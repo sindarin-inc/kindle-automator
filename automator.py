@@ -157,18 +157,29 @@ class KindleAutomator:
         try:
             # Initialize the driver
             if not self.initialize_driver():
-                print("Failed to initialize driver")
+                logger.error("Failed to initialize driver")
                 return False
 
             # Handle initial setup and ensure we reach library
             if not self.handle_initial_setup():
-                print("Failed to reach library view")
+                logger.error("Failed to reach library view")
                 return False
+
+            # Switch to list view and get book titles
+            logger.info("Getting book titles...")
+            book_titles = self.library_handler.get_book_titles()
+
+            if book_titles:
+                logger.info("Found books:")
+                for title in book_titles:
+                    logger.info(f"- {title}")
+            else:
+                logger.warning("No books found in library")
 
             return True
 
         except Exception as e:
-            print(f"Automation failed: {e}")
+            logger.error(f"Automation failed: {e}")
             return False
         finally:
             self.cleanup()

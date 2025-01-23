@@ -16,3 +16,18 @@ LIBRARY_TAB_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[@text='LIBRARY']"),
     (AppiumBy.XPATH, "//android.widget.TextView[@text='Library']"),
 ]
+
+# View mode identifiers
+GRID_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/library_books_grid"),
+    (AppiumBy.XPATH, "//*[contains(@resource-id, 'grid_view')]"),
+]
+
+LIST_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/recycler_view"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[contains(@content-desc, 'Book') and .//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
+    ),
+    (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title_container"),
+]

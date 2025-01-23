@@ -2,16 +2,17 @@ import subprocess
 import time
 from appium.webdriver.common.appiumby import AppiumBy
 from views.core.logger import logger
-from views.core.states import AppState as View
+from views.core.app_state import AppState, AppView
+from views.library.view_strategies import LIBRARY_VIEW_IDENTIFIERS
+from views.home.view_strategies import HOME_VIEW_IDENTIFIERS, HOME_TAB_IDENTIFIERS
+from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
+from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.auth.view_strategies import (
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
 )
-from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
-from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
-from views.library.view_strategies import LIBRARY_VIEW_IDENTIFIERS
-from views.home.view_strategies import HOME_VIEW_IDENTIFIERS, HOME_TAB_IDENTIFIERS
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 
 
 class ViewInspector:
@@ -125,78 +126,87 @@ class ViewInspector:
                 continue
         return None
 
-    def get_current_view(self):
-        """Determine the current view in the Kindle app."""
-        logger.info("Starting view detection...")
-
-        # Check for notification permission dialog
-        logger.info("Checking for notification permission dialog...")
-        if self._try_find_element(NOTIFICATION_DIALOG_IDENTIFIERS, "Found notification permission dialog"):
-            return View.NOTIFICATION_PERMISSION
-
-        # Check tab selection first
-        logger.info("Checking tab selection...")
-        if self._is_tab_selected("LIBRARY"):
-            logger.info("Library tab is selected, checking for sign in button...")
-            # Dump page source before checking for sign in button
-            self._dump_page_source()
-
-            # Try each sign in button strategy and log the attempts
-            for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
+    def _is_view_options_menu_open(self):
+        """Check if the view options menu is currently open."""
+        try:
+            for strategy, locator in VIEW_OPTIONS_MENU_STATE_STRATEGIES:
                 try:
-                    logger.info(
-                        f"Trying to find sign in button with strategy: {strategy}, locator: {locator}"
-                    )
+                    self.driver.find_element(strategy, locator)
+                    logger.info(f"View options menu detected via {strategy}: {locator}")
+                    return True
+                except Exception:
+                    continue
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking view options menu state: {e}")
+            return False
+
+    def get_current_view(self):
+        """Get the current view in the Kindle app."""
+        try:
+            # Check for notification permission dialog first
+            if self._try_find_element(
+                NOTIFICATION_DIALOG_IDENTIFIERS, "Found notification permission dialog"
+            ):
+                logger.info("Found notification permission dialog")
+                return AppView.NOTIFICATION_PERMISSION
+
+            # Check for library view indicators
+            logger.info("Checking for library view indicators...")
+            if self._is_view_options_menu_open():
+                logger.info("Found view options menu - this is part of library view")
+                return AppView.LIBRARY
+
+            # Check tab selection
+            logger.info("Checking tab selection...")
+            if self._is_tab_selected("LIBRARY"):
+                logger.info("LIBRARY tab is selected")
+                return AppView.LIBRARY
+            elif self._is_tab_selected("HOME"):
+                logger.info("HOME tab is selected")
+                return AppView.HOME
+
+            # Check for password view
+            logger.info("Checking for password view...")
+            self._dump_page_source()
+            for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
+                try:
+                    logger.info(f"Trying to find password view with strategy: {strategy}, locator: {locator}")
                     element = self.driver.find_element(strategy, locator)
-                    logger.info("Found sign in button on Library tab")
-                    return View.LIBRARY_SIGN_IN
+                    logger.info(f"Found password view element: {element.get_attribute('text')}")
+                    return AppView.SIGN_IN_PASSWORD
                 except Exception as e:
                     logger.debug(f"Strategy {strategy} failed: {e}")
                     continue
 
-            logger.info("No sign in button found, assuming library view")
-            return View.LIBRARY
-        elif self._is_tab_selected("HOME"):
-            logger.info("Found home view (HOME tab selected)")
-            return View.HOME
+            # Check for sign in view
+            logger.info("Checking for sign in view...")
+            for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
+                try:
+                    logger.info(f"Trying to find sign in view with strategy: {strategy}, locator: {locator}")
+                    element = self.driver.find_element(strategy, locator)
+                    logger.info(f"Found sign in view element: {element.get_attribute('text')}")
+                    return AppView.SIGN_IN
+                except Exception as e:
+                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    continue
 
-        # Check for password view first (more specific than general sign in)
-        logger.info("Checking for password view...")
-        self._dump_page_source()
-        for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
-            try:
-                logger.info(f"Trying to find password view with strategy: {strategy}, locator: {locator}")
-                element = self.driver.find_element(strategy, locator)
-                logger.info(f"Found password view element: {element.get_attribute('text')}")
-                return View.SIGN_IN_PASSWORD
-            except Exception as e:
-                logger.debug(f"Strategy {strategy} failed: {e}")
-                continue
+            # Check for reading view
+            logger.info("Checking for reading view...")
+            if self._try_find_element(READING_VIEW_IDENTIFIERS, "Found reading view"):
+                return AppView.READING
 
-        # Check for sign in view (when not on Library tab)
-        logger.info("Checking for sign in view...")
-        for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
-            try:
-                logger.info(f"Trying to find sign in view with strategy: {strategy}, locator: {locator}")
-                element = self.driver.find_element(strategy, locator)
-                logger.info(f"Found sign in view element: {element.get_attribute('text')}")
-                return View.SIGN_IN
-            except Exception as e:
-                logger.debug(f"Strategy {strategy} failed: {e}")
-                continue
+            # Check for general app indicators
+            logger.info("Checking for general app indicators...")
+            if self._try_find_element(
+                LIBRARY_VIEW_IDENTIFIERS,
+                "Found library root view - in app but can't determine exact view",
+            ):
+                return AppView.UNKNOWN
 
-        # Check for reading view
-        logger.info("Checking for reading view...")
-        if self._try_find_element(READING_VIEW_IDENTIFIERS, "Found reading view"):
-            return View.READING
+            logger.debug("Not in main app view")
+            return AppView.UNKNOWN
 
-        # Check for general app indicators
-        logger.info("Checking for general app indicators...")
-        if self._try_find_element(
-            LIBRARY_VIEW_IDENTIFIERS,
-            "Found library root view - in app but can't determine exact view",
-        ):
-            return View.UNKNOWN
-
-        logger.debug("Not in main app view")
-        return View.UNKNOWN
+        except Exception as e:
+            logger.error(f"Error getting current view: {e}")
+            return AppView.UNKNOWN
