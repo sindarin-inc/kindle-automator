@@ -5,7 +5,7 @@ from .core.logger import logger
 from .core.states import AppState as View
 from .core.strategies import (
     SIGN_IN_BUTTON_STRATEGIES,
-    get_tab_selection_strategies,
+    SIGN_IN_VIEW_STRATEGIES,
     NOTIFICATION_DIALOG_STRATEGIES,
     READING_VIEW_STRATEGIES,
     LIBRARY_ROOT_STRATEGIES,
@@ -39,42 +39,65 @@ class ViewInspector:
             logger.error(f"Error bringing app to foreground: {e}")
             return False
 
+    def _get_tab_selection_strategies(self, tab_name):
+        """Generate strategies for detecting tab selection state.
+
+        Args:
+            tab_name (str): Name of the tab to check (e.g. 'LIBRARY', 'HOME')
+
+        Returns:
+            list: List of tuples containing strategies to detect if the tab is selected
+        """
+        return [
+            (
+                AppiumBy.ANDROID_UIAUTOMATOR,
+                f'new UiSelector().descriptionContains("{tab_name}, Tab selected")',
+            ),
+            (
+                AppiumBy.ID,
+                f"com.amazon.kindle:id/{tab_name.lower()}_tab",
+                {
+                    "icon": (
+                        AppiumBy.ID,
+                        "com.amazon.kindle:id/icon",
+                        "selected",
+                        "true",
+                    ),
+                    "label": (
+                        AppiumBy.ID,
+                        "com.amazon.kindle:id/label",
+                        "selected",
+                        "true",
+                    ),
+                },
+            ),
+        ]
+
     def _is_tab_selected(self, tab_name):
-        """Check if a specific tab is currently selected using multiple strategies."""
+        """Check if a specific tab is currently selected."""
         logger.info(f"Checking if {tab_name} tab is selected...")
 
-        for strategy in get_tab_selection_strategies(tab_name):
+        for strategy in self._get_tab_selection_strategies(tab_name):
             try:
-                if len(strategy) == 3:  # Strategy with child element checks
+                if len(strategy) == 3:  # Complex strategy with child elements
                     by, value, child_checks = strategy
                     tab = self.driver.find_element(by, value)
-                    # Check all child elements have expected attributes
-                    all_checks_passed = True
-                    for child_name, (
-                        child_by,
-                        child_value,
-                        attr,
-                        expected,
-                    ) in child_checks.items():
-                        try:
-                            child = tab.find_element(child_by, child_value)
-                            if child.get_attribute(attr) != expected:
-                                all_checks_passed = False
-                                break
-                        except:
-                            all_checks_passed = False
-                            break
-                    if all_checks_passed:
-                        logger.info(
-                            f"Found {tab_name} tab with selected icon and label"
-                        )
-                        return True
+
+                    # Check child elements
+                    for child_by, child_value, attr, expected in child_checks.values():
+                        child = tab.find_element(child_by, child_value)
+                        if child.get_attribute(attr) == expected:
+                            logger.info(
+                                f"Found {tab_name} tab with '{attr}' in {child_by}"
+                            )
+                            return True
                 else:  # Simple strategy
                     by, value = strategy
                     self.driver.find_element(by, value)
-                    logger.info(f"Found {tab_name} tab with 'selected' in content-desc")
+                    logger.info(f"Found {tab_name} tab with strategy: {by}")
                     return True
-            except:
+            except Exception as e:
+                logger.debug(f"Strategy failed: {e}")
                 continue
 
         logger.info(f"{tab_name} tab is not selected")
@@ -83,10 +106,10 @@ class ViewInspector:
     def _dump_page_source(self):
         """Dump the page source for debugging"""
         try:
-            logger.debug("\n=== Page Source ===")
+            logger.info("\n=== PAGE SOURCE START ===")
             source = self.driver.page_source
-            logger.debug(source)
-            logger.debug("=== End Page Source ===\n")
+            logger.info(source)
+            logger.info("=== PAGE SOURCE END ===\n")
         except Exception as e:
             logger.error(f"Failed to get page source: {e}")
 
@@ -141,8 +164,22 @@ class ViewInspector:
 
         # Check for sign in view (when not on Library tab)
         logger.info("Checking for sign in view...")
-        if self._try_find_element(SIGN_IN_BUTTON_STRATEGIES, "Found sign in view"):
-            return View.SIGN_IN
+        self._dump_page_source()  # Dump page source to see what elements are present
+
+        # Try each sign in view strategy
+        for strategy, locator in SIGN_IN_VIEW_STRATEGIES:
+            try:
+                logger.info(
+                    f"Trying to find sign in view with strategy: {strategy}, locator: {locator}"
+                )
+                element = self.driver.find_element(strategy, locator)
+                logger.info(
+                    f"Found sign in view element: {element.get_attribute('text')}"
+                )
+                return View.SIGN_IN
+            except Exception as e:
+                logger.debug(f"Strategy {strategy} failed: {e}")
+                continue
 
         # Check for reading view
         logger.info("Checking for reading view...")
