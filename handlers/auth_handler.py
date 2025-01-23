@@ -133,9 +133,7 @@ class AuthenticationHandler:
     def _verify_login(self):
         try:
             library_locator = (AppiumBy.ID, "com.amazon.kindle:id/library_home_root")
-            WebDriverWait(self.driver, 20).until(
-                EC.presence_of_element_located(library_locator)
-            )
+            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located(library_locator))
             return True
         except Exception:
             return False

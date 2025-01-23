@@ -1,13 +1,7 @@
 import time
 import os
-import subprocess
 from appium import webdriver
-from appium.webdriver.common.appiumby import AppiumBy
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from appium.options.android import UiAutomator2Options
-import xml.etree.ElementTree as ET
-import sys
 
 from views.view_inspector import ViewInspector
 from views.state_machine import KindleStateMachine
@@ -35,9 +29,7 @@ class KindleAutomator:
         android_home = os.path.expanduser("~/Library/Android/sdk")
         os.environ["ANDROID_HOME"] = android_home
         os.environ["ANDROID_SDK_ROOT"] = android_home
-        os.environ["PATH"] = (
-            f"{os.environ.get('PATH')}:{android_home}/tools:{android_home}/platform-tools"
-        )
+        os.environ["PATH"] = f"{os.environ.get('PATH')}:{android_home}/tools:{android_home}/platform-tools"
 
         options = UiAutomator2Options()
         options.platform_name = "Android"
@@ -64,18 +56,12 @@ class KindleAutomator:
 
         while attempt <= max_attempts:
             try:
-                logger.info(
-                    f"Attempting to initialize driver (attempt {attempt}/{max_attempts})..."
-                )
-                self.driver = webdriver.Remote(
-                    command_executor="http://127.0.0.1:4723", options=options
-                )
+                logger.info(f"Attempting to initialize driver (attempt {attempt}/{max_attempts})...")
+                self.driver = webdriver.Remote(command_executor="http://127.0.0.1:4723", options=options)
 
                 # Initialize all handlers with the driver
                 self.view_inspector.set_driver(self.driver)
-                self.auth_handler = AuthenticationHandler(
-                    self.driver, self.email, self.password
-                )
+                self.auth_handler = AuthenticationHandler(self.driver, self.email, self.password)
                 self.permissions_handler = PermissionsHandler(self.driver)
                 self.library_handler = LibraryHandler(self.driver)
                 self.reader_handler = ReaderHandler(self.driver)
@@ -92,9 +78,7 @@ class KindleAutomator:
                 return True
             except Exception as e:
                 last_error = str(e)
-                logger.error(
-                    f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}"
-                )
+                logger.error(f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}")
                 if attempt < max_attempts:
                     logger.info("Waiting 1 second before retrying...")
                     time.sleep(1)
@@ -105,9 +89,7 @@ class KindleAutomator:
         logger.info("\nPlease ensure:")
         logger.info("1. Appium server is running (start with 'appium')")
         logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
-        logger.info(
-            "3. Android device/emulator is connected (check with 'adb devices')"
-        )
+        logger.info("3. Android device/emulator is connected (check with 'adb devices')")
         return False
 
     def handle_initial_setup(self):

@@ -32,9 +32,7 @@ class LibraryHandler:
             library_tab = None
             for strategy, locator in library_tab_strategies:
                 try:
-                    print(
-                        f"\nTrying to find Library tab with strategy: {strategy}, locator: {locator}"
-                    )
+                    print(f"\nTrying to find Library tab with strategy: {strategy}, locator: {locator}")
                     library_tab = WebDriverWait(self.driver, 2).until(
                         EC.presence_of_element_located((strategy, locator))
                     )

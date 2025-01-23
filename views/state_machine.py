@@ -1,13 +1,10 @@
-import time
-from .core.states import AppState, get_state_from_view
-from .transitions import StateTransitions
-from .core.logger import logger
+from views.core.transitions import StateTransitions
+from views.core.states import AppState, get_state_from_view
+from views.core.logger import logger
 
 
 class KindleStateMachine:
-    def __init__(
-        self, view_inspector, auth_handler, permissions_handler, library_handler
-    ):
+    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler):
         logger.info("Initializing Kindle State Machine...")
         self.view_inspector = view_inspector
         self.transitions = StateTransitions(
@@ -54,7 +51,5 @@ class KindleStateMachine:
         if success:
             logger.info("Successfully reached library state!")
         else:
-            logger.error(
-                f"Failed to reach library state, ended in {self.current_state}"
-            )
+            logger.error(f"Failed to reach library state, ended in {self.current_state}")
         return success

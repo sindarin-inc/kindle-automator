@@ -18,9 +18,7 @@ class PermissionsHandler:
             )
 
             button_locator = (AppiumBy.ID, button_id)
-            WebDriverWait(self.driver, 2).until(
-                EC.presence_of_element_located(button_locator)
-            )
+            WebDriverWait(self.driver, 2).until(EC.presence_of_element_located(button_locator))
             self.driver.find_element(*button_locator).click()
             return True
         except Exception as e:

@@ -1,9 +1,9 @@
-from appium.webdriver.common.appiumby import AppiumBy
 import subprocess
 import time
-from .core.logger import logger
-from .core.states import AppState as View
-from .core.strategies import (
+from appium.webdriver.common.appiumby import AppiumBy
+from views.core.logger import logger
+from views.core.states import AppState as View
+from views.core.strategies import (
     SIGN_IN_BUTTON_STRATEGIES,
     SIGN_IN_VIEW_STRATEGIES,
     NOTIFICATION_DIALOG_STRATEGIES,
@@ -87,9 +87,7 @@ class ViewInspector:
                     for child_by, child_value, attr, expected in child_checks.values():
                         child = tab.find_element(child_by, child_value)
                         if child.get_attribute(attr) == expected:
-                            logger.info(
-                                f"Found {tab_name} tab with '{attr}' in {child_by}"
-                            )
+                            logger.info(f"Found {tab_name} tab with '{attr}' in {child_by}")
                             return True
                 else:  # Simple strategy
                     by, value = strategy
@@ -131,9 +129,7 @@ class ViewInspector:
 
         # Check for notification permission dialog
         logger.info("Checking for notification permission dialog...")
-        if self._try_find_element(
-            NOTIFICATION_DIALOG_STRATEGIES, "Found notification permission dialog"
-        ):
+        if self._try_find_element(NOTIFICATION_DIALOG_STRATEGIES, "Found notification permission dialog"):
             return View.NOTIFICATION_PERMISSION
 
         # Check tab selection first
@@ -169,13 +165,9 @@ class ViewInspector:
         # Try each sign in view strategy
         for strategy, locator in SIGN_IN_VIEW_STRATEGIES:
             try:
-                logger.info(
-                    f"Trying to find sign in view with strategy: {strategy}, locator: {locator}"
-                )
+                logger.info(f"Trying to find sign in view with strategy: {strategy}, locator: {locator}")
                 element = self.driver.find_element(strategy, locator)
-                logger.info(
-                    f"Found sign in view element: {element.get_attribute('text')}"
-                )
+                logger.info(f"Found sign in view element: {element.get_attribute('text')}")
                 return View.SIGN_IN
             except Exception as e:
                 logger.debug(f"Strategy {strategy} failed: {e}")

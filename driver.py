@@ -25,19 +25,13 @@ class Driver:
 
         while attempt <= max_attempts:
             try:
-                logger.info(
-                    f"Attempting to initialize driver (attempt {attempt}/{max_attempts})..."
-                )
-                self.driver = webdriver.Remote(
-                    command_executor="http://127.0.0.1:4723", options=options
-                )
+                logger.info(f"Attempting to initialize driver (attempt {attempt}/{max_attempts})...")
+                self.driver = webdriver.Remote(command_executor="http://127.0.0.1:4723", options=options)
                 logger.info("Driver initialized successfully")
                 return True
             except Exception as e:
                 last_error = str(e)
-                logger.error(
-                    f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}"
-                )
+                logger.error(f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}")
                 if attempt < max_attempts:
                     logger.info("Waiting 1 second before retrying...")
                     time.sleep(1)
@@ -48,9 +42,7 @@ class Driver:
         logger.info("\nPlease ensure:")
         logger.info("1. Appium server is running (start with 'appium')")
         logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
-        logger.info(
-            "3. Android device/emulator is connected (check with 'adb devices')"
-        )
+        logger.info("3. Android device/emulator is connected (check with 'adb devices')")
         return False
 
     def get_driver(self):

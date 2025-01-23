@@ -1,14 +1,10 @@
-import time
-from .core.states import AppState
-from .core.logger import logger
-from appium.webdriver.common.appiumby import AppiumBy
-from .core.strategies import SIGN_IN_BUTTON_STRATEGIES
+from views.core.states import AppState
+from views.core.logger import logger
+from views.core.strategies import SIGN_IN_BUTTON_STRATEGIES
 
 
 class StateTransitions:
-    def __init__(
-        self, view_inspector, auth_handler, permissions_handler, library_handler
-    ):
+    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler):
         logger.info("Initializing State Transitions...")
         self.view_inspector = view_inspector
         self.auth_handler = auth_handler
@@ -42,9 +38,7 @@ class StateTransitions:
         # Try each strategy to find and click the sign in button
         for strategy, locator in SIGN_IN_BUTTON_STRATEGIES:
             try:
-                sign_in_button = self.view_inspector.driver.find_element(
-                    strategy, locator
-                )
+                sign_in_button = self.view_inspector.driver.find_element(strategy, locator)
                 logger.info(f"Found sign in button using strategy: {strategy}")
                 sign_in_button.click()
                 logger.info("Successfully clicked sign in button")
