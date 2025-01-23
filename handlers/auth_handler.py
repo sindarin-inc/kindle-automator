@@ -6,6 +6,7 @@ from views.auth.view_strategies import (
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
     ERROR_VIEW_IDENTIFIERS,
+    LIBRARY_VIEW_VERIFICATION_STRATEGIES,
 )
 from views.auth.interaction_strategies import (
     EMAIL_FIELD_STRATEGIES,
@@ -175,11 +176,24 @@ class AuthenticationHandler:
         sign_in_button.click()
 
     def _verify_login(self):
+        """Verify successful login by waiting for library view to load."""
         try:
-            library_locator = (AppiumBy.ID, "com.amazon.kindle:id/library_home_root")
-            WebDriverWait(self.driver, 20).until(EC.presence_of_element_located(library_locator))
-            return True
-        except Exception:
+            logger.info("Verifying login success...")
+            # Try each locator strategy
+            for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
+                try:
+                    logger.info(f"Waiting for library element: {locator}")
+                    WebDriverWait(self.driver, 30).until(EC.presence_of_element_located((by, locator)))
+                    logger.info(f"Found library element: {locator}")
+                    return True
+                except Exception as e:
+                    logger.debug(f"Library locator {locator} not found: {e}")
+                    continue
+
+            logger.error("Could not verify library view loaded")
+            return False
+        except Exception as e:
+            logger.error(f"Error verifying login: {e}")
             return False
 
     def _check_for_errors(self):

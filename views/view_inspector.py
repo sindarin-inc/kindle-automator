@@ -3,7 +3,7 @@ import time
 from appium.webdriver.common.appiumby import AppiumBy
 from views.core.logger import logger
 from views.core.app_state import AppState, AppView
-from views.library.view_strategies import LIBRARY_VIEW_IDENTIFIERS
+from views.library.view_strategies import LIBRARY_VIEW_IDENTIFIERS, EMPTY_LIBRARY_IDENTIFIERS
 from views.home.view_strategies import HOME_VIEW_IDENTIFIERS, HOME_TAB_IDENTIFIERS
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
@@ -150,6 +150,12 @@ class ViewInspector:
             ):
                 logger.info("Found notification permission dialog")
                 return AppView.NOTIFICATION_PERMISSION
+
+            # Check for empty library with sign-in button first
+            logger.info("Checking for empty library with sign-in button...")
+            if self._try_find_element(EMPTY_LIBRARY_IDENTIFIERS, "Found empty library with sign-in button"):
+                logger.info("Found empty library with sign-in button")
+                return AppView.LIBRARY_SIGN_IN
 
             # Check for library view indicators
             logger.info("Checking for library view indicators...")

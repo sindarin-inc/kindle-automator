@@ -7,6 +7,8 @@ from views.library.view_strategies import (
     LIBRARY_VIEW_IDENTIFIERS,
     GRID_VIEW_IDENTIFIERS,
     LIST_VIEW_IDENTIFIERS,
+    BOOK_TITLE_IDENTIFIERS,
+    BOOK_AUTHOR_IDENTIFIERS,
 )
 from views.library.interaction_strategies import (
     LIBRARY_TAB_STRATEGIES,
@@ -17,6 +19,8 @@ from views.library.interaction_strategies import (
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 from views.view_options.interaction_strategies import VIEW_OPTIONS_DONE_STRATEGIES
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 
 
 class LibraryHandler:
@@ -140,21 +144,19 @@ class LibraryHandler:
             for strategy, locator in GRID_VIEW_IDENTIFIERS:
                 try:
                     self.driver.find_element(strategy, locator)
+                    logger.info(f"Grid view detected via {strategy}: {locator}")
                     return True
-                except:
+                except Exception as e:
+                    logger.debug(f"Grid view strategy failed - {strategy}: {locator} - {e}")
                     continue
             return False
-        except:
+        except Exception as e:
+            logger.error(f"Error checking grid view: {e}")
             return False
 
     def _is_list_view(self):
         """Check if currently in list view"""
         try:
-            logger.info("Checking if in list view...")
-            logger.info("\n=== PAGE SOURCE START ===")
-            logger.info(self.driver.page_source)
-            logger.info("=== PAGE SOURCE END ===\n")
-
             for strategy, locator in LIST_VIEW_IDENTIFIERS:
                 try:
                     self.driver.find_element(strategy, locator)
@@ -163,7 +165,6 @@ class LibraryHandler:
                 except Exception as e:
                     logger.debug(f"List view strategy failed - {strategy}: {locator} - {e}")
                     continue
-            logger.info("Not in list view")
             return False
         except Exception as e:
             logger.error(f"Error checking list view: {e}")
@@ -172,57 +173,65 @@ class LibraryHandler:
     def switch_to_list_view(self):
         """Switch to list view if not already in it"""
         try:
+            # First check if we're already in list view
             if self._is_list_view():
                 logger.info("Already in list view")
                 return True
 
-            # Find and click view options button
-            view_options = None
+            # Click view options button
             for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
                 try:
-                    view_options = self.driver.find_element(strategy, locator)
+                    button = self.driver.find_element(strategy, locator)
+                    button.click()
+                    logger.info("Clicked view options button")
+                    time.sleep(0.5)  # Short wait for menu animation
                     break
-                except:
+                except Exception:
                     continue
 
-            if not view_options:
-                logger.error("Could not find view options button")
-                return False
-
-            view_options.click()
-            logger.info("Clicked view options button")
-            time.sleep(1)  # Wait for menu to appear
-
-            # Find and click list view option
-            list_option = None
+            # Click list view option
             for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
                 try:
-                    list_option = self.driver.find_element(strategy, locator)
+                    option = self.driver.find_element(strategy, locator)
+                    option.click()
+                    logger.info("Clicked list view option")
+                    time.sleep(0.5)  # Short wait for selection to register
                     break
-                except:
+                except Exception:
                     continue
 
-            if not list_option:
-                logger.error("Could not find list view option")
-                # Try to close menu before returning
-                self._close_menu()
+            # Click DONE button
+            try:
+                done_button = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/view_and_sort_menu_dismiss"
+                )
+                done_button.click()
+                logger.info("Clicked DONE button")
+            except Exception as e:
+                logger.error(f"Failed to click DONE button: {e}")
                 return False
 
-            list_option.click()
-            logger.info("Clicked list view option")
-            time.sleep(1)  # Wait for view to change
-
-            # Close the menu
-            if not self._close_menu():
-                logger.error("Failed to close menu")
+            # Wait for list view to appear with timeout
+            try:
+                logger.info("Waiting for list view to appear...")
+                WebDriverWait(self.driver, 2).until(
+                    lambda x: any(
+                        x.find_element(strategy, locator) is not None
+                        for strategy, locator in LIST_VIEW_IDENTIFIERS
+                    )
+                )
+                logger.info("Successfully switched to list view")
+                return True
+            except Exception as e:
+                logger.error(f"Timed out waiting for list view: {e}")
+                # Get page source for debugging
+                logger.info("\n=== PAGE SOURCE AFTER VIEW SWITCH ===")
+                logger.info(self.driver.page_source)
+                logger.info("=== END PAGE SOURCE ===\n")
                 return False
 
-            time.sleep(1)  # Wait for menu to close
-            return self._is_list_view()
         except Exception as e:
             logger.error(f"Error switching to list view: {e}")
-            # Try to close menu in case of error
-            self._close_menu()
             return False
 
     def _close_menu(self):
@@ -258,64 +267,80 @@ class LibraryHandler:
         """Get a list of books in the library.
 
         Returns:
-            list: A list of dictionaries containing book information with 'title' and 'author' keys.
+            list[dict]: List of dictionaries containing book information with 'title' and 'author' keys.
         """
-        logger.info("Getting book titles...")
-
-        # First close view options menu if it's open
-        if self._is_view_options_menu_open():
-            logger.info("View options menu is open, closing it")
-            self._close_menu()
-            time.sleep(0.5)  # Wait for menu to close
-
-        # Then check if we need to switch to list view
-        if not self._is_list_view():
-            logger.info("Not in list view, switching...")
-            if not self.switch_to_list_view():
-                logger.error("Failed to switch to list view")
-                return []
-
-        logger.info("\n=== PAGE SOURCE START ===")
-        logger.info(self.driver.page_source)
-        logger.info("=== PAGE SOURCE END ===\n")
-
-        books = []
         try:
-            # Find all book buttons in list view
-            book_buttons = self.driver.find_elements(
-                AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, 'Book')]"
-            )
-            for button in book_buttons:
-                try:
-                    # Get the title element
-                    title_element = button.find_element(
-                        AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
-                    )
-                    title = title_element.text
+            # First close view options menu if it's open
+            if self._is_view_options_menu_open():
+                logger.info("View options menu is open, closing it")
+                if not self._close_menu():
+                    logger.error("Failed to close view options menu")
+                    return []
+                time.sleep(0.5)  # Wait for menu to close
 
-                    # Get the author element
-                    author_element = button.find_element(
-                        AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_author"
-                    )
-                    author = author_element.text
+            # Check current view type
+            if self._is_grid_view():
+                logger.info("Currently in grid view, switching to list view...")
+                if not self.switch_to_list_view():
+                    logger.error("Failed to switch to list view")
+                    return []
 
-                    books.append({"title": title, "author": author})
-                    logger.info(f"- {title} by {author}")
-                except Exception as e:
-                    logger.debug(f"Error extracting book info: {e}")
-                    continue
+            # Get page source for debugging
+            logger.info("\n=== PAGE SOURCE START ===")
+            logger.info(self.driver.page_source)
+            logger.info("=== PAGE SOURCE END ===\n")
+
+            books = []
+            try:
+                # Find all book title elements
+                title_elements = []
+                for strategy, locator in BOOK_TITLE_IDENTIFIERS:
+                    try:
+                        elements = self.driver.find_elements(strategy, locator)
+                        if elements:
+                            title_elements = elements
+                            break
+                    except Exception as e:
+                        logger.debug(f"Failed to find titles with {strategy}: {e}")
+                        continue
+
+                # Find all author elements
+                author_elements = []
+                for strategy, locator in BOOK_AUTHOR_IDENTIFIERS:
+                    try:
+                        elements = self.driver.find_elements(strategy, locator)
+                        if elements:
+                            author_elements = elements
+                            break
+                    except Exception as e:
+                        logger.debug(f"Failed to find authors with {strategy}: {e}")
+                        continue
+
+                # Pair up titles and authors
+                for title_elem, author_elem in zip(title_elements, author_elements):
+                    try:
+                        title = title_elem.text
+                        author = author_elem.text
+                        if title and author:  # Only add if both are present
+                            books.append({"title": title, "author": author})
+                            logger.info(f"Found book: {title} by {author}")
+                    except Exception as e:
+                        logger.debug(f"Failed to get book info: {e}")
+                        continue
+
+            except Exception as e:
+                logger.debug(f"Failed to find book elements: {e}")
+
+            logger.info(f"Found {len(books)} books")
+            if books:
+                logger.info("Found books:")
+                for book in books:
+                    logger.info(f"- {book}")
+            return books
 
         except Exception as e:
-            logger.error(f"Error finding book elements: {e}")
+            logger.error(f"Error getting book titles: {e}")
             return []
-
-        logger.info(f"Found {len(books)} books")
-        if books:
-            logger.info("Found books:")
-            for book in books:
-                logger.info(f"- {book}")
-
-        return books
 
     def list_books(self):
         """List all books in the library"""
@@ -326,3 +351,38 @@ class LibraryHandler:
         """Open a specific book by title"""
         # TODO: Implement book opening functionality
         pass
+
+    def handle_library_sign_in(self):
+        """Handle the library sign in state by clicking the sign in button."""
+        logger.info("Handling library sign in - clicking sign in button...")
+        try:
+            # Try each strategy to find and click the sign in button
+            for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
+                try:
+                    button = self.driver.find_element(strategy, locator)
+                    logger.info(f"Found sign in button using strategy: {strategy}")
+                    button.click()
+                    logger.info("Successfully clicked sign in button")
+
+                    # Wait for WebView to load
+                    logger.info("Waiting for sign in WebView to load...")
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.webkit.WebView"))
+                    )
+                    time.sleep(1)  # Short wait for WebView content to load
+
+                    # Wait for email input field
+                    logger.info("Waiting for email input field...")
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located(EMAIL_VIEW_IDENTIFIERS[0])
+                    )
+                    return True
+                except Exception as e:
+                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    continue
+
+            logger.error("Failed to find or click sign in button with any strategy")
+            return False
+        except Exception as e:
+            logger.error(f"Error handling library sign in: {e}")
+            return False

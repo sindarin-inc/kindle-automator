@@ -1,8 +1,11 @@
+from appium.webdriver.common.appiumby import AppiumBy
 from views.core.logger import logger
-from views.core.app_state import AppState
+from views.core.app_state import AppState, AppView
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
 
 
 class StateTransitions:
@@ -15,6 +18,11 @@ class StateTransitions:
         self.auth_handler = auth_handler
         self.permissions_handler = permissions_handler
         self.library_handler = library_handler
+        self.driver = None
+
+    def set_driver(self, driver):
+        """Sets the Appium driver instance"""
+        self.driver = driver
 
     def handle_unknown(self):
         """Handle UNKNOWN state by ensuring app is in foreground."""
@@ -42,32 +50,9 @@ class StateTransitions:
         return self.auth_handler.sign_in()
 
     def handle_library_sign_in(self):
-        """Handle LIBRARY_SIGN_IN state by clicking sign in button."""
-        logger.info("Handling LIBRARY_SIGN_IN state - clicking sign in button...")
-
-        # Try each strategy to find and click the sign in button
-        for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
-            try:
-                sign_in_button = self.view_inspector.driver.find_element(strategy, locator)
-                logger.info(f"Found sign in button using strategy: {strategy}")
-                sign_in_button.click()
-                logger.info("Successfully clicked sign in button")
-
-                # Wait for sign in view to appear
-                logger.info("Waiting for sign in view to appear...")
-                WebDriverWait(self.view_inspector.driver, 10).until(
-                    lambda x: any(
-                        x.find_elements(strategy[0], strategy[1]) for strategy in EMAIL_VIEW_IDENTIFIERS
-                    )
-                )
-                logger.info("Sign in view appeared")
-                return True
-            except Exception as e:
-                logger.debug(f"Strategy {strategy} failed: {e}")
-                continue
-
-        logger.error("Failed to find or click sign in button with any strategy")
-        return False
+        """Handle the library sign in state by clicking the sign in button."""
+        logger.info("Handling LIBRARY_SIGN_IN state...")
+        return self.library_handler.handle_library_sign_in()
 
     def handle_library(self):
         """Handle LIBRARY state - already in library."""

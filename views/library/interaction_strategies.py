@@ -45,19 +45,17 @@ LIBRARY_SIGN_IN_BUTTON_STRATEGIES = [
 
 # Book list elements
 BOOK_LIST_STRATEGIES = [
-    (AppiumBy.ID, "com.amazon.kindle:id/library_books_list"),
+    (AppiumBy.ID, "com.amazon.kindle:id/recycler_view"),
 ]
 
 BOOK_ITEM_STRATEGIES = [
-    (AppiumBy.ID, "com.amazon.kindle:id/library_book_item"),
-    (AppiumBy.XPATH, "//*[contains(@resource-id, 'book_item')]"),
+    (AppiumBy.ID, "com.amazon.kindle:id/badgeable_cover"),
+    (AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, ', Book')]"),
 ]
 
 BOOK_TITLE_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/badgeable_cover"),
     (AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, ', Book')]"),
-    (AppiumBy.ID, "com.amazon.kindle:id/library_book_title"),
-    (AppiumBy.XPATH, "//*[contains(@resource-id, 'book_title')]"),
 ]
 
 # Filter elements

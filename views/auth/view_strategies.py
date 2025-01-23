@@ -24,3 +24,10 @@ ERROR_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'incorrect')]"),
     (AppiumBy.XPATH, "//android.view.View[contains(@text, 'incorrect')]"),
 ]
+
+# Library view verification strategies
+LIBRARY_VIEW_VERIFICATION_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/library_home_root"),
+    (AppiumBy.ID, "com.amazon.kindle:id/library_root_view"),
+    (AppiumBy.ID, "com.amazon.kindle:id/library_recycler_container"),
+]
