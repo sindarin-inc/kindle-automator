@@ -15,6 +15,7 @@ from handlers.auth_handler import AuthenticationHandler
 from handlers.permissions_handler import PermissionsHandler
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
+from views.logger import logger
 
 
 class KindleAutomator:
@@ -57,38 +58,57 @@ class KindleAutomator:
         options.set_capability("appium:waitForIdleTimeout", 5000)
         options.set_capability("appium:systemPort", 8202)
 
-        try:
-            self.driver = webdriver.Remote(
-                command_executor="http://127.0.0.1:4723", options=options
-            )
+        max_attempts = 3
+        attempt = 1
+        last_error = None
 
-            # Initialize all handlers with the driver
-            self.view_inspector.set_driver(self.driver)
-            self.auth_handler = AuthenticationHandler(
-                self.driver, self.email, self.password
-            )
-            self.permissions_handler = PermissionsHandler(self.driver)
-            self.library_handler = LibraryHandler(self.driver)
-            self.reader_handler = ReaderHandler(self.driver)
+        while attempt <= max_attempts:
+            try:
+                logger.info(
+                    f"Attempting to initialize driver (attempt {attempt}/{max_attempts})..."
+                )
+                self.driver = webdriver.Remote(
+                    command_executor="http://127.0.0.1:4723", options=options
+                )
 
-            # Initialize state machine
-            self.state_machine = KindleStateMachine(
-                self.view_inspector,
-                self.auth_handler,
-                self.permissions_handler,
-                self.library_handler,
-            )
+                # Initialize all handlers with the driver
+                self.view_inspector.set_driver(self.driver)
+                self.auth_handler = AuthenticationHandler(
+                    self.driver, self.email, self.password
+                )
+                self.permissions_handler = PermissionsHandler(self.driver)
+                self.library_handler = LibraryHandler(self.driver)
+                self.reader_handler = ReaderHandler(self.driver)
 
-            print("Driver initialized successfully")
-            return True
+                # Initialize state machine
+                self.state_machine = KindleStateMachine(
+                    self.view_inspector,
+                    self.auth_handler,
+                    self.permissions_handler,
+                    self.library_handler,
+                )
 
-        except Exception as e:
-            print(f"Failed to initialize driver: {e}")
-            print("\nPlease ensure:")
-            print("1. Appium server is running (start with 'appium')")
-            print("2. Android SDK is installed at ~/Library/Android/sdk")
-            print("3. Android device/emulator is connected (check with 'adb devices')")
-            return False
+                logger.info("Driver initialized successfully")
+                return True
+            except Exception as e:
+                last_error = str(e)
+                logger.error(
+                    f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}"
+                )
+                if attempt < max_attempts:
+                    logger.info("Waiting 1 second before retrying...")
+                    time.sleep(1)
+                attempt += 1
+
+        logger.error(f"Failed to initialize driver after {max_attempts} attempts")
+        logger.error(f"Last error: {last_error}")
+        logger.info("\nPlease ensure:")
+        logger.info("1. Appium server is running (start with 'appium')")
+        logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
+        logger.info(
+            "3. Android device/emulator is connected (check with 'adb devices')"
+        )
+        return False
 
     def handle_initial_setup(self):
         """Handles the initial app setup and ensures we reach the library view"""
