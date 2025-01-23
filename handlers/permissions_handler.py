@@ -1,6 +1,7 @@
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from views.core.logger import logger
 
 
 class PermissionsHandler:
@@ -18,9 +19,17 @@ class PermissionsHandler:
             )
 
             button_locator = (AppiumBy.ID, button_id)
-            WebDriverWait(self.driver, 2).until(EC.presence_of_element_located(button_locator))
-            self.driver.find_element(*button_locator).click()
-            return True
+
+            # Only wait a short time since dialog may auto-dismiss
+            try:
+                WebDriverWait(self.driver, 2).until(EC.presence_of_element_located(button_locator))
+                self.driver.find_element(*button_locator).click()
+                logger.info("Successfully handled notification permission dialog")
+                return True
+            except Exception as e:
+                logger.info("Notification permission dialog not found - may have auto-dismissed")
+                return True  # Return True since absence of dialog is not an error
+
         except Exception as e:
-            print(f"Failed to handle notifications permission: {e}")
+            logger.error(f"Error handling notifications permission: {e}")
             return False

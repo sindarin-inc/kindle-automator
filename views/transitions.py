@@ -32,7 +32,14 @@ class StateTransitions:
     def handle_notifications(self):
         """Handle NOTIFICATIONS state by accepting permissions."""
         logger.info("Handling NOTIFICATIONS state - accepting permission...")
-        return self.permissions_handler.handle_notifications_permission()
+        result = self.permissions_handler.handle_notifications_permission()
+
+        # Even if permission handling fails, we want to continue the flow
+        # The dialog may have auto-dismissed, which is fine
+        if not result:
+            logger.info("Permission dialog may have auto-dismissed - continuing flow")
+
+        return True
 
     def handle_home(self):
         """Handle HOME state by navigating to library."""

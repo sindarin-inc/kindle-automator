@@ -134,64 +134,64 @@ class AuthenticationHandler:
         return True
 
     def _enter_password(self):
+        """Enter password into password field."""
         logger.info("Entering password...")
-        # Find password field using multiple strategies
-        password_field = None
-        for strategy, locator in PASSWORD_FIELD_STRATEGIES:
-            try:
-                logger.info(f"Trying to find password field with strategy: {strategy}")
-                password_field = self.driver.find_element(strategy, locator)
-                if password_field:
-                    break
-            except Exception as e:
-                logger.debug(f"Strategy failed: {e}")
-                continue
+        try:
+            # Find password field
+            logger.info("Trying to find password field with strategy: xpath")
+            password_field = self.driver.find_element(*PASSWORD_VIEW_IDENTIFIERS[0])
 
-        if not password_field:
-            raise Exception("Could not find password field")
+            # Clear and enter password
+            logger.info("Clearing password field...")
+            password_field.clear()
+            logger.info("Entering password...")
+            password_field.send_keys(self.password)
 
-        # Enter password
-        logger.info("Clearing password field...")
-        password_field.clear()
-        logger.info("Entering password...")
-        password_field.send_keys(self.password)
+            # Look for sign in button
+            logger.info("Looking for sign in button...")
+            logger.info("Trying to find sign in button with strategy: xpath")
+            sign_in_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((AppiumBy.XPATH, "//android.widget.Button[@text='Sign in']"))
+            )
 
-        # Find and click sign in button
-        logger.info("Looking for sign in button...")
-        sign_in_button = None
-        for strategy, locator in PASSWORD_SIGN_IN_BUTTON_STRATEGIES:
-            try:
-                logger.info(f"Trying to find sign in button with strategy: {strategy}")
-                sign_in_button = self.driver.find_element(strategy, locator)
-                if sign_in_button:
-                    break
-            except Exception as e:
-                logger.debug(f"Strategy failed: {e}")
-                continue
+            # Click sign in button
+            logger.info("Clicking sign in button...")
+            sign_in_button.click()
+            return True
 
-        if not sign_in_button:
-            raise Exception("Could not find sign in button")
-
-        logger.info("Clicking sign in button...")
-        sign_in_button.click()
+        except Exception as e:
+            logger.error(f"Error entering password: {e}")
+            return False
 
     def _verify_login(self):
         """Verify successful login by waiting for library view to load."""
         try:
             logger.info("Verifying login success...")
-            # Try each locator strategy
-            for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
-                try:
-                    logger.info(f"Waiting for library element: {locator}")
-                    WebDriverWait(self.driver, 30).until(EC.presence_of_element_located((by, locator)))
-                    logger.info(f"Found library element: {locator}")
-                    return True
-                except Exception as e:
-                    logger.debug(f"Library locator {locator} not found: {e}")
-                    continue
 
-            logger.error("Could not verify library view loaded")
-            return False
+            # Create a condition that will pass if ANY of our locators are found
+            def any_library_element_present(driver):
+                for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
+                    try:
+                        driver.find_element(by, locator)
+                        logger.info(f"Found library element: {locator}")
+                        return True
+                    except:
+                        continue
+                return False
+
+            # Wait for any library element to be present
+            try:
+                WebDriverWait(self.driver, 20).until(any_library_element_present)
+                logger.info("Successfully verified library view")
+                return True
+            except Exception as e:
+                # If we get here, log the page source to see what's visible
+                logger.info("\n=== PAGE SOURCE AFTER TIMEOUT START ===")
+                logger.info(self.driver.page_source)
+                logger.info("=== PAGE SOURCE AFTER TIMEOUT END ===\n")
+                logger.error("Could not verify library view loaded")
+                return False
+
         except Exception as e:
             logger.error(f"Error verifying login: {e}")
             return False
