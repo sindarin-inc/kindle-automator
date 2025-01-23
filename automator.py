@@ -15,9 +15,10 @@ from views.core.logger import logger
 
 
 class KindleAutomator:
-    def __init__(self, email, password):
+    def __init__(self, email, password, captcha_solution):
         self.email = email
         self.password = password
+        self.captcha_solution = captcha_solution
         self.driver = None
         self.view_inspector = ViewInspector()
         self.auth_handler = None
@@ -117,7 +118,9 @@ class KindleAutomator:
 
                 # Initialize all handlers with the driver
                 self.view_inspector.set_driver(self.driver)
-                self.auth_handler = AuthenticationHandler(self.driver, self.email, self.password)
+                self.auth_handler = AuthenticationHandler(
+                    self.driver, self.email, self.password, self.captcha_solution
+                )
                 self.permissions_handler = PermissionsHandler(self.driver)
                 self.library_handler = LibraryHandler(self.driver)
                 self.reader_handler = ReaderHandler(self.driver)
@@ -169,11 +172,7 @@ class KindleAutomator:
             logger.info("Getting book titles...")
             book_titles = self.library_handler.get_book_titles()
 
-            if book_titles:
-                logger.info("Found books:")
-                for title in book_titles:
-                    logger.info(f"- {title}")
-            else:
+            if not book_titles:
                 logger.warning("No books found in library")
 
             return True
@@ -187,14 +186,39 @@ class KindleAutomator:
 
 def main():
     try:
-        from config import AMAZON_EMAIL, AMAZON_PASSWORD
-    except ImportError:
-        logger.warning("No config.py found. Using default credentials from config.template.py")
-        from config_template import AMAZON_EMAIL, AMAZON_PASSWORD
+        # Try to import from config.py, fall back to template if not found
+        try:
+            import config
 
-    automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD)
-    automator.run()
+            AMAZON_EMAIL = config.AMAZON_EMAIL
+            AMAZON_PASSWORD = config.AMAZON_PASSWORD
+            CAPTCHA_SOLUTION = getattr(config, "CAPTCHA_SOLUTION", None)
+        except ImportError:
+            logger.warning("No config.py found. Using default credentials from config.template.py")
+            import config_template
+
+            AMAZON_EMAIL = config_template.AMAZON_EMAIL
+            AMAZON_PASSWORD = config_template.AMAZON_PASSWORD
+            CAPTCHA_SOLUTION = getattr(config_template, "CAPTCHA_SOLUTION", None)
+
+        if not AMAZON_EMAIL or not AMAZON_PASSWORD:
+            logger.error("Email and password are required in config.py")
+            return 1
+
+        automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
+        success = automator.run()
+
+        if not success and automator.auth_handler._is_captcha_screen():
+            logger.info("Automation stopped at captcha screen. Please solve the captcha in captcha.png")
+            logger.info("Then update CAPTCHA_SOLUTION in config.py and run again")
+            return 2
+
+        return 0 if success else 1
+
+    except Exception as e:
+        logger.error(f"Automation failed: {e}")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    exit(main())

@@ -16,6 +16,7 @@ class AppState(Enum):
     LIBRARY = auto()  # Library tab is selected
     LIBRARY_SIGN_IN = auto()  # Library view with sign in button
     READING = auto()  # Book reading view
+    CAPTCHA = auto()  # Captcha verification screen
 
 
 class AppView(Enum):
@@ -29,3 +30,4 @@ class AppView(Enum):
     LIBRARY = auto()
     LIBRARY_SIGN_IN = auto()
     READING = auto()
+    CAPTCHA = auto()  # Captcha verification screen

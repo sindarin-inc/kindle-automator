@@ -7,6 +7,8 @@ from views.auth.view_strategies import (
     PASSWORD_VIEW_IDENTIFIERS,
     ERROR_VIEW_IDENTIFIERS,
     LIBRARY_VIEW_VERIFICATION_STRATEGIES,
+    CAPTCHA_VIEW_IDENTIFIERS,
+    CAPTCHA_REQUIRED_INDICATORS,
 )
 from views.auth.interaction_strategies import (
     EMAIL_FIELD_STRATEGIES,
@@ -16,16 +18,22 @@ from views.auth.interaction_strategies import (
     SIGN_IN_RADIO_BUTTON_STRATEGIES,
     AUTH_ERROR_STRATEGIES,
     SIGN_IN_ERROR_STRATEGIES,
+    CAPTCHA_INPUT_FIELD,
+    CAPTCHA_CONTINUE_BUTTON,
 )
 import time
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from PIL import Image
+import os
+import subprocess
 
 
 class AuthenticationHandler:
-    def __init__(self, driver, email, password):
+    def __init__(self, driver, email, password, captcha_solution=None):
         self.driver = driver
         self.email = email
         self.password = password
+        self.captcha_solution = captcha_solution
 
     def sign_in(self):
         try:
@@ -35,14 +43,24 @@ class AuthenticationHandler:
                 self._enter_password()
                 return self._verify_login()
 
+            # Check for captcha first
+            if self._is_captcha_screen():
+                logger.info("Captcha detected!")
+                if not self._handle_captcha():
+                    logger.error("Failed to handle captcha")
+                    return False
+
             # Otherwise handle the full sign in flow
             # Check if we need to select the sign in radio button
             self._select_sign_in_if_needed()
 
             # Handle email entry and continue
-            email_error = self._enter_email(self.email)
-            if isinstance(email_error, str):  # Only treat string responses as errors
-                logger.error(f"Email validation failed: {email_error}")
+            email_result = self._enter_email(self.email)
+            if email_result == "RESTART_AUTH":  # Check for special restart value
+                logger.info("Restarting authentication process...")
+                return False
+            elif isinstance(email_result, str) or not email_result:  # Handle other error cases
+                logger.error(f"Email validation failed: {email_result}")
                 return False
 
             # Handle password
@@ -63,7 +81,13 @@ class AuthenticationHandler:
                     if not radio.is_selected():
                         logger.info("Clicking sign in radio button")
                         radio.click()
-                        time.sleep(1)  # Wait for any animations
+                        # Wait for radio button animation to complete
+                        WebDriverWait(self.driver, 5).until(
+                            lambda driver: any(
+                                self._try_find_element(strategy, locator)
+                                for strategy, locator in EMAIL_FIELD_STRATEGIES
+                            )
+                        )
                     return
                 except:
                     continue
@@ -74,63 +98,84 @@ class AuthenticationHandler:
         """Enter email and click continue."""
         logger.info("Entering email...")
 
-        # Find and enter email
         try:
-            email_field = None
-            for strategy, locator in EMAIL_FIELD_STRATEGIES:
-                try:
-                    email_field = self.driver.find_element(strategy, locator)
-                    if email_field:
-                        break
-                except Exception:
-                    continue
-
+            # Wait for and find email field
+            email_field = WebDriverWait(self.driver, 10).until(
+                lambda driver: next(
+                    (
+                        field
+                        for strategy, locator in EMAIL_FIELD_STRATEGIES
+                        if (field := self._try_find_element(strategy, locator))
+                    ),
+                    None,
+                )
+            )
             if not email_field:
                 raise Exception("Could not find email field")
 
             email_field.clear()
             email_field.send_keys(email)
             logger.info("Successfully entered email")
-        except Exception as e:
-            logger.error(f"Failed to enter email: {e}")
-            return False
 
-        # Find and click continue button
-        try:
-            continue_button = None
-            for strategy, locator in CONTINUE_BUTTON_STRATEGIES:
-                try:
-                    continue_button = self.driver.find_element(strategy, locator)
-                    if continue_button:
-                        break
-                except Exception:
-                    continue
-
+            # Wait for and click continue button
+            continue_button = WebDriverWait(self.driver, 10).until(
+                lambda driver: next(
+                    (
+                        button
+                        for strategy, locator in CONTINUE_BUTTON_STRATEGIES
+                        if (button := self._try_find_element(strategy, locator))
+                    ),
+                    None,
+                )
+            )
             if not continue_button:
                 raise Exception("Could not find continue button")
 
             continue_button.click()
             logger.info("Successfully clicked continue button")
+
+            # Wait for either password page or error message
+            logger.info("Waiting for password page or error message...")
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    lambda driver: (
+                        # Check for password page
+                        any(
+                            self._try_find_element(strategy, locator)
+                            for strategy, locator in PASSWORD_VIEW_IDENTIFIERS
+                        )
+                        or
+                        # Check for error message
+                        any(
+                            self._try_find_element(AppiumBy.XPATH, strategy)
+                            for strategy in SIGN_IN_ERROR_STRATEGIES
+                        )
+                    )
+                )
+
+                # Now check which one we got
+                for strategy in SIGN_IN_ERROR_STRATEGIES:
+                    error = self._try_find_element(AppiumBy.XPATH, strategy)
+                    if error and error.text.strip():
+                        logger.error(f"Found error message: {error.text.strip()}")
+                        # Close the dialog by clicking the back button
+                        logger.info("Closing authentication dialog...")
+                        self.driver.back()
+                        time.sleep(2)  # Wait for dialog to close
+                        return "RESTART_AUTH"
+
+                # If we get here, we found the password page
+                logger.info("Successfully transitioned to password page")
+                return True
+
+            except TimeoutException:
+                logger.error("Timed out waiting for password page or error message")
+                return False
+
         except Exception as e:
-            logger.error(f"Failed to click continue button: {e}")
+            logger.error(f"Failed during email entry process: {e}")
             return False
 
-        # Check for errors
-        time.sleep(1)  # Wait for error messages
-        logger.info("Checking for error messages...")
-        self.driver.page_source  # Dump page source for debugging
-
-        for strategy in SIGN_IN_ERROR_STRATEGIES:
-            try:
-                error_element = self.driver.find_element(AppiumBy.XPATH, strategy)
-                error_text = error_element.text.strip()
-                if error_text:
-                    logger.error(f"Found error message: {error_text}")
-                    return error_text
-            except:
-                continue
-
-        logger.info("No error messages found")
         return True
 
     def _enter_password(self):
@@ -198,23 +243,31 @@ class AuthenticationHandler:
 
     def _check_for_errors(self):
         """Check for error messages after attempting to sign in."""
-        time.sleep(1)  # Wait for error messages to appear
         logger.info("Checking for error messages...")
 
-        for strategy in AUTH_ERROR_STRATEGIES:
-            try:
-                error_element = self.driver.find_element(*strategy)
-                error_text = error_element.text.strip()
-                if error_text:
-                    logger.info(f"Found error message: {error_text}")
-                    if "No account found with email address" in error_text:
-                        return True
-                    if "incorrect password" in error_text:
-                        return True
-            except NoSuchElementException:
-                continue
+        try:
+            error = WebDriverWait(self.driver, 5).until(
+                lambda driver: next(
+                    (
+                        error.text.strip()
+                        for strategy in AUTH_ERROR_STRATEGIES
+                        if (error := self._try_find_element(*strategy))
+                        and error.text.strip()
+                        and any(
+                            msg in error.text
+                            for msg in ["No account found with email address", "incorrect password"]
+                        )
+                    ),
+                    None,
+                )
+            )
+            if error:
+                logger.info(f"Found error message: {error}")
+                return True
+        except TimeoutException:
+            logger.info("No error messages found")
+            return False
 
-        logger.info("No error messages found")
         return False
 
     def _is_password_screen(self):
@@ -229,3 +282,130 @@ class AuthenticationHandler:
             return False
         except:
             return False
+
+    def _is_captcha_screen(self):
+        """Check if we're on the captcha screen."""
+        try:
+            # Check for multiple captcha indicators to be confident
+            indicators_found = 0
+            for strategy, locator in CAPTCHA_REQUIRED_INDICATORS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    indicators_found += 1
+                except:
+                    continue
+
+            # Require at least 3 indicators to be confident it's a captcha screen
+            return indicators_found >= 3
+        except Exception as e:
+            logger.error(f"Error checking for captcha screen: {e}")
+            return False
+
+    def _handle_captcha(self):
+        """Handle the captcha screen if present."""
+        try:
+            if not self._is_captcha_screen():
+                return False
+
+            logger.info("Captcha screen detected")
+
+            # Find and capture the captcha image
+            try:
+                # Get page source to find captcha coordinates
+                logger.info("Finding captcha image coordinates...")
+                page_source = self.driver.page_source
+
+                # Find captcha image element
+                captcha_element = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"
+                )
+                if captcha_element:
+                    logger.info("Found captcha image element")
+                    bounds = captcha_element.get_attribute("bounds")
+                    logger.info(f"Captcha bounds: {bounds}")
+
+                    # Parse bounds string "[left,top][right,bottom]"
+                    import re
+
+                    coords = re.findall(r"\[(\d+),(\d+)\]", bounds)
+                    if len(coords) == 2:
+                        left, top = map(int, coords[0])
+                        right, bottom = map(int, coords[1])
+                        logger.info(f"Cropping to coordinates: [{left},{top}][{right},{bottom}]")
+
+                        # Take screenshot and crop to captcha bounds
+                        result = subprocess.run(
+                            ["adb", "exec-out", "screencap", "-p"],
+                            check=True,
+                            capture_output=True,
+                        )
+
+                        from io import BytesIO
+                        from PIL import Image
+
+                        image = Image.open(BytesIO(result.stdout))
+
+                        # Add some padding around the captcha
+                        padding = 10
+                        left = max(0, left - padding)
+                        top = max(0, top - padding)
+                        right = min(image.width, right + padding)
+                        bottom = min(image.height, bottom + padding)
+
+                        cropped = image.crop((left, top, right, bottom))
+                        cropped.save("captcha.png")
+                        logger.info("Successfully saved cropped captcha screenshot")
+
+                # Fallback to full screenshot if needed
+                else:
+                    logger.info("Falling back to full screenshot...")
+                    self.driver.save_screenshot("captcha.png")
+                    logger.info("Saved full screenshot")
+
+            except Exception as e:
+                logger.error(f"Error capturing screenshot: {e}")
+                self.driver.save_screenshot("captcha.png")
+                logger.info("Saved fallback screenshot")
+
+            # If we have a captcha solution, use it
+            if self.captcha_solution:
+                logger.info("Attempting to solve captcha...")
+
+                # Find and fill the captcha input field
+                input_field = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located(CAPTCHA_INPUT_FIELD)
+                )
+                input_field.clear()
+                input_field.send_keys(self.captcha_solution)
+
+                # Click continue
+                continue_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable(CAPTCHA_CONTINUE_BUTTON)
+                )
+                continue_button.click()
+
+                # Wait to see if we move past the captcha screen
+                time.sleep(2)
+                if not self._is_captcha_screen():
+                    logger.info("Captcha solved successfully")
+                    # Add a wait to allow the app to transition
+                    logger.info("Waiting for app to transition...")
+                    time.sleep(5)  # Give it 5 seconds to stabilize
+                    return True
+                else:
+                    logger.error("Captcha solution was incorrect")
+                    return False
+            else:
+                logger.info("No captcha solution provided")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error handling captcha: {e}")
+            return False
+
+    def _try_find_element(self, by, locator):
+        """Helper method to safely find an element without raising exceptions."""
+        try:
+            return self.driver.find_element(by, locator)
+        except:
+            return None

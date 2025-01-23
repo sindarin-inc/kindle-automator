@@ -71,6 +71,11 @@ class StateTransitions:
         logger.info("Handling READING state - navigating back to library...")
         return self.library_handler.navigate_to_library()
 
+    def handle_captcha(self):
+        """Handle CAPTCHA state by attempting to solve captcha."""
+        logger.info("Handling CAPTCHA state...")
+        return self.auth_handler.sign_in()
+
     def get_handler_for_state(self, state):
         """Get the appropriate handler method for a given state.
 
@@ -89,6 +94,7 @@ class StateTransitions:
             AppState.LIBRARY_SIGN_IN: self.handle_library_sign_in,
             AppState.LIBRARY: self.handle_library,
             AppState.READING: self.handle_reading,
+            AppState.CAPTCHA: self.handle_captcha,
         }
         handler = handlers.get(state)
         if handler:

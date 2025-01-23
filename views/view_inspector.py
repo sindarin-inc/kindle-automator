@@ -10,6 +10,7 @@ from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.auth.view_strategies import (
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
+    CAPTCHA_REQUIRED_INDICATORS,
 )
 from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
@@ -151,6 +152,18 @@ class ViewInspector:
                 logger.info("Found notification permission dialog")
                 return AppView.NOTIFICATION_PERMISSION
 
+            # Check for captcha screen
+            indicators_found = 0
+            for strategy, locator in CAPTCHA_REQUIRED_INDICATORS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    indicators_found += 1
+                except:
+                    continue
+            if indicators_found >= 3:
+                logger.info("Found captcha screen")
+                return AppView.CAPTCHA
+
             # Check for empty library with sign-in button first
             logger.info("Checking for empty library with sign-in button...")
             if self._try_find_element(EMPTY_LIBRARY_IDENTIFIERS, "Found empty library with sign-in button"):
@@ -159,16 +172,37 @@ class ViewInspector:
 
             # Check for library view indicators
             logger.info("Checking for library view indicators...")
+            has_library_root = False
+            has_library_tab = False
+
+            # Check for library root view
+            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    logger.info(f"Found library view indicator: {locator}")
+                    has_library_root = True
+                    break
+                except:
+                    continue
+
+            # Check if library tab is selected
+            if self._is_tab_selected("LIBRARY"):
+                logger.info("LIBRARY tab is selected")
+                has_library_tab = True
+
+            # Return LIBRARY view if both conditions are met
+            if has_library_root and has_library_tab:
+                logger.info("Detected LIBRARY view")
+                return AppView.LIBRARY
+
+            # Check for view options menu (part of library view)
             if self._is_view_options_menu_open():
                 logger.info("Found view options menu - this is part of library view")
                 return AppView.LIBRARY
 
-            # Check tab selection
+            # Check tab selection for HOME view
             logger.info("Checking tab selection...")
-            if self._is_tab_selected("LIBRARY"):
-                logger.info("LIBRARY tab is selected")
-                return AppView.LIBRARY
-            elif self._is_tab_selected("HOME"):
+            if self._is_tab_selected("HOME"):
                 logger.info("HOME tab is selected")
                 return AppView.HOME
 

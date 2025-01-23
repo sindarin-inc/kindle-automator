@@ -354,8 +354,36 @@ class LibraryHandler:
 
     def handle_library_sign_in(self):
         """Handle the library sign in state by clicking the sign in button."""
-        logger.info("Handling library sign in - clicking sign in button...")
+        logger.info("Handling library sign in - checking if already signed in...")
         try:
+            # Check if we're already signed in by looking for library root view AND checking that sign in button is NOT present
+            has_library_root = False
+            has_sign_in_button = False
+
+            # Check for library root view
+            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    has_library_root = True
+                    break
+                except Exception:
+                    continue
+
+            # Check for sign in button
+            for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    has_sign_in_button = True
+                    break
+                except Exception:
+                    continue
+
+            # If we have library root but no sign in button, we're signed in
+            if has_library_root and not has_sign_in_button:
+                logger.info("Already signed in - library view found without sign in button")
+                return True
+
+            logger.info("Not signed in - clicking sign in button...")
             # Try each strategy to find and click the sign in button
             for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
                 try:

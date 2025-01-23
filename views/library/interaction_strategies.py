@@ -2,6 +2,8 @@ from appium.webdriver.common.appiumby import AppiumBy
 
 # Navigation elements
 LIBRARY_TAB_STRATEGIES = [
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"),
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'LIBRARY')]"),
     (AppiumBy.XPATH, "//android.widget.TextView[@text='LIBRARY']"),
     (AppiumBy.XPATH, "//android.widget.TextView[@text='Library']"),
     (AppiumBy.ID, "com.amazon.kindle:id/library_tab"),
