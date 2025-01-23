@@ -15,7 +15,7 @@ from handlers.auth_handler import AuthenticationHandler
 from handlers.permissions_handler import PermissionsHandler
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
-from views.logger import logger
+from views.core.logger import logger
 
 
 class KindleAutomator:

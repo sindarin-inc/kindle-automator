@@ -1,7 +1,8 @@
 import time
-from views.states import AppState
-from .logger import logger
-from appium.webdriver.common.mobile_by import MobileBy as AppiumBy
+from .core.states import AppState
+from .core.logger import logger
+from appium.webdriver.common.appiumby import AppiumBy
+from .core.strategies import SIGN_IN_BUTTON_STRATEGIES
 
 
 class StateTransitions:
@@ -37,16 +38,23 @@ class StateTransitions:
     def handle_library_sign_in(self):
         """Handle sign in button on library tab"""
         logger.info("Handling LIBRARY_SIGN_IN state - clicking sign in button...")
-        try:
-            sign_in_button = self.view_inspector.driver.find_element(
-                AppiumBy.ID, "com.amazon.kindle:id/sign_in_button"
-            )
-            sign_in_button.click()
-            logger.info("Successfully clicked sign in button")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to click sign in button: {e}")
-            return False
+
+        # Try each strategy to find and click the sign in button
+        for strategy, locator in SIGN_IN_BUTTON_STRATEGIES:
+            try:
+                sign_in_button = self.view_inspector.driver.find_element(
+                    strategy, locator
+                )
+                logger.info(f"Found sign in button using strategy: {strategy}")
+                sign_in_button.click()
+                logger.info("Successfully clicked sign in button")
+                return True
+            except Exception as e:
+                logger.debug(f"Strategy {strategy} failed: {e}")
+                continue
+
+        logger.error("Failed to find or click sign in button with any strategy")
+        return False
 
     def handle_library(self):
         """Already in library, nothing to do"""

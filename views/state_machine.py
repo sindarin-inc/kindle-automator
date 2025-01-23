@@ -1,7 +1,7 @@
 import time
-from views.states import AppState, get_state_from_view
-from views.transitions import StateTransitions
-from .logger import logger
+from .core.states import AppState, get_state_from_view
+from .transitions import StateTransitions
+from .core.logger import logger
 
 
 class KindleStateMachine:

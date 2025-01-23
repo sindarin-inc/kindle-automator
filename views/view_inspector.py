@@ -1,8 +1,15 @@
 from appium.webdriver.common.appiumby import AppiumBy
 import subprocess
 import time
-from .logger import logger
-from .states import AppState as View  # Import AppState as View for compatibility
+from .core.logger import logger
+from .core.states import AppState as View
+from .core.strategies import (
+    SIGN_IN_BUTTON_STRATEGIES,
+    get_tab_selection_strategies,
+    NOTIFICATION_DIALOG_STRATEGIES,
+    READING_VIEW_STRATEGIES,
+    LIBRARY_ROOT_STRATEGIES,
+)
 
 
 class ViewInspector:
@@ -36,36 +43,39 @@ class ViewInspector:
         """Check if a specific tab is currently selected using multiple strategies."""
         logger.info(f"Checking if {tab_name} tab is selected...")
 
-        # Strategy 1: Check content-desc attribute
-        try:
-            tab = self.driver.find_element(
-                AppiumBy.ANDROID_UIAUTOMATOR,
-                f'new UiSelector().descriptionContains("{tab_name}, Tab selected")',
-            )
-            logger.info(f"Found {tab_name} tab with 'selected' in content-desc")
-            return True
-        except:
-            logger.debug(
-                f"Strategy 1 failed: No tab found with content-desc containing '{tab_name}, Tab selected'"
-            )
-
-        # Strategy 2: Check if the tab's icon and label are selected
-        try:
-            tab = self.driver.find_element(
-                AppiumBy.ID, f"com.amazon.kindle:id/{tab_name.lower()}_tab"
-            )
-            icon = tab.find_element(AppiumBy.ID, "com.amazon.kindle:id/icon")
-            label = tab.find_element(AppiumBy.ID, "com.amazon.kindle:id/label")
-            if (
-                icon.get_attribute("selected") == "true"
-                and label.get_attribute("selected") == "true"
-            ):
-                logger.info(f"Found {tab_name} tab with selected icon and label")
-                return True
-        except:
-            logger.debug(
-                f"Strategy 2 failed: Could not verify icon and label selection state for {tab_name} tab"
-            )
+        for strategy in get_tab_selection_strategies(tab_name):
+            try:
+                if len(strategy) == 3:  # Strategy with child element checks
+                    by, value, child_checks = strategy
+                    tab = self.driver.find_element(by, value)
+                    # Check all child elements have expected attributes
+                    all_checks_passed = True
+                    for child_name, (
+                        child_by,
+                        child_value,
+                        attr,
+                        expected,
+                    ) in child_checks.items():
+                        try:
+                            child = tab.find_element(child_by, child_value)
+                            if child.get_attribute(attr) != expected:
+                                all_checks_passed = False
+                                break
+                        except:
+                            all_checks_passed = False
+                            break
+                    if all_checks_passed:
+                        logger.info(
+                            f"Found {tab_name} tab with selected icon and label"
+                        )
+                        return True
+                else:  # Simple strategy
+                    by, value = strategy
+                    self.driver.find_element(by, value)
+                    logger.info(f"Found {tab_name} tab with 'selected' in content-desc")
+                    return True
+            except:
+                continue
 
         logger.info(f"{tab_name} tab is not selected")
         return False
@@ -80,69 +90,72 @@ class ViewInspector:
         except Exception as e:
             logger.error(f"Failed to get page source: {e}")
 
+    def _try_find_element(self, strategies, success_message=None):
+        """Try to find an element using multiple strategies"""
+        for strategy in strategies:
+            try:
+                element = self.driver.find_element(strategy[0], strategy[1])
+                if success_message:
+                    logger.info(success_message)
+                return element
+            except:
+                continue
+        return None
+
     def get_current_view(self):
         """Determine the current view in the Kindle app."""
         logger.info("Starting view detection...")
 
         # Check for notification permission dialog
         logger.info("Checking for notification permission dialog...")
-        try:
-            self.driver.find_element(
-                AppiumBy.ID, "com.android.permissioncontroller:id/permission_message"
-            )
-            logger.info("Found notification permission dialog")
+        if self._try_find_element(
+            NOTIFICATION_DIALOG_STRATEGIES, "Found notification permission dialog"
+        ):
             return View.NOTIFICATION_PERMISSION
-        except Exception as e:
-            logger.debug(f"No notification dialog found: {str(e)}")
 
         # Check tab selection first
         logger.info("Checking tab selection...")
         if self._is_tab_selected("LIBRARY"):
             logger.info("Library tab is selected, checking for sign in button...")
-            try:
-                sign_in_button = self.driver.find_element(
-                    AppiumBy.ID, "com.amazon.kindle:id/sign_in_button"
-                )
-                logger.info("Found sign in button while on Library tab")
-                return View.LIBRARY_SIGN_IN
-            except Exception as e:
-                logger.debug("No sign in button found on Library tab")
-                logger.info("Found library view (LIBRARY tab selected)")
-                return View.LIBRARY
+            # Dump page source before checking for sign in button
+            self._dump_page_source()
+
+            # Try each sign in button strategy and log the attempts
+            for strategy, locator in SIGN_IN_BUTTON_STRATEGIES:
+                try:
+                    logger.info(
+                        f"Trying to find sign in button with strategy: {strategy}, locator: {locator}"
+                    )
+                    element = self.driver.find_element(strategy, locator)
+                    logger.info("Found sign in button on Library tab")
+                    return View.LIBRARY_SIGN_IN
+                except Exception as e:
+                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    continue
+
+            logger.info("No sign in button found, assuming library view")
+            return View.LIBRARY
         elif self._is_tab_selected("HOME"):
             logger.info("Found home view (HOME tab selected)")
             return View.HOME
 
         # Check for sign in view (when not on Library tab)
         logger.info("Checking for sign in view...")
-        try:
-            self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/sign_in_button")
-            logger.info("Found sign in view")
+        if self._try_find_element(SIGN_IN_BUTTON_STRATEGIES, "Found sign in view"):
             return View.SIGN_IN
-        except Exception as e:
-            logger.debug(f"No sign in view found: {str(e)}")
 
         # Check for reading view
         logger.info("Checking for reading view...")
-        try:
-            self.driver.find_element(
-                AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"
-            )
-            logger.info("Found reading view")
+        if self._try_find_element(READING_VIEW_STRATEGIES, "Found reading view"):
             return View.READING
-        except Exception as e:
-            logger.debug(f"No reading view found: {str(e)}")
 
         # Check for general app indicators
         logger.info("Checking for general app indicators...")
-        try:
-            self.driver.find_element(
-                AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
-            )
-            logger.info(
-                "Found library root view - in app but can't determine exact view"
-            )
+        if self._try_find_element(
+            LIBRARY_ROOT_STRATEGIES,
+            "Found library root view - in app but can't determine exact view",
+        ):
             return View.UNKNOWN
-        except:
-            logger.debug("Not in main app view")
-            return View.UNKNOWN
+
+        logger.debug("Not in main app view")
+        return View.UNKNOWN
