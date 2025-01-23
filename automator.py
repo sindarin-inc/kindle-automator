@@ -1,5 +1,7 @@
 import time
 import os
+import subprocess
+import socket
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 
@@ -23,6 +25,56 @@ class KindleAutomator:
         self.library_handler = None
         self.reader_handler = None
         self.state_machine = None
+        self.appium_process = None
+
+    def _is_port_in_use(self, port):
+        """Check if a port is in use."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(("localhost", port)) == 0
+
+    def ensure_appium_running(self):
+        """Ensure Appium server is running, start it if not."""
+        # Check if Appium is already running on port 4723
+        if self._is_port_in_use(4723):
+            logger.info("Appium server is already running")
+            return True
+
+        try:
+            logger.info("Starting Appium server...")
+            # Start Appium server in the background
+            self.appium_process = subprocess.Popen(
+                ["appium"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+
+            # Wait for server to start (max 10 seconds)
+            start_time = time.time()
+            while time.time() - start_time < 10:
+                if self._is_port_in_use(4723):
+                    logger.info("Appium server started successfully")
+                    return True
+                time.sleep(0.5)
+
+            logger.error("Timeout waiting for Appium server to start")
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to start Appium server: {e}")
+            return False
+
+    def cleanup(self):
+        """Cleanup resources."""
+        if self.driver:
+            try:
+                self.driver.quit()
+            except:
+                pass
+
+        if self.appium_process:
+            try:
+                self.appium_process.terminate()
+                self.appium_process.wait(timeout=5)
+            except:
+                pass
 
     def initialize_driver(self):
         # Set up Android SDK environment variables
@@ -30,6 +82,10 @@ class KindleAutomator:
         os.environ["ANDROID_HOME"] = android_home
         os.environ["ANDROID_SDK_ROOT"] = android_home
         os.environ["PATH"] = f"{os.environ.get('PATH')}:{android_home}/tools:{android_home}/platform-tools"
+
+        # Ensure Appium is running
+        if not self.ensure_appium_running():
+            return False
 
         options = UiAutomator2Options()
         options.platform_name = "Android"
@@ -114,6 +170,8 @@ class KindleAutomator:
         except Exception as e:
             print(f"Automation failed: {e}")
             return False
+        finally:
+            self.cleanup()
 
 
 def main():

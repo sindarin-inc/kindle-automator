@@ -1,4 +1,4 @@
-from views.core.transitions import StateTransitions
+from views.transitions import StateTransitions
 from views.core.states import AppState, get_state_from_view
 from views.core.logger import logger
 
@@ -24,32 +24,35 @@ class KindleStateMachine:
         """Main method to ensure we reach the library state"""
         logger.info("Attempting to reach library state...")
 
-        # Get current state
-        self.current_state = self._get_current_state()
+        max_transitions = 5  # Maximum number of state transitions to prevent infinite loops
+        transitions = 0
 
-        # If we're in library, we're done
-        if self.current_state == AppState.LIBRARY:
-            logger.info("Successfully reached library state!")
-            return True
+        while transitions < max_transitions:
+            # Get current state
+            self.current_state = self._get_current_state()
+            logger.info(f"Current state: {self.current_state}")
 
-        # Get handler for current state
-        logger.info(f"Looking for handler for state: {self.current_state}")
-        handler = self.transitions.get_handler_for_state(self.current_state)
-        if not handler:
-            logger.error(f"No handler found for state {self.current_state}")
-            return False
+            # If we're in library, we're done
+            if self.current_state == AppState.LIBRARY:
+                logger.info("Successfully reached library state!")
+                return True
 
-        # Execute handler
-        logger.info(f"Executing handler for state {self.current_state}...")
-        if not handler():
-            logger.error(f"Handler failed for state {self.current_state}")
-            return False
+            # Get handler for current state
+            logger.info(f"Looking for handler for state: {self.current_state}")
+            handler = self.transitions.get_handler_for_state(self.current_state)
+            if not handler:
+                logger.error(f"No handler found for state {self.current_state}")
+                return False
 
-        # Check if we reached library state
-        self.current_state = self._get_current_state()
-        success = self.current_state == AppState.LIBRARY
-        if success:
-            logger.info("Successfully reached library state!")
-        else:
-            logger.error(f"Failed to reach library state, ended in {self.current_state}")
-        return success
+            # Execute handler
+            logger.info(f"Executing handler for state {self.current_state}...")
+            if not handler():
+                logger.error(f"Handler failed for state {self.current_state}")
+                return False
+
+            transitions += 1
+            logger.info(f"Completed transition {transitions}/{max_transitions}")
+
+        logger.error(f"Failed to reach library state after {max_transitions} transitions")
+        logger.error(f"Final state: {self.current_state}")
+        return False

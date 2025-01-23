@@ -6,6 +6,7 @@ class AppState(Enum):
     NOTIFICATIONS = auto()
     HOME = auto()
     SIGN_IN = auto()
+    SIGN_IN_PASSWORD = auto()
     LIBRARY = auto()
     LIBRARY_SIGN_IN = auto()
     READING = auto()
@@ -22,6 +23,7 @@ def get_state_from_view(view):
         "notifications_permission": AppState.NOTIFICATIONS,
         "home": AppState.HOME,
         "sign_in": AppState.SIGN_IN,
+        "sign_in_password": AppState.SIGN_IN_PASSWORD,
         "library": AppState.LIBRARY,
         "library_sign_in": AppState.LIBRARY_SIGN_IN,
         "reading": AppState.READING,

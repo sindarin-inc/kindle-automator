@@ -3,13 +3,15 @@ import time
 from appium.webdriver.common.appiumby import AppiumBy
 from views.core.logger import logger
 from views.core.states import AppState as View
-from views.core.strategies import (
-    SIGN_IN_BUTTON_STRATEGIES,
-    SIGN_IN_VIEW_STRATEGIES,
-    NOTIFICATION_DIALOG_STRATEGIES,
-    READING_VIEW_STRATEGIES,
-    LIBRARY_ROOT_STRATEGIES,
+from views.auth.view_strategies import (
+    EMAIL_VIEW_IDENTIFIERS,
+    PASSWORD_VIEW_IDENTIFIERS,
 )
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
+from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
+from views.library.view_strategies import LIBRARY_VIEW_IDENTIFIERS
+from views.home.view_strategies import HOME_VIEW_IDENTIFIERS, HOME_TAB_IDENTIFIERS
 
 
 class ViewInspector:
@@ -129,7 +131,7 @@ class ViewInspector:
 
         # Check for notification permission dialog
         logger.info("Checking for notification permission dialog...")
-        if self._try_find_element(NOTIFICATION_DIALOG_STRATEGIES, "Found notification permission dialog"):
+        if self._try_find_element(NOTIFICATION_DIALOG_IDENTIFIERS, "Found notification permission dialog"):
             return View.NOTIFICATION_PERMISSION
 
         # Check tab selection first
@@ -140,7 +142,7 @@ class ViewInspector:
             self._dump_page_source()
 
             # Try each sign in button strategy and log the attempts
-            for strategy, locator in SIGN_IN_BUTTON_STRATEGIES:
+            for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
                 try:
                     logger.info(
                         f"Trying to find sign in button with strategy: {strategy}, locator: {locator}"
@@ -158,12 +160,22 @@ class ViewInspector:
             logger.info("Found home view (HOME tab selected)")
             return View.HOME
 
+        # Check for password view first (more specific than general sign in)
+        logger.info("Checking for password view...")
+        self._dump_page_source()
+        for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
+            try:
+                logger.info(f"Trying to find password view with strategy: {strategy}, locator: {locator}")
+                element = self.driver.find_element(strategy, locator)
+                logger.info(f"Found password view element: {element.get_attribute('text')}")
+                return View.SIGN_IN_PASSWORD
+            except Exception as e:
+                logger.debug(f"Strategy {strategy} failed: {e}")
+                continue
+
         # Check for sign in view (when not on Library tab)
         logger.info("Checking for sign in view...")
-        self._dump_page_source()  # Dump page source to see what elements are present
-
-        # Try each sign in view strategy
-        for strategy, locator in SIGN_IN_VIEW_STRATEGIES:
+        for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
             try:
                 logger.info(f"Trying to find sign in view with strategy: {strategy}, locator: {locator}")
                 element = self.driver.find_element(strategy, locator)
@@ -175,13 +187,13 @@ class ViewInspector:
 
         # Check for reading view
         logger.info("Checking for reading view...")
-        if self._try_find_element(READING_VIEW_STRATEGIES, "Found reading view"):
+        if self._try_find_element(READING_VIEW_IDENTIFIERS, "Found reading view"):
             return View.READING
 
         # Check for general app indicators
         logger.info("Checking for general app indicators...")
         if self._try_find_element(
-            LIBRARY_ROOT_STRATEGIES,
+            LIBRARY_VIEW_IDENTIFIERS,
             "Found library root view - in app but can't determine exact view",
         ):
             return View.UNKNOWN

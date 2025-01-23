@@ -1,6 +1,8 @@
 from views.core.states import AppState
 from views.core.logger import logger
-from views.core.strategies import SIGN_IN_BUTTON_STRATEGIES
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
+from selenium.webdriver.support.ui import WebDriverWait
 
 
 class StateTransitions:
@@ -31,17 +33,31 @@ class StateTransitions:
         logger.info("Handling SIGN_IN state - attempting authentication...")
         return self.auth_handler.sign_in()
 
+    def handle_sign_in_password(self):
+        """Handle password input screen"""
+        logger.info("Handling SIGN_IN_PASSWORD state - entering password...")
+        return self.auth_handler.sign_in()
+
     def handle_library_sign_in(self):
         """Handle sign in button on library tab"""
         logger.info("Handling LIBRARY_SIGN_IN state - clicking sign in button...")
 
         # Try each strategy to find and click the sign in button
-        for strategy, locator in SIGN_IN_BUTTON_STRATEGIES:
+        for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
             try:
                 sign_in_button = self.view_inspector.driver.find_element(strategy, locator)
                 logger.info(f"Found sign in button using strategy: {strategy}")
                 sign_in_button.click()
                 logger.info("Successfully clicked sign in button")
+
+                # Wait for sign in view to appear
+                logger.info("Waiting for sign in view to appear...")
+                WebDriverWait(self.view_inspector.driver, 10).until(
+                    lambda x: any(
+                        x.find_elements(strategy[0], strategy[1]) for strategy in EMAIL_VIEW_IDENTIFIERS
+                    )
+                )
+                logger.info("Sign in view appeared")
                 return True
             except Exception as e:
                 logger.debug(f"Strategy {strategy} failed: {e}")
@@ -67,6 +83,7 @@ class StateTransitions:
             AppState.NOTIFICATIONS: self.handle_notifications,
             AppState.HOME: self.handle_home,
             AppState.SIGN_IN: self.handle_sign_in,
+            AppState.SIGN_IN_PASSWORD: self.handle_sign_in_password,
             AppState.LIBRARY_SIGN_IN: self.handle_library_sign_in,
             AppState.LIBRARY: self.handle_library,
             AppState.READING: self.handle_reading,
