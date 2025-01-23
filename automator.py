@@ -117,8 +117,11 @@ class KindleAutomator:
 
 
 def main():
-    AMAZON_EMAIL = "xxx"
-    AMAZON_PASSWORD = "xxx"
+    try:
+        from config import AMAZON_EMAIL, AMAZON_PASSWORD
+    except ImportError:
+        logger.warning("No config.py found. Using default credentials from config.template.py")
+        from config_template import AMAZON_EMAIL, AMAZON_PASSWORD
 
     automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD)
     automator.run()

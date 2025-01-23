@@ -138,3 +138,11 @@ cython_debug/
 
 # VS Code
 .vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Credentials
+config.py
