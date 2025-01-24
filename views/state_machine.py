@@ -6,11 +6,11 @@ from views.transitions import StateTransitions
 class KindleStateMachine:
     """State machine for managing Kindle app states and transitions."""
 
-    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler):
+    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler, reader_handler):
         """Initialize the state machine with required handlers."""
         self.view_inspector = view_inspector
         self.transitions = StateTransitions(
-            view_inspector, auth_handler, permissions_handler, library_handler
+            view_inspector, auth_handler, permissions_handler, library_handler, reader_handler
         )
         self.current_state = AppState.UNKNOWN
 
@@ -52,4 +52,20 @@ class KindleStateMachine:
 
         logger.error(f"Failed to reach library state after {max_transitions} transitions")
         logger.error(f"Final state: {self.current_state}")
+
+        # Log the page source for debugging
+        try:
+            logger.info("\n=== PAGE SOURCE AFTER FAILED TRANSITIONS START ===")
+            logger.info(self.view_inspector.driver.page_source)
+            logger.info("=== PAGE SOURCE AFTER FAILED TRANSITIONS END ===\n")
+
+            # Also save a screenshot for visual debugging
+            try:
+                self.view_inspector.driver.save_screenshot("failed_transition.png")
+                logger.info("Saved screenshot of failed transition to failed_transition.png")
+            except Exception as e:
+                logger.error(f"Failed to save transition screenshot: {e}")
+        except Exception as e:
+            logger.error(f"Failed to get page source after failed transitions: {e}")
+
         return False

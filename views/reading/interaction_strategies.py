@@ -1,9 +1,25 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
-# Navigation controls
+# Navigation elements
 PAGE_TURN_STRATEGIES = [
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_page_turn_overlay"),
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_page_turn_button"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_content_view"),  # Main content area for tapping
+]
+
+# UI elements
+READING_TOOLBAR_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_toolbar"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_toolbar_container"),
+]
+
+PAGE_NUMBER_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number"),
+    (AppiumBy.XPATH, "//*[contains(@resource-id, 'page_number')]"),
+]
+
+# Menu elements
+READING_MENU_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_menu_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_menu"),
 ]
 
 # Toolbar elements

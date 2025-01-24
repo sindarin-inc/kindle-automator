@@ -9,6 +9,8 @@ from views.library.view_strategies import (
     LIST_VIEW_IDENTIFIERS,
     BOOK_TITLE_IDENTIFIERS,
     BOOK_AUTHOR_IDENTIFIERS,
+    BOOK_TITLE_ELEMENT_ID,
+    BOOK_AUTHOR_ELEMENT_ID,
 )
 from views.library.interaction_strategies import (
     LIBRARY_TAB_STRATEGIES,
@@ -21,6 +23,8 @@ from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIE
 from views.view_options.interaction_strategies import VIEW_OPTIONS_DONE_STRATEGIES
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
+from typing import Optional, List
+from selenium.webdriver.remote.webelement import WebElement
 
 
 class LibraryHandler:
@@ -286,46 +290,46 @@ class LibraryHandler:
                     return []
 
             # Get page source for debugging
-            logger.info("\n=== PAGE SOURCE START ===")
+            logger.info("\n=== LIBRARY PAGE SOURCE START ===")
             logger.info(self.driver.page_source)
-            logger.info("=== PAGE SOURCE END ===\n")
+            logger.info("=== LIBRARY PAGE SOURCE END ===\n")
+
+            # Also save a screenshot for visual debugging
+            try:
+                self.driver.save_screenshot("library_view.png")
+                logger.info("Saved screenshot of library view to library_view.png")
+            except Exception as e:
+                logger.error(f"Failed to save library screenshot: {e}")
 
             books = []
             try:
-                # Find all book title elements
-                title_elements = []
+                # Find all book buttons
                 for strategy, locator in BOOK_TITLE_IDENTIFIERS:
                     try:
-                        elements = self.driver.find_elements(strategy, locator)
-                        if elements:
-                            title_elements = elements
+                        buttons = self.driver.find_elements(strategy, locator)
+                        logger.info(f"Found {len(buttons)} book buttons")
+
+                        for button in buttons:
+                            try:
+                                # Get the title and author elements inside the button
+                                title_elem = button.find_element(AppiumBy.ID, BOOK_TITLE_ELEMENT_ID)
+                                author_elem = button.find_element(AppiumBy.ID, BOOK_AUTHOR_ELEMENT_ID)
+
+                                title = title_elem.text.strip()
+                                author = author_elem.text.strip()
+
+                                if title and author:  # Only add if both are present
+                                    books.append({"title": title, "author": author})
+                                    logger.info(f"Found book: {title} by {author}")
+                            except Exception as e:
+                                logger.debug(f"Failed to get book info from button: {e}")
+                                continue
+
+                        # If we found any books, break out of the strategy loop
+                        if books:
                             break
                     except Exception as e:
-                        logger.debug(f"Failed to find titles with {strategy}: {e}")
-                        continue
-
-                # Find all author elements
-                author_elements = []
-                for strategy, locator in BOOK_AUTHOR_IDENTIFIERS:
-                    try:
-                        elements = self.driver.find_elements(strategy, locator)
-                        if elements:
-                            author_elements = elements
-                            break
-                    except Exception as e:
-                        logger.debug(f"Failed to find authors with {strategy}: {e}")
-                        continue
-
-                # Pair up titles and authors
-                for title_elem, author_elem in zip(title_elements, author_elements):
-                    try:
-                        title = title_elem.text
-                        author = author_elem.text
-                        if title and author:  # Only add if both are present
-                            books.append({"title": title, "author": author})
-                            logger.info(f"Found book: {title} by {author}")
-                    except Exception as e:
-                        logger.debug(f"Failed to get book info: {e}")
+                        logger.debug(f"Failed to find books with {strategy}: {e}")
                         continue
 
             except Exception as e:
@@ -347,10 +351,107 @@ class LibraryHandler:
         # TODO: Implement book listing functionality
         pass
 
-    def open_book(self, book_title):
-        """Open a specific book by title"""
-        # TODO: Implement book opening functionality
-        pass
+    def _normalize_title(self, title: str) -> str:
+        """Normalize a title by removing all characters except alphanumeric and spaces."""
+        # First convert to lowercase
+        normalized = title.lower()
+        # Keep only alphanumeric characters and spaces
+        normalized = "".join(c for c in normalized if c.isalnum() or c.isspace())
+        # Replace multiple spaces with single space and strip
+        normalized = " ".join(normalized.split())
+        return normalized
+
+    def find_book(self, book_title: str) -> bool:
+        """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
+        try:
+            # Normalize the input title
+            normalized_book_title = self._normalize_title(book_title)
+            logger.info(f"Looking for book: {book_title}")
+            logger.info(f"Normalized book title: {normalized_book_title}")
+
+            for strategy, locator in BOOK_TITLE_IDENTIFIERS:
+                buttons = self.driver.find_elements(strategy, locator)
+                logger.info(f"Found {len(buttons)} book buttons")
+
+                for button in buttons:
+                    try:
+                        title_elem = button.find_element(AppiumBy.ID, BOOK_TITLE_ELEMENT_ID)
+                        title_text = title_elem.text.strip()
+                        normalized_title_text = self._normalize_title(title_text)
+                        logger.info(f"Found title text: {title_text}")
+                        logger.info(f"Normalized title text: {normalized_title_text}")
+
+                        if normalized_title_text == normalized_book_title:
+                            # Check if the book is downloaded
+                            content_desc = button.get_attribute("content-desc")
+                            logger.info(f"Book content description: {content_desc}")
+
+                            if "Book downloaded" not in content_desc:
+                                logger.info("Book is not downloaded yet, initiating download...")
+                                button.click()
+                                logger.info("Clicked book to start download")
+
+                                # Wait for download to complete (up to 60 seconds)
+                                max_attempts = 60
+                                for attempt in range(max_attempts):
+                                    try:
+                                        # Re-find the button since the page might have refreshed
+                                        button = self.driver.find_element(strategy, locator)
+                                        content_desc = button.get_attribute("content-desc")
+                                        logger.info(
+                                            f"Checking download status (attempt {attempt + 1}/{max_attempts})"
+                                        )
+
+                                        if "Book downloaded" in content_desc:
+                                            logger.info("Book has finished downloading")
+                                            # Click again to open now that it's downloaded
+                                            button.click()
+                                            logger.info("Clicked book button after download")
+                                            return True
+
+                                        time.sleep(1)  # Wait 1 second between checks
+                                    except Exception as e:
+                                        logger.error(f"Error checking download status: {e}")
+                                        time.sleep(1)
+                                        continue
+
+                                logger.error("Timed out waiting for book to download")
+                                return False
+
+                            logger.info(f"Found downloaded book: {title_text}")
+                            button.click()
+                            logger.info("Clicked book button")
+                            return True
+                    except Exception as e:
+                        logger.error(f"Error getting book title: {e}")
+                        continue
+
+            logger.info(f"Book not found: {book_title}")
+            return False
+        except Exception as e:
+            logger.error(f"Error finding book: {e}")
+            return False
+
+    def open_book(self, book_title: str) -> bool:
+        """Open a book in the library.
+
+        Args:
+            book_title (str): The title of the book to open
+
+        Returns:
+            bool: True if the book was found and opened, False otherwise
+        """
+        try:
+            # Find and click the book button
+            if not self.find_book(book_title):
+                logger.error(f"Failed to find book: {book_title}")
+                return False
+
+            logger.info(f"Successfully opened book: {book_title}")
+            return True
+        except Exception as e:
+            logger.error(f"Error opening book: {e}")
+            return False
 
     def handle_library_sign_in(self):
         """Handle the library sign in state by clicking the sign in button."""

@@ -4,6 +4,7 @@ import subprocess
 import socket
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
+from typing import Union, Tuple
 
 from views.view_inspector import ViewInspector
 from views.state_machine import KindleStateMachine
@@ -131,6 +132,7 @@ class KindleAutomator:
                     self.auth_handler,
                     self.permissions_handler,
                     self.library_handler,
+                    self.reader_handler,
                 )
 
                 logger.info("Driver initialized successfully")
@@ -155,31 +157,45 @@ class KindleAutomator:
         """Handles the initial app setup and ensures we reach the library view"""
         return self.state_machine.transition_to_library()
 
-    def run(self):
-        """Main automation flow"""
+    def run(self, reading_book_title=None):
+        """Main automation flow.
+
+        Args:
+            reading_book_title (str, optional): If provided, will attempt to open and read this book.
+                                              If None, will just list available books.
+
+        Returns:
+            Union[bool, Tuple[bool, str]]: If reading_book_title is None, returns success boolean.
+                                         If reading_book_title is provided, returns (success, page_number).
+        """
         try:
             # Initialize the driver
             if not self.initialize_driver():
                 logger.error("Failed to initialize driver")
-                return False
+                return (False, None) if reading_book_title else False
 
             # Handle initial setup and ensure we reach library
             if not self.handle_initial_setup():
                 logger.error("Failed to reach library view")
-                return False
+                return (False, None) if reading_book_title else False
 
-            # Switch to list view and get book titles
+            # Always get book titles first for debugging
             logger.info("Getting book titles...")
             book_titles = self.library_handler.get_book_titles()
 
             if not book_titles:
                 logger.warning("No books found in library")
+                return (False, None) if reading_book_title else True
+
+            # If we're reading a specific book
+            if reading_book_title:
+                return self.reader_handler.handle_reading_flow(reading_book_title)
 
             return True
 
         except Exception as e:
             logger.error(f"Automation failed: {e}")
-            return False
+            return (False, None) if reading_book_title else False
         finally:
             self.cleanup()
 
@@ -193,6 +209,7 @@ def main():
             AMAZON_EMAIL = config.AMAZON_EMAIL
             AMAZON_PASSWORD = config.AMAZON_PASSWORD
             CAPTCHA_SOLUTION = getattr(config, "CAPTCHA_SOLUTION", None)
+            READING_BOOK_TITLE = getattr(config, "READING_BOOK_TITLE", None)
         except ImportError:
             logger.warning("No config.py found. Using default credentials from config.template.py")
             import config_template
@@ -200,20 +217,33 @@ def main():
             AMAZON_EMAIL = config_template.AMAZON_EMAIL
             AMAZON_PASSWORD = config_template.AMAZON_PASSWORD
             CAPTCHA_SOLUTION = getattr(config_template, "CAPTCHA_SOLUTION", None)
+            READING_BOOK_TITLE = None
 
         if not AMAZON_EMAIL or not AMAZON_PASSWORD:
             logger.error("Email and password are required in config.py")
             return 1
 
+        # Initialize automator and run
         automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
-        success = automator.run()
+        result = automator.run(READING_BOOK_TITLE)
 
-        if not success and automator.auth_handler._is_captcha_screen():
+        # Handle captcha case
+        if automator.auth_handler._is_captcha_screen():
             logger.info("Automation stopped at captcha screen. Please solve the captcha in captcha.png")
             logger.info("Then update CAPTCHA_SOLUTION in config.py and run again")
             return 2
 
-        return 0 if success else 1
+        # Handle results
+        if isinstance(result, tuple):
+            success, page_number = result
+            if success:
+                logger.info(f"Successfully opened book. Current page: {page_number}")
+                return 0
+        else:
+            if result:
+                return 0
+
+        return 1
 
     except Exception as e:
         logger.error(f"Automation failed: {e}")

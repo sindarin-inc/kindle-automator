@@ -2,17 +2,31 @@ from appium.webdriver.common.appiumby import AppiumBy
 
 # View identification strategies
 READING_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
     (AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"),
-    (AppiumBy.XPATH, "//*[contains(@resource-id, 'reader_view')]"),
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_content_view"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_view"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_content_fragment_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_page_fragment_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),
 ]
 
 READING_TOOLBAR_IDENTIFIERS = [
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_toolbar"),
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_toolbar_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_close_book"),
+    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_hamburger"),
+    (AppiumBy.ID, "com.amazon.kindle:id/command_bar_title_bottom"),
+]
+
+BOTTOM_SHEET_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_dialog"),
+    (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_pill"),
 ]
 
 PAGE_NUMBER_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number"),
-    (AppiumBy.XPATH, "//*[contains(@resource-id, 'page_number')]"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_container"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),
 ]

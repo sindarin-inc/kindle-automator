@@ -208,7 +208,6 @@ class ViewInspector:
 
             # Check for password view
             logger.info("Checking for password view...")
-            self._dump_page_source()
             for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
                 try:
                     logger.info(f"Trying to find password view with strategy: {strategy}, locator: {locator}")
@@ -244,9 +243,27 @@ class ViewInspector:
             ):
                 return AppView.UNKNOWN
 
+            # If we get here, we couldn't determine the view
+            logger.warning("Could not determine current view - dumping page source for debugging")
+            self._dump_page_source()
+
+            # Also save a screenshot for visual debugging
+            try:
+                self.driver.save_screenshot("unknown_view.png")
+                logger.info("Saved screenshot of unknown view to unknown_view.png")
+            except Exception as e:
+                logger.error(f"Failed to save screenshot: {e}")
+
             logger.debug("Not in main app view")
             return AppView.UNKNOWN
 
         except Exception as e:
             logger.error(f"Error getting current view: {e}")
+            logger.warning("Dumping page source due to error")
+            self._dump_page_source()
+            try:
+                self.driver.save_screenshot("error_view.png")
+                logger.info("Saved screenshot of error state to error_view.png")
+            except Exception as screenshot_error:
+                logger.error(f"Failed to save error screenshot: {screenshot_error}")
             return AppView.UNKNOWN

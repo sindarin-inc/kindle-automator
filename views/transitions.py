@@ -11,13 +11,14 @@ import time
 class StateTransitions:
     """Handles transitions between different app states."""
 
-    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler):
+    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler, reader_handler):
         """Initialize with required handlers."""
         logger.info("Initializing State Transitions...")
         self.view_inspector = view_inspector
         self.auth_handler = auth_handler
         self.permissions_handler = permissions_handler
         self.library_handler = library_handler
+        self.reader_handler = reader_handler
         self.driver = None
 
     def set_driver(self, driver):
@@ -69,7 +70,7 @@ class StateTransitions:
     def handle_reading(self):
         """Handle READING state by navigating back to library."""
         logger.info("Handling READING state - navigating back to library...")
-        return self.library_handler.navigate_to_library()
+        return self.reader_handler.handle_reading()
 
     def handle_captcha(self):
         """Handle CAPTCHA state by attempting to solve captcha."""

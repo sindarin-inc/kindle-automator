@@ -51,9 +51,16 @@ LIST_VIEW_IDENTIFIERS = [
 
 # Book element identifiers
 BOOK_TITLE_IDENTIFIERS = [
-    (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"),
+    # Find the button that contains the book title
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
+    ),
 ]
 
+BOOK_TITLE_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_title"
+BOOK_AUTHOR_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_author"
+
 BOOK_AUTHOR_IDENTIFIERS = [
-    (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_author"),
+    (AppiumBy.ID, BOOK_AUTHOR_ELEMENT_ID),
 ]
