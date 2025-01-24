@@ -1,5 +1,6 @@
 import subprocess
 import time
+import os
 from appium.webdriver.common.appiumby import AppiumBy
 from views.core.logger import logger
 from views.core.app_state import AppState, AppView
@@ -17,10 +18,13 @@ from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 
 
 class ViewInspector:
-    def __init__(self):
+    def __init__(self, driver):
+        self.driver = driver
+        self.screenshots_dir = "screenshots"
+        # Ensure screenshots directory exists
+        os.makedirs(self.screenshots_dir, exist_ok=True)
         self.app_package = "com.amazon.kindle"
         self.app_activity = "com.amazon.kindle.UpgradePage"
-        self.driver = None
 
     def set_driver(self, driver):
         """Sets the Appium driver instance"""
@@ -249,8 +253,9 @@ class ViewInspector:
 
             # Also save a screenshot for visual debugging
             try:
-                self.driver.save_screenshot("unknown_view.png")
-                logger.info("Saved screenshot of unknown view to unknown_view.png")
+                screenshot_path = os.path.join(self.screenshots_dir, "unknown_view.png")
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
             except Exception as e:
                 logger.error(f"Failed to save screenshot: {e}")
 
@@ -262,8 +267,9 @@ class ViewInspector:
             logger.warning("Dumping page source due to error")
             self._dump_page_source()
             try:
-                self.driver.save_screenshot("error_view.png")
-                logger.info("Saved screenshot of error state to error_view.png")
+                screenshot_path = os.path.join(self.screenshots_dir, "error_view.png")
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Saved screenshot of error state to {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to save error screenshot: {screenshot_error}")
             return AppView.UNKNOWN

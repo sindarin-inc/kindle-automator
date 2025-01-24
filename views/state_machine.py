@@ -1,17 +1,25 @@
 from views.core.logger import logger
-from views.core.app_state import AppState
-from views.transitions import StateTransitions
+from views.core.app_state import AppState, AppView
+from views.view_inspector import ViewInspector
+from handlers.auth_handler import AuthenticationHandler
+from handlers.library_handler import LibraryHandler
+from handlers.reader_handler import ReaderHandler
+import os
 
 
 class KindleStateMachine:
     """State machine for managing Kindle app states and transitions."""
 
-    def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler, reader_handler):
+    def __init__(self, driver):
         """Initialize the state machine with required handlers."""
-        self.view_inspector = view_inspector
-        self.transitions = StateTransitions(
-            view_inspector, auth_handler, permissions_handler, library_handler, reader_handler
-        )
+        self.driver = driver
+        self.view_inspector = ViewInspector(driver)
+        self.auth_handler = AuthenticationHandler(driver)
+        self.library_handler = LibraryHandler(driver)
+        self.reader_handler = ReaderHandler(driver)
+        self.screenshots_dir = "screenshots"
+        # Ensure screenshots directory exists
+        os.makedirs(self.screenshots_dir, exist_ok=True)
         self.current_state = AppState.UNKNOWN
 
     def _get_current_state(self):
@@ -61,11 +69,22 @@ class KindleStateMachine:
 
             # Also save a screenshot for visual debugging
             try:
-                self.view_inspector.driver.save_screenshot("failed_transition.png")
-                logger.info("Saved screenshot of failed transition to failed_transition.png")
+                screenshot_path = os.path.join(self.screenshots_dir, "failed_transition.png")
+                self.view_inspector.driver.save_screenshot(screenshot_path)
+                logger.info(f"Saved failed transition screenshot to {screenshot_path}")
             except Exception as e:
-                logger.error(f"Failed to save transition screenshot: {e}")
+                logger.error(f"Failed to save transition error screenshot: {e}")
         except Exception as e:
             logger.error(f"Failed to get page source after failed transitions: {e}")
 
         return False
+
+    def _handle_failed_transition(self, from_state, to_state, error):
+        """Handle a failed state transition by logging details and saving screenshot"""
+        logger.error(f"Failed to transition from {from_state} to {to_state}: {error}")
+        try:
+            screenshot_path = os.path.join(self.screenshots_dir, "failed_transition.png")
+            self.view_inspector.driver.save_screenshot(screenshot_path)
+            logger.info(f"Saved failed transition screenshot to {screenshot_path}")
+        except Exception as e:
+            logger.error(f"Failed to save transition error screenshot: {e}")

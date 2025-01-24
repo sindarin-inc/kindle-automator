@@ -146,3 +146,6 @@ __pycache__/
 
 # Credentials
 config.py
+
+# Screenshot directory
+# screenshots/

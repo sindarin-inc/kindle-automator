@@ -34,6 +34,9 @@ class AuthenticationHandler:
         self.email = email
         self.password = password
         self.captcha_solution = captcha_solution
+        self.screenshots_dir = "screenshots"
+        # Ensure screenshots directory exists
+        os.makedirs(self.screenshots_dir, exist_ok=True)
 
     def sign_in(self):
         try:
@@ -302,103 +305,22 @@ class AuthenticationHandler:
             return False
 
     def _handle_captcha(self):
-        """Handle the captcha screen if present."""
+        """Handle captcha if present by saving screenshot and waiting for manual input"""
         try:
-            if not self._is_captcha_screen():
-                return False
+            # Save screenshot of captcha
+            screenshot_path = os.path.join(self.screenshots_dir, "captcha.png")
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Saved captcha screenshot to {screenshot_path}")
 
-            logger.info("Captcha screen detected")
+            # Wait for manual captcha entry
+            input("Please solve the captcha and press Enter to continue...")
 
-            # Find and capture the captcha image
-            try:
-                # Get page source to find captcha coordinates
-                logger.info("Finding captcha image coordinates...")
-                page_source = self.driver.page_source
+            # Save another screenshot to verify captcha was entered
+            screenshot_path = os.path.join(self.screenshots_dir, "captcha_entered.png")
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Saved post-captcha screenshot to {screenshot_path}")
 
-                # Find captcha image element
-                captcha_element = self.driver.find_element(
-                    AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"
-                )
-                if captcha_element:
-                    logger.info("Found captcha image element")
-                    bounds = captcha_element.get_attribute("bounds")
-                    logger.info(f"Captcha bounds: {bounds}")
-
-                    # Parse bounds string "[left,top][right,bottom]"
-                    import re
-
-                    coords = re.findall(r"\[(\d+),(\d+)\]", bounds)
-                    if len(coords) == 2:
-                        left, top = map(int, coords[0])
-                        right, bottom = map(int, coords[1])
-                        logger.info(f"Cropping to coordinates: [{left},{top}][{right},{bottom}]")
-
-                        # Take screenshot and crop to captcha bounds
-                        result = subprocess.run(
-                            ["adb", "exec-out", "screencap", "-p"],
-                            check=True,
-                            capture_output=True,
-                        )
-
-                        from io import BytesIO
-                        from PIL import Image
-
-                        image = Image.open(BytesIO(result.stdout))
-
-                        # Add some padding around the captcha
-                        padding = 10
-                        left = max(0, left - padding)
-                        top = max(0, top - padding)
-                        right = min(image.width, right + padding)
-                        bottom = min(image.height, bottom + padding)
-
-                        cropped = image.crop((left, top, right, bottom))
-                        cropped.save("captcha.png")
-                        logger.info("Successfully saved cropped captcha screenshot")
-
-                # Fallback to full screenshot if needed
-                else:
-                    logger.info("Falling back to full screenshot...")
-                    self.driver.save_screenshot("captcha.png")
-                    logger.info("Saved full screenshot")
-
-            except Exception as e:
-                logger.error(f"Error capturing screenshot: {e}")
-                self.driver.save_screenshot("captcha.png")
-                logger.info("Saved fallback screenshot")
-
-            # If we have a captcha solution, use it
-            if self.captcha_solution:
-                logger.info("Attempting to solve captcha...")
-
-                # Find and fill the captcha input field
-                input_field = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located(CAPTCHA_INPUT_FIELD)
-                )
-                input_field.clear()
-                input_field.send_keys(self.captcha_solution)
-
-                # Click continue
-                continue_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable(CAPTCHA_CONTINUE_BUTTON)
-                )
-                continue_button.click()
-
-                # Wait to see if we move past the captcha screen
-                time.sleep(2)
-                if not self._is_captcha_screen():
-                    logger.info("Captcha solved successfully")
-                    # Add a wait to allow the app to transition
-                    logger.info("Waiting for app to transition...")
-                    time.sleep(5)  # Give it 5 seconds to stabilize
-                    return True
-                else:
-                    logger.error("Captcha solution was incorrect")
-                    return False
-            else:
-                logger.info("No captcha solution provided")
-                return False
-
+            return True
         except Exception as e:
             logger.error(f"Error handling captcha: {e}")
             return False

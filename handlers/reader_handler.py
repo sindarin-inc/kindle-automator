@@ -14,6 +14,7 @@ import subprocess
 from PIL import Image
 from io import BytesIO
 import time
+import os
 from selenium.common.exceptions import WebDriverException
 
 
@@ -21,6 +22,9 @@ class ReaderHandler:
     def __init__(self, driver):
         self.driver = driver
         self.library_handler = LibraryHandler(driver)
+        self.screenshots_dir = "screenshots"
+        # Ensure screenshots directory exists
+        os.makedirs(self.screenshots_dir, exist_ok=True)
 
     def handle_reading_flow(self, book_title):
         """Handle the entire reading flow for a specified book.
@@ -111,8 +115,9 @@ class ReaderHandler:
         # Capture screenshot of first page
         logger.info("Capturing page screenshot...")
         try:
-            self.driver.save_screenshot("first_page.png")
-            logger.info("Successfully saved page screenshot")
+            screenshot_path = os.path.join(self.screenshots_dir, "first_page.png")
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Successfully saved page screenshot to {screenshot_path}")
         except Exception as e:
             logger.error(f"Failed to save page screenshot: {e}")
 
@@ -148,8 +153,9 @@ class ReaderHandler:
             )
 
             image = Image.open(BytesIO(result.stdout))
-            image.save("reading_page.png")
-            logger.info("Successfully saved page screenshot")
+            screenshot_path = os.path.join(self.screenshots_dir, "reading_page.png")
+            image.save(screenshot_path)
+            logger.info(f"Successfully saved page screenshot to {screenshot_path}")
             return True
 
         except Exception as e:
@@ -246,6 +252,15 @@ class ReaderHandler:
                         logger.info("\n=== PAGE SOURCE AFTER FAILED ATTEMPTS START ===")
                         logger.info(self.driver.page_source)
                         logger.info("=== PAGE SOURCE AFTER FAILED ATTEMPTS END ===\n")
+                        # Save screenshot of failed state
+                        try:
+                            screenshot_path = os.path.join(
+                                self.screenshots_dir, "failed_toolbar_visibility.png"
+                            )
+                            self.driver.save_screenshot(screenshot_path)
+                            logger.info(f"Saved screenshot of failed state to {screenshot_path}")
+                        except Exception as screenshot_error:
+                            logger.error(f"Failed to save error screenshot: {screenshot_error}")
                         return False
 
             if not toolbar_visible:
@@ -253,6 +268,13 @@ class ReaderHandler:
                 logger.info("\n=== FINAL PAGE SOURCE START ===")
                 logger.info(self.driver.page_source)
                 logger.info("=== FINAL PAGE SOURCE END ===\n")
+                # Save screenshot of failed state
+                try:
+                    screenshot_path = os.path.join(self.screenshots_dir, "toolbar_not_visible.png")
+                    self.driver.save_screenshot(screenshot_path)
+                    logger.info(f"Saved screenshot of failed state to {screenshot_path}")
+                except Exception as screenshot_error:
+                    logger.error(f"Failed to save error screenshot: {screenshot_error}")
                 return False
 
             # Now that toolbar is visible, click the close book button

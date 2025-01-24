@@ -2,6 +2,7 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+import os
 from views.core.logger import logger
 from views.library.view_strategies import (
     LIBRARY_VIEW_IDENTIFIERS,
@@ -18,9 +19,9 @@ from views.library.interaction_strategies import (
     LIST_VIEW_OPTION_STRATEGIES,
     BOOK_TITLE_STRATEGIES,
     MENU_CLOSE_STRATEGIES,
+    VIEW_OPTIONS_DONE_STRATEGIES,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
-from views.view_options.interaction_strategies import VIEW_OPTIONS_DONE_STRATEGIES
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from typing import Optional, List
@@ -30,6 +31,9 @@ from selenium.webdriver.remote.webelement import WebElement
 class LibraryHandler:
     def __init__(self, driver):
         self.driver = driver
+        self.screenshots_dir = "screenshots"
+        # Ensure screenshots directory exists
+        os.makedirs(self.screenshots_dir, exist_ok=True)
 
     def _get_tab_selection_strategies(self):
         """Generate strategies for detecting library tab selection state."""
@@ -295,11 +299,7 @@ class LibraryHandler:
             logger.info("=== LIBRARY PAGE SOURCE END ===\n")
 
             # Also save a screenshot for visual debugging
-            try:
-                self.driver.save_screenshot("library_view.png")
-                logger.info("Saved screenshot of library view to library_view.png")
-            except Exception as e:
-                logger.error(f"Failed to save library screenshot: {e}")
+            self._dump_library_view()
 
             books = []
             try:
@@ -515,3 +515,12 @@ class LibraryHandler:
         except Exception as e:
             logger.error(f"Error handling library sign in: {e}")
             return False
+
+    def _dump_library_view(self):
+        """Dump the library view for debugging"""
+        try:
+            screenshot_path = os.path.join(self.screenshots_dir, "library_view.png")
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Saved library view screenshot to {screenshot_path}")
+        except Exception as e:
+            logger.error(f"Failed to save library view screenshot: {e}")
