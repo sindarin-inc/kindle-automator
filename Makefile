@@ -22,4 +22,4 @@ deploy:
 
 ssh: ssh-kindle
 ssh-kindle:
-	ssh -i ansible/keys/kindle.key root@kindle.sindarin.com
+	ssh -i ansible/keys/kindle.key root@kindle01.sindarin.com

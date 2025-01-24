@@ -9,8 +9,30 @@
       - python3-libvirt
       - bridge-utils
       - libglu-dev
+      - default-jdk
     state: present
     update_cache: yes
+  become: yes
+
+- name: Set $PATH for Android SDK
+  lineinfile:
+    path: ~/.zshrc
+    line: "export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator"
+    create: yes
+  become: yes
+
+- name: Set ANDROID_HOME
+  lineinfile:
+    path: ~/.zshrc
+    line: "export ANDROID_HOME={{ android_home }}"
+    create: yes
+  become: yes
+
+- name: Set ANDROID_SDK_ROOT
+  lineinfile:
+    path: ~/.zshrc
+    line: "export ANDROID_SDK_ROOT={{ android_home }}"
+    create: yes
   become: yes
 
 - name: Create Android SDK directory
@@ -46,11 +68,18 @@
     mode: "0755"
   become: yes
 
-- name: Move all content under cmdline-tools-latest to the 'latest' folder
-  command: mv {{ android_home }}/cmdline-tools-latest/* "{{ android_home }}/cmdline-tools/latest"
+- name: List directory contents for debugging
+  shell: ls -la {{ android_home }}/cmdline-tools-latest/
+  register: dir_contents
   become: yes
-  args:
-    removes: "{{ android_home }}/cmdline-tools-latest"
+
+# - name: Debug directory contents
+#   debug:
+#     var: dir_contents.stdout_lines
+
+- name: Move all content under cmdline-tools-latest to the 'latest' folder
+  shell: "cp -r {{ android_home }}/cmdline-tools-latest/. {{ android_home }}/cmdline-tools/latest/ && rm -rf {{ android_home }}/cmdline-tools-latest"
+  become: yes
 
 - name: Set ANDROID_HOME environment variable for all users
   lineinfile:
@@ -85,8 +114,19 @@
 
 - name: Install platform-tools
   shell: >
-    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager 
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager
     "{{ platform_tools_package }}"
+  args:
+    chdir: "{{ android_home }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+- name: Install platforms
+  shell: >
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager
+    "platforms;android-{{ sdk_api_level }}"
   args:
     chdir: "{{ android_home }}"
   become: yes
@@ -126,13 +166,12 @@
   environment:
     ANDROID_HOME: "{{ android_home }}"
     PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
-
 ##
 # Create an AVD
 ##
 - name: Create the AVD (if not exists)
   shell: >
-    echo "no" | 
+    echo "no" |
     {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd
     --name {{ avd_name }}
     --package "{{ sys_img }}"
@@ -148,66 +187,97 @@
     PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
 
 ##
-# Launch the emulator in headless mode
+# Manage emulator process
 ##
-- name: Start the emulator in background
-  shell: |
-    nohup {{ android_home }}/emulator/emulator \
-      -avd {{ avd_name }} \
-      -memory {{ avd_heap_size }} \
-      {{ emulator_extra_opts }} > /tmp/emulator.log 2>&1 &
-    sleep 30
-  args:
-    chdir: "{{ android_home }}"
-  async: 90
-  poll: 0
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-    PATH: "{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
-  register: emulator_start
-
-- name: Wait for emulator to boot
-  shell: >
-    {{ android_home }}/platform-tools/adb wait-for-device
-  retries: 15
-  delay: 10
-  register: emulator_wait
-  until: emulator_wait is succeeded
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
-
-##
-# Disable HW overlays:
-#   The exact setting can vary with different Android versions.
-#   For some versions: "adb shell settings put global disable_hardware_overlays 1"
-##
-- name: Disable HW overlays
-  shell: >
-    {{ android_home }}/platform-tools/adb shell settings put global disable_hardware_overlays 1
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
-
-##
-# Upload and install the APK
-##
-- name: Upload the Kindle APK to remote
-  copy:
-    src: "{{ kindle_package_path }}"
-    dest: "/tmp/Kindle.apk"
+- name: Get running emulator processes
+  shell: pgrep -f qemu-system-x86_64-headless
+  register: emulator_check
+  ignore_errors: yes
   become: yes
 
-- name: Install Kindle APK
-  shell: >
-    {{ android_home }}/platform-tools/adb install -r /tmp/Kindle.apk
+- name: Kill existing emulator if running
+  shell: "kill {{ item }}"
+  with_items: "{{ emulator_check.stdout_lines | default([]) }}"
+  ignore_errors: yes
+  become: yes
+  when: emulator_check.stdout_lines is defined
+
+- name: Stop existing ADB server
+  command: adb kill-server
+  ignore_errors: yes
+  become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
     PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
 
+- name: Start ADB server
+  command: adb start-server
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+
+- name: Check emulator status
+  shell: "{{ android_home }}/platform-tools/adb devices | grep emulator | wc -l"
+  register: emulator_status
+  changed_when: false
+
+- name: Start the emulator in background
+  shell: |
+    {{ android_home }}/emulator/emulator \
+      -avd {{ avd_name }} \
+      -no-window \
+      -no-audio \
+      -no-boot-anim \
+      -gpu guest \
+      -memory 2048 \
+      -cores 2 \
+      -verbose &
+  args:
+    chdir: "{{ android_home }}"
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    ANDROID_AVD_HOME: "{{ android_home }}/.android/avd"
+    PATH: "{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+  become: yes
+  when: emulator_status.stdout | int == 0
+
+- name: Wait for emulator to boot
+  shell: |
+    {{ android_home }}/platform-tools/adb wait-for-device shell '
+      while [ "$(getprop sys.boot_completed)" != "1" ]; do
+        sleep 2;
+      done'
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+  when: emulator_status.stdout | int == 0
+
 ##
-# Launch the APK
+# Install and launch Kindle
 ##
+- name: Check if Kindle is installed
+  shell: "{{ android_home }}/platform-tools/adb shell pm list packages | grep com.amazon.kindle"
+  register: kindle_installed
+  ignore_errors: yes
+  changed_when: false
+
+- name: Upload and install Kindle APK
+  block:
+    - name: Upload the Kindle APK to remote
+      copy:
+        src: "{{ kindle_package_path }}"
+        dest: "/tmp/Kindle.apk"
+      become: yes
+
+    - name: Install Kindle APK
+      shell: >
+        {{ android_home }}/platform-tools/adb install -r /tmp/Kindle.apk
+      environment:
+        ANDROID_HOME: "{{ android_home }}"
+        PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+  when: kindle_installed.rc != 0
+
 - name: Launch Kindle
   shell: >
     {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle 1
