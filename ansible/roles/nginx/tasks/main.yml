@@ -1,0 +1,42 @@
+---
+- name: Update and install dependencies
+  apt:
+    name:
+      - nginx
+    state: present
+
+- name: Start and enable Nginx service
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Copy Nginx configuration file
+  template:
+    src: nginx.conf
+    dest: /etc/nginx/sites-available/kindle.sindarin.com
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Enable Nginx site
+  file:
+    src: /etc/nginx/sites-available/kindle.sindarin.com
+    dest: /etc/nginx/sites-enabled/kindle.sindarin.com
+    state: link
+
+- name: Remove default Nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Test Nginx configuration
+  command: nginx -t
+  register: nginx_test
+  ignore_errors: yes
+
+- name: Reload Nginx if configuration is valid
+  service:
+    name: nginx
+    state: reloaded
+  when: nginx_test.rc == 0

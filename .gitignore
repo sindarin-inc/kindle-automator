@@ -149,3 +149,10 @@ config.py
 
 # Screenshot directory
 screenshots/*.png
+<<<<<<< HEAD
+=======
+
+# Ansible
+ansible/keys/*
+ansible/roles/android/files/*
+>>>>>>> ba6c885 (Adding in ansible playbooks for provisioning server. Android command line tools aren't working yet.)

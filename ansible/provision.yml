@@ -1,0 +1,11 @@
+---
+- name: Provision Sol Kindle Automator server
+  hosts: all
+  become: yes
+
+  roles:
+    - { role: provision, tags: base }
+    - { role: nginx, tags: nginx, when: "'kindle' in inventory_hostname" }
+    - { role: certbot, tags: certbot, when: "'kindle' in inventory_hostname" }
+    - { role: logspout, tags: logspout }
+    - { role: android, tags: android }

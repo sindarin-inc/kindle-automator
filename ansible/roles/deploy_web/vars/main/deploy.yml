@@ -1,0 +1,7 @@
+docker_registry_url: "registry.digitalocean.com/sol-web-app"
+docker_image: "web-app"
+docker_container_name: "sol-web-app"
+health_check_url_new: "http://localhost:4097/health"
+health_check_url_old: "http://localhost:4096/health"
+max_retries: 10
+deploy_delay: 5

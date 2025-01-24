@@ -1,0 +1,30 @@
+---
+- name: Log in to DigitalOcean Container Registry
+  shell: |
+    echo {{ DO_DOCKER_REGISTRY_TOKEN }} | docker login registry.digitalocean.com -u sam@solreader.com --password-stdin
+  args:
+    executable: /bin/bash
+
+- name: Prune docker to recollect disk space
+  shell: |
+    docker system prune -f
+  args:
+    executable: /bin/bash
+- name: Run new Docker task container
+  docker_container:
+    name: "{{ docker_container_name }}"
+    image: "{{ docker_registry_url }}/{{ docker_image }}:{{ 'prod' if 'sol' in inventory_hostname else 'staging' }}"
+    pull: true
+    state: started
+    restart_policy: always
+    command: "celery -A sol worker --beat -l debug"
+    hostname: "{{ docker_container_name }}"
+    networks:
+      - name: sol-network
+    volumes:
+      - /srv/sol-web/static:/app/static
+      - /srv/sol-web/media:/app/media
+      - "/srv/sol-web/sol/.env.{{ 'prod' if 'sol' in inventory_hostname else 'staging' }}:/app/sol/.env.{{ 'prod' if 'sol' in inventory_hostname else 'staging' }}"
+    env:
+      ENVIRONMENT: "{{ 'PROD' if 'sol' in inventory_hostname else 'STAGING' }}"
+      DEBUG: "false"

@@ -1,0 +1,19 @@
+---
+- name: Deploy Sol Web + Task server
+  hosts: all
+  vars:
+    docker_registry_url: "registry.digitalocean.com/sol-web-app"
+    docker_image: "web-app"
+    docker_container_name: "sol-web-app"
+
+  roles:
+    - {
+        role: deploy_web,
+        tags: web,
+        when: "'web' in inventory_hostname or 'staging' in inventory_hostname",
+      }
+    - {
+        role: deploy_task,
+        tags: task,
+        when: "'task' in inventory_hostname or 'staging' in inventory_hostname",
+      }

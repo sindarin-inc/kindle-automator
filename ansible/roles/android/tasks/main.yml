@@ -1,0 +1,216 @@
+---
+- name: Ensure required dependencies are installed (Ubuntu ARM)
+  apt:
+    name:
+      - unzip
+      - qemu-kvm
+      - libvirt-daemon-system
+      - libvirt-clients
+      - python3-libvirt
+      - bridge-utils
+      - libglu-dev
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Create Android SDK directory
+  file:
+    path: "{{ android_home }}"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Download command line tools
+  get_url:
+    url: "{{ sdk_tools_url }}"
+    dest: "/tmp/cmdline-tools.zip"
+  become: yes
+
+- name: Unzip command line tools into SDK folder
+  unarchive:
+    src: "/tmp/cmdline-tools.zip"
+    dest: "{{ android_home }}"
+    remote_src: yes
+  become: yes
+
+- name: Move/rename command line tools folder
+  command: mv "{{ android_home }}/cmdline-tools" "{{ android_home }}/cmdline-tools-latest"
+  become: yes
+  args:
+    creates: "{{ android_home }}/cmdline-tools-latest"
+
+- name: Create cmdline-tools folder structure
+  file:
+    path: "{{ android_home }}/cmdline-tools/latest"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Move all content under cmdline-tools-latest to the 'latest' folder
+  command: mv {{ android_home }}/cmdline-tools-latest/* "{{ android_home }}/cmdline-tools/latest"
+  become: yes
+  args:
+    removes: "{{ android_home }}/cmdline-tools-latest"
+
+- name: Set ANDROID_HOME environment variable for all users
+  lineinfile:
+    path: /etc/profile
+    line: "export ANDROID_HOME={{ android_home }}"
+    create: yes
+  become: yes
+
+- name: Add Android SDK tools to PATH
+  lineinfile:
+    path: /etc/profile
+    line: "export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator"
+    create: yes
+  become: yes
+
+- name: Refresh environment variables
+  shell: . /etc/profile
+  become: yes
+
+##
+# Install SDK packages via sdkmanager
+##
+- name: Accept all Android SDK licenses
+  shell: |
+    yes | {{ android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
+  args:
+    chdir: "{{ android_home }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+- name: Install platform-tools
+  shell: >
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager 
+    "{{ platform_tools_package }}"
+  args:
+    chdir: "{{ android_home }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+- name: Install emulator
+  shell: >
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager
+    "{{ emulator_package }}"
+  args:
+    chdir: "{{ android_home }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+- name: Install build-tools
+  shell: >
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager
+    "{{ build_tools_package }}"
+  args:
+    chdir: "{{ android_home }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+- name: Install system image (Google APIs for API {{ sdk_api_level }})
+  shell: >
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager
+    "{{ sys_img }}"
+  args:
+    chdir: "{{ android_home }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+##
+# Create an AVD
+##
+- name: Create the AVD (if not exists)
+  shell: >
+    echo "no" | 
+    {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd
+    --name {{ avd_name }}
+    --package "{{ sys_img }}"
+    --device "{{ device_skin }}"
+    --sdcard {{ sdcard_size }}
+    --force
+  args:
+    creates: "{{ android_home }}/.android/avd/{{ avd_name }}.avd"
+  become: yes
+  environment:
+    ANDROID_SDK_ROOT: "{{ android_home }}"
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+
+##
+# Launch the emulator in headless mode
+##
+- name: Start the emulator in background
+  shell: |
+    nohup {{ android_home }}/emulator/emulator \
+      -avd {{ avd_name }} \
+      -memory {{ avd_heap_size }} \
+      {{ emulator_extra_opts }} > /tmp/emulator.log 2>&1 &
+    sleep 30
+  args:
+    chdir: "{{ android_home }}"
+  async: 90
+  poll: 0
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ android_home }}/emulator:{{ ansible_env.PATH }}"
+  register: emulator_start
+
+- name: Wait for emulator to boot
+  shell: >
+    {{ android_home }}/platform-tools/adb wait-for-device
+  retries: 15
+  delay: 10
+  register: emulator_wait
+  until: emulator_wait is succeeded
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+
+##
+# Disable HW overlays:
+#   The exact setting can vary with different Android versions.
+#   For some versions: "adb shell settings put global disable_hardware_overlays 1"
+##
+- name: Disable HW overlays
+  shell: >
+    {{ android_home }}/platform-tools/adb shell settings put global disable_hardware_overlays 1
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+
+##
+# Upload and install the APK
+##
+- name: Upload the Kindle APK to remote
+  copy:
+    src: "{{ kindle_package_path }}"
+    dest: "/tmp/Kindle.apk"
+  become: yes
+
+- name: Install Kindle APK
+  shell: >
+    {{ android_home }}/platform-tools/adb install -r /tmp/Kindle.apk
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+
+##
+# Launch the APK
+##
+- name: Launch Kindle
+  shell: >
+    {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle 1
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"

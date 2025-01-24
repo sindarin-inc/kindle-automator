@@ -1,0 +1,77 @@
+---
+- name: Update and install dependencies
+  apt:
+    update_cache: yes
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - docker.io
+      - zsh
+    state: present
+
+- name: Create /srv/sol-web directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  with_items:
+    - /srv/sol-web/sol
+    - /srv/certs/api.sindarin.com
+
+- name: Start Docker service
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Create sol-network docker network
+  docker_network:
+    name: sol-network
+    state: present
+
+- name: Copy sol/.env.prod to /srv/sol-web/sol/.env.prod
+  copy:
+    src: ../sol/.env.prod
+    dest: /srv/sol-web/sol/.env.prod
+    owner: root
+    group: root
+    mode: 0644
+  when: "'sol' in inventory_hostname"
+  tags: env
+
+- name: Copy sol/.env.staging to /srv/sol-web/sol/.env.staging
+  copy:
+    src: ../sol/.env.staging
+    dest: /srv/sol-web/sol/.env.staging
+    owner: root
+    group: root
+    mode: 0644
+  when: "'staging' in inventory_hostname"
+
+- name: Copy toprc.conf to /root/.toprc
+  template:
+    src: toprc.conf
+    dest: /root/.toprc
+  tags: toprc
+
+- name: Cloning oh-my-zsh
+  git:
+    repo: https://github.com/robbyrussell/oh-my-zsh
+    dest: /root/.oh-my-zsh
+    force: yes
+  tags: zsh
+
+- name: Copy zshrc.conf to /root/.zshrc
+  template:
+    src: zshrc.conf
+    dest: /root/.zshrc
+  tags: zsh
+
+- name: Set zsh as default shell
+  command:
+    cmd: chsh -s /bin/zsh
+  tags: zsh
