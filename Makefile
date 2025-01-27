@@ -12,14 +12,18 @@ lint:
 # Ansible
 
 provision:
-	ansible-playbook ansible/provision.yml
+	ansible-playbook ansible/provision.yml -l kindle-automator-2
 provision-android:
-	ansible-playbook ansible/provision.yml -t android
+	ansible-playbook ansible/provision.yml -t android -l kindle-automator-2
 deploy:
 	ansible-playbook ansible/deploy.yml
 
 # SSH
 
-ssh: ssh-kindle
-ssh-kindle:
+ssh: ssh-arm64
+ssh-x86:
 	ssh -i ansible/keys/kindle.key root@kindle01.sindarin.com
+ssh-arm64:
+	ssh -i ansible/keys/kindle.key root@kindle.sindarin.com
+ssh-2:
+	ssh -i ansible/keys/kindle.key root@94.130.229.244

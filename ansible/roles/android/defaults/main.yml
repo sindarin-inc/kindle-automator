@@ -6,7 +6,7 @@ android_home: "/opt/android-sdk"
 avd_name: "android35"
 sdk_api_level: "35"
 sys_img: "system-images;android-{{ sdk_api_level }};default;x86_64"
-emulator_package: "emulator"
+emulator_package: "emulator-arm64"
 platform_tools_package: "platform-tools"
 build_tools_version: "35.0.0"
 # Example build-tools path: build-tools;35.0.0

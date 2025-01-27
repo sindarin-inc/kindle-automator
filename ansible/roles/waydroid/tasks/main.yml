@@ -1,0 +1,38 @@
+---
+- name: Update and install dependencies
+  dnf:
+    name:
+      - curl
+      - ca-certificates
+      - container-selinux
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - zsh
+      - git
+      - ansible
+    state: present
+    update_cache: yes
+
+- name: Install Waydroid
+  dnf:
+    name:
+      - waydroid
+    state: present
+  become: yes
+
+- name: Upload and install Kindle APK
+  block:
+    - name: Upload the Kindle APK to remote
+      copy:
+        src: "{{ kindle_package_path }}"
+        dest: "/tmp/Kindle.apk"
+      become: yes
+
+    - name: Install Kindle APK
+      shell: >
+        waydroid app install -r /tmp/Kindle.apk
+
+- name: Launch Kindle
+  shell: >
+    waydroid launch com.amazon.kindle
