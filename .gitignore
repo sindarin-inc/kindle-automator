@@ -153,3 +153,4 @@ screenshots/*.png
 # Ansible
 ansible/keys/*
 ansible/roles/android/files/*
+ansible/roles/waydroid/files/*
