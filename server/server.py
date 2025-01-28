@@ -6,17 +6,31 @@ from flask import Flask, request, jsonify, send_file
 from flask_restful import Api, Resource
 from typing import Optional
 import json
+from PIL import Image
+from io import BytesIO
+import base64
 
 from automator import KindleAutomator
 
 # Setup logging
 os.makedirs("logs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/server.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+
+# Create logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Create formatters and handlers
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+# File handler
+file_handler = logging.FileHandler("logs/server.log")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 app = Flask(__name__)
 api = Api(app)
@@ -134,9 +148,136 @@ class BooksResource(Resource):
             if not server.automator or not server.automator.library_handler:
                 return {"error": "Automator not initialized"}, 400
 
-            books = server.automator.library_handler.get_book_titles()
-            return {"books": books}, 200
+            # Get book titles from library handler
+            book_titles = server.automator.library_handler.get_book_titles()
+
+            if book_titles is None:
+                return {"error": "Failed to get book titles"}, 500
+
+            if not book_titles:
+                logger.warning("No books found in library")
+
+            # Return in same format as automator
+            return {"book_titles": book_titles}, 200
+
         except Exception as e:
+            logger.error(f"Error getting books: {e}")
+            return {"error": str(e)}, 500
+
+
+class ScreenshotResource(Resource):
+    def get(self):
+        """Get current page screenshot"""
+        try:
+            if not server.automator:
+                return {"error": "Automator not initialized"}, 400
+
+            screenshot_path = os.path.join(server.automator.screenshots_dir, "current_screen.png")
+            server.automator.driver.save_screenshot(screenshot_path)
+
+            # Convert to base64 for response
+            with open(screenshot_path, "rb") as img_file:
+                img_data = base64.b64encode(img_file.read()).decode()
+
+            return {"screenshot": img_data}, 200
+        except Exception as e:
+            logger.error(f"Error getting screenshot: {e}")
+            return {"error": str(e)}, 500
+
+
+class NavigationResource(Resource):
+    def post(self):
+        """Handle page navigation"""
+        try:
+            if not server.automator:
+                return {"error": "Automator not initialized"}, 400
+
+            data = request.get_json()
+            action = data.get("action")
+
+            if action == "next_page":
+                success = server.automator.reader_handler.turn_page_forward()
+            elif action == "prev_page":
+                success = server.automator.reader_handler.turn_page_backward()
+            else:
+                return {"error": "Invalid action"}, 400
+
+            if success:
+                # Get current page number after navigation
+                page_number = server.automator.reader_handler.get_current_page()
+                return {"success": True, "page": page_number}, 200
+            return {"error": "Navigation failed"}, 500
+
+        except Exception as e:
+            logger.error(f"Navigation error: {e}")
+            return {"error": str(e)}, 500
+
+
+class BookOpenResource(Resource):
+    def post(self):
+        """Open a specific book"""
+        try:
+            if not server.automator:
+                return {"error": "Automator not initialized"}, 400
+
+            data = request.get_json()
+            book_title = data.get("title")
+
+            if not book_title:
+                return {"error": "Book title required"}, 400
+
+            success, page = server.automator.run(reading_book_title=book_title)
+            if success:
+                return {"success": True, "page": page}, 200
+            return {"error": "Failed to open book"}, 500
+
+        except Exception as e:
+            logger.error(f"Error opening book: {e}")
+            return {"error": str(e)}, 500
+
+
+class StyleResource(Resource):
+    def post(self):
+        """Update reading style settings"""
+        try:
+            if not server.automator:
+                return {"error": "Automator not initialized"}, 400
+
+            data = request.get_json()
+            settings = data.get("settings", {})
+
+            # Example settings: font_size, brightness, background_color
+            success = server.automator.reader_handler.update_style_settings(settings)
+
+            if success:
+                return {"success": True}, 200
+            return {"error": "Failed to update settings"}, 500
+
+        except Exception as e:
+            logger.error(f"Error updating style: {e}")
+            return {"error": str(e)}, 500
+
+
+class TwoFactorResource(Resource):
+    def post(self):
+        """Submit 2FA code"""
+        try:
+            if not server.automator:
+                return {"error": "Automator not initialized"}, 400
+
+            data = request.get_json()
+            code = data.get("code")
+
+            if not code:
+                return {"error": "2FA code required"}, 400
+
+            success = server.automator.auth_handler.handle_2fa(code)
+            if success:
+                return {"success": True}, 200
+            return {"error": "Invalid 2FA code"}, 500
+
+        except Exception as e:
+            logger.error(f"2FA error: {e}")
             return {"error": str(e)}, 500
 
 
@@ -145,6 +286,11 @@ api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
+api.add_resource(ScreenshotResource, "/screenshot")
+api.add_resource(NavigationResource, "/navigate")
+api.add_resource(BookOpenResource, "/open-book")
+api.add_resource(StyleResource, "/style")
+api.add_resource(TwoFactorResource, "/2fa")
 
 
 def main():

@@ -1,4 +1,4 @@
-.PHONY: run deps reinstall lint server test-init kill-server
+.PHONY: run deps reinstall lint server test-init kill-server test-navigate test-screenshot test-open-book test-style test-2fa test-books
 
 run:
 	uv run automator.py
@@ -52,3 +52,49 @@ kill-server:
 	@echo "Killing existing server processes..."
 	@pkill -f "python -m server.server" || true
 	@pkill -f "appium" || true
+
+# Test navigation endpoint
+test-navigate:
+	@echo "Testing page navigation..."
+	@curl -X POST http://localhost:4098/navigate \
+		-H "Content-Type: application/json" \
+		-d '{"action": "next_page"}' \
+		-v
+
+# Test screenshot endpoint
+test-screenshot:
+	@echo "Getting current screenshot..."
+	@curl http://localhost:4098/screenshot \
+		-H "Accept: application/json" \
+		-v
+
+# Test open book endpoint
+test-open-book:
+	@echo "Opening book..."
+	@curl -X POST http://localhost:4098/open-book \
+		-H "Content-Type: application/json" \
+		-d '{"title": "Sample Book Title"}' \
+		-v
+
+# Test style endpoint
+test-style:
+	@echo "Updating style settings..."
+	@curl -X POST http://localhost:4098/style \
+		-H "Content-Type: application/json" \
+		-d '{"settings": {"font_size": "large", "brightness": 80}}' \
+		-v
+
+# Test 2FA endpoint
+test-2fa:
+	@echo "Submitting 2FA code..."
+	@curl -X POST http://localhost:4098/2fa \
+		-H "Content-Type: application/json" \
+		-d '{"code": "123456"}' \
+		-v
+
+# Test books endpoint
+test-books:
+	@echo "Getting list of books..."
+	@curl http://localhost:4098/books \
+		-H "Accept: application/json" \
+		-v
