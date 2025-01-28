@@ -1,7 +1,13 @@
-.PHONY: run
+.PHONY: run deps reinstall lint
 
 run:
-	python automator.py
+	uv run automator.py
+
+deps:
+	uv pip install -r requirements.txt
+
+reinstall:
+	uv run automator.py --reinstall
 
 lint:
 	workon kindle-automator

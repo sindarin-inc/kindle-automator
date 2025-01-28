@@ -26,6 +26,14 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from PIL import Image
 import os
 import subprocess
+from enum import Enum
+
+
+class LoginVerificationState(Enum):
+    SUCCESS = "success"
+    CAPTCHA = "captcha"
+    ERROR = "error"
+    UNKNOWN = "unknown"
 
 
 class AuthenticationHandler:
@@ -212,32 +220,109 @@ class AuthenticationHandler:
             return False
 
     def _verify_login(self):
-        """Verify successful login by waiting for library view to load."""
+        """Verify successful login by waiting for library view to load or detect error conditions."""
         try:
             logger.info("Verifying login success...")
 
-            # Create a condition that will pass if ANY of our locators are found
-            def any_library_element_present(driver):
+            def check_login_result(driver):
+                # First check if we're still on the sign-in page with a disabled button
+                # This indicates we're in a transitional state where the password is being verified
+                try:
+                    sign_in_button = driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.Button[@text='Sign in']"
+                    )
+                    if not sign_in_button.is_enabled():
+                        logger.info("Sign-in button is disabled, still processing login...")
+                        return None  # Return None to continue waiting
+                except:
+                    pass
+
+                # Check for password field - if it's still present, we're still on the sign-in page
+                try:
+                    password_field = driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.EditText[@password='true'][@hint='Amazon password']"
+                    )
+                    if password_field.is_displayed():
+                        logger.info("Still on password page, waiting for transition...")
+                        return None  # Return None to continue waiting
+                except:
+                    pass
+
+                # Now check for CAPTCHA since we're not in a transitional state
+                logger.info("Checking for CAPTCHA...")
+                # Log what indicators we're looking for
+                logger.info("Looking for CAPTCHA indicators:")
+                indicators_found = 0
+                for strategy, locator in CAPTCHA_REQUIRED_INDICATORS:
+                    try:
+                        driver.find_element(strategy, locator)
+                        logger.info(f"Found CAPTCHA indicator: {strategy}={locator}")
+                        indicators_found += 1
+                    except:
+                        logger.debug(f"CAPTCHA indicator not found: {strategy}={locator}")
+
+                if indicators_found >= 3:
+                    logger.info(f"CAPTCHA detected! Found {indicators_found} indicators")
+                    return LoginVerificationState.CAPTCHA
+
+                # Check for library view
+                logger.info("Checking for library view...")
                 for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
                     try:
                         driver.find_element(by, locator)
                         logger.info(f"Found library element: {locator}")
-                        return True
+                        return LoginVerificationState.SUCCESS
+                    except:
+                        logger.debug(f"Library element not found: {locator}")
+                        continue
+
+                # Check for error messages
+                logger.info("Checking for error messages...")
+                for strategy in AUTH_ERROR_STRATEGIES:
+                    try:
+                        error = driver.find_element(*strategy)
+                        if error and error.text.strip():
+                            logger.info(f"Found error message: {error.text.strip()}")
+                            return (LoginVerificationState.ERROR, error.text.strip())
                     except:
                         continue
-                return False
 
-            # Wait for any library element to be present
+                # Log page source when we can't determine the state
+                logger.info("\n=== PAGE SOURCE FOR UNKNOWN STATE START ===")
+                logger.info(driver.page_source)
+                logger.info("=== PAGE SOURCE FOR UNKNOWN STATE END ===\n")
+                logger.info("No definitive state found, returning UNKNOWN")
+                return LoginVerificationState.UNKNOWN
+
+            # Wait for any result with a longer timeout since we're handling transitions
             try:
-                WebDriverWait(self.driver, 20).until(any_library_element_present)
-                logger.info("Successfully verified library view")
-                return True
-            except Exception as e:
-                # If we get here, log the page source to see what's visible
+                logger.info("Waiting for login verification result...")
+                result = WebDriverWait(self.driver, 30).until(check_login_result)  # 30 second timeout
+                logger.info(f"Login verification result: {result}")
+
+                if result == LoginVerificationState.SUCCESS:
+                    logger.info("Successfully verified library view")
+                    return True
+                elif result == LoginVerificationState.CAPTCHA:
+                    # Handle CAPTCHA immediately
+                    logger.info("Handling CAPTCHA during verification...")
+                    if not self._handle_captcha():
+                        logger.error("Failed to handle CAPTCHA")
+                        return False
+                    return True
+                elif isinstance(result, tuple) and result[0] == LoginVerificationState.ERROR:
+                    logger.error(f"Login failed: {result[1]}")
+                    return False
+                else:
+                    logger.error(f"Could not verify login status, state: {result}")
+                    return False
+
+            except TimeoutException:
+                # If we timeout, log the page source to see what's visible
                 logger.info("\n=== PAGE SOURCE AFTER TIMEOUT START ===")
                 logger.info(self.driver.page_source)
                 logger.info("=== PAGE SOURCE AFTER TIMEOUT END ===\n")
-                logger.error("Could not verify library view loaded")
+                logger.error("Could not verify login status within timeout")
                 return False
 
         except Exception as e:

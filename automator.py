@@ -1,18 +1,16 @@
-import time
+import argparse
 import os
-import subprocess
 import socket
+import subprocess
+import time
+from typing import Tuple, Union
+
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
-from typing import Union, Tuple
-
-from views.view_inspector import ViewInspector
-from views.state_machine import KindleStateMachine
-from handlers.auth_handler import AuthenticationHandler
-from handlers.permissions_handler import PermissionsHandler
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
 from views.core.logger import logger
+from views.state_machine import AppState, KindleStateMachine
 
 
 class KindleAutomator:
@@ -21,13 +19,18 @@ class KindleAutomator:
         self.password = password
         self.captcha_solution = captcha_solution
         self.driver = None
-        self.view_inspector = ViewInspector()
-        self.auth_handler = None
-        self.permissions_handler = None
-        self.library_handler = None
-        self.reader_handler = None
         self.state_machine = None
         self.appium_process = None
+        self.device_id = "emulator-5554"
+        self.library_handler = None
+        self.reader_handler = None
+        self.apk_path = os.path.join(
+            "ansible",
+            "roles",
+            "android",
+            "files",
+            "com.amazon.kindle_8.113.0.100(2.0.29451.0)-1285953011_minAPI28(arm64-v8a)(nodpi).com.apk",
+        )
 
     def _is_port_in_use(self, port):
         """Check if a port is in use."""
@@ -78,6 +81,96 @@ class KindleAutomator:
             except:
                 pass
 
+    def _is_kindle_installed(self):
+        """Check if the Kindle app is installed on the device."""
+        try:
+            logger.info(f"Checking Kindle installation on device {self.device_id}")
+            result = subprocess.run(
+                ["adb", "-s", self.device_id, "shell", "pm", "list", "packages", "com.amazon.kindle"],
+                capture_output=True,
+                text=True,
+            )
+            return "com.amazon.kindle" in result.stdout
+        except Exception as e:
+            logger.error(f"Error checking Kindle installation: {e}")
+            return False
+
+    def install_kindle(self):
+        """Install the Kindle APK using Appium."""
+        try:
+            logger.info(f"Installing Kindle APK on device {self.device_id}...")
+            if not os.path.exists(self.apk_path):
+                logger.error(f"APK file not found at {self.apk_path}")
+                return False
+
+            # Set up Appium options for installation
+            options = UiAutomator2Options()
+            options.platform_name = "Android"
+            options.device_name = self.device_id
+            options.app = os.path.abspath(self.apk_path)
+            options.automation_name = "UiAutomator2"
+
+            # Create a temporary driver just for installation
+            temp_driver = webdriver.Remote(command_executor="http://127.0.0.1:4723", options=options)
+            temp_driver.quit()
+
+            logger.info("Kindle APK installed successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to install Kindle APK: {e}")
+            return False
+
+    def uninstall_kindle(self):
+        """Uninstall the Kindle app."""
+        try:
+            logger.info(f"Uninstalling Kindle app from device {self.device_id}...")
+            subprocess.run(
+                ["adb", "-s", self.device_id, "uninstall", "com.amazon.kindle"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Kindle app uninstalled successfully")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to uninstall Kindle app: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error uninstalling Kindle app: {e}")
+            return False
+
+    def _disable_hw_overlays(self):
+        """Disable hardware overlays to improve WebView visibility."""
+        try:
+            # Check current state
+            logger.info(f"Checking HW overlays state on device {self.device_id}")
+            result = subprocess.run(
+                ["adb", "-s", self.device_id, "shell", "settings", "get", "global", "debug.hw.overlay"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            current_state = result.stdout.strip()
+
+            if current_state == "1":
+                logger.info("HW overlays are already disabled")
+                return True
+
+            logger.info(f"Disabling HW overlays on device {self.device_id}")
+            subprocess.run(
+                ["adb", "-s", self.device_id, "shell", "settings", "put", "global", "debug.hw.overlay", "1"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to handle HW overlays: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error handling HW overlays: {e}")
+            return False
+
     def initialize_driver(self):
         # Set up Android SDK environment variables
         android_home = os.path.expanduser("~/Library/Android/sdk")
@@ -89,9 +182,20 @@ class KindleAutomator:
         if not self.ensure_appium_running():
             return False
 
+        # Disable HW overlays for better WebView visibility
+        if not self._disable_hw_overlays():
+            logger.warning("Failed to disable HW overlays, continuing anyway...")
+
+        # Check if Kindle app is installed and install if needed
+        if not self._is_kindle_installed():
+            logger.info(f"Kindle app not found on device {self.device_id}, attempting to install...")
+            if not self.install_kindle():
+                return False
+
+        logger.info(f"Initializing Appium driver for device {self.device_id}")
         options = UiAutomator2Options()
         options.platform_name = "Android"
-        options.device_name = "emulator-5554"
+        options.device_name = self.device_id
         options.app_package = "com.amazon.kindle"
         options.app_activity = "com.amazon.kindle.UpgradePage"
         options.app_wait_activity = "com.amazon.kindle.*"
@@ -101,7 +205,7 @@ class KindleAutomator:
         # Add additional capabilities
         options.set_capability("appium:automationName", "UiAutomator2")
         options.set_capability("appium:platformName", "Android")
-        options.set_capability("appium:deviceName", "emulator-5554")
+        options.set_capability("appium:deviceName", self.device_id)
         options.set_capability("appium:noReset", True)
         options.set_capability("appium:newCommandTimeout", 300)
         options.set_capability("appium:autoGrantPermissions", True)
@@ -117,23 +221,17 @@ class KindleAutomator:
                 logger.info(f"Attempting to initialize driver (attempt {attempt}/{max_attempts})...")
                 self.driver = webdriver.Remote(command_executor="http://127.0.0.1:4723", options=options)
 
-                # Initialize all handlers with the driver
-                self.view_inspector.set_driver(self.driver)
-                self.auth_handler = AuthenticationHandler(
-                    self.driver, self.email, self.password, self.captcha_solution
+                # Initialize state machine with credentials
+                self.state_machine = KindleStateMachine(
+                    self.driver,
+                    email=self.email,
+                    password=self.password,
+                    captcha_solution=self.captcha_solution,
                 )
-                self.permissions_handler = PermissionsHandler(self.driver)
+
+                # Initialize handlers
                 self.library_handler = LibraryHandler(self.driver)
                 self.reader_handler = ReaderHandler(self.driver)
-
-                # Initialize state machine
-                self.state_machine = KindleStateMachine(
-                    self.view_inspector,
-                    self.auth_handler,
-                    self.permissions_handler,
-                    self.library_handler,
-                    self.reader_handler,
-                )
 
                 logger.info("Driver initialized successfully")
                 return True
@@ -179,6 +277,12 @@ class KindleAutomator:
                 logger.error("Failed to reach library view")
                 return (False, None) if reading_book_title else False
 
+            # Check if we're on a captcha screen
+            if self.state_machine.current_state == AppState.CAPTCHA:
+                logger.info("Automation stopped at captcha screen. Please solve the captcha in captcha.png")
+                logger.info("Then update CAPTCHA_SOLUTION in config.py and run again")
+                return (False, None) if reading_book_title else False
+
             # Always get book titles first for debugging
             logger.info("Getting book titles...")
             book_titles = self.library_handler.get_book_titles()
@@ -195,12 +299,19 @@ class KindleAutomator:
 
         except Exception as e:
             logger.error(f"Automation failed: {e}")
+            import traceback
+
+            traceback.print_exc()
             return (False, None) if reading_book_title else False
         finally:
             self.cleanup()
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Kindle Automation Tool")
+    parser.add_argument("--reinstall", action="store_true", help="Reinstall the Kindle app")
+    args = parser.parse_args()
+
     try:
         # Try to import from config.py, fall back to template if not found
         try:
@@ -219,19 +330,24 @@ def main():
             CAPTCHA_SOLUTION = getattr(config_template, "CAPTCHA_SOLUTION", None)
             READING_BOOK_TITLE = None
 
+        # Initialize automator
+        automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
+
+        # Handle reinstall command
+        if args.reinstall:
+            logger.info("Reinstalling Kindle app...")
+            if automator.uninstall_kindle() and automator.install_kindle():
+                logger.info("Kindle app reinstalled successfully")
+                return 0
+            return 1
+
+        # Check credentials for normal operation
         if not AMAZON_EMAIL or not AMAZON_PASSWORD:
             logger.error("Email and password are required in config.py")
             return 1
 
-        # Initialize automator and run
-        automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
+        # Run the automation
         result = automator.run(READING_BOOK_TITLE)
-
-        # Handle captcha case
-        if automator.auth_handler._is_captcha_screen():
-            logger.info("Automation stopped at captcha screen. Please solve the captcha in captcha.png")
-            logger.info("Then update CAPTCHA_SOLUTION in config.py and run again")
-            return 2
 
         # Handle results
         if isinstance(result, tuple):
@@ -247,6 +363,9 @@ def main():
 
     except Exception as e:
         logger.error(f"Automation failed: {e}")
+        import traceback
+
+        traceback.print_exc()
         return 1
 
 

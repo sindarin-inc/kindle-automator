@@ -77,3 +77,8 @@ VIEW_OPTIONS_MENU_STATE_STRATEGIES = [
     (AppiumBy.XPATH, "//android.widget.TextView[@text='List']"),  # List view option
     (AppiumBy.XPATH, "//android.widget.TextView[@text='Grid']"),  # Grid view option
 ]
+
+VIEW_OPTIONS_DONE_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/view_and_sort_menu_dismiss"),  # DONE button
+    (AppiumBy.ID, "com.amazon.kindle:id/touch_outside"),  # Touch outside area
+]

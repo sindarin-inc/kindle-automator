@@ -4,19 +4,30 @@ from views.view_inspector import ViewInspector
 from handlers.auth_handler import AuthenticationHandler
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
+from handlers.permissions_handler import PermissionsHandler
+from views.transitions import StateTransitions
 import os
 
 
 class KindleStateMachine:
     """State machine for managing Kindle app states and transitions."""
 
-    def __init__(self, driver):
+    def __init__(self, driver, email=None, password=None, captcha_solution=None):
         """Initialize the state machine with required handlers."""
         self.driver = driver
         self.view_inspector = ViewInspector(driver)
-        self.auth_handler = AuthenticationHandler(driver)
+        self.auth_handler = AuthenticationHandler(driver, email, password, captcha_solution)
         self.library_handler = LibraryHandler(driver)
         self.reader_handler = ReaderHandler(driver)
+        self.permissions_handler = PermissionsHandler(driver)
+        self.transitions = StateTransitions(
+            self.view_inspector,
+            self.auth_handler,
+            self.permissions_handler,
+            self.library_handler,
+            self.reader_handler,
+        )
+        self.transitions.set_driver(driver)
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
