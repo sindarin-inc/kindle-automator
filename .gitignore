@@ -139,13 +139,18 @@ cython_debug/
 # VS Code
 .vscode/
 
+# macOS
+.DS_Store
+logs/
+screenshots/
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 
 # Credentials
-config.py
+/config.py
 
 # Screenshot directory
 screenshots/*.png
