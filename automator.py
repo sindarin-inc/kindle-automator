@@ -171,7 +171,42 @@ class KindleAutomator:
             logger.error(f"Error handling HW overlays: {e}")
             return False
 
+    def _is_driver_healthy(self):
+        """Check if the Appium driver is connected and responsive."""
+        try:
+            if not self.driver:
+                return False
+            # Try to get the current activity - a lightweight operation
+            self.driver.current_activity
+            return True
+        except Exception as e:
+            logger.debug(f"Driver health check failed: {e}")
+            return False
+
+    def _is_kindle_responsive(self):
+        """Check if the Kindle app is responsive."""
+        try:
+            if not self.driver:
+                return False
+            # Try to get the current package - a lightweight operation
+            current_package = self.driver.current_package
+            return current_package == "com.amazon.kindle"
+        except Exception as e:
+            logger.debug(f"Kindle responsiveness check failed: {e}")
+            return False
+
+    def ensure_driver_running(self):
+        """Ensure the driver is running and healthy, initialize if needed."""
+        # Quick health check first
+        if self._is_driver_healthy() and self._is_kindle_responsive():
+            logger.debug("Driver is healthy and Kindle is responsive")
+            return True
+
+        # If not healthy, try to initialize
+        return self.initialize_driver()
+
     def initialize_driver(self):
+        """Initialize the Appium driver and Kindle app."""
         # Set up Android SDK environment variables
         android_home = os.path.expanduser("~/Library/Android/sdk")
         os.environ["ANDROID_HOME"] = android_home
@@ -182,74 +217,82 @@ class KindleAutomator:
         if not self.ensure_appium_running():
             return False
 
-        # Disable HW overlays for better WebView visibility
-        if not self._disable_hw_overlays():
-            logger.warning("Failed to disable HW overlays, continuing anyway...")
+        # If driver exists but is unhealthy, clean it up
+        if self.driver and not self._is_driver_healthy():
+            self.cleanup()
 
-        # Check if Kindle app is installed and install if needed
-        if not self._is_kindle_installed():
-            logger.info(f"Kindle app not found on device {self.device_id}, attempting to install...")
-            if not self.install_kindle():
-                return False
+        # Only proceed with initialization if we don't have a healthy driver
+        if not self._is_driver_healthy():
+            # Disable HW overlays for better WebView visibility
+            if not self._disable_hw_overlays():
+                logger.warning("Failed to disable HW overlays, continuing anyway...")
 
-        logger.info(f"Initializing Appium driver for device {self.device_id}")
-        options = UiAutomator2Options()
-        options.platform_name = "Android"
-        options.device_name = self.device_id
-        options.app_package = "com.amazon.kindle"
-        options.app_activity = "com.amazon.kindle.UpgradePage"
-        options.app_wait_activity = "com.amazon.kindle.*"
-        options.automation_name = "UiAutomator2"
-        options.no_reset = True
+            # Check if Kindle app is installed and install if needed
+            if not self._is_kindle_installed():
+                logger.info(f"Kindle app not found on device {self.device_id}, attempting to install...")
+                if not self.install_kindle():
+                    return False
 
-        # Add additional capabilities
-        options.set_capability("appium:automationName", "UiAutomator2")
-        options.set_capability("appium:platformName", "Android")
-        options.set_capability("appium:deviceName", self.device_id)
-        options.set_capability("appium:noReset", True)
-        options.set_capability("appium:newCommandTimeout", 300)
-        options.set_capability("appium:autoGrantPermissions", True)
-        options.set_capability("appium:waitForIdleTimeout", 5000)
-        options.set_capability("appium:systemPort", 8202)
+            logger.info(f"Initializing Appium driver for device {self.device_id}")
+            options = UiAutomator2Options()
+            options.platform_name = "Android"
+            options.device_name = self.device_id
+            options.app_package = "com.amazon.kindle"
+            options.app_activity = "com.amazon.kindle.UpgradePage"
+            options.app_wait_activity = "com.amazon.kindle.*"
+            options.automation_name = "UiAutomator2"
+            options.no_reset = True
 
-        max_attempts = 3
-        attempt = 1
-        last_error = None
+            # Add additional capabilities
+            options.set_capability("appium:automationName", "UiAutomator2")
+            options.set_capability("appium:platformName", "Android")
+            options.set_capability("appium:deviceName", self.device_id)
+            options.set_capability("appium:noReset", True)
+            options.set_capability("appium:newCommandTimeout", 300)
+            options.set_capability("appium:autoGrantPermissions", True)
+            options.set_capability("appium:waitForIdleTimeout", 5000)
+            options.set_capability("appium:systemPort", 8202)
 
-        while attempt <= max_attempts:
-            try:
-                logger.info(f"Attempting to initialize driver (attempt {attempt}/{max_attempts})...")
-                self.driver = webdriver.Remote(command_executor="http://127.0.0.1:4723", options=options)
+            max_attempts = 3
+            attempt = 1
+            last_error = None
 
-                # Initialize state machine with credentials
-                self.state_machine = KindleStateMachine(
-                    self.driver,
-                    email=self.email,
-                    password=self.password,
-                    captcha_solution=self.captcha_solution,
-                )
+            while attempt <= max_attempts:
+                try:
+                    logger.info(f"Attempting to initialize driver (attempt {attempt}/{max_attempts})...")
+                    self.driver = webdriver.Remote(command_executor="http://127.0.0.1:4723", options=options)
 
-                # Initialize handlers
-                self.library_handler = LibraryHandler(self.driver)
-                self.reader_handler = ReaderHandler(self.driver)
+                    # Initialize state machine with credentials
+                    self.state_machine = KindleStateMachine(
+                        self.driver,
+                        email=self.email,
+                        password=self.password,
+                        captcha_solution=self.captcha_solution,
+                    )
 
-                logger.info("Driver initialized successfully")
-                return True
-            except Exception as e:
-                last_error = str(e)
-                logger.error(f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}")
-                if attempt < max_attempts:
-                    logger.info("Waiting 1 second before retrying...")
-                    time.sleep(1)
-                attempt += 1
+                    # Initialize handlers
+                    self.library_handler = LibraryHandler(self.driver)
+                    self.reader_handler = ReaderHandler(self.driver)
 
-        logger.error(f"Failed to initialize driver after {max_attempts} attempts")
-        logger.error(f"Last error: {last_error}")
-        logger.info("\nPlease ensure:")
-        logger.info("1. Appium server is running (start with 'appium')")
-        logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
-        logger.info("3. Android device/emulator is connected (check with 'adb devices')")
-        return False
+                    logger.info("Driver initialized successfully")
+                    return True
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error(f"Failed to initialize driver (attempt {attempt}/{max_attempts}): {e}")
+                    if attempt < max_attempts:
+                        logger.info("Waiting 1 second before retrying...")
+                        time.sleep(1)
+                    attempt += 1
+
+            logger.error(f"Failed to initialize driver after {max_attempts} attempts")
+            logger.error(f"Last error: {last_error}")
+            logger.info("\nPlease ensure:")
+            logger.info("1. Appium server is running (start with 'appium')")
+            logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
+            logger.info("3. Android device/emulator is connected (check with 'adb devices')")
+            return False
+
+        return True
 
     def handle_initial_setup(self):
         """Handles the initial app setup and ensures we reach the library view"""

@@ -105,11 +105,22 @@ class InitializeResource(Resource):
             return {"error": str(e)}, 500
 
 
-class StateResource(Resource):
-    def get(self):
+def ensure_automator_healthy(f):
+    """Decorator to ensure automator is initialized and healthy before each operation."""
+
+    def wrapper(*args, **kwargs):
         if not server.automator:
             return {"error": "Automator not initialized"}, 400
+        if not server.automator.ensure_driver_running():
+            return {"error": "Failed to ensure driver is running"}, 500
+        return f(*args, **kwargs)
 
+    return wrapper
+
+
+class StateResource(Resource):
+    @ensure_automator_healthy
+    def get(self):
         try:
             current_state = server.automator.state_machine.current_state
             return {"state": current_state.name}, 200
@@ -126,6 +137,7 @@ class CaptchaResource(Resource):
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @ensure_automator_healthy
     def post(self):
         """Submit captcha solution"""
         try:
@@ -142,12 +154,10 @@ class CaptchaResource(Resource):
 
 
 class BooksResource(Resource):
+    @ensure_automator_healthy
     def get(self):
         """Get list of available books"""
         try:
-            if not server.automator or not server.automator.library_handler:
-                return {"error": "Automator not initialized"}, 400
-
             # Get book titles from library handler
             book_titles = server.automator.library_handler.get_book_titles()
 
@@ -166,12 +176,10 @@ class BooksResource(Resource):
 
 
 class ScreenshotResource(Resource):
+    @ensure_automator_healthy
     def get(self):
         """Get current page screenshot"""
         try:
-            if not server.automator:
-                return {"error": "Automator not initialized"}, 400
-
             screenshot_path = os.path.join(server.automator.screenshots_dir, "current_screen.png")
             server.automator.driver.save_screenshot(screenshot_path)
 
@@ -186,12 +194,10 @@ class ScreenshotResource(Resource):
 
 
 class NavigationResource(Resource):
+    @ensure_automator_healthy
     def post(self):
         """Handle page navigation"""
         try:
-            if not server.automator:
-                return {"error": "Automator not initialized"}, 400
-
             data = request.get_json()
             action = data.get("action")
 
@@ -214,12 +220,10 @@ class NavigationResource(Resource):
 
 
 class BookOpenResource(Resource):
+    @ensure_automator_healthy
     def post(self):
         """Open a specific book"""
         try:
-            if not server.automator:
-                return {"error": "Automator not initialized"}, 400
-
             data = request.get_json()
             book_title = data.get("title")
 
@@ -237,12 +241,10 @@ class BookOpenResource(Resource):
 
 
 class StyleResource(Resource):
+    @ensure_automator_healthy
     def post(self):
         """Update reading style settings"""
         try:
-            if not server.automator:
-                return {"error": "Automator not initialized"}, 400
-
             data = request.get_json()
             settings = data.get("settings", {})
 
@@ -259,12 +261,10 @@ class StyleResource(Resource):
 
 
 class TwoFactorResource(Resource):
+    @ensure_automator_healthy
     def post(self):
         """Submit 2FA code"""
         try:
-            if not server.automator:
-                return {"error": "Automator not initialized"}, 400
-
             data = request.get_json()
             code = data.get("code")
 
