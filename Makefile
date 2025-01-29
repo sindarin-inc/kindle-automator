@@ -73,7 +73,7 @@ test-open-book:
 	@echo "Opening book..."
 	@curl -X POST http://localhost:4098/open-book \
 		-H "Content-Type: application/json" \
-		-d '{"title": "Sample Book Title"}' \
+		-d '{"title": "Poor Charlie\u2019s Almanack: The Essential Wit and Wisdom of Charles T. Munger"}' \
 		-v
 
 # Test style endpoint

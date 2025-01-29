@@ -25,8 +25,12 @@ BOTTOM_SHEET_IDENTIFIERS = [
 ]
 
 PAGE_NUMBER_IDENTIFIERS = [
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number"),
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"),
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_container"),
+    # Primary identifier - the text element containing the page number
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),
+    # Fallback identifiers
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/reader_footer_page_number_text']",
+    ),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@resource-id, 'page_number')]"),
 ]

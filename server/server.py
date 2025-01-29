@@ -377,20 +377,8 @@ def main():
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
 
-    if IS_DEVELOPMENT:
-        # In development, run in a separate process
-        process = multiprocessing.Process(target=run_server)
-        process.daemon = True  # This ensures the process is killed when the parent exits
-        process.start()
-        # Keep the main process running to handle signals
-        try:
-            process.join()
-        except KeyboardInterrupt:
-            process.terminate()
-            process.join()
-    else:
-        # In production, run normally
-        run_server()
+    # Run the server directly, regardless of development mode
+    run_server()
 
 
 if __name__ == "__main__":

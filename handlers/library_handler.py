@@ -449,8 +449,20 @@ class LibraryHandler:
                 logger.error(f"Failed to find book: {book_title}")
                 return False
 
-            logger.info(f"Successfully opened book: {book_title}")
-            return True
+            logger.info(f"Successfully clicked book: {book_title}")
+
+            # Wait for reading view to load
+            try:
+                logger.info("Waiting for reading view to load...")
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"))
+                )
+                logger.info("Reading view loaded")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to wait for reading view: {e}")
+                return False
+
         except Exception as e:
             logger.error(f"Error opening book: {e}")
             return False

@@ -85,7 +85,12 @@ LIST_VIEW_IDENTIFIERS = [
 
 # Book element identifiers - updated for tablet layout
 BOOK_TITLE_IDENTIFIERS = [
-    # Primary title identifier
+    # Primary title identifier - use container-based approach
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
+    ),
+    # Fallback to direct title identifier
     (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']"),
 ]
 

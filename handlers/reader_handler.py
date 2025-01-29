@@ -75,8 +75,40 @@ class ReaderHandler:
             logger.error(f"Failed to open book: {book_title}")
             return False
 
-        logger.info(f"Successfully opened book: {book_title}")
-        logger.info("Reading view loaded")
+        logger.info(f"Successfully clicked book: {book_title}")
+
+        # Wait for reading view to load
+        try:
+            logger.info("Waiting for reading view to load...")
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(READING_VIEW_IDENTIFIERS[0]))
+            logger.info("Reading view loaded")
+
+            # Wait for page content to load
+            logger.info("Waiting for page content to load...")
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"))
+            )
+            logger.info("Page content loaded")
+
+            # Tap center of screen to show reading controls
+            window_size = self.driver.get_window_size()
+            center_x = window_size["width"] // 2
+            center_y = window_size["height"] // 2
+            self.driver.tap([(center_x, center_y)])
+            logger.info(f"Tapped center of screen at ({center_x}, {center_y})")
+
+            # Wait for reading controls to appear
+            logger.info("Waiting for reading controls to appear...")
+            WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"))
+            )
+            logger.info("Reading controls visible")
+
+            # Short wait for controls to settle
+            time.sleep(1)
+        except Exception as e:
+            logger.error(f"Failed to wait for reading view or content: {e}")
+            return False
 
         # Log the page source to check for slideout
         logger.info("\n=== READING VIEW PAGE SOURCE START ===")
@@ -107,6 +139,14 @@ class ReaderHandler:
                     logger.info("Bottom sheet dialog successfully dismissed")
         except Exception as e:
             logger.info(f"No bottom sheet dialog found or error dismissing it: {e}")
+
+        # Wait for page number to be visible
+        try:
+            logger.info("Waiting for page number to be visible...")
+            WebDriverWait(self.driver, 5).until(EC.presence_of_element_located(PAGE_NUMBER_IDENTIFIERS[0]))
+            logger.info("Page number element found")
+        except Exception as e:
+            logger.info(f"Page number element not found: {e}")
 
         # Get current page
         current_page = self.get_current_page()
