@@ -197,6 +197,7 @@ class BooksResource(Resource):
         """Get list of available books"""
         try:
             current_state = server.automator.state_machine.current_state
+            logger.info(f"Current state when getting books: {current_state}")
 
             # Handle different states
             if current_state == AppState.CAPTCHA:
@@ -206,7 +207,10 @@ class BooksResource(Resource):
                     "image_url": "/screenshots/captcha.png",
                 }, 403
             elif current_state != AppState.LIBRARY:
-                return {"error": f"Cannot get books in current state: {current_state.name}"}, 400
+                return {
+                    "error": f"Cannot get books in current state: {current_state.name}",
+                    "current_state": current_state.name,
+                }, 400
 
             # Get book titles from library handler
             book_titles = server.automator.library_handler.get_book_titles()

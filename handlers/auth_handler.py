@@ -394,10 +394,40 @@ class AuthenticationHandler:
         try:
             logger.info("Handling CAPTCHA state...")
 
-            # Save captcha screenshot
-            screenshot_path = os.path.join("screenshots", "captcha.png")
+            # Find the captcha image element
+            captcha_image = self.driver.find_element(
+                AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"
+            )
+            if not captcha_image:
+                logger.error("Could not find captcha image element")
+                return False
+
+            # Get the location and size of the captcha image
+            location = captcha_image.location
+            size = captcha_image.size
+
+            # Take full screenshot
+            screenshot_path = os.path.join("screenshots", "temp_full.png")
             self.driver.save_screenshot(screenshot_path)
-            logger.info(f"Saved captcha screenshot to {screenshot_path}")
+
+            # Open the screenshot and crop to captcha dimensions
+            with Image.open(screenshot_path) as img:
+                # Calculate crop boundaries
+                left = location["x"]
+                top = location["y"]
+                right = left + size["width"]
+                bottom = top + size["height"]
+
+                # Crop the image
+                captcha_img = img.crop((left, top, right, bottom))
+
+                # Save cropped captcha
+                captcha_path = os.path.join("screenshots", "captcha.png")
+                captcha_img.save(captcha_path)
+                logger.info(f"Saved cropped captcha to {captcha_path}")
+
+                # Clean up temp file
+                os.remove(screenshot_path)
 
             # If we have a solution, use it
             if self.captcha_solution:
