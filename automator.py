@@ -122,25 +122,12 @@ def main():
     args = parser.parse_args()
 
     try:
-        # Try to import from config.py, fall back to template if not found
-        try:
-            import config
+        # Import config
+        import config
 
-            AMAZON_EMAIL = config.AMAZON_EMAIL
-            AMAZON_PASSWORD = config.AMAZON_PASSWORD
-            CAPTCHA_SOLUTION = getattr(config, "CAPTCHA_SOLUTION", None)
-            READING_BOOK_TITLE = getattr(config, "READING_BOOK_TITLE", None)
-        except ImportError:
-            logger.warning("No config.py found. Using default credentials from config.template.py")
-            import config_template
-
-            AMAZON_EMAIL = config_template.AMAZON_EMAIL
-            AMAZON_PASSWORD = config_template.AMAZON_PASSWORD
-            CAPTCHA_SOLUTION = getattr(config_template, "CAPTCHA_SOLUTION", None)
-            READING_BOOK_TITLE = None
-
-        # Initialize automator
-        automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
+        automator = KindleAutomator(
+            config.AMAZON_EMAIL, config.AMAZON_PASSWORD, getattr(config, "CAPTCHA_SOLUTION", None)
+        )
 
         # Handle reinstall command
         if args.reinstall:
@@ -150,13 +137,8 @@ def main():
                 return 0
             return 1
 
-        # Check credentials for normal operation
-        if not AMAZON_EMAIL or not AMAZON_PASSWORD:
-            logger.error("Email and password are required in config.py")
-            return 1
-
         # Run the automation
-        result = automator.run(READING_BOOK_TITLE)
+        result = automator.run(getattr(config, "READING_BOOK_TITLE", None))
 
         # Handle results
         if isinstance(result, tuple):

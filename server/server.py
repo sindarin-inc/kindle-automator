@@ -14,6 +14,21 @@ import base64
 from automator import KindleAutomator
 from views.core.logger import logger
 
+# Load configuration
+try:
+    import config
+
+    AMAZON_EMAIL = config.AMAZON_EMAIL
+    AMAZON_PASSWORD = config.AMAZON_PASSWORD
+    CAPTCHA_SOLUTION = getattr(config, "CAPTCHA_SOLUTION", None)
+except ImportError:
+    logger.warning("No config.py found. Using default credentials from config.template.py")
+    import config_template
+
+    AMAZON_EMAIL = config_template.AMAZON_EMAIL
+    AMAZON_PASSWORD = config_template.AMAZON_PASSWORD
+    CAPTCHA_SOLUTION = None
+
 app = Flask(__name__)
 api = Api(app)
 
@@ -24,6 +39,12 @@ class AutomationServer:
         self.appium_process = None
         self.pid_dir = "logs"
         os.makedirs(self.pid_dir, exist_ok=True)
+
+    def initialize_automator(self):
+        """Initialize automator with configured credentials"""
+        if not self.automator:
+            self.automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
+        return self.automator
 
     def save_pid(self, name: str, pid: int):
         """Save process ID to file"""
@@ -68,13 +89,13 @@ class InitializeResource(Resource):
     def post(self):
         try:
             data = request.get_json()
-            email = data.get("email")
-            password = data.get("password")
+            email = data.get("email", AMAZON_EMAIL)  # Fall back to config email
+            password = data.get("password", AMAZON_PASSWORD)  # Fall back to config password
 
             if not email or not password:
                 return {"error": "Email and password are required"}, 400
 
-            server.automator = KindleAutomator(email, password, None)
+            server.automator = KindleAutomator(email, password, CAPTCHA_SOLUTION)
             success = server.automator.initialize_driver()
 
             if not success:
@@ -92,12 +113,11 @@ def ensure_automator_healthy(f):
 
     def wrapper(*args, **kwargs):
         if not server.automator:
-            # Initialize with default test credentials if not initialized
-            server.automator = KindleAutomator("test@example.com", "test123", None)
+            server.initialize_automator()
             if not server.automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
             if not server.automator.handle_initial_setup():
-                return {"error": "Failed to complete initial setup"}, 500
+                return {"error": "Failed to reach library view"}, 500
 
         if not server.automator.ensure_driver_running():
             return {"error": "Failed to ensure driver is running"}, 500
