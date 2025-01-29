@@ -14,14 +14,14 @@ from views.state_machine import AppState, KindleStateMachine
 
 
 class KindleAutomator:
-    def __init__(self, email, password, captcha_solution):
+    def __init__(self, email, password, captcha_solution, device_id=None):
         self.email = email
         self.password = password
         self.captcha_solution = captcha_solution
         self.driver = None
         self.state_machine = None
         self.appium_process = None
-        self.device_id = "emulator-5554"
+        self.device_id = device_id or "emulator-5554"
         self.library_handler = None
         self.reader_handler = None
         self.apk_path = os.path.join(

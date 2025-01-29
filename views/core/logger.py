@@ -7,16 +7,21 @@ def setup_logger():
     logger = logging.getLogger("kindle_automator")
     logger.setLevel(logging.INFO)
 
-    # Create console handler with formatting
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-
     # Create formatter with minutes, seconds, and milliseconds
     formatter = logging.Formatter(
         # "[%(asctime)s.%(msecs)03d] %(message)s", datefmt="%H:%M:%S"
         "\033[32m[%(asctime)s]\033[0m %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    # File handler
+    file_handler = logging.FileHandler("logs/server.log")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Create console handler with formatting
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
 
     # Add handler to logger

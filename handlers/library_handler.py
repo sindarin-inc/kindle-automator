@@ -18,7 +18,6 @@ from views.library.view_strategies import (
 )
 from views.library.interaction_strategies import (
     LIBRARY_TAB_STRATEGIES,
-    BOTTOM_NAV_STRATEGIES,
     VIEW_OPTIONS_BUTTON_STRATEGIES,
     LIST_VIEW_OPTION_STRATEGIES,
     MENU_CLOSE_STRATEGIES,
@@ -93,7 +92,7 @@ class LibraryHandler:
 
     def _find_bottom_navigation(self):
         """Find the bottom navigation bar."""
-        for strategy, locator in BOTTOM_NAV_STRATEGIES:
+        for strategy, locator in BOTTOM_NAV_IDENTIFIERS:
             try:
                 nav = self.driver.find_element(strategy, locator)
                 logger.info(f"Found bottom navigation using {strategy}")
@@ -285,6 +284,7 @@ class LibraryHandler:
     def get_book_titles(self):
         """Get a list of all book titles in the library."""
         try:
+            # Ensure we're in the library view
             if not self.navigate_to_library():
                 logger.error("Failed to navigate to library")
                 return []
@@ -292,28 +292,39 @@ class LibraryHandler:
             # Wait for library content to load
             time.sleep(2)
 
-            # Log the page source for debugging
-            logger.info("\n=== PAGE SOURCE START ===")
-            logger.info(self.driver.page_source)
-            logger.info("=== PAGE SOURCE END ===\n")
-
-            # Try to find book buttons
-            try:
-                book_buttons = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
-                logger.info(f"Found {len(book_buttons)} book buttons")
-            except Exception as e:
-                logger.error(f"Error finding book buttons: {e}")
-                book_buttons = []
-
-            # Extract titles from content descriptions
+            # Try to find books using the book title identifiers first
             book_titles = []
-            for button in book_buttons:
+            for strategy, locator in BOOK_TITLE_IDENTIFIERS:
                 try:
-                    desc = button.get_attribute("content-desc")
-                    if desc:
-                        book_titles.append(desc)
+                    elements = self.driver.find_elements(strategy, locator)
+                    if elements:
+                        for element in elements:
+                            try:
+                                desc = element.get_attribute("content-desc")
+                                if desc:
+                                    book_titles.append(desc)
+                            except Exception as e:
+                                logger.debug(f"Error getting book title: {e}")
+                        logger.info(f"Found {len(book_titles)} books using {strategy}")
+                        return book_titles
                 except Exception as e:
-                    logger.debug(f"Error getting book title: {e}")
+                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    continue
+
+            # Fallback: Try to find any buttons with content descriptions
+            if not book_titles:
+                try:
+                    book_buttons = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
+                    logger.info(f"Found {len(book_buttons)} book buttons")
+                    for button in book_buttons:
+                        try:
+                            desc = button.get_attribute("content-desc")
+                            if desc and ", Book" in desc:  # Only include items that are actually books
+                                book_titles.append(desc)
+                        except Exception as e:
+                            logger.debug(f"Error getting book title: {e}")
+                except Exception as e:
+                    logger.error(f"Error finding book buttons: {e}")
 
             logger.info(f"Found {len(book_titles)} books")
             return book_titles
