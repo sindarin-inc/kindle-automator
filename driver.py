@@ -65,6 +65,98 @@ class Driver:
             logger.error(f"Error handling HW overlays: {e}")
             return False
 
+    def _cleanup_old_sessions(self):
+        """Clean up any existing UiAutomator2 sessions."""
+        try:
+            logger.info("Cleaning up old UiAutomator2 sessions...")
+            subprocess.run(
+                ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server.test"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error cleaning up old sessions: {e}")
+            return False
+
+    def _is_kindle_installed(self) -> bool:
+        """Check if the Kindle app is installed on the device."""
+        try:
+            logger.info(f"Checking Kindle installation on device {self.device_id}")
+            result = subprocess.run(
+                ["adb", "-s", self.device_id, "shell", "pm", "list", "packages", "com.amazon.kindle"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return "com.amazon.kindle" in result.stdout
+        except Exception as e:
+            logger.error(f"Error checking Kindle installation: {e}")
+            return False
+
+    def _install_kindle(self) -> bool:
+        """Install the Kindle app on the device."""
+        try:
+            logger.info(f"Installing Kindle on device {self.device_id}")
+            apk_path = os.path.join(
+                "ansible",
+                "roles",
+                "android",
+                "files",
+                "com.amazon.kindle_8.113.0.100(2.0.29451.0)-1285953011_minAPI28(arm64-v8a)(nodpi).com.apk",
+            )
+            if not os.path.exists(apk_path):
+                logger.error(f"Kindle APK not found at {apk_path}")
+                return False
+
+            subprocess.run(
+                ["adb", "-s", self.device_id, "install", "-r", apk_path],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("Kindle app installed successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error installing Kindle: {e}")
+            return False
+
+    def _get_kindle_launch_activity(self) -> Optional[str]:
+        """Get the main launch activity for the Kindle app."""
+        try:
+            result = subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "cmd package resolve-activity -c android.intent.category.LAUNCHER com.amazon.kindle",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Parse output to find main activity
+            for line in result.stdout.splitlines():
+                if "name=" in line and "com.amazon.kindle" in line:
+                    activity = line.split("name=")[1].strip()
+                    logger.info(f"Found Kindle launch activity: {activity}")
+                    return activity
+
+            logger.error("Could not find Kindle launch activity")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting Kindle launch activity: {e}")
+            return None
+
     def initialize(self) -> bool:
         """Initialize Appium driver with retry logic. Safe to call multiple times."""
         # If we already have a driver, check if it's healthy
@@ -94,16 +186,32 @@ class Driver:
         os.environ["ANDROID_SERIAL"] = self.device_id
         logger.info(f"Using emulator device: {self.device_id}")
 
+        # Check and install Kindle if needed
+        if not self._is_kindle_installed():
+            if not self._install_kindle():
+                logger.error("Failed to install Kindle app")
+                return False
+
+        # Clean up old sessions before starting new one
+        self._cleanup_old_sessions()
+
         # Disable HW overlays for better WebView visibility
         if not self._disable_hw_overlays():
             logger.warning("Failed to disable HW overlays, continuing anyway...")
+
+        # Get the launch activity
+        app_activity = self._get_kindle_launch_activity()
+        if not app_activity:
+            logger.error("Could not determine Kindle launch activity")
+            return False
+        logger.info(f"Using Kindle launch activity: {app_activity}")
 
         # Set up Appium options
         options = UiAutomator2Options()
         options.platform_name = "Android"
         options.device_name = self.device_id
         options.app_package = "com.amazon.kindle"
-        options.app_activity = "com.amazon.kindle.UpgradePage"
+        options.app_activity = app_activity
         options.app_wait_activity = "com.amazon.kindle.*"
         options.automation_name = "UiAutomator2"
         options.no_reset = True
