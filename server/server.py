@@ -49,24 +49,31 @@ class AutomationServer:
 
     def save_pid(self, name: str, pid: int):
         """Save process ID to file"""
-        with open(os.path.join(self.pid_dir, f"{name}.pid"), "w") as f:
-            f.write(str(pid))
+        pid_file = os.path.join(self.pid_dir, f"{name}.pid")
+        try:
+            with open(pid_file, "w") as f:
+                f.write(str(pid))
+            # Set file permissions to be readable by all
+            os.chmod(pid_file, 0o644)
+        except Exception as e:
+            logger.error(f"Error saving PID file: {e}")
 
     def kill_existing_process(self, name: str):
-        """Kill existing process if PID file exists"""
-        pid_file = os.path.join(self.pid_dir, f"{name}.pid")
-        if os.path.exists(pid_file):
-            try:
-                with open(pid_file) as f:
-                    pid = int(f.read().strip())
-                os.kill(pid, signal.SIGTERM)
-                logger.info(f"Killed existing {name} process with PID {pid}")
-            except ProcessLookupError:
-                logger.info(f"No existing {name} process found")
-            except Exception as e:
-                logger.error(f"Error killing {name} process: {e}")
-            finally:
-                os.remove(pid_file)
+        """Kill existing process if running on port 4098"""
+        try:
+            if name == "flask":
+                # Use lsof to find process on port 4098
+                pid = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
+                if pid:
+                    os.kill(int(pid), signal.SIGTERM)
+                    logger.info(f"Killed existing flask process with PID {pid}")
+            elif name == "appium":
+                subprocess.run(["pkill", "-f", "appium"], check=False)
+                logger.info("Killed existing appium processes")
+        except subprocess.CalledProcessError:
+            logger.info(f"No existing {name} process found")
+        except Exception as e:
+            logger.error(f"Error killing {name} process: {e}")
 
     def start_appium(self):
         """Start Appium server and save PID"""
@@ -366,4 +373,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # If running in background, write PID to file before starting server
+    if os.getenv("FLASK_ENV") == "development":
+        with open(os.path.join("logs", "flask.pid"), "w") as f:
+            f.write(str(os.getpid()))
     main()

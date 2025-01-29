@@ -37,7 +37,8 @@ ssh-2:
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@python -m server.server
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server &
+	@sleep 1  # Give the server a moment to start
 
 # Test initialization endpoint
 test-init:
@@ -50,7 +51,7 @@ test-init:
 # Optional helper target to kill existing processes
 kill-server:
 	@echo "Killing existing server processes..."
-	@pkill -f "python -m server.server" || true
+	@-kill $$(lsof -t -i:4098) 2>/dev/null || true
 	@pkill -f "appium" || true
 
 # Test navigation endpoint
