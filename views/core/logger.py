@@ -1,11 +1,19 @@
 import logging
 import sys
+import os
 
 
 def setup_logger():
     """Configure logging with timestamps including minutes, seconds, and milliseconds"""
-    logger = logging.getLogger("kindle_automator")
+    # Create logs directory if it doesn't exist
+    os.makedirs("logs", exist_ok=True)
+
+    # Get the root logger
+    logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+
+    # Clear any existing handlers
+    logger.handlers.clear()
 
     # Create formatter with minutes, seconds, and milliseconds
     formatter = logging.Formatter(

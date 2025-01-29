@@ -12,26 +12,7 @@ from io import BytesIO
 import base64
 
 from automator import KindleAutomator
-
-# Setup logging
-os.makedirs("logs", exist_ok=True)
-
-# Create logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Create formatters and handlers
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-# File handler
-file_handler = logging.FileHandler("logs/server.log")
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
-
-# Console handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
+from views.core.logger import logger
 
 app = Flask(__name__)
 api = Api(app)
