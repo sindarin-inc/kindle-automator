@@ -85,13 +85,49 @@ LIST_VIEW_IDENTIFIERS = [
 
 # Book element identifiers - updated for tablet layout
 BOOK_TITLE_IDENTIFIERS = [
-    # Find buttons that contain book titles
-    (AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, ', Book')]"),
-    (
-        AppiumBy.XPATH,
-        "//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
-    ),
+    # Primary title identifier
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']"),
 ]
+
+# Book metadata identifiers
+BOOK_METADATA_IDENTIFIERS = {
+    "title": [
+        # Primary title identifier - start with the recycler view and find titles within it
+        (
+            AppiumBy.XPATH,
+            "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']",
+        ),
+        # Alternative title identifiers
+        (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"),
+    ],
+    "progress": [
+        (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_reading_progress"),
+        (
+            AppiumBy.XPATH,
+            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_reading_progress']",
+        ),
+    ],
+    "size": [
+        (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_file_size"),
+        (
+            AppiumBy.XPATH,
+            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_file_size']",
+        ),
+    ],
+    "author": [
+        (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_author"),
+        (
+            AppiumBy.XPATH,
+            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_author']",
+        ),
+    ],
+    "container": [
+        (
+            AppiumBy.XPATH,
+            "//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
+        ),
+    ],
+}
 
 BOOK_TITLE_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_title"
 BOOK_AUTHOR_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_author"

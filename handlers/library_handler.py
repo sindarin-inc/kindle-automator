@@ -1,7 +1,8 @@
+import time
+import traceback
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
 import os
 from views.core.logger import logger
 from views.library.view_strategies import (
@@ -15,6 +16,8 @@ from views.library.view_strategies import (
     BOOK_AUTHOR_IDENTIFIERS,
     BOOK_TITLE_ELEMENT_ID,
     BOOK_AUTHOR_ELEMENT_ID,
+    EMPTY_LIBRARY_IDENTIFIERS,
+    BOOK_METADATA_IDENTIFIERS,
 )
 from views.library.interaction_strategies import (
     LIBRARY_TAB_STRATEGIES,
@@ -282,7 +285,7 @@ class LibraryHandler:
             return False
 
     def get_book_titles(self):
-        """Get a list of all book titles in the library."""
+        """Get a list of all books in the library with their metadata."""
         try:
             # Ensure we're in the library view
             if not self.navigate_to_library():
@@ -292,42 +295,55 @@ class LibraryHandler:
             # Wait for library content to load
             time.sleep(2)
 
-            # Try to find books using the book title identifiers first
-            book_titles = []
-            for strategy, locator in BOOK_TITLE_IDENTIFIERS:
+            # Log page source for debugging
+            logger.info("=== LIBRARY PAGE SOURCE START ===")
+            logger.info(self.driver.page_source)
+            logger.info("=== LIBRARY PAGE SOURCE END ===")
+
+            # Initialize list to store book information
+            books = []
+
+            # First find all containers
+            containers = []
+            for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"]:
                 try:
-                    elements = self.driver.find_elements(strategy, locator)
-                    if elements:
-                        for element in elements:
-                            try:
-                                desc = element.get_attribute("content-desc")
-                                if desc:
-                                    book_titles.append(desc)
-                            except Exception as e:
-                                logger.debug(f"Error getting book title: {e}")
-                        logger.info(f"Found {len(book_titles)} books using {strategy}")
-                        return book_titles
+                    found_containers = self.driver.find_elements(container_strategy, container_locator)
+                    if found_containers:
+                        containers = found_containers
+                        logger.debug(f"Found {len(containers)} book containers")
+                        break
                 except Exception as e:
-                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    logger.debug(f"Failed to find containers with {container_strategy}: {e}")
                     continue
 
-            # Fallback: Try to find any buttons with content descriptions
-            if not book_titles:
+            # Process each container
+            for container in containers:
                 try:
-                    book_buttons = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
-                    logger.info(f"Found {len(book_buttons)} book buttons")
-                    for button in book_buttons:
-                        try:
-                            desc = button.get_attribute("content-desc")
-                            if desc and ", Book" in desc:  # Only include items that are actually books
-                                book_titles.append(desc)
-                        except Exception as e:
-                            logger.debug(f"Error getting book title: {e}")
-                except Exception as e:
-                    logger.error(f"Error finding book buttons: {e}")
+                    book_info = {"title": None, "progress": None, "size": None, "author": None}
 
-            logger.info(f"Found {len(book_titles)} books")
-            return book_titles
+                    # Extract metadata using strategies
+                    for field in ["title", "progress", "size", "author"]:
+                        for strategy, locator in BOOK_METADATA_IDENTIFIERS[field]:
+                            try:
+                                elements = container.find_elements(strategy, locator)
+                                if elements:
+                                    book_info[field] = elements[0].text
+                                    logger.debug(f"Found {field}: {book_info[field]}")
+                                    break
+                            except Exception as e:
+                                logger.debug(f"Failed to find {field} with {strategy}: {e}")
+                                continue
+
+                    if book_info["title"]:  # Only add books that have at least a title
+                        books.append(book_info)
+
+                except Exception as e:
+                    logger.error(f"Error extracting book info: {e}")
+                    continue
+
+            logger.info(f"Found {len(books)} books using xpath")
+            return books
+
         except Exception as e:
             logger.error(f"Error getting book titles: {e}")
             return []

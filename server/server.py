@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 import logging
+import multiprocessing
 from flask import Flask, request, jsonify, send_file
 from flask_restful import Api, Resource
 from typing import Optional
@@ -14,6 +15,9 @@ import base64
 from automator import KindleAutomator
 from views.core.logger import logger
 from views.core.app_state import AppState
+
+# Development mode detection
+IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
 # Load configuration
 try:
@@ -201,7 +205,7 @@ class CaptchaResource(Resource):
 class BooksResource(Resource):
     @ensure_automator_healthy
     def get(self):
-        """Get list of available books"""
+        """Get list of available books with metadata"""
         try:
             current_state = server.automator.state_machine.current_state
             logger.info(f"Current state when getting books: {current_state}")
@@ -219,12 +223,12 @@ class BooksResource(Resource):
                     "current_state": current_state.name,
                 }, 400
 
-            # Get book titles from library handler
-            book_titles = server.automator.library_handler.get_book_titles()
-            if book_titles is None:
-                return {"error": "Failed to get book titles"}, 500
+            # Get books with metadata from library handler
+            books = server.automator.library_handler.get_book_titles()
+            if books is None:
+                return {"error": "Failed to get books"}, 500
 
-            return {"book_titles": book_titles}, 200
+            return {"books": books}, 200
 
         except Exception as e:
             logger.error(f"Error getting books: {e}")
@@ -355,6 +359,11 @@ api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
 
 
+def run_server():
+    """Run the Flask server"""
+    app.run(host="0.0.0.0", port=4098)
+
+
 def main():
     # Kill any existing processes
     server.kill_existing_process("flask")
@@ -368,8 +377,20 @@ def main():
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
 
-    # Start Flask server
-    app.run(host="0.0.0.0", port=4098)
+    if IS_DEVELOPMENT:
+        # In development, run in a separate process
+        process = multiprocessing.Process(target=run_server)
+        process.daemon = True  # This ensures the process is killed when the parent exits
+        process.start()
+        # Keep the main process running to handle signals
+        try:
+            process.join()
+        except KeyboardInterrupt:
+            process.terminate()
+            process.join()
+    else:
+        # In production, run normally
+        run_server()
 
 
 if __name__ == "__main__":

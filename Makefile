@@ -38,7 +38,6 @@ ssh-2:
 server:
 	@echo "Starting Flask server..."
 	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server &
-	@sleep 1  # Give the server a moment to start
 
 # Test initialization endpoint
 test-init:

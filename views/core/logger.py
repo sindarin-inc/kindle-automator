@@ -8,6 +8,11 @@ def setup_logger():
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
+    # Clear the log file
+    log_file = "logs/server.log"
+    with open(log_file, "w") as f:
+        f.truncate(0)
+
     # Get the root logger
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
@@ -23,7 +28,7 @@ def setup_logger():
     )
 
     # File handler
-    file_handler = logging.FileHandler("logs/server.log")
+    file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
