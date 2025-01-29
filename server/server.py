@@ -89,12 +89,11 @@ class InitializeResource(Resource):
             data = request.get_json()
             email = data.get("email")
             password = data.get("password")
-            device_id = data.get("device_id")  # Get device_id from request
 
             if not email or not password:
                 return {"error": "Email and password are required"}, 400
 
-            server.automator = KindleAutomator(email, password, None, device_id)
+            server.automator = KindleAutomator(email, password, None)
             success = server.automator.initialize_driver()
 
             if not success:
@@ -113,7 +112,7 @@ def ensure_automator_healthy(f):
     def wrapper(*args, **kwargs):
         if not server.automator:
             # Initialize with default test credentials if not initialized
-            server.automator = KindleAutomator("test@example.com", "test123", None, "emulator-5554")
+            server.automator = KindleAutomator("test@example.com", "test123", None)
             if not server.automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
             if not server.automator.handle_initial_setup():

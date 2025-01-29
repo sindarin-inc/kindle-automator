@@ -14,14 +14,14 @@ from views.state_machine import AppState, KindleStateMachine
 
 
 class KindleAutomator:
-    def __init__(self, email, password, captcha_solution, device_id=None):
+    def __init__(self, email, password, captcha_solution):
         self.email = email
         self.password = password
         self.captcha_solution = captcha_solution
         self.driver = None
         self.state_machine = None
         self.appium_process = None
-        self.device_id = device_id or "emulator-5554"
+        self.device_id = None  # Will be set during initialization
         self.library_handler = None
         self.reader_handler = None
         self.apk_path = os.path.join(
@@ -205,6 +205,27 @@ class KindleAutomator:
         # If not healthy, try to initialize
         return self.initialize_driver()
 
+    def _get_emulator_device_id(self):
+        """Get the emulator device ID from adb devices."""
+        try:
+            result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+            for line in result.stdout.splitlines():
+                if "emulator-" in line and "device" in line:
+                    device_id = line.split()[0]
+                    # Verify this is actually an emulator
+                    verify_result = subprocess.run(
+                        ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    if "sdk" in verify_result.stdout.lower() or "emulator" in verify_result.stdout.lower():
+                        return device_id
+            return None
+        except Exception as e:
+            logger.error(f"Error getting emulator device ID: {e}")
+            return None
+
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
         # Set up Android SDK environment variables
@@ -212,6 +233,16 @@ class KindleAutomator:
         os.environ["ANDROID_HOME"] = android_home
         os.environ["ANDROID_SDK_ROOT"] = android_home
         os.environ["PATH"] = f"{os.environ.get('PATH')}:{android_home}/tools:{android_home}/platform-tools"
+
+        # Get the emulator device ID
+        self.device_id = self._get_emulator_device_id()
+        if not self.device_id:
+            logger.error("No emulator found. Please start an Android emulator first.")
+            return False
+
+        # Force ADB to use emulator
+        os.environ["ANDROID_SERIAL"] = self.device_id
+        logger.info(f"Using emulator device: {self.device_id}")
 
         # Ensure Appium is running
         if not self.ensure_appium_running():
@@ -247,11 +278,20 @@ class KindleAutomator:
             options.set_capability("appium:automationName", "UiAutomator2")
             options.set_capability("appium:platformName", "Android")
             options.set_capability("appium:deviceName", self.device_id)
+            options.set_capability(
+                "appium:avd", "Sol_Reader_0.68_Prototype_API_35"
+            )  # Use the correct AVD name
+            options.set_capability("appium:isEmulator", True)  # Force emulator mode
+            options.set_capability("appium:avdLaunchTimeout", 180000)
+            options.set_capability("appium:avdReadyTimeout", 180000)
             options.set_capability("appium:noReset", True)
             options.set_capability("appium:newCommandTimeout", 300)
             options.set_capability("appium:autoGrantPermissions", True)
             options.set_capability("appium:waitForIdleTimeout", 5000)
             options.set_capability("appium:systemPort", 8202)
+            options.set_capability("appium:enforceXPath1", True)
+            options.set_capability("appium:skipServerInstallation", False)
+            options.set_capability("appium:skipDeviceInitialization", False)
 
             max_attempts = 3
             attempt = 1

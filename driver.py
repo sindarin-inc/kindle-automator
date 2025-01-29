@@ -13,11 +13,12 @@ class Driver:
         options = UiAutomator2Options()
         options.platform_name = "Android"
         options.automation_name = "UiAutomator2"
-        options.device_name = "Android Emulator"
+        options.device_name = "emulator-5554"
         options.app_package = "com.amazon.kindle"
         options.app_activity = "com.amazon.kindle.UpgradePage"
         options.no_reset = True
         options.set_capability("appium:systemPort", 8202)
+        options.set_capability("appium:udid", "emulator-5554")
 
         max_attempts = 3
         attempt = 1
