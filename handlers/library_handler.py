@@ -5,6 +5,9 @@ import time
 import os
 from views.core.logger import logger
 from views.library.view_strategies import (
+    LIBRARY_TAB_IDENTIFIERS,
+    LIBRARY_TAB_SELECTION_IDENTIFIERS,
+    BOTTOM_NAV_IDENTIFIERS,
     LIBRARY_VIEW_IDENTIFIERS,
     GRID_VIEW_IDENTIFIERS,
     LIST_VIEW_IDENTIFIERS,
@@ -15,17 +18,21 @@ from views.library.view_strategies import (
 )
 from views.library.interaction_strategies import (
     LIBRARY_TAB_STRATEGIES,
+    BOTTOM_NAV_STRATEGIES,
     VIEW_OPTIONS_BUTTON_STRATEGIES,
     LIST_VIEW_OPTION_STRATEGIES,
-    BOOK_TITLE_STRATEGIES,
     MENU_CLOSE_STRATEGIES,
     VIEW_OPTIONS_DONE_STRATEGIES,
+    SAFE_TAP_AREAS,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from typing import Optional, List
 from selenium.webdriver.remote.webelement import WebElement
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LibraryHandler:
@@ -35,38 +42,12 @@ class LibraryHandler:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
-    def _get_tab_selection_strategies(self):
-        """Generate strategies for detecting library tab selection state."""
-        return [
-            (
-                AppiumBy.ANDROID_UIAUTOMATOR,
-                'new UiSelector().descriptionContains("LIBRARY, Tab selected")',
-            ),
-            (
-                AppiumBy.ID,
-                "com.amazon.kindle:id/library_tab",
-                {
-                    "icon": (
-                        AppiumBy.ID,
-                        "com.amazon.kindle:id/icon",
-                        "selected",
-                        "true",
-                    ),
-                    "label": (
-                        AppiumBy.ID,
-                        "com.amazon.kindle:id/label",
-                        "selected",
-                        "true",
-                    ),
-                },
-            ),
-        ]
-
     def _is_library_tab_selected(self):
         """Check if the library tab is currently selected."""
         logger.info("Checking if library tab is selected...")
 
-        for strategy in self._get_tab_selection_strategies():
+        # First try the selection strategies
+        for strategy in LIBRARY_TAB_SELECTION_IDENTIFIERS:
             try:
                 if len(strategy) == 3:  # Complex strategy with child elements
                     by, value, child_checks = strategy
@@ -87,24 +68,40 @@ class LibraryHandler:
                 logger.debug(f"Strategy failed: {e}")
                 continue
 
+        # If we're here, check if we're in the library view by looking for library-specific elements
+        try:
+            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    logger.info(f"Found library view element: {locator}")
+                    return True
+                except:
+                    continue
+        except Exception as e:
+            logger.debug(f"Library view check failed: {e}")
+
         logger.info("Library tab is not selected")
         return False
 
     def _is_view_options_menu_open(self):
-        """Check if the view options menu is currently open."""
+        """Check if the view options menu is open."""
         try:
-            # Check for distinctive elements of the view options menu
-            for strategy, locator in VIEW_OPTIONS_MENU_STATE_STRATEGIES:
-                try:
-                    self.driver.find_element(strategy, locator)
-                    logger.info(f"View options menu detected via {strategy}: {locator}")
-                    return True
-                except Exception:
-                    continue
+            self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_options_menu")
+            return True
+        except:
             return False
-        except Exception as e:
-            logger.debug(f"Error checking view options menu state: {e}")
-            return False
+
+    def _find_bottom_navigation(self):
+        """Find the bottom navigation bar."""
+        for strategy, locator in BOTTOM_NAV_STRATEGIES:
+            try:
+                nav = self.driver.find_element(strategy, locator)
+                logger.info(f"Found bottom navigation using {strategy}")
+                return nav
+            except Exception as e:
+                logger.debug(f"Bottom nav strategy failed - {strategy}: {e}")
+                continue
+        return None
 
     def navigate_to_library(self):
         """Navigate to the library tab"""
@@ -122,23 +119,35 @@ class LibraryHandler:
                 logger.info("Already on library tab")
                 return True
 
-            # Try each strategy to find and click the library tab
-            for strategy, locator in LIBRARY_TAB_STRATEGIES:
+            # Try to find the library tab directly using identifiers
+            for strategy, locator in LIBRARY_TAB_IDENTIFIERS:
                 try:
-                    logger.info(f"Trying to find Library tab with strategy: {strategy}, locator: {locator}")
                     library_tab = self.driver.find_element(strategy, locator)
                     logger.info(f"Found Library tab using {strategy}")
                     library_tab.click()
                     logger.info("Clicked Library tab")
-
-                    # Wait for library tab to be selected
-                    logger.info("Waiting for library tab to be selected...")
-                    WebDriverWait(self.driver, 10).until(lambda x: self._is_library_tab_selected())
-                    logger.info("Library tab selected")
+                    time.sleep(1)  # Wait for tab switch animation
                     return True
                 except Exception as e:
-                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    logger.debug(f"Library tab identifier failed - {strategy}: {e}")
                     continue
+
+            # Try to find the bottom navigation bar
+            nav = self._find_bottom_navigation()
+            if nav:
+                logger.info("Found bottom navigation bar")
+                # Try each library tab strategy within the navigation bar
+                for strategy, locator in LIBRARY_TAB_STRATEGIES:
+                    try:
+                        library_tab = nav.find_element(strategy, locator)
+                        logger.info(f"Found Library tab using {strategy}")
+                        library_tab.click()
+                        logger.info("Clicked Library tab")
+                        time.sleep(1)  # Wait for tab switch animation
+                        return True
+                    except Exception as e:
+                        logger.debug(f"Strategy {strategy} failed: {e}")
+                        continue
 
             logger.error("Failed to find Library tab with any strategy")
             return False
@@ -243,105 +252,71 @@ class LibraryHandler:
             return False
 
     def _close_menu(self):
-        """Close any open menu by clicking outside or the done button"""
-        logger.info("Attempting to close menu...")
+        """Close any open menu by tapping outside."""
+        try:
+            # Try each safe tap area
+            for x, y in SAFE_TAP_AREAS:
+                try:
+                    self.driver.tap([(x, y)])
+                    logger.info(f"Tapped at ({x}, {y}) to close menu")
+                    time.sleep(0.5)  # Wait for menu animation
+                    if not self._is_view_options_menu_open():
+                        return True
+                except Exception as e:
+                    logger.debug(f"Failed to tap at ({x}, {y}): {e}")
+                    continue
 
-        # First try view options specific strategies
-        for strategy, locator in VIEW_OPTIONS_DONE_STRATEGIES:
-            try:
-                element = self.driver.find_element(strategy, locator)
-                element.click()
-                logger.info(f"Closed menu using {strategy}: {locator}")
-                return True
-            except Exception as e:
-                logger.debug(f"Strategy {strategy} failed: {e}")
-                continue
+            # If tapping didn't work, try clicking dismiss buttons
+            for strategy, locator in MENU_CLOSE_STRATEGIES:
+                try:
+                    button = self.driver.find_element(strategy, locator)
+                    button.click()
+                    logger.info(f"Clicked dismiss button using {strategy}")
+                    return True
+                except Exception as e:
+                    logger.debug(f"Failed to click dismiss button: {e}")
+                    continue
 
-        # Fall back to general menu close strategies
-        for strategy, locator in MENU_CLOSE_STRATEGIES:
-            try:
-                element = self.driver.find_element(strategy, locator)
-                element.click()
-                logger.info(f"Closed menu using fallback {strategy}: {locator}")
-                return True
-            except Exception as e:
-                logger.debug(f"Fallback strategy {strategy} failed: {e}")
-                continue
-
-        logger.error("Failed to close menu with any strategy")
-        return False
+            return False
+        except Exception as e:
+            logger.error(f"Error closing menu: {e}")
+            return False
 
     def get_book_titles(self):
-        """Get a list of books in the library.
-
-        Returns:
-            list[dict]: List of dictionaries containing book information with 'title' and 'author' keys.
-        """
+        """Get a list of all book titles in the library."""
         try:
-            # First close view options menu if it's open
-            if self._is_view_options_menu_open():
-                logger.info("View options menu is open, closing it")
-                if not self._close_menu():
-                    logger.error("Failed to close view options menu")
-                    return []
-                time.sleep(0.5)  # Wait for menu to close
+            if not self.navigate_to_library():
+                logger.error("Failed to navigate to library")
+                return []
 
-            # Check current view type
-            if self._is_grid_view():
-                logger.info("Currently in grid view, switching to list view...")
-                if not self.switch_to_list_view():
-                    logger.error("Failed to switch to list view")
-                    return []
+            # Wait for library content to load
+            time.sleep(2)
 
-            # Get page source for debugging
-            logger.info("\n=== LIBRARY PAGE SOURCE START ===")
+            # Log the page source for debugging
+            logger.info("\n=== PAGE SOURCE START ===")
             logger.info(self.driver.page_source)
-            logger.info("=== LIBRARY PAGE SOURCE END ===\n")
+            logger.info("=== PAGE SOURCE END ===\n")
 
-            # Also save a screenshot for visual debugging
-            self._dump_library_view()
-
-            books = []
+            # Try to find book buttons
             try:
-                # Find all book buttons
-                for strategy, locator in BOOK_TITLE_IDENTIFIERS:
-                    try:
-                        buttons = self.driver.find_elements(strategy, locator)
-                        logger.info(f"Found {len(buttons)} book buttons")
-
-                        for button in buttons:
-                            try:
-                                # Get the title and author elements inside the button
-                                title_elem = button.find_element(AppiumBy.ID, BOOK_TITLE_ELEMENT_ID)
-                                author_elem = button.find_element(AppiumBy.ID, BOOK_AUTHOR_ELEMENT_ID)
-
-                                title = title_elem.text.strip()
-                                author = author_elem.text.strip()
-
-                                if title and author:  # Only add if both are present
-                                    books.append({"title": title, "author": author})
-                                    logger.info(f"Found book: {title} by {author}")
-                            except Exception as e:
-                                logger.debug(f"Failed to get book info from button: {e}")
-                                continue
-
-                        # If we found any books, break out of the strategy loop
-                        if books:
-                            break
-                    except Exception as e:
-                        logger.debug(f"Failed to find books with {strategy}: {e}")
-                        continue
-
+                book_buttons = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
+                logger.info(f"Found {len(book_buttons)} book buttons")
             except Exception as e:
-                logger.debug(f"Failed to find book elements: {e}")
+                logger.error(f"Error finding book buttons: {e}")
+                book_buttons = []
 
-            logger.info(f"Found {len(books)} books")
-            if books:
-                logger.info("Found books:")
-                for book in books:
-                    logger.info(f"- {book}")
-            return books
+            # Extract titles from content descriptions
+            book_titles = []
+            for button in book_buttons:
+                try:
+                    desc = button.get_attribute("content-desc")
+                    if desc:
+                        book_titles.append(desc)
+                except Exception as e:
+                    logger.debug(f"Error getting book title: {e}")
 
+            logger.info(f"Found {len(book_titles)} books")
+            return book_titles
         except Exception as e:
             logger.error(f"Error getting book titles: {e}")
             return []

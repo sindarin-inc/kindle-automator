@@ -1,3 +1,4 @@
+import traceback
 import os
 import signal
 import subprocess
@@ -126,6 +127,7 @@ class StateResource(Resource):
             return {"state": current_state.name}, 200
         except Exception as e:
             logger.error(f"Error getting state: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -135,6 +137,8 @@ class CaptchaResource(Resource):
         try:
             return send_file("captcha.png", mimetype="image/png")
         except Exception as e:
+            logger.error(f"Captcha error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
     @ensure_automator_healthy
@@ -150,6 +154,8 @@ class CaptchaResource(Resource):
             success = server.automator.handle_initial_setup()
             return {"success": success}, 200 if success else 500
         except Exception as e:
+            logger.error(f"Captcha error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -172,6 +178,7 @@ class BooksResource(Resource):
 
         except Exception as e:
             logger.error(f"Error getting books: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -190,6 +197,7 @@ class ScreenshotResource(Resource):
             return {"screenshot": img_data}, 200
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -216,6 +224,7 @@ class NavigationResource(Resource):
 
         except Exception as e:
             logger.error(f"Navigation error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -237,6 +246,7 @@ class BookOpenResource(Resource):
 
         except Exception as e:
             logger.error(f"Error opening book: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -257,6 +267,7 @@ class StyleResource(Resource):
 
         except Exception as e:
             logger.error(f"Error updating style: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -278,6 +289,7 @@ class TwoFactorResource(Resource):
 
         except Exception as e:
             logger.error(f"2FA error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 

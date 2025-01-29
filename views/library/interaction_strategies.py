@@ -58,6 +58,7 @@ BOOK_ITEM_STRATEGIES = [
 BOOK_TITLE_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/badgeable_cover"),
     (AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, ', Book')]"),
+    (AppiumBy.ID, "com.amazon.kindle:id/book_item"),
 ]
 
 # Filter elements

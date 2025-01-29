@@ -28,25 +28,45 @@ EMPTY_LIBRARY_IDENTIFIERS = [
 ]
 
 LIBRARY_TAB_IDENTIFIERS = [
-    (AppiumBy.XPATH, "//android.widget.TextView[@text='LIBRARY']"),
-    (AppiumBy.XPATH, "//android.widget.TextView[@text='Library']"),
+    (AppiumBy.ID, "com.amazon.kindle:id/library_tab"),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("LIBRARY, Tab")'),
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().text("Library")'),
+]
+
+LIBRARY_TAB_SELECTION_IDENTIFIERS = [
+    (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("LIBRARY, Tab selected")'),
+    (
+        AppiumBy.ID,
+        "com.amazon.kindle:id/library_tab",
+        {
+            "icon": (AppiumBy.ID, "com.amazon.kindle:id/icon", "selected", "true"),
+            "label": (AppiumBy.ID, "com.amazon.kindle:id/label", "selected", "true"),
+        },
+    ),
+]
+
+# Bottom navigation bar identifiers
+BOTTOM_NAV_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/bottom_navigation"),
+    (AppiumBy.ID, "com.amazon.kindle:id/navigation_bar_view"),
+]
+
+# Library view content identifiers
+LIBRARY_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/library_content"),
+    (AppiumBy.ID, "com.amazon.kindle:id/library_view"),
+    (AppiumBy.ID, "com.amazon.kindle:id/library_toolbar"),
 ]
 
 # View mode identifiers
 GRID_VIEW_IDENTIFIERS = [
-    (AppiumBy.XPATH, "//android.widget.GridView[@resource-id='com.amazon.kindle:id/recycler_view']"),
-    (AppiumBy.CLASS_NAME, "android.widget.GridView"),
+    (AppiumBy.ID, "com.amazon.kindle:id/grid_view"),
+    (AppiumBy.ID, "com.amazon.kindle:id/grid_recycler_view"),
 ]
 
 LIST_VIEW_IDENTIFIERS = [
-    (
-        AppiumBy.XPATH,
-        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']",
-    ),
-    (
-        AppiumBy.XPATH,
-        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_author']",
-    ),
+    (AppiumBy.ID, "com.amazon.kindle:id/list_view"),
+    (AppiumBy.ID, "com.amazon.kindle:id/list_recycler_view"),
 ]
 
 # Book element identifiers

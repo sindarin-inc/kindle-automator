@@ -162,10 +162,53 @@ class ReaderHandler:
             logger.error(f"Error capturing page screenshot: {e}")
             return False
 
-    def turn_page(self, direction="forward"):
-        """Turn the page forward or backward"""
-        # TODO: Implement page turning functionality
-        pass
+    def turn_page_forward(self):
+        """Turn to the next page."""
+        try:
+            # Get screen dimensions
+            window_size = self.driver.get_window_size()
+            screen_width = window_size["width"]
+            screen_height = window_size["height"]
+
+            # Calculate tap coordinates for right side of screen
+            tap_x = int(screen_width * 0.9)  # 90% of screen width
+            tap_y = int(screen_height * 0.5)  # Middle of screen height
+
+            # Tap to turn page
+            self.driver.tap([(tap_x, tap_y)])
+            logger.info(f"Tapped at ({tap_x}, {tap_y}) to turn page forward")
+
+            # Short wait for page turn animation
+            time.sleep(0.5)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error turning page forward: {e}")
+            return False
+
+    def turn_page_backward(self):
+        """Turn to the previous page."""
+        try:
+            # Get screen dimensions
+            window_size = self.driver.get_window_size()
+            screen_width = window_size["width"]
+            screen_height = window_size["height"]
+
+            # Calculate tap coordinates for left side of screen
+            tap_x = int(screen_width * 0.1)  # 10% of screen width
+            tap_y = int(screen_height * 0.5)  # Middle of screen height
+
+            # Tap to turn page
+            self.driver.tap([(tap_x, tap_y)])
+            logger.info(f"Tapped at ({tap_x}, {tap_y}) to turn page backward")
+
+            # Short wait for page turn animation
+            time.sleep(0.5)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error turning page backward: {e}")
+            return False
 
     def get_reading_progress(self):
         """Get reading progress as percentage"""
