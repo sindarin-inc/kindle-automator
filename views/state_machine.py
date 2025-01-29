@@ -58,6 +58,12 @@ class KindleStateMachine:
                 logger.info("Successfully reached library state")
                 return True
 
+            # Special handling for CAPTCHA state
+            if self.current_state == AppState.CAPTCHA:
+                # Return True to indicate we're in a valid state that needs client interaction
+                logger.info("Reached CAPTCHA state - waiting for client interaction")
+                return True
+
             handler = self.transitions.get_handler_for_state(self.current_state)
             if not handler:
                 logger.error(f"No handler found for state {self.current_state}")

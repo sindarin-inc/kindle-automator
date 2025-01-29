@@ -13,6 +13,7 @@ import base64
 
 from automator import KindleAutomator
 from views.core.logger import logger
+from views.core.app_state import AppState
 
 # Load configuration
 try:
@@ -140,12 +141,29 @@ class StateResource(Resource):
 
 
 class CaptchaResource(Resource):
+    @ensure_automator_healthy
     def get(self):
-        """Get captcha image"""
+        """Get current captcha status and image if present"""
         try:
-            return send_file("captcha.png", mimetype="image/png")
+            if server.automator.state_machine.current_state == AppState.CAPTCHA:
+                # Get path to latest captcha image
+                captcha_path = os.path.join("screenshots", "captcha.png")
+                if os.path.exists(captcha_path):
+                    return {
+                        "status": "captcha_required",
+                        "message": "Automation stopped at captcha screen. Please solve the captcha.",
+                        "image_url": "/screenshots/captcha.png",
+                    }, 200
+                else:
+                    return {
+                        "status": "captcha_required",
+                        "message": "Captcha required but image not found",
+                        "error": "Captcha image not found",
+                    }, 500
+            return {"status": "no_captcha"}, 200
+
         except Exception as e:
-            logger.error(f"Captcha error: {e}")
+            logger.error(f"Error checking captcha: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -155,14 +173,20 @@ class CaptchaResource(Resource):
         try:
             data = request.get_json()
             solution = data.get("solution")
+
             if not solution:
                 return {"error": "Captcha solution required"}, 400
 
+            # Update captcha solution and retry
             server.automator.captcha_solution = solution
             success = server.automator.handle_initial_setup()
-            return {"success": success}, 200 if success else 500
+
+            if success:
+                return {"status": "success"}, 200
+            return {"error": "Failed to process captcha solution"}, 500
+
         except Exception as e:
-            logger.error(f"Captcha error: {e}")
+            logger.error(f"Error submitting captcha: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -172,16 +196,23 @@ class BooksResource(Resource):
     def get(self):
         """Get list of available books"""
         try:
+            current_state = server.automator.state_machine.current_state
+
+            # Handle different states
+            if current_state == AppState.CAPTCHA:
+                return {
+                    "status": "captcha_required",
+                    "message": "Authentication requires captcha solution",
+                    "image_url": "/screenshots/captcha.png",
+                }, 403
+            elif current_state != AppState.LIBRARY:
+                return {"error": f"Cannot get books in current state: {current_state.name}"}, 400
+
             # Get book titles from library handler
             book_titles = server.automator.library_handler.get_book_titles()
-
             if book_titles is None:
                 return {"error": "Failed to get book titles"}, 500
 
-            if not book_titles:
-                logger.warning("No books found in library")
-
-            # Return in same format as automator
             return {"book_titles": book_titles}, 200
 
         except Exception as e:

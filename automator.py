@@ -115,6 +115,27 @@ class KindleAutomator:
         """Handles the initial app setup and ensures we reach the library view"""
         return self.state_machine.transition_to_library()
 
+    def ensure_driver_running(self):
+        """Ensure the driver is healthy and running, reinitialize if needed."""
+        try:
+            if not self.driver:
+                logger.info("No driver found, initializing...")
+                return self.initialize_driver()
+
+            # Basic health check - try to get current activity
+            try:
+                self.driver.current_activity
+                logger.info("Driver is healthy")
+                return True
+            except Exception as e:
+                logger.info(f"Driver is unhealthy ({e}), reinitializing...")
+                self.cleanup()  # Clean up old driver
+                return self.initialize_driver()
+
+        except Exception as e:
+            logger.error(f"Error ensuring driver is running: {e}")
+            return False
+
 
 def main():
     parser = argparse.ArgumentParser(description="Kindle Automation Tool")

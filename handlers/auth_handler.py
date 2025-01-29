@@ -390,22 +390,35 @@ class AuthenticationHandler:
             return False
 
     def _handle_captcha(self):
-        """Handle captcha if present by saving screenshot and waiting for manual input"""
+        """Handle captcha screen by saving the image and returning."""
         try:
-            # Save screenshot of captcha
-            screenshot_path = os.path.join(self.screenshots_dir, "captcha.png")
+            logger.info("Handling CAPTCHA state...")
+
+            # Save captcha screenshot
+            screenshot_path = os.path.join("screenshots", "captcha.png")
             self.driver.save_screenshot(screenshot_path)
             logger.info(f"Saved captcha screenshot to {screenshot_path}")
 
-            # Wait for manual captcha entry
-            input("Please solve the captcha and press Enter to continue...")
+            # If we have a solution, use it
+            if self.captcha_solution:
+                logger.info("Using provided captcha solution...")
+                captcha_input = self.driver.find_element(AppiumBy.CLASS_NAME, "android.widget.EditText")
+                captcha_input.send_keys(self.captcha_solution)
 
-            # Save another screenshot to verify captcha was entered
-            screenshot_path = os.path.join(self.screenshots_dir, "captcha_entered.png")
-            self.driver.save_screenshot(screenshot_path)
-            logger.info(f"Saved post-captcha screenshot to {screenshot_path}")
+                # Find and click submit button
+                submit_button = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.Button[@text='Submit']"
+                )
+                submit_button.click()
 
-            return True
+                # Wait briefly to see if it worked
+                time.sleep(2)
+                return True
+
+            # No solution provided, let server handle it
+            logger.info("No captcha solution provided - server will handle interaction")
+            return False
+
         except Exception as e:
             logger.error(f"Error handling captcha: {e}")
             return False
