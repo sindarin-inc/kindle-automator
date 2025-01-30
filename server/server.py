@@ -1,20 +1,24 @@
-import traceback
+import base64
+import json
+import logging
+import multiprocessing
 import os
 import signal
 import subprocess
-import logging
-import multiprocessing
-from flask import Flask, request, jsonify, send_file
-from flask_restful import Api, Resource
-from typing import Optional
-import json
-from PIL import Image
+import traceback
 from io import BytesIO
-import base64
+from typing import Optional
 
 from automator import KindleAutomator
-from views.core.logger import logger
+from flask import Flask, jsonify, request, send_file
+from flask_restful import Api, Resource
+from handlers.test_fixtures_handler import TestFixturesHandler
+from PIL import Image
 from views.core.app_state import AppState
+from server.logging_config import setup_logger
+
+setup_logger()
+logger = logging.getLogger(__name__)
 
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
@@ -271,9 +275,25 @@ class NavigationResource(Resource):
                 return {"error": "Invalid action"}, 400
 
             if success:
-                # Get current page number after navigation
+                # Get current page number and progress after navigation
                 page_number = server.automator.reader_handler.get_current_page()
-                return {"success": True, "page": page_number}, 200
+                progress = server.automator.reader_handler.get_reading_progress()
+
+                # Capture screenshot
+                screenshot_path = os.path.join(server.automator.screenshots_dir, "current_screen.png")
+                server.automator.driver.save_screenshot(screenshot_path)
+
+                # Convert screenshot to base64
+                with open(screenshot_path, "rb") as img_file:
+                    img_data = base64.b64encode(img_file.read()).decode()
+
+                return {
+                    "success": True,
+                    "page": page_number,
+                    "progress": progress,
+                    "screenshot": img_data,
+                }, 200
+
             return {"error": "Navigation failed"}, 500
 
         except Exception as e:
@@ -347,6 +367,22 @@ class TwoFactorResource(Resource):
             return {"error": str(e)}, 500
 
 
+class FixturesResource(Resource):
+    @ensure_automator_healthy
+    def post(self):
+        """Create fixtures for major views"""
+        try:
+            fixtures_handler = TestFixturesHandler(server.automator.driver)
+            if fixtures_handler.create_fixtures():
+                return {"status": "success", "message": "Created fixtures for all major views"}, 200
+            return {"error": "Failed to create fixtures"}, 500
+
+        except Exception as e:
+            logger.error(f"Error creating fixtures: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": str(e)}, 500
+
+
 # Add resources to API
 api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
@@ -357,6 +393,7 @@ api.add_resource(NavigationResource, "/navigate")
 api.add_resource(BookOpenResource, "/open-book")
 api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
+api.add_resource(FixturesResource, "/fixtures")
 
 
 def run_server():

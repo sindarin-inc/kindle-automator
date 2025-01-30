@@ -1,11 +1,15 @@
+import logging
+import time
+
 from appium.webdriver.common.appiumby import AppiumBy
-from views.core.logger import logger
-from views.core.app_state import AppState, AppView
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import time
+from views.core.app_state import AppState, AppView
+
+logger = logging.getLogger(__name__)
 
 
 class StateTransitions:

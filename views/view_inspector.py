@@ -1,20 +1,25 @@
+import logging
+import os
 import subprocess
 import time
-import os
+
 from appium.webdriver.common.appiumby import AppiumBy
-from views.core.logger import logger
-from views.core.app_state import AppState, AppView
-from views.library.view_strategies import LIBRARY_VIEW_IDENTIFIERS, EMPTY_LIBRARY_IDENTIFIERS
-from views.home.view_strategies import HOME_VIEW_IDENTIFIERS, HOME_TAB_IDENTIFIERS
-from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
-from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
+
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import (
+    CAPTCHA_REQUIRED_INDICATORS,
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
-    CAPTCHA_REQUIRED_INDICATORS,
 )
+from views.core.app_state import AppState, AppView
+from server.logging_config import store_page_source
+from views.home.view_strategies import HOME_TAB_IDENTIFIERS, HOME_VIEW_IDENTIFIERS
+from views.library.view_strategies import EMPTY_LIBRARY_IDENTIFIERS, LIBRARY_VIEW_IDENTIFIERS
+from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
-from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
+
+logger = logging.getLogger(__name__)
 
 
 class ViewInspector:
@@ -112,10 +117,11 @@ class ViewInspector:
     def _dump_page_source(self):
         """Dump the page source for debugging"""
         try:
-            logger.info("\n=== PAGE SOURCE START ===")
             source = self.driver.page_source
-            logger.info(source)
-            logger.info("=== PAGE SOURCE END ===\n")
+
+            # Store the page source
+            filepath = store_page_source(source, "unknown_view")
+            logger.info(f"Stored unknown view page source at: {filepath}")
         except Exception as e:
             logger.error(f"Failed to get page source: {e}")
 
@@ -214,7 +220,6 @@ class ViewInspector:
             logger.info("Checking for password view...")
             for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
                 try:
-                    logger.info(f"Trying to find password view with strategy: {strategy}, locator: {locator}")
                     element = self.driver.find_element(strategy, locator)
                     logger.info(f"Found password view element: {element.get_attribute('text')}")
                     return AppView.SIGN_IN_PASSWORD

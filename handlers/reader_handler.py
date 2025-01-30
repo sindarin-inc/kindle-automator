@@ -1,21 +1,31 @@
-from appium.webdriver.common.appiumby import AppiumBy
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from views.core.logger import logger
-from views.reading.view_strategies import (
-    READING_VIEW_IDENTIFIERS,
-    READING_TOOLBAR_IDENTIFIERS,
-    BOTTOM_SHEET_IDENTIFIERS,
-    PAGE_NUMBER_IDENTIFIERS,
-)
-from views.library.view_strategies import BOOK_TITLE_IDENTIFIERS, BOOK_TITLE_ELEMENT_ID
-from handlers.library_handler import LibraryHandler
-import subprocess
-from PIL import Image
-from io import BytesIO
-import time
+import logging
 import os
+import subprocess
+import time
+from io import BytesIO
+
+from appium.webdriver.common.appiumby import AppiumBy
+from PIL import Image
 from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+from handlers.library_handler import LibraryHandler
+from server.logging_config import store_page_source
+from views.library.view_strategies import BOOK_TITLE_ELEMENT_ID, BOOK_TITLE_IDENTIFIERS
+from views.reading.interaction_strategies import (
+    BOTTOM_SHEET_IDENTIFIERS,
+    CLOSE_BOOK_STRATEGIES,
+)
+from views.reading.view_strategies import (
+    PAGE_NAVIGATION_ZONES,
+    PAGE_NUMBER_IDENTIFIERS,
+    READING_PROGRESS_IDENTIFIERS,
+    READING_TOOLBAR_IDENTIFIERS,
+    READING_VIEW_IDENTIFIERS,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ReaderHandler:
@@ -111,9 +121,8 @@ class ReaderHandler:
             return False
 
         # Log the page source to check for slideout
-        logger.info("\n=== READING VIEW PAGE SOURCE START ===")
-        logger.info(self.driver.page_source)
-        logger.info("=== READING VIEW PAGE SOURCE END ===\n")
+        filepath = store_page_source(self.driver.page_source, "reading_view")
+        logger.info(f"Stored reading view page source at: {filepath}")
 
         # Check for and dismiss bottom sheet dialog
         try:
@@ -205,14 +214,24 @@ class ReaderHandler:
     def turn_page_forward(self):
         """Turn to the next page."""
         try:
-            # Get screen dimensions
-            window_size = self.driver.get_window_size()
-            screen_width = window_size["width"]
-            screen_height = window_size["height"]
+            # Check if we're in reading toolbar view
+            try:
+                toolbar = self.driver.find_element(*READING_TOOLBAR_IDENTIFIERS[0])
+                if toolbar.is_displayed():
+                    # Tap center to exit toolbar view
+                    logger.info("Tapping center to exit toolbar view")
+                    window_size = self.driver.get_window_size()
+                    center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
+                    center_y = window_size["height"] // 2
+                    self.driver.tap([(center_x, center_y)])
+                    time.sleep(0.5)  # Wait for toolbar to hide
+            except:
+                pass  # Not in toolbar view, continue with page turn
 
-            # Calculate tap coordinates for right side of screen
-            tap_x = int(screen_width * 0.9)  # 90% of screen width
-            tap_y = int(screen_height * 0.5)  # Middle of screen height
+            # Get screen dimensions and calculate tap coordinates
+            window_size = self.driver.get_window_size()
+            tap_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["next"])  # 90% of screen width
+            tap_y = window_size["height"] // 2
 
             # Tap to turn page
             self.driver.tap([(tap_x, tap_y)])
@@ -252,8 +271,53 @@ class ReaderHandler:
 
     def get_reading_progress(self):
         """Get reading progress as percentage"""
-        # TODO: Implement reading progress retrieval
-        pass
+        try:
+            # First check if we need to show controls
+            try:
+                # Try to find progress element directly first
+                progress_element = self.driver.find_element(*READING_PROGRESS_IDENTIFIERS[0])
+            except:
+                # If not found, tap center to show controls
+                window_size = self.driver.get_window_size()
+                center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
+                center_y = window_size["height"] // 2
+                self.driver.tap([(center_x, center_y)])
+                time.sleep(0.5)  # Wait for controls to appear
+
+                try:
+                    progress_element = self.driver.find_element(*READING_PROGRESS_IDENTIFIERS[0])
+                except:
+                    logger.error("Could not find progress element after showing controls")
+                    return None
+
+            # Extract progress text (usually in format "Page X of Y (Z%)")
+            progress_text = progress_element.text
+            logger.info(f"Found progress text: {progress_text}")
+
+            # Try to extract percentage
+            try:
+                if "%" in progress_text:
+                    percentage = progress_text.split("(")[-1].split("%")[0]
+                    return f"{percentage}%"
+            except:
+                pass
+
+            # If no percentage, try to extract page numbers
+            try:
+                if "of" in progress_text:
+                    current, total = progress_text.lower().replace("page", "").split("of")
+                    current = int("".join(filter(str.isdigit, current)))
+                    total = int("".join(filter(str.isdigit, total)))
+                    percentage = round((current / total) * 100)
+                    return f"{percentage}%"
+            except:
+                pass
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting reading progress: {e}")
+            return None
 
     def handle_reading(self) -> bool:
         """Handle the reading state by navigating back to the library.
@@ -271,20 +335,17 @@ class ReaderHandler:
         try:
             # First check for and dismiss bottom sheet if present
             try:
-                bottom_sheet = self.driver.find_element(
-                    AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_dialog"
-                )
+                bottom_sheet = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[0])
                 if bottom_sheet.is_displayed():
                     logger.info("Found bottom sheet dialog, dismissing it...")
-                    pill = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_pill")
+                    pill = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
                     pill.click()
                     logger.info("Clicked bottom sheet pill to dismiss")
                     time.sleep(1)  # Wait for dismiss animation
 
                     # Log the page source after dismissing bottom sheet
-                    logger.info("\n=== PAGE SOURCE AFTER DISMISSING BOTTOM SHEET START ===")
-                    logger.info(self.driver.page_source)
-                    logger.info("=== PAGE SOURCE AFTER DISMISSING BOTTOM SHEET END ===\n")
+                    filepath = store_page_source(self.driver.page_source, "bottom_sheet_dismissed")
+                    logger.info(f"Stored bottom sheet dismissed page source at: {filepath}")
             except WebDriverException:
                 logger.info("No bottom sheet dialog found")
             except Exception as e:
@@ -301,9 +362,8 @@ class ReaderHandler:
             toolbar_visible = False
 
             for attempt in range(max_attempts):
-                logger.info(f"\n=== PAGE SOURCE BEFORE TAP ATTEMPT {attempt + 1} START ===")
-                logger.info(self.driver.page_source)
-                logger.info(f"=== PAGE SOURCE BEFORE TAP ATTEMPT {attempt + 1} END ===\n")
+                filepath = store_page_source(self.driver.page_source, f"tap_attempt")
+                logger.info(f"Stored tap attempt {attempt + 1} page source at: {filepath}")
 
                 logger.info(
                     f"Toolbar is not visible, tapping top of screen (attempt {attempt + 1}/{max_attempts})"
@@ -320,9 +380,8 @@ class ReaderHandler:
                         )
                     )
                     logger.info("Toolbar is now visible")
-                    logger.info("\n=== PAGE SOURCE AFTER SUCCESSFUL TAP START ===")
-                    logger.info(self.driver.page_source)
-                    logger.info("=== PAGE SOURCE AFTER SUCCESSFUL TAP END ===\n")
+                    filepath = store_page_source(self.driver.page_source, "toolbar_visible")
+                    logger.info(f"Stored toolbar visible page source at: {filepath}")
                     toolbar_visible = True
                     break
 
@@ -332,9 +391,10 @@ class ReaderHandler:
                         logger.info("Toolbar did not appear, trying again...")
                     else:
                         logger.error("Failed to make toolbar visible after all attempts")
-                        logger.info("\n=== PAGE SOURCE AFTER FAILED ATTEMPTS START ===")
-                        logger.info(self.driver.page_source)
-                        logger.info("=== PAGE SOURCE AFTER FAILED ATTEMPTS END ===\n")
+                        # Save page source
+                        filepath = store_page_source(self.driver.page_source, "failed_toolbar_visibility")
+                        logger.info(f"Stored failed toolbar visibility page source at: {filepath}")
+
                         # Save screenshot of failed state
                         try:
                             screenshot_path = os.path.join(
@@ -360,20 +420,25 @@ class ReaderHandler:
                     logger.error(f"Failed to save error screenshot: {screenshot_error}")
                 return False
 
-            # Now that toolbar is visible, click the close book button
+            # Find and click close book button
             try:
-                strategy, locator = READING_TOOLBAR_IDENTIFIERS[0]  # Get close book button identifier
-                close_book_button = WebDriverWait(self.driver, 3).until(
-                    EC.element_to_be_clickable((strategy, locator))
-                )
-                close_book_button.click()
-                logger.info("Clicked close book button")
-                return True
+                # Try each close book strategy in order
+                for strategy, locator in CLOSE_BOOK_STRATEGIES:
+                    try:
+                        close_button = self.driver.find_element(strategy, locator)
+                        if close_button.is_displayed():
+                            close_button.click()
+                            logger.info(f"Clicked close book button using {strategy}: {locator}")
+                            return True
+                    except:
+                        continue
+
+                logger.error("Failed to find close book button with any strategy")
+                return False
             except Exception as e:
-                logger.error(f"Error clicking close book button: {e}")
+                logger.error(f"Error handling close book button: {e}")
                 return False
 
         except Exception as e:
-            logger.error(f"Error making toolbar visible: {e}")
-            logger.info("Could not make toolbar visible")
+            logger.error(f"Error handling reading state: {e}")
             return False

@@ -1,4 +1,4 @@
-.PHONY: run deps reinstall lint server test-init kill-server test-navigate test-screenshot test-open-book test-style test-2fa test-books
+.PHONY: run deps reinstall lint server test-init kill-server test-navigate test-screenshot test-open-book test-style test-2fa test-books test-fixtures
 
 run:
 	uv run automator.py
@@ -76,6 +76,13 @@ test-open-book:
 		-d '{"title": "Poor Charlie\u2019s Almanack: The Essential Wit and Wisdom of Charles T. Munger"}' \
 		-v
 
+test-next-page:
+	@echo "Navigating to next page..."
+	@curl -X POST http://localhost:4098/navigate \
+		-H "Content-Type: application/json" \
+		-d '{"action": "next_page"}' \
+		-v
+
 # Test style endpoint
 test-style:
 	@echo "Updating style settings..."
@@ -97,4 +104,12 @@ test-books:
 	@echo "Getting list of books..."
 	@curl http://localhost:4098/books \
 		-H "Accept: application/json" \
+		-v
+
+# Test fixtures endpoint to capture page source for major views
+test-fixtures:
+	@echo "Creating fixtures for major views..."
+	@mkdir -p fixtures/views
+	@curl -X POST http://localhost:4098/fixtures \
+		-H "Content-Type: application/json" \
 		-v

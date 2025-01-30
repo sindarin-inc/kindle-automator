@@ -1,38 +1,40 @@
+import logging
+import os
 import time
 import traceback
+from typing import List, Optional
+
 from appium.webdriver.common.appiumby import AppiumBy
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
-import os
-from views.core.logger import logger
-from views.library.view_strategies import (
-    LIBRARY_TAB_IDENTIFIERS,
-    LIBRARY_TAB_SELECTION_IDENTIFIERS,
-    BOTTOM_NAV_IDENTIFIERS,
-    LIBRARY_VIEW_IDENTIFIERS,
-    GRID_VIEW_IDENTIFIERS,
-    LIST_VIEW_IDENTIFIERS,
-    BOOK_TITLE_IDENTIFIERS,
-    BOOK_AUTHOR_IDENTIFIERS,
-    BOOK_TITLE_ELEMENT_ID,
-    BOOK_AUTHOR_ELEMENT_ID,
-    EMPTY_LIBRARY_IDENTIFIERS,
-    BOOK_METADATA_IDENTIFIERS,
-)
-from views.library.interaction_strategies import (
-    LIBRARY_TAB_STRATEGIES,
-    VIEW_OPTIONS_BUTTON_STRATEGIES,
-    LIST_VIEW_OPTION_STRATEGIES,
-    MENU_CLOSE_STRATEGIES,
-    VIEW_OPTIONS_DONE_STRATEGIES,
-    SAFE_TAP_AREAS,
-)
-from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
+from selenium.webdriver.support.ui import WebDriverWait
+
+from server.logging_config import store_page_source
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
-from typing import Optional, List
-from selenium.webdriver.remote.webelement import WebElement
-import logging
+from views.library.interaction_strategies import (
+    LIBRARY_TAB_STRATEGIES,
+    LIST_VIEW_OPTION_STRATEGIES,
+    MENU_CLOSE_STRATEGIES,
+    SAFE_TAP_AREAS,
+    VIEW_OPTIONS_BUTTON_STRATEGIES,
+    VIEW_OPTIONS_DONE_STRATEGIES,
+)
+from views.library.view_strategies import (
+    BOOK_AUTHOR_ELEMENT_ID,
+    BOOK_AUTHOR_IDENTIFIERS,
+    BOOK_METADATA_IDENTIFIERS,
+    BOOK_TITLE_ELEMENT_ID,
+    BOOK_TITLE_IDENTIFIERS,
+    BOTTOM_NAV_IDENTIFIERS,
+    EMPTY_LIBRARY_IDENTIFIERS,
+    GRID_VIEW_IDENTIFIERS,
+    LIBRARY_TAB_IDENTIFIERS,
+    LIBRARY_TAB_SELECTION_IDENTIFIERS,
+    LIBRARY_VIEW_IDENTIFIERS,
+    LIST_VIEW_IDENTIFIERS,
+)
+from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 
 logger = logging.getLogger(__name__)
 
@@ -244,9 +246,8 @@ class LibraryHandler:
             except Exception as e:
                 logger.error(f"Timed out waiting for list view: {e}")
                 # Get page source for debugging
-                logger.info("\n=== PAGE SOURCE AFTER VIEW SWITCH ===")
-                logger.info(self.driver.page_source)
-                logger.info("=== END PAGE SOURCE ===\n")
+                filepath = store_page_source(self.driver.page_source, "unknown_timeout")
+                logger.info(f"Stored unknown timeout page source at: {filepath}")
                 return False
 
         except Exception as e:
@@ -296,9 +297,8 @@ class LibraryHandler:
             time.sleep(2)
 
             # Log page source for debugging
-            logger.info("=== LIBRARY PAGE SOURCE START ===")
-            logger.info(self.driver.page_source)
-            logger.info("=== LIBRARY PAGE SOURCE END ===")
+            filepath = store_page_source(self.driver.page_source, "library_view")
+            logger.info(f"Stored library view page source at: {filepath}")
 
             # Initialize list to store book information
             books = []

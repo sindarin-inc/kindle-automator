@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import socket
 import subprocess
@@ -7,11 +8,13 @@ from typing import Tuple, Union
 
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
+
+from driver import Driver
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
-from views.core.logger import logger
 from views.state_machine import AppState, KindleStateMachine
-from driver import Driver
+
+logger = logging.getLogger(__name__)
 
 
 class KindleAutomator:
@@ -24,6 +27,9 @@ class KindleAutomator:
         self.device_id = None  # Will be set during initialization
         self.library_handler = None
         self.reader_handler = None
+        self.screenshots_dir = "screenshots"
+        # Ensure screenshots directory exists
+        os.makedirs(self.screenshots_dir, exist_ok=True)
 
     def cleanup(self):
         """Cleanup resources."""
@@ -82,6 +88,9 @@ class KindleAutomator:
                 logger.error("Failed to reach library view")
                 return (False, None) if reading_book_title else False
 
+            # Store the current page source
+            self.store_current_page_source()
+
             # Check if we're on a captcha screen
             if self.state_machine.current_state == AppState.CAPTCHA:
                 logger.info("Automation stopped at captcha screen. Please solve the captcha in captcha.png")
@@ -110,6 +119,19 @@ class KindleAutomator:
             return (False, None) if reading_book_title else False
         finally:
             self.cleanup()
+
+    def store_current_page_source(self):
+        """Store the current page source as a screenshot"""
+        # Get the current page source
+        page_source = self.driver.page_source
+
+        # Store the page source in a file named after the current state
+        state_name = self.state_machine.current_state.name
+        file_name = f"{state_name}.xml"
+        file_path = os.path.join(self.screenshots_dir, file_name)
+        with open(file_path, "w") as file:
+            file.write(page_source)
+        logger.info(f"Saved current page source ({state_name}) to {file_path}")
 
     def handle_initial_setup(self):
         """Handles the initial app setup and ensures we reach the library view"""

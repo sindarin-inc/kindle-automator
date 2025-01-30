@@ -1,7 +1,7 @@
+import logging
 import os
 import signal
 import subprocess
-import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)

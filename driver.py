@@ -1,10 +1,13 @@
-from appium import webdriver
-from appium.options.android import UiAutomator2Options
-from views.core.logger import logger
-import time
+import logging
 import os
 import subprocess
+import time
 from typing import Optional
+
+from appium import webdriver
+from appium.options.android import UiAutomator2Options
+
+logger = logging.getLogger(__name__)
 
 
 class Driver:

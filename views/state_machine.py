@@ -1,12 +1,16 @@
-from views.core.logger import logger
-from views.core.app_state import AppState, AppView
-from views.view_inspector import ViewInspector
+import logging
+import os
+
 from handlers.auth_handler import AuthenticationHandler
 from handlers.library_handler import LibraryHandler
-from handlers.reader_handler import ReaderHandler
 from handlers.permissions_handler import PermissionsHandler
+from handlers.reader_handler import ReaderHandler
+from views.core.app_state import AppState, AppView
+from server.logging_config import store_page_source
 from views.transitions import StateTransitions
-import os
+from views.view_inspector import ViewInspector
+
+logger = logging.getLogger(__name__)
 
 
 class KindleStateMachine:
@@ -78,11 +82,13 @@ class KindleStateMachine:
         logger.error(f"Failed to reach library state after {max_transitions} transitions")
         logger.error(f"Final state: {self.current_state}")
 
-        # Log the page source for debugging
+        # Log the page source for debugging and store it
         try:
-            logger.info("\n=== PAGE SOURCE AFTER FAILED TRANSITIONS START ===")
-            logger.info(self.view_inspector.driver.page_source)
-            logger.info("=== PAGE SOURCE AFTER FAILED TRANSITIONS END ===\n")
+            source = self.view_inspector.driver.page_source
+
+            # Store the page source
+            filepath = store_page_source(source, "failed_transition")
+            logger.info(f"Stored failed transition page source at: {filepath}")
 
             # Also save a screenshot for visual debugging
             try:
@@ -100,8 +106,14 @@ class KindleStateMachine:
         """Handle a failed state transition by logging details and saving screenshot"""
         logger.error(f"Failed to transition from {from_state} to {to_state}: {error}")
         try:
+            # Store page source
+            source = self.view_inspector.driver.page_source
+            filepath = store_page_source(source, f"failed_transition_{from_state}_to_{to_state}")
+            logger.info(f"Stored failed transition page source at: {filepath}")
+
+            # Save screenshot
             screenshot_path = os.path.join(self.screenshots_dir, "failed_transition.png")
             self.view_inspector.driver.save_screenshot(screenshot_path)
             logger.info(f"Saved failed transition screenshot to {screenshot_path}")
         except Exception as e:
-            logger.error(f"Failed to save transition error screenshot: {e}")
+            logger.error(f"Failed to save transition error data: {e}")

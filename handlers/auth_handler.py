@@ -1,32 +1,37 @@
-from appium.webdriver.common.appiumby import AppiumBy
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from views.core.logger import logger
-from views.auth.view_strategies import (
-    EMAIL_VIEW_IDENTIFIERS,
-    PASSWORD_VIEW_IDENTIFIERS,
-    ERROR_VIEW_IDENTIFIERS,
-    LIBRARY_VIEW_VERIFICATION_STRATEGIES,
-    CAPTCHA_VIEW_IDENTIFIERS,
-    CAPTCHA_REQUIRED_INDICATORS,
-)
-from views.auth.interaction_strategies import (
-    EMAIL_FIELD_STRATEGIES,
-    CONTINUE_BUTTON_STRATEGIES,
-    PASSWORD_FIELD_STRATEGIES,
-    PASSWORD_SIGN_IN_BUTTON_STRATEGIES,
-    SIGN_IN_RADIO_BUTTON_STRATEGIES,
-    AUTH_ERROR_STRATEGIES,
-    SIGN_IN_ERROR_STRATEGIES,
-    CAPTCHA_INPUT_FIELD,
-    CAPTCHA_CONTINUE_BUTTON,
-)
-import time
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from PIL import Image
+import logging
 import os
 import subprocess
+import time
 from enum import Enum
+
+from appium.webdriver.common.appiumby import AppiumBy
+from PIL import Image
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+from views.auth.interaction_strategies import (
+    AUTH_ERROR_STRATEGIES,
+    CAPTCHA_CONTINUE_BUTTON,
+    CAPTCHA_INPUT_FIELD,
+    CONTINUE_BUTTON_STRATEGIES,
+    EMAIL_FIELD_STRATEGIES,
+    PASSWORD_FIELD_STRATEGIES,
+    PASSWORD_SIGN_IN_BUTTON_STRATEGIES,
+    SIGN_IN_ERROR_STRATEGIES,
+    SIGN_IN_RADIO_BUTTON_STRATEGIES,
+)
+from views.auth.view_strategies import (
+    CAPTCHA_REQUIRED_INDICATORS,
+    CAPTCHA_VIEW_IDENTIFIERS,
+    EMAIL_VIEW_IDENTIFIERS,
+    ERROR_VIEW_IDENTIFIERS,
+    LIBRARY_VIEW_VERIFICATION_STRATEGIES,
+    PASSWORD_VIEW_IDENTIFIERS,
+)
+from server.logging_config import store_page_source
+
+logger = logging.getLogger(__name__)
 
 
 class LoginVerificationState(Enum):
@@ -287,10 +292,11 @@ class AuthenticationHandler:
                     except:
                         continue
 
+                # Save page source
+                filepath = store_page_source(driver.page_source, "unknown_captcha")
+                logger.info(f"Stored unknown captcha page source at: {filepath}")
+
                 # Log page source when we can't determine the state
-                logger.info("\n=== PAGE SOURCE FOR UNKNOWN STATE START ===")
-                logger.info(driver.page_source)
-                logger.info("=== PAGE SOURCE FOR UNKNOWN STATE END ===\n")
                 logger.info("No definitive state found, returning UNKNOWN")
                 return LoginVerificationState.UNKNOWN
 
@@ -319,9 +325,9 @@ class AuthenticationHandler:
 
             except TimeoutException:
                 # If we timeout, log the page source to see what's visible
-                logger.info("\n=== PAGE SOURCE AFTER TIMEOUT START ===")
-                logger.info(self.driver.page_source)
-                logger.info("=== PAGE SOURCE AFTER TIMEOUT END ===\n")
+                filepath = store_page_source(self.driver.page_source, "unknown_timeout")
+                logger.info(f"Stored unknown timeout page source at: {filepath}")
+
                 logger.error("Could not verify login status within timeout")
                 return False
 

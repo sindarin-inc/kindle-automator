@@ -43,3 +43,14 @@ BOOKMARK_BUTTON_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_bookmark_button"),
     (AppiumBy.XPATH, "//*[contains(@resource-id, 'bookmark_button')]"),
 ]
+
+BOTTOM_SHEET_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_dialog"),
+    (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_pill"),
+]
+
+# Close book button
+CLOSE_BOOK_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_close_book"),  # Primary strategy
+    (AppiumBy.XPATH, "//android.widget.Button[@content-desc='Close Book.']"),  # Fallback strategy
+]
