@@ -51,7 +51,7 @@ class KindleStateMachine:
                                  This prevents infinite loops.
 
         Returns:
-            bool: True if library state was reached, False otherwise.
+            bool: True if library state was reached or CAPTCHA needs solving, False otherwise.
         """
         transitions = 0
         while transitions < max_transitions:
@@ -73,7 +73,17 @@ class KindleStateMachine:
                 logger.error(f"No handler found for state {self.current_state}")
                 return False
 
-            if not handler():
+            # Special handling for CAPTCHA during sign-in
+            result = handler()
+            if not result and self.current_state == AppState.SIGN_IN:
+                # Check if we're actually in CAPTCHA state now
+                new_state = self._get_current_state()
+                if new_state == AppState.CAPTCHA:
+                    logger.info("Sign-in resulted in CAPTCHA state - waiting for client interaction")
+                    self.current_state = new_state
+                    return True
+
+            if not result:
                 logger.error(f"Handler failed for state {self.current_state}")
                 return False
 

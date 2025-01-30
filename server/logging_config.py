@@ -74,7 +74,7 @@ def setup_logger():
             "formatters": {
                 "colored": {
                     "()": RelativePathFormatter,
-                    "format": "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m (\033[33m%(pathname)24s\033[0m) %(message)s",
+                    "format": "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m (\033[33m%(pathname)24s:%(lineno)-4d\033[0m) %(message)s",
                     "datefmt": "%H:%M:%S",
                 },
             },

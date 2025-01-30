@@ -313,8 +313,10 @@ class AuthenticationHandler:
                     # Handle CAPTCHA immediately
                     logger.info("Handling CAPTCHA during verification...")
                     if not self._handle_captcha():
-                        logger.error("Failed to handle CAPTCHA")
-                        return False
+                        # If _handle_captcha returns False, it means we need client interaction
+                        # This is actually a success case where we need the client to solve the CAPTCHA
+                        logger.info("CAPTCHA needs client interaction - returning True")
+                        return True
                     return True
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.ERROR:
                     logger.error(f"Login failed: {result[1]}")
