@@ -5,18 +5,14 @@ import time
 from io import BytesIO
 
 from appium.webdriver.common.appiumby import AppiumBy
+from handlers.library_handler import LibraryHandler
 from PIL import Image
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, WebDriverException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-
-from handlers.library_handler import LibraryHandler
 from server.logging_config import store_page_source
 from views.library.view_strategies import BOOK_TITLE_ELEMENT_ID, BOOK_TITLE_IDENTIFIERS
-from views.reading.interaction_strategies import (
-    BOTTOM_SHEET_IDENTIFIERS,
-    CLOSE_BOOK_STRATEGIES,
-)
+from views.reading.interaction_strategies import BOTTOM_SHEET_IDENTIFIERS, CLOSE_BOOK_STRATEGIES
 from views.reading.view_strategies import (
     PAGE_NAVIGATION_ZONES,
     PAGE_NUMBER_IDENTIFIERS,
@@ -109,15 +105,19 @@ class ReaderHandler:
 
             # Wait for reading controls to appear
             logger.info("Waiting for reading controls to appear...")
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"))
+            WebDriverWait(self.driver, 3).until(
+                lambda x: any(
+                    x.find_element(strategy, locator).is_displayed()
+                    for strategy, locator in READING_TOOLBAR_IDENTIFIERS
+                )
             )
             logger.info("Reading controls visible")
 
             # Short wait for controls to settle
             time.sleep(1)
-        except Exception as e:
-            logger.error(f"Failed to wait for reading view or content: {e}")
+        except TimeoutException:
+            filepath = store_page_source(self.driver.page_source, "reading_view_timeout")
+            logger.error(f"Failed to wait for reading view or content, stored page source at: {filepath}")
             return False
 
         # Log the page source to check for slideout
@@ -215,18 +215,20 @@ class ReaderHandler:
         """Turn to the next page."""
         try:
             # Check if we're in reading toolbar view
-            try:
-                toolbar = self.driver.find_element(*READING_TOOLBAR_IDENTIFIERS[0])
-                if toolbar.is_displayed():
-                    # Tap center to exit toolbar view
-                    logger.info("Tapping center to exit toolbar view")
-                    window_size = self.driver.get_window_size()
-                    center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
-                    center_y = window_size["height"] // 2
-                    self.driver.tap([(center_x, center_y)])
-                    time.sleep(0.5)  # Wait for toolbar to hide
-            except:
-                pass  # Not in toolbar view, continue with page turn
+            for strategy, locator in READING_TOOLBAR_IDENTIFIERS:
+                try:
+                    toolbar = self.driver.find_element(strategy, locator)
+                    if toolbar.is_displayed():
+                        # Tap center to exit toolbar view
+                        logger.info("Tapping center to exit toolbar view")
+                        window_size = self.driver.get_window_size()
+                        center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
+                        center_y = window_size["height"] // 2
+                        self.driver.tap([(center_x, center_y)])
+                        time.sleep(0.5)  # Wait for toolbar to hide
+                        break
+                except:
+                    continue  # Try the next strategy
 
             # Get screen dimensions and calculate tap coordinates
             window_size = self.driver.get_window_size()

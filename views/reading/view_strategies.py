@@ -21,12 +21,23 @@ READING_PROGRESS_IDENTIFIERS = [
         "//android.widget.TextView[@resource-id='com.amazon.kindle:id/reader_footer_page_number_text']",
     ),
 ]
-
 READING_TOOLBAR_IDENTIFIERS = [
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_header_view"),
-    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_close_book"),
-    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_hamburger"),
-    (AppiumBy.ID, "com.amazon.kindle:id/command_bar_title_bottom"),
+    (
+        AppiumBy.XPATH,
+        "//android.view.View[@resource-id='com.amazon.kindle:id/reader_header_view']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[@resource-id='com.amazon.kindle:id/menuitem_close_book']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[@resource-id='com.amazon.kindle:id/menuitem_hamburger']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/command_bar_title_bottom']",
+    ),
 ]
 
 BOTTOM_SHEET_IDENTIFIERS = [

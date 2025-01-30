@@ -61,17 +61,6 @@ BOTTOM_NAV_IDENTIFIERS = [
     ),
 ]
 
-# Library view content identifiers
-LIBRARY_VIEW_IDENTIFIERS = [
-    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_content']"),
-    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_view']"),
-    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_toolbar']"),
-    (
-        AppiumBy.XPATH,
-        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']",
-    ),
-]
-
 # View mode identifiers
 GRID_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/grid_view']"),
@@ -79,8 +68,7 @@ GRID_VIEW_IDENTIFIERS = [
 ]
 
 LIST_VIEW_IDENTIFIERS = [
-    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/list_view']"),
-    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/list_recycler_view']"),
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/lib_book_row_title']"),
 ]
 
 # Book element identifiers - updated for tablet layout
@@ -139,4 +127,98 @@ BOOK_AUTHOR_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_author"
 
 BOOK_AUTHOR_IDENTIFIERS = [
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/lib_book_row_author']"),
+]
+
+# Library tab selection strategies - moved from view_inspector.py
+LIBRARY_TAB_SELECTION_STRATEGIES = [
+    # Primary strategy - check for exact content-desc match
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab selected']"),
+    # Secondary strategy - check for selected child elements
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/library_tab']//android.widget.ImageView[@selected='true']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/library_tab']//android.widget.TextView[@selected='true']",
+    ),
+    # Additional strategy - check for both child elements being selected
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/library_tab'][.//android.widget.ImageView[@selected='true'] and .//android.widget.TextView[@selected='true']]",
+    ),
+    # Fallback strategy - check for content-desc without selected attribute
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab selected' and .//android.widget.ImageView[@selected='true'] and .//android.widget.TextView[@selected='true']]",
+    ),
+]
+
+# Library tab child element selection strategies - moved from library_handler.py
+LIBRARY_TAB_CHILD_SELECTION_STRATEGIES = [
+    # Check for selected icon and label together
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/library_tab']//android.widget.ImageView[@selected='true']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/library_tab']//android.widget.TextView[@selected='true']",
+    ),
+]
+
+# Library-specific element detection strategies
+LIBRARY_ELEMENT_DETECTION_STRATEGIES = [
+    # Primary identifiers - most specific and reliable
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_recycler_container']"),
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_root_view']"),
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_screenlet_root']"),
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_view_root']"),
+]
+
+# Combined library view detection strategies
+LIBRARY_VIEW_DETECTION_STRATEGIES = [
+    # Primary identifiers - most specific and reliable
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_root_view']"),
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_recycler_container']"),
+    # Secondary identifiers - specific to library functionality
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_top_tool_bar_layout']"),
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/sort_filter']"),  # View options button
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/filter_root']"),  # Filter section
+    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/search_box']"),  # Search box
+]
+
+# View options menu strategies
+VIEW_OPTIONS_MENU_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/view_and_sort_menu_dismiss"),  # DONE button
+]
+
+# View options done button strategies
+VIEW_OPTIONS_DONE_BUTTON_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/view_and_sort_menu_dismiss"),  # DONE button
+]
+
+# Library content container strategies
+LIBRARY_CONTENT_CONTAINER_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"),  # Content container
+]
+
+# Reader drawer layout identifiers
+READER_DRAWER_LAYOUT_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
+]
+
+# WebView identifiers
+WEBVIEW_IDENTIFIERS = [
+    (AppiumBy.CLASS_NAME, "android.webkit.WebView"),
+]
+
+# Reader content identifiers
+READER_CONTENT_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"),
+]
+
+# Reader footer identifiers
+READER_FOOTER_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"),
 ]

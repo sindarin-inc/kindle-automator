@@ -5,6 +5,7 @@ import traceback
 from typing import List, Optional
 
 from appium.webdriver.common.appiumby import AppiumBy
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -33,6 +34,15 @@ from views.library.view_strategies import (
     LIBRARY_TAB_SELECTION_IDENTIFIERS,
     LIBRARY_VIEW_IDENTIFIERS,
     LIST_VIEW_IDENTIFIERS,
+    LIBRARY_TAB_CHILD_SELECTION_STRATEGIES,
+    LIBRARY_VIEW_DETECTION_STRATEGIES,
+    VIEW_OPTIONS_MENU_STRATEGIES,
+    VIEW_OPTIONS_DONE_BUTTON_STRATEGIES,
+    LIBRARY_CONTENT_CONTAINER_STRATEGIES,
+    READER_DRAWER_LAYOUT_IDENTIFIERS,
+    WEBVIEW_IDENTIFIERS,
+    READER_CONTENT_IDENTIFIERS,
+    READER_FOOTER_IDENTIFIERS,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 
@@ -65,20 +75,34 @@ class LibraryHandler:
                             return True
                 else:  # Simple strategy
                     by, value = strategy
-                    self.driver.find_element(by, value)
-                    logger.info(f"Found library tab with strategy: {by}")
-                    return True
-            except Exception as e:
-                logger.debug(f"Strategy failed: {e}")
+                    element = self.driver.find_element(by, value)
+                    if element.is_displayed():
+                        logger.info(f"Found library tab with strategy: {by}")
+                        return True
+            except NoSuchElementException:
                 continue
 
         # If we're here, check if we're in the library view by looking for library-specific elements
         try:
-            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+            for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
                 try:
-                    self.driver.find_element(strategy, locator)
-                    logger.info(f"Found library view element: {locator}")
-                    return True
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"Found library view element: {locator}")
+                        # Also check for selected child elements
+                        try:
+                            # Check both child elements are selected
+                            all_selected = True
+                            for child_strategy, child_locator in LIBRARY_TAB_CHILD_SELECTION_STRATEGIES:
+                                child = self.driver.find_element(child_strategy, child_locator)
+                                if not child.is_displayed():
+                                    all_selected = False
+                                    break
+                            if all_selected:
+                                logger.info("Found library tab child elements selected")
+                                return True
+                        except:
+                            pass
                 except:
                     continue
         except Exception as e:
@@ -131,7 +155,10 @@ class LibraryHandler:
                     library_tab.click()
                     logger.info("Clicked Library tab")
                     time.sleep(1)  # Wait for tab switch animation
-                    return True
+                    # Verify we're in library view
+                    if self._is_library_tab_selected():
+                        logger.info("Successfully switched to library tab")
+                        return True
                 except Exception as e:
                     logger.debug(f"Library tab identifier failed - {strategy}: {e}")
                     continue
@@ -148,10 +175,23 @@ class LibraryHandler:
                         library_tab.click()
                         logger.info("Clicked Library tab")
                         time.sleep(1)  # Wait for tab switch animation
-                        return True
+                        # Verify we're in library view
+                        if self._is_library_tab_selected():
+                            logger.info("Successfully switched to library tab")
+                            return True
                     except Exception as e:
                         logger.debug(f"Strategy {strategy} failed: {e}")
                         continue
+
+            # If we're here, try checking if we're already in the library view
+            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"Found library view element: {locator}")
+                        return True
+                except:
+                    continue
 
             logger.error("Failed to find Library tab with any strategy")
             return False
@@ -183,8 +223,7 @@ class LibraryHandler:
                     self.driver.find_element(strategy, locator)
                     logger.info(f"List view detected via {strategy}: {locator}")
                     return True
-                except Exception as e:
-                    logger.debug(f"List view strategy failed - {strategy}: {locator} - {e}")
+                except NoSuchElementException:
                     continue
             return False
         except Exception as e:
@@ -222,15 +261,15 @@ class LibraryHandler:
                     continue
 
             # Click DONE button
-            try:
-                done_button = self.driver.find_element(
-                    AppiumBy.ID, "com.amazon.kindle:id/view_and_sort_menu_dismiss"
-                )
-                done_button.click()
-                logger.info("Clicked DONE button")
-            except Exception as e:
-                logger.error(f"Failed to click DONE button: {e}")
-                return False
+            for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
+                try:
+                    done_button = self.driver.find_element(strategy, locator)
+                    done_button.click()
+                    logger.info("Clicked DONE button")
+                    break
+                except Exception as e:
+                    logger.debug(f"Failed to click DONE button with strategy {strategy}: {e}")
+                    continue
 
             # Wait for list view to appear with timeout
             try:
@@ -243,8 +282,8 @@ class LibraryHandler:
                 )
                 logger.info("Successfully switched to list view")
                 return True
-            except Exception as e:
-                logger.error(f"Timed out waiting for list view: {e}")
+            except TimeoutException:
+                logger.error(f"Timed out waiting for list view")
                 # Get page source for debugging
                 filepath = store_page_source(self.driver.page_source, "unknown_timeout")
                 logger.info(f"Stored unknown timeout page source at: {filepath}")
@@ -347,11 +386,6 @@ class LibraryHandler:
         except Exception as e:
             logger.error(f"Error getting book titles: {e}")
             return []
-
-    def list_books(self):
-        """List all books in the library"""
-        # TODO: Implement book listing functionality
-        pass
 
     def _normalize_title(self, title: str) -> str:
         """Normalize a title by removing all characters except alphanumeric and spaces."""
@@ -510,7 +544,7 @@ class LibraryHandler:
                     # Wait for WebView to load
                     logger.info("Waiting for sign in WebView to load...")
                     WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.webkit.WebView"))
+                        EC.presence_of_element_located(WEBVIEW_IDENTIFIERS[0])
                     )
                     time.sleep(1)  # Short wait for WebView content to load
 

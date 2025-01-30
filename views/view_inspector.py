@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 
+from selenium.common.exceptions import NoSuchElementException
 from appium.webdriver.common.appiumby import AppiumBy
 
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
@@ -12,9 +13,14 @@ from views.auth.view_strategies import (
     PASSWORD_VIEW_IDENTIFIERS,
 )
 from views.core.app_state import AppState, AppView
+from views.core.tab_strategies import get_tab_selection_strategies
 from server.logging_config import store_page_source
 from views.home.view_strategies import HOME_TAB_IDENTIFIERS, HOME_VIEW_IDENTIFIERS
-from views.library.view_strategies import EMPTY_LIBRARY_IDENTIFIERS, LIBRARY_VIEW_IDENTIFIERS
+from views.library.view_strategies import (
+    EMPTY_LIBRARY_IDENTIFIERS,
+    LIBRARY_VIEW_IDENTIFIERS,
+    LIBRARY_TAB_SELECTION_STRATEGIES,
+)
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
@@ -52,63 +58,18 @@ class ViewInspector:
             logger.error(f"Error bringing app to foreground: {e}")
             return False
 
-    def _get_tab_selection_strategies(self, tab_name):
-        """Generate strategies for detecting tab selection state.
-
-        Args:
-            tab_name (str): Name of the tab to check (e.g. 'LIBRARY', 'HOME')
-
-        Returns:
-            list: List of tuples containing strategies to detect if the tab is selected
-        """
-        return [
-            (
-                AppiumBy.ANDROID_UIAUTOMATOR,
-                f'new UiSelector().descriptionContains("{tab_name}, Tab selected")',
-            ),
-            (
-                AppiumBy.ID,
-                f"com.amazon.kindle:id/{tab_name.lower()}_tab",
-                {
-                    "icon": (
-                        AppiumBy.ID,
-                        "com.amazon.kindle:id/icon",
-                        "selected",
-                        "true",
-                    ),
-                    "label": (
-                        AppiumBy.ID,
-                        "com.amazon.kindle:id/label",
-                        "selected",
-                        "true",
-                    ),
-                },
-            ),
-        ]
-
     def _is_tab_selected(self, tab_name):
         """Check if a specific tab is currently selected."""
         logger.info(f"Checking if {tab_name} tab is selected...")
 
-        for strategy in self._get_tab_selection_strategies(tab_name):
+        for strategy in get_tab_selection_strategies(tab_name):
             try:
-                if len(strategy) == 3:  # Complex strategy with child elements
-                    by, value, child_checks = strategy
-                    tab = self.driver.find_element(by, value)
-
-                    # Check child elements
-                    for child_by, child_value, attr, expected in child_checks.values():
-                        child = tab.find_element(child_by, child_value)
-                        if child.get_attribute(attr) == expected:
-                            logger.info(f"Found {tab_name} tab with '{attr}' in {child_by}")
-                            return True
-                else:  # Simple strategy
-                    by, value = strategy
-                    self.driver.find_element(by, value)
-                    logger.info(f"Found {tab_name} tab with strategy: {by}")
+                by, value = strategy
+                element = self.driver.find_element(by, value)
+                if element.is_displayed():
+                    logger.info(f"Found {tab_name} tab with strategy: {by}, value: {value}")
                     return True
-            except Exception as e:
-                logger.debug(f"Strategy failed: {e}")
+            except NoSuchElementException:
                 continue
 
         logger.info(f"{tab_name} tab is not selected")
@@ -185,23 +146,7 @@ class ViewInspector:
             has_library_root = False
             has_library_tab = False
 
-            # Check for library root view
-            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
-                try:
-                    self.driver.find_element(strategy, locator)
-                    logger.info(f"Found library view indicator: {locator}")
-                    has_library_root = True
-                    break
-                except:
-                    continue
-
-            # Check if library tab is selected
             if self._is_tab_selected("LIBRARY"):
-                logger.info("LIBRARY tab is selected")
-                has_library_tab = True
-
-            # Return LIBRARY view if both conditions are met
-            if has_library_root and has_library_tab:
                 logger.info("Detected LIBRARY view")
                 return AppView.LIBRARY
 
@@ -223,20 +168,17 @@ class ViewInspector:
                     element = self.driver.find_element(strategy, locator)
                     logger.info(f"Found password view element: {element.get_attribute('text')}")
                     return AppView.SIGN_IN_PASSWORD
-                except Exception as e:
-                    logger.debug(f"Strategy {strategy} failed: {e}")
+                except NoSuchElementException:
                     continue
 
             # Check for sign in view
             logger.info("Checking for sign in view...")
             for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
                 try:
-                    logger.info(f"Trying to find sign in view with strategy: {strategy}, locator: {locator}")
                     element = self.driver.find_element(strategy, locator)
                     logger.info(f"Found sign in view element: {element.get_attribute('text')}")
                     return AppView.SIGN_IN
-                except Exception as e:
-                    logger.debug(f"Strategy {strategy} failed: {e}")
+                except NoSuchElementException:
                     continue
 
             # Check for reading view

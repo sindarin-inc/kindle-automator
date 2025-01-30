@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 from handlers.auth_handler import AuthenticationHandler
 from handlers.library_handler import LibraryHandler
@@ -9,6 +10,7 @@ from views.core.app_state import AppState, AppView
 from server.logging_config import store_page_source
 from views.transitions import StateTransitions
 from views.view_inspector import ViewInspector
+from views.library.view_strategies import LIBRARY_ELEMENT_DETECTION_STRATEGIES
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,9 @@ class KindleStateMachine:
 
             if self.current_state == AppState.LIBRARY:
                 logger.info("Successfully reached library state")
+                # Switch to list view if needed
+                if not self.library_handler.switch_to_list_view():
+                    logger.warning("Failed to switch to list view, but we're still in library")
                 return True
 
             # Special handling for CAPTCHA state
@@ -67,6 +72,30 @@ class KindleStateMachine:
                 # Return True to indicate we're in a valid state that needs client interaction
                 logger.info("Reached CAPTCHA state - waiting for client interaction")
                 return True
+
+            # If we're in UNKNOWN state, try to bring app to foreground
+            if self.current_state == AppState.UNKNOWN:
+                logger.info("In UNKNOWN state - bringing app to foreground...")
+                if not self.view_inspector.ensure_app_foreground():
+                    logger.error("Failed to bring app to foreground")
+                    return False
+                time.sleep(1)  # Wait for app to come to foreground
+                # Try to get the current state again
+                self.current_state = self._get_current_state()
+                logger.info(f"After bringing app to foreground, state is: {self.current_state}")
+                if self.current_state == AppState.LIBRARY:
+                    logger.info("Successfully reached library state after bringing app to foreground")
+                    return True
+
+                # If still unknown, try checking for library-specific elements
+                if self.current_state == AppState.UNKNOWN:
+                    logger.info("Still in UNKNOWN state, checking for library-specific elements...")
+                    # Use library handler's existing view detection logic
+                    if self.library_handler._is_library_tab_selected():
+                        logger.info("Library handler detected library view")
+                        return True
+
+                continue
 
             handler = self.transitions.get_handler_for_state(self.current_state)
             if not handler:

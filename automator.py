@@ -84,7 +84,7 @@ class KindleAutomator:
                 return (False, None) if reading_book_title else False
 
             # Handle initial setup and reach library view
-            if not self.handle_initial_setup():
+            if not self.transition_to_library():
                 logger.error("Failed to reach library view")
                 return (False, None) if reading_book_title else False
 
@@ -133,7 +133,7 @@ class KindleAutomator:
             file.write(page_source)
         logger.info(f"Saved current page source ({state_name}) to {file_path}")
 
-    def handle_initial_setup(self):
+    def transition_to_library(self):
         """Handles the initial app setup and ensures we reach the library view"""
         return self.state_machine.transition_to_library()
 

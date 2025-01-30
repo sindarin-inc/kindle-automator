@@ -128,17 +128,21 @@ def ensure_automator_healthy(f):
     """Decorator to ensure automator is initialized and healthy before each operation."""
 
     def wrapper(*args, **kwargs):
-        if not server.automator:
-            server.initialize_automator()
-            if not server.automator.initialize_driver():
-                return {"error": "Failed to initialize driver"}, 500
-            if not server.automator.handle_initial_setup():
-                return {"error": "Failed to reach library view"}, 500
+        try:
+            if not server.automator:
+                logger.info("No automator found, initializing...")
+                server.initialize_automator()
+                if not server.automator.initialize_driver():
+                    return {"error": "Failed to initialize driver"}, 500
 
-        if not server.automator.ensure_driver_running():
-            return {"error": "Failed to ensure driver is running"}, 500
+            if not server.automator.ensure_driver_running():
+                return {"error": "Failed to ensure driver is running"}, 500
 
-        return f(*args, **kwargs)
+            return f(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in automator health check: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": str(e)}, 500
 
     return wrapper
 
@@ -194,7 +198,7 @@ class CaptchaResource(Resource):
 
             # Update captcha solution and retry
             server.automator.captcha_solution = solution
-            success = server.automator.handle_initial_setup()
+            success = server.automator.transition_to_library()
 
             if success:
                 return {"status": "success"}, 200
@@ -222,10 +226,20 @@ class BooksResource(Resource):
                     "image_url": "/screenshots/captcha.png",
                 }, 403
             elif current_state != AppState.LIBRARY:
-                return {
-                    "error": f"Cannot get books in current state: {current_state.name}",
-                    "current_state": current_state.name,
-                }, 400
+                # Try to transition to library state
+                logger.info("Not in library state, attempting to transition...")
+                if server.automator.state_machine.transition_to_library():
+                    logger.info("Successfully transitioned to library state")
+                    # Get books with metadata from library handler
+                    books = server.automator.library_handler.get_book_titles()
+                    if books is None:
+                        return {"error": "Failed to get books"}, 500
+                    return {"books": books}, 200
+                else:
+                    return {
+                        "error": f"Cannot get books in current state: {current_state.name}",
+                        "current_state": current_state.name,
+                    }, 400
 
             # Get books with metadata from library handler
             books = server.automator.library_handler.get_book_titles()
