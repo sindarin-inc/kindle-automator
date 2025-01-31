@@ -50,9 +50,5 @@ SIGN_IN_ERROR_STRATEGIES = [
 ]
 
 # Captcha interaction strategies
-CAPTCHA_INPUT_FIELD = (AppiumBy.XPATH, "//android.widget.EditText[not(@password='true')]")
-
-CAPTCHA_CONTINUE_BUTTON = (
-    AppiumBy.XPATH,
-    "//android.widget.Button[@text='Continue' and @hint='verifyCaptcha']",
-)
+CAPTCHA_INPUT_FIELD = (AppiumBy.XPATH, "//android.widget.EditText")
+CAPTCHA_CONTINUE_BUTTON = (AppiumBy.XPATH, "//android.widget.Button[@text='Continue']")

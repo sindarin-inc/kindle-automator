@@ -5,7 +5,11 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.auth.interaction_strategies import (
+    CAPTCHA_CONTINUE_BUTTON,
+    CAPTCHA_INPUT_FIELD,
+    LIBRARY_SIGN_IN_STRATEGIES,
+)
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from views.core.app_state import AppState, AppView
 
@@ -99,11 +103,40 @@ class StateTransitions:
             AppState.LIBRARY_SIGN_IN: self.handle_library_sign_in,
             AppState.LIBRARY: self.handle_library,
             AppState.READING: self.handle_reading,
-            AppState.CAPTCHA: self.handle_captcha,
+            AppState.CAPTCHA: self._handle_captcha,  # Add new CAPTCHA handler
         }
+
         handler = handlers.get(state)
         if handler:
             logger.info(f"Found handler for state {state}: {handler.__name__}")
         else:
             logger.error(f"No handler found for state {state}")
         return handler
+
+    def _handle_captcha(self):
+        """Handle CAPTCHA state by entering solution if available."""
+        try:
+            # If we have a captcha solution, enter it
+            if self.auth_handler.captcha_solution:
+                logger.info("Entering CAPTCHA solution...")
+
+                # Find and enter the CAPTCHA solution
+                captcha_input = self.driver.find_element(*CAPTCHA_INPUT_FIELD)
+                captcha_input.clear()
+                captcha_input.send_keys(self.auth_handler.captcha_solution)
+
+                # Find and click submit button
+                submit_button = self.driver.find_element(*CAPTCHA_CONTINUE_BUTTON)
+                submit_button.click()
+
+                # Wait briefly for transition
+                time.sleep(2)
+                return True
+
+            # No solution available, need client interaction
+            logger.info("No CAPTCHA solution available")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error handling CAPTCHA: {e}")
+            return False

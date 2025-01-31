@@ -46,16 +46,11 @@ class KindleStateMachine:
         return AppState[view.name]
 
     def transition_to_library(self, max_transitions=5):
-        """Attempt to transition to the library state.
-
-        Args:
-            max_transitions (int): Maximum number of transitions to attempt before giving up.
-                                 This prevents infinite loops.
-
-        Returns:
-            bool: True if library state was reached or CAPTCHA needs solving, False otherwise.
-        """
+        """Attempt to transition to the library state."""
         transitions = 0
+        unknown_retries = 0
+        MAX_UNKNOWN_RETRIES = 3  # Maximum times to try recovering from UNKNOWN state
+
         while transitions < max_transitions:
             self.current_state = self._get_current_state()
             logger.info(f"Current state: {self.current_state}")
@@ -67,19 +62,25 @@ class KindleStateMachine:
                     logger.warning("Failed to switch to list view, but we're still in library")
                 return True
 
-            # Special handling for CAPTCHA state
-            if self.current_state == AppState.CAPTCHA:
-                # Return True to indicate we're in a valid state that needs client interaction
-                logger.info("Reached CAPTCHA state - waiting for client interaction")
-                return True
-
             # If we're in UNKNOWN state, try to bring app to foreground
             if self.current_state == AppState.UNKNOWN:
-                logger.info("In UNKNOWN state - bringing app to foreground...")
+                unknown_retries += 1
+                if unknown_retries > MAX_UNKNOWN_RETRIES:
+                    logger.error(
+                        f"Failed to recover from UNKNOWN state after {MAX_UNKNOWN_RETRIES} attempts. "
+                        "Please check screenshots/unknown_view.png and fixtures/dumps/unknown_view.xml "
+                        "to determine why the view cannot be recognized."
+                    )
+                    return False
+
+                logger.info(
+                    f"In UNKNOWN state (attempt {unknown_retries}/{MAX_UNKNOWN_RETRIES}) - bringing app to foreground..."
+                )
                 if not self.view_inspector.ensure_app_foreground():
                     logger.error("Failed to bring app to foreground")
                     return False
                 time.sleep(1)  # Wait for app to come to foreground
+
                 # Try to get the current state again
                 self.current_state = self._get_current_state()
                 logger.info(f"After bringing app to foreground, state is: {self.current_state}")
@@ -102,10 +103,23 @@ class KindleStateMachine:
                 logger.error(f"No handler found for state {self.current_state}")
                 return False
 
-            # Special handling for CAPTCHA during sign-in
+            # Handle current state
             result = handler()
-            if not result and self.current_state == AppState.SIGN_IN:
-                # Check if we're actually in CAPTCHA state now
+
+            # Special handling for CAPTCHA state
+            if self.current_state == AppState.CAPTCHA:
+                logger.info(
+                    "In CAPTCHA state with solution: %s",
+                    self.auth_handler.captcha_solution,
+                )
+                if not result:
+                    # If handler returns False, we need client interaction
+                    logger.info("CAPTCHA handler needs client interaction")
+                    return True
+                # If handler succeeds, continue with transitions
+                continue
+            # Check if sign-in resulted in CAPTCHA
+            elif not result and self.current_state == AppState.SIGN_IN:
                 new_state = self._get_current_state()
                 if new_state == AppState.CAPTCHA:
                     logger.info("Sign-in resulted in CAPTCHA state - waiting for client interaction")

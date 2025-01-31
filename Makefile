@@ -99,6 +99,14 @@ test-2fa:
 		-d '{"code": "123456"}' \
 		-v
 
+# Test Captcha endpoint
+test-captcha:
+	@echo "Posting captcha solution..."
+	@curl -X POST http://localhost:4098/captcha \
+		-H "Content-Type: application/json" \
+		-d '{"solution": "wtnxzp"}' \
+		-v
+
 # Test books endpoint
 test-books:
 	@echo "Getting list of books..."

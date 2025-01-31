@@ -160,33 +160,20 @@ class StateResource(Resource):
 
 class CaptchaResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def get(self):
         """Get current captcha status and image if present"""
         try:
-            logger.info(f"Checking captcha status: {server.automator.state_machine.current_state}")
-            if server.automator.state_machine.current_state == AppState.CAPTCHA:
-                # Get path to latest captcha image
-                captcha_path = os.path.join("screenshots", "captcha.png")
-                if os.path.exists(captcha_path):
-                    return {
-                        "status": "captcha_required",
-                        "message": "Automation stopped at captcha screen. Please solve the captcha.",
-                        "image_url": "/screenshots/captcha.png",
-                    }, 200
-                else:
-                    return {
-                        "status": "captcha_required",
-                        "message": "Captcha required but image not found",
-                        "error": "Captcha image not found",
-                    }, 500
+            # Return simple success response - the response handler will
+            # intercept if we're in CAPTCHA state
             return {"status": "no_captcha"}, 200
-
         except Exception as e:
             logger.error(f"Error checking captcha: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
         """Submit captcha solution"""
         try:
@@ -196,8 +183,8 @@ class CaptchaResource(Resource):
             if not solution:
                 return {"error": "Captcha solution required"}, 400
 
-            # Update captcha solution and retry
-            server.automator.captcha_solution = solution
+            # Update captcha solution if different
+            server.automator.update_captcha_solution(solution)
             success = server.automator.transition_to_library()
 
             if success:

@@ -157,6 +157,23 @@ class KindleAutomator:
             logger.error(f"Error ensuring driver is running: {e}")
             return False
 
+    def update_captcha_solution(self, solution):
+        """Update captcha solution across all components if different.
+
+        Args:
+            solution: The new captcha solution to set
+
+        Returns:
+            bool: True if solution was updated (was different), False otherwise
+        """
+        if solution != self.captcha_solution:
+            logger.info("Updating captcha solution")
+            self.captcha_solution = solution
+            if self.state_machine:
+                self.state_machine.auth_handler.captcha_solution = solution
+            return True
+        return False
+
 
 def main():
     parser = argparse.ArgumentParser(description="Kindle Automation Tool")
