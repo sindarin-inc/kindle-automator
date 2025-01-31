@@ -1,13 +1,6 @@
 import argparse
 import logging
 import os
-import socket
-import subprocess
-import time
-from typing import Tuple, Union
-
-from appium import webdriver
-from appium.options.android import UiAutomator2Options
 
 from driver import Driver
 from handlers.library_handler import LibraryHandler
@@ -84,17 +77,22 @@ class KindleAutomator:
 
             # Handle initial setup and reach library view
             if not self.transition_to_library():
+                # Check if we're on a captcha screen - this is actually a success case
+                # that requires client interaction
+                if self.state_machine.current_state == AppState.CAPTCHA:
+                    logger.info(
+                        "Automation stopped at captcha screen. Please solve the captcha in captcha.png"
+                    )
+                    logger.info("Then update CAPTCHA_SOLUTION in config.py and run again")
+                    # Don't cleanup - keep driver alive for next request
+                    return (True, None) if reading_book_title else True
+
                 logger.error("Failed to reach library view")
+                self.cleanup()  # Only cleanup on actual failure
                 return (False, None) if reading_book_title else False
 
             # Store the current page source
             self.store_current_page_source()
-
-            # Check if we're on a captcha screen
-            if self.state_machine.current_state == AppState.CAPTCHA:
-                logger.info("Automation stopped at captcha screen. Please solve the captcha in captcha.png")
-                logger.info("Then update CAPTCHA_SOLUTION in config.py and run again")
-                return (False, None) if reading_book_title else False
 
             # Always get book titles first for debugging
             logger.info("Getting book titles...")
@@ -106,7 +104,10 @@ class KindleAutomator:
 
             # If we're reading a specific book
             if reading_book_title:
-                return self.reader_handler.handle_reading_flow(reading_book_title)
+                result = self.reader_handler.handle_reading_flow(reading_book_title)
+                if not result[0]:  # Only cleanup on failure
+                    self.cleanup()
+                return result
 
             return True
 
@@ -115,9 +116,8 @@ class KindleAutomator:
             import traceback
 
             traceback.print_exc()
+            self.cleanup()  # Cleanup on exception
             return (False, None) if reading_book_title else False
-        finally:
-            self.cleanup()
 
     def store_current_page_source(self):
         """Store the current page source as a screenshot"""

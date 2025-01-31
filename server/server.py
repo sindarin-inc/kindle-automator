@@ -1,21 +1,19 @@
 import base64
-import json
 import logging
-import multiprocessing
 import os
 import signal
 import subprocess
 import traceback
-from io import BytesIO
 from typing import Optional
 
-from automator import KindleAutomator
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, request
 from flask_restful import Api, Resource
+
+from automator import KindleAutomator
 from handlers.test_fixtures_handler import TestFixturesHandler
-from PIL import Image
-from views.core.app_state import AppState
 from server.logging_config import setup_logger
+from server.response_handler import handle_automator_response
+from views.core.app_state import AppState
 
 setup_logger()
 logger = logging.getLogger(__name__)
@@ -214,6 +212,7 @@ class CaptchaResource(Resource):
 
 class BooksResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def get(self):
         """Get list of available books with metadata"""
         try:
@@ -221,13 +220,7 @@ class BooksResource(Resource):
             logger.info(f"Current state when getting books: {current_state}")
 
             # Handle different states
-            if current_state == AppState.CAPTCHA:
-                return {
-                    "status": "captcha_required",
-                    "message": "Authentication requires captcha solution",
-                    "image_url": "/screenshots/captcha.png",
-                }, 403
-            elif current_state != AppState.LIBRARY:
+            if current_state != AppState.LIBRARY:
                 # Try to transition to library state
                 logger.info("Not in library state, attempting to transition...")
                 if server.automator.state_machine.transition_to_library():
@@ -320,6 +313,7 @@ class NavigationResource(Resource):
 
 class BookOpenResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
         """Open a specific book"""
         try:
@@ -333,8 +327,10 @@ class BookOpenResource(Resource):
 
             success, page = server.automator.run(reading_book_title=book_title)
             logger.info(f"Book opened: {success}, page: {page}")
+
             if success:
                 return {"success": True, "page": page}, 200
+
             return {"error": "Failed to open book"}, 500
 
         except Exception as e:

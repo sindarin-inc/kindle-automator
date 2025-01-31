@@ -6,11 +6,11 @@ from handlers.auth_handler import AuthenticationHandler
 from handlers.library_handler import LibraryHandler
 from handlers.permissions_handler import PermissionsHandler
 from handlers.reader_handler import ReaderHandler
-from views.core.app_state import AppState, AppView
 from server.logging_config import store_page_source
+from views.core.app_state import AppState, AppView
+from views.library.view_strategies import LIBRARY_ELEMENT_DETECTION_STRATEGIES
 from views.transitions import StateTransitions
 from views.view_inspector import ViewInspector
-from views.library.view_strategies import LIBRARY_ELEMENT_DETECTION_STRATEGIES
 
 logger = logging.getLogger(__name__)
 

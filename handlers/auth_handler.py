@@ -10,6 +10,7 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from server.logging_config import store_page_source
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -29,7 +30,6 @@ from views.auth.view_strategies import (
     LIBRARY_VIEW_VERIFICATION_STRATEGIES,
     PASSWORD_VIEW_IDENTIFIERS,
 )
-from server.logging_config import store_page_source
 
 logger = logging.getLogger(__name__)
 

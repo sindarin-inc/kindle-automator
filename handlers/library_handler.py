@@ -1,12 +1,9 @@
 import logging
 import os
 import time
-import traceback
-from typing import List, Optional
 
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -19,30 +16,21 @@ from views.library.interaction_strategies import (
     MENU_CLOSE_STRATEGIES,
     SAFE_TAP_AREAS,
     VIEW_OPTIONS_BUTTON_STRATEGIES,
-    VIEW_OPTIONS_DONE_STRATEGIES,
 )
 from views.library.view_strategies import (
-    BOOK_AUTHOR_ELEMENT_ID,
-    BOOK_AUTHOR_IDENTIFIERS,
     BOOK_METADATA_IDENTIFIERS,
     BOOK_TITLE_ELEMENT_ID,
     BOOK_TITLE_IDENTIFIERS,
     BOTTOM_NAV_IDENTIFIERS,
-    EMPTY_LIBRARY_IDENTIFIERS,
     GRID_VIEW_IDENTIFIERS,
+    LIBRARY_TAB_CHILD_SELECTION_STRATEGIES,
     LIBRARY_TAB_IDENTIFIERS,
     LIBRARY_TAB_SELECTION_IDENTIFIERS,
+    LIBRARY_VIEW_DETECTION_STRATEGIES,
     LIBRARY_VIEW_IDENTIFIERS,
     LIST_VIEW_IDENTIFIERS,
-    LIBRARY_TAB_CHILD_SELECTION_STRATEGIES,
-    LIBRARY_VIEW_DETECTION_STRATEGIES,
-    VIEW_OPTIONS_MENU_STRATEGIES,
     VIEW_OPTIONS_DONE_BUTTON_STRATEGIES,
-    LIBRARY_CONTENT_CONTAINER_STRATEGIES,
-    READER_DRAWER_LAYOUT_IDENTIFIERS,
     WEBVIEW_IDENTIFIERS,
-    READER_CONTENT_IDENTIFIERS,
-    READER_FOOTER_IDENTIFIERS,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 
@@ -127,7 +115,6 @@ class LibraryHandler:
                 logger.info(f"Found bottom navigation using {strategy}")
                 return nav
             except Exception as e:
-                logger.debug(f"Bottom nav strategy failed - {strategy}: {e}")
                 continue
         return None
 
@@ -160,7 +147,6 @@ class LibraryHandler:
                         logger.info("Successfully switched to library tab")
                         return True
                 except Exception as e:
-                    logger.debug(f"Library tab identifier failed - {strategy}: {e}")
                     continue
 
             # Try to find the bottom navigation bar
