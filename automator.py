@@ -34,10 +34,9 @@ class KindleAutomator:
     def cleanup(self):
         """Cleanup resources."""
         if self.driver:
-            try:
-                self.driver.quit()
-            except:
-                pass
+            Driver.reset()  # This will allow reinitialization
+            self.driver = None
+            self.device_id = None
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""

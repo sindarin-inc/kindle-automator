@@ -11,9 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 class Driver:
+    _instance = None
+    _initialized = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            logger.info("Creating new Driver instance")
+            cls._instance = super(Driver, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        self.driver = None
-        self.device_id = None
+        # Only initialize once
+        if not Driver._initialized:
+            logger.info("Initializing Driver")
+            self.driver = None
+            self.device_id = None
+            Driver._initialized = True
 
     def _get_emulator_device_id(self) -> Optional[str]:
         """Get the emulator device ID from adb devices."""
@@ -233,5 +246,18 @@ class Driver:
 
     def quit(self):
         """Quit the Appium driver"""
+        logger.info(f"Quitting driver: {self.driver}")
         if self.driver:
             self.driver.quit()
+            self.driver = None
+            self.device_id = None
+            Driver._initialized = False  # Allow reinitialization
+
+    @classmethod
+    def reset(cls):
+        """Reset the singleton instance"""
+        logger.info("Resetting Driver")
+        if cls._instance:
+            cls._instance.quit()
+            cls._instance = None
+            cls._initialized = False

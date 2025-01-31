@@ -151,6 +151,7 @@ class StateResource(Resource):
     @ensure_automator_healthy
     def get(self):
         try:
+            logger.info(f"Getting state: {server.automator.state_machine.current_state}")
             current_state = server.automator.state_machine.current_state
             return {"state": current_state.name}, 200
         except Exception as e:
@@ -164,6 +165,7 @@ class CaptchaResource(Resource):
     def get(self):
         """Get current captcha status and image if present"""
         try:
+            logger.info(f"Checking captcha status: {server.automator.state_machine.current_state}")
             if server.automator.state_machine.current_state == AppState.CAPTCHA:
                 # Get path to latest captcha image
                 captcha_path = os.path.join("screenshots", "captcha.png")
@@ -324,10 +326,13 @@ class BookOpenResource(Resource):
             data = request.get_json()
             book_title = data.get("title")
 
+            logger.info(f"Opening book: {book_title}")
+
             if not book_title:
                 return {"error": "Book title required"}, 400
 
             success, page = server.automator.run(reading_book_title=book_title)
+            logger.info(f"Book opened: {success}, page: {page}")
             if success:
                 return {"success": True, "page": page}, 200
             return {"error": "Failed to open book"}, 500
@@ -345,6 +350,8 @@ class StyleResource(Resource):
         try:
             data = request.get_json()
             settings = data.get("settings", {})
+
+            logger.info(f"Updating style settings: {settings}")
 
             # Example settings: font_size, brightness, background_color
             success = server.automator.reader_handler.update_style_settings(settings)
@@ -366,6 +373,8 @@ class TwoFactorResource(Resource):
         try:
             data = request.get_json()
             code = data.get("code")
+
+            logger.info(f"Submitting 2FA code: {code}")
 
             if not code:
                 return {"error": "2FA code required"}, 400

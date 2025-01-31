@@ -186,6 +186,7 @@ class AuthenticationHandler:
 
             except TimeoutException:
                 logger.error("Timed out waiting for password page or error message")
+                store_page_source(self.driver.page_source, "auth_email_timeout")
                 return False
 
         except Exception as e:
@@ -293,7 +294,7 @@ class AuthenticationHandler:
                         continue
 
                 # Save page source
-                filepath = store_page_source(driver.page_source, "unknown_captcha")
+                filepath = store_page_source(driver.page_source, "auth_captcha")
                 logger.info(f"Stored unknown captcha page source at: {filepath}")
 
                 # Log page source when we can't determine the state
@@ -327,7 +328,7 @@ class AuthenticationHandler:
 
             except TimeoutException:
                 # If we timeout, log the page source to see what's visible
-                filepath = store_page_source(self.driver.page_source, "unknown_timeout")
+                filepath = store_page_source(self.driver.page_source, "auth_login_timeout")
                 logger.info(f"Stored unknown timeout page source at: {filepath}")
 
                 logger.error("Could not verify login status within timeout")
