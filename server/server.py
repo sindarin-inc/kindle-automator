@@ -302,7 +302,7 @@ class BookOpenResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
-        """Open a specific book"""
+        """Open a specific book. Note that if we're already in a book, we don't know exactly which one, which we need to back out to the library first, then re-open the book."""
         try:
             data = request.get_json()
             book_title = data.get("title")

@@ -54,3 +54,9 @@ CLOSE_BOOK_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/menuitem_close_book"),  # Primary strategy
     (AppiumBy.XPATH, "//android.widget.Button[@content-desc='Close Book.']"),  # Fallback strategy
 ]
+
+# Full screen dialog interaction
+FULL_SCREEN_DIALOG_GOT_IT = [
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
+    (AppiumBy.ID, "android:id/button1"),  # Fallback using button ID
+]

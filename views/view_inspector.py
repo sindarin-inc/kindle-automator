@@ -28,7 +28,10 @@ from views.library.view_strategies import (
     LIBRARY_VIEW_IDENTIFIERS,
 )
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
-from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
+from views.reading.view_strategies import (
+    READING_VIEW_FULL_SCREEN_DIALOG,
+    READING_VIEW_IDENTIFIERS,
+)
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 
 logger = logging.getLogger(__name__)
@@ -145,6 +148,25 @@ class ViewInspector:
                     continue
 
             logger.info("Determining current view...")
+
+            # Check for reading view or full screen dialog
+            for strategy, locator in READING_VIEW_IDENTIFIERS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    logger.info("   Found reading view element")
+                    return AppView.READING
+                except NoSuchElementException:
+                    continue
+
+            # Also check for full screen dialog which indicates reading view
+            for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    logger.info("   Found reading view full screen dialog")
+                    return AppView.READING
+                except NoSuchElementException:
+                    continue
+
             # Check for auth-related views first
             if self._is_auth_view():
                 # Store auth page source for debugging
@@ -219,11 +241,6 @@ class ViewInspector:
                     return AppView.SIGN_IN
                 except NoSuchElementException:
                     continue
-
-            # Check for reading view
-            logger.info("   Checking for reading view...")
-            if self._try_find_element(READING_VIEW_IDENTIFIERS, "   Found reading view"):
-                return AppView.READING
 
             # Check for general app indicators
             logger.info("   Checking for general app indicators...")

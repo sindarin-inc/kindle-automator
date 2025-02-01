@@ -24,25 +24,20 @@ READING_PROGRESS_IDENTIFIERS = [
 READING_TOOLBAR_IDENTIFIERS = [
     (
         AppiumBy.XPATH,
-        "//android.view.View[@resource-id='com.amazon.kindle:id/reader_header_view']",
-    ),
-    (
-        AppiumBy.XPATH,
         "//android.widget.Button[@resource-id='com.amazon.kindle:id/menuitem_close_book']",
     ),
     (
         AppiumBy.XPATH,
         "//android.widget.Button[@resource-id='com.amazon.kindle:id/menuitem_hamburger']",
     ),
-    (
-        AppiumBy.XPATH,
-        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/command_bar_title_bottom']",
-    ),
 ]
 
 BOTTOM_SHEET_IDENTIFIERS = [
-    (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_dialog"),
-    (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_pill"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/bottom_sheet_dialog']",
+    ),
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/bottom_sheet_pill']"),
 ]
 
 PAGE_NUMBER_IDENTIFIERS = [
@@ -62,3 +57,11 @@ PAGE_NAVIGATION_ZONES = {
     "prev": 0.1,  # 10% of screen width for previous page
     "center": 0.5,  # 50% for center taps
 }
+
+# Full screen dialog detection
+READING_VIEW_FULL_SCREEN_DIALOG = [
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/immersive_cling_title' and @text='Viewing full screen']",
+    ),
+]

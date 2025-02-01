@@ -79,7 +79,7 @@ class StateTransitions:
     def handle_reading(self):
         """Handle READING state by navigating back to library."""
         logger.info("Handling READING state - navigating back to library...")
-        return self.reader_handler.handle_reading()
+        return self.reader_handler.navigate_back_to_library()
 
     def handle_captcha(self):
         """Handle CAPTCHA state by attempting to solve captcha."""
