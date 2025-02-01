@@ -53,8 +53,8 @@ PAGE_NUMBER_IDENTIFIERS = [
 
 # Add tap zones for page navigation
 PAGE_NAVIGATION_ZONES = {
-    "next": 0.9,  # 90% of screen width for next page
-    "prev": 0.1,  # 10% of screen width for previous page
+    "next": 0.95,  # 95% of screen width for next page (further right)
+    "prev": 0.05,  # 5% of screen width for previous page (further left)
     "center": 0.5,  # 50% for center taps
 }
 

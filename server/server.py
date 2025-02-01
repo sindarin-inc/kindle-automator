@@ -3,10 +3,11 @@ import logging
 import os
 import signal
 import subprocess
+import time
 import traceback
 from typing import Optional
 
-from flask import Flask, request
+from flask import Flask, request, send_file
 from flask_restful import Api, Resource
 
 from automator import KindleAutomator
@@ -271,30 +272,28 @@ class NavigationResource(Resource):
                 return {"error": "Invalid action"}, 400
 
             if success:
-                # Get current page number and progress after navigation
+                # Get current page number and progress
                 page_number = server.automator.reader_handler.get_current_page()
                 progress = server.automator.reader_handler.get_reading_progress()
 
-                # Capture screenshot
-                screenshot_path = os.path.join(server.automator.screenshots_dir, "current_screen.png")
+                # Save screenshot with unique ID
+                screenshot_id = f"page_{int(time.time())}"
+                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
                 server.automator.driver.save_screenshot(screenshot_path)
 
-                # Convert screenshot to base64
-                with open(screenshot_path, "rb") as img_file:
-                    img_data = base64.b64encode(img_file.read()).decode()
-
+                # Return URL to image
+                image_url = f"/image/{screenshot_id}"
                 return {
                     "success": True,
                     "page": page_number,
                     "progress": progress,
-                    "screenshot": img_data,
+                    "screenshot_url": image_url,
                 }, 200
 
             return {"error": "Navigation failed"}, 500
 
         except Exception as e:
             logger.error(f"Navigation error: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -302,7 +301,7 @@ class BookOpenResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
-        """Open a specific book. Note that if we're already in a book, we don't know exactly which one, which we need to back out to the library first, then re-open the book."""
+        """Open a specific book."""
         try:
             data = request.get_json()
             book_title = data.get("title")
@@ -316,13 +315,19 @@ class BookOpenResource(Resource):
             logger.info(f"Book opened: {success}, page: {page}")
 
             if success:
-                return {"success": True, "page": page}, 200
+                # Save screenshot with unique ID
+                screenshot_id = f"book_page_{int(time.time())}"
+                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+                server.automator.driver.save_screenshot(screenshot_path)
+
+                # Return URL to image
+                image_url = f"/image/{screenshot_id}"
+                return {"success": True, "page": page, "screenshot_url": image_url}, 200
 
             return {"error": "Failed to open book"}, 500
 
         except Exception as e:
             logger.error(f"Error opening book: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
@@ -389,6 +394,35 @@ class FixturesResource(Resource):
             return {"error": str(e)}, 500
 
 
+class ImageResource(Resource):
+    def get(self, image_id):
+        """Get an image by ID and delete it after serving."""
+        try:
+            # Build path to image using project root
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            image_path = os.path.join(project_root, "screenshots", f"{image_id}.png")
+
+            if not os.path.exists(image_path):
+                logger.error(f"Image not found at path: {image_path}")
+                return {"error": "Image not found"}, 404
+
+            # Return the image file
+            response = send_file(image_path, mimetype="image/png")
+
+            # Delete the file after sending
+            try:
+                os.remove(image_path)
+                logger.info(f"Deleted image: {image_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete image {image_path}: {e}")
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error serving image: {e}")
+            return {"error": str(e)}, 500
+
+
 # Add resources to API
 api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
@@ -400,6 +434,7 @@ api.add_resource(BookOpenResource, "/open-book")
 api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(FixturesResource, "/fixtures")
+api.add_resource(ImageResource, "/image/<string:image_id>")
 
 
 def run_server():
