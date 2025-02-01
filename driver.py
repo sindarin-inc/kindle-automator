@@ -185,6 +185,14 @@ class Driver:
             if not self.device_id:
                 return False
 
+            # Check if app is installed
+            if not self._is_kindle_installed():
+                logger.error("Kindle app not installed - attempting to install")
+                if not self._install_kindle():
+                    logger.error("Failed to install Kindle app")
+                    return False
+                logger.info("Successfully installed Kindle app")
+
             # Clean up any existing sessions
             self._cleanup_old_sessions()
 
@@ -209,6 +217,8 @@ class Driver:
                     options.app_activity = app_activity
                     options.app_wait_activity = "com.amazon.kindle.*"
                     options.no_reset = True
+                    options.auto_grant_permissions = True
+                    options.enable_multi_windows = True
 
                     self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
                     logger.info("Driver initialized successfully")

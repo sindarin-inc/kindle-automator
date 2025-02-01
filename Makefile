@@ -104,7 +104,7 @@ test-captcha:
 	@echo "Posting captcha solution..."
 	@curl -X POST http://localhost:4098/captcha \
 		-H "Content-Type: application/json" \
-		-d '{"solution": "wtnxzp"}' \
+		-d '{"solution": "4s6cwm"}' \
 		-v
 
 # Test books endpoint

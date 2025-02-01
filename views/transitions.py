@@ -10,7 +10,7 @@ from views.auth.interaction_strategies import (
     CAPTCHA_INPUT_FIELD,
     LIBRARY_SIGN_IN_STRATEGIES,
 )
-from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
+from views.auth.view_strategies import CAPTCHA_ERROR_MESSAGES, EMAIL_VIEW_IDENTIFIERS
 from views.core.app_state import AppState, AppView
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class StateTransitions:
         self.library_handler = library_handler
         self.reader_handler = reader_handler
         self.driver = None
+        self.used_captcha_solutions = set()  # Track used solutions
 
     def set_driver(self, driver):
         """Sets the Appium driver instance"""
@@ -118,6 +119,11 @@ class StateTransitions:
         try:
             # If we have a captcha solution, enter it
             if self.auth_handler.captcha_solution:
+                # Check if we've already tried this solution
+                if self.auth_handler.captcha_solution in self.used_captcha_solutions:
+                    logger.info("CAPTCHA solution already attempted - needs new solution")
+                    return False
+
                 logger.info("Entering CAPTCHA solution...")
 
                 # Find and enter the CAPTCHA solution
@@ -128,6 +134,9 @@ class StateTransitions:
                 # Find and click submit button
                 submit_button = self.driver.find_element(*CAPTCHA_CONTINUE_BUTTON)
                 submit_button.click()
+
+                # Mark this solution as used
+                self.used_captcha_solutions.add(self.auth_handler.captcha_solution)
 
                 # Wait briefly for transition
                 time.sleep(2)

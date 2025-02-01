@@ -480,6 +480,8 @@ class LibraryHandler:
                 logger.info("Reading view loaded")
                 return True
             except Exception as e:
+                filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
+                logger.info(f"Stored unknown library timeout page source at: {filepath}")
                 logger.error(f"Failed to wait for reading view: {e}")
                 return False
 

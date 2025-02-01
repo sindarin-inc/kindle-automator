@@ -20,7 +20,7 @@ ERROR_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'incorrect')]"),
 ]
 
-# Captcha view identification strategies
+# Captcha-related strategies
 CAPTCHA_VIEW_IDENTIFIERS = [
     # Main view identifier
     (AppiumBy.XPATH, "//android.webkit.WebView[@text='Authentication required']"),
@@ -39,13 +39,16 @@ CAPTCHA_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='Continue' and @hint='verifyCaptcha']"),
 ]
 
-# Required indicators for captcha screen verification
 CAPTCHA_REQUIRED_INDICATORS = [
     (AppiumBy.XPATH, "//android.webkit.WebView[@text='Authentication required']"),
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Solve this puzzle')]"),
     (AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"),
     (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Enter the letters')]"),
     (AppiumBy.XPATH, "//android.widget.Button[@hint='verifyCaptcha']"),
+]
+
+CAPTCHA_ERROR_MESSAGES = [
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Enter the characters as they are given')]"),
 ]
 
 # Library view verification strategies - prioritized by specificity
@@ -70,4 +73,12 @@ SIGN_IN_ERROR_STRATEGIES = [
     "//android.view.View[contains(@text, 'No account found with email address')]",
     "//android.view.View[contains(@text, 'incorrect password')]",
     "//android.view.View[contains(@text, 'unable to verify your mobile number')]",  # Add mobile verification error
+]
+
+# Auth error messages that require app restart
+AUTH_RESTART_MESSAGES = [
+    (
+        AppiumBy.XPATH,
+        '//android.view.View[contains(@text, "We\'re unable to verify your mobile number")]',
+    ),
 ]
