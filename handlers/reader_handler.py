@@ -263,12 +263,7 @@ class ReaderHandler:
             Union['WebDriver', 'ActionHelpers']: Self instance
         """
 
-        actions = ActionChains(self.driver)
-        actions.w3c_actions.pointer_action.move_to_location(start_x, start_y)
-        actions.w3c_actions.pointer_action.pointer_down()
-        actions.w3c_actions.pointer_action.move_to_location(end_x, end_y)
-        actions.w3c_actions.pointer_action.release()
-        actions.perform()
+        self.driver.swipe(start_x, start_y, end_x, end_y, duration)
 
     def turn_page(self, direction: int):
         """Turn to the next/previous page."""

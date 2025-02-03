@@ -321,52 +321,87 @@ class LibraryHandler:
             # Wait for library content to load
             time.sleep(2)
 
-            # Log page source for debugging
-            filepath = store_page_source(self.driver.page_source, "library_view")
-            logger.info(f"Stored library view page source at: {filepath}")
-
-            # Initialize list to store book information
+            # Initialize list to store book information and set to track seen titles
             books = []
+            seen_titles = set()
 
-            # First find all containers
-            containers = []
-            for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"]:
+            # Get screen size for scrolling
+            screen_size = self.driver.get_window_size()
+            start_y = screen_size["height"] * 0.8
+            end_y = screen_size["height"] * 0.2
+
+            while True:
+                # Log page source for debugging
+                filepath = store_page_source(self.driver.page_source, "library_view")
+                logger.info(f"Stored library view page source at: {filepath}")
+
+                # Find all containers on current screen
+                containers = []
+                for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"]:
+                    try:
+                        found_containers = self.driver.find_elements(container_strategy, container_locator)
+                        if found_containers:
+                            containers = found_containers
+                            logger.debug(f"Found {len(containers)} book containers on current screen")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Failed to find containers with {container_strategy}: {e}")
+                        continue
+
+                # Track if we found any new books in this iteration
+                new_books_found = False
+
+                # Process each container
+                for container in containers:
+                    try:
+                        book_info = {"title": None, "progress": None, "size": None, "author": None}
+
+                        # Extract metadata using strategies
+                        for field in ["title", "progress", "size", "author"]:
+                            for strategy, locator in BOOK_METADATA_IDENTIFIERS[field]:
+                                try:
+                                    elements = container.find_elements(strategy, locator)
+                                    if elements:
+                                        book_info[field] = elements[0].text
+                                        logger.debug(f"Found {field}: {book_info[field]}")
+                                        break
+                                except Exception as e:
+                                    logger.debug(f"Failed to find {field} with {strategy}: {e}")
+                                    continue
+
+                        if book_info["title"]:
+                            # Only add book if we haven't seen this title before
+                            if book_info["title"] not in seen_titles:
+                                books.append(book_info)
+                                seen_titles.add(book_info["title"])
+                                new_books_found = True
+
+                    except Exception as e:
+                        logger.error(f"Error extracting book info: {e}")
+                        continue
+
+                # If we didn't find any new books, we've probably reached the end
+                if not new_books_found:
+                    logger.info("No new books found on this screen, stopping scroll")
+                    break
+
+                # Scroll down
                 try:
-                    found_containers = self.driver.find_elements(container_strategy, container_locator)
-                    if found_containers:
-                        containers = found_containers
-                        logger.debug(f"Found {len(containers)} book containers")
-                        break
+                    self.driver.swipe(
+                        screen_size["width"] // 2,
+                        start_y,
+                        screen_size["width"] // 2,
+                        end_y,
+                        1000,  # Duration in ms
+                    )
+                    logger.debug("Scrolled down for more books")
+                    # Small wait for content to load
+                    time.sleep(1.5)
                 except Exception as e:
-                    logger.debug(f"Failed to find containers with {container_strategy}: {e}")
-                    continue
+                    logger.error(f"Failed to scroll: {e}")
+                    break
 
-            # Process each container
-            for container in containers:
-                try:
-                    book_info = {"title": None, "progress": None, "size": None, "author": None}
-
-                    # Extract metadata using strategies
-                    for field in ["title", "progress", "size", "author"]:
-                        for strategy, locator in BOOK_METADATA_IDENTIFIERS[field]:
-                            try:
-                                elements = container.find_elements(strategy, locator)
-                                if elements:
-                                    book_info[field] = elements[0].text
-                                    logger.debug(f"Found {field}: {book_info[field]}")
-                                    break
-                            except Exception as e:
-                                logger.debug(f"Failed to find {field} with {strategy}: {e}")
-                                continue
-
-                    if book_info["title"]:  # Only add books that have at least a title
-                        books.append(book_info)
-
-                except Exception as e:
-                    logger.error(f"Error extracting book info: {e}")
-                    continue
-
-            logger.info(f"Found {len(books)} books using xpath")
+            logger.info(f"Found total of {len(books)} unique books")
             return books
 
         except Exception as e:
