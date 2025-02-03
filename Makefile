@@ -37,7 +37,7 @@ ssh-2:
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server &
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server
 
 # Test initialization endpoint
 test-init:
@@ -81,6 +81,13 @@ test-next-page:
 	@curl -X POST http://localhost:4098/navigate \
 		-H "Content-Type: application/json" \
 		-d '{"action": "next_page"}' \
+		-v
+
+test-previous-page:
+	@echo "Navigating to previous page..."
+	@curl -X POST http://localhost:4098/navigate \
+		-H "Content-Type: application/json" \
+		-d '{"action": "previous_page"}' \
 		-v
 
 # Test style endpoint

@@ -20,6 +20,10 @@ READING_PROGRESS_IDENTIFIERS = [
         AppiumBy.XPATH,
         "//android.widget.TextView[@resource-id='com.amazon.kindle:id/reader_footer_page_number_text']",
     ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/nln_text_secondary']",
+    ),
 ]
 READING_TOOLBAR_IDENTIFIERS = [
     (

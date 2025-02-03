@@ -1,18 +1,26 @@
 import logging
 import os
+import re
 import subprocess
 import time
 from io import BytesIO
 
 from appium.webdriver.common.appiumby import AppiumBy
+from appium.webdriver.extensions.action_helpers import ActionHelpers
 from PIL import Image
 from selenium.common.exceptions import (
     NoSuchElementException,
     TimeoutException,
     WebDriverException,
 )
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.actions import interaction
+from selenium.webdriver.common.actions.action_builder import ActionBuilder
+from selenium.webdriver.common.actions.mouse_button import MouseButton
+from selenium.webdriver.common.actions.pointer_input import PointerInput
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from typing_extensions import Self
 
 from handlers.library_handler import LibraryHandler
 from server.logging_config import store_page_source
@@ -178,6 +186,7 @@ class ReaderHandler:
         # Wait for page number to be visible
         try:
             logger.info("Waiting for page number to be visible...")
+            store_page_source(self.driver.driver.page_source, "page_number_waiting")
             WebDriverWait(self.driver, 5).until(EC.presence_of_element_located(PAGE_NUMBER_IDENTIFIERS[0]))
             logger.info("Page number element found")
         except Exception as e:
@@ -237,8 +246,32 @@ class ReaderHandler:
             logger.error(f"Error capturing page screenshot: {e}")
             return False
 
-    def turn_page_forward(self):
-        """Turn to the next page."""
+    def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 0):
+        """Swipe from one point to another point, for an optional duration.
+
+        Args:
+            start_x: x-coordinate at which to start
+            start_y: y-coordinate at which to start
+            end_x: x-coordinate at which to stop
+            end_y: y-coordinate at which to stop
+            duration: defines the swipe speed as time taken to swipe from point a to point b, in ms.
+
+        Usage:
+            driver.swipe(100, 100, 100, 400)
+
+        Returns:
+            Union['WebDriver', 'ActionHelpers']: Self instance
+        """
+
+        actions = ActionChains(self.driver)
+        actions.w3c_actions.pointer_action.move_to_location(start_x, start_y)
+        actions.w3c_actions.pointer_action.pointer_down()
+        actions.w3c_actions.pointer_action.move_to_location(end_x, end_y)
+        actions.w3c_actions.pointer_action.release()
+        actions.perform()
+
+    def turn_page(self, direction: int):
+        """Turn to the next/previous page."""
         try:
             # Check if we're in reading toolbar view
             for strategy, locator in READING_TOOLBAR_IDENTIFIERS:
@@ -261,9 +294,13 @@ class ReaderHandler:
             tap_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["next"])  # 90% of screen width
             tap_y = window_size["height"] // 2
 
-            # Tap to turn page
-            self.driver.tap([(tap_x, tap_y)])
-            logger.info(f"Tapped at ({tap_x}, {tap_y}) to turn page forward")
+            # Gesture swipe left
+            if direction == 1:
+                self.swipe(tap_x, tap_y, tap_x - 200, tap_y, 600)
+                logger.info(f"Swiped left ({tap_x}, {tap_y}) to turn page forward")
+            else:
+                self.swipe(tap_x, tap_y, tap_x + 200, tap_y, 600)
+                logger.info(f"Swiped right ({tap_x}, {tap_y}) to turn page backward")
 
             # Short wait for page turn animation
             time.sleep(0.5)
@@ -273,32 +310,27 @@ class ReaderHandler:
             logger.error(f"Error turning page forward: {e}")
             return False
 
+    def turn_page_forward(self):
+        """Turn to the next page."""
+
+        return self.turn_page(1)
+
     def turn_page_backward(self):
         """Turn to the previous page."""
-        try:
-            # Get screen dimensions
-            window_size = self.driver.get_window_size()
-            screen_width = window_size["width"]
-            screen_height = window_size["height"]
 
-            # Calculate tap coordinates for left side of screen
-            tap_x = int(screen_width * 0.1)  # 10% of screen width
-            tap_y = int(screen_height * 0.5)  # Middle of screen height
-
-            # Tap to turn page
-            self.driver.tap([(tap_x, tap_y)])
-            logger.info(f"Tapped at ({tap_x}, {tap_y}) to turn page backward")
-
-            # Short wait for page turn animation
-            time.sleep(0.5)
-            return True
-
-        except Exception as e:
-            logger.error(f"Error turning page backward: {e}")
-            return False
+        return self.turn_page(-1)
 
     def get_reading_progress(self):
-        """Get reading progress as percentage"""
+        """Get reading progress information
+
+        Returns:
+            dict: Dictionary containing:
+                - percentage: Reading progress as percentage (str)
+                - current_page: Current page number (int)
+                - total_pages: Total pages (int)
+            or None if progress info couldn't be retrieved
+        """
+        opened_controls = False
         try:
             # First check if we need to show controls
             try:
@@ -327,40 +359,65 @@ class ReaderHandler:
 
                     WebDriverWait(self.driver, 3).until(check_toolbar_visibility)
                     logger.info("Reading controls now visible")
+                    opened_controls = True
                 except TimeoutException:
                     logger.error("Could not make reading controls visible")
                     return None
 
                 try:
-                    progress_element = self.driver.find_element(*READING_PROGRESS_IDENTIFIERS[0])
+                    for strategy, locator in READING_PROGRESS_IDENTIFIERS:
+                        try:
+                            progress_element = self.driver.find_element(strategy, locator)
+                            break
+                        except NoSuchElementException:
+                            continue
+                    else:
+                        raise NoSuchElementException("Could not find any reading progress element")
                 except NoSuchElementException:
                     logger.error("Could not find progress element after showing controls")
                     return None
 
-            # Extract progress text (usually in format "Page X of Y (Z%)")
-            progress_text = progress_element.text
+            # Extract progress text (format: "Page X of Y  •  Z%" or "Page X of Y")
+            progress_text = progress_element.text.strip()
             logger.info(f"Found progress text: {progress_text}")
 
-            # Try to extract percentage
-            try:
-                if "%" in progress_text:
-                    percentage = progress_text.split("(")[-1].split("%")[0]
-                    return f"{percentage}%"
-            except:
-                pass
+            # Initialize return values
+            percentage = None
+            current_page = None
+            total_pages = None
 
-            # If no percentage, try to extract page numbers
-            try:
-                if "of" in progress_text:
-                    current, total = progress_text.lower().replace("page", "").split("of")
-                    current = int("".join(filter(str.isdigit, current)))
-                    total = int("".join(filter(str.isdigit, total)))
-                    percentage = round((current / total) * 100)
-                    return f"{percentage}%"
-            except:
-                pass
+            # Extract percentage if present (between the last space before the % and the %)
+            if "%" in progress_text:
+                percentage_regex = r"(\d+)%"
+                match = re.search(percentage_regex, progress_text)
+                if match:
+                    percentage = int(match.group(1))
 
-            return None
+            # Extract page numbers
+            if "of" in progress_text.lower():
+                try:
+                    page_regex = r"page\s+(\d+)\sof\s+(\d+)"
+                    match = re.search(page_regex, progress_text.lower())
+                    if match:
+                        current_page = int(match.group(1))
+                        total_pages = int(match.group(2))
+
+                    # Calculate percentage if not found in text
+                    if not percentage:
+                        calc_percentage = round((current_page / total_pages) * 100)
+                        percentage = f"{calc_percentage}%"
+                except Exception as e:
+                    logger.error(f"Error parsing page numbers: {e}")
+
+            if opened_controls:
+                logger.info("Closing reading controls")
+                self.driver.tap([(center_x, center_y)])
+
+            if not any([percentage, current_page, total_pages]):
+                logger.error("Could not extract any progress information")
+                return None
+
+            return {"percentage": percentage, "current_page": current_page, "total_pages": total_pages}
 
         except Exception as e:
             logger.error(f"Error getting reading progress: {e}")

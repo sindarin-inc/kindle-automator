@@ -266,7 +266,7 @@ class NavigationResource(Resource):
 
             if action == "next_page":
                 success = server.automator.reader_handler.turn_page_forward()
-            elif action == "prev_page":
+            elif action == "previous_page":
                 success = server.automator.reader_handler.turn_page_backward()
             else:
                 return {"error": "Invalid action"}, 400

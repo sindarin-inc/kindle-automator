@@ -177,8 +177,15 @@ class Driver:
         """Initialize Appium driver with retry logic. Safe to call multiple times."""
         try:
             if self.driver:
-                logger.info("Driver already initialized")
-                return True
+                # Test if driver is still connected
+                try:
+                    self.driver.current_activity
+                except Exception as e:
+                    logger.info("Driver not connected - reinitializing")
+                    self.driver = None
+                else:
+                    logger.info("Driver already initialized")
+                    return True
 
             # Get device ID first
             self.device_id = self._get_emulator_device_id()
@@ -218,6 +225,9 @@ class Driver:
                     options.app_wait_activity = "com.amazon.kindle.*"
                     options.no_reset = True
                     options.auto_grant_permissions = True
+                    options.enable_multi_windows = True
+                    options.ignore_unimportant_views = False
+                    options.allow_invisible_elements = True
                     options.enable_multi_windows = True
 
                     self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
@@ -268,6 +278,9 @@ class Driver:
         """Reset the singleton instance"""
         logger.info("Resetting Driver")
         if cls._instance:
-            cls._instance.quit()
+            try:
+                cls._instance.quit()
+            except Exception as e:
+                logger.error(f"Error quitting driver: {e}")
             cls._instance = None
             cls._initialized = False

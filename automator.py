@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import traceback
 
 from driver import Driver
 from handlers.library_handler import LibraryHandler
@@ -140,8 +141,15 @@ class KindleAutomator:
         """Ensure the driver is healthy and running, reinitialize if needed."""
         try:
             if not self.driver:
-                logger.info("No driver found, initializing...")
-                return self.initialize_driver()
+                # Test if driver is still connected
+                try:
+                    self.driver.current_activity
+                except Exception as e:
+                    logger.info("Driver not connected - reinitializing")
+                    self.cleanup()
+                    return self.initialize_driver()
+                else:
+                    logger.info("Driver already initialized")
 
             # Basic health check - try to get current activity
             try:
@@ -154,6 +162,7 @@ class KindleAutomator:
                 return self.initialize_driver()
 
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"Error ensuring driver is running: {e}")
             return False
 
