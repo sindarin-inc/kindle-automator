@@ -311,10 +311,12 @@ class BookOpenResource(Resource):
             if not book_title:
                 return {"error": "Book title required"}, 400
 
-            success, page = server.automator.run(reading_book_title=book_title)
-            logger.info(f"Book opened: {success}, page: {page}")
+            success = server.automator.library_handler.open_book(book_title)
+            logger.info(f"Book opened: {success}")
 
             if success:
+                progress = server.automator.reader_handler.get_reading_progress()
+                logger.info(f"Progress: {progress}")
                 # Save screenshot with unique ID
                 screenshot_id = f"book_page_{int(time.time())}"
                 screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
@@ -322,11 +324,12 @@ class BookOpenResource(Resource):
 
                 # Return URL to image
                 image_url = f"/image/{screenshot_id}"
-                return {"success": True, "page": page, "screenshot_url": image_url}, 200
+                return {"success": True, "progress": progress, "screenshot_url": image_url}, 200
 
             return {"error": "Failed to open book"}, 500
 
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"Error opening book: {e}")
             return {"error": str(e)}, 500
 

@@ -183,6 +183,34 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Unexpected error handling bottom sheet: {e}")
 
+        # Check for and dismiss Goodreads auto-update dialog
+        try:
+            not_now_button = self.driver.find_element(
+                AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
+            )
+            if not_now_button.is_displayed():
+                logger.info("Found Goodreads auto-update dialog - clicking Not Now")
+                not_now_button.click()
+                time.sleep(0.5)  # Wait for dialog to dismiss
+
+                # Verify dialog is gone
+                try:
+                    not_now_button = self.driver.find_element(
+                        AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
+                    )
+                    if not_now_button.is_displayed():
+                        logger.error("Goodreads dialog still visible after clicking Not Now")
+                        return False
+                except NoSuchElementException:
+                    logger.info("Successfully dismissed Goodreads dialog")
+
+                filepath = store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
+                logger.info(f"Stored Goodreads dialog dismissed page source at: {filepath}")
+        except NoSuchElementException:
+            logger.info("No Goodreads auto-update dialog found - continuing")
+        except Exception as e:
+            logger.error(f"Error handling Goodreads dialog: {e}")
+
         # Wait for page number to be visible
         try:
             logger.info("Waiting for page number to be visible...")
@@ -287,14 +315,15 @@ class ReaderHandler:
             # Get screen dimensions and calculate tap coordinates
             window_size = self.driver.get_window_size()
             tap_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["next"])  # 90% of screen width
+            end_x = tap_x * 0.2
             tap_y = window_size["height"] // 2
 
             # Gesture swipe left
             if direction == 1:
-                self.swipe(tap_x, tap_y, tap_x - 200, tap_y, 600)
+                self.swipe(tap_x, tap_y, end_x, tap_y, 200)
                 logger.info(f"Swiped left ({tap_x}, {tap_y}) to turn page forward")
             else:
-                self.swipe(tap_x, tap_y, tap_x + 200, tap_y, 600)
+                self.swipe(end_x, tap_y, tap_x, tap_y, 200)
                 logger.info(f"Swiped right ({tap_x}, {tap_y}) to turn page backward")
 
             # Short wait for page turn animation

@@ -70,10 +70,11 @@ test-screenshot:
 
 # Test open book endpoint
 test-open-book:
+# -d '{"title": "Poor Charlie\u2019s Almanack: The Essential Wit and Wisdom of Charles T. Munger"}' \
 	@echo "Opening book..."
 	@curl -X POST http://localhost:4098/open-book \
 		-H "Content-Type: application/json" \
-		-d '{"title": "Poor Charlie\u2019s Almanack: The Essential Wit and Wisdom of Charles T. Munger"}' \
+		-d '{"title": "Luminous"}' \
 		-v
 
 test-next-page:
@@ -83,6 +84,7 @@ test-next-page:
 		-d '{"action": "next_page"}' \
 		-v
 
+test-prev-page: test-previous-page
 test-previous-page:
 	@echo "Navigating to previous page..."
 	@curl -X POST http://localhost:4098/navigate \

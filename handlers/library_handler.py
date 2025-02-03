@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import traceback
 
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
@@ -318,6 +319,10 @@ class LibraryHandler:
                 logger.error("Failed to navigate to library")
                 return []
 
+            # Scroll to top of list
+            if not self.scroll_to_list_top():
+                logger.warning("Failed to scroll to top of list, continuing anyway...")
+
             # Wait for library content to load
             time.sleep(2)
 
@@ -392,7 +397,7 @@ class LibraryHandler:
                         start_y,
                         screen_size["width"] // 2,
                         end_y,
-                        1000,  # Duration in ms
+                        600,  # Duration in ms
                     )
                     logger.debug("Scrolled down for more books")
                     # Small wait for content to load
@@ -426,65 +431,110 @@ class LibraryHandler:
             logger.info(f"Looking for book: {book_title}")
             logger.info(f"Normalized book title: {normalized_book_title}")
 
-            for strategy, locator in BOOK_TITLE_IDENTIFIERS:
-                buttons = self.driver.find_elements(strategy, locator)
-                logger.info(f"Found {len(buttons)} book buttons")
+            # Scroll to top first
+            if not self.scroll_to_list_top():
+                logger.warning("Failed to scroll to top of list, continuing anyway...")
 
-                for button in buttons:
-                    try:
-                        title_elem = button.find_element(AppiumBy.ID, BOOK_TITLE_ELEMENT_ID)
-                        title_text = title_elem.text.strip()
-                        normalized_title_text = self._normalize_title(title_text)
-                        logger.info(f"Found title text: {title_text}")
-                        logger.info(f"Normalized title text: {normalized_title_text}")
+            # Get screen size for scrolling
+            screen_size = self.driver.get_window_size()
+            start_y = screen_size["height"] * 0.8
+            end_y = screen_size["height"] * 0.2
 
-                        if normalized_title_text == normalized_book_title:
-                            # Check if the book is downloaded
-                            content_desc = button.get_attribute("content-desc")
-                            logger.info(f"Book content description: {content_desc}")
+            # Keep track of seen titles to detect when we've reached the bottom
+            seen_titles = set()
 
-                            if "Book downloaded" not in content_desc:
-                                logger.info("Book is not downloaded yet, initiating download...")
+            while True:
+                # Store titles from previous scroll position
+                previous_titles = set(seen_titles)
+
+                # Search current screen for the book
+                for strategy, locator in BOOK_TITLE_IDENTIFIERS:
+                    buttons = self.driver.find_elements(strategy, locator)
+                    logger.info(f"Found {len(buttons)} book buttons on current screen")
+
+                    for button in buttons:
+                        try:
+                            title_elem = button.find_element(AppiumBy.ID, BOOK_TITLE_ELEMENT_ID)
+                            title_text = title_elem.text.strip()
+                            normalized_title_text = self._normalize_title(title_text)
+
+                            # Add to seen titles
+                            seen_titles.add(normalized_title_text)
+
+                            if normalized_title_text == normalized_book_title:
+                                # Check if the book is downloaded
+                                content_desc = button.get_attribute("content-desc")
+                                logger.info(f"Book content description: {content_desc}")
+
+                                if "Book downloaded" not in content_desc:
+                                    logger.info("Book is not downloaded yet, initiating download...")
+                                    button.click()
+                                    logger.info("Clicked book to start download")
+
+                                    # Wait for download to complete (up to 60 seconds)
+                                    max_attempts = 60
+                                    for attempt in range(max_attempts):
+                                        try:
+                                            # Re-find the button since the page might have refreshed
+                                            button = self.driver.find_element(strategy, locator)
+                                            content_desc = button.get_attribute("content-desc")
+                                            logger.info(
+                                                f"Checking download status (attempt {attempt + 1}/{max_attempts})"
+                                            )
+                                            store_page_source(
+                                                self.driver.page_source, "library_view_downloading"
+                                            )
+
+                                            if "Book downloaded" in content_desc:
+                                                logger.info("Book has finished downloading")
+                                                # Click again to open now that it's downloaded
+                                                button.click()
+                                                logger.info("Clicked book button after download")
+                                                return True
+
+                                            time.sleep(1)  # Wait 1 second between checks
+                                        except Exception as e:
+                                            logger.error(f"Error checking download status: {e}")
+                                            time.sleep(1)
+                                            continue
+
+                                    logger.error("Timed out waiting for book to download")
+                                    return False
+
+                                logger.info(f"Found downloaded book: {title_text}")
                                 button.click()
-                                logger.info("Clicked book to start download")
+                                logger.info("Clicked book button")
+                                return True
+                        except Exception as e:
+                            logger.error(f"Error getting book title: {e}")
+                            continue
 
-                                # Wait for download to complete (up to 60 seconds)
-                                max_attempts = 60
-                                for attempt in range(max_attempts):
-                                    try:
-                                        # Re-find the button since the page might have refreshed
-                                        button = self.driver.find_element(strategy, locator)
-                                        content_desc = button.get_attribute("content-desc")
-                                        logger.info(
-                                            f"Checking download status (attempt {attempt + 1}/{max_attempts})"
-                                        )
+                # Check if we found any new titles after collecting from this screen
+                if len(seen_titles) == len(previous_titles):
+                    logger.info(
+                        f"Reached bottom of list without finding book, seen titles: {seen_titles}, previous titles: {previous_titles}"
+                    )
+                    break
 
-                                        if "Book downloaded" in content_desc:
-                                            logger.info("Book has finished downloading")
-                                            # Click again to open now that it's downloaded
-                                            button.click()
-                                            logger.info("Clicked book button after download")
-                                            return True
+                # Scroll down for next iteration
+                try:
+                    self.driver.swipe(
+                        screen_size["width"] // 2,
+                        start_y,
+                        screen_size["width"] // 2,
+                        end_y,
+                        600,  # Duration in ms
+                    )
+                    logger.debug("Scrolled down for more books")
+                    time.sleep(0.5)
 
-                                        time.sleep(1)  # Wait 1 second between checks
-                                    except Exception as e:
-                                        logger.error(f"Error checking download status: {e}")
-                                        time.sleep(1)
-                                        continue
+                except Exception as e:
+                    logger.error(f"Failed to scroll: {e}")
+                    break
 
-                                logger.error("Timed out waiting for book to download")
-                                return False
-
-                            logger.info(f"Found downloaded book: {title_text}")
-                            button.click()
-                            logger.info("Clicked book button")
-                            return True
-                    except Exception as e:
-                        logger.error(f"Error getting book title: {e}")
-                        continue
-
-            logger.info(f"Book not found: {book_title}")
+            logger.info(f"Book not found after searching entire list: {book_title}")
             return False
+
         except Exception as e:
             logger.error(f"Error finding book: {e}")
             return False
@@ -521,6 +571,7 @@ class LibraryHandler:
                 return False
 
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"Error opening book: {e}")
             return False
 
@@ -595,3 +646,37 @@ class LibraryHandler:
             logger.info(f"Saved library view screenshot to {screenshot_path}")
         except Exception as e:
             logger.error(f"Failed to save library view screenshot: {e}")
+
+    def scroll_to_list_top(self):
+        """Scroll to the top of the All list by toggling between Downloaded and All."""
+        try:
+            logger.info("Attempting to scroll to top of list by toggling filters...")
+
+            # First try to find the Downloaded button
+            try:
+                downloaded_button = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/kindle_downloaded_toggle_downloaded"
+                )
+                logger.info("Found Downloaded button")
+                downloaded_button.click()
+                logger.info("Clicked Downloaded button")
+                time.sleep(0.5)  # Short wait for filter to apply
+
+                # Now find and click the All button
+                all_button = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/kindle_downloaded_toggle_all"
+                )
+                logger.info("Found All button")
+                all_button.click()
+                logger.info("Clicked All button")
+                time.sleep(0.5)  # Short wait for filter to apply
+
+                return True
+
+            except NoSuchElementException:
+                logger.error("Could not find Downloaded or All toggle buttons")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error scrolling to top of list: {e}")
+            return False
