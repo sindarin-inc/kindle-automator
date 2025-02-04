@@ -30,6 +30,7 @@ from views.library.view_strategies import (
     LIBRARY_VIEW_DETECTION_STRATEGIES,
     LIBRARY_VIEW_IDENTIFIERS,
     LIST_VIEW_IDENTIFIERS,
+    READER_DRAWER_LAYOUT_IDENTIFIERS,
     VIEW_OPTIONS_DONE_BUTTON_STRATEGIES,
     WEBVIEW_IDENTIFIERS,
 )
@@ -379,7 +380,10 @@ class LibraryHandler:
                             if book_info["title"] not in seen_titles:
                                 books.append(book_info)
                                 seen_titles.add(book_info["title"])
+                                logger.info(f"Found library book: {book_info['title']}")
                                 new_books_found = True
+                        else:
+                            logger.info(f"Container has no book info, skipping: {book_info}")
 
                     except Exception as e:
                         logger.error(f"Error extracting book info: {e}")
@@ -462,49 +466,60 @@ class LibraryHandler:
                             seen_titles.add(normalized_title_text)
 
                             if normalized_title_text == normalized_book_title:
-                                # Check if the book is downloaded
-                                content_desc = button.get_attribute("content-desc")
-                                logger.info(f"Book content description: {content_desc}")
+                                # Find the parent RelativeLayout that contains the download status
+                                try:
+                                    parent_container = button.find_element(
+                                        AppiumBy.XPATH,
+                                        ".//ancestor::android.widget.RelativeLayout[@content-desc]",
+                                    )
+                                    content_desc = parent_container.get_attribute("content-desc")
+                                    logger.info(f"Book content description: {content_desc}")
 
-                                if "Book downloaded" not in content_desc:
-                                    logger.info("Book is not downloaded yet, initiating download...")
+                                    if "Book downloaded" not in content_desc:
+                                        logger.info("Book is not downloaded yet, initiating download...")
+                                        button.click()
+                                        logger.info("Clicked book to start download")
+
+                                        # Wait for download to complete (up to 60 seconds)
+                                        max_attempts = 60
+                                        for attempt in range(max_attempts):
+                                            try:
+                                                # Re-find the parent container since the page might have refreshed
+                                                parent_container = self.driver.find_element(
+                                                    AppiumBy.XPATH,
+                                                    f"//android.widget.RelativeLayout[.//android.widget.TextView[@text='{title_text}']]",
+                                                )
+                                                content_desc = parent_container.get_attribute("content-desc")
+                                                logger.info(
+                                                    f"Checking download status (attempt {attempt + 1}/{max_attempts})"
+                                                )
+                                                store_page_source(
+                                                    self.driver.page_source, "library_view_downloading"
+                                                )
+
+                                                if "Book downloaded" in content_desc:
+                                                    logger.info("Book has finished downloading")
+                                                    # Click the book button again to open now that it's downloaded
+                                                    parent_container.click()
+                                                    logger.info("Clicked book button after download")
+                                                    return True
+
+                                                time.sleep(1)  # Wait 1 second between checks
+                                            except Exception as e:
+                                                logger.error(f"Error checking download status: {e}")
+                                                time.sleep(1)
+                                                continue
+
+                                        logger.error("Timed out waiting for book to download")
+                                        return False
+
+                                    logger.info(f"Found downloaded book: {title_text}")
                                     button.click()
-                                    logger.info("Clicked book to start download")
-
-                                    # Wait for download to complete (up to 60 seconds)
-                                    max_attempts = 60
-                                    for attempt in range(max_attempts):
-                                        try:
-                                            # Re-find the button since the page might have refreshed
-                                            button = self.driver.find_element(strategy, locator)
-                                            content_desc = button.get_attribute("content-desc")
-                                            logger.info(
-                                                f"Checking download status (attempt {attempt + 1}/{max_attempts})"
-                                            )
-                                            store_page_source(
-                                                self.driver.page_source, "library_view_downloading"
-                                            )
-
-                                            if "Book downloaded" in content_desc:
-                                                logger.info("Book has finished downloading")
-                                                # Click again to open now that it's downloaded
-                                                button.click()
-                                                logger.info("Clicked book button after download")
-                                                return True
-
-                                            time.sleep(1)  # Wait 1 second between checks
-                                        except Exception as e:
-                                            logger.error(f"Error checking download status: {e}")
-                                            time.sleep(1)
-                                            continue
-
-                                    logger.error("Timed out waiting for book to download")
-                                    return False
-
-                                logger.info(f"Found downloaded book: {title_text}")
-                                button.click()
-                                logger.info("Clicked book button")
-                                return True
+                                    logger.info("Clicked book button")
+                                    return True
+                                except NoSuchElementException:
+                                    logger.error("Could not find parent container with content-desc")
+                                    continue
                         except Exception as e:
                             logger.error(f"Error getting book title: {e}")
                             continue
@@ -560,7 +575,7 @@ class LibraryHandler:
             try:
                 logger.info("Waiting for reading view to load...")
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"))
+                    EC.presence_of_element_located(READER_DRAWER_LAYOUT_IDENTIFIERS[0])
                 )
                 logger.info("Reading view loaded")
                 return True

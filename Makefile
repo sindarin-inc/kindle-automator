@@ -74,7 +74,7 @@ test-open-book:
 	@echo "Opening book..."
 	@curl -X POST http://localhost:4098/open-book \
 		-H "Content-Type: application/json" \
-		-d '{"title": "Luminous"}' \
+		-d '{"title": "Guns, Germs, and Steel: The Fates of Human Societies (20th Anniversary Edition)"}' \
 		-v
 
 test-next-page:
