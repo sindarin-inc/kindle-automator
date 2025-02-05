@@ -1,4 +1,4 @@
-.PHONY: run deps reinstall lint server test-init kill-server test-navigate test-screenshot test-open-book test-style test-2fa test-books test-fixtures
+.PHONY: server
 
 run:
 	uv run automator.py
@@ -71,10 +71,11 @@ test-screenshot:
 # Test open book endpoint
 test-open-book:
 # -d '{"title": "Poor Charlie\u2019s Almanack: The Essential Wit and Wisdom of Charles T. Munger"}' \
+# -d '{"title": "Guns, Germs, and Steel: The Fates of Human Societies (20th Anniversary Edition)"}' \
 	@echo "Opening book..."
 	@curl -X POST http://localhost:4098/open-book \
 		-H "Content-Type: application/json" \
-		-d '{"title": "Guns, Germs, and Steel: The Fates of Human Societies (20th Anniversary Edition)"}' \
+		-d '{"title": "The Design of Everyday Things: Revised and Expanded Edition"}' \
 		-v
 
 test-next-page:

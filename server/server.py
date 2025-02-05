@@ -274,13 +274,13 @@ class NavigationResource(Resource):
                 return {"error": "Invalid action"}, 400
 
             if success:
-                # Get current page number and progress
-                progress = server.automator.reader_handler.get_reading_progress()
-
                 # Save screenshot with unique ID
                 screenshot_id = f"page_{int(time.time())}"
                 screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
                 server.automator.driver.save_screenshot(screenshot_path)
+
+                # Get current page number and progress
+                progress = server.automator.reader_handler.get_reading_progress()
 
                 # Return URL to image
                 image_url = f"/image/{screenshot_id}"
