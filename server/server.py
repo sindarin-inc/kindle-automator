@@ -239,6 +239,7 @@ class BooksResource(Resource):
 
 class ScreenshotResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def get(self):
         """Get current page screenshot"""
         try:
@@ -258,6 +259,7 @@ class ScreenshotResource(Resource):
 
 class NavigationResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
         """Handle page navigation"""
         try:
@@ -273,7 +275,6 @@ class NavigationResource(Resource):
 
             if success:
                 # Get current page number and progress
-                page_number = server.automator.reader_handler.get_current_page()
                 progress = server.automator.reader_handler.get_reading_progress()
 
                 # Save screenshot with unique ID
@@ -285,7 +286,6 @@ class NavigationResource(Resource):
                 image_url = f"/image/{screenshot_id}"
                 return {
                     "success": True,
-                    "page": page_number,
                     "progress": progress,
                     "screenshot_url": image_url,
                 }, 200
@@ -337,6 +337,7 @@ class BookOpenResource(Resource):
 
 class StyleResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
         """Update reading style settings"""
         try:
@@ -360,6 +361,7 @@ class StyleResource(Resource):
 
 class TwoFactorResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
         """Submit 2FA code"""
         try:
@@ -384,6 +386,7 @@ class TwoFactorResource(Resource):
 
 class FixturesResource(Resource):
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
         """Create fixtures for major views"""
         try:
@@ -399,6 +402,7 @@ class FixturesResource(Resource):
 
 
 class ImageResource(Resource):
+    @handle_automator_response(server)
     def get(self, image_id):
         """Get an image by ID and delete it after serving."""
         try:
