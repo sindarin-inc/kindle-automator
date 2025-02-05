@@ -20,8 +20,6 @@ from views.library.interaction_strategies import (
 )
 from views.library.view_strategies import (
     BOOK_METADATA_IDENTIFIERS,
-    BOOK_TITLE_ELEMENT_ID,
-    BOOK_TITLE_IDENTIFIERS,
     BOTTOM_NAV_IDENTIFIERS,
     GRID_VIEW_IDENTIFIERS,
     LIBRARY_TAB_CHILD_SELECTION_STRATEGIES,
@@ -209,7 +207,6 @@ class LibraryHandler:
             for strategy, locator in LIST_VIEW_IDENTIFIERS:
                 try:
                     self.driver.find_element(strategy, locator)
-                    logger.info(f"List view detected via {strategy}: {locator}")
                     return True
                 except NoSuchElementException:
                     continue
@@ -312,29 +309,26 @@ class LibraryHandler:
             logger.error(f"Error closing menu: {e}")
             return False
 
-    def get_book_titles(self):
-        """Get a list of all books in the library with their metadata."""
+    def _scroll_through_library(self, target_title: str = None):
+        """Scroll through library collecting book info, optionally looking for a specific title.
+
+        Args:
+            target_title: Optional title to search for. If provided, returns early when found.
+
+        Returns:
+            If target_title provided: (found_container, found_button, book_info) or (None, None, None)
+            If no target_title: List of book info dictionaries
+        """
         try:
-            # Ensure we're in the library view
-            if not self.navigate_to_library():
-                logger.error("Failed to navigate to library")
-                return []
-
-            # Scroll to top of list
-            if not self.scroll_to_list_top():
-                logger.warning("Failed to scroll to top of list, continuing anyway...")
-
-            # Wait for library content to load
-            time.sleep(2)
-
-            # Initialize list to store book information and set to track seen titles
-            books = []
-            seen_titles = set()
-
             # Get screen size for scrolling
             screen_size = self.driver.get_window_size()
             start_y = screen_size["height"] * 0.8
             end_y = screen_size["height"] * 0.2
+
+            # Initialize tracking variables
+            books = []
+            seen_titles = set()
+            normalized_target = self._normalize_title(target_title) if target_title else None
 
             while True:
                 # Log page source for debugging
@@ -354,7 +348,8 @@ class LibraryHandler:
                         logger.debug(f"Failed to find containers with {container_strategy}: {e}")
                         continue
 
-                # Track if we found any new books in this iteration
+                # Store titles from previous scroll position
+                previous_titles = set(seen_titles)
                 new_books_found = False
 
                 # Process each container
@@ -369,18 +364,47 @@ class LibraryHandler:
                                     elements = container.find_elements(strategy, locator)
                                     if elements:
                                         book_info[field] = elements[0].text
-                                        logger.debug(f"Found {field}: {book_info[field]}")
+                                        # logger.debug(f"Found {field}: {book_info[field]}")
                                         break
                                 except Exception as e:
                                     logger.debug(f"Failed to find {field} with {strategy}: {e}")
                                     continue
 
                         if book_info["title"]:
+                            normalized_title = self._normalize_title(book_info["title"])
+
+                            # If we're looking for a specific book
+                            if normalized_target and normalized_title == normalized_target:
+                                # Find the button and parent container for download status
+                                for strategy, locator in BOOK_METADATA_IDENTIFIERS["title"]:
+                                    try:
+                                        button = container.find_element(strategy, locator)
+                                        logger.info(f"Found button: {button}, looking for parent container")
+
+                                        # The container itself should be the RelativeLayout with content-desc
+                                        parent_container = container
+                                        content_desc = parent_container.get_attribute("content-desc")
+                                        if not content_desc:
+                                            # If no content-desc, try the immediate parent
+                                            parent_container = container.find_element(AppiumBy.XPATH, "..")
+                                            content_desc = parent_container.get_attribute("content-desc")
+
+                                        if content_desc:
+                                            logger.info(f"Found target book: {book_info['title']}")
+                                            return parent_container, button, book_info
+                                        else:
+                                            logger.error("Could not find container with content-desc")
+                                            continue
+
+                                    except NoSuchElementException as e:
+                                        logger.error(f"Found title but couldn't get container elements: {e}")
+                                        continue
+
                             # Only add book if we haven't seen this title before
                             if book_info["title"] not in seen_titles:
                                 books.append(book_info)
                                 seen_titles.add(book_info["title"])
-                                logger.info(f"Found library book: {book_info['title']}")
+                                logger.info(f"Found book: {book_info['title']}")
                                 new_books_found = True
                         else:
                             logger.info(f"Container has no book info, skipping: {book_info}")
@@ -389,12 +413,12 @@ class LibraryHandler:
                         logger.error(f"Error extracting book info: {e}")
                         continue
 
-                # If we didn't find any new books, we've probably reached the end
+                # If we didn't find any new books, we've reached the end
                 if not new_books_found:
                     logger.info("No new books found on this screen, stopping scroll")
                     break
 
-                # Scroll down
+                # Scroll down for next iteration
                 try:
                     self.driver.swipe(
                         screen_size["width"] // 2,
@@ -404,14 +428,35 @@ class LibraryHandler:
                         600,  # Duration in ms
                     )
                     logger.debug("Scrolled down for more books")
-                    # Small wait for content to load
-                    time.sleep(1.5)
+                    time.sleep(0.5)
                 except Exception as e:
                     logger.error(f"Failed to scroll: {e}")
                     break
 
+            if target_title:
+                logger.info(f"Book not found after searching entire list: {target_title}")
+                return None, None, None
+
             logger.info(f"Found total of {len(books)} unique books")
             return books
+
+        except Exception as e:
+            logger.error(f"Error scrolling through library: {e}")
+            return [] if not target_title else (None, None, None)
+
+    def get_book_titles(self):
+        """Get a list of all books in the library with their metadata."""
+        try:
+            # Ensure we're in the library view
+            if not self.navigate_to_library():
+                logger.error("Failed to navigate to library")
+                return []
+
+            # Scroll to top of list
+            if not self.scroll_to_list_top():
+                logger.warning("Failed to scroll to top of list, continuing anyway...")
+
+            return self._scroll_through_library()
 
         except Exception as e:
             logger.error(f"Error getting book titles: {e}")
@@ -430,125 +475,56 @@ class LibraryHandler:
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
-            # Normalize the input title
-            normalized_book_title = self._normalize_title(book_title)
-            logger.info(f"Looking for book: {book_title}")
-            logger.info(f"Normalized book title: {normalized_book_title}")
-
             # Scroll to top first
             if not self.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
 
-            # Get screen size for scrolling
-            screen_size = self.driver.get_window_size()
-            start_y = screen_size["height"] * 0.8
-            end_y = screen_size["height"] * 0.2
+            # Search for the book
+            parent_container, button, book_info = self._scroll_through_library(book_title)
+            if not parent_container:
+                return False
 
-            # Keep track of seen titles to detect when we've reached the bottom
-            seen_titles = set()
+            # Check download status and handle download if needed
+            content_desc = parent_container.get_attribute("content-desc")
+            logger.info(f"Book content description: {content_desc}")
 
-            while True:
-                # Store titles from previous scroll position
-                previous_titles = set(seen_titles)
+            if "Book not downloaded" in content_desc:
+                logger.info("Book is not downloaded yet, initiating download...")
+                button.click()
+                logger.info("Clicked book to start download")
 
-                # Search current screen for the book
-                for strategy, locator in BOOK_TITLE_IDENTIFIERS:
-                    buttons = self.driver.find_elements(strategy, locator)
-                    logger.info(f"Found {len(buttons)} book buttons on current screen")
+                # Wait for download to complete (up to 60 seconds)
+                max_attempts = 60
+                for attempt in range(max_attempts):
+                    try:
+                        # Re-find the parent container since the page might have refreshed
+                        parent_container = self.driver.find_element(
+                            AppiumBy.XPATH,
+                            f"//android.widget.RelativeLayout[.//android.widget.TextView[@text='{book_info['title']}']]",
+                        )
+                        content_desc = parent_container.get_attribute("content-desc")
+                        logger.info(f"Checking download status (attempt {attempt + 1}/{max_attempts})")
+                        store_page_source(self.driver.page_source, "library_view_downloading")
 
-                    for button in buttons:
-                        try:
-                            title_elem = button.find_element(AppiumBy.ID, BOOK_TITLE_ELEMENT_ID)
-                            title_text = title_elem.text.strip()
-                            normalized_title_text = self._normalize_title(title_text)
+                        if "Book downloaded" in content_desc:
+                            logger.info("Book has finished downloading")
+                            parent_container.click()
+                            logger.info("Clicked book button after download")
+                            return True
 
-                            # Add to seen titles
-                            seen_titles.add(normalized_title_text)
+                        time.sleep(1)
+                    except Exception as e:
+                        logger.error(f"Error checking download status: {e}")
+                        time.sleep(1)
+                        continue
 
-                            if normalized_title_text == normalized_book_title:
-                                # Find the parent RelativeLayout that contains the download status
-                                try:
-                                    parent_container = button.find_element(
-                                        AppiumBy.XPATH,
-                                        ".//ancestor::android.widget.RelativeLayout[@content-desc]",
-                                    )
-                                    content_desc = parent_container.get_attribute("content-desc")
-                                    logger.info(f"Book content description: {content_desc}")
+                logger.error("Timed out waiting for book to download")
+                return False
 
-                                    if "Book downloaded" not in content_desc:
-                                        logger.info("Book is not downloaded yet, initiating download...")
-                                        button.click()
-                                        logger.info("Clicked book to start download")
-
-                                        # Wait for download to complete (up to 60 seconds)
-                                        max_attempts = 60
-                                        for attempt in range(max_attempts):
-                                            try:
-                                                # Re-find the parent container since the page might have refreshed
-                                                parent_container = self.driver.find_element(
-                                                    AppiumBy.XPATH,
-                                                    f"//android.widget.RelativeLayout[.//android.widget.TextView[@text='{title_text}']]",
-                                                )
-                                                content_desc = parent_container.get_attribute("content-desc")
-                                                logger.info(
-                                                    f"Checking download status (attempt {attempt + 1}/{max_attempts})"
-                                                )
-                                                store_page_source(
-                                                    self.driver.page_source, "library_view_downloading"
-                                                )
-
-                                                if "Book downloaded" in content_desc:
-                                                    logger.info("Book has finished downloading")
-                                                    # Click the book button again to open now that it's downloaded
-                                                    parent_container.click()
-                                                    logger.info("Clicked book button after download")
-                                                    return True
-
-                                                time.sleep(1)  # Wait 1 second between checks
-                                            except Exception as e:
-                                                logger.error(f"Error checking download status: {e}")
-                                                time.sleep(1)
-                                                continue
-
-                                        logger.error("Timed out waiting for book to download")
-                                        return False
-
-                                    logger.info(f"Found downloaded book: {title_text}")
-                                    button.click()
-                                    logger.info("Clicked book button")
-                                    return True
-                                except NoSuchElementException:
-                                    logger.error("Could not find parent container with content-desc")
-                                    continue
-                        except Exception as e:
-                            logger.error(f"Error getting book title: {e}")
-                            continue
-
-                # Check if we found any new titles after collecting from this screen
-                if len(seen_titles) == len(previous_titles):
-                    logger.info(
-                        f"Reached bottom of list without finding book, seen titles: {seen_titles}, previous titles: {previous_titles}"
-                    )
-                    break
-
-                # Scroll down for next iteration
-                try:
-                    self.driver.swipe(
-                        screen_size["width"] // 2,
-                        start_y,
-                        screen_size["width"] // 2,
-                        end_y,
-                        600,  # Duration in ms
-                    )
-                    logger.debug("Scrolled down for more books")
-                    time.sleep(0.5)
-
-                except Exception as e:
-                    logger.error(f"Failed to scroll: {e}")
-                    break
-
-            logger.info(f"Book not found after searching entire list: {book_title}")
-            return False
+            logger.info(f"Found downloaded book: {book_info['title']}")
+            button.click()
+            logger.info("Clicked book button")
+            return True
 
         except Exception as e:
             logger.error(f"Error finding book: {e}")
@@ -672,7 +648,6 @@ class LibraryHandler:
                 downloaded_button = self.driver.find_element(
                     AppiumBy.ID, "com.amazon.kindle:id/kindle_downloaded_toggle_downloaded"
                 )
-                logger.info("Found Downloaded button")
                 downloaded_button.click()
                 logger.info("Clicked Downloaded button")
                 time.sleep(0.5)  # Short wait for filter to apply
@@ -681,7 +656,6 @@ class LibraryHandler:
                 all_button = self.driver.find_element(
                     AppiumBy.ID, "com.amazon.kindle:id/kindle_downloaded_toggle_all"
                 )
-                logger.info("Found All button")
                 all_button.click()
                 logger.info("Clicked All button")
                 time.sleep(0.5)  # Short wait for filter to apply

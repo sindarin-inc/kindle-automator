@@ -24,7 +24,6 @@ from typing_extensions import Self
 
 from handlers.library_handler import LibraryHandler
 from server.logging_config import store_page_source
-from views.library.view_strategies import BOOK_TITLE_ELEMENT_ID, BOOK_TITLE_IDENTIFIERS
 from views.reading.interaction_strategies import (
     BOTTOM_SHEET_IDENTIFIERS,
     CLOSE_BOOK_STRATEGIES,

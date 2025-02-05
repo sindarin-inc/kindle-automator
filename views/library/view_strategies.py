@@ -71,24 +71,13 @@ LIST_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/lib_book_row_title']"),
 ]
 
-# Book element identifiers - updated for tablet layout
-BOOK_TITLE_IDENTIFIERS = [
-    # Primary title identifier - use container-based approach
-    (
-        AppiumBy.XPATH,
-        "//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
-    ),
-    # Fallback to direct title identifier
-    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']"),
-]
-
 # Book metadata identifiers
 BOOK_METADATA_IDENTIFIERS = {
     "title": [
         # Primary title identifier - start with the recycler view and find titles within it
         (
             AppiumBy.XPATH,
-            "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']",
+            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']",
         ),
         # Alternative title identifiers
         (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"),
@@ -117,13 +106,10 @@ BOOK_METADATA_IDENTIFIERS = {
     "container": [
         (
             AppiumBy.XPATH,
-            "//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]",
+            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']",
         ),
     ],
 }
-
-BOOK_TITLE_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_title"
-BOOK_AUTHOR_ELEMENT_ID = "com.amazon.kindle:id/lib_book_row_author"
 
 BOOK_AUTHOR_IDENTIFIERS = [
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/lib_book_row_author']"),
