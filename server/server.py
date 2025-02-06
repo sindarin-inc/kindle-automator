@@ -201,7 +201,7 @@ class CaptchaResource(Resource):
 class BooksResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
-    def get(self):
+    def _get_books(self):
         """Get list of available books with metadata"""
         try:
             current_state = server.automator.state_machine.current_state
@@ -235,6 +235,14 @@ class BooksResource(Resource):
             logger.error(f"Error getting books: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
+
+    def get(self):
+        """Handle GET request for books list"""
+        return self._get_books()
+
+    def post(self):
+        """Handle POST request for books list"""
+        return self._get_books()
 
 
 class ScreenshotResource(Resource):
@@ -402,13 +410,21 @@ class FixturesResource(Resource):
 
 
 class ImageResource(Resource):
-    @handle_automator_response(server)
+    def _get_image_path(self, image_id):
+        """Get full path for an image file."""
+        # Build path to image using project root
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Ensure .png extension
+        if not image_id.endswith(".png"):
+            image_id = f"{image_id}.png"
+
+        return os.path.join(project_root, "screenshots", image_id)
+
     def get(self, image_id):
         """Get an image by ID and delete it after serving."""
         try:
-            # Build path to image using project root
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            image_path = os.path.join(project_root, "screenshots", f"{image_id}.png")
+            image_path = self._get_image_path(image_id)
 
             if not os.path.exists(image_path):
                 logger.error(f"Image not found at path: {image_path}")
@@ -425,6 +441,22 @@ class ImageResource(Resource):
                 logger.error(f"Failed to delete image {image_path}: {e}")
 
             return response
+
+        except Exception as e:
+            logger.error(f"Error serving image: {e}")
+            return {"error": str(e)}, 500
+
+    def post(self, image_id):
+        """Get an image by ID without deleting it."""
+        try:
+            image_path = self._get_image_path(image_id)
+
+            if not os.path.exists(image_path):
+                logger.error(f"Image not found at path: {image_path}")
+                return {"error": "Image not found"}, 404
+
+            # Return the image file without deleting
+            return send_file(image_path, mimetype="image/png")
 
         except Exception as e:
             logger.error(f"Error serving image: {e}")
