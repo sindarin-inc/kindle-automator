@@ -60,3 +60,9 @@ FULL_SCREEN_DIALOG_GOT_IT = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
     (AppiumBy.ID, "android:id/button1"),  # Fallback using button ID
 ]
+
+# Add strategies for the "last read page" dialog buttons
+LAST_READ_PAGE_DIALOG_BUTTONS = [
+    (AppiumBy.ID, "android:id/button1"),  # YES button
+    (AppiumBy.XPATH, "//android.widget.Button[@text='YES']"),  # Fallback using text
+]

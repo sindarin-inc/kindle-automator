@@ -364,7 +364,6 @@ class LibraryHandler:
                                     elements = container.find_elements(strategy, locator)
                                     if elements:
                                         book_info[field] = elements[0].text
-                                        # logger.debug(f"Found {field}: {book_info[field]}")
                                         break
                                 except Exception as e:
                                     logger.debug(f"Failed to find {field} with {strategy}: {e}")
@@ -379,22 +378,57 @@ class LibraryHandler:
                                 for strategy, locator in BOOK_METADATA_IDENTIFIERS["title"]:
                                     try:
                                         button = container.find_element(strategy, locator)
-                                        logger.info(f"Found button: {button}, looking for parent container")
+                                        logger.info(
+                                            f"Found button: {button.get_attribute('content-desc')} looking for parent container"
+                                        )
 
-                                        # The container itself should be the RelativeLayout with content-desc
-                                        parent_container = container
+                                        # Try to find the parent RelativeLayout using XPath
+                                        try:
+                                            # First try finding the direct parent RelativeLayout
+                                            parent_container = container.find_element(
+                                                AppiumBy.XPATH,
+                                                ".//android.widget.RelativeLayout[android.widget.TextView[@text='"
+                                                + book_info["title"]
+                                                + "']]",
+                                            )
+                                        except NoSuchElementException:
+                                            # If that fails, try finding any ancestor RelativeLayout
+                                            try:
+                                                parent_container = container.find_element(
+                                                    AppiumBy.XPATH,
+                                                    "//android.widget.RelativeLayout[.//android.widget.TextView[@text='"
+                                                    + book_info["title"]
+                                                    + "']]",
+                                                )
+                                            except NoSuchElementException:
+                                                # If that fails too, just use the container itself
+                                                parent_container = container
+
                                         content_desc = parent_container.get_attribute("content-desc")
-                                        if not content_desc:
+                                        if not content_desc or content_desc == "null":
                                             # If no content-desc, try the immediate parent
-                                            parent_container = container.find_element(AppiumBy.XPATH, "..")
-                                            content_desc = parent_container.get_attribute("content-desc")
+                                            try:
+                                                temp_parent = parent_container.find_element(
+                                                    AppiumBy.XPATH, ".."
+                                                )
+                                                temp_desc = temp_parent.get_attribute("content-desc")
+                                                if temp_desc and temp_desc != "null":
+                                                    parent_container = temp_parent
+                                                    content_desc = temp_desc
+                                            except Exception:
+                                                pass
 
                                         if content_desc:
-                                            logger.info(f"Found target book: {book_info['title']}")
+                                            logger.info(
+                                                f"Found target book: {book_info['title']} {content_desc}"
+                                            )
                                             return parent_container, button, book_info
                                         else:
-                                            logger.error("Could not find container with content-desc")
-                                            continue
+                                            # If we still don't have content-desc, return what we have
+                                            logger.warning(
+                                                "Could not find container with content-desc, using fallback"
+                                            )
+                                            return parent_container, button, book_info
 
                                     except NoSuchElementException as e:
                                         logger.error(f"Found title but couldn't get container elements: {e}")
@@ -486,7 +520,8 @@ class LibraryHandler:
 
             # Check download status and handle download if needed
             content_desc = parent_container.get_attribute("content-desc")
-            logger.info(f"Book content description: {content_desc}")
+            logger.info(f"Book content description: {content_desc} {parent_container}")
+            store_page_source(self.driver.page_source, "library_view_book_info")
 
             if "Book not downloaded" in content_desc:
                 logger.info("Book is not downloaded yet, initiating download...")

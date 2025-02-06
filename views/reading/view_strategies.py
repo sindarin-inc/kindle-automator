@@ -69,3 +69,11 @@ READING_VIEW_FULL_SCREEN_DIALOG = [
         "//android.widget.TextView[@resource-id='android:id/immersive_cling_title' and @text='Viewing full screen']",
     ),
 ]
+
+# Add new identifiers for the "last read page" dialog
+LAST_READ_PAGE_DIALOG_IDENTIFIERS = [
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/message' and contains(@text, 'You are currently on page')]",
+    ),
+]

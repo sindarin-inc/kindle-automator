@@ -28,8 +28,10 @@ from views.reading.interaction_strategies import (
     BOTTOM_SHEET_IDENTIFIERS,
     CLOSE_BOOK_STRATEGIES,
     FULL_SCREEN_DIALOG_GOT_IT,
+    LAST_READ_PAGE_DIALOG_BUTTONS,
 )
 from views.reading.view_strategies import (
+    LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
     PAGE_NUMBER_IDENTIFIERS,
     READING_PROGRESS_IDENTIFIERS,
@@ -181,6 +183,30 @@ class ReaderHandler:
 
         except Exception as e:
             logger.error(f"Unexpected error handling bottom sheet: {e}")
+
+        # Check for and handle "last read page" dialog
+        try:
+            store_page_source(self.driver.page_source, "last_read_page_dialog")
+            for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
+                try:
+                    message = self.driver.find_element(strategy, locator)
+                    if message.is_displayed() and "You are currently on page" in message.text:
+                        logger.info("Found 'last read page' dialog - clicking YES")
+                        for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
+                            try:
+                                yes_button = self.driver.find_element(btn_strategy, btn_locator)
+                                if yes_button.is_displayed():
+                                    yes_button.click()
+                                    logger.info("Clicked YES button")
+                                    time.sleep(0.5)  # Wait for dialog to dismiss
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        break
+                except NoSuchElementException:
+                    continue
+        except Exception as e:
+            logger.error(f"Error handling 'last read page' dialog: {e}")
 
         # Check for and dismiss Goodreads auto-update dialog
         try:

@@ -320,7 +320,7 @@ class BookOpenResource(Resource):
                 return {"error": "Book title required"}, 400
 
             if server.automator.state_machine.transition_to_library():
-                success = server.automator.library_handler.open_book(book_title)
+                success = server.automator.reader_handler.open_book(book_title)
                 logger.info(f"Book opened: {success}")
 
                 if success:
