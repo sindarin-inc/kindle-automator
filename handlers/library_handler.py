@@ -387,18 +387,14 @@ class LibraryHandler:
                                             # First try finding the direct parent RelativeLayout
                                             parent_container = container.find_element(
                                                 AppiumBy.XPATH,
-                                                ".//android.widget.RelativeLayout[android.widget.TextView[@text='"
-                                                + book_info["title"]
-                                                + "']]",
+                                                f".//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={self._xpath_literal(book_info['title'])}]]",
                                             )
                                         except NoSuchElementException:
                                             # If that fails, try finding any ancestor RelativeLayout
                                             try:
                                                 parent_container = container.find_element(
                                                     AppiumBy.XPATH,
-                                                    "//android.widget.RelativeLayout[.//android.widget.TextView[@text='"
-                                                    + book_info["title"]
-                                                    + "']]",
+                                                    f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={self._xpath_literal(book_info['title'])}]]",
                                                 )
                                             except NoSuchElementException:
                                                 # If that fails too, just use the container itself
@@ -444,6 +440,8 @@ class LibraryHandler:
                             logger.info(f"Container has no book info, skipping: {book_info}")
 
                     except Exception as e:
+                        traceback.print_exc()
+                        store_page_source(self.driver.page_source, "library_view_error")
                         logger.error(f"Error extracting book info: {e}")
                         continue
 
@@ -520,7 +518,7 @@ class LibraryHandler:
 
             # Check download status and handle download if needed
             content_desc = parent_container.get_attribute("content-desc")
-            logger.info(f"Book content description: {content_desc} {parent_container}")
+            logger.info(f"Book content description: {content_desc}")
             store_page_source(self.driver.page_source, "library_view_book_info")
 
             if "Book not downloaded" in content_desc:
@@ -535,17 +533,24 @@ class LibraryHandler:
                         # Re-find the parent container since the page might have refreshed
                         parent_container = self.driver.find_element(
                             AppiumBy.XPATH,
-                            f"//android.widget.RelativeLayout[.//android.widget.TextView[@text='{book_info['title']}']]",
+                            f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={self._xpath_literal(book_info['title'])}]]",
                         )
                         content_desc = parent_container.get_attribute("content-desc")
-                        logger.info(f"Checking download status (attempt {attempt + 1}/{max_attempts})")
-                        store_page_source(self.driver.page_source, "library_view_downloading")
+                        logger.info(
+                            f"Checking download status (attempt {attempt + 1}/{max_attempts}): {content_desc}"
+                        )
 
                         if "Book downloaded" in content_desc:
                             logger.info("Book has finished downloading")
+                            time.sleep(1)  # Short wait for UI to stabilize
                             parent_container.click()
                             logger.info("Clicked book button after download")
                             return True
+
+                        # If we see an error in the content description, abort
+                        if any(error in content_desc.lower() for error in ["error", "failed"]):
+                            logger.error(f"Download failed: {content_desc}")
+                            return False
 
                         time.sleep(1)
                     except Exception as e:
@@ -556,9 +561,25 @@ class LibraryHandler:
                 logger.error("Timed out waiting for book to download")
                 return False
 
+            # For already downloaded books, just click and verify
             logger.info(f"Found downloaded book: {book_info['title']}")
             button.click()
             logger.info("Clicked book button")
+
+            # Wait a moment for any animations
+            time.sleep(1)
+
+            # Verify the click worked by checking we're no longer in library view
+            try:
+                self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                logger.error("Still in library view after clicking book")
+                # Try clicking one more time
+                button.click()
+                time.sleep(1)
+            except NoSuchElementException:
+                logger.info("Successfully left library view")
+                pass
+
             return True
 
         except Exception as e:
@@ -704,3 +725,11 @@ class LibraryHandler:
         except Exception as e:
             logger.error(f"Error scrolling to top of list: {e}")
             return False
+
+    def _xpath_literal(self, s):
+        """Create a valid XPath literal for a string that may contain both single and double quotes."""
+        if "'" not in s:
+            return f"'{s}'"
+        if '"' not in s:
+            return f'"{s}"'
+        return f"concat('{s.replace("'", "',\"'\",'")}')"

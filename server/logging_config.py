@@ -3,6 +3,8 @@ import logging.config
 import os
 import sys
 
+logger = logging.getLogger(__name__)
+
 
 def store_page_source(source: str, prefix: str = "unknown", directory: str = "fixtures/dumps") -> str:
     """Store page source XML in the fixtures directory with timestamp.
@@ -26,6 +28,7 @@ def store_page_source(source: str, prefix: str = "unknown", directory: str = "fi
     with open(filepath, "w") as f:
         f.write(source)
 
+    logger.info(f"Stored page source to {filepath}")
     return filepath
 
 
