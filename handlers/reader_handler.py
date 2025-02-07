@@ -6,21 +6,10 @@ import time
 from io import BytesIO
 
 from appium.webdriver.common.appiumby import AppiumBy
-from appium.webdriver.extensions.action_helpers import ActionHelpers
 from PIL import Image
-from selenium.common.exceptions import (
-    NoSuchElementException,
-    TimeoutException,
-    WebDriverException,
-)
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.actions import interaction
-from selenium.webdriver.common.actions.action_builder import ActionBuilder
-from selenium.webdriver.common.actions.mouse_button import MouseButton
-from selenium.webdriver.common.actions.pointer_input import PointerInput
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from typing_extensions import Self
 
 from handlers.library_handler import LibraryHandler
 from server.logging_config import store_page_source
@@ -32,10 +21,8 @@ from views.reading.interaction_strategies import (
 )
 from views.reading.view_strategies import (
     BLACK_BG_IDENTIFIERS,
-    DARK_MODE_TOGGLE_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     LAYOUT_TAB_IDENTIFIERS,
-    LIGHT_MODE_TOGGLE_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
     PAGE_NUMBER_IDENTIFIERS,
     READING_PROGRESS_IDENTIFIERS,
@@ -43,7 +30,6 @@ from views.reading.view_strategies import (
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
     STYLE_BUTTON_IDENTIFIERS,
-    STYLE_MENU_IDENTIFIERS,
     WHITE_BG_IDENTIFIERS,
 )
 
@@ -57,54 +43,6 @@ class ReaderHandler:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-
-    def handle_reading_flow(self, book_title):
-        """Handle the reading flow for a specific book.
-
-        Args:
-            book_title (str): Title of the book to read
-
-        Returns:
-            tuple: (success, page_number) where success is a boolean and page_number
-                   is the current page number or None if not found
-        """
-        try:
-            logger.info(f"Starting reading flow for book: {book_title}")
-
-            # Try to open the book
-            if not self.open_book(book_title):
-                logger.error(f"Failed to open book: {book_title}")
-                return False, None
-
-            # Get page number
-            page_number = self.get_current_page()
-            logger.info(f"Current page: {page_number}")
-
-            # Capture screenshot
-            if not self.capture_page_screenshot():
-                logger.error("Failed to capture page screenshot")
-                return False, page_number
-
-            # Check for and handle full screen dialog
-            try:
-                dialog = self.driver.find_element(*READING_VIEW_FULL_SCREEN_DIALOG[0])
-                if dialog:
-                    logger.info("Found full screen reading dialog - dismissing...")
-                    # Tap in center of screen to dismiss
-                    screen_size = self.driver.get_window_size()
-                    center_x = screen_size["width"] // 2
-                    center_y = screen_size["height"] // 2
-                    self.driver.tap([(center_x, center_y)], 100)
-                    time.sleep(1)  # Wait for dialog to dismiss
-            except NoSuchElementException:
-                pass  # Dialog not present, continue normally
-
-            logger.info("Successfully opened book and captured first page")
-            return True, page_number
-
-        except Exception as e:
-            logger.error(f"Error in reading flow: {e}")
-            return False, None
 
     def open_book(self, book_title: str) -> bool:
         """Open a book in the library and wait for reading view to load.
@@ -243,28 +181,9 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Error handling Goodreads dialog: {e}")
 
-        # Wait for page number to be visible
-        try:
-            logger.info("Waiting for page number to be visible...")
-            store_page_source(self.driver.driver.page_source, "page_number_waiting")
-            WebDriverWait(self.driver, 5).until(EC.presence_of_element_located(PAGE_NUMBER_IDENTIFIERS[0]))
-            logger.info("Page number element found")
-        except Exception as e:
-            logger.info(f"Page number element not found: {e}")
-
         # Get current page
         current_page = self.get_current_page()
         logger.info(f"Current page: {current_page}")
-
-        # Capture screenshot of first page
-        logger.info("Capturing page screenshot...")
-        try:
-            screenshot_path = os.path.join(self.screenshots_dir, "first_page.png")
-            self.driver.save_screenshot(screenshot_path)
-            logger.info(f"Successfully saved page screenshot to {screenshot_path}")
-        except Exception as e:
-            logger.error(f"Failed to save page screenshot: {e}")
-
         logger.info("Successfully opened book and captured first page")
         return True
 
@@ -663,8 +582,13 @@ class ReaderHandler:
                 except NoSuchElementException:
                     continue
 
-            # Tap center again to close menu
-            self.driver.tap([(center_x, center_y)])
+            # Calculate safe tap position above style menu using strategy constants
+            store_page_source(self.driver.page_source, "style_close_style_menu")
+            window_size = self.driver.get_window_size()
+            center_x = window_size["width"] // 2
+            safe_tap_y = int(window_size["height"] * 0.30)
+
+            self.driver.tap([(center_x, safe_tap_y)])
             time.sleep(0.5)
 
             return True

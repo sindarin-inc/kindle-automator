@@ -282,13 +282,14 @@ class NavigationResource(Resource):
                 return {"error": "Invalid action"}, 400
 
             if success:
-                # Save screenshot with unique ID
-                screenshot_id = f"page_{int(time.time())}"
-                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                server.automator.driver.save_screenshot(screenshot_path)
-
                 # Get current page number and progress
                 progress = server.automator.reader_handler.get_reading_progress()
+
+                # Save screenshot with unique ID
+                screenshot_id = f"page_{int(time.time())}"
+                time.sleep(0.5)
+                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+                server.automator.driver.save_screenshot(screenshot_path)
 
                 # Return URL to image
                 image_url = f"/image/{screenshot_id}"
@@ -326,9 +327,11 @@ class BookOpenResource(Resource):
                 if success:
                     progress = server.automator.reader_handler.get_reading_progress()
                     logger.info(f"Progress: {progress}")
+
                     # Save screenshot with unique ID
-                    screenshot_id = f"book_page_{int(time.time())}"
+                    screenshot_id = f"page_{int(time.time())}"
                     screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+                    time.sleep(0.5)
                     server.automator.driver.save_screenshot(screenshot_path)
 
                     # Return URL to image
