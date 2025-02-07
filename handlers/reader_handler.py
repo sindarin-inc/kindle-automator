@@ -31,13 +31,20 @@ from views.reading.interaction_strategies import (
     LAST_READ_PAGE_DIALOG_BUTTONS,
 )
 from views.reading.view_strategies import (
+    BLACK_BG_IDENTIFIERS,
+    DARK_MODE_TOGGLE_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
+    LAYOUT_TAB_IDENTIFIERS,
+    LIGHT_MODE_TOGGLE_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
     PAGE_NUMBER_IDENTIFIERS,
     READING_PROGRESS_IDENTIFIERS,
     READING_TOOLBAR_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
+    STYLE_BUTTON_IDENTIFIERS,
+    STYLE_MENU_IDENTIFIERS,
+    WHITE_BG_IDENTIFIERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -588,3 +595,80 @@ class ReaderHandler:
 
         logger.error("Could not find close book button")
         return False
+
+    def set_dark_mode(self, enable: bool) -> bool:
+        """Toggle dark mode on/off."""
+        try:
+            # First tap center to show controls if needed
+            window_size = self.driver.get_window_size()
+            center_x = window_size["width"] // 2
+            center_y = window_size["height"] // 2
+            self.driver.tap([(center_x, center_y)])
+            time.sleep(0.5)  # Wait for controls to appear
+
+            store_page_source(self.driver.page_source, "style_button_before")
+
+            # Find and click style button
+            for strategy, locator in STYLE_BUTTON_IDENTIFIERS:
+                try:
+                    style_button = self.driver.find_element(strategy, locator)
+                    if style_button.is_displayed():
+                        style_button.click()
+                        logger.info("Clicked style button")
+                        time.sleep(0.5)  # Wait for menu to appear
+                        break
+                except NoSuchElementException:
+                    continue
+
+            store_page_source(self.driver.page_source, "style_button_after")
+
+            # Find and click the layout tab
+            for strategy, locator in LAYOUT_TAB_IDENTIFIERS:
+                try:
+                    layout_tab = self.driver.find_element(strategy, locator)
+                    if layout_tab.is_displayed():
+                        layout_tab.click()
+                        logger.info("Clicked layout tab")
+                        break
+                except NoSuchElementException:
+                    continue
+
+            store_page_source(self.driver.page_source, "layout_tab_after")
+
+            # Verify layout menu is open by checking for the Layout tab
+            layout_menu_visible = False
+            for strategy, locator in LAYOUT_TAB_IDENTIFIERS:
+                try:
+                    tab = self.driver.find_element(strategy, locator)
+                    if tab.is_displayed():
+                        layout_menu_visible = True
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not layout_menu_visible:
+                logger.error("Layout menu not visible after clicking button")
+                return False
+
+            # Click appropriate color radio button
+            color_identifiers = BLACK_BG_IDENTIFIERS if enable else WHITE_BG_IDENTIFIERS
+            for strategy, locator in color_identifiers:
+                try:
+                    toggle = self.driver.find_element(strategy, locator)
+                    if toggle.is_displayed():
+                        toggle.click()
+                        logger.info(f"Set background color to: {'black' if enable else 'white'}")
+                        time.sleep(0.5)  # Wait for change to apply
+                        break
+                except NoSuchElementException:
+                    continue
+
+            # Tap center again to close menu
+            self.driver.tap([(center_x, center_y)])
+            time.sleep(0.5)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error setting dark mode: {e}")
+            return False

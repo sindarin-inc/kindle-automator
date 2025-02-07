@@ -77,3 +77,40 @@ LAST_READ_PAGE_DIALOG_IDENTIFIERS = [
         "//android.widget.TextView[@resource-id='android:id/message' and contains(@text, 'You are currently on page')]",
     ),
 ]
+
+# Add style button and menu identifiers
+STYLE_BUTTON_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_viewoptions"),
+    (AppiumBy.XPATH, "//android.widget.Button[@content-desc='Reading Settings']"),
+]
+
+LAYOUT_TAB_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_layout_tab"),
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='Layout']"),
+]
+
+STYLE_MENU_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_settings_panel"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_settings_container"),
+]
+
+DARK_MODE_TOGGLE_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_settings_theme_dark"),
+    (AppiumBy.XPATH, "//android.widget.RadioButton[@text='Dark']"),
+]
+
+LIGHT_MODE_TOGGLE_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_settings_theme_light"),
+    (AppiumBy.XPATH, "//android.widget.RadioButton[@text='Light']"),
+]
+
+# Background color radio buttons
+BLACK_BG_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bg_color_option_black"),
+    (AppiumBy.XPATH, "//android.widget.RadioButton[@content-desc='Black']"),
+]
+
+WHITE_BG_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bg_color_option_white"),
+    (AppiumBy.XPATH, "//android.widget.RadioButton[@content-desc='White']"),
+]

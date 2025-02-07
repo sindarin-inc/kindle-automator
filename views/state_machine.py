@@ -170,3 +170,35 @@ class KindleStateMachine:
             logger.info(f"Saved failed transition screenshot to {screenshot_path}")
         except Exception as e:
             logger.error(f"Failed to save transition error data: {e}")
+
+    def update_current_state(self) -> AppState:
+        """Update and return the current state of the app.
+
+        Returns:
+            AppState: The current state of the app
+        """
+        try:
+            # Get current state from view inspector
+            self.current_state = self._get_current_state()
+            logger.info(f"Updated current state to: {self.current_state}")
+
+            # If unknown, try to detect specific states
+            if self.current_state == AppState.UNKNOWN:
+                # Store page source for debugging
+                source = self.driver.page_source
+                filepath = store_page_source(source, "unknown_state")
+                logger.info(f"Stored unknown state page source at: {filepath}")
+
+                # Try to detect library state specifically
+                if self.library_handler._is_library_tab_selected():
+                    self.current_state = AppState.LIBRARY
+                    logger.info("Detected LIBRARY state from library handler")
+                # Add other specific state checks here as needed
+                # e.g. check for reading view elements to detect READING state
+
+            return self.current_state
+
+        except Exception as e:
+            logger.error(f"Error updating current state: {e}")
+            self.current_state = AppState.UNKNOWN
+            return self.current_state

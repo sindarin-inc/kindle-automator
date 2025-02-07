@@ -19,7 +19,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
     Returns:
         The result from the function or raises the last error encountered
     """
-    max_retries = 3
+    max_retries = 1
     last_error = None
     start_time = time.time()
 

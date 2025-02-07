@@ -351,14 +351,44 @@ class StyleResource(Resource):
         try:
             data = request.get_json()
             settings = data.get("settings", {})
+            dark_mode = data.get("dark-mode")
 
-            logger.info(f"Updating style settings: {settings}")
+            logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
 
-            # Example settings: font_size, brightness, background_color
-            success = server.automator.reader_handler.update_style_settings(settings)
+            # Update state machine's current state
+            server.automator.state_machine.update_current_state()
+
+            # Check if we're in reading state
+            current_state = server.automator.state_machine.current_state
+            if current_state != AppState.READING:
+                return {
+                    "error": f"Must be reading a book to change style settings, current state: {current_state.name}",
+                }, 400
+
+            if dark_mode is not None:
+                success = server.automator.reader_handler.set_dark_mode(dark_mode)
+            else:
+                # For now just return success since we haven't implemented other style settings
+                success = True
+                logger.warning("Other style settings not yet implemented")
 
             if success:
-                return {"success": True}, 200
+                # Save screenshot with unique ID
+                screenshot_id = f"style_update_{int(time.time())}"
+                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+                server.automator.driver.save_screenshot(screenshot_path)
+
+                # Get current page number and progress
+                progress = server.automator.reader_handler.get_reading_progress()
+
+                # Return URL to image
+                image_url = f"/image/{screenshot_id}"
+                return {
+                    "success": True,
+                    "progress": progress,
+                    "screenshot_url": image_url,
+                }, 200
+
             return {"error": "Failed to update settings"}, 500
 
         except Exception as e:

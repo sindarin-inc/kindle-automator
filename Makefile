@@ -98,7 +98,15 @@ test-style:
 	@echo "Updating style settings..."
 	@curl -X POST http://localhost:4098/style \
 		-H "Content-Type: application/json" \
-		-d '{"settings": {"font_size": "large", "brightness": 80}}' \
+		-d '{"settings": {"font_size": "large", "brightness": 80}, "dark-mode": true}' \
+		-v
+
+# Test style endpoint
+test-style-light:
+	@echo "Updating style settings to light mode..."
+	@curl -X POST http://localhost:4098/style \
+		-H "Content-Type: application/json" \
+		-d '{"settings": {"font_size": "large", "brightness": 80}, "dark-mode": false}' \
 		-v
 
 # Test 2FA endpoint
