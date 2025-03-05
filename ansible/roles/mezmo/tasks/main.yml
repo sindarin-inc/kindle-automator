@@ -1,0 +1,16 @@
+---
+- name: Start mezmo logspout docker container
+  docker_container:
+    name: logdna
+    image: logdna/logspout:latest
+    state: started
+    restart_policy: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    env:
+      LOGDNA_KEY: "{{ MEZMO_LOGDNA_KEY }}"
+      FILTER_NAME: ""
+      TAGS: "{{ inventory_hostname }}"
+      HOSTNAME: "{{ inventory_hostname }}"
+    networks:
+      - name: sol-network

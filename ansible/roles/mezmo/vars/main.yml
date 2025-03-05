@@ -1,0 +1,5 @@
+---
+# Default values for mezmo configuration
+# These can be overridden in group_vars or host_vars
+mezmo_filter_name: "" # Container names with wildcards (Optional)
+mezmo_tags: "" # Comma-separated list of tags (Optional)
