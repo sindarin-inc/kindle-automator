@@ -1,11 +1,12 @@
 ---
 # Reset and update the repository
 - name: Reset git repository to clean state
-  git:
-    repo: "{{ kindle_repo_url }}"
-    dest: /opt/kindle-automator
-    force: yes
-    update: no
+  shell: |
+    cd /opt/kindle-automator
+    git reset --hard HEAD
+    git clean -fdx
+  args:
+    executable: /bin/bash
   register: git_reset
 
 - name: Pull latest changes
