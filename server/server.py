@@ -271,15 +271,8 @@ class ScreenshotResource(Resource):
                 image_url = f"/image/{image_id}"
                 return {"screenshot_url": image_url}, 200
             else:
-                # Display the image directly (GET method will delete after serving)
-                response = send_file(screenshot_path, mimetype="image/png")
-                # Delete the file after serving
-                try:
-                    os.remove(screenshot_path)
-                    logger.info(f"Deleted screenshot: {screenshot_path}")
-                except Exception as e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {e}")
-                return response, 200
+                # Return ImageResource
+                return ImageResource.get(image_id)
             
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
