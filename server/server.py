@@ -249,8 +249,11 @@ class ScreenshotResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
-        """Get current page screenshot and return a URL to access it"""
+        """Get current page screenshot and return a URL to access it or display it directly"""
         try:
+            # Check if save parameter is provided
+            save = request.args.get('save', '0') == '1'
+            
             # Generate a unique filename with timestamp to avoid caching issues
             timestamp = int(time.time())
             filename = f"current_screen_{timestamp}.png"
@@ -259,11 +262,25 @@ class ScreenshotResource(Resource):
             # Take the screenshot
             server.automator.driver.save_screenshot(screenshot_path)
             
-            # Return the URL to access the screenshot via the /image endpoint
-            # The POST method is used to serve the image without deleting it
-            image_url = f"/image/{os.path.splitext(filename)[0]}"
+            # If save=1, return the URL to access the screenshot via the /image endpoint with POST method
+            # Otherwise, return the image directly via GET method (which will delete it after serving)
+            image_id = os.path.splitext(filename)[0]
             
-            return {"screenshot_url": image_url}, 200
+            if save:
+                # Return URL to access the screenshot (POST method preserves the image)
+                image_url = f"/image/{image_id}"
+                return {"screenshot_url": image_url}, 200
+            else:
+                # Display the image directly (GET method will delete after serving)
+                response = send_file(screenshot_path, mimetype="image/png")
+                # Delete the file after serving
+                try:
+                    os.remove(screenshot_path)
+                    logger.info(f"Deleted screenshot: {screenshot_path}")
+                except Exception as e:
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {e}")
+                return response, 200
+            
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
