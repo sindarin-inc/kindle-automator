@@ -1,0 +1,11 @@
+---
+- name: restart logdna-agent
+  systemd:
+    name: logdna-agent
+    state: restarted
+    daemon_reload: yes
+
+- name: restart logdna container
+  docker_container:
+    name: logdna
+    restart: yes

@@ -1,4 +1,61 @@
 ---
+# Add Mezmo repository and GPG key using the exact commands from documentation
+- name: Add Mezmo repository and GPG key
+  become: yes
+  block:
+    - name: Add Mezmo repository
+      shell: echo "deb https://assets.logdna.com stable main" | tee /etc/apt/sources.list.d/logdna.list
+      args:
+        creates: /etc/apt/sources.list.d/logdna.list
+
+    - name: Download Mezmo GPG key
+      get_url:
+        url: https://assets.logdna.com/logdna.gpg
+        dest: /tmp/logdna.gpg
+        mode: "0644"
+
+    - name: Add Mezmo GPG key
+      apt_key:
+        file: /tmp/logdna.gpg
+        state: present
+        id: C1BF174AEF506BE8
+      register: apt_key_result
+      ignore_errors: yes
+
+    - name: Add Mezmo GPG key (alternative method)
+      shell: apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C1BF174AEF506BE8
+      args:
+        warn: false
+      when: apt_key_result is failed
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+# Install Mezmo agent
+- name: Install Mezmo agent
+  apt:
+    name: logdna-agent
+    state: present
+    update_cache: yes
+
+# Create Mezmo agent configuration
+- name: Create Mezmo agent configuration
+  template:
+    src: mezmo-agent.conf.j2
+    dest: /etc/logdna.env
+    mode: "0644"
+  notify: restart logdna-agent
+
+# Enable and start Mezmo agent service
+- name: Enable and start Mezmo agent service
+  systemd:
+    name: logdna-agent
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+# Keep the existing logspout container for Docker logs
 - name: Start mezmo logspout docker container
   docker_container:
     name: logdna
@@ -9,8 +66,8 @@
       - /var/run/docker.sock:/var/run/docker.sock
     env:
       LOGDNA_KEY: "{{ MEZMO_LOGDNA_KEY }}"
-      FILTER_NAME: ""
-      TAGS: "{{ inventory_hostname }}"
+      FILTER_NAME: "{{ mezmo_filter_name }}"
+      TAGS: "{{ inventory_hostname }}{% if mezmo_tags %},{{ mezmo_tags }}{% endif %}"
       HOSTNAME: "{{ inventory_hostname }}"
     networks:
       - name: sol-network

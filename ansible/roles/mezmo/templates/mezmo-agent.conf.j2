@@ -1,0 +1,26 @@
+# Environment variables for logdna-agent
+LOGDNA_LOG_DIRS=/opt/kindle-automator/logs
+LOGDNA_EXCLUSION_RULES=/var/log/*
+MZ_SYSTEMD_JOURNAL_TAILER=false
+LOGDNA_INGESTION_KEY={{ MEZMO_LOGDNA_KEY }}
+LOGDNA_TAGS={{ inventory_hostname }}{% if mezmo_tags %},{{ mezmo_tags }}{% endif %}
+LOGDNA_EXCLUDE=/var/log/wtmp,/var/log/btmp
+LOGDNA_EXCLUDE_REGEX=.*\.gz$,.*\.zip$
+
+# Disable systemd journal collection
+LOGDNA_JOURNALD=false
+# Connection settings
+LOGDNA_SSL=true
+LOGDNA_COMPRESSION=true
+LOGDNA_LOG_LEVEL=debug
+
+# Improve real-time log detection
+LOGDNA_DBPERSIST=true
+LOGDNA_RESCANINTERVAL=10
+LOGDNA_LOGSENDBATCHSIZE=5
+LOGDNA_LOGSENDBATCHTIME=3000
+
+# Connectivity settings
+LOGDNA_RECONNECTTIMEOUT=120
+LOGDNA_RETRYCOUNT=5
+LOGDNA_RETRYTIMEOUT=60

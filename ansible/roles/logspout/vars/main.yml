@@ -1,4 +1,0 @@
-papertrail_host_prod: "logs6.papertrailapp.com"
-papertrail_port_prod: "15454"
-papertrail_host_staging: "logs.papertrailapp.com"
-papertrail_port_staging: "50489"
