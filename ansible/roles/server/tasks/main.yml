@@ -19,16 +19,18 @@
 # Create app directory
 - name: Create application directory
   file:
-    path: /opt/kindle-automator
+    path: "{{ item }}"
     state: directory
     mode: "0755"
+  with_items:
+    - /opt/keys
 
 # Create public deploy key for GitHub
 - name: Copy public deploy key for GitHub
   copy:
     src: files/deploy_key
-    dest: /opt/kindle-automator/deploy_key
-    mode: "0644"
+    dest: /opt/keys/deploy_key
+    mode: "0400"
   register: deploy_key
 
 # Clone or update the repository
@@ -39,7 +41,8 @@
     version: "{{ kindle_repo_branch | default('main') }}"
     update: yes
     force: yes
-    key_file: /opt/kindle-automator/deploy_key
+    key_file: /opt/keys/deploy_key
+    accept_hostkey: yes
   register: git_clone
 
 # Set up Python virtual environment
@@ -57,10 +60,12 @@
 
 # Install dependencies
 - name: Install Python dependencies
-  command: /opt/kindle-automator/venv/bin/uv pip install -r requirements.txt
+  shell: |
+    source /opt/kindle-automator/venv/bin/activate
+    cd /opt/kindle-automator
+    uv pip install -r requirements.txt
   args:
-    chdir: /opt/kindle-automator
-  when: git_clone.changed
+    executable: /bin/bash
 
 # Create logs directory
 - name: Create logs directory
