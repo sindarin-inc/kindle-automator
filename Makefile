@@ -10,7 +10,7 @@ reinstall:
 	uv run automator.py --reinstall
 
 lint:
-	workon kindle-automator
+# workon kindle-automator
 	isort --profile black .
 	black --line-length 110 .
 	flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv

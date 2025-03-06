@@ -732,4 +732,5 @@ class LibraryHandler:
             return f"'{s}'"
         if '"' not in s:
             return f'"{s}"'
-        return f"concat('{s.replace("'", "',\"'\",'")}')"
+        replaced = s.replace("'", "',\"'\",'")
+        return f"concat('{replaced}')"
