@@ -4,7 +4,6 @@
   shell: |
     cd /opt/kindle-automator
     git reset --hard HEAD
-    git clean -fdx
   args:
     executable: /bin/bash
   register: git_reset

@@ -208,6 +208,7 @@
     dest: "{{ android_home }}/apk/kindle.apk"
     mode: "0644"
   become: yes
+  tags: apk
 
 - name: Install Kindle APK
   shell: |

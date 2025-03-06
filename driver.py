@@ -122,11 +122,11 @@ class Driver:
         try:
             logger.info(f"Installing Kindle on device {self.device_id}")
             apk_path = os.path.join(
-                "ansible",
-                "roles",
-                "android",
-                "files",
-                "com.amazon.kindle_8.113.0.100(2.0.29451.0)-1285953011_minAPI28(arm64-v8a)(nodpi).com.apk",
+                os.path.dirname(__file__),
+                "..",
+                "android-sdk",
+                "apk",
+                "kindle.apk",
             )
             if not os.path.exists(apk_path):
                 logger.error(f"Kindle APK not found at {apk_path}")
@@ -229,6 +229,7 @@ class Driver:
                     options.ignore_unimportant_views = False
                     options.allow_invisible_elements = True
                     options.enable_multi_windows = True
+                    options.new_command_timeout = 60*60*24*7  # 7 days
 
                     self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
                     logger.info("Driver initialized successfully")

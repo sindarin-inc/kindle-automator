@@ -93,6 +93,9 @@
   command: npx appium driver install uiautomator2
   args:
     creates: /usr/local/lib/node_modules/appium/node_modules/appium-uiautomator2-driver
+  register: uiautomator2_installed
+  ignore_errors: yes
+  changed_when: false
 
 # Create systemd service file
 - name: Create systemd service file
