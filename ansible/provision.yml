@@ -11,3 +11,4 @@
     - { role: mezmo, tags: mezmo }
     - { role: android_x86, tags: android-x86 }
     # - { role: android_arm, tags: android-arm }
+    - { role: server, tags: server }

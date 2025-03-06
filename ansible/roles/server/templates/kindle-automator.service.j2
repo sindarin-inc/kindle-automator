@@ -1,0 +1,18 @@
+[Unit]
+Description=Kindle Automator Flask Server
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/kindle-automator
+Environment="PATH=/opt/kindle-automator/venv/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:/usr/local/bin:/usr/bin:/bin"
+Environment="ANDROID_HOME=/opt/android-sdk"
+Environment="ANDROID_SDK_ROOT=/opt/android-sdk"
+Environment="FLASK_ENV=production"
+Environment="PYTHONPATH=/opt/kindle-automator"
+ExecStart=/opt/kindle-automator/venv/bin/python -m server.server
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
