@@ -20,7 +20,7 @@
     mode: 0755
   with_items:
     - /srv/sol-web/sol
-    - /srv/certs/api.sindarin.com
+    - /srv/certs/kindle.sindarin.com
 
 - name: Start Docker service
   service:

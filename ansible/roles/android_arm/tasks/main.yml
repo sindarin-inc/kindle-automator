@@ -1,0 +1,140 @@
+---
+- name: Ensure required dependencies are installed (Ubuntu ARM64)
+  apt:
+    name:
+      - unzip
+      - qemu-kvm
+      - libvirt-daemon-system
+      - libvirt-clients
+      - python3-libvirt
+      - bridge-utils
+      - libglu1-mesa-dev
+      - openjdk-17-jdk
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Set Android SDK environment variables
+  blockinfile:
+    path: /etc/profile
+    block: |
+      export ANDROID_HOME={{ android_home }}
+      export ANDROID_SDK_ROOT={{ android_home }}
+      export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator
+    create: yes
+  become: yes
+
+- name: Create Android SDK directory
+  file:
+    path: "{{ android_home }}"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Download command line tools
+  get_url:
+    url: "{{ sdk_tools_url }}"
+    dest: "/tmp/cmdline-tools.zip"
+  become: yes
+
+- name: Unzip command line tools into SDK folder
+  unarchive:
+    src: "/tmp/cmdline-tools.zip"
+    dest: "{{ android_home }}"
+    remote_src: yes
+  become: yes
+
+- name: Move and rename command line tools folder
+  command: mv "{{ android_home }}/cmdline-tools" "{{ android_home }}/cmdline-tools-latest"
+  become: yes
+  args:
+    creates: "{{ android_home }}/cmdline-tools-latest"
+
+- name: Create cmdline-tools folder structure
+  file:
+    path: "{{ android_home }}/cmdline-tools/latest"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Move all content under cmdline-tools-latest to 'latest' folder
+  shell: "cp -r {{ android_home }}/cmdline-tools-latest/. {{ android_home }}/cmdline-tools/latest/ && rm -rf {{ android_home }}/cmdline-tools-latest"
+  become: yes
+
+- name: Accept all Android SDK licenses
+  shell: |
+    yes | {{ android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Update Android SDK package list
+  shell: "{{ android_home }}/cmdline-tools/latest/bin/sdkmanager --update"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Install required Android SDK components
+  shell: |
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "{{ sys_img }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Manually install emulator if missing
+  block:
+    - name: Download Android Emulator manually
+      get_url:
+        url: "https://redirector.gvt1.com/edgedl/android/repository/emulator-linux_x64-13025442.zip"
+        dest: "/tmp/android-emulator.zip"
+      become: yes
+
+    - name: Extract Android Emulator
+      unarchive:
+        src: "/tmp/android-emulator.zip"
+        dest: "{{ android_home }}/emulator/"
+        remote_src: yes
+      become: yes
+
+    - name: Make emulator executable
+      file:
+        path: "{{ android_home }}/emulator/emulator"
+        mode: "0755"
+      become: yes
+  when: emulator_check.stdout | length == 0
+
+- name: Create an ARM64 AVD
+  shell: |
+    echo "no" | {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd -n {{ avd_name }} -k "{{ sys_img }}" --device "{{ device_skin }}" --force
+  args:
+    creates: "{{ android_home }}/.android/avd/{{ avd_name }}.avd"
+  become: yes
+  environment:
+    ANDROID_SDK_ROOT: "{{ android_home }}"
+
+- name: Start the emulator in background with KVM acceleration
+  shell: |
+    {{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -accel on &
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Wait for emulator to boot
+  shell: |
+    {{ android_home }}/platform-tools/adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Install Kindle APK
+  shell: |
+    {{ android_home }}/platform-tools/adb install -r {{ kindle_package_path }}
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Launch Kindle app
+  shell: |
+    {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle -c android.intent.category.LAUNCHER 1
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"

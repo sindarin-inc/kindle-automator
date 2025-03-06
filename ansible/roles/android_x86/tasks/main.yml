@@ -1,0 +1,224 @@
+---
+- name: Ensure required dependencies are installed (Ubuntu x86_64)
+  apt:
+    name:
+      - unzip
+      - qemu-kvm
+      - libvirt-daemon-system
+      - libvirt-clients
+      - python3-libvirt
+      - bridge-utils
+      - libglu1-mesa-dev
+      - openjdk-17-jdk
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Add Android SDK environment variables to /etc/profile
+  blockinfile:
+    path: ~/.zshrc
+    block: |
+      export ANDROID_HOME={{ android_home }}
+      export ANDROID_SDK_ROOT={{ android_home }}
+      export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator
+    create: yes
+  become: yes
+
+- name: Set Android SDK environment variables
+  blockinfile:
+    path: /etc/profile
+    block: |
+      export ANDROID_HOME={{ android_home }}
+      export ANDROID_SDK_ROOT={{ android_home }}
+      export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator
+    create: yes
+  become: yes
+
+- name: Create Android SDK directory
+  file:
+    path: "{{ android_home }}"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Download command line tools
+  get_url:
+    url: "{{ sdk_tools_url }}"
+    dest: "/tmp/cmdline-tools.zip"
+  become: yes
+
+- name: Unzip command line tools into SDK folder
+  unarchive:
+    src: "/tmp/cmdline-tools.zip"
+    dest: "{{ android_home }}"
+    remote_src: yes
+  become: yes
+
+- name: Move and rename command line tools folder
+  command: mv "{{ android_home }}/cmdline-tools" "{{ android_home }}/cmdline-tools-latest"
+  become: yes
+  args:
+    creates: "{{ android_home }}/cmdline-tools-latest"
+
+- name: Create cmdline-tools folder structure
+  file:
+    path: "{{ android_home }}/cmdline-tools/latest"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Move all content under cmdline-tools-latest to 'latest' folder
+  shell: "cp -r {{ android_home }}/cmdline-tools-latest/. {{ android_home }}/cmdline-tools/latest/ && rm -rf {{ android_home }}/cmdline-tools-latest"
+  become: yes
+
+- name: Accept all Android SDK licenses
+  shell: |
+    yes | {{ android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Install required Android SDK components
+  shell: |
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "emulator" "{{ sys_img }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Ensure AVD directory exists
+  file:
+    path: "{{ android_home }}/avd"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Create an x86 AVD in /opt/android-sdk/avd
+  shell: |
+    echo "no" | {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd -n {{ avd_name }} -k "{{ sys_img }}" --device "{{ device_skin }}" --force
+  args:
+    creates: "{{ android_home }}/avd/{{ avd_name }}.avd"
+  become: yes
+  environment:
+    ANDROID_SDK_ROOT: "{{ android_home }}"
+    ANDROID_AVD_HOME: "{{ android_home }}/avd"
+
+- name: Configure AVD settings for better performance
+  lineinfile:
+    path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
+    regexp: "{{ item.regex }}"
+    line: "{{ item.line }}"
+    state: present
+    backrefs: yes
+  with_items:
+    - { regex: "^hw.ramSize=.*", line: "hw.ramSize=2048" }
+    - { regex: "^hw.cpu.ncore=.*", line: "hw.cpu.ncore=2" }
+    - { regex: "^hw.gpu.enabled=.*", line: "hw.gpu.enabled=yes" }
+    - { regex: "^hw.gpu.mode=.*", line: "hw.gpu.mode=swiftshader" }
+    - { regex: "^hw.audioInput=.*", line: "hw.audioInput=no" }
+    - { regex: "^hw.audioOutput=.*", line: "hw.audioOutput=no" }
+    - { regex: "^hw.gps=.*", line: "hw.gps=no" }
+    - { regex: "^hw.camera.back=.*", line: "hw.camera.back=none" }
+    - {
+        regex: "^disk.dataPartition.size=.*",
+        line: "disk.dataPartition.size=6G",
+      }
+  become: yes
+
+- name: Create systemd service for Android Emulator
+  copy:
+    dest: /etc/systemd/system/android-emulator.service
+    content: |
+      [Unit]
+      Description=Android Emulator Service
+      After=network.target
+
+      [Service]
+      User={{ ansible_user }}
+      WorkingDirectory={{ android_home }}
+      ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -accel on
+      Restart=always
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+  become: yes
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: Enable and start Android Emulator service
+  systemd:
+    name: android-emulator
+    enabled: yes
+    state: started
+  become: yes
+
+- name: Wait for emulator to boot completely
+  shell: |
+    until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+      echo "Waiting for emulator to fully boot..."
+      sleep 5
+    done
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Ensure libhoudini directory exists
+  file:
+    path: "{{ android_home }}/libhoudini"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Check if libhoudini is already downloaded
+  stat:
+    path: "{{ android_home }}/libhoudini/libhoudini.so"
+  register: libhoudini_check
+
+- name: Download and install libhoudini for ARM translation
+  shell: |
+    wget -O {{ android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
+    {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib/
+    {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib64/
+    {{ android_home }}/platform-tools/adb reboot
+  become: yes
+  when: not libhoudini_check.stat.exists
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Ensure permanent directory for APKs exists
+  file:
+    path: "{{ android_home }}/apk"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Ensure directory for user app data exists
+  file:
+    path: "{{ android_home }}/app_data"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Ensure Kindle APK is uploaded to the server
+  copy:
+    src: "files/{{ kindle_package_path }}"
+    dest: "{{ android_home }}/apk/kindle.apk"
+    mode: "0644"
+  become: yes
+
+- name: Install Kindle APK
+  shell: |
+    {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Launch Kindle app
+  shell: |
+    {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle -c android.intent.category.LAUNCHER 1
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"

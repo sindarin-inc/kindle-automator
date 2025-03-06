@@ -33,6 +33,8 @@ ssh-arm64:
 	ssh -i ansible/keys/kindle.key root@kindle.sindarin.com
 ssh-2:
 	ssh -i ansible/keys/kindle.key root@94.130.229.244
+ssh-x86-2:
+	ssh -i ansible/keys/kindle.key root@164.92.64.106
 
 # Start the Flask server
 server:

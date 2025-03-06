@@ -157,6 +157,7 @@ screenshots/*.png
 
 # Ansible
 ansible/keys/*
-ansible/roles/android/files/*
+ansible/roles/android_x86/files/*
+ansible/roles/android_arm/files/*
 ansible/roles/waydroid/files/*
 ansible/.env.ansible.yml

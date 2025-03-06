@@ -13,12 +13,6 @@
     state: present
   when: ansible_facts['os_family'] == 'RedHat'
 
-- name: Start and enable Nginx service
-  service:
-    name: nginx
-    state: started
-    enabled: yes
-
 - name: Copy Nginx configuration file
   template:
     src: nginx.conf
@@ -42,6 +36,12 @@
   command: nginx -t
   register: nginx_test
   ignore_errors: yes
+
+- name: Start and enable Nginx service
+  service:
+    name: nginx
+    state: started
+    enabled: yes
 
 - name: Reload Nginx if configuration is valid
   service:

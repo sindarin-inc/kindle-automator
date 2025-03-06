@@ -5,12 +5,16 @@ sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-
 android_home: "/opt/android-sdk"
 avd_name: "android35"
 sdk_api_level: "35"
-sys_img: "system-images;android-{{ sdk_api_level }};default;x86_64"
-emulator_package: "emulator-arm64"
+
+# Use ARM64 system image instead of x86_64
+sys_img: "system-images;android-{{ sdk_api_level }};google_apis;arm64-v8a"
+
+emulator_package: "emulator"
 platform_tools_package: "platform-tools"
 build_tools_version: "35.0.0"
-# Example build-tools path: build-tools;35.0.0
 build_tools_package: "build-tools;{{ build_tools_version }}"
+
+# Ensure this is an ARM64-compatible APK
 kindle_package_path: "com.amazon.kindle_8.113.0.100(2.0.29451.0)-1285953011_minAPI28(arm64-v8a)(nodpi).com.apk"
 
 # If you want a custom skin or density:
@@ -21,8 +25,7 @@ avd_heap_size: "512"
 # Headless emulator options:
 emulator_extra_opts: "-no-audio -no-window -gpu swiftshader_indirect"
 
-# If you need to accept multiple licenses, you can add them here:
+# Remove Intel-specific licenses (not needed on ARM)
 sdk_licenses:
   - "android-sdk-license"
   - "android-sdk-preview-license"
-  - "intel-android-extra-license"
