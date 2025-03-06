@@ -17,6 +17,7 @@
     key_file: /opt/keys/deploy_key
     accept_hostkey: yes
   register: git_pull
+  notify: restart kindle-automator
 
 # Update Python dependencies if requirements.txt changed
 - name: Update Python dependencies if requirements.txt changed
@@ -27,21 +28,3 @@
   args:
     executable: /bin/bash
   when: git_pull.changed
-
-# Notify handler to restart the kindle-automator service
-- name: Trigger kindle-automator service restart
-  debug:
-    msg: "Triggering kindle-automator service restart"
-  changed_when: true
-  notify: restart kindle-automator
-
-# Check service status after restart
-- name: Check service status
-  shell: systemctl status kindle-automator
-  register: service_status
-  changed_when: false
-  failed_when: false
-
-- name: Display service status
-  debug:
-    var: service_status.stdout_lines

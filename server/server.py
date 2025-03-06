@@ -7,7 +7,7 @@ import time
 import traceback
 from typing import Optional
 
-from flask import Flask, request, send_file
+from flask import Flask, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
 
 from automator import KindleAutomator
@@ -247,7 +247,6 @@ class BooksResource(Resource):
 
 class ScreenshotResource(Resource):
     @ensure_automator_healthy
-    @handle_automator_response(server)
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly"""
         try:
@@ -269,10 +268,10 @@ class ScreenshotResource(Resource):
             if save:
                 # Return URL to access the screenshot (POST method preserves the image)
                 image_url = f"/image/{image_id}"
-                return {"screenshot_url": image_url}, 200
+                return handle_automator_response({"screenshot_url": image_url}, 200)
             else:
-                # Return ImageResource
-                return ImageResource.get(image_id)
+                # Use the shared serve_image function to serve the image directly
+                return serve_image(image_id, delete_after=True)
             
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
@@ -457,58 +456,56 @@ class FixturesResource(Resource):
             return {"error": str(e)}, 500
 
 
-class ImageResource(Resource):
-    def _get_image_path(self, image_id):
-        """Get full path for an image file."""
-        # Build path to image using project root
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Helper function to get image path
+def get_image_path(image_id):
+    """Get full path for an image file."""
+    # Build path to image using project root
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        # Ensure .png extension
-        if not image_id.endswith(".png"):
-            image_id = f"{image_id}.png"
+    # Ensure .png extension
+    if not image_id.endswith(".png"):
+        image_id = f"{image_id}.png"
 
-        return os.path.join(project_root, "screenshots", image_id)
+    return os.path.join(project_root, "screenshots", image_id)
 
-    def get(self, image_id):
-        """Get an image by ID and delete it after serving."""
-        try:
-            image_path = self._get_image_path(image_id)
+# Helper function to serve an image with option to delete after serving
+def serve_image(image_id, delete_after=True):
+    """Serve an image by ID with option to delete after serving.
+    
+    This function properly handles the Flask response object to work with Flask-RESTful.
+    """
+    try:
+        image_path = get_image_path(image_id)
 
-            if not os.path.exists(image_path):
-                logger.error(f"Image not found at path: {image_path}")
-                return {"error": "Image not found"}, 404
+        if not os.path.exists(image_path):
+            logger.error(f"Image not found at path: {image_path}")
+            return {"error": "Image not found"}, 404
 
-            # Return the image file
-            response = send_file(image_path, mimetype="image/png")
+        # Create a response that bypasses Flask-RESTful's serialization
+        response = make_response(send_file(image_path, mimetype="image/png"))
 
-            # Delete the file after sending
+        # Delete the file after sending if requested
+        if delete_after:
             try:
                 os.remove(image_path)
                 logger.info(f"Deleted image: {image_path}")
             except Exception as e:
                 logger.error(f"Failed to delete image {image_path}: {e}")
 
-            return response
+        return response
 
-        except Exception as e:
-            logger.error(f"Error serving image: {e}")
-            return {"error": str(e)}, 500
+    except Exception as e:
+        logger.error(f"Error serving image: {e}")
+        return {"error": str(e)}, 500
+
+class ImageResource(Resource):
+    def get(self, image_id):
+        """Get an image by ID and delete it after serving."""
+        return serve_image(image_id, delete_after=True)
 
     def post(self, image_id):
         """Get an image by ID without deleting it."""
-        try:
-            image_path = self._get_image_path(image_id)
-
-            if not os.path.exists(image_path):
-                logger.error(f"Image not found at path: {image_path}")
-                return {"error": "Image not found"}, 404
-
-            # Return the image file without deleting
-            return send_file(image_path, mimetype="image/png")
-
-        except Exception as e:
-            logger.error(f"Error serving image: {e}")
-            return {"error": str(e)}, 500
+        return serve_image(image_id, delete_after=False)
 
 
 # Add resources to API
