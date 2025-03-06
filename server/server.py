@@ -249,16 +249,21 @@ class ScreenshotResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
-        """Get current page screenshot"""
+        """Get current page screenshot and return a URL to access it"""
         try:
-            screenshot_path = os.path.join(server.automator.screenshots_dir, "current_screen.png")
+            # Generate a unique filename with timestamp to avoid caching issues
+            timestamp = int(time.time())
+            filename = f"current_screen_{timestamp}.png"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, filename)
+            
+            # Take the screenshot
             server.automator.driver.save_screenshot(screenshot_path)
-
-            # Convert to base64 for response
-            with open(screenshot_path, "rb") as img_file:
-                img_data = base64.b64encode(img_file.read()).decode()
-
-            return {"screenshot": img_data}, 200
+            
+            # Return the URL to access the screenshot via the /image endpoint
+            # The POST method is used to serve the image without deleting it
+            image_url = f"/image/{os.path.splitext(filename)[0]}"
+            
+            return {"screenshot_url": image_url}, 200
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")

@@ -3,13 +3,10 @@ LOGDNA_LOG_DIRS=/opt/kindle-automator/logs
 LOGDNA_EXCLUSION_RULES=/var/log/*
 MZ_SYSTEMD_JOURNAL_TAILER=false
 LOGDNA_JOURNALD=false
+LOGDNA_JOURNALD_PATHS=
 LOGDNA_INGESTION_KEY={{ MEZMO_LOGDNA_KEY }}
 LOGDNA_TAGS={{ inventory_hostname }}{% if mezmo_tags %},{{ mezmo_tags }}{% endif %}
-LOGDNA_EXCLUDE=/var/log/wtmp,/var/log/btmp
-LOGDNA_EXCLUDE_REGEX=.*\.gz$,.*\.zip$
 
-# Disable systemd journal collection
-LOGDNA_JOURNALD=false
 # Connection settings
 LOGDNA_SSL=true
 LOGDNA_COMPRESSION=true

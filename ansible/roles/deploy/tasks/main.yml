@@ -1,0 +1,47 @@
+---
+# Reset and update the repository
+- name: Reset git repository to clean state
+  git:
+    repo: "{{ kindle_repo_url }}"
+    dest: /opt/kindle-automator
+    force: yes
+    update: no
+  register: git_reset
+
+- name: Pull latest changes
+  git:
+    repo: "{{ kindle_repo_url }}"
+    dest: /opt/kindle-automator
+    update: yes
+    version: "{{ kindle_repo_branch | default('main') }}"
+    key_file: /opt/keys/deploy_key
+    accept_hostkey: yes
+  register: git_pull
+
+# Update Python dependencies if requirements.txt changed
+- name: Update Python dependencies if requirements.txt changed
+  shell: |
+    source /opt/kindle-automator/venv/bin/activate
+    cd /opt/kindle-automator
+    uv pip install -r requirements.txt
+  args:
+    executable: /bin/bash
+  when: git_pull.changed
+
+# Notify handler to restart the kindle-automator service
+- name: Trigger kindle-automator service restart
+  debug:
+    msg: "Triggering kindle-automator service restart"
+  changed_when: true
+  notify: restart kindle-automator
+
+# Check service status after restart
+- name: Check service status
+  shell: systemctl status kindle-automator
+  register: service_status
+  changed_when: false
+  failed_when: false
+
+- name: Display service status
+  debug:
+    var: service_status.stdout_lines
