@@ -40,9 +40,21 @@ class StateTransitions:
         return self.view_inspector.ensure_app_foreground()
 
     def handle_notifications(self):
-        """Handle NOTIFICATIONS state by accepting permissions."""
-        logger.info("Handling NOTIFICATIONS state - accepting permission...")
-        result = self.permissions_handler.handle_notifications_permission()
+        """Handle NOTIFICATIONS state by accepting or denying permissions as appropriate."""
+        # Check if this is a Magisk notification dialog
+        try:
+            notification_text = self.driver.find_element(AppiumBy.ID, "com.android.permissioncontroller:id/permission_message").text
+            if "Magisk" in notification_text:
+                logger.info("Handling Magisk notification dialog - denying permission...")
+                result = self.permissions_handler.handle_notifications_permission(should_allow=False)
+            else:
+                # For Kindle or other app permissions, we usually want to allow
+                logger.info("Handling notification permission dialog - accepting permission...")
+                result = self.permissions_handler.handle_notifications_permission(should_allow=True)
+        except Exception as e:
+            # If we can't determine the app, default to accepting the permission
+            logger.info(f"Could not determine notification app, defaulting to accept: {e}")
+            result = self.permissions_handler.handle_notifications_permission()
 
         # Even if permission handling fails, we want to continue the flow
         # The dialog may have auto-dismissed, which is fine
