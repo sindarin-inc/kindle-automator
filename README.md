@@ -120,3 +120,14 @@ Now you are ready to proceed with the automation setup and run the scripts.
     ```
 
     This will install the Kindle APK and start the Flask server so it's ready to automate the app.
+
+## Important files
+
+- `server/server.py`: Flask server on port 4098
+- `views/state_machine.py`: Handles Kindle app states and transitions
+- `views/core/app_state.py`: Kindle views and app states
+- `views/transition.py`: Controller between states and handlers
+- `views/view_inspector.py`: App view identifying, interacting with appium driver
+- `handlers/*_handler.py`: Various handlers for different app states
+- `automator.py`: Glue between the Kindle side and the server side, ensuring driver is running
+- `driver.py`: Handles Appium driver initialization and management

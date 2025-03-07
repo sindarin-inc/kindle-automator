@@ -1,7 +1,6 @@
 .PHONY: server
 
-run:
-	uv run automator.py
+run: server
 
 deps:
 	uv pip install -r requirements.txt
