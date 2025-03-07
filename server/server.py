@@ -246,33 +246,70 @@ class BooksResource(Resource):
 
 
 class ScreenshotResource(Resource):
+    # Only use the automator_healthy decorator without the response handler for direct image responses
     @ensure_automator_healthy
     def get(self):
-        """Get current page screenshot and return a URL to access it or display it directly"""
+        """Get current page screenshot and return a URL to access it or display it directly.
+        If xml=1 is provided, also returns the XML page source."""
         try:
             # Check if save parameter is provided
-            save = request.args.get('save', '0') == '1'
-            
+            save = request.args.get("save", "0") == "1"
+            # Check if xml parameter is provided
+            include_xml = request.args.get("xml", "0") in ("1", "true")
+
             # Generate a unique filename with timestamp to avoid caching issues
             timestamp = int(time.time())
             filename = f"current_screen_{timestamp}.png"
             screenshot_path = os.path.join(server.automator.screenshots_dir, filename)
-            
+
             # Take the screenshot
             server.automator.driver.save_screenshot(screenshot_path)
-            
+
             # If save=1, return the URL to access the screenshot via the /image endpoint with POST method
             # Otherwise, return the image directly via GET method (which will delete it after serving)
             image_id = os.path.splitext(filename)[0]
-            
-            if save:
-                # Return URL to access the screenshot (POST method preserves the image)
-                image_url = f"/image/{image_id}"
-                return handle_automator_response({"screenshot_url": image_url}, 200)
+
+            if save or include_xml:
+                # For JSON responses, we can wrap with the automator response handler
+                @handle_automator_response(server)
+                def get_screenshot_json():
+                    # Prepare the response data
+                    response_data = {}
+
+                    # Return URL to access the screenshot (POST method preserves the image)
+                    image_url = f"/image/{image_id}"
+                    response_data["screenshot_url"] = image_url
+
+                    # If xml=1, get and save the page source XML
+                    if include_xml:
+                        try:
+                            # Get page source from the driver
+                            page_source = server.automator.driver.page_source
+
+                            # Store the XML with the same base name as the screenshot
+                            xml_filename = f"{image_id}.xml"
+                            from server.logging_config import store_page_source
+
+                            xml_path = store_page_source(page_source, image_id)
+
+                            # Add the XML URL to the response
+                            # Assuming the XML will be served via a dedicated endpoint or file location
+                            xml_url = f"/fixtures/dumps/{xml_filename}"
+                            response_data["xml_url"] = xml_url
+                        except Exception as xml_error:
+                            logger.error(f"Error getting page source XML: {xml_error}")
+                            response_data["xml_error"] = str(xml_error)
+
+                    # Return the response as a tuple that the decorator can handle
+                    return response_data, 200
+                
+                # Call the nested function with automator response handling
+                return get_screenshot_json()
             else:
-                # Use the shared serve_image function to serve the image directly
+                # For direct image responses, don't use the automator response handler
+                # since it can't handle Flask Response objects
                 return serve_image(image_id, delete_after=True)
-            
+
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
@@ -280,20 +317,34 @@ class ScreenshotResource(Resource):
 
 
 class NavigationResource(Resource):
+    def __init__(self, default_action=None):
+        self.default_action = default_action
+        super().__init__()
+
     @ensure_automator_healthy
     @handle_automator_response(server)
-    def post(self):
+    def post(self, action=None):
         """Handle page navigation"""
         try:
-            data = request.get_json()
-            action = data.get("action")
+            # Use provided action parameter if available
+            if action is None:
+                # Otherwise check if we have a default action from initialization
+                if self.default_action:
+                    action = self.default_action
+                else:
+                    # Fall back to action from request JSON
+                    data = request.get_json()
+                    action = data.get("action")
+
+            if not action:
+                return {"error": "Navigation action is required"}, 400
 
             if action == "next_page":
                 success = server.automator.reader_handler.turn_page_forward()
             elif action == "previous_page":
                 success = server.automator.reader_handler.turn_page_backward()
             else:
-                return {"error": "Invalid action"}, 400
+                return {"error": f"Invalid action: {action}"}, 400
 
             if success:
                 # Get current page number and progress
@@ -314,6 +365,22 @@ class NavigationResource(Resource):
                 }, 200
 
             return {"error": "Navigation failed"}, 500
+
+        except Exception as e:
+            logger.error(f"Navigation error: {e}")
+            return {"error": str(e)}, 500
+
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def get(self):
+        """Handle navigation via GET requests, using default_action from endpoint config"""
+        try:
+            # For GET requests, use the default action configured for this endpoint
+            if not self.default_action:
+                return {"error": "This endpoint doesn't support GET requests"}, 400
+
+            # Pass the default action to the post method to handle navigation
+            return self.post(self.default_action)
 
         except Exception as e:
             logger.error(f"Navigation error: {e}")
@@ -379,7 +446,9 @@ class StyleResource(Resource):
             current_state = server.automator.state_machine.current_state
             if current_state != AppState.READING:
                 return {
-                    "error": f"Must be reading a book to change style settings, current state: {current_state.name}",
+                    "error": (
+                        f"Must be reading a book to change style settings, current state: {current_state.name}"
+                    ),
                 }, 400
 
             if dark_mode is not None:
@@ -468,10 +537,11 @@ def get_image_path(image_id):
 
     return os.path.join(project_root, "screenshots", image_id)
 
+
 # Helper function to serve an image with option to delete after serving
 def serve_image(image_id, delete_after=True):
     """Serve an image by ID with option to delete after serving.
-    
+
     This function properly handles the Flask response object to work with Flask-RESTful.
     """
     try:
@@ -498,6 +568,7 @@ def serve_image(image_id, delete_after=True):
         logger.error(f"Error serving image: {e}")
         return {"error": str(e)}, 500
 
+
 class ImageResource(Resource):
     def get(self, image_id):
         """Get an image by ID and delete it after serving."""
@@ -514,7 +585,21 @@ api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
 api.add_resource(ScreenshotResource, "/screenshot")
+# General navigation endpoint that requires a JSON body with action
 api.add_resource(NavigationResource, "/navigate")
+# Specialized navigation endpoints for direct GET requests
+api.add_resource(
+    NavigationResource,
+    "/navigate-next",
+    endpoint="navigate_next",
+    resource_class_kwargs={"default_action": "next_page"},
+)
+api.add_resource(
+    NavigationResource,
+    "/navigate-previous",
+    endpoint="navigate_previous",
+    resource_class_kwargs={"default_action": "previous_page"},
+)
 api.add_resource(BookOpenResource, "/open-book")
 api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")

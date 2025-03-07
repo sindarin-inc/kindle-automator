@@ -94,7 +94,7 @@
 
 - name: Create an x86 AVD in /opt/android-sdk/avd
   shell: |
-    echo "no" | {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd -n {{ avd_name }} -k "{{ sys_img }}" --device "{{ device_skin }}" --force
+    {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd -n {{ avd_name }} -k "{{ sys_img }}" --device "{{ device_skin }}" --force
   args:
     creates: "{{ android_home }}/avd/{{ avd_name }}.avd"
   become: yes
@@ -110,18 +110,30 @@
     state: present
     backrefs: yes
   with_items:
-    - { regex: "^hw.ramSize=.*", line: "hw.ramSize=2048" }
-    - { regex: "^hw.cpu.ncore=.*", line: "hw.cpu.ncore=2" }
+    - { regex: "^hw.ramSize=.*", line: "hw.ramSize=4096" }
+    - { regex: "^hw.cpu.ncore=.*", line: "hw.cpu.ncore=4" }
     - { regex: "^hw.gpu.enabled=.*", line: "hw.gpu.enabled=yes" }
     - { regex: "^hw.gpu.mode=.*", line: "hw.gpu.mode=swiftshader" }
     - { regex: "^hw.audioInput=.*", line: "hw.audioInput=no" }
     - { regex: "^hw.audioOutput=.*", line: "hw.audioOutput=no" }
     - { regex: "^hw.gps=.*", line: "hw.gps=no" }
     - { regex: "^hw.camera.back=.*", line: "hw.camera.back=none" }
+    - { regex: "^hw.keyboard=.*", line: "hw.keyboard=yes" }
+    - { regex: "^hw.fastboot=.*", line: "hw.fastboot=no" }
+    - { regex: "^hw.arc=.*", line: "hw.arc=false" }
+    - { regex: "^hw.useext4=.*", line: "hw.useext4=yes" }
+    - { regex: "^kvm.enabled=.*", line: "kvm.enabled=no" }
+    - { regex: "^showWindow=.*", line: "showWindow=no" }
+    - { regex: "^hw.arc.autologin=.*", line: "hw.arc.autologin=no" }
+    - { regex: "^snapshot.present=.*", line: "snapshot.present=no" }
     - {
         regex: "^disk.dataPartition.size=.*",
         line: "disk.dataPartition.size=6G",
       }
+  become: yes
+
+- name: Restart ADB Server
+  shell: "{{ android_home }}/platform-tools/adb kill-server && {{ android_home }}/platform-tools/adb start-server"
   become: yes
 
 - name: Create systemd service for Android Emulator
@@ -135,7 +147,7 @@
       [Service]
       User={{ ansible_user }}
       WorkingDirectory={{ android_home }}
-      ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -accel on
+      ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -accel off -no-snapshot -no-snapshot-load -no-snapshot-save
       Restart=always
       StandardOutput=journal
       StandardError=journal
@@ -158,12 +170,13 @@
 
 - name: Wait for emulator to boot completely
   shell: |
-    until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+    timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
       echo "Waiting for emulator to fully boot..."
       sleep 5
-    done
+    done'
   environment:
     ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
 
 - name: Ensure libhoudini directory exists
   file:

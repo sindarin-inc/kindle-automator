@@ -58,7 +58,7 @@
 # Keep the existing logspout container for Docker logs
 - name: Start mezmo logspout docker container
   docker_container:
-    name: logdna
+    name: kindle-automator-logspout
     image: logdna/logspout:latest
     state: started
     restart_policy: always
@@ -66,7 +66,6 @@
       - /var/run/docker.sock:/var/run/docker.sock
     env:
       LOGDNA_KEY: "{{ MEZMO_LOGDNA_KEY }}"
-      FILTER_NAME: "{{ mezmo_filter_name }}"
       TAGS: "{{ inventory_hostname }}{% if mezmo_tags %},{{ mezmo_tags }}{% endif %}"
       HOSTNAME: "{{ inventory_hostname }}"
     networks:

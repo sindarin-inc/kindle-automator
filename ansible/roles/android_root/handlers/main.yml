@@ -1,0 +1,15 @@
+---
+# Handlers for android-root role
+
+- name: restart android emulator
+  systemd:
+    name: android-emulator
+    state: restarted
+  become: yes
+
+- name: reboot android emulator
+  shell: |
+    {{ android_home }}/platform-tools/adb reboot
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"

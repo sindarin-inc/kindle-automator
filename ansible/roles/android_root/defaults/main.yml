@@ -1,0 +1,28 @@
+---
+android_home: "/opt/android-sdk"
+avd_name: "KindleAVD"
+sdk_api_level: "35"
+sys_img: "system-images;android-{{ sdk_api_level }};google_apis_playstore;x86_64"
+sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+
+# Default variables for android-root role
+
+# Magisk version
+magisk_version: "v26.1"
+magisk_apk_url: "https://github.com/topjohnwu/Magisk/releases/download/{{ magisk_version }}/Magisk-{{ magisk_version }}.apk"
+
+# EdXposed version
+edxposed_version: "v0.5.2.2"
+edxposed_version_2: "v0.5.2.2_4683-master"
+edxposed_framework_url: "https://github.com/ElderDrivers/EdXposed/releases/download/{{ edxposed_version }}/EdXposed-{{ edxposed_version_2 }}-release.zip"
+
+# EdXposed Manager version
+edxposed_manager_version: "4.6.2.0.0"
+edxposed_manager_version_2: "4.6.2-46200-org.meowcat.edxposed.manager"
+edxposed_manager_url: "https://github.com/ElderDrivers/EdXposedManager/releases/download/v{{ edxposed_manager_version }}/EdXposedManager-{{ edxposed_manager_version_2 }}-release.apk"
+
+# Root tools directory
+root_tools_dir: "{{ android_home }}/root_tools"
+
+# Boot timeout in seconds
+boot_timeout: 120

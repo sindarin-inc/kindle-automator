@@ -1,0 +1,188 @@
+---
+- name: Create directory for rooting tools
+  file:
+    path: "{{ root_tools_dir }}"
+    state: directory
+    mode: "0755"
+  become: yes
+
+- name: Download Magisk APK
+  get_url:
+    url: "{{ magisk_apk_url }}"
+    dest: "{{ root_tools_dir }}/magisk.apk"
+  become: yes
+
+- name: Download EdXposed Framework
+  get_url:
+    url: "{{ edxposed_framework_url }}"
+    dest: "{{ root_tools_dir }}/edxposed.zip"
+  become: yes
+
+- name: Download EdXposed Manager
+  get_url:
+    url: "{{ edxposed_manager_url }}"
+    dest: "{{ root_tools_dir }}/edxposed_manager.apk"
+  become: yes
+
+- name: Stop Android Emulator service
+  systemd:
+    name: android-emulator
+    state: stopped
+  become: yes
+
+- name: Modify AVD config to enable root access
+  lineinfile:
+    path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
+    regexp: "{{ item.regex }}"
+    line: "{{ item.line }}"
+    state: present
+    backrefs: yes
+  with_items:
+    - {
+        regex: "^hw.initialBootParameters=.*",
+        line: "hw.initialBootParameters=androidboot.selinux=permissive",
+      }
+    - { regex: "^qemu.gles=.*", line: "qemu.gles=1" }
+    - { regex: "^qemu.gltransport=.*", line: "qemu.gltransport=pipe" }
+  become: yes
+
+- name: Start Android Emulator service
+  systemd:
+    name: android-emulator
+    state: started
+  become: yes
+
+- name: Wait for emulator to boot completely
+  shell: |
+    timeout {{ boot_timeout }}s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+      echo "Waiting for emulator to fully boot..."
+      sleep 5
+    done'
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+
+- name: Install Magisk APK
+  shell: |
+    {{ android_home }}/platform-tools/adb install -r {{ root_tools_dir }}/magisk.apk
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Launch Magisk app
+  shell: |
+    {{ android_home }}/platform-tools/adb shell monkey -p com.topjohnwu.magisk -c android.intent.category.LAUNCHER 1
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Wait for Magisk to initialize
+  pause:
+    seconds: 10
+
+- name: Download rootAVD script
+  get_url:
+    url: https://raw.githubusercontent.com/newbit1/rootAVD/master/rootAVD.sh
+    dest: "{{ root_tools_dir }}/rootAVD.sh"
+    mode: "0755"
+  become: yes
+
+- name: Get ramdisk path
+  shell: |
+    echo "{{ android_home }}/avd/{{ avd_name }}.avd/ramdisk.img"
+  register: ramdisk_path
+
+- name: Stop Android Emulator service before rooting
+  systemd:
+    name: android-emulator
+    state: stopped
+  become: yes
+
+- name: Execute rootAVD script
+  shell: |
+    {{ root_tools_dir }}/rootAVD.sh "{{ ramdisk_path.stdout }}"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Start Android Emulator service
+  systemd:
+    name: android-emulator
+    state: started
+  become: yes
+
+- name: Wait for emulator to boot
+  shell: |
+    timeout {{ boot_timeout }}s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+      echo "Waiting for emulator to fully boot..."
+      sleep 5
+    done'
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+
+- name: Verify root access
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "su -c 'id'"
+  register: root_check
+  ignore_errors: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Install EdXposed Manager
+  shell: |
+    {{ android_home }}/platform-tools/adb install -r {{ root_tools_dir }}/edxposed_manager.apk
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Install EdXposed Framework
+  shell: |
+    {{ android_home }}/platform-tools/adb push {{ root_tools_dir }}/edxposed.zip /sdcard/
+    {{ android_home }}/platform-tools/adb shell "su -c 'magisk --install-module /sdcard/edxposed.zip'"
+    {{ android_home }}/platform-tools/adb shell "su -c 'rm /sdcard/edxposed.zip'"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Configure system settings for automation
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "su -c 'settings put global policy_control immersive.full=*'"
+    {{ android_home }}/platform-tools/adb shell "su -c 'settings put global hidden_api_policy_pre_p_apps 0'"
+    {{ android_home }}/platform-tools/adb shell "su -c 'settings put global hidden_api_policy_p_apps 0'"
+    {{ android_home }}/platform-tools/adb shell "su -c 'settings put global hidden_api_policy 0'"
+    {{ android_home }}/platform-tools/adb shell "su -c 'setprop ro.debuggable 1'"
+    {{ android_home }}/platform-tools/adb shell "su -c 'setprop persist.sys.disableflags 1'"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Reboot emulator to apply all changes
+  shell: |
+    {{ android_home }}/platform-tools/adb reboot
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+
+- name: Wait for emulator to boot completely
+  shell: |
+    timeout {{ boot_timeout }}s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+      echo "Waiting for emulator to fully boot..."
+      sleep 5
+    done'
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+
+- name: Display root status
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "su -c 'id'"
+  register: root_check
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  changed_when: false
+
+- name: Show root status
+  debug:
+    var: root_check.stdout
