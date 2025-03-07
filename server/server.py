@@ -302,13 +302,13 @@ class ScreenshotResource(Resource):
 
                     # Return the response as a tuple that the decorator can handle
                     return response_data, 200
-                
+
                 # Call the nested function with automator response handling
                 return get_screenshot_json()
             else:
                 # For direct image responses, don't use the automator response handler
                 # since it can't handle Flask Response objects
-                return serve_image(image_id, delete_after=True)
+                return serve_image(image_id, delete_after=False)
 
         except Exception as e:
             logger.error(f"Error getting screenshot: {e}")
@@ -572,7 +572,7 @@ def serve_image(image_id, delete_after=True):
 class ImageResource(Resource):
     def get(self, image_id):
         """Get an image by ID and delete it after serving."""
-        return serve_image(image_id, delete_after=True)
+        return serve_image(image_id, delete_after=False)
 
     def post(self, image_id):
         """Get an image by ID without deleting it."""
