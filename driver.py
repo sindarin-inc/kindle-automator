@@ -230,6 +230,7 @@ class Driver:
                     options.allow_invisible_elements = True
                     options.enable_multi_windows = True
                     options.new_command_timeout = 60*60*24*7  # 7 days
+                    options.set_capability('adbExecTimeout', 120000)  # 120 seconds timeout for ADB commands
 
                     self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
                     logger.info("Driver initialized successfully")
