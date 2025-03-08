@@ -95,8 +95,8 @@
 - name: Create an x86 AVD in /opt/android-sdk/avd
   shell: |
     {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd -n {{ avd_name }} -k "{{ sys_img }}" --device "{{ device_skin }}" --force
-  args:
-    creates: "{{ android_home }}/avd/{{ avd_name }}.avd"
+  # args:
+  #   creates: "{{ android_home }}/avd/{{ avd_name }}.avd"
   become: yes
   environment:
     ANDROID_SDK_ROOT: "{{ android_home }}"
@@ -147,7 +147,7 @@
       [Service]
       User={{ ansible_user }}
       WorkingDirectory={{ android_home }}
-      ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -accel off -no-snapshot -no-snapshot-load -no-snapshot-save
+      ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -accel off -no-snapshot -no-snapshot-load -no-snapshot-save -writable-system -selinux disabled -qemu -enable-kvm
       Restart=always
       StandardOutput=journal
       StandardError=journal

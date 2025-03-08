@@ -82,7 +82,7 @@
 
 - name: Download rootAVD script
   get_url:
-    url: https://raw.githubusercontent.com/newbit1/rootAVD/master/rootAVD.sh
+    url: https://gitlab.com/newbit/rootAVD/-/raw/master/rootAVD.sh
     dest: "{{ root_tools_dir }}/rootAVD.sh"
     mode: "0755"
   become: yes

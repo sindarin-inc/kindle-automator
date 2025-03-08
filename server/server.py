@@ -9,6 +9,7 @@ from typing import Optional
 
 from flask import Flask, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
+from selenium.common import exceptions as selenium_exceptions
 
 from automator import KindleAutomator
 from handlers.test_fixtures_handler import TestFixturesHandler
@@ -123,21 +124,48 @@ class InitializeResource(Resource):
             return {"error": str(e)}, 500
 
 
+def handle_uiautomator_crash(f):
+    """Decorator to handle UiAutomator2 server crashes by restarting the driver."""
+    
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            # Check if it's the UiAutomator2 server crash error
+            if isinstance(e, selenium_exceptions.WebDriverException) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(e):
+                logger.warning("UiAutomator2 server crashed. Attempting to restart driver...")
+                if server.automator and server.automator.ensure_driver_running():
+                    # Retry the operation after driver restart
+                    logger.info("Driver restarted successfully. Retrying operation...")
+                    return f(*args, **kwargs)
+                else:
+                    logger.error("Failed to restart driver after UiAutomator2 server crash")
+                    return {"error": "Failed to restart driver after UiAutomator2 server crash"}, 500
+            # Re-raise other exceptions
+            raise
+    
+    return wrapper
+
+
 def ensure_automator_healthy(f):
     """Decorator to ensure automator is initialized and healthy before each operation."""
 
+    @handle_uiautomator_crash
+    def wrapped_function(*args, **kwargs):
+        if not server.automator:
+            logger.info("No automator found, initializing...")
+            server.initialize_automator()
+            if not server.automator.initialize_driver():
+                return {"error": "Failed to initialize driver"}, 500
+
+        if not server.automator.ensure_driver_running():
+            return {"error": "Failed to ensure driver is running"}, 500
+
+        return f(*args, **kwargs)
+    
     def wrapper(*args, **kwargs):
         try:
-            if not server.automator:
-                logger.info("No automator found, initializing...")
-                server.initialize_automator()
-                if not server.automator.initialize_driver():
-                    return {"error": "Failed to initialize driver"}, 500
-
-            if not server.automator.ensure_driver_running():
-                return {"error": "Failed to ensure driver is running"}, 500
-
-            return f(*args, **kwargs)
+            return wrapped_function(*args, **kwargs)
         except Exception as e:
             logger.error(f"Error in automator health check: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
