@@ -124,52 +124,60 @@ class InitializeResource(Resource):
             return {"error": str(e)}, 500
 
 
-def handle_uiautomator_crash(f):
-    """Decorator to handle UiAutomator2 server crashes by restarting the driver."""
-    
-    def wrapper(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except Exception as e:
-            # Check if it's the UiAutomator2 server crash error
-            if isinstance(e, selenium_exceptions.WebDriverException) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(e):
-                logger.warning("UiAutomator2 server crashed. Attempting to restart driver...")
-                if server.automator and server.automator.ensure_driver_running():
-                    # Retry the operation after driver restart
-                    logger.info("Driver restarted successfully. Retrying operation...")
-                    return f(*args, **kwargs)
-                else:
-                    logger.error("Failed to restart driver after UiAutomator2 server crash")
-                    return {"error": "Failed to restart driver after UiAutomator2 server crash"}, 500
-            # Re-raise other exceptions
-            raise
-    
-    return wrapper
-
-
 def ensure_automator_healthy(f):
     """Decorator to ensure automator is initialized and healthy before each operation."""
 
-    @handle_uiautomator_crash
-    def wrapped_function(*args, **kwargs):
-        if not server.automator:
-            logger.info("No automator found, initializing...")
-            server.initialize_automator()
-            if not server.automator.initialize_driver():
-                return {"error": "Failed to initialize driver"}, 500
-
-        if not server.automator.ensure_driver_running():
-            return {"error": "Failed to ensure driver is running"}, 500
-
-        return f(*args, **kwargs)
-    
     def wrapper(*args, **kwargs):
-        try:
-            return wrapped_function(*args, **kwargs)
-        except Exception as e:
-            logger.error(f"Error in automator health check: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+        max_retries = 3  # Allow more retries for UiAutomator2 crashes
+
+        for attempt in range(max_retries):
+            try:
+                # Initialize automator if needed
+                if not server.automator:
+                    logger.info("No automator found, initializing...")
+                    server.initialize_automator()
+                    if not server.automator.initialize_driver():
+                        return {"error": "Failed to initialize driver"}, 500
+
+                # Ensure driver is running
+                if not server.automator.ensure_driver_running():
+                    return {"error": "Failed to ensure driver is running"}, 500
+
+                # Execute the function
+                return f(*args, **kwargs)
+
+            except Exception as e:
+                # Check if it's the UiAutomator2 server crash error
+                is_uiautomator_crash = isinstance(
+                    e, selenium_exceptions.WebDriverException
+                ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
+                    e
+                )
+
+                if is_uiautomator_crash and attempt < max_retries - 1:
+                    logger.warning(
+                        f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
+                    )
+
+                    # Force a complete driver restart
+                    if server.automator:
+                        server.automator.cleanup()
+                        server.initialize_automator()
+                        if server.automator.initialize_driver():
+                            logger.info(
+                                "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
+                            )
+                            continue  # Retry the operation with the next loop iteration
+                        else:
+                            logger.error("Failed to restart driver after UiAutomator2 crash")
+
+                # For non-UiAutomator2 crashes or if restart failed, log and return error
+                logger.error(f"Error in operation (attempt {attempt + 1}/{max_retries}): {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+
+                # On the last attempt, return the error
+                if attempt == max_retries - 1:
+                    return {"error": str(e)}, 500
 
     return wrapper
 
@@ -192,38 +200,27 @@ class CaptchaResource(Resource):
     @handle_automator_response(server)
     def get(self):
         """Get current captcha status and image if present"""
-        try:
-            # Return simple success response - the response handler will
-            # intercept if we're in CAPTCHA state
-            return {"status": "no_captcha"}, 200
-        except Exception as e:
-            logger.error(f"Error checking captcha: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+        # Return simple success response - the response handler will
+        # intercept if we're in CAPTCHA state
+        return {"status": "no_captcha"}, 200
 
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
         """Submit captcha solution"""
-        try:
-            data = request.get_json()
-            solution = data.get("solution")
+        data = request.get_json()
+        solution = data.get("solution")
 
-            if not solution:
-                return {"error": "Captcha solution required"}, 400
+        if not solution:
+            return {"error": "Captcha solution required"}, 400
 
-            # Update captcha solution if different
-            server.automator.update_captcha_solution(solution)
-            success = server.automator.transition_to_library()
+        # Update captcha solution if different
+        server.automator.update_captcha_solution(solution)
+        success = server.automator.transition_to_library()
 
-            if success:
-                return {"status": "success"}, 200
-            return {"error": "Failed to process captcha solution"}, 500
-
-        except Exception as e:
-            logger.error(f"Error submitting captcha: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+        if success:
+            return {"status": "success"}, 200
+        return {"error": "Failed to process captcha solution"}, 500
 
 
 class BooksResource(Resource):
@@ -231,38 +228,32 @@ class BooksResource(Resource):
     @handle_automator_response(server)
     def _get_books(self):
         """Get list of available books with metadata"""
-        try:
-            current_state = server.automator.state_machine.current_state
-            logger.info(f"Current state when getting books: {current_state}")
+        current_state = server.automator.state_machine.current_state
+        logger.info(f"Current state when getting books: {current_state}")
 
-            # Handle different states
-            if current_state != AppState.LIBRARY:
-                # Try to transition to library state
-                logger.info("Not in library state, attempting to transition...")
-                if server.automator.state_machine.transition_to_library():
-                    logger.info("Successfully transitioned to library state")
-                    # Get books with metadata from library handler
-                    books = server.automator.library_handler.get_book_titles()
-                    if books is None:
-                        return {"error": "Failed to get books"}, 500
-                    return {"books": books}, 200
-                else:
-                    return {
-                        "error": f"Cannot get books in current state: {current_state.name}",
-                        "current_state": current_state.name,
-                    }, 400
+        # Handle different states
+        if current_state != AppState.LIBRARY:
+            # Try to transition to library state
+            logger.info("Not in library state, attempting to transition...")
+            if server.automator.state_machine.transition_to_library():
+                logger.info("Successfully transitioned to library state")
+                # Get books with metadata from library handler
+                books = server.automator.library_handler.get_book_titles()
+                if books is None:
+                    return {"error": "Failed to get books"}, 500
+                return {"books": books}, 200
+            else:
+                return {
+                    "error": f"Cannot get books in current state: {current_state.name}",
+                    "current_state": current_state.name,
+                }, 400
 
-            # Get books with metadata from library handler
-            books = server.automator.library_handler.get_book_titles()
-            if books is None:
-                return {"error": "Failed to get books"}, 500
+        # Get books with metadata from library handler
+        books = server.automator.library_handler.get_book_titles()
+        if books is None:
+            return {"error": "Failed to get books"}, 500
 
-            return {"books": books}, 200
-
-        except Exception as e:
-            logger.error(f"Error getting books: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+        return {"books": books}, 200
 
     def get(self):
         """Handle GET request for books list"""
@@ -279,69 +270,63 @@ class ScreenshotResource(Resource):
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
         If xml=1 is provided, also returns the XML page source."""
-        try:
-            # Check if save parameter is provided
-            save = request.args.get("save", "0") == "1"
-            # Check if xml parameter is provided
-            include_xml = request.args.get("xml", "0") in ("1", "true")
+        # Check if save parameter is provided
+        save = request.args.get("save", "0") == "1"
+        # Check if xml parameter is provided
+        include_xml = request.args.get("xml", "0") in ("1", "true")
 
-            # Generate a unique filename with timestamp to avoid caching issues
-            timestamp = int(time.time())
-            filename = f"current_screen_{timestamp}.png"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, filename)
+        # Generate a unique filename with timestamp to avoid caching issues
+        timestamp = int(time.time())
+        filename = f"current_screen_{timestamp}.png"
+        screenshot_path = os.path.join(server.automator.screenshots_dir, filename)
 
-            # Take the screenshot
-            server.automator.driver.save_screenshot(screenshot_path)
+        # Take the screenshot
+        server.automator.driver.save_screenshot(screenshot_path)
 
-            # If save=1, return the URL to access the screenshot via the /image endpoint with POST method
-            # Otherwise, return the image directly via GET method (which will delete it after serving)
-            image_id = os.path.splitext(filename)[0]
+        # If save=1, return the URL to access the screenshot via the /image endpoint with POST method
+        # Otherwise, return the image directly via GET method (which will delete it after serving)
+        image_id = os.path.splitext(filename)[0]
 
-            if save or include_xml:
-                # For JSON responses, we can wrap with the automator response handler
-                @handle_automator_response(server)
-                def get_screenshot_json():
-                    # Prepare the response data
-                    response_data = {}
+        if save or include_xml:
+            # For JSON responses, we can wrap with the automator response handler
+            @handle_automator_response(server)
+            def get_screenshot_json():
+                # Prepare the response data
+                response_data = {}
 
-                    # Return URL to access the screenshot (POST method preserves the image)
-                    image_url = f"/image/{image_id}"
-                    response_data["screenshot_url"] = image_url
+                # Return URL to access the screenshot (POST method preserves the image)
+                image_url = f"/image/{image_id}"
+                response_data["screenshot_url"] = image_url
 
-                    # If xml=1, get and save the page source XML
-                    if include_xml:
-                        try:
-                            # Get page source from the driver
-                            page_source = server.automator.driver.page_source
+                # If xml=1, get and save the page source XML
+                if include_xml:
+                    try:
+                        # Get page source from the driver
+                        page_source = server.automator.driver.page_source
 
-                            # Store the XML with the same base name as the screenshot
-                            xml_filename = f"{image_id}.xml"
-                            from server.logging_config import store_page_source
+                        # Store the XML with the same base name as the screenshot
+                        xml_filename = f"{image_id}.xml"
+                        from server.logging_config import store_page_source
 
-                            xml_path = store_page_source(page_source, image_id)
+                        xml_path = store_page_source(page_source, image_id)
 
-                            # Add the XML URL to the response
-                            # Assuming the XML will be served via a dedicated endpoint or file location
-                            xml_url = f"/fixtures/dumps/{xml_filename}"
-                            response_data["xml_url"] = xml_url
-                        except Exception as xml_error:
-                            logger.error(f"Error getting page source XML: {xml_error}")
-                            response_data["xml_error"] = str(xml_error)
+                        # Add the XML URL to the response
+                        # Assuming the XML will be served via a dedicated endpoint or file location
+                        xml_url = f"/fixtures/dumps/{xml_filename}"
+                        response_data["xml_url"] = xml_url
+                    except Exception as xml_error:
+                        logger.error(f"Error getting page source XML: {xml_error}")
+                        response_data["xml_error"] = str(xml_error)
 
-                    # Return the response as a tuple that the decorator can handle
-                    return response_data, 200
+                # Return the response as a tuple that the decorator can handle
+                return response_data, 200
 
-                # Call the nested function with automator response handling
-                return get_screenshot_json()
-            else:
-                # For direct image responses, don't use the automator response handler
-                # since it can't handle Flask Response objects
-                return serve_image(image_id, delete_after=False)
-
-        except Exception as e:
-            logger.error(f"Error getting screenshot: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+            # Call the nested function with automator response handling
+            return get_screenshot_json()
+        else:
+            # For direct image responses, don't use the automator response handler
+            # since it can't handle Flask Response objects
+            return serve_image(image_id, delete_after=False)
 
 
 class NavigationResource(Resource):
@@ -353,66 +338,56 @@ class NavigationResource(Resource):
     @handle_automator_response(server)
     def post(self, action=None):
         """Handle page navigation"""
-        try:
-            # Use provided action parameter if available
-            if action is None:
-                # Otherwise check if we have a default action from initialization
-                if self.default_action:
-                    action = self.default_action
-                else:
-                    # Fall back to action from request JSON
-                    data = request.get_json()
-                    action = data.get("action")
-
-            if not action:
-                return {"error": "Navigation action is required"}, 400
-
-            if action == "next_page":
-                success = server.automator.reader_handler.turn_page_forward()
-            elif action == "previous_page":
-                success = server.automator.reader_handler.turn_page_backward()
+        # Use provided action parameter if available
+        if action is None:
+            # Otherwise check if we have a default action from initialization
+            if self.default_action:
+                action = self.default_action
             else:
-                return {"error": f"Invalid action: {action}"}, 400
+                # Fall back to action from request JSON
+                data = request.get_json()
+                action = data.get("action")
 
-            if success:
-                # Get current page number and progress
-                progress = server.automator.reader_handler.get_reading_progress()
+        if not action:
+            return {"error": "Navigation action is required"}, 400
 
-                # Save screenshot with unique ID
-                screenshot_id = f"page_{int(time.time())}"
-                time.sleep(0.5)
-                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                server.automator.driver.save_screenshot(screenshot_path)
+        if action == "next_page":
+            success = server.automator.reader_handler.turn_page_forward()
+        elif action == "previous_page":
+            success = server.automator.reader_handler.turn_page_backward()
+        else:
+            return {"error": f"Invalid action: {action}"}, 400
 
-                # Return URL to image
-                image_url = f"/image/{screenshot_id}"
-                return {
-                    "success": True,
-                    "progress": progress,
-                    "screenshot_url": image_url,
-                }, 200
+        if success:
+            # Get current page number and progress
+            progress = server.automator.reader_handler.get_reading_progress()
 
-            return {"error": "Navigation failed"}, 500
+            # Save screenshot with unique ID
+            screenshot_id = f"page_{int(time.time())}"
+            time.sleep(0.5)
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+            server.automator.driver.save_screenshot(screenshot_path)
 
-        except Exception as e:
-            logger.error(f"Navigation error: {e}")
-            return {"error": str(e)}, 500
+            # Return URL to image
+            image_url = f"/image/{screenshot_id}"
+            return {
+                "success": True,
+                "progress": progress,
+                "screenshot_url": image_url,
+            }, 200
+
+        return {"error": "Navigation failed"}, 500
 
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
         """Handle navigation via GET requests, using default_action from endpoint config"""
-        try:
-            # For GET requests, use the default action configured for this endpoint
-            if not self.default_action:
-                return {"error": "This endpoint doesn't support GET requests"}, 400
+        # For GET requests, use the default action configured for this endpoint
+        if not self.default_action:
+            return {"error": "This endpoint doesn't support GET requests"}, 400
 
-            # Pass the default action to the post method to handle navigation
-            return self.post(self.default_action)
-
-        except Exception as e:
-            logger.error(f"Navigation error: {e}")
-            return {"error": str(e)}, 500
+        # Pass the default action to the post method to handle navigation
+        return self.post(self.default_action)
 
 
 class BookOpenResource(Resource):
@@ -420,39 +395,33 @@ class BookOpenResource(Resource):
     @handle_automator_response(server)
     def post(self):
         """Open a specific book."""
-        try:
-            data = request.get_json()
-            book_title = data.get("title")
+        data = request.get_json()
+        book_title = data.get("title")
 
-            logger.info(f"Opening book: {book_title}")
+        logger.info(f"Opening book: {book_title}")
 
-            if not book_title:
-                return {"error": "Book title required"}, 400
+        if not book_title:
+            return {"error": "Book title required"}, 400
 
-            if server.automator.state_machine.transition_to_library():
-                success = server.automator.reader_handler.open_book(book_title)
-                logger.info(f"Book opened: {success}")
+        if server.automator.state_machine.transition_to_library():
+            success = server.automator.reader_handler.open_book(book_title)
+            logger.info(f"Book opened: {success}")
 
-                if success:
-                    progress = server.automator.reader_handler.get_reading_progress()
-                    logger.info(f"Progress: {progress}")
+            if success:
+                progress = server.automator.reader_handler.get_reading_progress()
+                logger.info(f"Progress: {progress}")
 
-                    # Save screenshot with unique ID
-                    screenshot_id = f"page_{int(time.time())}"
-                    screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                    time.sleep(0.5)
-                    server.automator.driver.save_screenshot(screenshot_path)
+                # Save screenshot with unique ID
+                screenshot_id = f"page_{int(time.time())}"
+                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+                time.sleep(0.5)
+                server.automator.driver.save_screenshot(screenshot_path)
 
-                    # Return URL to image
-                    image_url = f"/image/{screenshot_id}"
-                    return {"success": True, "progress": progress, "screenshot_url": image_url}, 200
+                # Return URL to image
+                image_url = f"/image/{screenshot_id}"
+                return {"success": True, "progress": progress, "screenshot_url": image_url}, 200
 
-            return {"error": "Failed to open book"}, 500
-
-        except Exception as e:
-            traceback.print_exc()
-            logger.error(f"Error opening book: {e}")
-            return {"error": str(e)}, 500
+        return {"error": "Failed to open book"}, 500
 
 
 class StyleResource(Resource):
@@ -460,55 +429,49 @@ class StyleResource(Resource):
     @handle_automator_response(server)
     def post(self):
         """Update reading style settings"""
-        try:
-            data = request.get_json()
-            settings = data.get("settings", {})
-            dark_mode = data.get("dark-mode")
+        data = request.get_json()
+        settings = data.get("settings", {})
+        dark_mode = data.get("dark-mode")
 
-            logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
+        logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
 
-            # Update state machine's current state
-            server.automator.state_machine.update_current_state()
+        # Update state machine's current state
+        server.automator.state_machine.update_current_state()
 
-            # Check if we're in reading state
-            current_state = server.automator.state_machine.current_state
-            if current_state != AppState.READING:
-                return {
-                    "error": (
-                        f"Must be reading a book to change style settings, current state: {current_state.name}"
-                    ),
-                }, 400
+        # Check if we're in reading state
+        current_state = server.automator.state_machine.current_state
+        if current_state != AppState.READING:
+            return {
+                "error": (
+                    f"Must be reading a book to change style settings, current state: {current_state.name}"
+                ),
+            }, 400
 
-            if dark_mode is not None:
-                success = server.automator.reader_handler.set_dark_mode(dark_mode)
-            else:
-                # For now just return success since we haven't implemented other style settings
-                success = True
-                logger.warning("Other style settings not yet implemented")
+        if dark_mode is not None:
+            success = server.automator.reader_handler.set_dark_mode(dark_mode)
+        else:
+            # For now just return success since we haven't implemented other style settings
+            success = True
+            logger.warning("Other style settings not yet implemented")
 
-            if success:
-                # Save screenshot with unique ID
-                screenshot_id = f"style_update_{int(time.time())}"
-                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                server.automator.driver.save_screenshot(screenshot_path)
+        if success:
+            # Save screenshot with unique ID
+            screenshot_id = f"style_update_{int(time.time())}"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+            server.automator.driver.save_screenshot(screenshot_path)
 
-                # Get current page number and progress
-                progress = server.automator.reader_handler.get_reading_progress()
+            # Get current page number and progress
+            progress = server.automator.reader_handler.get_reading_progress()
 
-                # Return URL to image
-                image_url = f"/image/{screenshot_id}"
-                return {
-                    "success": True,
-                    "progress": progress,
-                    "screenshot_url": image_url,
-                }, 200
+            # Return URL to image
+            image_url = f"/image/{screenshot_id}"
+            return {
+                "success": True,
+                "progress": progress,
+                "screenshot_url": image_url,
+            }, 200
 
-            return {"error": "Failed to update settings"}, 500
-
-        except Exception as e:
-            logger.error(f"Error updating style: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+        return {"error": "Failed to update settings"}, 500
 
 
 class TwoFactorResource(Resource):
@@ -516,24 +479,18 @@ class TwoFactorResource(Resource):
     @handle_automator_response(server)
     def post(self):
         """Submit 2FA code"""
-        try:
-            data = request.get_json()
-            code = data.get("code")
+        data = request.get_json()
+        code = data.get("code")
 
-            logger.info(f"Submitting 2FA code: {code}")
+        logger.info(f"Submitting 2FA code: {code}")
 
-            if not code:
-                return {"error": "2FA code required"}, 400
+        if not code:
+            return {"error": "2FA code required"}, 400
 
-            success = server.automator.auth_handler.handle_2fa(code)
-            if success:
-                return {"success": True}, 200
-            return {"error": "Invalid 2FA code"}, 500
-
-        except Exception as e:
-            logger.error(f"2FA error: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
+        success = server.automator.auth_handler.handle_2fa(code)
+        if success:
+            return {"success": True}, 200
+        return {"error": "Invalid 2FA code"}, 500
 
 
 class FixturesResource(Resource):

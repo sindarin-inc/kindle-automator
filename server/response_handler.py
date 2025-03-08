@@ -3,6 +3,7 @@ import time
 import traceback
 from functools import wraps
 
+from selenium.common import exceptions as selenium_exceptions
 from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
@@ -17,52 +18,98 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         *args, **kwargs: Arguments to pass to the function
 
     Returns:
-        The result from the function or raises the last error encountered
+        The result from the function or a formatted error response
     """
-    max_retries = 1
-    last_error = None
+    max_retries = 2
     start_time = time.time()
+    last_error = None
 
+    def format_response(result):
+        """Format response with time taken"""
+        time_taken = round(time.time() - start_time, 3)
+        
+        if isinstance(result, tuple) and len(result) == 2:
+            response, status_code = result
+            if isinstance(response, dict):
+                response["time_taken"] = time_taken
+            return response, status_code
+        elif isinstance(result, dict):
+            result["time_taken"] = time_taken
+            return result, 200
+        return result
+
+    def restart_driver():
+        """Restart the Appium driver"""
+        if not server_instance.automator:
+            server_instance.initialize_automator()
+            return server_instance.automator.initialize_driver()
+        
+        server_instance.automator.cleanup()
+        server_instance.initialize_automator()
+        return server_instance.automator.initialize_driver()
+    
+    def is_uiautomator_crash(error):
+        """Check if the error is a UiAutomator2 server crash"""
+        return (
+            isinstance(error, selenium_exceptions.WebDriverException) and 
+            "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(error)
+        )
+
+    # Main retry loop
     for attempt in range(max_retries):
         try:
+            # Restart driver for retry attempts
             if attempt > 0:
                 logger.info(f"Retry attempt {attempt + 1}/{max_retries}")
-                # Cleanup and reinitialize automator
-                if server_instance.automator:
-                    server_instance.automator.cleanup()
-                server_instance.initialize_automator()
+                if not restart_driver():
+                    logger.error("Failed to initialize driver during retry")
+                    continue
 
+            # Execute function
             result = func(*args, **kwargs)
 
-            # If result is a tuple with error status code, retry
+            # Check for error status codes
             if isinstance(result, tuple) and len(result) == 2:
                 response, status_code = result
                 if status_code >= 400:
                     raise Exception(f"Request failed with status {status_code}: {response}")
 
-            # Add time taken to response
-            time_taken = round(time.time() - start_time, 3)
-            if isinstance(result, tuple):
-                response, status_code = result
-                if isinstance(response, dict):
-                    response["time_taken"] = time_taken
-                return response, status_code
-            elif isinstance(result, dict):
-                result["time_taken"] = time_taken
-            return result
+            # Success case - format and return the result
+            return format_response(result)
 
         except Exception as e:
             last_error = e
-            logger.error(f"Attempt {attempt + 1} failed: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-
+            
+            # Special handling for UiAutomator2 server crash
+            if is_uiautomator_crash(e):
+                logger.warning(f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver...")
+                
+                # Try to restart the driver and immediately retry once more
+                if restart_driver():
+                    logger.info("Successfully restarted driver after UiAutomator2 crash")
+                    try:
+                        logger.info("Retrying operation after UiAutomator2 crash recovery")
+                        result = func(*args, **kwargs)
+                        return format_response(result)
+                    except Exception as retry_error:
+                        logger.error(f"Retry after UiAutomator2 recovery failed: {retry_error}")
+                        last_error = retry_error
+                else:
+                    logger.error("Failed to reinitialize driver after UiAutomator2 crash")
+            else:
+                # Regular error handling for non-UiAutomator2 crashes
+                logger.error(f"Attempt {attempt + 1} failed: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            # Check if we should continue with another attempt
             if attempt < max_retries - 1:
                 time.sleep(1)  # Wait before retry
                 continue
-            else:
-                time_taken = round(time.time() - start_time, 3)
-                logger.error(f"All retry attempts failed. Last error: {last_error}")
-                return {"error": str(last_error), "time_taken": time_taken}, 500
+    
+    # If we reach here, all retries failed
+    time_taken = round(time.time() - start_time, 3)
+    logger.error(f"All retry attempts failed. Last error: {last_error}")
+    return {"error": str(last_error), "time_taken": time_taken}, 500
 
 
 def handle_automator_response(server_instance):
