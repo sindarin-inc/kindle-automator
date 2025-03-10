@@ -1,4 +1,11 @@
 ---
+- name: Install required packages for MagiskOnEmulator
+  apt:
+    name: "{{ required_packages }}"
+    state: present
+    update_cache: yes
+  become: yes
+
 - name: Create directory for rooting tools
   file:
     path: "{{ root_tools_dir }}"
@@ -9,41 +16,413 @@
 - name: Download Magisk APK
   get_url:
     url: "{{ magisk_apk_url }}"
-    dest: "{{ root_tools_dir }}/magisk.apk"
+    dest: "{{ root_tools_dir }}/Magisk.apk"
   become: yes
 
-- name: Download EdXposed Framework
-  get_url:
-    url: "{{ edxposed_framework_url }}"
-    dest: "{{ root_tools_dir }}/edxposed.zip"
+- name: Check if MagiskOnEmulator directory exists
+  stat:
+    path: "{{ root_tools_dir }}/MagiskOnEmulator"
+  register: magisk_emulator_dir
   become: yes
 
-- name: Download EdXposed Manager
-  get_url:
-    url: "{{ edxposed_manager_url }}"
-    dest: "{{ root_tools_dir }}/edxposed_manager.apk"
+- name: Remove existing MagiskOnEmulator directory if it exists
+  file:
+    path: "{{ root_tools_dir }}/MagiskOnEmulator"
+    state: absent
+  when: magisk_emulator_dir.stat.exists
   become: yes
 
-- name: Stop Android Emulator service
+- name: Clone MagiskOnEmulator repository
+  git:
+    repo: https://github.com/shakalaca/MagiskOnEmulator.git
+    dest: "{{ root_tools_dir }}/MagiskOnEmulator"
+  become: yes
+
+- name: Copy Magisk APK to MagiskOnEmulator directory
+  copy:
+    src: "{{ root_tools_dir }}/Magisk.apk"
+    dest: "{{ root_tools_dir }}/MagiskOnEmulator/Magisk.apk"
+    remote_src: yes
+  become: yes
+
+- name: Create magisk.apk symlink for patch script compatibility
+  file:
+    src: "{{ root_tools_dir }}/MagiskOnEmulator/Magisk.apk"
+    dest: "{{ root_tools_dir }}/MagiskOnEmulator/magisk.apk"
+    state: link
+  become: yes
+
+- name: Check for ramdisk file in primary location
+  stat:
+    path: "{{ android_home }}/system-images/{{ android_api_name }}/{{ android_system_image_type }}/ramdisk.img"
+  register: ramdisk_primary
+  become: yes
+
+- name: Set ramdisk path if primary location exists
+  set_fact:
+    ramdisk_path: "{{ android_home }}/system-images/{{ android_api_name }}/{{ android_system_image_type }}/ramdisk.img"
+  when: ramdisk_primary.stat.exists
+
+- name: Check fallback paths if primary path doesn't exist
+  block:
+    - name: Check each fallback path
+      stat:
+        path: "{{ item }}"
+      register: fallback_check
+      loop: "{{ ramdisk_fallback_paths }}"
+      become: yes
+
+    - name: Set first valid ramdisk path from fallbacks
+      set_fact:
+        ramdisk_path: "{{ item.item }}"
+      with_items: "{{ fallback_check.results }}"
+      when: item.stat.exists
+      loop_control:
+        label: "{{ item.item }}"
+      run_once: true
+  when: not ramdisk_primary.stat.exists
+
+- name: Display found ramdisk path
+  debug:
+    var: ramdisk_path
+
+- name: Fail if no ramdisk file found
+  fail:
+    msg: |
+      No ramdisk file found in any of the following locations:
+      - {{ android_home }}/system-images/{{ android_api_name }}/{{ android_system_image_type }}/ramdisk.img
+      - {{ ramdisk_fallback_paths | join('\n- ') }}
+      Please check your Android SDK installation and ensure the ramdisk.img exists.
+  when: ramdisk_path is not defined
+
+- name: Stop Android Emulator service before rooting
   systemd:
     name: android-emulator
     state: stopped
   become: yes
 
-- name: Modify AVD config to enable root access
-  lineinfile:
-    path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
-    regexp: "{{ item.regex }}"
-    line: "{{ item.line }}"
-    state: present
-    backrefs: yes
-  with_items:
-    - {
-        regex: "^hw.initialBootParameters=.*",
-        line: "hw.initialBootParameters=androidboot.selinux=permissive",
+- name: Backup original ramdisk.img
+  copy:
+    src: "{{ ramdisk_path }}"
+    dest: "{{ root_tools_dir }}/ramdisk.img.backup"
+    remote_src: yes
+  become: yes
+
+- name: Copy original ramdisk.img to MagiskOnEmulator directory
+  copy:
+    src: "{{ ramdisk_path }}"
+    dest: "{{ root_tools_dir }}/MagiskOnEmulator/ramdisk.img"
+    remote_src: yes
+  become: yes
+
+- name: Make patch.sh executable
+  file:
+    path: "{{ root_tools_dir }}/MagiskOnEmulator/patch.sh"
+    mode: "0755"
+  become: yes
+
+- name: Fix line endings on patch.sh (in case of CRLF issues)
+  shell: |
+    dos2unix "{{ root_tools_dir }}/MagiskOnEmulator/patch.sh"
+  ignore_errors: yes
+  become: yes
+  environment:
+    PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
+
+- name: Examine patch.sh script (for debugging)
+  shell: |
+    cat "{{ root_tools_dir }}/MagiskOnEmulator/patch.sh" | head -20
+  register: patchsh_content
+  become: yes
+
+- name: Debug patch.sh content
+  debug:
+    var: patchsh_content.stdout_lines
+
+- name: Create custom patch.sh that won't hang indefinitely
+  copy:
+    dest: "{{ root_tools_dir }}/MagiskOnEmulator/patch.sh"
+    content: |
+      #!/bin/bash
+      # Improved patch script with better error handling
+      
+      # Try to connect to device with timeout
+      echo "Connecting to device (timeout: 30s)..."
+      timeout 30s adb wait-for-device || echo "Device connection timed out after 30s"
+      
+      # Ensure device is connected
+      echo "Checking device connection..."
+      adb devices | grep -q emulator || {
+        echo "Warning: No emulator found in device list. Continuing anyway..."
       }
-    - { regex: "^qemu.gles=.*", line: "qemu.gles=1" }
-    - { regex: "^qemu.gltransport=.*", line: "qemu.gltransport=pipe" }
+      
+      # Push files to device
+      echo "Pushing files to device..."
+      adb -e push ramdisk.img /data/local/tmp/ramdisk.img.gz || {
+        echo "Error: Failed to push ramdisk.img"
+        exit 1
+      }
+      
+      # Push Magisk files
+      if [[ -f magisk.zip ]]; then
+        echo "Pushing magisk.zip..."
+        adb -e push magisk.zip /data/local/tmp/magisk.zip || echo "Warning: Failed to push magisk.zip"
+      fi
+      
+      if [[ -f magisk.apk ]]; then
+        echo "Pushing magisk.apk..."
+        adb -e push magisk.apk /data/local/tmp/magisk.zip || echo "Warning: Failed to push magisk.apk"
+      fi
+      
+      # Push busybox and process script
+      echo "Pushing busybox and process script..."
+      adb -e push busybox /data/local/tmp/ || {
+        echo "Error: Failed to push busybox"
+        exit 1
+      }
+      
+      adb -e push process.sh /data/local/tmp/ || {
+        echo "Error: Failed to push process.sh"
+        exit 1
+      }
+      
+      # Fix line endings and run process script
+      echo "Converting line endings and running process script..."
+      adb -e shell "dos2unix /data/local/tmp/process.sh" || echo "Warning: dos2unix failed, continuing anyway"
+      adb -e shell "sh /data/local/tmp/process.sh /data/local/tmp $1" || {
+        echo "Error: Failed to run process.sh"
+        exit 1
+      }
+      
+      # Pull the patched ramdisk
+      echo "Pulling patched ramdisk..."
+      adb -e pull /data/local/tmp/ramdisk.img || {
+        echo "Error: Failed to pull patched ramdisk.img"
+        exit 1
+      }
+      
+      echo "Patching completed successfully!"
+    mode: "0755"
+  become: yes
+
+- name: Log environment details for debugging
+  shell: |
+    echo "Sed version: $(sed --version | head -1)"
+    echo "Bash version: $(bash --version | head -1)"
+    echo "Shell: $SHELL"
+    echo "PATH: $PATH"
+  register: env_details
+  become: yes
+
+- name: Display environment details
+  debug:
+    var: env_details.stdout_lines
+
+- name: Modify patch.sh shebang to use bash
+  shell: |
+    echo '#!/bin/bash' > {{ root_tools_dir }}/temp_shebang.txt && \
+    tail -n +2 {{ root_tools_dir }}/MagiskOnEmulator/patch.sh >> {{ root_tools_dir }}/temp_shebang.txt && \
+    mv {{ root_tools_dir }}/temp_shebang.txt {{ root_tools_dir }}/MagiskOnEmulator/patch.sh && \
+    chmod +x {{ root_tools_dir }}/MagiskOnEmulator/patch.sh
+  become: yes
+
+- name: Ensure ADB is in PATH for the patch script
+  shell: |
+    cp "{{ android_home }}/platform-tools/adb" "{{ root_tools_dir }}/MagiskOnEmulator/"
+    chmod +x "{{ root_tools_dir }}/MagiskOnEmulator/adb"
+  become: yes
+
+- name: Detect if emulator is using ARM architecture
+  shell: |
+    {{ android_home }}/emulator/emulator -accel-check | grep -i arm
+  register: arm_check
+  ignore_errors: yes
+  become: yes
+
+- name: Rename busybox to busybox_x86 as backup
+  shell: |
+    if [ -f "{{ root_tools_dir }}/MagiskOnEmulator/busybox" ]; then
+      cp "{{ root_tools_dir }}/MagiskOnEmulator/busybox" "{{ root_tools_dir }}/MagiskOnEmulator/busybox_x86"
+    fi
+  become: yes
+  ignore_errors: yes
+
+- name: Use busybox_arm for ARM architecture if it exists
+  shell: |
+    if [ -f "{{ root_tools_dir }}/MagiskOnEmulator/busybox_arm" ]; then
+      cp "{{ root_tools_dir }}/MagiskOnEmulator/busybox_arm" "{{ root_tools_dir }}/MagiskOnEmulator/busybox"
+    fi
+  when: arm_check.rc == 0
+  become: yes
+  ignore_errors: yes
+
+- name: Make busybox executable
+  file:
+    path: "{{ root_tools_dir }}/MagiskOnEmulator/busybox"
+    mode: "0755"
+  become: yes
+
+- name: Check if process.sh exists
+  stat:
+    path: "{{ root_tools_dir }}/MagiskOnEmulator/process.sh"
+  register: process_sh_check
+  become: yes
+
+- name: Create process.sh if it doesn't exist
+  copy:
+    dest: "{{ root_tools_dir }}/MagiskOnEmulator/process.sh"
+    content: |
+      #!/bin/bash
+      # Customized process.sh for Kindle Automator
+      TMPDIR=$1
+      ARG=$2
+      cd $TMPDIR
+      
+      # Make busybox executable
+      chmod 755 busybox
+      
+      # Extract ramdisk
+      mkdir -p ramdisk
+      cd ramdisk
+      gunzip -c ../ramdisk.img | ../busybox cpio -i
+      
+      # Create necessary directories
+      mkdir -p ./sbin
+      mkdir -p ./system/xbin
+      mkdir -p ./system/bin
+      
+      # Add su daemon in multiple locations to ensure it's found
+      if [ -e ../magisk.zip ]; then
+        # Try to extract from Magisk zip
+        unzip -o ../magisk.zip x86/su.pie -d ../ || echo "Failed to extract su.pie"
+        unzip -o ../magisk.zip x86/magiskinit -d ../ || echo "Failed to extract magiskinit"
+        
+        if [ -e ../x86/su.pie ]; then
+          echo "Found su.pie, installing to multiple locations"
+          # Install su in multiple locations with proper permissions
+          cp ../x86/su.pie ./sbin/su
+          cp ../x86/su.pie ./system/xbin/su
+          cp ../x86/su.pie ./system/bin/su
+          cp ../x86/su.pie ./su
+          chmod 6755 ./sbin/su
+          chmod 6755 ./system/xbin/su
+          chmod 6755 ./system/bin/su
+          chmod 6755 ./su
+        else
+          echo "No su.pie found, using busybox as su"
+          # Fallback to busybox
+          cp ../busybox ./sbin/su
+          cp ../busybox ./system/xbin/su
+          cp ../busybox ./system/bin/su
+          cp ../busybox ./su
+          chmod 6755 ./sbin/su
+          chmod 6755 ./system/xbin/su
+          chmod 6755 ./system/bin/su
+          chmod 6755 ./su
+        fi
+        
+        if [ -e ../x86/magiskinit ]; then
+          cp ../x86/magiskinit ./sbin/magiskinit
+          chmod 755 ./sbin/magiskinit
+        fi
+      else
+        echo "No Magisk zip found, using busybox as su"
+        cp ../busybox ./sbin/su
+        cp ../busybox ./system/xbin/su
+        cp ../busybox ./system/bin/su
+        cp ../busybox ./su
+        chmod 6755 ./sbin/su
+        chmod 6755 ./system/xbin/su
+        chmod 6755 ./system/bin/su
+        chmod 6755 ./su
+      fi
+      
+      # Create su wrapper scripts for compatibility in multiple locations
+      for SU_DIR in ./sbin ./system/xbin ./system/bin; do
+        echo '#!/system/bin/sh' > $SU_DIR/su.sh
+        echo 'exec /system/bin/su "$@"' >> $SU_DIR/su.sh
+        chmod 755 $SU_DIR/su.sh
+      done
+      
+      # Add init.d support
+      mkdir -p ./system/etc/init.d
+      echo '#!/system/bin/sh' > ./system/etc/init.d/99-su
+      echo '# Make sure su is available in PATH' >> ./system/etc/init.d/99-su
+      echo 'for SU_PATH in /sbin/su /system/xbin/su /system/bin/su /su; do' >> ./system/etc/init.d/99-su
+      echo '  if [ -f $SU_PATH ]; then' >> ./system/etc/init.d/99-su
+      echo '    chmod 6755 $SU_PATH' >> ./system/etc/init.d/99-su
+      echo '    # Create symlinks to ensure su is found' >> ./system/etc/init.d/99-su
+      echo '    mount -o rw,remount /system' >> ./system/etc/init.d/99-su
+      echo '    [ ! -f /system/bin/su ] && ln -sf $SU_PATH /system/bin/su' >> ./system/etc/init.d/99-su
+      echo '    [ ! -f /system/xbin/su ] && ln -sf $SU_PATH /system/xbin/su' >> ./system/etc/init.d/99-su
+      echo '    [ ! -f /sbin/su ] && ln -sf $SU_PATH /sbin/su' >> ./system/etc/init.d/99-su
+      echo '    mount -o ro,remount /system' >> ./system/etc/init.d/99-su
+      echo '    break' >> ./system/etc/init.d/99-su
+      echo '  fi' >> ./system/etc/init.d/99-su
+      echo 'done' >> ./system/etc/init.d/99-su
+      chmod 755 ./system/etc/init.d/99-su
+      
+      # Set proper permissions for all binaries
+      chmod 0755 ./sbin/su
+      chmod 0755 ./system/xbin/su
+      [ -e ./sbin/su.sh ] && chmod 0755 ./sbin/su.sh
+      [ -e ./sbin/magiskinit ] && chmod 0755 ./sbin/magiskinit
+      
+      # Create .magisk directory to indicate root status
+      mkdir -p ./.magisk
+      echo "MAGISK" > ./.magisk/config
+      
+      # Repack ramdisk
+      find . | ../busybox cpio -o -H newc > ../new_ramdisk
+      cd ..
+      cat new_ramdisk | gzip > ramdisk.img
+      
+      exit 0
+    mode: "0755"
+  when: not process_sh_check.stat.exists
+  become: yes
+
+- name: Ensure ADB server is running
+  shell: |
+    {{ android_home }}/platform-tools/adb start-server
+  become: yes
+
+- name: Check if emulator is running
+  shell: |
+    {{ android_home }}/platform-tools/adb devices | grep emulator
+  register: emulator_check
+  ignore_errors: yes
+  become: yes
+
+- name: Display emulator status
+  debug:
+    var: emulator_check.stdout_lines
+
+- name: Patch ramdisk with Magisk (with timeout)
+  shell: |
+    cd "{{ root_tools_dir }}/MagiskOnEmulator" && \
+    export ANDROID_HOME="{{ android_home }}" && \
+    export PATH="{{ root_tools_dir }}/MagiskOnEmulator:{{ android_home }}/platform-tools:$PATH" && \
+    export TMPDIR=/tmp && \
+    ls -la && \
+    timeout 120s bash -x ./patch.sh
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+    PATH: "{{ root_tools_dir }}/MagiskOnEmulator:{{ android_home }}/platform-tools:{{ ansible_env.PATH }}"
+    TMPDIR: "/tmp"
+  register: patch_output
+  ignore_errors: yes
+
+- name: Show patch script output
+  debug:
+    var: patch_output.stdout_lines
+
+- name: Copy patched ramdisk back to system images
+  copy:
+    src: "{{ root_tools_dir }}/MagiskOnEmulator/ramdisk.img"
+    dest: "{{ ramdisk_path }}"
+    remote_src: yes
   become: yes
 
 - name: Start Android Emulator service
@@ -64,62 +443,14 @@
 
 - name: Install Magisk APK
   shell: |
-    {{ android_home }}/platform-tools/adb install -r {{ root_tools_dir }}/magisk.apk
+    {{ android_home }}/platform-tools/adb install -r {{ root_tools_dir }}/Magisk.apk
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
 
-- name: Launch Magisk app
-  shell: |
-    {{ android_home }}/platform-tools/adb shell monkey -p com.topjohnwu.magisk -c android.intent.category.LAUNCHER 1
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-
-- name: Wait for Magisk to initialize
+- name: Wait for Magisk app to be installed
   pause:
     seconds: 10
-
-- name: Download rootAVD script
-  get_url:
-    url: https://gitlab.com/newbit/rootAVD/-/raw/master/rootAVD.sh
-    dest: "{{ root_tools_dir }}/rootAVD.sh"
-    mode: "0755"
-  become: yes
-
-- name: Get ramdisk path
-  shell: |
-    echo "{{ android_home }}/avd/{{ avd_name }}.avd/ramdisk.img"
-  register: ramdisk_path
-
-- name: Stop Android Emulator service before rooting
-  systemd:
-    name: android-emulator
-    state: stopped
-  become: yes
-
-- name: Execute rootAVD script
-  shell: |
-    {{ root_tools_dir }}/rootAVD.sh "{{ ramdisk_path.stdout }}"
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-
-- name: Start Android Emulator service
-  systemd:
-    name: android-emulator
-    state: started
-  become: yes
-
-- name: Wait for emulator to boot
-  shell: |
-    timeout {{ boot_timeout }}s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
-      echo "Waiting for emulator to fully boot..."
-      sleep 5
-    done'
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-  ignore_errors: yes
 
 - name: Verify root access
   shell: |
@@ -129,23 +460,7 @@
   environment:
     ANDROID_HOME: "{{ android_home }}"
 
-- name: Install EdXposed Manager
-  shell: |
-    {{ android_home }}/platform-tools/adb install -r {{ root_tools_dir }}/edxposed_manager.apk
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-
-- name: Install EdXposed Framework
-  shell: |
-    {{ android_home }}/platform-tools/adb push {{ root_tools_dir }}/edxposed.zip /sdcard/
-    {{ android_home }}/platform-tools/adb shell "su -c 'magisk --install-module /sdcard/edxposed.zip'"
-    {{ android_home }}/platform-tools/adb shell "su -c 'rm /sdcard/edxposed.zip'"
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-
-- name: Configure system settings for automation
+- name: Configure system settings for screenshot access
   shell: |
     {{ android_home }}/platform-tools/adb shell "su -c 'settings put global policy_control immersive.full=*'"
     {{ android_home }}/platform-tools/adb shell "su -c 'settings put global hidden_api_policy_pre_p_apps 0'"
@@ -156,6 +471,28 @@
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+
+- name: Try permission grant with /sbin/su
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "/sbin/su -c 'pm grant com.android.shell android.permission.READ_FRAME_BUFFER'"
+    {{ android_home }}/platform-tools/adb shell "/sbin/su -c 'pm grant com.android.shell android.permission.WRITE_EXTERNAL_STORAGE'"
+    {{ android_home }}/platform-tools/adb shell "/sbin/su -c 'pm grant com.android.shell android.permission.DUMP'"
+  register: su_sbin
+  ignore_errors: yes
+  become: yes
+
+- name: Try permission grant with /system/xbin/su
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "/system/xbin/su -c 'pm grant com.android.shell android.permission.READ_FRAME_BUFFER'"
+    {{ android_home }}/platform-tools/adb shell "/system/xbin/su -c 'pm grant com.android.shell android.permission.WRITE_EXTERNAL_STORAGE'"
+    {{ android_home }}/platform-tools/adb shell "/system/xbin/su -c 'pm grant com.android.shell android.permission.DUMP'"
+  ignore_errors: yes
+  become: yes
+  when: su_sbin is failed
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
 
 - name: Reboot emulator to apply all changes
   shell: |
@@ -164,7 +501,7 @@
   environment:
     ANDROID_HOME: "{{ android_home }}"
 
-- name: Wait for emulator to boot completely
+- name: Wait for emulator to boot completely after reboot
   shell: |
     timeout {{ boot_timeout }}s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
       echo "Waiting for emulator to fully boot..."
@@ -174,15 +511,138 @@
     ANDROID_HOME: "{{ android_home }}"
   ignore_errors: yes
 
-- name: Display root status
+- name: Test screenshot with /sbin/su
   shell: |
-    {{ android_home }}/platform-tools/adb shell "su -c 'id'"
-  register: root_check
+    {{ android_home }}/platform-tools/adb shell "/sbin/su -c 'screencap -p /sdcard/test_screenshot.png'"
+    {{ android_home }}/platform-tools/adb pull /sdcard/test_screenshot.png {{ root_tools_dir }}/test_screenshot.png
+    {{ android_home }}/platform-tools/adb shell "rm /sdcard/test_screenshot.png"
+  register: screenshot_sbin
+  ignore_errors: yes
   become: yes
+
+- name: Test screenshot with /system/xbin/su
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "/system/xbin/su -c 'screencap -p /sdcard/test_screenshot.png'"
+    {{ android_home }}/platform-tools/adb pull /sdcard/test_screenshot.png {{ root_tools_dir }}/test_screenshot.png
+    {{ android_home }}/platform-tools/adb shell "rm /sdcard/test_screenshot.png"
+  register: screenshot_xbin
+  ignore_errors: yes
+  become: yes
+  when: screenshot_sbin is failed
+
+- name: Test screenshot without su (fallback)
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "screencap -p /sdcard/test_screenshot.png"
+    {{ android_home }}/platform-tools/adb pull /sdcard/test_screenshot.png {{ root_tools_dir }}/test_screenshot.png
+    {{ android_home }}/platform-tools/adb shell "rm /sdcard/test_screenshot.png"
+  register: screenshot_direct
+  ignore_errors: yes
+  become: yes
+  when: (screenshot_sbin is failed) and (screenshot_xbin is failed or screenshot_xbin is skipped)
   environment:
     ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+
+- name: Check root status with /sbin/su
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "/sbin/su -c 'id'"
+  register: root_sbin
+  ignore_errors: yes
+  become: yes
   changed_when: false
 
-- name: Show root status
+- name: Check root status with /system/xbin/su
+  shell: |
+    {{ android_home }}/platform-tools/adb shell "/system/xbin/su -c 'id'"
+  register: root_xbin
+  ignore_errors: yes
+  become: yes
+  changed_when: false
+  when: root_sbin is failed
+
+- name: Check if any root method succeeded
+  set_fact:
+    root_successful: "{{ (root_sbin is success) or (root_xbin is success) }}"
+
+- name: Show root status summary
   debug:
-    var: root_check.stdout
+    msg: "Root status: {{ 'SUCCESS' if root_successful else 'FAILED - no working su binary found' }}"
+
+
+- name: Show detailed root status
+  debug:
+    msg: |
+      Root status details:
+      - /sbin/su: {{ 'SUCCESS' if root_sbin is success else 'FAILED' }}
+      - /system/xbin/su: {{ 'SUCCESS' if root_xbin is success else 'FAILED or SKIPPED' }}
+
+- name: Show screenshot capability status
+  debug:
+    msg: |
+      Screenshot capability details:
+      - With /sbin/su: {{ 'SUCCESS' if screenshot_sbin is success else 'FAILED' }}
+      - With /system/xbin/su: {{ 'SUCCESS' if screenshot_xbin is success else 'FAILED or SKIPPED' }}
+      - Direct (no su): {{ 'SUCCESS' if screenshot_direct is success else 'FAILED or SKIPPED' }}
+      - Overall: {{ 'SUCCESS' if (screenshot_sbin is success) or (screenshot_xbin is success) or (screenshot_direct is success) else 'FAILED' }}
+
+- name: Create reliable screenshot helper script
+  copy:
+    dest: "{{ android_home }}/platform-tools/screenshot_helper.sh"
+    content: |
+      #!/bin/bash
+      # Helper script to ensure reliable screenshot capabilities
+      # This script tries multiple methods to take a screenshot and returns the first successful one
+      
+      OUTPUT_PATH="$1"
+      if [ -z "$OUTPUT_PATH" ]; then
+        OUTPUT_PATH="/sdcard/screenshot.png"
+      fi
+      
+      # Try with root first if available
+      for SU_PATH in "/sbin/su" "/system/xbin/su" "/system/bin/su" "/su"; do
+        if [ -x "$SU_PATH" ]; then
+          echo "Trying screenshot with $SU_PATH..."
+          if "$SU_PATH" -c "screencap -p $OUTPUT_PATH" 2>/dev/null; then
+            echo "Screenshot taken successfully with $SU_PATH"
+            exit 0
+          fi
+        fi
+      done
+      
+      # Try direct method without su
+      echo "Trying direct screenshot without su..."
+      if screencap -p "$OUTPUT_PATH" 2>/dev/null; then
+        echo "Screenshot taken successfully without su"
+        exit 0
+      fi
+      
+      # If we got here, all methods failed
+      echo "Failed to take screenshot using any method"
+      exit 1
+    mode: "0755"
+  become: yes
+
+- name: Create UiAutomator2 recovery script
+  copy:
+    dest: "{{ android_home }}/platform-tools/uiautomator2_recovery.sh"
+    content: |
+      #!/bin/bash
+      # Recovery script for UiAutomator2 server crashes
+      # This script restarts the UiAutomator2 server when it crashes
+      
+      echo "Attempting to recover from UiAutomator2 server crash..."
+      
+      # Stop any existing UiAutomator2 processes
+      adb shell "ps | grep uiautomator | awk '{print \$2}' | xargs kill -9" 2>/dev/null
+      
+      # Clear app data
+      adb shell "pm clear io.appium.uiautomator2.server" 2>/dev/null
+      adb shell "pm clear io.appium.uiautomator2.server.test" 2>/dev/null
+      
+      # Start UiAutomator2 server
+      adb shell "am instrument -w io.appium.uiautomator2.server.test/androidx.test.runner.AndroidJUnitRunner" &
+      
+      echo "UiAutomator2 server recovery attempted"
+      exit 0
+    mode: "0755"
+  become: yes

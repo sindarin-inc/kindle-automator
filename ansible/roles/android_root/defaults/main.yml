@@ -11,12 +11,12 @@ sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-
 magisk_version: "v26.1"
 magisk_apk_url: "https://github.com/topjohnwu/Magisk/releases/download/{{ magisk_version }}/Magisk-{{ magisk_version }}.apk"
 
-# EdXposed version
+# EdXposed version (kept for reference but not used with MagiskOnEmulator approach)
 edxposed_version: "v0.5.2.2"
 edxposed_version_2: "v0.5.2.2_4683-master"
 edxposed_framework_url: "https://github.com/ElderDrivers/EdXposed/releases/download/{{ edxposed_version }}/EdXposed-{{ edxposed_version_2 }}-release.zip"
 
-# EdXposed Manager version
+# EdXposed Manager version (kept for reference but not used with MagiskOnEmulator approach)
 edxposed_manager_version: "4.6.2.0.0"
 edxposed_manager_version_2: "4.6.2-46200-org.meowcat.edxposed.manager"
 edxposed_manager_url: "https://github.com/ElderDrivers/EdXposedManager/releases/download/v{{ edxposed_manager_version }}/EdXposedManager-{{ edxposed_manager_version_2 }}-release.apk"
@@ -26,3 +26,21 @@ root_tools_dir: "{{ android_home }}/root_tools"
 
 # Boot timeout in seconds
 boot_timeout: 120
+
+# MagiskOnEmulator variables
+# Derived from sys_img format: system-images;android-35;google_apis_playstore;x86_64
+# Check the path structure in your system-images directory to ensure this matches
+android_api_name: "android-{{ sdk_api_level }}"
+android_system_image_type: "google_apis_playstore/x86_64"
+
+# Fallback paths for finding ramdisk.img - these will be checked if the primary path doesn't exist
+ramdisk_fallback_paths:
+  - "{{ android_home }}/system-images/{{ android_api_name }}/google_apis_playstore/x86_64/ramdisk.img"
+  - "{{ android_home }}/system-images/{{ android_api_name }}/google_apis/x86_64/ramdisk.img"
+  - "{{ android_home }}/system-images/{{ android_api_name }}/default/x86_64/ramdisk.img"
+  - "{{ android_home }}/avd/{{ avd_name }}.avd/ramdisk.img"
+
+# Required packages for MagiskOnEmulator
+required_packages:
+  - git
+  - dos2unix
