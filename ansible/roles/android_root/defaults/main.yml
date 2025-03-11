@@ -2,7 +2,7 @@
 android_home: "/opt/android-sdk"
 avd_name: "KindleAVD"
 sdk_api_level: "35"
-sys_img: "system-images;android-{{ sdk_api_level }};google_apis_playstore;x86_64"
+sys_img: "system-images;android-{{ sdk_api_level }};default;x86_64"
 sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 
 # Default variables for android-root role

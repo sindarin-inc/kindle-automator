@@ -14,6 +14,16 @@
     update_cache: yes
   become: yes
 
+- name: Add Android SDK environment variables to /etc/profile
+  blockinfile:
+    path: ~/.zshrc
+    block: |
+      export ANDROID_HOME={{ android_home }}
+      export ANDROID_SDK_ROOT={{ android_home }}
+      export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator
+    create: yes
+  become: yes
+
 - name: Set Android SDK environment variables
   blockinfile:
     path: /etc/profile
@@ -76,7 +86,7 @@
 
 - name: Install required Android SDK components
   shell: |
-    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "{{ sys_img }}"
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "emulator" "{{ sys_img }}"
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"

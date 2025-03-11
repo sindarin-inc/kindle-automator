@@ -3,11 +3,11 @@
 
 sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 android_home: "/opt/android-sdk"
-avd_name: "android35"
+avd_name: "KindleArmAVD"
 sdk_api_level: "35"
 
 # Use ARM64 system image instead of x86_64
-sys_img: "system-images;android-{{ sdk_api_level }};google_apis;arm64-v8a"
+sys_img: "system-images;android-{{ sdk_api_level }};default;arm64-v8a"
 
 emulator_package: "emulator"
 platform_tools_package: "platform-tools"

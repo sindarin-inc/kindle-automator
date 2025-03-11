@@ -197,9 +197,10 @@
     {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib64/
     {{ android_home }}/platform-tools/adb reboot
   become: yes
-  when: not libhoudini_check.stat.exists
   environment:
     ANDROID_HOME: "{{ android_home }}"
+  tags:
+    - libhoudini
 
 - name: Ensure permanent directory for APKs exists
   file:

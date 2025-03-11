@@ -9,6 +9,6 @@
     - { role: certbot, tags: certbot, when: "'kindle' in inventory_hostname" }
     - { role: mezmo, tags: mezmo }
     - { role: android_x86, tags: android-x86 }
-    - { role: android_root, tags: android-root }
     # - { role: android_arm, tags: android-arm }
+    # - { role: android_root, tags: android-root }
     - { role: server, tags: server }
