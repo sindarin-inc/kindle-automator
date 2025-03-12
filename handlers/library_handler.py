@@ -199,14 +199,35 @@ class LibraryHandler:
     def _is_grid_view(self):
         """Check if currently in grid view"""
         try:
+            # First check for grid view identifiers
             for strategy, locator in GRID_VIEW_IDENTIFIERS:
                 try:
                     self.driver.find_element(strategy, locator)
                     logger.info(f"Grid view detected via {strategy}: {locator}")
                     return True
-                except Exception as e:
-                    logger.debug(f"Grid view strategy failed - {strategy}: {locator} - {e}")
+                except NoSuchElementException:
+                    # Expected failure, continue silently without logging
                     continue
+                except StaleElementReferenceException:
+                    # UI state changed, continue silently without logging
+                    continue
+                except Exception as e:
+                    # Only log unexpected errors
+                    logger.debug(f"Unexpected error checking grid view with {strategy}: {e}")
+                    continue
+                    
+            # Second check - look for GridView element directly
+            try:
+                self.driver.find_element(AppiumBy.CLASS_NAME, "android.widget.GridView")
+                logger.info("Grid view detected via GridView class")
+                return True
+            except NoSuchElementException:
+                # Expected failure, don't log
+                pass
+            except Exception as e:
+                # Only log unexpected errors
+                logger.debug(f"Unexpected error checking for GridView class: {e}")
+                
             return False
         except Exception as e:
             logger.error(f"Error checking grid view: {e}")
@@ -233,60 +254,119 @@ class LibraryHandler:
             if self._is_list_view():
                 logger.info("Already in list view")
                 return True
-
-            # Click view options button
-            for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
+                
+            # If we're in grid view, we need to open the view options menu
+            if self._is_grid_view():
+                logger.info("Currently in grid view, switching to list view")
+                
+                # Store page source for debugging
+                filepath = store_page_source(self.driver.page_source, "grid_view_detected")
+                logger.info(f"Stored grid view page source at: {filepath}")
+                
+                # Click view options button
+                button_clicked = False
+                for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
+                    try:
+                        button = self.driver.find_element(strategy, locator)
+                        button.click()
+                        logger.info(f"Clicked view options button using {strategy}: {locator}")
+                        time.sleep(1)  # Increased wait for menu animation
+                        button_clicked = True
+                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to click view options button with strategy {strategy}: {e}")
+                        continue
+                
+                if not button_clicked:
+                    logger.error("Failed to click any view options button")
+                    return False
+                
+                # Verify the menu is open
+                menu_open = False
                 try:
-                    button = self.driver.find_element(strategy, locator)
-                    button.click()
-                    logger.info("Clicked view options button")
-                    time.sleep(0.5)  # Short wait for menu animation
-                    break
-                except Exception:
-                    continue
-
-            # Click list view option
-            for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
-                try:
-                    option = self.driver.find_element(strategy, locator)
-                    option.click()
-                    logger.info("Clicked list view option")
-                    time.sleep(0.5)  # Short wait for selection to register
-                    break
-                except Exception:
-                    continue
-
-            # Click DONE button
-            for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
-                try:
-                    done_button = self.driver.find_element(strategy, locator)
-                    done_button.click()
-                    logger.info("Clicked DONE button")
-                    break
+                    for strategy, locator in VIEW_OPTIONS_MENU_STATE_STRATEGIES:
+                        try:
+                            self.driver.find_element(strategy, locator)
+                            menu_open = True
+                            logger.info(f"View options menu is open, detected via {strategy}: {locator}")
+                            break
+                        except Exception:
+                            continue
                 except Exception as e:
-                    logger.debug(f"Failed to click DONE button with strategy {strategy}: {e}")
-                    continue
-
-            # Wait for list view to appear with timeout
-            try:
-                logger.info("Waiting for list view to appear...")
-                WebDriverWait(self.driver, 2).until(
-                    lambda x: any(
-                        x.find_element(strategy, locator) is not None
-                        for strategy, locator in LIST_VIEW_IDENTIFIERS
+                    logger.debug(f"Error checking if menu is open: {e}")
+                
+                if not menu_open:
+                    logger.error("View options menu did not open properly")
+                    return False
+                
+                # Click list view option
+                list_option_clicked = False
+                for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
+                    try:
+                        option = self.driver.find_element(strategy, locator)
+                        option.click()
+                        logger.info(f"Clicked list view option using {strategy}: {locator}")
+                        time.sleep(1)  # Increased wait for selection to register
+                        list_option_clicked = True
+                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to click list view option with strategy {strategy}: {e}")
+                        continue
+                
+                if not list_option_clicked:
+                    logger.error("Failed to click list view option")
+                    return False
+                
+                # Click DONE button
+                done_clicked = False
+                for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
+                    try:
+                        done_button = self.driver.find_element(strategy, locator)
+                        done_button.click()
+                        logger.info(f"Clicked DONE button using {strategy}: {locator}")
+                        done_clicked = True
+                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to click DONE button with strategy {strategy}: {e}")
+                        continue
+                
+                if not done_clicked:
+                    logger.error("Failed to click DONE button")
+                    return False
+                
+                # Wait longer for list view to appear
+                try:
+                    logger.info("Waiting for list view to appear...")
+                    WebDriverWait(self.driver, 5).until(
+                        lambda x: any(
+                            self.try_find_element(x, strategy, locator) 
+                            for strategy, locator in LIST_VIEW_IDENTIFIERS
+                        )
                     )
-                )
-                logger.info("Successfully switched to list view")
-                return True
-            except TimeoutException:
-                logger.error(f"Timed out waiting for list view")
-                # Get page source for debugging
-                filepath = store_page_source(self.driver.page_source, "unknown_timeout")
-                logger.info(f"Stored unknown timeout page source at: {filepath}")
+                    logger.info("Successfully switched to list view")
+                    return True
+                except TimeoutException:
+                    logger.error("Timed out waiting for list view")
+                    # Get page source for debugging
+                    filepath = store_page_source(self.driver.page_source, "list_view_timeout")
+                    logger.info(f"Stored list view timeout page source at: {filepath}")
+                    return False
+            else:
+                logger.warning("Neither in grid view nor list view, unable to determine current state")
+                filepath = store_page_source(self.driver.page_source, "unknown_view_state")
+                logger.info(f"Stored unknown view state page source at: {filepath}")
                 return False
 
         except Exception as e:
             logger.error(f"Error switching to list view: {e}")
+            traceback.print_exc()
+            return False
+
+    def try_find_element(self, driver, strategy, locator):
+        """Safe wrapper to find element without raising exception"""
+        try:
+            return driver.find_element(strategy, locator) is not None
+        except:
             return False
 
     def _close_menu(self):
