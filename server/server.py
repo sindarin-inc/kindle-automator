@@ -186,8 +186,10 @@ class StateResource(Resource):
     @ensure_automator_healthy
     def get(self):
         try:
-            logger.info(f"Getting state: {server.automator.state_machine.current_state}")
+            logger.info(f"Getting state, currently in {server.automator.state_machine.current_state}")
+            server.automator.state_machine.update_current_state()
             current_state = server.automator.state_machine.current_state
+            logger.info(f"Getting state, now in {current_state}")
             return {"state": current_state.name}, 200
         except Exception as e:
             logger.error(f"Error getting state: {e}")

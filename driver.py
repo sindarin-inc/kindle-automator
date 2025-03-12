@@ -35,6 +35,7 @@ class Driver:
             for line in result.stdout.splitlines():
                 if "emulator-" in line and "device" in line:
                     device_id = line.split()[0]
+                    logger.info(f"Found device ID: {device_id}, attempting to verify...")
                     # Verify this is actually an emulator
                     verify_result = subprocess.run(
                         ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
@@ -43,6 +44,18 @@ class Driver:
                         check=True,
                     )
                     if "sdk" in verify_result.stdout.lower() or "emulator" in verify_result.stdout.lower():
+                        return device_id
+                elif "127.0.0.1:" in line:
+                    device_id = line.split()[0]
+                    logger.info(f"Found device ID: {device_id}, attempting to verify...")
+                    verify_result = subprocess.run(
+                        ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    logger.info(f"Verify result: {verify_result.stdout}")
+                    if "pixel" in verify_result.stdout.lower():
                         return device_id
             return None
         except Exception as e:
@@ -229,8 +242,8 @@ class Driver:
                     options.ignore_unimportant_views = False
                     options.allow_invisible_elements = True
                     options.enable_multi_windows = True
-                    options.new_command_timeout = 60*60*24*7  # 7 days
-                    options.set_capability('adbExecTimeout', 120000)  # 120 seconds timeout for ADB commands
+                    options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
+                    options.set_capability("adbExecTimeout", 120000)  # 120 seconds timeout for ADB commands
 
                     self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
                     logger.info("Driver initialized successfully")
