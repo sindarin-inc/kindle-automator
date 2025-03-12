@@ -125,6 +125,14 @@ test-captcha:
 		-d '{"solution": "4s6cwm"}' \
 		-v
 
+# Test Auth endpoint
+test-auth:
+	@echo "Testing authentication..."
+	@curl -X POST http://localhost:4098/auth \
+		-H "Content-Type: application/json" \
+		-d '{"email": "sam@solreader.com", "password": "Z4jZdEsJqEViVWDzDDJ*"}' \
+		-v
+
 # Test books endpoint
 test-books:
 	@echo "Getting list of books..."

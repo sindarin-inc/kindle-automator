@@ -218,6 +218,9 @@ class CaptchaResource(Resource):
 
         # Update captcha solution if different
         server.automator.update_captcha_solution(solution)
+        # Also update it directly in the state machine's auth handler as a backup
+        server.automator.state_machine.auth_handler.captcha_solution = solution
+        
         success = server.automator.transition_to_library()
 
         if success:
@@ -495,6 +498,97 @@ class TwoFactorResource(Resource):
         return {"error": "Invalid 2FA code"}, 500
 
 
+class AuthResource(Resource):
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def post(self):
+        """Authenticate with Amazon username and password"""
+        data = request.get_json()
+        email = data.get("email", AMAZON_EMAIL)  # Fall back to config email
+        password = data.get("password", AMAZON_PASSWORD)  # Fall back to config password
+
+        logger.info(f"Authenticating with email: {email}")
+
+        if not email or not password:
+            return {"error": "Email and password are required"}, 400
+
+        # Check if already authenticated by checking if we're in the library state
+        server.automator.state_machine.update_current_state()
+        current_state = server.automator.state_machine.current_state
+
+        if current_state == AppState.LIBRARY:
+            logger.info("Already authenticated and in library state")
+            return {"success": True, "message": "Already authenticated"}, 200
+
+        # Update credentials if different from current ones
+        if email != server.automator.email or password != server.automator.password:
+            server.automator.email = email
+            server.automator.password = password
+            # Also update credentials in the state machine's auth handler
+            server.automator.state_machine.auth_handler.email = email
+            server.automator.state_machine.auth_handler.password = password
+
+        # First try to reach sign-in state if we're not already there
+        if current_state != AppState.SIGN_IN:
+            logger.info(f"Not in sign-in state (current: {current_state.name}), attempting to transition")
+            # Use existing state transition mechanisms to get to sign-in state
+            if not server.automator.transition_to_library():
+                # Take a screenshot for visual feedback
+                timestamp = int(time.time())
+                screenshot_id = f"auth_failed_transition_{timestamp}"
+                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+                server.automator.driver.save_screenshot(screenshot_path)
+                image_url = f"/image/{screenshot_id}"
+                
+                # Update current state
+                server.automator.state_machine.update_current_state()
+                current_state = server.automator.state_machine.current_state
+                
+                return {
+                    "success": False,
+                    "message": f"Could not transition to authentication state, current state: {current_state.name}",
+                    "screenshot_url": image_url
+                }, 500
+        
+        # Now proceed with authentication
+        success = server.automator.state_machine.auth_handler.sign_in()
+        
+        # Update current state after auth attempt
+        server.automator.state_machine.update_current_state()
+        current_state = server.automator.state_machine.current_state
+        
+        # Take a screenshot for visual feedback
+        timestamp = int(time.time())
+        screenshot_id = f"auth_screen_{timestamp}"
+        screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+        server.automator.driver.save_screenshot(screenshot_path)
+        image_url = f"/image/{screenshot_id}"
+
+        # Handle different states
+        if current_state == AppState.LIBRARY:
+            return {"success": True, "message": "Authentication successful", "screenshot_url": image_url}, 200
+        elif current_state == AppState.CAPTCHA:
+            return {
+                "success": False, 
+                "requires": "captcha", 
+                "message": "CAPTCHA required", 
+                "screenshot_url": image_url
+            }, 202
+        elif current_state == AppState.SIGN_IN and success:
+            return {
+                "success": False,
+                "requires": "2fa",
+                "message": "2FA code required",
+                "screenshot_url": image_url
+            }, 202
+        else:
+            return {
+                "success": False,
+                "message": f"Authentication failed, current state: {current_state.name}",
+                "screenshot_url": image_url
+            }, 401
+
+
 class FixturesResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
@@ -590,6 +684,7 @@ api.add_resource(
 api.add_resource(BookOpenResource, "/open-book")
 api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
+api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 

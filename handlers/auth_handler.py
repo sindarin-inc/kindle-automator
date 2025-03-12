@@ -50,6 +50,64 @@ class AuthenticationHandler:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
+        
+    def update_captcha_solution(self, solution):
+        """Update the captcha solution."""
+        self.captcha_solution = solution
+        
+    def handle_2fa(self, code):
+        """Handle 2FA verification.
+        
+        Args:
+            code: The 2FA code provided by the user
+            
+        Returns:
+            bool: True if 2FA verification was successful, False otherwise
+        """
+        try:
+            logger.info(f"Handling 2FA with code: {code}")
+            
+            # Find the 2FA input field
+            try:
+                # Look for input field that might contain a 2FA code
+                input_field = self.driver.find_element(
+                    AppiumBy.XPATH, 
+                    "//android.widget.EditText[contains(@hint, 'code') or contains(@text, 'code')]"
+                )
+                
+                # Clear and enter the 2FA code
+                input_field.clear()
+                input_field.send_keys(code)
+                
+                # Find and click the submit button
+                submit_button = self.driver.find_element(
+                    AppiumBy.XPATH, 
+                    "//android.widget.Button[contains(@text, 'Submit') or contains(@text, 'Verify') or contains(@text, 'Continue')]"
+                )
+                submit_button.click()
+                
+                # Wait for transition to complete
+                time.sleep(2)
+                
+                # Check if we've moved to the library state
+                for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
+                    try:
+                        self.driver.find_element(by, locator)
+                        logger.info("2FA verification successful")
+                        return True
+                    except:
+                        continue
+                        
+                logger.error("2FA verification failed - could not detect library view")
+                return False
+                
+            except NoSuchElementException:
+                logger.error("2FA input field or submit button not found")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error handling 2FA: {e}")
+            return False
 
     def sign_in(self):
         try:
