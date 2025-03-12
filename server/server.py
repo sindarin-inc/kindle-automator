@@ -7,11 +7,13 @@ import time
 import traceback
 from typing import Optional
 
+from appium.webdriver.common.appiumby import AppiumBy
 from flask import Flask, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
 from selenium.common import exceptions as selenium_exceptions
 
 from automator import KindleAutomator
+from handlers.auth_handler import LoginVerificationState
 from handlers.test_fixtures_handler import TestFixturesHandler
 from server.logging_config import setup_logger
 from server.response_handler import handle_automator_response
@@ -220,7 +222,7 @@ class CaptchaResource(Resource):
         server.automator.update_captcha_solution(solution)
         # Also update it directly in the state machine's auth handler as a backup
         server.automator.state_machine.auth_handler.captcha_solution = solution
-        
+
         success = server.automator.transition_to_library()
 
         if success:
@@ -275,6 +277,7 @@ class ScreenshotResource(Resource):
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
         If xml=1 is provided, also returns the XML page source."""
+        failed = None
         # Check if save parameter is provided
         save = request.args.get("save", "0") == "1"
         # Check if xml parameter is provided
@@ -286,52 +289,66 @@ class ScreenshotResource(Resource):
         screenshot_path = os.path.join(server.automator.screenshots_dir, filename)
 
         # Take the screenshot
-        server.automator.driver.save_screenshot(screenshot_path)
+        try:
+            server.automator.driver.save_screenshot(screenshot_path)
+        except Exception as e:
+            logger.error(f"Error taking screenshot: {e}")
+            failed = "Failed to take screenshot"
 
         # If save=1, return the URL to access the screenshot via the /image endpoint with POST method
         # Otherwise, return the image directly via GET method (which will delete it after serving)
         image_id = os.path.splitext(filename)[0]
 
-        if save or include_xml:
-            # For JSON responses, we can wrap with the automator response handler
-            @handle_automator_response(server)
-            def get_screenshot_json():
-                # Prepare the response data
-                response_data = {}
-
-                # Return URL to access the screenshot (POST method preserves the image)
-                image_url = f"/image/{image_id}"
-                response_data["screenshot_url"] = image_url
-
-                # If xml=1, get and save the page source XML
-                if include_xml:
-                    try:
-                        # Get page source from the driver
-                        page_source = server.automator.driver.page_source
-
-                        # Store the XML with the same base name as the screenshot
-                        xml_filename = f"{image_id}.xml"
-                        from server.logging_config import store_page_source
-
-                        xml_path = store_page_source(page_source, image_id)
-
-                        # Add the XML URL to the response
-                        # Assuming the XML will be served via a dedicated endpoint or file location
-                        xml_url = f"/fixtures/dumps/{xml_filename}"
-                        response_data["xml_url"] = xml_url
-                    except Exception as xml_error:
-                        logger.error(f"Error getting page source XML: {xml_error}")
-                        response_data["xml_error"] = str(xml_error)
-
-                # Return the response as a tuple that the decorator can handle
-                return response_data, 200
-
-            # Call the nested function with automator response handling
-            return get_screenshot_json()
-        else:
+        if not save and not include_xml:
             # For direct image responses, don't use the automator response handler
             # since it can't handle Flask Response objects
+            if failed:
+                return {"error": failed, "screenshot_url": None, "xml_url": None}, 200
             return serve_image(image_id, delete_after=False)
+
+        # For JSON responses, we can wrap with the automator response handler
+        @handle_automator_response(server)
+        def get_screenshot_json():
+            # Prepare the response data
+            response_data = {}
+
+            # Return URL to access the screenshot (POST method preserves the image)
+            image_url = f"/image/{image_id}"
+            response_data["screenshot_url"] = image_url
+
+            # If xml=1, get and save the page source XML
+            if include_xml:
+                try:
+                    # Get page source from the driver
+                    page_source = server.automator.driver.page_source
+
+                    # Store the XML with the same base name as the screenshot
+                    xml_filename = f"{image_id}.xml"
+                    from server.logging_config import store_page_source
+
+                    xml_path = store_page_source(page_source, image_id)
+                    logger.info(f"Stored page source XML at {xml_path}")
+
+                    # Add the XML URL to the response
+                    # Assuming the XML will be served via a dedicated endpoint or file location
+                    xml_url = f"/fixtures/dumps/{xml_filename}"
+                    response_data["xml_url"] = xml_url
+                except Exception as xml_error:
+                    logger.error(f"Error getting page source XML: {xml_error}")
+                    response_data["xml_error"] = str(xml_error)
+
+            # Return the response as a tuple that the decorator can handle
+            if failed:
+                response_data["error"] = failed
+                return response_data, 500
+            return response_data, 200
+
+        # Call the nested function with automator response handling
+        response, status_code = get_screenshot_json()
+        if failed:
+            response["error"] = failed
+            return response, status_code
+        return response, status_code
 
 
 class NavigationResource(Resource):
@@ -539,54 +556,122 @@ class AuthResource(Resource):
                 screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
                 server.automator.driver.save_screenshot(screenshot_path)
                 image_url = f"/image/{screenshot_id}"
-                
+
                 # Update current state
                 server.automator.state_machine.update_current_state()
                 current_state = server.automator.state_machine.current_state
-                
+
                 return {
                     "success": False,
-                    "message": f"Could not transition to authentication state, current state: {current_state.name}",
-                    "screenshot_url": image_url
+                    "message": (
+                        f"Could not transition to authentication state, current state: {current_state.name}"
+                    ),
+                    "screenshot_url": image_url,
                 }, 500
-        
+
         # Now proceed with authentication
-        success = server.automator.state_machine.auth_handler.sign_in()
-        
+        auth_result = server.automator.state_machine.auth_handler.sign_in()
+        logger.debug(f"Authentication result: {auth_result}")
+        # auth_result could be a boolean (success/failure) or tuple with (LoginVerificationState, message)
+
+        # Check if auth_result is a tuple with error information
+        error_message = None
+        incorrect_password = False
+        if isinstance(auth_result, tuple) and len(auth_result) == 2:
+            state, message = auth_result
+            if state in [LoginVerificationState.INCORRECT_PASSWORD, LoginVerificationState.ERROR]:
+                incorrect_password = True
+                error_message = message
+                logger.error(f"Authentication failed with incorrect password: {message}")
+                # Return immediately with error response without retrying
+                return {"success": False, "message": message, "error_type": "incorrect_password"}, 401
+
         # Update current state after auth attempt
         server.automator.state_machine.update_current_state()
         current_state = server.automator.state_machine.current_state
-        
-        # Take a screenshot for visual feedback
-        timestamp = int(time.time())
-        screenshot_id = f"auth_screen_{timestamp}"
-        screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-        server.automator.driver.save_screenshot(screenshot_path)
-        image_url = f"/image/{screenshot_id}"
+
+        # Take a screenshot for visual feedback (skip if we already know it's incorrect password)
+        image_url = None
+        if not incorrect_password:
+            timestamp = int(time.time())
+            screenshot_id = f"auth_screen_{timestamp}"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+
+            try:
+                server.automator.driver.save_screenshot(screenshot_path)
+                image_url = f"/image/{screenshot_id}"
+                logger.info(f"Saved authentication screenshot to {screenshot_path}")
+            except Exception as e:
+                logger.warning(f"Failed to take authentication screenshot: {e}")
+                # This is expected on secure screens like password entry
+
+        # Check for authentication errors
+        error_message = None
+        try:
+            # Check for error message box
+            error_box = server.automator.driver.find_element(
+                AppiumBy.XPATH, "//android.view.View[@resource-id='auth-error-message-box']"
+            )
+            if error_box:
+                # Try to find specific error messages
+                try:
+                    error_elements = server.automator.driver.find_elements(
+                        AppiumBy.XPATH,
+                        "//android.view.View[@resource-id='auth-error-message-box']//android.view.View",
+                    )
+                    error_texts = []
+                    for elem in error_elements:
+                        if elem.text and elem.text.strip():
+                            error_texts.append(elem.text.strip())
+
+                    if error_texts:
+                        error_message = " - ".join(error_texts)
+                        logger.error(f"Authentication error: {error_message}")
+                except Exception as e:
+                    logger.error(f"Error extracting message from error box: {e}")
+                    error_message = "Authentication error"
+        except:
+            # No error box found
+            pass
 
         # Handle different states
         if current_state == AppState.LIBRARY:
             return {"success": True, "message": "Authentication successful", "screenshot_url": image_url}, 200
         elif current_state == AppState.CAPTCHA:
             return {
-                "success": False, 
-                "requires": "captcha", 
-                "message": "CAPTCHA required", 
-                "screenshot_url": image_url
+                "success": False,
+                "requires": "captcha",
+                "message": "CAPTCHA required",
+                "screenshot_url": image_url,
             }, 202
         elif current_state == AppState.SIGN_IN and success:
             return {
                 "success": False,
                 "requires": "2fa",
                 "message": "2FA code required",
-                "screenshot_url": image_url
+                "screenshot_url": image_url,
             }, 202
         else:
-            return {
-                "success": False,
-                "message": f"Authentication failed, current state: {current_state.name}",
-                "screenshot_url": image_url
-            }, 401
+            # Return the specific error message if we found one
+            if incorrect_password:
+                # Special case for incorrect password - don't retry
+                return {"success": False, "message": error_message, "error_type": "incorrect_password"}, 401
+            elif error_message:
+                response = {
+                    "success": False,
+                    "message": error_message,
+                }
+                if image_url:
+                    response["screenshot_url"] = image_url
+                return response, 401
+            else:
+                response = {
+                    "success": False,
+                    "message": f"Authentication failed, current state: {current_state.name}",
+                }
+                if image_url:
+                    response["screenshot_url"] = image_url
+                return response, 401
 
 
 class FixturesResource(Resource):

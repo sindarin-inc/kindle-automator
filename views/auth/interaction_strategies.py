@@ -40,6 +40,15 @@ SIGN_IN_RADIO_BUTTON_STRATEGIES = [
 AUTH_ERROR_STRATEGIES = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'No account found')]"),
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'incorrect password')]"),
+    (
+        AppiumBy.XPATH,
+        "//android.view.View[@resource-id='auth-error-message-box']//android.view.View[contains(@text, 'problem')]",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.view.View[@resource-id='auth-error-message-box']//android.view.View[contains(@text, 'incorrect')]",
+    ),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='auth-error-message-box']//android.view.View"),
 ]
 
 # Sign-in specific error messages

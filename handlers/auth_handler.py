@@ -23,6 +23,7 @@ from views.auth.interaction_strategies import (
     SIGN_IN_RADIO_BUTTON_STRATEGIES,
 )
 from views.auth.view_strategies import (
+    AUTH_RESTART_MESSAGES,
     CAPTCHA_REQUIRED_INDICATORS,
     CAPTCHA_VIEW_IDENTIFIERS,
     EMAIL_VIEW_IDENTIFIERS,
@@ -37,6 +38,8 @@ logger = logging.getLogger(__name__)
 class LoginVerificationState(Enum):
     SUCCESS = "success"
     CAPTCHA = "captcha"
+    TWO_FACTOR = "two_factor"
+    INCORRECT_PASSWORD = "incorrect_password"
     ERROR = "error"
     UNKNOWN = "unknown"
 
@@ -50,45 +53,45 @@ class AuthenticationHandler:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-        
+
     def update_captcha_solution(self, solution):
         """Update the captcha solution."""
         self.captcha_solution = solution
-        
+
     def handle_2fa(self, code):
         """Handle 2FA verification.
-        
+
         Args:
             code: The 2FA code provided by the user
-            
+
         Returns:
             bool: True if 2FA verification was successful, False otherwise
         """
         try:
             logger.info(f"Handling 2FA with code: {code}")
-            
+
             # Find the 2FA input field
             try:
                 # Look for input field that might contain a 2FA code
                 input_field = self.driver.find_element(
-                    AppiumBy.XPATH, 
-                    "//android.widget.EditText[contains(@hint, 'code') or contains(@text, 'code')]"
+                    AppiumBy.XPATH,
+                    "//android.widget.EditText[contains(@hint, 'code') or contains(@text, 'code')]",
                 )
-                
+
                 # Clear and enter the 2FA code
                 input_field.clear()
                 input_field.send_keys(code)
-                
+
                 # Find and click the submit button
                 submit_button = self.driver.find_element(
-                    AppiumBy.XPATH, 
-                    "//android.widget.Button[contains(@text, 'Submit') or contains(@text, 'Verify') or contains(@text, 'Continue')]"
+                    AppiumBy.XPATH,
+                    "//android.widget.Button[contains(@text, 'Submit') or contains(@text, 'Verify') or contains(@text, 'Continue')]",
                 )
                 submit_button.click()
-                
+
                 # Wait for transition to complete
                 time.sleep(2)
-                
+
                 # Check if we've moved to the library state
                 for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
                     try:
@@ -97,14 +100,14 @@ class AuthenticationHandler:
                         return True
                     except:
                         continue
-                        
+
                 logger.error("2FA verification failed - could not detect library view")
                 return False
-                
+
             except NoSuchElementException:
                 logger.error("2FA input field or submit button not found")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error handling 2FA: {e}")
             return False
@@ -289,7 +292,88 @@ class AuthenticationHandler:
             logger.info("Verifying login success...")
 
             def check_login_result(driver):
-                # First check if we're still on the sign-in page with a disabled button
+                # First check for error message box which indicates authentication problems
+                try:
+                    error_box = driver.find_element(
+                        AppiumBy.XPATH, "//android.view.View[@resource-id='auth-error-message-box']"
+                    )
+                    if error_box:
+                        # Try to find the specific error message within the box
+                        try:
+                            # First try to find the "Your password is incorrect" message
+                            error_message = driver.find_element(
+                                AppiumBy.XPATH,
+                                "//android.view.View[@resource-id='auth-error-message-box']//android.view.View[contains(@text, 'incorrect')]",
+                            )
+                            logger.error(f"Authentication error: {error_message.text}")
+                            return (LoginVerificationState.ERROR, error_message.text)
+                        except:
+                            # If specific message not found, try to get any text from the error box
+                            try:
+                                error_texts = []
+                                error_elements = driver.find_elements(
+                                    AppiumBy.XPATH,
+                                    "//android.view.View[@resource-id='auth-error-message-box']//android.view.View",
+                                )
+                                for elem in error_elements:
+                                    if elem.text and elem.text.strip():
+                                        error_texts.append(elem.text.strip())
+
+                                if error_texts:
+                                    error_message = " - ".join(error_texts)
+                                    logger.error(f"Authentication error: {error_message}")
+                                    return (LoginVerificationState.ERROR, error_message)
+                                else:
+                                    logger.error(
+                                        "Authentication error box found but couldn't extract message"
+                                    )
+                                    return (LoginVerificationState.ERROR, "Unknown authentication error")
+                            except Exception as e:
+                                logger.error(f"Error extracting message from error box: {e}")
+                                return (LoginVerificationState.ERROR, "Authentication error")
+                except:
+                    # No error box found, continue with other checks
+                    pass
+
+                # Check if the sign-in button is disabled, which indicates an error state
+                try:
+                    sign_in_button = driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.Button[@text='Sign in' and @enabled='false']"
+                    )
+                    if sign_in_button:
+                        logger.info("Sign-in button is disabled, indicating an authentication error")
+
+                        # Check for any error messages in the page
+                        try:
+                            # Store page source for debugging
+                            filepath = store_page_source(driver.page_source, "auth_error_disabled_button")
+                            logger.info(f"Stored auth error page source at: {filepath}")
+
+                            # Look for any error text in the page
+                            for strategy in AUTH_ERROR_STRATEGIES:
+                                try:
+                                    error = driver.find_element(*strategy)
+                                    if error and error.text.strip():
+                                        logger.error(
+                                            f"Found error message with disabled button: {error.text.strip()}"
+                                        )
+                                        return (LoginVerificationState.ERROR, error.text.strip())
+                                except:
+                                    continue
+
+                            # If no specific error message found, return a generic error
+                            return (
+                                LoginVerificationState.INCORRECT_PASSWORD,
+                                "Authentication failed - incorrect credentials",
+                            )
+                        except Exception as e:
+                            logger.error(f"Error checking for error messages: {e}")
+                            return (LoginVerificationState.ERROR, "Authentication failed")
+                except:
+                    # No disabled sign-in button found, continue with other checks
+                    pass
+
+                # Check if we're still on the sign-in page with a disabled button
                 # This indicates we're in a transitional state where the password is being verified
                 try:
                     sign_in_button = driver.find_element(
@@ -307,6 +391,16 @@ class AuthenticationHandler:
                         AppiumBy.XPATH, "//android.widget.EditText[@password='true'][@hint='Amazon password']"
                     )
                     if password_field.is_displayed():
+                        # Before continuing to wait, check again for error messages that might have appeared
+                        for strategy in AUTH_ERROR_STRATEGIES:
+                            try:
+                                error = driver.find_element(*strategy)
+                                if error and error.text.strip():
+                                    logger.error(f"Found error message: {error.text.strip()}")
+                                    return (LoginVerificationState.ERROR, error.text.strip())
+                            except:
+                                continue
+
                         logger.info("Still on password page, waiting for transition...")
                         return None  # Return None to continue waiting
                 except:
@@ -351,9 +445,24 @@ class AuthenticationHandler:
                     except:
                         continue
 
+                # Check for auth errors that require restart
+                for strategy, locator in AUTH_RESTART_MESSAGES:
+                    try:
+                        element = driver.find_element(strategy, locator)
+                        if element:
+                            text = element.get_attribute("text")
+                            logger.info(f"Found auth error text: '{text}'")
+                            logger.info("Found auth error requiring restart - storing page source")
+                            source = driver.page_source
+                            store_page_source(source, "auth_restart_error")
+                            return (LoginVerificationState.ERROR, text)
+                    except NoSuchElementException:
+                        logger.debug("No auth restart error text found - continuing")
+                        continue
+
                 # Save page source
-                filepath = store_page_source(driver.page_source, "auth_captcha")
-                logger.info(f"Stored unknown captcha page source at: {filepath}")
+                filepath = store_page_source(driver.page_source, "auth_unknown_state")
+                logger.info(f"Stored unknown state page source at: {filepath}")
 
                 # Log page source when we can't determine the state
                 logger.info("No definitive state found, returning UNKNOWN")
@@ -377,9 +486,14 @@ class AuthenticationHandler:
                         logger.info("CAPTCHA needs client interaction - returning True")
                         return True
                     return True
+                elif isinstance(result, tuple) and result[0] == LoginVerificationState.INCORRECT_PASSWORD:
+                    # Special handling for incorrect password
+                    logger.error(f"Login failed with incorrect password: {result[1]}")
+                    # Return the result tuple directly so the server can handle it specifically
+                    return result
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.ERROR:
                     logger.error(f"Login failed: {result[1]}")
-                    return False
+                    return result
                 else:
                     logger.error(f"Could not verify login status, state: {result}")
                     return False

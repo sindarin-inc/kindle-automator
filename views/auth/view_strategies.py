@@ -18,6 +18,7 @@ PASSWORD_VIEW_IDENTIFIERS = [
 ERROR_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Error')]"),
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'incorrect')]"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='auth-error-message-box']"),
 ]
 
 # Captcha-related strategies
@@ -73,6 +74,7 @@ SIGN_IN_ERROR_STRATEGIES = [
     "//android.view.View[contains(@text, 'No account found with email address')]",
     "//android.view.View[contains(@text, 'incorrect password')]",
     "//android.view.View[contains(@text, 'unable to verify your mobile number')]",  # Add mobile verification error
+    "//android.view.View[@resource-id='auth-error-message-box']//android.view.View[contains(@text, 'problem')]",
 ]
 
 # Auth error messages that require app restart

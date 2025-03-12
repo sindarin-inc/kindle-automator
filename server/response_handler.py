@@ -4,6 +4,7 @@ import traceback
 from functools import wraps
 
 from selenium.common import exceptions as selenium_exceptions
+
 from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
     def format_response(result):
         """Format response with time taken"""
         time_taken = round(time.time() - start_time, 3)
-        
+
         if isinstance(result, tuple) and len(result) == 2:
             response, status_code = result
             if isinstance(response, dict):
@@ -43,16 +44,17 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         if not server_instance.automator:
             server_instance.initialize_automator()
             return server_instance.automator.initialize_driver()
-        
+
         server_instance.automator.cleanup()
         server_instance.initialize_automator()
         return server_instance.automator.initialize_driver()
-    
+
     def is_uiautomator_crash(error):
         """Check if the error is a UiAutomator2 server crash"""
-        return (
-            isinstance(error, selenium_exceptions.WebDriverException) and 
-            "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(error)
+        return isinstance(
+            error, selenium_exceptions.WebDriverException
+        ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
+            error
         )
 
     # Main retry loop
@@ -71,7 +73,11 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             # Check for error status codes
             if isinstance(result, tuple) and len(result) == 2:
                 response, status_code = result
-                if status_code >= 400:
+                # Don't retry authentication errors with incorrect password
+                if isinstance(response, dict) and response.get("error_type") == "incorrect_password":
+                    logger.info("Authentication failed with incorrect password - won't retry and returning directly")
+                    return format_response(result)
+                elif status_code >= 400:
                     raise Exception(f"Request failed with status {status_code}: {response}")
 
             # Success case - format and return the result
@@ -79,11 +85,13 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
 
         except Exception as e:
             last_error = e
-            
+
             # Special handling for UiAutomator2 server crash
             if is_uiautomator_crash(e):
-                logger.warning(f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver...")
-                
+                logger.warning(
+                    f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
+                )
+
                 # Try to restart the driver and immediately retry once more
                 if restart_driver():
                     logger.info("Successfully restarted driver after UiAutomator2 crash")
@@ -100,12 +108,12 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                 # Regular error handling for non-UiAutomator2 crashes
                 logger.error(f"Attempt {attempt + 1} failed: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
-            
+
             # Check if we should continue with another attempt
             if attempt < max_retries - 1:
                 time.sleep(1)  # Wait before retry
                 continue
-    
+
     # If we reach here, all retries failed
     time_taken = round(time.time() - start_time, 3)
     logger.error(f"All retry attempts failed. Last error: {last_error}")
@@ -155,6 +163,11 @@ def handle_automator_response(server_instance):
                                 "time_taken": time_taken,
                             }, 403
 
+                    # Check if this is a known authentication error that shouldn't be retried
+                    if isinstance(result, dict) and result.get("error_type") == "incorrect_password":
+                        logger.info("Authentication failed with incorrect password - won't retry")
+                        return result, status_code
+                        
                     # Return original response if no special handling needed
                     return result, status_code
 

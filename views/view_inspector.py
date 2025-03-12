@@ -124,29 +124,6 @@ class ViewInspector:
     def get_current_view(self):
         """Determine the current view based on visible elements."""
         try:
-            # Check for auth errors that require restart
-            for strategy, locator in AUTH_RESTART_MESSAGES:
-                try:
-                    element = self.driver.find_element(strategy, locator)
-                    if element:
-                        text = element.get_attribute("text")
-                        logger.info(f"Found auth error text: '{text}'")
-                        logger.info("Found auth error requiring restart - storing page source")
-                        source = self.driver.page_source
-                        store_page_source(source, "auth_timeout")
-
-                        # Restart the app
-                        logger.info("Restarting app due to auth verification error")
-                        self.driver.terminate_app(self.app_package)
-                        time.sleep(1)
-                        self.driver.activate_app(self.app_package)
-                        time.sleep(2)
-
-                        return AppView.UNKNOWN
-                except NoSuchElementException:
-                    logger.debug("No auth error text found - continuing")
-                    continue
-
             logger.info("Determining current view...")
 
             # Check for reading view or full screen dialog
