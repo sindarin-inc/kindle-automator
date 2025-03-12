@@ -1,10 +1,16 @@
 import logging
 import os
+import re
 import time
 import traceback
+from typing import Dict, List, Optional, Tuple, Union
 
 from appium.webdriver.common.appiumby import AppiumBy
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+)
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -19,17 +25,22 @@ from views.library.interaction_strategies import (
     VIEW_OPTIONS_BUTTON_STRATEGIES,
 )
 from views.library.view_strategies import (
+    BOOK_AUTHOR_IDENTIFIERS,
+    BOOK_CONTAINER_RELATIONSHIPS,
     BOOK_METADATA_IDENTIFIERS,
-    BOTTOM_NAV_IDENTIFIERS,
+    CONTENT_DESC_STRATEGIES,
     GRID_VIEW_IDENTIFIERS,
+    LIBRARY_ELEMENT_DETECTION_STRATEGIES,
     LIBRARY_TAB_CHILD_SELECTION_STRATEGIES,
     LIBRARY_TAB_IDENTIFIERS,
     LIBRARY_TAB_SELECTION_IDENTIFIERS,
+    LIBRARY_TAB_SELECTION_STRATEGIES,
     LIBRARY_VIEW_DETECTION_STRATEGIES,
     LIBRARY_VIEW_IDENTIFIERS,
     LIST_VIEW_IDENTIFIERS,
     READER_DRAWER_LAYOUT_IDENTIFIERS,
     VIEW_OPTIONS_DONE_BUTTON_STRATEGIES,
+    VIEW_OPTIONS_MENU_STRATEGIES,
     WEBVIEW_IDENTIFIERS,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
@@ -335,18 +346,34 @@ class LibraryHandler:
                 filepath = store_page_source(self.driver.page_source, "library_view")
                 logger.info(f"Stored library view page source at: {filepath}")
 
-                # Find all containers on current screen
-                containers = []
-                for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"]:
-                    try:
-                        found_containers = self.driver.find_elements(container_strategy, container_locator)
-                        if found_containers:
-                            containers = found_containers
-                            logger.debug(f"Found {len(containers)} book containers on current screen")
-                            break
-                    except Exception as e:
-                        logger.debug(f"Failed to find containers with {container_strategy}: {e}")
-                        continue
+                # Find all book containers on current screen
+                # First find all book buttons in the recycler view
+                book_buttons = []
+                try:
+                    # Use the container strategy from BOOK_METADATA_IDENTIFIERS
+                    container_strategy, container_locator = BOOK_METADATA_IDENTIFIERS["container"][0]
+                    book_buttons = self.driver.find_elements(container_strategy, container_locator)
+                    logger.debug(f"Found {len(book_buttons)} book buttons on current screen")
+                except Exception as e:
+                    logger.debug(f"Failed to find book buttons: {e}")
+
+                # If no book buttons found, try the old container approach as fallback
+                if not book_buttons:
+                    containers = []
+                    for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"][1:]:
+                        try:
+                            found_containers = self.driver.find_elements(
+                                container_strategy, container_locator
+                            )
+                            if found_containers:
+                                containers = found_containers
+                                logger.debug(f"Found {len(containers)} book containers on current screen")
+                                break
+                        except Exception as e:
+                            logger.debug(f"Failed to find containers with {container_strategy}: {e}")
+                            continue
+                else:
+                    containers = book_buttons
 
                 # Store titles from previous scroll position
                 previous_titles = set(seen_titles)
@@ -359,14 +386,106 @@ class LibraryHandler:
 
                         # Extract metadata using strategies
                         for field in ["title", "progress", "size", "author"]:
+                            # Try to find elements directly in the container first
                             for strategy, locator in BOOK_METADATA_IDENTIFIERS[field]:
                                 try:
-                                    elements = container.find_elements(strategy, locator)
+                                    # For direct elements, use find_element with a relative XPath
+                                    relative_locator = (
+                                        f".{locator}" if strategy == AppiumBy.XPATH else locator
+                                    )
+                                    elements = container.find_elements(strategy, relative_locator)
                                     if elements:
+                                        # logger.info(f"Found {field}: {elements[0].text}")
                                         book_info[field] = elements[0].text
                                         break
+                                    else:
+                                        # If not found directly, try finding within title container
+                                        try:
+                                            # Use the title_container strategy from BOOK_CONTAINER_RELATIONSHIPS
+                                            title_container_strategy, title_container_locator = (
+                                                BOOK_CONTAINER_RELATIONSHIPS["title_container"]
+                                            )
+                                            title_container = container.find_element(
+                                                title_container_strategy, title_container_locator
+                                            )
+                                            elements = title_container.find_elements(
+                                                strategy, relative_locator
+                                            )
+                                            if elements:
+                                                logger.info(
+                                                    f"Found {field} in title container: {elements[0].text}"
+                                                )
+                                                book_info[field] = elements[0].text
+                                                break
+                                        except NoSuchElementException:
+                                            # Expected exception when element not found, don't log
+                                            pass
+                                        except Exception as e:
+                                            # Only log unexpected exceptions
+                                            logger.error(
+                                                f"Unexpected error finding {field} in title container: {e}"
+                                            )
+
+                                        # Only log at debug level that we didn't find the element
+                                        # logger.debug(f"No {field} found with {strategy}: {locator}")
+                                except NoSuchElementException:
+                                    # Expected exception when element not found, don't log
+                                    continue
                                 except Exception as e:
-                                    logger.debug(f"Failed to find {field} with {strategy}: {e}")
+                                    # Only log unexpected exceptions
+                                    logger.error(f"Unexpected error finding {field}: {e}")
+                                    continue
+
+                        # If we still don't have author, try to extract from content-desc
+                        if not book_info["author"] and container.get_attribute("content-desc"):
+                            content_desc = container.get_attribute("content-desc")
+                            logger.debug(f"Content desc: {content_desc}")
+
+                            # Try each pattern in the content-desc strategies
+                            for pattern in CONTENT_DESC_STRATEGIES["patterns"]:
+                                try:
+                                    # Split the content-desc by the specified delimiter
+                                    parts = content_desc.split(pattern["split_by"])
+
+                                    # Skip this pattern if the content-desc contains any skip terms
+                                    if "skip_if_contains" in pattern and any(
+                                        skip_term in content_desc for skip_term in pattern["skip_if_contains"]
+                                    ):
+                                        continue
+
+                                    # Get the author part based on the index
+                                    if len(parts) > abs(pattern["author_index"]):
+                                        potential_author = parts[pattern["author_index"]]
+
+                                        # Apply any processing function
+                                        if "process" in pattern:
+                                            potential_author = pattern["process"](potential_author)
+
+                                        # Apply cleanup rules
+                                        for rule in CONTENT_DESC_STRATEGIES["cleanup_rules"]:
+                                            potential_author = re.sub(
+                                                rule["pattern"], rule["replace"], potential_author
+                                            )
+
+                                        # Skip if the potential author contains non-author terms
+                                        non_author_terms = CONTENT_DESC_STRATEGIES["non_author_terms"]
+                                        if any(
+                                            non_author in potential_author.lower()
+                                            for non_author in non_author_terms
+                                        ):
+                                            continue
+
+                                        # Skip if the potential author is empty after cleanup
+                                        potential_author = potential_author.strip()
+                                        if not potential_author:
+                                            continue
+
+                                        # logger.info(f"Extracted author from content-desc: {potential_author}")
+                                        book_info["author"] = potential_author
+                                        break
+                                except Exception as e:
+                                    # Only log at debug level for content-desc parsing errors
+                                    logger.debug(f"Error parsing content-desc with pattern {pattern}: {e}")
                                     continue
 
                         if book_info["title"]:
@@ -384,97 +503,96 @@ class LibraryHandler:
 
                                         # Try to find the parent RelativeLayout using XPath
                                         try:
-                                            # First try finding the direct parent RelativeLayout
+                                            # Use the parent_by_title strategy from BOOK_CONTAINER_RELATIONSHIPS
+                                            parent_strategy, parent_locator_template = (
+                                                BOOK_CONTAINER_RELATIONSHIPS["parent_by_title"]
+                                            )
+                                            parent_locator = parent_locator_template.format(
+                                                title=self._xpath_literal(book_info["title"])
+                                            )
                                             parent_container = container.find_element(
-                                                AppiumBy.XPATH,
-                                                f".//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={self._xpath_literal(book_info['title'])}]]",
+                                                parent_strategy, parent_locator
                                             )
                                         except NoSuchElementException:
                                             # If that fails, try finding any ancestor RelativeLayout
                                             try:
+                                                # Use the ancestor_by_title strategy from BOOK_CONTAINER_RELATIONSHIPS
+                                                ancestor_strategy, ancestor_locator_template = (
+                                                    BOOK_CONTAINER_RELATIONSHIPS["ancestor_by_title"]
+                                                )
+                                                ancestor_locator = ancestor_locator_template.format(
+                                                    title=self._xpath_literal(book_info["title"])
+                                                )
                                                 parent_container = container.find_element(
-                                                    AppiumBy.XPATH,
-                                                    f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={self._xpath_literal(book_info['title'])}]]",
+                                                    ancestor_strategy, ancestor_locator
                                                 )
                                             except NoSuchElementException:
-                                                # If that fails too, just use the container itself
-                                                parent_container = container
-
-                                        content_desc = parent_container.get_attribute("content-desc")
-                                        if not content_desc or content_desc == "null":
-                                            # If no content-desc, try the immediate parent
-                                            try:
-                                                temp_parent = parent_container.find_element(
-                                                    AppiumBy.XPATH, ".."
+                                                logger.debug(
+                                                    f"Could not find parent container for {book_info['title']}"
                                                 )
-                                                temp_desc = temp_parent.get_attribute("content-desc")
-                                                if temp_desc and temp_desc != "null":
-                                                    parent_container = temp_parent
-                                                    content_desc = temp_desc
-                                            except Exception:
-                                                pass
+                                                continue
 
-                                        if content_desc:
-                                            logger.info(
-                                                f"Found target book: {book_info['title']} {content_desc}"
-                                            )
-                                            return parent_container, button, book_info
-                                        else:
-                                            # If we still don't have content-desc, return what we have
-                                            logger.warning(
-                                                "Could not find container with content-desc, using fallback"
-                                            )
-                                            return parent_container, button, book_info
-
-                                    except NoSuchElementException as e:
-                                        logger.error(f"Found title but couldn't get container elements: {e}")
+                                        # Return the found container, button, and book info
+                                        return parent_container, button, book_info
+                                    except NoSuchElementException:
+                                        logger.debug(f"Could not find button for {book_info['title']}")
+                                        continue
+                                    except StaleElementReferenceException:
+                                        logger.debug(
+                                            f"Stale element reference when finding button for {book_info['title']}"
+                                        )
+                                        continue
+                                    except Exception as e:
+                                        logger.error(
+                                            f"Unexpected error finding button for {book_info['title']}: {e}"
+                                        )
                                         continue
 
-                            # Only add book if we haven't seen this title before
+                            # Add book to list if not already seen
                             if book_info["title"] not in seen_titles:
-                                books.append(book_info)
                                 seen_titles.add(book_info["title"])
-                                logger.info(f"Found book: {book_info['title']}")
+                                books.append(book_info)
                                 new_books_found = True
+                                logger.info(f"Found book: {book_info}")
                         else:
                             logger.info(f"Container has no book info, skipping: {book_info}")
-
+                    except StaleElementReferenceException:
+                        logger.debug("Stale element reference, skipping container")
+                        continue
                     except Exception as e:
-                        traceback.print_exc()
-                        store_page_source(self.driver.page_source, "library_view_error")
-                        logger.error(f"Error extracting book info: {e}")
+                        logger.error(f"Error processing container: {e}")
                         continue
 
-                # If we didn't find any new books, we've reached the end
+                # If we've found no new books on this screen, we're done scrolling
                 if not new_books_found:
                     logger.info("No new books found on this screen, stopping scroll")
                     break
 
-                # Scroll down for next iteration
-                try:
-                    self.driver.swipe(
-                        screen_size["width"] // 2,
-                        start_y,
-                        screen_size["width"] // 2,
-                        end_y,
-                        600,  # Duration in ms
-                    )
-                    logger.debug("Scrolled down for more books")
-                    time.sleep(0.5)
-                except Exception as e:
-                    logger.error(f"Failed to scroll: {e}")
+                # If we've found the same books as before, we're at the end
+                if seen_titles == previous_titles:
+                    logger.info("Same books as previous scroll, stopping")
                     break
 
-            if target_title:
-                logger.info(f"Book not found after searching entire list: {target_title}")
-                return None, None, None
+                # Scroll down to see more books
+                self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
+                time.sleep(1)  # Wait for scroll to complete
 
             logger.info(f"Found total of {len(books)} unique books")
+
+            # If we were looking for a specific book but didn't find it
+            if target_title and normalized_target not in [
+                self._normalize_title(title) for title in seen_titles
+            ]:
+                logger.warning(f"Book not found after searching entire library: {target_title}")
+                return None, None, None
+
             return books
 
         except Exception as e:
             logger.error(f"Error scrolling through library: {e}")
-            return [] if not target_title else (None, None, None)
+            if target_title:
+                return None, None, None
+            return []
 
     def get_book_titles(self):
         """Get a list of all books in the library with their metadata."""

@@ -97,17 +97,93 @@ BOOK_METADATA_IDENTIFIERS = {
         ),
     ],
     "author": [
+        # Direct ID lookup
         (AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_author"),
+        # Standard XPath lookup
         (
             AppiumBy.XPATH,
             "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_author']",
         ),
+        # Relative XPath within title container
+        (
+            AppiumBy.XPATH,
+            ".//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_author']",
+        ),
+        # Find author as sibling of title in the same parent container
+        (
+            AppiumBy.XPATH,
+            "//android.widget.RelativeLayout[@resource-id='com.amazon.kindle:id/lib_book_row_title_container']/android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_author']",
+        ),
+        # Find any author element in the current view
+        (
+            AppiumBy.XPATH,
+            "//*[@resource-id='com.amazon.kindle:id/lib_book_row_author']",
+        ),
     ],
     "container": [
+        # Primary container strategy - find the book buttons directly
+        (
+            AppiumBy.XPATH,
+            "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.Button",
+        ),
+        # Fallback to title elements if buttons not found
         (
             AppiumBy.XPATH,
             "//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']",
         ),
+        # Alternative container strategy - find title containers
+        (
+            AppiumBy.XPATH,
+            "//android.widget.RelativeLayout[@resource-id='com.amazon.kindle:id/lib_book_row_title_container']",
+        ),
+    ],
+}
+
+# Additional container relationship strategies
+BOOK_CONTAINER_RELATIONSHIPS = {
+    # Strategy to find title container within a book button
+    "title_container": (
+        AppiumBy.XPATH,
+        ".//android.widget.RelativeLayout[@resource-id='com.amazon.kindle:id/lib_book_row_title_container']",
+    ),
+    # Strategy to find parent RelativeLayout containing a specific title
+    "parent_by_title": (
+        AppiumBy.XPATH,
+        ".//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title}']]",
+    ),
+    # Strategy to find any ancestor RelativeLayout containing a specific title
+    "ancestor_by_title": (
+        AppiumBy.XPATH,
+        "//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title}']]",
+    ),
+}
+
+# Content description parsing strategies
+CONTENT_DESC_STRATEGIES = {
+    # Non-author terms to filter out when parsing content-desc
+    "non_author_terms": ["book", "volume", "downloaded", "series", "with foreword", "foreword", "with", "by"],
+    # Patterns for content-desc formats
+    "patterns": [
+        # Pattern: "Title, Author, ..."
+        {"split_by": ", ", "author_index": 1},
+        # Pattern: "Title, Author, Book not downloaded., ..."
+        {"split_by": ", ", "author_index": 1, "skip_if_contains": ["Book not downloaded"]},
+        # Pattern: "Series: Title, N volumes, , Author;Author2"
+        {"split_by": ", ", "author_index": -1, "process": lambda s: s.split(";")[0] if ";" in s else s},
+        # Pattern: "Title, with foreword by X, Author, ..."
+        {"split_by": ", ", "author_index": 2},
+        # Pattern: "Title, with foreword by X, Author, ..."
+        {"split_by": ", ", "author_index": 3},
+    ],
+    # Author name cleanup rules
+    "cleanup_rules": [
+        # Remove "with foreword by" and similar phrases
+        {"pattern": r"with foreword by.*", "replace": ""},
+        # Remove anything after semicolon (co-authors)
+        {"pattern": r";.*", "replace": ""},
+        # Remove non-author indicators
+        {"pattern": r"Book \d+", "replace": ""},
+        {"pattern": r"\(.*\)", "replace": ""},
     ],
 }
 

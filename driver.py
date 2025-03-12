@@ -143,7 +143,23 @@ class Driver:
             )
             if not os.path.exists(apk_path):
                 logger.error(f"Kindle APK not found at {apk_path}")
-                return False
+                # Try ../ansible/roles/kindle/files/com.amazon.kindle*.apk. Will have to find the full file name
+                # from the list of files in the directory
+                kindle_apk_dir = os.path.join(
+                    os.path.dirname(__file__),
+                    "ansible",
+                    "roles",
+                    "android_arm",
+                    "files",
+                )
+                apk_files = os.listdir(kindle_apk_dir)
+                for file in apk_files:
+                    if "com.amazon.kindle" in file:
+                        apk_path = os.path.join(kindle_apk_dir, file)
+                        break
+                if not os.path.exists(apk_path):
+                    logger.error(f"Kindle APK not found at {apk_path}")
+                    return False
 
             subprocess.run(
                 ["adb", "-s", self.device_id, "install", "-r", apk_path],
