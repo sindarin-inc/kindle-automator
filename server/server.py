@@ -644,7 +644,12 @@ class AuthResource(Resource):
                 "message": "CAPTCHA required",
                 "screenshot_url": image_url,
             }, 202
-        elif current_state == AppState.SIGN_IN and success:
+        elif (
+            current_state == AppState.SIGN_IN
+            and auth_result
+            and len(auth_result) >= 1
+            and auth_result[0] == LoginVerificationState.TWO_FACTOR
+        ):
             return {
                 "success": False,
                 "requires": "2fa",

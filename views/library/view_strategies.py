@@ -70,7 +70,10 @@ GRID_VIEW_IDENTIFIERS = [
 
 LIST_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/lib_book_row_title']"),
-    (AppiumBy.XPATH, "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']//android.widget.RelativeLayout[@resource-id='com.amazon.kindle:id/lib_book_row_title_container']"),
+    (
+        AppiumBy.XPATH,
+        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']//android.widget.RelativeLayout[@resource-id='com.amazon.kindle:id/lib_book_row_title_container']",
+    ),
 ]
 
 # Book metadata identifiers

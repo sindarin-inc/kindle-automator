@@ -75,7 +75,9 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                 response, status_code = result
                 # Don't retry authentication errors with incorrect password
                 if isinstance(response, dict) and response.get("error_type") == "incorrect_password":
-                    logger.info("Authentication failed with incorrect password - won't retry and returning directly")
+                    logger.info(
+                        "Authentication failed with incorrect password - won't retry and returning directly"
+                    )
                     return format_response(result)
                 elif status_code >= 400:
                     raise Exception(f"Request failed with status {status_code}: {response}")
@@ -167,7 +169,7 @@ def handle_automator_response(server_instance):
                     if isinstance(result, dict) and result.get("error_type") == "incorrect_password":
                         logger.info("Authentication failed with incorrect password - won't retry")
                         return result, status_code
-                        
+
                     # Return original response if no special handling needed
                     return result, status_code
 

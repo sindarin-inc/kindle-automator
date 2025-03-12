@@ -43,7 +43,9 @@ class StateTransitions:
         """Handle NOTIFICATIONS state by accepting or denying permissions as appropriate."""
         # Check if this is a Magisk notification dialog
         try:
-            notification_text = self.driver.find_element(AppiumBy.ID, "com.android.permissioncontroller:id/permission_message").text
+            notification_text = self.driver.find_element(
+                AppiumBy.ID, "com.android.permissioncontroller:id/permission_message"
+            ).text
             if "Magisk" in notification_text:
                 logger.info("Handling Magisk notification dialog - denying permission...")
                 result = self.permissions_handler.handle_notifications_permission(should_allow=False)

@@ -28,6 +28,7 @@ from views.library.view_strategies import (
     BOOK_AUTHOR_IDENTIFIERS,
     BOOK_CONTAINER_RELATIONSHIPS,
     BOOK_METADATA_IDENTIFIERS,
+    BOTTOM_NAV_IDENTIFIERS,
     CONTENT_DESC_STRATEGIES,
     GRID_VIEW_IDENTIFIERS,
     LIBRARY_ELEMENT_DETECTION_STRATEGIES,
@@ -215,7 +216,7 @@ class LibraryHandler:
                     # Only log unexpected errors
                     logger.debug(f"Unexpected error checking grid view with {strategy}: {e}")
                     continue
-                    
+
             # Second check - look for GridView element directly
             try:
                 self.driver.find_element(AppiumBy.CLASS_NAME, "android.widget.GridView")
@@ -227,7 +228,7 @@ class LibraryHandler:
             except Exception as e:
                 # Only log unexpected errors
                 logger.debug(f"Unexpected error checking for GridView class: {e}")
-                
+
             return False
         except Exception as e:
             logger.error(f"Error checking grid view: {e}")
@@ -254,15 +255,15 @@ class LibraryHandler:
             if self._is_list_view():
                 logger.info("Already in list view")
                 return True
-                
+
             # If we're in grid view, we need to open the view options menu
             if self._is_grid_view():
                 logger.info("Currently in grid view, switching to list view")
-                
+
                 # Store page source for debugging
                 filepath = store_page_source(self.driver.page_source, "grid_view_detected")
                 logger.info(f"Stored grid view page source at: {filepath}")
-                
+
                 # Click view options button
                 button_clicked = False
                 for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
@@ -276,11 +277,11 @@ class LibraryHandler:
                     except Exception as e:
                         logger.debug(f"Failed to click view options button with strategy {strategy}: {e}")
                         continue
-                
+
                 if not button_clicked:
                     logger.error("Failed to click any view options button")
                     return False
-                
+
                 # Verify the menu is open
                 menu_open = False
                 try:
@@ -294,11 +295,11 @@ class LibraryHandler:
                             continue
                 except Exception as e:
                     logger.debug(f"Error checking if menu is open: {e}")
-                
+
                 if not menu_open:
                     logger.error("View options menu did not open properly")
                     return False
-                
+
                 # Click list view option
                 list_option_clicked = False
                 for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
@@ -312,11 +313,11 @@ class LibraryHandler:
                     except Exception as e:
                         logger.debug(f"Failed to click list view option with strategy {strategy}: {e}")
                         continue
-                
+
                 if not list_option_clicked:
                     logger.error("Failed to click list view option")
                     return False
-                
+
                 # Click DONE button
                 done_clicked = False
                 for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
@@ -329,17 +330,17 @@ class LibraryHandler:
                     except Exception as e:
                         logger.debug(f"Failed to click DONE button with strategy {strategy}: {e}")
                         continue
-                
+
                 if not done_clicked:
                     logger.error("Failed to click DONE button")
                     return False
-                
+
                 # Wait longer for list view to appear
                 try:
                     logger.info("Waiting for list view to appear...")
                     WebDriverWait(self.driver, 5).until(
                         lambda x: any(
-                            self.try_find_element(x, strategy, locator) 
+                            self.try_find_element(x, strategy, locator)
                             for strategy, locator in LIST_VIEW_IDENTIFIERS
                         )
                     )
@@ -682,6 +683,14 @@ class LibraryHandler:
                 logger.error("Failed to navigate to library")
                 return []
 
+            # Check if we're in grid view and switch to list view if needed
+            if self._is_grid_view():
+                logger.info("Detected grid view, switching to list view")
+                if not self.switch_to_list_view():
+                    logger.error("Failed to switch to list view")
+                    return []
+                logger.info("Successfully switched to list view")
+
             # Scroll to top of list
             if not self.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
@@ -705,6 +714,14 @@ class LibraryHandler:
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
+            # Check if we're in grid view and switch to list view if needed
+            if self._is_grid_view():
+                logger.info("Detected grid view, switching to list view")
+                if not self.switch_to_list_view():
+                    logger.error("Failed to switch to list view")
+                    return False
+                logger.info("Successfully switched to list view")
+
             # Scroll to top first
             if not self.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
