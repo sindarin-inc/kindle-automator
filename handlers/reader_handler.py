@@ -21,6 +21,7 @@ from views.reading.interaction_strategies import (
 )
 from views.reading.view_strategies import (
     BLACK_BG_IDENTIFIERS,
+    GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     LAYOUT_TAB_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
@@ -135,8 +136,8 @@ class ReaderHandler:
             for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
                 try:
                     message = self.driver.find_element(strategy, locator)
-                    if message.is_displayed() and "You are currently on page" in message.text:
-                        logger.info("Found 'last read page' dialog - clicking YES")
+                    if message.is_displayed() and ("You are currently on page" in message.text or "You are currently at location" in message.text):
+                        logger.info("Found 'last read page/location' dialog - clicking YES")
                         for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
                             try:
                                 yes_button = self.driver.find_element(btn_strategy, btn_locator)
@@ -151,7 +152,31 @@ class ReaderHandler:
                 except NoSuchElementException:
                     continue
         except Exception as e:
-            logger.error(f"Error handling 'last read page' dialog: {e}")
+            logger.error(f"Error handling 'last read page/location' dialog: {e}")
+
+        # Check for and handle "Go to that location?" dialog
+        try:
+            store_page_source(self.driver.page_source, "go_to_location_dialog")
+            for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
+                try:
+                    message = self.driver.find_element(strategy, locator)
+                    if message.is_displayed() and ("Go to that location?" in message.text or "Go to that page?" in message.text):
+                        logger.info("Found 'Go to that location/page?' dialog - clicking YES")
+                        for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:  # Reuse the same buttons as last read page dialog
+                            try:
+                                yes_button = self.driver.find_element(btn_strategy, btn_locator)
+                                if yes_button.is_displayed():
+                                    yes_button.click()
+                                    logger.info("Clicked YES button")
+                                    time.sleep(0.5)  # Wait for dialog to dismiss
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        break
+                except NoSuchElementException:
+                    continue
+        except Exception as e:
+            logger.error(f"Error handling 'Go to that location/page?' dialog: {e}")
 
         # Check for and dismiss Goodreads auto-update dialog
         try:
@@ -468,6 +493,20 @@ class ReaderHandler:
                 if got_it_visible:
                     got_it_button.click()
                     logger.info("Clicked 'Got it' button to dismiss dialog")
+                    time.sleep(1)
+            
+            # Check for and handle "Go to that location/page?" dialog
+            go_to_location_visible, message = self._check_element_visibility(
+                GO_TO_LOCATION_DIALOG_IDENTIFIERS, "'Go to that location/page?' dialog"
+            )
+            if go_to_location_visible:
+                logger.info("Found 'Go to that location/page?' dialog - clicking YES")
+                yes_button_visible, yes_button = self._check_element_visibility(
+                    LAST_READ_PAGE_DIALOG_BUTTONS, "YES button"
+                )
+                if yes_button_visible:
+                    yes_button.click()
+                    logger.info("Clicked YES button")
                     time.sleep(1)
 
             # Now try to make toolbar visible if it isn't already

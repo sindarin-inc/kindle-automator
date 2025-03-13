@@ -76,6 +76,22 @@ LAST_READ_PAGE_DIALOG_IDENTIFIERS = [
         AppiumBy.XPATH,
         "//android.widget.TextView[@resource-id='android:id/message' and contains(@text, 'You are currently on page')]",
     ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/message' and contains(@text, 'You are currently at location')]",
+    ),
+]
+
+# Add new identifiers for the "Go to that location?" dialog 
+GO_TO_LOCATION_DIALOG_IDENTIFIERS = [
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/message' and contains(@text, 'Go to that location?')]",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/message' and contains(@text, 'Go to that page?')]",
+    ),
 ]
 
 # Add style button and menu identifiers

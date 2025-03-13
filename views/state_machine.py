@@ -193,8 +193,34 @@ class KindleStateMachine:
                 if self.library_handler._is_library_tab_selected():
                     self.current_state = AppState.LIBRARY
                     logger.info("Detected LIBRARY state from library handler")
-                # Add other specific state checks here as needed
-                # e.g. check for reading view elements to detect READING state
+                    
+                # Check for reading view dialog elements
+                try:
+                    from views.reading.view_strategies import GO_TO_LOCATION_DIALOG_IDENTIFIERS, READING_VIEW_IDENTIFIERS
+                    # Check for "Go to that location?" dialog
+                    for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element.is_displayed() and "Go to that location?" in element.text:
+                                self.current_state = AppState.READING
+                                logger.info("Detected READING state from 'Go to that location?' dialog")
+                                break
+                        except:
+                            continue
+                    
+                    # Check for other reading view elements if state is still unknown
+                    if self.current_state == AppState.UNKNOWN:
+                        for strategy, locator in READING_VIEW_IDENTIFIERS:
+                            try:
+                                element = self.driver.find_element(strategy, locator)
+                                if element.is_displayed():
+                                    self.current_state = AppState.READING
+                                    logger.info("Detected READING state from reading view elements")
+                                    break
+                            except:
+                                continue
+                except Exception as e:
+                    logger.error(f"Error checking for reading state: {e}")
 
             return self.current_state
 

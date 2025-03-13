@@ -29,6 +29,8 @@ from views.library.view_strategies import (
 )
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.reading.view_strategies import (
+    GO_TO_LOCATION_DIALOG_IDENTIFIERS,
+    LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
 )
@@ -141,6 +143,28 @@ class ViewInspector:
                     self.driver.find_element(strategy, locator)
                     logger.info("   Found reading view full screen dialog")
                     return AppView.READING
+                except NoSuchElementException:
+                    continue
+                    
+            # Check for "Go to that location?" dialog which indicates reading view
+            for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed() and "Go to that location?" in element.text:
+                        logger.info("   Found 'Go to that location?' dialog - this indicates reading view")
+                        return AppView.READING
+                except NoSuchElementException:
+                    continue
+                    
+            # Check for "last read page" dialog which indicates reading view
+            for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        text = element.text
+                        if ("You are currently on page" in text) or ("You are currently at location" in text):
+                            logger.info("   Found 'last read page/location' dialog - this indicates reading view")
+                            return AppView.READING
                 except NoSuchElementException:
                     continue
 
