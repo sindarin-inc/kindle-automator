@@ -80,7 +80,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     )
                     return format_response(result)
                 elif status_code >= 400:
-                    raise Exception(f"Request failed with status {status_code}: {response}")
+                    raise Exception(response)
 
             # Success case - format and return the result
             return format_response(result)

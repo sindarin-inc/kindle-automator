@@ -570,10 +570,8 @@ class LibraryHandler:
                                     continue
 
                         if book_info["title"]:
-                            normalized_title = self._normalize_title(book_info["title"])
-
                             # If we're looking for a specific book
-                            if normalized_target and normalized_title == normalized_target:
+                            if normalized_target and self._title_match(book_info["title"], target_title):
                                 # Find the button and parent container for download status
                                 for strategy, locator in BOOK_METADATA_IDENTIFIERS["title"]:
                                     try:
@@ -614,6 +612,7 @@ class LibraryHandler:
                                                 continue
 
                                         # Return the found container, button, and book info
+                                        logger.info(f"Found match for '{target_title}' -> '{book_info['title']}'")
                                         return parent_container, button, book_info
                                     except NoSuchElementException:
                                         logger.debug(f"Could not find button for {book_info['title']}")
@@ -661,10 +660,29 @@ class LibraryHandler:
             logger.info(f"Found total of {len(books)} unique books")
 
             # If we were looking for a specific book but didn't find it
-            if target_title and normalized_target not in [
-                self._normalize_title(title) for title in seen_titles
-            ]:
-                logger.warning(f"Book not found after searching entire library: {target_title}")
+            if target_title:
+                # Check if this book was found but we couldn't grab the container
+                found_matching_title = False
+                for book in books:
+                    if book.get("title") and self._title_match(book["title"], target_title):
+                        found_matching_title = True
+                        logger.info(f"Book title matched using _title_match: '{book['title']}' -> '{target_title}'")
+                        try:
+                            # Try to find the book button directly by content-desc
+                            buttons = self.driver.find_elements(
+                                AppiumBy.XPATH, 
+                                f"//android.widget.Button[contains(@content-desc, '{book['title'].split()[0]}')]"
+                            )
+                            if buttons:
+                                logger.info(f"Found {len(buttons)} buttons matching first word of title")
+                                parent_container = buttons[0]
+                                return parent_container, buttons[0], book
+                        except Exception as e:
+                            logger.error(f"Error finding book button by content-desc: {e}")
+                
+                if not found_matching_title:
+                    logger.warning(f"Book not found after searching entire library: {target_title}")
+                    logger.info(f"Available titles: {', '.join(seen_titles)}")
                 return None, None, None
 
             return books
@@ -702,14 +720,49 @@ class LibraryHandler:
             return []
 
     def _normalize_title(self, title: str) -> str:
-        """Normalize a title by removing all characters except alphanumeric and spaces."""
+        """
+        Normalize a title for comparison.
+        Instead of removing all non-alphanumeric chars, we'll keep more characters
+        and focus on substring matching rather than exact matching.
+        """
+        if not title:
+            return ""
         # First convert to lowercase
         normalized = title.lower()
-        # Keep only alphanumeric characters and spaces
-        normalized = "".join(c for c in normalized if c.isalnum() or c.isspace())
+        # Replace special characters with spaces
+        for char in ",:;\"'!@#$%^&*()[]{}_+-=<>?/\\|~`":
+            normalized = normalized.replace(char, " ")
         # Replace multiple spaces with single space and strip
         normalized = " ".join(normalized.split())
         return normalized
+        
+    def _title_match(self, title1: str, title2: str) -> bool:
+        """
+        Check if titles match by looking for substantial substring overlap.
+        This is more forgiving than exact matching after normalization.
+        """
+        if not title1 or not title2:
+            return False
+            
+        norm1 = self._normalize_title(title1)
+        norm2 = self._normalize_title(title2)
+        
+        # If exact match after normalization, return True
+        if norm1 == norm2:
+            return True
+            
+        # Look for substantial substring overlap 
+        # (title contains at least half of the words in the other title)
+        words1 = set(norm1.split())
+        words2 = set(norm2.split())
+        
+        if len(words1) <= len(words2):
+            matches = sum(1 for w in words1 if w in norm2)
+            return matches >= max(3, len(words1) // 2)
+        else:
+            matches = sum(1 for w in words2 if w in norm1)
+            return matches >= max(3, len(words2) // 2)
+            
 
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
@@ -942,10 +995,29 @@ class LibraryHandler:
             return False
 
     def _xpath_literal(self, s):
-        """Create a valid XPath literal for a string that may contain both single and double quotes."""
-        if "'" not in s:
+        """
+        Create a valid XPath literal for a string that may contain both single and double quotes.
+        Using a more robust implementation that handles special characters better.
+        """
+        if not s:
+            return "''"
+        
+        # Use resource-id-based XPath instead of text-based when apostrophes are present
+        if "'" in s:
+            # Use a partial text match instead that doesn't include the apostrophe
+            # Split the string at apostrophes and use contains() for each part
+            parts = s.split("'")
+            conditions = []
+            
+            for part in parts:
+                if part:  # Only add non-empty parts
+                    conditions.append(f"contains(., '{part}')")
+            
+            # Join all conditions with 'and'
+            if conditions:
+                return " and ".join(conditions)
+            else:
+                return "true()"  # Fallback if there are no valid parts
+        else:
+            # For strings without apostrophes, use the simple approach
             return f"'{s}'"
-        if '"' not in s:
-            return f'"{s}"'
-        replaced = s.replace("'", "',\"'\",'")
-        return f"concat('{replaced}')"
