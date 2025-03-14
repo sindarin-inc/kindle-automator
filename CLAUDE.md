@@ -17,6 +17,7 @@
 - **State machine**: Core architecture pattern for app state management
 - **Exception handling**: Use decorators like `ensure_automator_healthy` for cross-cutting concerns
 - **XPATHs**: All XPATHs should be defined in view_strategies.py or interaction_strategies.py files within the corresponding view directory
+- **Diagnostics**: Add page source XML dump and screenshot capture to error paths using `store_page_source()` and `driver.save_screenshot()`
 
 ## Project Structure
 - **server/**: Flask REST API (server.py is the entrypoint)
