@@ -192,9 +192,29 @@ class LibraryHandler:
                     continue
 
             logger.error("Failed to find Library tab with any strategy")
+            # Save page source for debugging
+            try:
+                source = self.driver.page_source
+                xml_path = store_page_source(source, "failed_library_tab")
+                # Save screenshot
+                screenshot_path = os.path.join(self.screenshots_dir, "failed_library_tab.png")
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Saved diagnostics: XML={xml_path}, Screenshot={screenshot_path}")
+            except Exception as screenshot_error:
+                logger.error(f"Failed to save diagnostics: {screenshot_error}")
             return False
         except Exception as e:
             logger.error(f"Error navigating to library: {e}")
+            # Save page source for debugging
+            try:
+                source = self.driver.page_source
+                xml_path = store_page_source(source, "library_navigation_error")
+                # Save screenshot
+                screenshot_path = os.path.join(self.screenshots_dir, "library_navigation_error.png")
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Saved diagnostics: XML={xml_path}, Screenshot={screenshot_path}")
+            except Exception as screenshot_error:
+                logger.error(f"Failed to save diagnostics: {screenshot_error}")
             return False
 
     def _is_grid_view(self):
