@@ -276,12 +276,15 @@ class ScreenshotResource(Resource):
     @ensure_automator_healthy
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
-        If xml=1 is provided, also returns the XML page source."""
+        If xml=1 is provided, also returns the XML page source.
+        If base64=1 is provided, returns the image encoded as base64 instead of a URL."""
         failed = None
         # Check if save parameter is provided
         save = request.args.get("save", "0") == "1"
         # Check if xml parameter is provided
         include_xml = request.args.get("xml", "0") in ("1", "true")
+        # Check if base64 parameter is provided
+        use_base64 = is_base64_requested()
 
         # Generate a unique filename with timestamp to avoid caching issues
         timestamp = int(time.time())
@@ -299,7 +302,7 @@ class ScreenshotResource(Resource):
         # Otherwise, return the image directly via GET method (which will delete it after serving)
         image_id = os.path.splitext(filename)[0]
 
-        if not save and not include_xml:
+        if not save and not include_xml and not use_base64:
             # For direct image responses, don't use the automator response handler
             # since it can't handle Flask Response objects
             if failed:
@@ -312,9 +315,9 @@ class ScreenshotResource(Resource):
             # Prepare the response data
             response_data = {}
 
-            # Return URL to access the screenshot (POST method preserves the image)
-            image_url = f"/image/{image_id}"
-            response_data["screenshot_url"] = image_url
+            # Process the screenshot (either base64 encode or add URL)
+            screenshot_data = process_screenshot_response(image_id, use_base64)
+            response_data.update(screenshot_data)
 
             # If xml=1, get and save the page source XML
             if include_xml:
@@ -370,6 +373,13 @@ class NavigationResource(Resource):
                 data = request.get_json()
                 action = data.get("action")
 
+        # Check if base64 parameter is provided
+        use_base64 = is_base64_requested()
+        if use_base64:
+            logger.info("Base64 parameter is provided, will return base64 encoded image")
+        else:
+            logger.info("Base64 parameter is not provided, will return URL to image")
+
         if not action:
             return {"error": "Navigation action is required"}, 400
 
@@ -390,13 +400,16 @@ class NavigationResource(Resource):
             screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
             server.automator.driver.save_screenshot(screenshot_path)
 
-            # Return URL to image
-            image_url = f"/image/{screenshot_id}"
-            return {
+            response_data = {
                 "success": True,
                 "progress": progress,
-                "screenshot_url": image_url,
-            }, 200
+            }
+
+            # Process the screenshot (either base64 encode or add URL)
+            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+            response_data.update(screenshot_data)
+
+            return response_data, 200
 
         return {"error": "Navigation failed"}, 500
 
@@ -420,6 +433,9 @@ class BookOpenResource(Resource):
         data = request.get_json()
         book_title = data.get("title")
 
+        # Check if base64 parameter is provided
+        use_base64 = is_base64_requested()
+
         logger.info(f"Opening book: {book_title}")
 
         if not book_title:
@@ -439,9 +455,13 @@ class BookOpenResource(Resource):
                 time.sleep(0.5)
                 server.automator.driver.save_screenshot(screenshot_path)
 
-                # Return URL to image
-                image_url = f"/image/{screenshot_id}"
-                return {"success": True, "progress": progress, "screenshot_url": image_url}, 200
+                response_data = {"success": True, "progress": progress}
+
+                # Process the screenshot (either base64 encode or add URL)
+                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                response_data.update(screenshot_data)
+
+                return response_data, 200
 
         return {"error": "Failed to open book"}, 500
 
@@ -454,6 +474,9 @@ class StyleResource(Resource):
         data = request.get_json()
         settings = data.get("settings", {})
         dark_mode = data.get("dark-mode")
+
+        # Check if base64 parameter is provided
+        use_base64 = is_base64_requested()
 
         logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
 
@@ -485,13 +508,16 @@ class StyleResource(Resource):
             # Get current page number and progress
             progress = server.automator.reader_handler.get_reading_progress()
 
-            # Return URL to image
-            image_url = f"/image/{screenshot_id}"
-            return {
+            response_data = {
                 "success": True,
                 "progress": progress,
-                "screenshot_url": image_url,
-            }, 200
+            }
+
+            # Process the screenshot (either base64 encode or add URL)
+            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+            response_data.update(screenshot_data)
+
+            return response_data, 200
 
         return {"error": "Failed to update settings"}, 500
 
@@ -524,6 +550,9 @@ class AuthResource(Resource):
         email = data.get("email", AMAZON_EMAIL)  # Fall back to config email
         password = data.get("password", AMAZON_PASSWORD)  # Fall back to config password
 
+        # Check if base64 parameter is provided
+        use_base64 = is_base64_requested()
+
         logger.info(f"Authenticating with email: {email}")
 
         if not email or not password:
@@ -555,19 +584,23 @@ class AuthResource(Resource):
                 screenshot_id = f"auth_failed_transition_{timestamp}"
                 screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
                 server.automator.driver.save_screenshot(screenshot_path)
-                image_url = f"/image/{screenshot_id}"
 
                 # Update current state
                 server.automator.state_machine.update_current_state()
                 current_state = server.automator.state_machine.current_state
 
-                return {
+                response_data = {
                     "success": False,
                     "message": (
                         f"Could not transition to authentication state, current state: {current_state.name}"
                     ),
-                    "screenshot_url": image_url,
-                }, 500
+                }
+
+                # Process the screenshot (either base64 encode or add URL)
+                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                response_data.update(screenshot_data)
+
+                return response_data, 500
 
         # Now proceed with authentication
         auth_result = server.automator.state_machine.auth_handler.sign_in()
@@ -591,7 +624,8 @@ class AuthResource(Resource):
         current_state = server.automator.state_machine.current_state
 
         # Take a screenshot for visual feedback (skip if we already know it's incorrect password)
-        image_url = None
+        screenshot_data = {}
+        screenshot_id = None
         if not incorrect_password:
             timestamp = int(time.time())
             screenshot_id = f"auth_screen_{timestamp}"
@@ -599,7 +633,8 @@ class AuthResource(Resource):
 
             try:
                 server.automator.driver.save_screenshot(screenshot_path)
-                image_url = f"/image/{screenshot_id}"
+                # Process the screenshot (either base64 encode or add URL)
+                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
                 logger.info(f"Saved authentication screenshot to {screenshot_path}")
             except Exception as e:
                 logger.warning(f"Failed to take authentication screenshot: {e}")
@@ -636,47 +671,49 @@ class AuthResource(Resource):
 
         # Handle different states
         if current_state == AppState.LIBRARY:
-            return {"success": True, "message": "Authentication successful", "screenshot_url": image_url}, 200
+            response_data = {"success": True, "message": "Authentication successful"}
+            response_data.update(screenshot_data)
+            return response_data, 200
         elif current_state == AppState.CAPTCHA:
-            return {
+            response_data = {
                 "success": False,
                 "requires": "captcha",
                 "message": "CAPTCHA required",
-                "screenshot_url": image_url,
-            }, 202
+            }
+            response_data.update(screenshot_data)
+            return response_data, 202
         elif (
             current_state == AppState.SIGN_IN
             and auth_result
             and len(auth_result) >= 1
             and auth_result[0] == LoginVerificationState.TWO_FACTOR
         ):
-            return {
+            response_data = {
                 "success": False,
                 "requires": "2fa",
                 "message": "2FA code required",
-                "screenshot_url": image_url,
-            }, 202
+            }
+            response_data.update(screenshot_data)
+            return response_data, 202
         else:
             # Return the specific error message if we found one
             if incorrect_password:
                 # Special case for incorrect password - don't retry
                 return {"success": False, "message": error_message, "error_type": "incorrect_password"}, 401
             elif error_message:
-                response = {
+                response_data = {
                     "success": False,
                     "message": error_message,
                 }
-                if image_url:
-                    response["screenshot_url"] = image_url
-                return response, 401
+                response_data.update(screenshot_data)
+                return response_data, 401
             else:
-                response = {
+                response_data = {
                     "success": False,
                     "message": f"Authentication failed, current state: {current_state.name}",
                 }
-                if image_url:
-                    response["screenshot_url"] = image_url
-                return response, 401
+                response_data.update(screenshot_data)
+                return response_data, 401
 
 
 class FixturesResource(Resource):
@@ -738,6 +775,70 @@ def serve_image(image_id, delete_after=True):
     except Exception as e:
         logger.error(f"Error serving image: {e}")
         return {"error": str(e)}, 500
+
+
+# Helper function to check if base64 is requested
+def is_base64_requested():
+    """Check if base64 format is requested in query parameters or JSON body.
+
+    Returns:
+        Boolean indicating whether base64 was requested
+    """
+    # Check URL query parameters first
+    use_base64 = request.args.get("base64", "0") == "1"
+
+    # If not in URL parameters, check JSON body
+    if not use_base64 and request.is_json:
+        try:
+            json_data = request.get_json(silent=True) or {}
+            base64_param = json_data.get("base64", False)
+            if isinstance(base64_param, bool):
+                use_base64 = base64_param
+            elif isinstance(base64_param, str):
+                use_base64 = base64_param == "1" or base64_param.lower() == "true"
+            elif isinstance(base64_param, int):
+                use_base64 = base64_param == 1
+        except Exception as e:
+            logger.warning(f"Error parsing JSON for base64 parameter: {e}")
+
+    return use_base64
+
+
+# Helper function to handle image encoding for API responses
+def process_screenshot_response(screenshot_id, use_base64=False):
+    """Process screenshot for API response - either adding URL or base64-encoded image.
+
+    Args:
+        screenshot_id: The ID of the screenshot
+        use_base64: Whether to use base64 encoding
+
+    Returns:
+        Dictionary with either screenshot_url or screenshot_base64 key
+    """
+    result = {}
+    screenshot_path = get_image_path(screenshot_id)
+
+    if use_base64:
+        try:
+            with open(screenshot_path, "rb") as img_file:
+                encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
+                result["screenshot_base64"] = encoded_image
+
+            # Delete the image file after encoding
+            try:
+                os.remove(screenshot_path)
+                logger.info(f"Deleted image after base64 encoding: {screenshot_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete image {screenshot_path}: {e}")
+        except Exception as e:
+            logger.error(f"Error encoding image to base64: {e}")
+            result["error"] = f"Failed to encode image to base64: {str(e)}"
+    else:
+        # Return URL to image
+        image_url = f"/image/{screenshot_id}"
+        result["screenshot_url"] = image_url
+
+    return result
 
 
 class ImageResource(Resource):
