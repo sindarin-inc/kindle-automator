@@ -82,7 +82,7 @@ LAST_READ_PAGE_DIALOG_IDENTIFIERS = [
     ),
 ]
 
-# Add new identifiers for the "Go to that location?" dialog 
+# Add new identifiers for the "Go to that location?" dialog
 GO_TO_LOCATION_DIALOG_IDENTIFIERS = [
     (
         AppiumBy.XPATH,

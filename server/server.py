@@ -281,14 +281,19 @@ class ScreenshotResource(Resource):
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
         If xml=1 is provided, also returns the XML page source.
+        If text=1 is provided, OCRs the image and returns the text.
         If base64=1 is provided, returns the image encoded as base64 instead of a URL."""
         failed = None
         # Check if save parameter is provided
-        save = request.args.get("save", "0") == "1"
+        save = request.args.get("save", "0") in ("1", "true")
         # Check if xml parameter is provided
         include_xml = request.args.get("xml", "0") in ("1", "true")
+        # Check if OCR is requested
+        perform_ocr = request.args.get("text", "0") in ("1", "true")
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
+        if perform_ocr and not use_base64:
+            use_base64 = True
 
         # Generate a unique filename with timestamp to avoid caching issues
         timestamp = int(time.time())
@@ -302,11 +307,14 @@ class ScreenshotResource(Resource):
             logger.error(f"Error taking screenshot: {e}")
             failed = "Failed to take screenshot"
 
-        # If save=1, return the URL to access the screenshot via the /image endpoint with POST method
-        # Otherwise, return the image directly via GET method (which will delete it after serving)
+        # Get the image ID for URLs
         image_id = os.path.splitext(filename)[0]
 
-        if not save and not include_xml and not use_base64:
+        # Default is to return the image directly unless explicitly requested otherwise
+        logger.info(
+            f"save: {save}, include_xml: {include_xml}, use_base64: {use_base64}, perform_ocr: {perform_ocr}"
+        )
+        if not save and not include_xml and not use_base64 and not perform_ocr:
             # For direct image responses, don't use the automator response handler
             # since it can't handle Flask Response objects
             if failed:
@@ -343,6 +351,13 @@ class ScreenshotResource(Resource):
                 except Exception as xml_error:
                     logger.error(f"Error getting page source XML: {xml_error}")
                     response_data["xml_error"] = str(xml_error)
+
+            # If text=1, perform OCR on the image
+            if perform_ocr:
+                # OCR implementation would go here
+                # This is a placeholder for the OCR implementation
+                response_data["ocr_text"] = "OCR functionality not yet implemented"
+                logger.warning("OCR requested but not implemented")
 
             # Return the response as a tuple that the decorator can handle
             if failed:

@@ -193,10 +193,14 @@ class KindleStateMachine:
                 if self.library_handler._is_library_tab_selected():
                     self.current_state = AppState.LIBRARY
                     logger.info("Detected LIBRARY state from library handler")
-                    
+
                 # Check for reading view dialog elements
                 try:
-                    from views.reading.view_strategies import GO_TO_LOCATION_DIALOG_IDENTIFIERS, READING_VIEW_IDENTIFIERS
+                    from views.reading.view_strategies import (
+                        GO_TO_LOCATION_DIALOG_IDENTIFIERS,
+                        READING_VIEW_IDENTIFIERS,
+                    )
+
                     # Check for "Go to that location?" dialog
                     for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
                         try:
@@ -207,7 +211,7 @@ class KindleStateMachine:
                                 break
                         except:
                             continue
-                    
+
                     # Check for other reading view elements if state is still unknown
                     if self.current_state == AppState.UNKNOWN:
                         for strategy, locator in READING_VIEW_IDENTIFIERS:

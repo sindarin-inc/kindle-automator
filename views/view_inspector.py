@@ -145,7 +145,7 @@ class ViewInspector:
                     return AppView.READING
                 except NoSuchElementException:
                     continue
-                    
+
             # Check for "Go to that location?" dialog which indicates reading view
             for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
                 try:
@@ -155,7 +155,7 @@ class ViewInspector:
                         return AppView.READING
                 except NoSuchElementException:
                     continue
-                    
+
             # Check for "last read page" dialog which indicates reading view
             for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
                 try:
@@ -163,7 +163,9 @@ class ViewInspector:
                     if element.is_displayed():
                         text = element.text
                         if ("You are currently on page" in text) or ("You are currently at location" in text):
-                            logger.info("   Found 'last read page/location' dialog - this indicates reading view")
+                            logger.info(
+                                "   Found 'last read page/location' dialog - this indicates reading view"
+                            )
                             return AppView.READING
                 except NoSuchElementException:
                     continue

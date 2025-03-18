@@ -136,7 +136,10 @@ class ReaderHandler:
             for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
                 try:
                     message = self.driver.find_element(strategy, locator)
-                    if message.is_displayed() and ("You are currently on page" in message.text or "You are currently at location" in message.text):
+                    if message.is_displayed() and (
+                        "You are currently on page" in message.text
+                        or "You are currently at location" in message.text
+                    ):
                         logger.info("Found 'last read page/location' dialog - clicking YES")
                         for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
                             try:
@@ -160,9 +163,14 @@ class ReaderHandler:
             for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
                 try:
                     message = self.driver.find_element(strategy, locator)
-                    if message.is_displayed() and ("Go to that location?" in message.text or "Go to that page?" in message.text):
+                    if message.is_displayed() and (
+                        "Go to that location?" in message.text or "Go to that page?" in message.text
+                    ):
                         logger.info("Found 'Go to that location/page?' dialog - clicking YES")
-                        for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:  # Reuse the same buttons as last read page dialog
+                        for (
+                            btn_strategy,
+                            btn_locator,
+                        ) in LAST_READ_PAGE_DIALOG_BUTTONS:  # Reuse the same buttons as last read page dialog
                             try:
                                 yes_button = self.driver.find_element(btn_strategy, btn_locator)
                                 if yes_button.is_displayed():
@@ -494,7 +502,7 @@ class ReaderHandler:
                     got_it_button.click()
                     logger.info("Clicked 'Got it' button to dismiss dialog")
                     time.sleep(1)
-            
+
             # Check for and handle "Go to that location/page?" dialog
             go_to_location_visible, message = self._check_element_visibility(
                 GO_TO_LOCATION_DIALOG_IDENTIFIERS, "'Go to that location/page?' dialog"

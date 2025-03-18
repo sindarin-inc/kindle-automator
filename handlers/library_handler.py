@@ -632,7 +632,9 @@ class LibraryHandler:
                                                 continue
 
                                         # Return the found container, button, and book info
-                                        logger.info(f"Found match for '{target_title}' -> '{book_info['title']}'")
+                                        logger.info(
+                                            f"Found match for '{target_title}' -> '{book_info['title']}'"
+                                        )
                                         return parent_container, button, book_info
                                     except NoSuchElementException:
                                         logger.debug(f"Could not find button for {book_info['title']}")
@@ -686,12 +688,14 @@ class LibraryHandler:
                 for book in books:
                     if book.get("title") and self._title_match(book["title"], target_title):
                         found_matching_title = True
-                        logger.info(f"Book title matched using _title_match: '{book['title']}' -> '{target_title}'")
+                        logger.info(
+                            f"Book title matched using _title_match: '{book['title']}' -> '{target_title}'"
+                        )
                         try:
                             # Try to find the book button directly by content-desc
                             buttons = self.driver.find_elements(
-                                AppiumBy.XPATH, 
-                                f"//android.widget.Button[contains(@content-desc, '{book['title'].split()[0]}')]"
+                                AppiumBy.XPATH,
+                                f"//android.widget.Button[contains(@content-desc, '{book['title'].split()[0]}')]",
                             )
                             if buttons:
                                 logger.info(f"Found {len(buttons)} buttons matching first word of title")
@@ -699,7 +703,7 @@ class LibraryHandler:
                                 return parent_container, buttons[0], book
                         except Exception as e:
                             logger.error(f"Error finding book button by content-desc: {e}")
-                
+
                 if not found_matching_title:
                     logger.warning(f"Book not found after searching entire library: {target_title}")
                     logger.info(f"Available titles: {', '.join(seen_titles)}")
@@ -755,7 +759,7 @@ class LibraryHandler:
         # Replace multiple spaces with single space and strip
         normalized = " ".join(normalized.split())
         return normalized
-        
+
     def _title_match(self, title1: str, title2: str) -> bool:
         """
         Check if titles match by looking for substantial substring overlap.
@@ -763,26 +767,25 @@ class LibraryHandler:
         """
         if not title1 or not title2:
             return False
-            
+
         norm1 = self._normalize_title(title1)
         norm2 = self._normalize_title(title2)
-        
+
         # If exact match after normalization, return True
         if norm1 == norm2:
             return True
-            
-        # Look for substantial substring overlap 
+
+        # Look for substantial substring overlap
         # (title contains at least half of the words in the other title)
         words1 = set(norm1.split())
         words2 = set(norm2.split())
-        
+
         if len(words1) <= len(words2):
             matches = sum(1 for w in words1 if w in norm2)
             return matches >= max(3, len(words1) // 2)
         else:
             matches = sum(1 for w in words2 if w in norm1)
             return matches >= max(3, len(words2) // 2)
-            
 
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
@@ -1021,18 +1024,18 @@ class LibraryHandler:
         """
         if not s:
             return "''"
-        
+
         # Use resource-id-based XPath instead of text-based when apostrophes are present
         if "'" in s:
             # Use a partial text match instead that doesn't include the apostrophe
             # Split the string at apostrophes and use contains() for each part
             parts = s.split("'")
             conditions = []
-            
+
             for part in parts:
                 if part:  # Only add non-empty parts
                     conditions.append(f"contains(., '{part}')")
-            
+
             # Join all conditions with 'and'
             if conditions:
                 return " and ".join(conditions)

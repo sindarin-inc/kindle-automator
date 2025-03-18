@@ -10,6 +10,7 @@ This middleware logs the request and response bodies for all API calls. It's use
 - Formats JSON data for readability
 - Handles various content types (JSON, form data, binary data)
 - Provides request method and path context for each log
+- Uses color-coding for improved readability (magenta for paths, dim yellow for content)
 
 ## How It Works
 
@@ -24,6 +25,10 @@ The middleware is already set up in the main server.py file. All requests and re
 
 ### Example Log Output
 
+The logs will appear with color-coding in your terminal:
+- URL paths in magenta
+- Request/response bodies in dim yellow
+
 ```
 INFO [2025-03-18 10:15:30] server.request_logger: REQUEST [POST /auth]: {"email": "[REDACTED]", "password": "[REDACTED]"}
 INFO [2025-03-18 10:15:31] server.request_logger: RESPONSE [POST /auth]: {"status": "success", "message": "Authentication successful", "token": "[REDACTED]", "time_taken": 0.532}
@@ -31,6 +36,8 @@ INFO [2025-03-18 10:15:31] server.request_logger: RESPONSE [POST /auth]: {"statu
 # For large responses:
 INFO [2025-03-18 10:15:31] server.request_logger: RESPONSE [POST /books]: {"books":[{"title":"Book 1","author":"Author 1"},{"title":"Book 2","author":"Author 2"},...]}... (truncated, total 2345 bytes)
 ```
+
+Note: The colors will only appear in terminal output, not in log files unless your log viewer supports ANSI color codes.
 
 ## Testing
 
