@@ -16,6 +16,7 @@ from automator import KindleAutomator
 from handlers.auth_handler import LoginVerificationState
 from handlers.test_fixtures_handler import TestFixturesHandler
 from server.logging_config import setup_logger
+from server.request_logger import setup_request_logger
 from server.response_handler import handle_automator_response
 from views.core.app_state import AppState
 
@@ -42,6 +43,9 @@ except ImportError:
 
 app = Flask(__name__)
 api = Api(app)
+
+# Set up request and response logging middleware
+setup_request_logger(app)
 
 
 class AutomationServer:
