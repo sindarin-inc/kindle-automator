@@ -112,8 +112,26 @@ Now you are ready to proceed with the automation setup and run the scripts.
    make deps
    ```
 
-10. **Run the Script**:
-    After setting up the virtual environment and installing dependencies, you can run the automation script using:
+10. **Configuration**:
+    The application uses a `.env` file for API keys and other configuration. Create your `.env` file by copying the example:
+
+    ```sh
+    cp .env.example .env
+    ```
+
+    Then edit the `.env` file to add your API keys:
+
+    ```
+    # API Keys 
+    MISTRAL_API_KEY=your-actual-mistral-api-key
+    ```
+
+    This file is listed in `.gitignore` to ensure your API keys are never committed to the repository.
+    
+    **Note**: Amazon credentials (email and password) must be provided in the /auth API request, and captcha solutions (if needed) must be provided to the /captcha endpoint. These are not read from environment variables or configuration files. The system will automatically initialize when needed, but you must authenticate with the /auth endpoint before accessing other features.
+
+11. **Run the Script**:
+    After setting up the virtual environment, installing dependencies, and configuring your environment, you can run the automation script using:
 
     ```sh
     make run

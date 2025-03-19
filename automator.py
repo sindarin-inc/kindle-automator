@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class KindleAutomator:
-    def __init__(self, email, password, captcha_solution):
-        self.email = email
-        self.password = password
-        self.captcha_solution = captcha_solution
+    def __init__(self):
+        self.email = None
+        self.password = None
+        self.captcha_solution = None
         self.driver = None
         self.state_machine = None
         self.device_id = None  # Will be set during initialization
@@ -42,13 +42,8 @@ class KindleAutomator:
         self.driver = driver.get_driver()
         self.device_id = driver.get_device_id()
 
-        # Initialize state machine with credentials
-        self.state_machine = KindleStateMachine(
-            self.driver,
-            email=self.email,
-            password=self.password,
-            captcha_solution=self.captcha_solution,
-        )
+        # Initialize state machine without credentials or captcha
+        self.state_machine = KindleStateMachine(self.driver)
 
         # Initialize handlers
         self.library_handler = LibraryHandler(self.driver)
@@ -118,3 +113,17 @@ class KindleAutomator:
                 self.state_machine.auth_handler.captcha_solution = solution
             return True
         return False
+        
+    def update_credentials(self, email, password):
+        """Update user credentials in the automator and state machine.
+        
+        Args:
+            email: The Amazon account email
+            password: The Amazon account password
+        """
+        logger.info(f"Updating credentials for email: {email}")
+        self.email = email
+        self.password = password
+        if self.state_machine and self.state_machine.auth_handler:
+            self.state_machine.auth_handler.email = email
+            self.state_machine.auth_handler.password = password

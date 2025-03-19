@@ -5,11 +5,13 @@ import signal
 import subprocess
 import time
 import traceback
-from typing import Optional
+from typing import Optional, Tuple
 
 from appium.webdriver.common.appiumby import AppiumBy
+from dotenv import load_dotenv
 from flask import Flask, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
+from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
 
 from automator import KindleAutomator
@@ -20,26 +22,16 @@ from server.request_logger import setup_request_logger
 from server.response_handler import handle_automator_response
 from views.core.app_state import AppState
 
+# Load environment variables from .env file
+load_dotenv()
+
 setup_logger()
 logger = logging.getLogger(__name__)
 
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
-# Load configuration
-try:
-    import config
-
-    AMAZON_EMAIL = config.AMAZON_EMAIL
-    AMAZON_PASSWORD = config.AMAZON_PASSWORD
-    CAPTCHA_SOLUTION = getattr(config, "CAPTCHA_SOLUTION", None)
-except ImportError:
-    logger.warning("No config.py found. Using default credentials from config.template.py")
-    import config_template
-
-    AMAZON_EMAIL = config_template.AMAZON_EMAIL
-    AMAZON_PASSWORD = config_template.AMAZON_PASSWORD
-    CAPTCHA_SOLUTION = None
+# We'll handle captcha solutions at runtime when passed via API, not from environment
 
 app = Flask(__name__)
 api = Api(app)
@@ -56,9 +48,10 @@ class AutomationServer:
         os.makedirs(self.pid_dir, exist_ok=True)
 
     def initialize_automator(self):
-        """Initialize automator with configured credentials"""
+        """Initialize automator without credentials or captcha solution"""
         if not self.automator:
-            self.automator = KindleAutomator(AMAZON_EMAIL, AMAZON_PASSWORD, CAPTCHA_SOLUTION)
+            # Initialize without credentials or captcha - they'll be set when needed
+            self.automator = KindleAutomator()
         return self.automator
 
     def save_pid(self, name: str, pid: int):
@@ -109,21 +102,23 @@ server = AutomationServer()
 
 class InitializeResource(Resource):
     def post(self):
+        """Explicitly initialize the automation driver.
+        
+        Note: This endpoint is optional as the system automatically initializes
+        when needed on other endpoints. It can be used for pre-initialization.
+        """
         try:
-            data = request.get_json()
-            email = data.get("email", AMAZON_EMAIL)  # Fall back to config email
-            password = data.get("password", AMAZON_PASSWORD)  # Fall back to config password
-
-            if not email or not password:
-                return {"error": "Email and password are required"}, 400
-
-            server.automator = KindleAutomator(email, password, CAPTCHA_SOLUTION)
+            # Initialize automator without credentials - they'll be set during authentication
+            server.initialize_automator()
             success = server.automator.initialize_driver()
 
             if not success:
                 return {"error": "Failed to initialize driver"}, 500
 
-            return {"status": "initialized"}, 200
+            return {
+                "status": "initialized", 
+                "message": "Device initialized. Use /auth endpoint to authenticate with your Amazon credentials."
+            }, 200
 
         except Exception as e:
             logger.error(f"Initialization error: {e}")
@@ -140,10 +135,11 @@ def ensure_automator_healthy(f):
             try:
                 # Initialize automator if needed
                 if not server.automator:
-                    logger.info("No automator found, initializing...")
+                    logger.info("No automator found. Initializing automatically...")
                     server.initialize_automator()
                     if not server.automator.initialize_driver():
-                        return {"error": "Failed to initialize driver"}, 500
+                        logger.error("Failed to initialize driver automatically")
+                        return {"error": "Failed to initialize driver automatically. Call /initialize first."}, 500
 
                 # Ensure driver is running
                 if not server.automator.ensure_driver_running():
@@ -222,10 +218,8 @@ class CaptchaResource(Resource):
         if not solution:
             return {"error": "Captcha solution required"}, 400
 
-        # Update captcha solution if different
+        # Update captcha solution using our update method
         server.automator.update_captcha_solution(solution)
-        # Also update it directly in the state machine's auth handler as a backup
-        server.automator.state_machine.auth_handler.captcha_solution = solution
 
         success = server.automator.transition_to_library()
 
@@ -288,8 +282,16 @@ class ScreenshotResource(Resource):
         save = request.args.get("save", "0") in ("1", "true")
         # Check if xml parameter is provided
         include_xml = request.args.get("xml", "0") in ("1", "true")
-        # Check if OCR is requested
-        perform_ocr = request.args.get("text", "0") in ("1", "true")
+        # Check if OCR is requested via 'text' or 'ocr' parameter
+        ocr_param = request.args.get("ocr", "0")
+        text_param = request.args.get("text", "0")
+        is_ocr = is_ocr_requested()
+        logger.info(
+            f"OCR debug - ocr param: {ocr_param}, text param: {text_param}, is_ocr_requested(): {is_ocr}"
+        )
+
+        perform_ocr = text_param in ("1", "true") or is_ocr
+
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
         if perform_ocr and not use_base64:
@@ -314,7 +316,11 @@ class ScreenshotResource(Resource):
         logger.info(
             f"save: {save}, include_xml: {include_xml}, use_base64: {use_base64}, perform_ocr: {perform_ocr}"
         )
-        if not save and not include_xml and not use_base64 and not perform_ocr:
+
+        # If OCR is requested, we need the JSON response path
+        if perform_ocr:
+            logger.info("OCR requested, forcing JSON response path")
+        elif not save and not include_xml and not use_base64:
             # For direct image responses, don't use the automator response handler
             # since it can't handle Flask Response objects
             if failed:
@@ -327,8 +333,8 @@ class ScreenshotResource(Resource):
             # Prepare the response data
             response_data = {}
 
-            # Process the screenshot (either base64 encode or add URL)
-            screenshot_data = process_screenshot_response(image_id, use_base64)
+            # Process the screenshot (either base64 encode, add URL, or perform OCR)
+            screenshot_data = process_screenshot_response(image_id, use_base64, perform_ocr)
             response_data.update(screenshot_data)
 
             # If xml=1, get and save the page source XML
@@ -352,12 +358,7 @@ class ScreenshotResource(Resource):
                     logger.error(f"Error getting page source XML: {xml_error}")
                     response_data["xml_error"] = str(xml_error)
 
-            # If text=1, perform OCR on the image
-            if perform_ocr:
-                # OCR implementation would go here
-                # This is a placeholder for the OCR implementation
-                response_data["ocr_text"] = "OCR functionality not yet implemented"
-                logger.warning("OCR requested but not implemented")
+            # OCR is now handled by process_screenshot_response
 
             # Return the response as a tuple that the decorator can handle
             if failed:
@@ -399,6 +400,15 @@ class NavigationResource(Resource):
         else:
             logger.info("Base64 parameter is not provided, will return URL to image")
 
+        # Check if OCR is requested
+        perform_ocr = is_ocr_requested()
+        if perform_ocr:
+            logger.info("OCR requested, will process image with OCR")
+            if not use_base64:
+                # Force base64 encoding for OCR
+                use_base64 = True
+                logger.info("Forcing base64 encoding for OCR processing")
+
         if not action:
             return {"error": "Navigation action is required"}, 400
 
@@ -424,8 +434,8 @@ class NavigationResource(Resource):
                 "progress": progress,
             }
 
-            # Process the screenshot (either base64 encode or add URL)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+            # Process the screenshot (either base64 encode, add URL, or OCR)
+            screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
             response_data.update(screenshot_data)
 
             return response_data, 200
@@ -435,13 +445,23 @@ class NavigationResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
-        """Handle navigation via GET requests, using default_action from endpoint config"""
-        # For GET requests, use the default action configured for this endpoint
-        if not self.default_action:
-            return {"error": "This endpoint doesn't support GET requests"}, 400
+        """Handle navigation via GET requests, using query parameters or default_action"""
+        # Check if action is provided in query parameters
+        action = request.args.get("action")
 
-        # Pass the default action to the post method to handle navigation
-        return self.post(self.default_action)
+        # If no action in query params, use the default action configured for this endpoint
+        if not action:
+            if not self.default_action:
+                return {"error": "Navigation action is required"}, 400
+            action = self.default_action
+
+        # Since we're using query params and moving them to POST,
+        # we don't need to do anything special here - the POST method
+        # already checks for the presence of base64 and ocr in both
+        # query params and request body.
+
+        # Pass the action to the post method to handle navigation
+        return self.post(action)
 
 
 class BookOpenResource(Resource):
@@ -458,7 +478,7 @@ class BookOpenResource(Resource):
         logger.info(f"Opening book: {book_title}")
 
         if not book_title:
-            return {"error": "Book title required"}, 400
+            return {"error": "Book title is required in the request"}, 400
 
         if server.automator.state_machine.transition_to_library():
             success = server.automator.reader_handler.open_book(book_title)
@@ -566,8 +586,8 @@ class AuthResource(Resource):
     def post(self):
         """Authenticate with Amazon username and password"""
         data = request.get_json()
-        email = data.get("email", AMAZON_EMAIL)  # Fall back to config email
-        password = data.get("password", AMAZON_PASSWORD)  # Fall back to config password
+        email = data.get("email")
+        password = data.get("password")
 
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
@@ -575,7 +595,7 @@ class AuthResource(Resource):
         logger.info(f"Authenticating with email: {email}")
 
         if not email or not password:
-            return {"error": "Email and password are required"}, 400
+            return {"error": "Email and password are required in the request"}, 400
 
         # Check if already authenticated by checking if we're in the library state
         server.automator.state_machine.update_current_state()
@@ -585,13 +605,8 @@ class AuthResource(Resource):
             logger.info("Already authenticated and in library state")
             return {"success": True, "message": "Already authenticated"}, 200
 
-        # Update credentials if different from current ones
-        if email != server.automator.email or password != server.automator.password:
-            server.automator.email = email
-            server.automator.password = password
-            # Also update credentials in the state machine's auth handler
-            server.automator.state_machine.auth_handler.email = email
-            server.automator.state_machine.auth_handler.password = password
+        # Update credentials using the dedicated method
+        server.automator.update_credentials(email, password)
 
         # First try to reach sign-in state if we're not already there
         if current_state != AppState.SIGN_IN:
@@ -823,39 +838,184 @@ def is_base64_requested():
     return use_base64
 
 
+# Helper function to check if OCR is requested
+def is_ocr_requested():
+    """Check if OCR is requested in query parameters or JSON body.
+
+    Returns:
+        Boolean indicating whether OCR was requested
+    """
+    # Check URL query parameters first - match exactly how other query params are checked
+    ocr_param = request.args.get("ocr", "0")
+    perform_ocr = ocr_param in ("1", "true")
+
+    logger.debug(f"is_ocr_requested check - query param 'ocr': {ocr_param}, result: {perform_ocr}")
+
+    # If not in URL parameters, check JSON body
+    if not perform_ocr and request.is_json:
+        try:
+            json_data = request.get_json(silent=True) or {}
+            ocr_param = json_data.get("ocr", False)
+            if isinstance(ocr_param, bool):
+                perform_ocr = ocr_param
+            elif isinstance(ocr_param, str):
+                perform_ocr = ocr_param == "1" or ocr_param.lower() == "true"
+            elif isinstance(ocr_param, int):
+                perform_ocr = ocr_param == 1
+            logger.debug(f"is_ocr_requested check - JSON param 'ocr': {ocr_param}, result: {perform_ocr}")
+        except Exception as e:
+            logger.warning(f"Error parsing JSON for OCR parameter: {e}")
+
+    return perform_ocr
+
+
+class KindleOCR:
+    """Utility class for OCR processing of Kindle screenshots."""
+
+    @staticmethod
+    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Process an image with Mistral's OCR API.
+
+        Args:
+            image_content: Either binary content (bytes) or a base64-encoded string
+
+        Returns:
+            A tuple of (OCR text result or None if processing failed, error message if an error occurred)
+        """
+        try:
+            # Determine if the input is already a base64 string or binary data
+            if isinstance(image_content, str):
+                # It's already a base64 string
+                base64_image = image_content
+                # Verify it's valid base64 by attempting to decode a small part
+                try:
+                    base64.b64decode(base64_image[:20])
+                except:
+                    error_msg = "Invalid base64 string provided"
+                    logger.error(error_msg)
+                    return None, error_msg
+            else:
+                # It's binary data, encode it as base64
+                base64_image = base64.b64encode(image_content).decode("utf-8")
+
+            # Get API key from environment variables (loaded from .env)
+            api_key = os.getenv("MISTRAL_API_KEY")
+            if not api_key:
+                error_msg = (
+                    "MISTRAL_API_KEY not found in environment variables. Please add it to your .env file."
+                )
+                logger.error(error_msg)
+                return None, error_msg
+
+            # Initialize Mistral client
+            client = Mistral(api_key=api_key)
+
+            # Process the image with OCR
+            ocr_response = client.ocr.process(
+                model="mistral-ocr-latest",
+                document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
+            )
+
+            # Extract and return the OCR text
+            logger.info(f"OCR response: {ocr_response}")
+            if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
+                page = ocr_response.pages[0]
+                return page.markdown, None
+            else:
+                error_msg = "No OCR response or no pages found"
+                logger.error(error_msg)
+                return None, error_msg
+
+        except Exception as e:
+            error_msg = f"Error processing OCR: {e}"
+            logger.error(error_msg)
+            return None, error_msg
+
+
 # Helper function to handle image encoding for API responses
-def process_screenshot_response(screenshot_id, use_base64=False):
-    """Process screenshot for API response - either adding URL or base64-encoded image.
+def process_screenshot_response(screenshot_id, use_base64=False, perform_ocr=False):
+    """Process screenshot for API response - either adding URL, base64-encoded image, or OCR text.
 
     Args:
         screenshot_id: The ID of the screenshot
         use_base64: Whether to use base64 encoding
+        perform_ocr: Whether to perform OCR on the image
 
     Returns:
-        Dictionary with either screenshot_url or screenshot_base64 key
+        Dictionary with screenshot information (URL, base64, or OCR text)
     """
     result = {}
     screenshot_path = get_image_path(screenshot_id)
+    delete_after = use_base64 or perform_ocr  # Delete the image if we're encoding it or OCR'ing it
 
-    if use_base64:
+    # If OCR is requested, we need to process the image
+    if perform_ocr:
+        try:
+            # Read the image file
+            with open(screenshot_path, "rb") as img_file:
+                image_data = img_file.read()
+
+            # Process the image with OCR
+            ocr_text, error = KindleOCR.process_ocr(image_data)
+
+            if ocr_text:
+                # If OCR successful, just add the text to the result and don't include the image
+                # Don't include base64 or URL to save bandwidth and storage
+                result["ocr_text"] = ocr_text
+                # Always delete the image after successful OCR
+                delete_after = True
+            else:
+                # If OCR failed, add the error and fall back to regular image handling
+                result["ocr_error"] = error or "Unknown OCR error"
+                # Fall back to base64 or URL
+                if use_base64:
+                    encoded_image = base64.b64encode(image_data).decode("utf-8")
+                    result["screenshot_base64"] = encoded_image
+                else:
+                    # Return URL to image and don't delete file
+                    image_url = f"/image/{screenshot_id}"
+                    result["screenshot_url"] = image_url
+                    delete_after = False
+        except Exception as e:
+            logger.error(f"Error processing OCR: {e}")
+            result["ocr_error"] = f"Failed to process image for OCR: {str(e)}"
+            # Fall back to regular image handling
+            if use_base64:
+                try:
+                    with open(screenshot_path, "rb") as img_file:
+                        encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
+                        result["screenshot_base64"] = encoded_image
+                except Exception as e2:
+                    logger.error(f"Error encoding image to base64: {e2}")
+                    result["error"] = f"Failed to encode image to base64: {str(e2)}"
+            else:
+                # Return URL to image and don't delete file
+                image_url = f"/image/{screenshot_id}"
+                result["screenshot_url"] = image_url
+                delete_after = False
+    elif use_base64:
+        # Base64 encoding without OCR
         try:
             with open(screenshot_path, "rb") as img_file:
                 encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
                 result["screenshot_base64"] = encoded_image
-
-            # Delete the image file after encoding
-            try:
-                os.remove(screenshot_path)
-                logger.info(f"Deleted image after base64 encoding: {screenshot_path}")
-            except Exception as e:
-                logger.error(f"Failed to delete image {screenshot_path}: {e}")
         except Exception as e:
             logger.error(f"Error encoding image to base64: {e}")
             result["error"] = f"Failed to encode image to base64: {str(e)}"
     else:
-        # Return URL to image
+        # Regular URL handling
         image_url = f"/image/{screenshot_id}"
         result["screenshot_url"] = image_url
+        delete_after = False  # Don't delete file when using URL
+
+    # Delete the image file if needed
+    if delete_after:
+        try:
+            os.remove(screenshot_path)
+            logger.info(f"Deleted image after processing: {screenshot_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete image {screenshot_path}: {e}")
 
     return result
 

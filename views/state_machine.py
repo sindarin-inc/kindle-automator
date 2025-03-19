@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 class KindleStateMachine:
     """State machine for managing Kindle app states and transitions."""
 
-    def __init__(self, driver, email=None, password=None, captcha_solution=None):
+    def __init__(self, driver):
         """Initialize the state machine with required handlers."""
         self.driver = driver
         self.view_inspector = ViewInspector(driver)
-        self.auth_handler = AuthenticationHandler(driver, email, password, captcha_solution)
+        # Initialize auth handler without credentials or captcha - they'll be set later
+        self.auth_handler = AuthenticationHandler(driver, None, None, None)
         self.library_handler = LibraryHandler(driver)
         self.reader_handler = ReaderHandler(driver)
         self.permissions_handler = PermissionsHandler(driver)
