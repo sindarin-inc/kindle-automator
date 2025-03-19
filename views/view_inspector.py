@@ -30,6 +30,7 @@ from views.library.view_strategies import (
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
+    GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
@@ -169,6 +170,25 @@ class ViewInspector:
                             return AppView.READING
                 except NoSuchElementException:
                     continue
+                    
+            # Check for "Auto-update on Goodreads" dialog which indicates reading view
+            for strategy, locator in GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed() and "Auto-update on Goodreads" in element.text:
+                        logger.info("   Found 'Auto-update on Goodreads' dialog - this indicates reading view")
+                        return AppView.READING
+                except NoSuchElementException:
+                    continue
+                    
+            # Also check for Goodreads dialog buttons directly
+            try:
+                not_now_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving")
+                if not_now_button.is_displayed():
+                    logger.info("   Found 'NOT NOW' button for Goodreads dialog - this indicates reading view")
+                    return AppView.READING
+            except NoSuchElementException:
+                pass
 
             # Check for auth-related views first
             if self._is_auth_view():

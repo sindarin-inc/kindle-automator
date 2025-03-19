@@ -130,3 +130,13 @@ WHITE_BG_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bg_color_option_white"),
     (AppiumBy.XPATH, "//android.widget.RadioButton[@content-desc='White']"),
 ]
+
+# Goodreads auto-update dialog identifiers
+GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/tutorial_title' and @text='Auto-update on Goodreads']"),
+]
+
+GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/button_enable_autoshelving"),  # "OK" button
+    (AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"),  # "NOT NOW" button
+]

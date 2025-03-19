@@ -467,11 +467,8 @@ class NavigationResource(Resource):
 class BookOpenResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
-    def post(self):
-        """Open a specific book."""
-        data = request.get_json()
-        book_title = data.get("title")
-
+    def _open_book(self, book_title):
+        """Open a specific book - shared implementation for GET and POST."""
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
@@ -503,6 +500,21 @@ class BookOpenResource(Resource):
                 return response_data, 200
 
         return {"error": "Failed to open book"}, 500
+
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def post(self):
+        """Open a specific book via POST request."""
+        data = request.get_json()
+        book_title = data.get("title")
+        return self._open_book(book_title)
+        
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def get(self):
+        """Open a specific book via GET request."""
+        book_title = request.args.get("title")
+        return self._open_book(book_title)
 
 
 class StyleResource(Resource):

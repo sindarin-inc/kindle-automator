@@ -22,6 +22,8 @@ from views.reading.interaction_strategies import (
 from views.reading.view_strategies import (
     BLACK_BG_IDENTIFIERS,
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
+    GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS,
+    GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     LAYOUT_TAB_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
@@ -188,27 +190,42 @@ class ReaderHandler:
 
         # Check for and dismiss Goodreads auto-update dialog
         try:
-            not_now_button = self.driver.find_element(
-                AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
-            )
-            if not_now_button.is_displayed():
-                logger.info("Found Goodreads auto-update dialog - clicking Not Now")
-                not_now_button.click()
-                time.sleep(0.5)  # Wait for dialog to dismiss
-
-                # Verify dialog is gone
+            # Store the page source before checking for the Goodreads dialog
+            store_page_source(self.driver.page_source, "goodreads_autoupdate_dialog")
+            
+            # Check if the Goodreads dialog is present
+            dialog_present = False
+            for strategy, locator in GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS:
                 try:
-                    not_now_button = self.driver.find_element(
-                        AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
-                    )
-                    if not_now_button.is_displayed():
-                        logger.error("Goodreads dialog still visible after clicking Not Now")
-                        return False
+                    dialog = self.driver.find_element(strategy, locator)
+                    if dialog.is_displayed():
+                        dialog_present = True
+                        logger.info("Found Goodreads auto-update dialog")
+                        break
                 except NoSuchElementException:
-                    logger.info("Successfully dismissed Goodreads dialog")
-
-                filepath = store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
-                logger.info(f"Stored Goodreads dialog dismissed page source at: {filepath}")
+                    continue
+            
+            if dialog_present:
+                # Find and click the "NOT NOW" button
+                not_now_button = self.driver.find_element(
+                    *GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS[1]  # Index 1 is the "NOT NOW" button
+                )
+                if not_now_button.is_displayed():
+                    logger.info("Clicking 'NOT NOW' button on Goodreads auto-update dialog")
+                    not_now_button.click()
+                    time.sleep(0.5)  # Wait for dialog to dismiss
+                    
+                    # Verify dialog is gone
+                    try:
+                        not_now_button = self.driver.find_element(*GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS[1])
+                        if not_now_button.is_displayed():
+                            logger.error("Goodreads dialog still visible after clicking Not Now")
+                            return False
+                    except NoSuchElementException:
+                        logger.info("Successfully dismissed Goodreads dialog")
+                    
+                    filepath = store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
+                    logger.info(f"Stored Goodreads dialog dismissed page source at: {filepath}")
         except NoSuchElementException:
             logger.info("No Goodreads auto-update dialog found - continuing")
         except Exception as e:
@@ -516,7 +533,37 @@ class ReaderHandler:
                     yes_button.click()
                     logger.info("Clicked YES button")
                     time.sleep(1)
-
+            
+            # Check for and dismiss Goodreads auto-update dialog
+            goodreads_dialog_visible, _ = self._check_element_visibility(
+                GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
+            )
+            if goodreads_dialog_visible:
+                logger.info("Found Goodreads auto-update dialog - clicking NOT NOW")
+                try:
+                    not_now_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving")
+                    if not_now_button.is_displayed():
+                        not_now_button.click()
+                        logger.info("Clicked NOT NOW button")
+                        time.sleep(1)
+                        
+                        # Verify dialog is gone
+                        try:
+                            not_now_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving")
+                            if not_now_button.is_displayed():
+                                logger.error("Goodreads dialog still visible after clicking NOT NOW")
+                            else:
+                                logger.info("Successfully dismissed Goodreads dialog")
+                        except NoSuchElementException:
+                            logger.info("Successfully dismissed Goodreads dialog")
+                            
+                        filepath = store_page_source(self.driver.page_source, "goodreads_dialog_dismissed_navigation")
+                        logger.info(f"Stored Goodreads dialog dismissed page source at: {filepath}")
+                except NoSuchElementException:
+                    logger.error("NOT NOW button not found for Goodreads dialog")
+                except Exception as e:
+                    logger.error(f"Error clicking NOT NOW button: {e}")
+            
             # Now try to make toolbar visible if it isn't already
             return self._show_toolbar_and_close_book()
 
@@ -531,6 +578,24 @@ class ReaderHandler:
         center_x = window_size["width"] // 2
         tap_y = window_size["height"] // 2
 
+        # Check if we're looking at the Goodreads auto-update dialog
+        goodreads_dialog_visible, _ = self._check_element_visibility(
+            GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
+        )
+        if goodreads_dialog_visible:
+            logger.info("Found Goodreads auto-update dialog before showing toolbar - dismissing it first")
+            try:
+                not_now_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving")
+                if not_now_button.is_displayed():
+                    not_now_button.click()
+                    logger.info("Clicked NOT NOW button")
+                    time.sleep(1)
+                    store_page_source(self.driver.page_source, "goodreads_dialog_dismissed_toolbar")
+            except NoSuchElementException:
+                logger.error("NOT NOW button not found for Goodreads dialog")
+            except Exception as e:
+                logger.error(f"Error clicking NOT NOW button: {e}")
+
         # Try tapping up to 3 times
         max_attempts = 3
         for attempt in range(max_attempts):
@@ -541,6 +606,30 @@ class ReaderHandler:
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
             if toolbar_visible:
                 return self._click_close_book_button()
+            
+            # If the toolbar didn't appear, check if a dialog is now visible
+            goodreads_dialog_visible, _ = self._check_element_visibility(
+                GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
+            )
+            if goodreads_dialog_visible:
+                logger.info("Found Goodreads auto-update dialog after tapping - dismissing it")
+                try:
+                    not_now_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving")
+                    if not_now_button.is_displayed():
+                        not_now_button.click()
+                        logger.info("Clicked NOT NOW button")
+                        time.sleep(1)
+                        store_page_source(self.driver.page_source, "goodreads_dialog_dismissed_during_toolbar")
+                        
+                        # Try again to show toolbar after dismissing dialog
+                        self.driver.tap([(center_x, tap_y)])
+                        toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
+                        if toolbar_visible:
+                            return self._click_close_book_button()
+                except NoSuchElementException:
+                    logger.error("NOT NOW button not found for Goodreads dialog")
+                except Exception as e:
+                    logger.error(f"Error clicking NOT NOW button: {e}")
 
             if attempt < max_attempts - 1:
                 logger.info("Toolbar not visible, will try again...")
