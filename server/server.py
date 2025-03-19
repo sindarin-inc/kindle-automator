@@ -103,7 +103,7 @@ server = AutomationServer()
 class InitializeResource(Resource):
     def post(self):
         """Explicitly initialize the automation driver.
-        
+
         Note: This endpoint is optional as the system automatically initializes
         when needed on other endpoints. It can be used for pre-initialization.
         """
@@ -116,8 +116,8 @@ class InitializeResource(Resource):
                 return {"error": "Failed to initialize driver"}, 500
 
             return {
-                "status": "initialized", 
-                "message": "Device initialized. Use /auth endpoint to authenticate with your Amazon credentials."
+                "status": "initialized",
+                "message": "Device initialized. Use /auth endpoint to authenticate with your Amazon credentials.",
             }, 200
 
         except Exception as e:
@@ -139,7 +139,9 @@ def ensure_automator_healthy(f):
                     server.initialize_automator()
                     if not server.automator.initialize_driver():
                         logger.error("Failed to initialize driver automatically")
-                        return {"error": "Failed to initialize driver automatically. Call /initialize first."}, 500
+                        return {
+                            "error": "Failed to initialize driver automatically. Call /initialize first."
+                        }, 500
 
                 # Ensure driver is running
                 if not server.automator.ensure_driver_running():
@@ -472,6 +474,15 @@ class BookOpenResource(Resource):
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
+        # Check if OCR is requested
+        perform_ocr = is_ocr_requested()
+        if perform_ocr:
+            logger.info("OCR requested for open-book, will process image with OCR")
+            if not use_base64:
+                # Force base64 encoding for OCR
+                use_base64 = True
+                logger.info("Forcing base64 encoding for OCR processing")
+
         logger.info(f"Opening book: {book_title}")
 
         if not book_title:
@@ -493,8 +504,8 @@ class BookOpenResource(Resource):
 
                 response_data = {"success": True, "progress": progress}
 
-                # Process the screenshot (either base64 encode or add URL)
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                # Process the screenshot (either base64 encode, add URL, or OCR)
+                screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
                 response_data.update(screenshot_data)
 
                 return response_data, 200
@@ -508,7 +519,7 @@ class BookOpenResource(Resource):
         data = request.get_json()
         book_title = data.get("title")
         return self._open_book(book_title)
-        
+
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):

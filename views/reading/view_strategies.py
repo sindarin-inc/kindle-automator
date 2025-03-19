@@ -133,7 +133,10 @@ WHITE_BG_IDENTIFIERS = [
 
 # Goodreads auto-update dialog identifiers
 GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS = [
-    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/tutorial_title' and @text='Auto-update on Goodreads']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/tutorial_title' and @text='Auto-update on Goodreads']",
+    ),
 ]
 
 GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS = [

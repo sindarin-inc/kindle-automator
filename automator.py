@@ -113,10 +113,10 @@ class KindleAutomator:
                 self.state_machine.auth_handler.captcha_solution = solution
             return True
         return False
-        
+
     def update_credentials(self, email, password):
         """Update user credentials in the automator and state machine.
-        
+
         Args:
             email: The Amazon account email
             password: The Amazon account password

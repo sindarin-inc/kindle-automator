@@ -32,7 +32,6 @@
                                             <android.widget.ImageView index="0" package="com.amazon.kindle" class="android.widget.ImageView" text="" resource-id="com.amazon.kindle:id/action_button_image" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[176,180][253,254]" displayed="true" />
                                           </android.widget.Button>
                                         </android.widget.LinearLayout>
-                                        <android.widget.LinearLayout index="1" package="com.amazon.kindle" class="android.widget.LinearLayout" text="" resource-id="com.amazon.kindle:id/action_bar_end_items" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" long-clickable="false" password="false" scrollable="false" selected="false" bounds="[464,145][1080,290]" displayed="true" />
                                       </android.widget.RelativeLayout>
                                     </android.widget.LinearLayout>
                                   </android.widget.FrameLayout>

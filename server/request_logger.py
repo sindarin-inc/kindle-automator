@@ -57,7 +57,7 @@ class RequestBodyLogger:
     def log_request():
         """Log the request body."""
         request_data = None
-        
+
         # For GET requests, use query parameters as the body
         if request.method == "GET" and request.args:
             request_data = RequestBodyLogger.sanitize_sensitive_data(dict(request.args))
