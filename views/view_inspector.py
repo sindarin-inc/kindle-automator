@@ -25,6 +25,7 @@ from views.home.view_strategies import HOME_TAB_IDENTIFIERS, HOME_VIEW_IDENTIFIE
 from views.library.view_strategies import (
     EMPTY_LIBRARY_IDENTIFIERS,
     LIBRARY_TAB_SELECTION_STRATEGIES,
+    LIBRARY_VIEW_DETECTION_STRATEGIES,
     LIBRARY_VIEW_IDENTIFIERS,
 )
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
@@ -73,6 +74,21 @@ class ViewInspector:
     def _is_tab_selected(self, tab_name):
         """Check if a specific tab is currently selected."""
         logger.info(f"   Checking if {tab_name} tab is selected...")
+
+        # Additional logging and page source capture for detailed debugging
+        if tab_name == "LIBRARY":
+            # Save page source when checking for LIBRARY tab selection
+            filepath = store_page_source(self.driver.page_source, "library_tab_check")
+            logger.info(f"Stored page source during library tab check at: {filepath}")
+            
+            # Directly check for library view identifiers to aid debugging
+            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"   Found library view element: {strategy}={locator}")
+                except NoSuchElementException:
+                    pass
 
         for strategy in get_tab_selection_strategies(tab_name):
             try:
@@ -134,6 +150,8 @@ class ViewInspector:
                 try:
                     self.driver.find_element(strategy, locator)
                     logger.info("   Found reading view element")
+                    # Save page source for debugging
+                    store_page_source(self.driver.page_source, "reading_view_detected")
                     return AppView.READING
                 except NoSuchElementException:
                     continue
@@ -235,9 +253,25 @@ class ViewInspector:
             logger.info("   Checking for library view indicators...")
             has_library_root = False
             has_library_tab = False
+            
+            # Directly check for specific library elements
+            logger.info("   Directly checking for library view elements...")
+            for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"   Found library view element: {strategy}={locator}")
+                        filepath = store_page_source(self.driver.page_source, "library_direct_element_detected")
+                        logger.info(f"Stored page source with library element detected at: {filepath}")
+                        logger.info("Detected LIBRARY view based on direct element detection")
+                        return AppView.LIBRARY
+                except NoSuchElementException:
+                    pass
 
             if self._is_tab_selected("LIBRARY"):
                 logger.info("Detected LIBRARY view")
+                # Save page source for debugging
+                store_page_source(self.driver.page_source, "library_view_detected")
                 return AppView.LIBRARY
 
             # Check for view options menu (part of library view)

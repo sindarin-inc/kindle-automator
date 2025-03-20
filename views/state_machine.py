@@ -179,9 +179,36 @@ class KindleStateMachine:
             AppState: The current state of the app
         """
         try:
+            # Store page source before determining state
+            source = self.driver.page_source
+            filepath = store_page_source(source, "before_state_detection")
+            logger.info(f"Stored page source before state detection at: {filepath}")
+            
             # Get current state from view inspector
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
+            
+            # If we detect READING but we've just clicked close book, make a special check
+            if self.current_state == AppState.READING:
+                # Double check for library elements
+                library_elements_found = False
+                logger.info("State detected as READING - double checking for library elements...")
+                for strategy, locator in LIBRARY_ELEMENT_DETECTION_STRATEGIES:
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        if element.is_displayed():
+                            logger.info(f"Found library element {strategy}={locator} despite READING state detection")
+                            library_elements_found = True
+                            # Save additional page source for debugging
+                            filepath = store_page_source(self.driver.page_source, "reading_with_library_elements")
+                            logger.info(f"Stored page source with reading/library conflict at: {filepath}")
+                            break
+                    except Exception:
+                        continue
+                
+                if library_elements_found:
+                    logger.info("Overriding state from READING to LIBRARY based on element detection")
+                    self.current_state = AppState.LIBRARY
 
             # If unknown, try to detect specific states
             if self.current_state == AppState.UNKNOWN:

@@ -5,6 +5,7 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from server.logging_config import store_page_source
 from views.auth.interaction_strategies import (
     CAPTCHA_CONTINUE_BUTTON,
     CAPTCHA_INPUT_FIELD,
@@ -12,6 +13,7 @@ from views.auth.interaction_strategies import (
 )
 from views.auth.view_strategies import CAPTCHA_ERROR_MESSAGES, EMAIL_VIEW_IDENTIFIERS
 from views.core.app_state import AppState, AppView
+from views.library.view_strategies import LIBRARY_VIEW_DETECTION_STRATEGIES
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +95,19 @@ class StateTransitions:
     def handle_reading(self):
         """Handle READING state by navigating back to library."""
         logger.info("Handling READING state - navigating back to library...")
-        return self.reader_handler.navigate_back_to_library()
+        
+        # Add debug page source capture before transitioning
+        filepath = store_page_source(self.driver.page_source, "reading_before_transition")
+        logger.info(f"Stored page source before navigating from reading state at: {filepath}")
+        
+        result = self.reader_handler.navigate_back_to_library()
+        
+        # If the navigation failed, capture the state to help with debugging
+        if not result:
+            filepath = store_page_source(self.driver.page_source, "reading_transition_failed")
+            logger.info(f"Stored page source after failed navigation attempt at: {filepath}")
+            
+        return result
 
     def handle_captcha(self):
         """Handle CAPTCHA state by attempting to solve captcha."""

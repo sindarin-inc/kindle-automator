@@ -660,6 +660,11 @@ class ReaderHandler:
         if close_visible:
             close_button.click()
             logger.info("Clicked close book button")
+            
+            # Add debug page source dump after clicking close button
+            filepath = store_page_source(self.driver.page_source, "failed_transition")
+            logger.info(f"Stored page source after closing book at: {filepath}")
+            
             return True
 
         logger.error("Could not find close book button")
