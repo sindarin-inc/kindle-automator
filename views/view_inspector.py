@@ -145,16 +145,23 @@ class ViewInspector:
         try:
             logger.info("Determining current view...")
 
-            # Check for reading view or full screen dialog
+            # Check for reading view identifiers
+            reading_view_elements_found = 0
             for strategy, locator in READING_VIEW_IDENTIFIERS:
                 try:
-                    self.driver.find_element(strategy, locator)
-                    logger.info("   Found reading view element")
-                    # Save page source for debugging
-                    store_page_source(self.driver.page_source, "reading_view_detected")
-                    return AppView.READING
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        reading_view_elements_found += 1
+                        logger.info(f"   Found reading view element: {strategy}={locator}")
                 except NoSuchElementException:
                     continue
+            
+            # If we found multiple reading view elements, we're definitely in reading view
+            if reading_view_elements_found >= 2:
+                logger.info(f"   Found {reading_view_elements_found} reading view elements - confidently in reading view")
+                # Save page source for debugging
+                store_page_source(self.driver.page_source, "reading_view_detected")
+                return AppView.READING
 
             # Also check for full screen dialog which indicates reading view
             for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:

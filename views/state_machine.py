@@ -193,22 +193,38 @@ class KindleStateMachine:
                 # Double check for library elements
                 library_elements_found = False
                 logger.info("State detected as READING - double checking for library elements...")
-                for strategy, locator in LIBRARY_ELEMENT_DETECTION_STRATEGIES:
+                
+                # First verify that we have strong reading view indicators
+                from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
+                reading_elements_count = 0
+                for strategy, locator in READING_VIEW_IDENTIFIERS:
                     try:
                         element = self.driver.find_element(strategy, locator)
                         if element.is_displayed():
-                            logger.info(f"Found library element {strategy}={locator} despite READING state detection")
-                            library_elements_found = True
-                            # Save additional page source for debugging
-                            filepath = store_page_source(self.driver.page_source, "reading_with_library_elements")
-                            logger.info(f"Stored page source with reading/library conflict at: {filepath}")
-                            break
+                            reading_elements_count += 1
                     except Exception:
                         continue
                 
-                if library_elements_found:
-                    logger.info("Overriding state from READING to LIBRARY based on element detection")
-                    self.current_state = AppState.LIBRARY
+                # Only check for library elements if we don't have strong reading indicators
+                if reading_elements_count < 2:
+                    for strategy, locator in LIBRARY_ELEMENT_DETECTION_STRATEGIES:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element.is_displayed():
+                                logger.info(f"Found library element {strategy}={locator} despite READING state detection")
+                                library_elements_found = True
+                                # Save additional page source for debugging
+                                filepath = store_page_source(self.driver.page_source, "reading_with_library_elements")
+                                logger.info(f"Stored page source with reading/library conflict at: {filepath}")
+                                break
+                        except Exception:
+                            continue
+                    
+                    if library_elements_found:
+                        logger.info("Overriding state from READING to LIBRARY based on element detection")
+                        self.current_state = AppState.LIBRARY
+                else:
+                    logger.info(f"Confirmed READING state with {reading_elements_count} strong indicators")
 
             # If unknown, try to detect specific states
             if self.current_state == AppState.UNKNOWN:

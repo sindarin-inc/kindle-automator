@@ -267,7 +267,8 @@ VIEW_OPTIONS_DONE_BUTTON_STRATEGIES = [
 
 # Library content container strategies
 LIBRARY_CONTENT_CONTAINER_STRATEGIES = [
-    (AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"),  # Content container
+    # Removed reader_content_container as it's actually a reader view element
+    # and was causing confusion between LIBRARY and READING views
 ]
 
 # Reader drawer layout identifiers
