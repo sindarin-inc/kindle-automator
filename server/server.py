@@ -45,6 +45,7 @@ class AutomationServer:
         self.automator: Optional[KindleAutomator] = None
         self.appium_process = None
         self.pid_dir = "logs"
+        self.current_book = None  # Track the currently open book title
         os.makedirs(self.pid_dir, exist_ok=True)
 
     def initialize_automator(self):
@@ -95,6 +96,17 @@ class AutomationServer:
         except Exception as e:
             logger.error(f"Failed to start Appium server: {e}")
             return False
+            
+    def set_current_book(self, book_title):
+        """Set the currently open book title"""
+        self.current_book = book_title
+        logger.info(f"Set current book to: {book_title}")
+        
+    def clear_current_book(self):
+        """Clear the currently open book tracking variable"""
+        if self.current_book:
+            logger.info(f"Cleared current book: {self.current_book}")
+            self.current_book = None
 
 
 server = AutomationServer()
@@ -114,6 +126,9 @@ class InitializeResource(Resource):
 
             if not success:
                 return {"error": "Failed to initialize driver"}, 500
+                
+            # Clear the current book since we're reinitializing the app
+            server.clear_current_book()
 
             return {
                 "status": "initialized",
@@ -167,6 +182,8 @@ def ensure_automator_healthy(f):
                     if server.automator:
                         server.automator.cleanup()
                         server.initialize_automator()
+                        # Clear current book since we're restarting the driver
+                        server.clear_current_book()
                         if server.automator.initialize_driver():
                             logger.info(
                                 "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
@@ -240,25 +257,80 @@ class BooksResource(Resource):
 
         # Handle different states
         if current_state != AppState.LIBRARY:
+            # Check if we're on the sign-in screen without credentials
+            if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
+                # Check if we have credentials set
+                if not server.automator.email or not server.automator.password:
+                    logger.info("Authentication required but no credentials are set")
+                    return {
+                        "error": "Authentication required",
+                        "requires_auth": True,
+                        "current_state": current_state.name,
+                        "message": "You need to provide Amazon credentials via the /auth endpoint"
+                    }, 401
+            
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
-            if server.automator.state_machine.transition_to_library():
+            transition_success = server.automator.state_machine.transition_to_library(server=server)
+            
+            # Get the updated state after transition attempt
+            new_state = server.automator.state_machine.current_state
+            logger.info(f"State after transition attempt: {new_state}")
+            
+            # Check for auth requirement regardless of transition success
+            if new_state == AppState.SIGN_IN:
+                # Check if we have credentials set
+                if not server.automator.email or not server.automator.password:
+                    logger.info("Authentication required after transition attempt but no credentials are set")
+                    return {
+                        "error": "Authentication required",
+                        "requires_auth": True,
+                        "current_state": new_state.name,
+                        "message": "You need to provide Amazon credentials via the /auth endpoint"
+                    }, 401
+            
+            if transition_success:
                 logger.info("Successfully transitioned to library state")
                 # Get books with metadata from library handler
                 books = server.automator.library_handler.get_book_titles()
+                
+                # If books is None, it means authentication is required
                 if books is None:
-                    return {"error": "Failed to get books"}, 500
+                    return {
+                        "error": "Authentication required",
+                        "requires_auth": True,
+                        "message": "You need to sign in to access your Kindle library"
+                    }, 401
+                    
                 return {"books": books}, 200
             else:
-                return {
-                    "error": f"Cannot get books in current state: {current_state.name}",
-                    "current_state": current_state.name,
-                }, 400
+                # If transition failed, check for auth requirement
+                updated_state = server.automator.state_machine.current_state
+                
+                if updated_state == AppState.SIGN_IN:
+                    logger.info("Transition failed - authentication required")
+                    return {
+                        "error": "Authentication required",
+                        "requires_auth": True,
+                        "current_state": updated_state.name,
+                        "message": "You need to provide Amazon credentials via the /auth endpoint"
+                    }, 401
+                else:
+                    return {
+                        "error": f"Cannot get books in current state: {updated_state.name}",
+                        "current_state": updated_state.name,
+                    }, 400
 
         # Get books with metadata from library handler
         books = server.automator.library_handler.get_book_titles()
+        
+        # If books is None, it means authentication is required
         if books is None:
-            return {"error": "Failed to get books"}, 500
+            return {
+                "error": "Authentication required",
+                "requires_auth": True,
+                "message": "You need to sign in to access your Kindle library"
+            }, 401
 
         return {"books": books}, 200
 
@@ -487,28 +559,50 @@ class BookOpenResource(Resource):
 
         if not book_title:
             return {"error": "Book title is required in the request"}, 400
+            
+        # Common function to capture progress and screenshot
+        def capture_book_state(already_open=False):
+            # Get reading progress
+            progress = server.automator.reader_handler.get_reading_progress()
+            logger.info(f"Progress: {progress}")
+            
+            # Save screenshot with unique ID
+            screenshot_id = f"page_{int(time.time())}"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+            time.sleep(0.5)
+            server.automator.driver.save_screenshot(screenshot_path)
+            
+            # Create response data with progress info
+            response_data = {
+                "success": True, 
+                "progress": progress
+            }
+            
+            # Add flag if book was already open
+            if already_open:
+                response_data["already_open"] = True
+                
+            # Process the screenshot (either base64 encode, add URL, or OCR)
+            screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
+            response_data.update(screenshot_data)
+            
+            return response_data, 200
+            
+        # Check if we're already in the reading state with the requested book
+        current_state = server.automator.state_machine.current_state
+        if current_state == AppState.READING and server.current_book == book_title:
+            logger.info(f"Already reading book: {book_title}, returning current state")
+            return capture_book_state(already_open=True)
 
-        if server.automator.state_machine.transition_to_library():
+        # If we're not already reading the requested book, transition to library and open it
+        if server.automator.state_machine.transition_to_library(server=server):
             success = server.automator.reader_handler.open_book(book_title)
             logger.info(f"Book opened: {success}")
 
             if success:
-                progress = server.automator.reader_handler.get_reading_progress()
-                logger.info(f"Progress: {progress}")
-
-                # Save screenshot with unique ID
-                screenshot_id = f"page_{int(time.time())}"
-                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                time.sleep(0.5)
-                server.automator.driver.save_screenshot(screenshot_path)
-
-                response_data = {"success": True, "progress": progress}
-
-                # Process the screenshot (either base64 encode, add URL, or OCR)
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
-                response_data.update(screenshot_data)
-
-                return response_data, 200
+                # Set the current book in the server state
+                server.set_current_book(book_title)
+                return capture_book_state()
 
         return {"error": "Failed to open book"}, 500
 
@@ -700,17 +794,18 @@ class AuthResource(Resource):
         # Check for authentication errors
         error_message = None
         try:
-            # Check for error message box
-            error_box = server.automator.driver.find_element(
-                AppiumBy.XPATH, "//android.view.View[@resource-id='auth-error-message-box']"
-            )
+            # Check for error message box - use the strategy defined in ERROR_VIEW_IDENTIFIERS
+            from views.auth.view_strategies import ERROR_VIEW_IDENTIFIERS
+            error_strategy, error_locator = ERROR_VIEW_IDENTIFIERS[2]  # This is the auth-error-message-box strategy
+            error_box = server.automator.driver.find_element(error_strategy, error_locator)
+            
             if error_box:
                 # Try to find specific error messages
                 try:
-                    error_elements = server.automator.driver.find_elements(
-                        AppiumBy.XPATH,
-                        "//android.view.View[@resource-id='auth-error-message-box']//android.view.View",
-                    )
+                    # Use the strategy from AUTH_ERROR_STRATEGIES
+                    from views.auth.interaction_strategies import AUTH_ERROR_STRATEGIES
+                    error_strategy, error_locator = AUTH_ERROR_STRATEGIES[4]  # This is the generic error message view
+                    error_elements = server.automator.driver.find_elements(error_strategy, error_locator)
                     error_texts = []
                     for elem in error_elements:
                         if elem.text and elem.text.strip():

@@ -114,6 +114,11 @@ class AuthenticationHandler:
 
     def sign_in(self):
         try:
+            # Check if we have credentials
+            if not self.email or not self.password:
+                logger.error("No credentials provided for authentication")
+                return (LoginVerificationState.ERROR, "No credentials provided - set email and password before authenticating")
+                
             # Check if we're on the password screen
             if self._is_password_screen():
                 logger.info("Already on password screen, entering password...")
@@ -272,9 +277,11 @@ class AuthenticationHandler:
 
             # Look for sign in button
             logger.info("Looking for sign in button...")
-            logger.info("Trying to find sign in button with strategy: xpath")
+            # Use the strategy from PASSWORD_SIGN_IN_BUTTON_STRATEGIES
+            sign_in_strategy, sign_in_locator = PASSWORD_SIGN_IN_BUTTON_STRATEGIES[0]
+            logger.info(f"Trying to find sign in button with strategy: {sign_in_strategy}")
             sign_in_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((AppiumBy.XPATH, "//android.widget.Button[@text='Sign in']"))
+                EC.element_to_be_clickable((sign_in_strategy, sign_in_locator))
             )
 
             # Click sign in button

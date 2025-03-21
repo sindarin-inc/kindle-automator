@@ -6,6 +6,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
+from handlers.auth_handler import LoginVerificationState
 from views.auth.interaction_strategies import (
     CAPTCHA_CONTINUE_BUTTON,
     CAPTCHA_INPUT_FIELD,
@@ -75,7 +76,18 @@ class StateTransitions:
     def handle_sign_in(self):
         """Handle SIGN_IN state by attempting authentication."""
         logger.info("Handling SIGN_IN state - attempting authentication...")
-        return self.auth_handler.sign_in()
+        result = self.auth_handler.sign_in()
+        
+        # Check if result is a tuple with LoginVerificationState.ERROR and credentials missing error
+        if isinstance(result, tuple) and len(result) == 2:
+            state, message = result
+            if state == LoginVerificationState.ERROR and "No credentials provided" in message:
+                logger.warning("Authentication requires credentials that haven't been set")
+                # Return False to stop the state transition loop
+                # This prevents infinite retries when no credentials are available
+                return False
+        
+        return result
 
     def handle_sign_in_password(self):
         """Handle SIGN_IN_PASSWORD state by entering password."""
@@ -85,6 +97,7 @@ class StateTransitions:
     def handle_library_sign_in(self):
         """Handle the library sign in state by clicking the sign in button."""
         logger.info("Handling LIBRARY_SIGN_IN state...")
+        # Use the new method to handle sign-in
         return self.library_handler.handle_library_sign_in()
 
     def handle_library(self):
@@ -92,7 +105,7 @@ class StateTransitions:
         logger.info("Handling LIBRARY state - already at destination")
         return True
 
-    def handle_reading(self):
+    def handle_reading(self, server=None):
         """Handle READING state by navigating back to library."""
         logger.info("Handling READING state - navigating back to library...")
         
@@ -101,6 +114,11 @@ class StateTransitions:
         logger.info(f"Stored page source before navigating from reading state at: {filepath}")
         
         result = self.reader_handler.navigate_back_to_library()
+        
+        # If the navigation was successful and we have a server reference, clear the current book
+        if result and server:
+            server.clear_current_book()
+            logger.info("Cleared current book in server state after returning to library")
         
         # If the navigation failed, capture the state to help with debugging
         if not result:

@@ -32,6 +32,14 @@ EMPTY_LIBRARY_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='SIGN IN']"),
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Sign in to access your Kindle Library')]"),
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_empty_view']"),
+    (AppiumBy.ID, "com.amazon.kindle:id/empty_library_logged_out"),  # Container for empty library when logged out
+    (AppiumBy.ID, "com.amazon.kindle:id/empty_library_sign_in"),     # Sign-in button in empty library
+]
+
+# Text indicators for empty library requiring sign-in
+EMPTY_LIBRARY_TEXT_INDICATORS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'empty here')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Sign in to access your Kindle Library')]"),
 ]
 
 LIBRARY_TAB_IDENTIFIERS = [

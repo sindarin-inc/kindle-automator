@@ -79,8 +79,17 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                         "Authentication failed with incorrect password - won't retry and returning directly"
                     )
                     return format_response(result)
+                # Don't retry authentication required errors
+                elif status_code == 401 and isinstance(response, dict) and response.get("requires_auth") == True:
+                    logger.info("Authentication required - returning directly without retry")
+                    return format_response(result)
                 elif status_code >= 400:
-                    raise Exception(response)
+                    # For other errors, include status_code in the response to maintain it through retries
+                    response_with_code = response
+                    if isinstance(response, dict):
+                        response_with_code = response.copy()
+                        response_with_code["status_code"] = status_code
+                    raise Exception(response_with_code)
 
             # Success case - format and return the result
             return format_response(result)
@@ -119,6 +128,20 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
     # If we reach here, all retries failed
     time_taken = round(time.time() - start_time, 3)
     logger.error(f"All retry attempts failed. Last error: {last_error}")
+    
+    # Check if the error is a dictionary response (likely from our API)
+    if isinstance(last_error, Exception) and str(last_error).startswith('{') and str(last_error).endswith('}'):
+        try:
+            # Import json here to avoid circular imports
+            import json
+            error_dict = json.loads(str(last_error).replace("'", '"'))
+            # Merge error_dict with time_taken
+            error_dict["time_taken"] = time_taken
+            return error_dict, 500 if "status_code" not in error_dict else error_dict.pop("status_code")
+        except Exception as parse_error:
+            # If parsing fails, log and fall back to string representation
+            logger.error(f"Failed to parse error as JSON: {parse_error}")
+                
     return {"error": str(last_error), "time_taken": time_taken}, 500
 
 

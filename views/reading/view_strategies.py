@@ -143,3 +143,6 @@ GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS = [
     (AppiumBy.ID, "com.amazon.kindle:id/button_enable_autoshelving"),  # "OK" button
     (AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"),  # "NOT NOW" button
 ]
+
+# ID for "Not Now" button in Goodreads dialog
+GOODREADS_NOT_NOW_BUTTON = (AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving")

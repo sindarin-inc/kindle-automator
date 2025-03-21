@@ -46,7 +46,7 @@ class KindleStateMachine:
         logger.info(f"View {view} maps to state {AppState[view.name]}")
         return AppState[view.name]
 
-    def transition_to_library(self, max_transitions=5):
+    def transition_to_library(self, max_transitions=5, server=None):
         """Attempt to transition to the library state."""
         transitions = 0
         unknown_retries = 0
@@ -105,7 +105,11 @@ class KindleStateMachine:
                 return False
 
             # Handle current state
-            result = handler()
+            # For reading state, pass the server instance
+            if self.current_state == AppState.READING and server:
+                result = handler(server)
+            else:
+                result = handler()
 
             # Special handling for CAPTCHA state
             if self.current_state == AppState.CAPTCHA:
@@ -119,13 +123,17 @@ class KindleStateMachine:
                     return True
                 # If handler succeeds, continue with transitions
                 continue
-            # Check if sign-in resulted in CAPTCHA
+            # Check if sign-in resulted in CAPTCHA or is in sign-in state without credentials
             elif not result and self.current_state == AppState.SIGN_IN:
                 new_state = self._get_current_state()
                 if new_state == AppState.CAPTCHA:
                     logger.info("Sign-in resulted in CAPTCHA state - waiting for client interaction")
                     self.current_state = new_state
                     return True
+                elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
+                    logger.info("Sign-in view detected but no credentials provided")
+                    self.current_state = AppState.SIGN_IN
+                    return True  # Return true for special handling in BooksResource
 
             if not result:
                 logger.error(f"Handler failed for state {self.current_state}")

@@ -717,6 +717,93 @@ class LibraryHandler:
                 return None, None, None
             return []
 
+    def check_for_sign_in_button(self):
+        """Check if the sign-in button is present in the library view.
+        
+        Returns:
+            bool: True if sign-in button is present, False otherwise
+        """
+        from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+        
+        try:
+            for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
+                try:
+                    button = self.driver.find_element(strategy, locator)
+                    if button.is_displayed():
+                        logger.info(f"Found sign-in button in library view using {strategy}")
+                        return True
+                except NoSuchElementException:
+                    continue
+                    
+            # Also check by ID based on the XML
+            try:
+                button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/empty_library_sign_in")
+                if button.is_displayed():
+                    logger.info("Found sign-in button by ID")
+                    return True
+            except NoSuchElementException:
+                pass
+                
+            # Check for empty library logged out container
+            try:
+                container = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/empty_library_logged_out")
+                if container.is_displayed():
+                    logger.info("Found empty library logged out container")
+                    return True
+            except NoSuchElementException:
+                pass
+                
+            logger.info("No sign-in button detected in library view")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking for sign-in button: {e}")
+            return False
+            
+    def handle_library_sign_in(self):
+        """Handle sign-in when in library view with sign-in button.
+        
+        This method clicks the sign-in button when detected in the library view,
+        which should transition to the authentication flow.
+        
+        Returns:
+            bool: True if successfully clicked sign-in button, False otherwise
+        """
+        from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+        
+        try:
+            logger.info("Attempting to handle library sign-in...")
+            
+            # Check for and click sign-in button using strategies
+            for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
+                try:
+                    button = self.driver.find_element(strategy, locator)
+                    if button.is_displayed():
+                        logger.info(f"Found and clicking sign-in button using {strategy}")
+                        button.click()
+                        time.sleep(1)  # Wait for navigation
+                        return True
+                except NoSuchElementException:
+                    continue
+                    
+            # Try by ID based on XML
+            try:
+                button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/empty_library_sign_in")
+                if button.is_displayed():
+                    logger.info("Found and clicking sign-in button by ID")
+                    button.click()
+                    time.sleep(1)  # Wait for navigation
+                    return True
+            except NoSuchElementException:
+                pass
+                
+            logger.error("Could not find sign-in button to click")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error handling library sign-in: {e}")
+            return False
+    
     def get_book_titles(self):
         """Get a list of all books in the library with their metadata."""
         try:
@@ -724,7 +811,12 @@ class LibraryHandler:
             if not self.navigate_to_library():
                 logger.error("Failed to navigate to library")
                 return []
-
+                
+            # Check if we need to sign in
+            if self.check_for_sign_in_button():
+                logger.warning("Library view shows sign-in button - authentication required")
+                return None  # Return None to indicate authentication needed
+                
             # Check if we're in grid view and switch to list view if needed
             if self._is_grid_view():
                 logger.info("Detected grid view, switching to list view")

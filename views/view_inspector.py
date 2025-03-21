@@ -210,9 +210,10 @@ class ViewInspector:
 
             # Also check for Goodreads dialog buttons directly
             try:
-                not_now_button = self.driver.find_element(
-                    AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
-                )
+                # Use strategy from GOODREADS_NOT_NOW_BUTTON
+                from views.reading.view_strategies import GOODREADS_NOT_NOW_BUTTON
+                not_now_button = self.driver.find_element(*GOODREADS_NOT_NOW_BUTTON)
+                
                 if not_now_button.is_displayed():
                     logger.info(
                         "   Found 'NOT NOW' button for Goodreads dialog - this indicates reading view"
@@ -250,11 +251,47 @@ class ViewInspector:
 
             # Check for empty library with sign-in button first
             logger.info("   Checking for empty library with sign-in button...")
+            # First try the predefined identifiers
             if self._try_find_element(
                 EMPTY_LIBRARY_IDENTIFIERS, "   Found empty library with sign-in button"
             ):
                 logger.info("   Found empty library with sign-in button")
                 return AppView.LIBRARY_SIGN_IN
+                
+            # Also check for more specific identifiers from XML
+            try:
+                # Import strategies for empty library 
+                from views.library.view_strategies import EMPTY_LIBRARY_IDENTIFIERS
+                
+                # Check for empty library logged out container
+                container_strategy = EMPTY_LIBRARY_IDENTIFIERS[3]  # Using the empty_library_logged_out ID
+                container = self.driver.find_element(*container_strategy)
+                if container.is_displayed():
+                    logger.info("   Found empty library logged out container")
+                    # Try to find sign-in button within it
+                    try:
+                        button_strategy = EMPTY_LIBRARY_IDENTIFIERS[4]  # Using the empty_library_sign_in ID
+                        button = self.driver.find_element(*button_strategy)
+                        if button.is_displayed():
+                            logger.info("   Found sign-in button by ID")
+                            return AppView.LIBRARY_SIGN_IN
+                    except NoSuchElementException:
+                        # Just check for text "It's a little empty here…" which suggests need to sign in
+                        try:
+                            from views.library.view_strategies import EMPTY_LIBRARY_TEXT_INDICATORS
+                            for strategy, locator in EMPTY_LIBRARY_TEXT_INDICATORS:
+                                try:
+                                    text = self.driver.find_element(strategy, locator)
+                                    if text.is_displayed():
+                                        logger.info(f"   Found '{text.text}' text suggesting sign-in needed")
+                                        return AppView.LIBRARY_SIGN_IN
+                                except NoSuchElementException:
+                                    continue
+                        except Exception as e:
+                            logger.debug(f"Error checking for empty library text: {e}")
+                            pass
+            except NoSuchElementException:
+                pass
 
             # Check for library view indicators
             logger.info("   Checking for library view indicators...")
