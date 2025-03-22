@@ -132,7 +132,9 @@ class InitializeResource(Resource):
 
             return {
                 "status": "initialized",
-                "message": "Device initialized. Use /auth endpoint to authenticate with your Amazon credentials.",
+                "message": (
+                    "Device initialized. Use /auth endpoint to authenticate with your Amazon credentials."
+                ),
             }, 200
 
         except Exception as e:
@@ -585,12 +587,53 @@ class BookOpenResource(Resource):
 
             return response_data, 200
 
-        # Check if we're already in the reading state with the requested book
+        # Reload the current state to be sure
+        server.automator.state_machine.update_current_state()
         current_state = server.automator.state_machine.current_state
-        if current_state == AppState.READING and server.current_book == book_title:
-            logger.info(f"Already reading book: {book_title}, returning current state")
-            return capture_book_state(already_open=True)
+        # Check if we're already in the reading state with the requested book
+        if current_state != AppState.READING and server.current_book:
+            logger.info(
+                f"Not in reading state: {current_state}, but have book '{server.current_book}' tracked - clearing it"
+            )
+            server.clear_current_book()
 
+        logger.info(f"Reloaded current state: {current_state}")
+        if current_state == AppState.READING and server.current_book:
+            # Normalize titles for comparison by removing special characters
+            normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
+            normalized_current_title = "".join(
+                c for c in server.current_book if c.isalnum() or c.isspace()
+            ).lower()
+
+            logger.info(
+                f"Title comparison: requested='{normalized_request_title}', current='{normalized_current_title}'"
+            )
+
+            # Try exact match first
+            if normalized_request_title == normalized_current_title:
+                logger.info(f"Already reading book (exact match): {book_title}, returning current state")
+                return capture_book_state(already_open=True)
+
+            # For longer titles, try to match the first 30+ characters or check if one title contains the other
+            if (
+                len(normalized_request_title) > 30
+                and len(normalized_current_title) > 30
+                and (
+                    normalized_request_title[:30] == normalized_current_title[:30]
+                    or normalized_request_title in normalized_current_title
+                    or normalized_current_title in normalized_request_title
+                )
+            ):
+                logger.info(f"Already reading book (partial match): {book_title}, returning current state")
+                return capture_book_state(already_open=True)
+
+            logger.info(
+                f"No match found for book: {book_title} ({normalized_request_title}) != {server.current_book} ({normalized_current_title}), transitioning to library"
+            )
+        else:
+            logger.info(
+                f"Not already reading book: {book_title} != {server.current_book}, transitioning from {current_state} to library"
+            )
         # If we're not already reading the requested book, transition to library and open it
         if server.automator.state_machine.transition_to_library(server=server):
             success = server.automator.reader_handler.open_book(book_title)
