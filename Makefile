@@ -130,7 +130,7 @@ test-auth:
 	@echo "Testing authentication..."
 	@curl -X POST http://localhost:4098/auth \
 		-H "Content-Type: application/json" \
-		-d '{"email": "sam@solreader.com", "password": "Z4jZdEsJqEViVWDzDDJ*"}' \
+		-d '{"email": "sam@solreader.com", "password": "JFK0epr!nwb5kjg1ekz"}' \
 		-v
 
 # Test books endpoint

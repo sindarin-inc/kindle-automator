@@ -58,7 +58,17 @@ CLOSE_BOOK_STRATEGIES = [
 # Full screen dialog interaction
 FULL_SCREEN_DIALOG_GOT_IT = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
+    (AppiumBy.ID, "android:id/ok"),  # Specific ID for the Got it button
     (AppiumBy.ID, "android:id/button1"),  # Fallback using button ID
+]
+
+# Full screen dialog detection
+FULL_SCREEN_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.RelativeLayout[.//android.widget.TextView[@text='Viewing full screen']]",
+    ),
 ]
 
 # Add strategies for the "last read page" dialog buttons

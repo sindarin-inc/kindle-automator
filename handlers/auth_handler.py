@@ -117,8 +117,11 @@ class AuthenticationHandler:
             # Check if we have credentials
             if not self.email or not self.password:
                 logger.error("No credentials provided for authentication")
-                return (LoginVerificationState.ERROR, "No credentials provided - set email and password before authenticating")
-                
+                return (
+                    LoginVerificationState.ERROR,
+                    "No credentials provided - set email and password before authenticating",
+                )
+
             # Check if we're on the password screen
             if self._is_password_screen():
                 logger.info("Already on password screen, entering password...")

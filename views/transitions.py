@@ -5,8 +5,8 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from server.logging_config import store_page_source
 from handlers.auth_handler import LoginVerificationState
+from server.logging_config import store_page_source
 from views.auth.interaction_strategies import (
     CAPTCHA_CONTINUE_BUTTON,
     CAPTCHA_INPUT_FIELD,
@@ -77,7 +77,7 @@ class StateTransitions:
         """Handle SIGN_IN state by attempting authentication."""
         logger.info("Handling SIGN_IN state - attempting authentication...")
         result = self.auth_handler.sign_in()
-        
+
         # Check if result is a tuple with LoginVerificationState.ERROR and credentials missing error
         if isinstance(result, tuple) and len(result) == 2:
             state, message = result
@@ -86,7 +86,7 @@ class StateTransitions:
                 # Return False to stop the state transition loop
                 # This prevents infinite retries when no credentials are available
                 return False
-        
+
         return result
 
     def handle_sign_in_password(self):
@@ -108,23 +108,23 @@ class StateTransitions:
     def handle_reading(self, server=None):
         """Handle READING state by navigating back to library."""
         logger.info("Handling READING state - navigating back to library...")
-        
+
         # Add debug page source capture before transitioning
         filepath = store_page_source(self.driver.page_source, "reading_before_transition")
         logger.info(f"Stored page source before navigating from reading state at: {filepath}")
-        
+
         result = self.reader_handler.navigate_back_to_library()
-        
+
         # If the navigation was successful and we have a server reference, clear the current book
         if result and server:
             server.clear_current_book()
             logger.info("Cleared current book in server state after returning to library")
-        
+
         # If the navigation failed, capture the state to help with debugging
         if not result:
             filepath = store_page_source(self.driver.page_source, "reading_transition_failed")
             logger.info(f"Stored page source after failed navigation attempt at: {filepath}")
-            
+
         return result
 
     def handle_captcha(self):

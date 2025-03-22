@@ -80,7 +80,7 @@ class ViewInspector:
             # Save page source when checking for LIBRARY tab selection
             filepath = store_page_source(self.driver.page_source, "library_tab_check")
             logger.info(f"Stored page source during library tab check at: {filepath}")
-            
+
             # Directly check for library view identifiers to aid debugging
             for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
                 try:
@@ -155,10 +155,12 @@ class ViewInspector:
                         logger.info(f"   Found reading view element: {strategy}={locator}")
                 except NoSuchElementException:
                     continue
-            
+
             # If we found multiple reading view elements, we're definitely in reading view
             if reading_view_elements_found >= 2:
-                logger.info(f"   Found {reading_view_elements_found} reading view elements - confidently in reading view")
+                logger.info(
+                    f"   Found {reading_view_elements_found} reading view elements - confidently in reading view"
+                )
                 # Save page source for debugging
                 store_page_source(self.driver.page_source, "reading_view_detected")
                 return AppView.READING
@@ -212,8 +214,9 @@ class ViewInspector:
             try:
                 # Use strategy from GOODREADS_NOT_NOW_BUTTON
                 from views.reading.view_strategies import GOODREADS_NOT_NOW_BUTTON
+
                 not_now_button = self.driver.find_element(*GOODREADS_NOT_NOW_BUTTON)
-                
+
                 if not_now_button.is_displayed():
                     logger.info(
                         "   Found 'NOT NOW' button for Goodreads dialog - this indicates reading view"
@@ -251,18 +254,15 @@ class ViewInspector:
 
             # Check for empty library with sign-in button first
             logger.info("   Checking for empty library with sign-in button...")
-            # First try the predefined identifiers
+            # Try the predefined identifiers
             if self._try_find_element(
                 EMPTY_LIBRARY_IDENTIFIERS, "   Found empty library with sign-in button"
             ):
                 logger.info("   Found empty library with sign-in button")
                 return AppView.LIBRARY_SIGN_IN
-                
+
             # Also check for more specific identifiers from XML
             try:
-                # Import strategies for empty library 
-                from views.library.view_strategies import EMPTY_LIBRARY_IDENTIFIERS
-                
                 # Check for empty library logged out container
                 container_strategy = EMPTY_LIBRARY_IDENTIFIERS[3]  # Using the empty_library_logged_out ID
                 container = self.driver.find_element(*container_strategy)
@@ -278,7 +278,10 @@ class ViewInspector:
                     except NoSuchElementException:
                         # Just check for text "It's a little empty here…" which suggests need to sign in
                         try:
-                            from views.library.view_strategies import EMPTY_LIBRARY_TEXT_INDICATORS
+                            from views.library.view_strategies import (
+                                EMPTY_LIBRARY_TEXT_INDICATORS,
+                            )
+
                             for strategy, locator in EMPTY_LIBRARY_TEXT_INDICATORS:
                                 try:
                                     text = self.driver.find_element(strategy, locator)
@@ -297,7 +300,7 @@ class ViewInspector:
             logger.info("   Checking for library view indicators...")
             has_library_root = False
             has_library_tab = False
-            
+
             # Directly check for specific library elements
             logger.info("   Directly checking for library view elements...")
             for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
@@ -305,7 +308,9 @@ class ViewInspector:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
                         logger.info(f"   Found library view element: {strategy}={locator}")
-                        filepath = store_page_source(self.driver.page_source, "library_direct_element_detected")
+                        filepath = store_page_source(
+                            self.driver.page_source, "library_direct_element_detected"
+                        )
                         logger.info(f"Stored page source with library element detected at: {filepath}")
                         logger.info("Detected LIBRARY view based on direct element detection")
                         return AppView.LIBRARY

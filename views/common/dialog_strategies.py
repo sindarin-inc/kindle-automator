@@ -15,6 +15,7 @@ DIALOG_BUTTON_STRATEGIES = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='Cancel']"),
     (AppiumBy.XPATH, "//android.widget.Button[@text='Allow']"),
     (AppiumBy.XPATH, "//android.widget.Button[@text='Deny']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
 ]
 
 # Error dialog identifiers
@@ -22,4 +23,11 @@ ERROR_DIALOG_IDENTIFIERS = [
     (AppiumBy.ID, "android:id/alertTitle"),
     (AppiumBy.XPATH, "//*[contains(@text, 'Error')]"),
     (AppiumBy.XPATH, "//*[contains(@text, 'error')]"),
+]
+
+# Full screen dialog identifiers
+FULLSCREEN_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
+    (AppiumBy.ID, "android:id/ok"),
 ]

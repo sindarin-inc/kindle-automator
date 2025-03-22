@@ -80,7 +80,11 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     )
                     return format_response(result)
                 # Don't retry authentication required errors
-                elif status_code == 401 and isinstance(response, dict) and response.get("requires_auth") == True:
+                elif (
+                    status_code == 401
+                    and isinstance(response, dict)
+                    and response.get("requires_auth") == True
+                ):
                     logger.info("Authentication required - returning directly without retry")
                     return format_response(result)
                 elif status_code >= 400:
@@ -128,12 +132,17 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
     # If we reach here, all retries failed
     time_taken = round(time.time() - start_time, 3)
     logger.error(f"All retry attempts failed. Last error: {last_error}")
-    
+
     # Check if the error is a dictionary response (likely from our API)
-    if isinstance(last_error, Exception) and str(last_error).startswith('{') and str(last_error).endswith('}'):
+    if (
+        isinstance(last_error, Exception)
+        and str(last_error).startswith("{")
+        and str(last_error).endswith("}")
+    ):
         try:
             # Import json here to avoid circular imports
             import json
+
             error_dict = json.loads(str(last_error).replace("'", '"'))
             # Merge error_dict with time_taken
             error_dict["time_taken"] = time_taken
@@ -141,7 +150,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         except Exception as parse_error:
             # If parsing fails, log and fall back to string representation
             logger.error(f"Failed to parse error as JSON: {parse_error}")
-                
+
     return {"error": str(last_error), "time_taken": time_taken}, 500
 
 

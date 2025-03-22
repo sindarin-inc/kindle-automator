@@ -64,6 +64,25 @@ class ReaderHandler:
 
         logger.info(f"Successfully clicked book: {book_title}")
 
+        # Check for fullscreen dialog that appears after downloading and opening a book
+        try:
+            full_screen_dialog = WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located(
+                    (AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']")
+                )
+            )
+            logger.info("Detected full screen dialog")
+
+            # Click the "Got it" button
+            got_it_button = self.driver.find_element(AppiumBy.ID, "android:id/ok")
+            got_it_button.click()
+            logger.info("Clicked 'Got it' on full screen dialog")
+            time.sleep(1)  # Give time for the dialog to close
+        except TimeoutException:
+            logger.info("No full screen dialog detected, continuing...")
+        except NoSuchElementException:
+            logger.warning("Full screen dialog detected but couldn't find 'Got it' button")
+
         # Wait for reading view to load
         try:
             logger.info("Waiting for reading view to load...")
@@ -660,11 +679,11 @@ class ReaderHandler:
         if close_visible:
             close_button.click()
             logger.info("Clicked close book button")
-            
+
             # Add debug page source dump after clicking close button
             filepath = store_page_source(self.driver.page_source, "failed_transition")
             logger.info(f"Stored page source after closing book at: {filepath}")
-            
+
             return True
 
         logger.error("Could not find close book button")
