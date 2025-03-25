@@ -634,11 +634,13 @@ class LibraryHandler:
                                                 )
                                                 continue
 
-                                        # Return the found container, button, and book info
-                                        logger.info(
-                                            f"Found match for '{target_title}' -> '{book_info['title']}'"
-                                        )
-                                        return parent_container, button, book_info
+                                        # Only return a match if titles actually match
+                                        if self._title_match(book_info['title'], target_title):
+                                            logger.info(f"Found match for '{target_title}'")
+                                            return parent_container, button, book_info
+                                        else:
+                                            # Continue searching rather than returning a false match
+                                            continue
                                     except NoSuchElementException:
                                         logger.debug(f"Could not find button for {book_info['title']}")
                                         continue
@@ -859,30 +861,18 @@ class LibraryHandler:
 
     def _title_match(self, title1: str, title2: str) -> bool:
         """
-        Check if titles match by looking for substantial substring overlap.
-        This is more forgiving than exact matching after normalization.
+        Check if titles match exactly after normalization.
+        Since we're getting titles from the same source, we should require exact matches.
         """
         if not title1 or not title2:
             return False
-
+            
+        # For exact matching, normalize both titles and compare
         norm1 = self._normalize_title(title1)
         norm2 = self._normalize_title(title2)
-
-        # If exact match after normalization, return True
-        if norm1 == norm2:
-            return True
-
-        # Look for substantial substring overlap
-        # (title contains at least half of the words in the other title)
-        words1 = set(norm1.split())
-        words2 = set(norm2.split())
-
-        if len(words1) <= len(words2):
-            matches = sum(1 for w in words1 if w in norm2)
-            return matches >= max(3, len(words1) // 2)
-        else:
-            matches = sum(1 for w in words2 if w in norm1)
-            return matches >= max(3, len(words2) // 2)
+        
+        # Only return true for exact matches after normalization
+        return norm1 == norm2
 
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
@@ -919,10 +909,9 @@ class LibraryHandler:
                 for attempt in range(max_attempts):
                     try:
                         # Re-find the parent container since the page might have refreshed
-                        parent_container = self.driver.find_element(
-                            AppiumBy.XPATH,
-                            f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={self._xpath_literal(book_info['title'])}]]",
-                        )
+                        # Using @text attribute for exact matching
+                        xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{book_info['title']}' ]]"
+                        parent_container = self.driver.find_element(AppiumBy.XPATH, xpath)
                         content_desc = parent_container.get_attribute("content-desc")
                         logger.info(
                             f"Checking download status (attempt {attempt + 1}/{max_attempts}): {content_desc}"

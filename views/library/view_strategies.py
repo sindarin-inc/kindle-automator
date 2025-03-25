@@ -165,12 +165,12 @@ BOOK_CONTAINER_RELATIONSHIPS = {
     # Strategy to find parent RelativeLayout containing a specific title
     "parent_by_title": (
         AppiumBy.XPATH,
-        ".//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and {title}]]",
+        ".//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={title}]]",
     ),
     # Strategy to find any ancestor RelativeLayout containing a specific title
     "ancestor_by_title": (
         AppiumBy.XPATH,
-        "//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and {title}]]",
+        "//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text={title}]]",
     ),
 }
 
