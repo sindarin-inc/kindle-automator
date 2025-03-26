@@ -380,7 +380,22 @@ class ScreenshotResource(Resource):
 
         # Take the screenshot
         try:
-            server.automator.driver.save_screenshot(screenshot_path)
+            # Check if we're in an auth-related state where we need to use secure screenshot
+            current_state = server.automator.state_machine.current_state
+            auth_states = [AppState.SIGN_IN, AppState.CAPTCHA, AppState.LIBRARY_SIGN_IN]
+            
+            # Check if the use_scrcpy parameter is explicitly set
+            use_scrcpy = request.args.get("use_scrcpy", "0") in ("1", "true")
+            
+            if current_state in auth_states or use_scrcpy:
+                logger.info(f"Using secure screenshot method for auth state: {current_state} or explicit scrcpy request")
+                secure_path = server.automator.take_secure_screenshot(screenshot_path)
+                if not secure_path:
+                    logger.warning("Secure screenshot failed, falling back to standard method")
+                    server.automator.driver.save_screenshot(screenshot_path)
+            else:
+                # Use standard screenshot for non-auth screens
+                server.automator.driver.save_screenshot(screenshot_path)
         except Exception as e:
             logger.error(f"Error taking screenshot: {e}")
             failed = "Failed to take screenshot"
@@ -823,10 +838,22 @@ class AuthResource(Resource):
             screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
 
             try:
-                server.automator.driver.save_screenshot(screenshot_path)
-                # Process the screenshot (either base64 encode or add URL)
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                logger.info(f"Saved authentication screenshot to {screenshot_path}")
+                # Use secure screenshot for auth screens
+                secure_path = server.automator.take_secure_screenshot(screenshot_path)
+                if secure_path:
+                    # Process the screenshot (either base64 encode or add URL)
+                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                    logger.info(f"Saved secure authentication screenshot to {screenshot_path}")
+                else:
+                    # Try standard method as fallback
+                    logger.warning("Secure screenshot failed, trying standard method")
+                    try:
+                        server.automator.driver.save_screenshot(screenshot_path)
+                        # Process the screenshot (either base64 encode or add URL)
+                        screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                        logger.info(f"Saved authentication screenshot using standard method to {screenshot_path}")
+                    except Exception as inner_e:
+                        logger.warning(f"Standard screenshot also failed: {inner_e}")
             except Exception as e:
                 logger.warning(f"Failed to take authentication screenshot: {e}")
                 # This is expected on secure screens like password entry

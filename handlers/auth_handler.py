@@ -581,7 +581,7 @@ class AuthenticationHandler:
             return False
 
     def _handle_captcha(self):
-        """Handle captcha screen by saving the image and returning."""
+        """Handle captcha screen by saving the image using scrcpy and returning."""
         try:
             logger.info("Handling CAPTCHA state...")
 
@@ -593,13 +593,32 @@ class AuthenticationHandler:
                 logger.error("Could not find captcha image element")
                 return False
 
+            # Take full screenshot using scrcpy to bypass FLAG_SECURE
+            # Access the automator through the driver
+            driver_instance = getattr(self.driver, '_driver', None)
+            if driver_instance and hasattr(driver_instance, 'automator'):
+                automator = driver_instance.automator
+            else:
+                automator = None
+            if not automator:
+                logger.error("Could not access automator from driver session")
+                
+                # Fall back to regular screenshot method
+                screenshot_path = os.path.join("screenshots", "temp_full.png")
+                self.driver.save_screenshot(screenshot_path)
+            else:
+                # Use secure screenshot method
+                screenshot_path = os.path.join("screenshots", "temp_full.png")
+                secure_path = automator.take_secure_screenshot(screenshot_path)
+                if secure_path:
+                    logger.info(f"Used scrcpy for secure screenshot at {secure_path}")
+                else:
+                    logger.warning("Secure screenshot failed, falling back to standard method")
+                    self.driver.save_screenshot(screenshot_path)
+
             # Get the location and size of the captcha image
             location = captcha_image.location
             size = captcha_image.size
-
-            # Take full screenshot
-            screenshot_path = os.path.join("screenshots", "temp_full.png")
-            self.driver.save_screenshot(screenshot_path)
 
             # Open the screenshot and crop to captcha dimensions
             with Image.open(screenshot_path) as img:

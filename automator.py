@@ -1,6 +1,9 @@
 import argparse
 import logging
 import os
+import subprocess
+import tempfile
+import time
 import traceback
 
 from driver import Driver
@@ -36,6 +39,9 @@ class KindleAutomator:
         """Initialize the Appium driver and Kindle app."""
         # Create and initialize driver
         driver = Driver()
+        # Set the automator reference in the driver
+        driver.automator = self
+        
         if not driver.initialize():
             return False
 
@@ -127,3 +133,70 @@ class KindleAutomator:
         if self.state_machine and self.state_machine.auth_handler:
             self.state_machine.auth_handler.email = email
             self.state_machine.auth_handler.password = password
+            
+    def take_secure_screenshot(self, output_path=None):
+        """Take screenshot using scrcpy for screens with FLAG_SECURE.
+        
+        This is used for screens like authentication and CAPTCHA where
+        normal screenshot methods are blocked by Android security.
+        
+        Args:
+            output_path (str, optional): Path to save the screenshot. If None, 
+                                        a path in the screenshots directory is generated.
+        
+        Returns:
+            str: Path to the saved screenshot or None if screenshot failed
+        """
+        try:
+            if output_path is None:
+                # Generate a filename if none provided
+                filename = f"secure_screenshot_{int(time.time())}.png"
+                output_path = os.path.join(self.screenshots_dir, filename)
+                
+            logger.info(f"Taking secure screenshot using scrcpy, saving to {output_path}")
+            
+            # Create a temporary file for the screenshot
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+                temp_path = temp_file.name
+            
+            # Use scrcpy to capture a screenshot
+            # The -s parameter specifies the device ID
+            cmd = ["scrcpy", 
+                   "-s", self.device_id, 
+                   "--no-display", 
+                   "--record", temp_path, 
+                   "--record-format", "image",
+                   "--max-fps", "1",
+                   "--no-audio",
+                   "--max-size", "1280"]
+            
+            # Execute the command with a short timeout
+            process = subprocess.Popen(cmd, 
+                                    stdout=subprocess.PIPE, 
+                                    stderr=subprocess.PIPE)
+            
+            # Wait for a short time then terminate the process
+            # This is because scrcpy doesn't have a built-in "take one screenshot and exit" option
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                
+            # Copy the temp screenshot to the desired location
+            if os.path.exists(temp_path):
+                if os.path.getsize(temp_path) > 0:  # Ensure the file is not empty
+                    subprocess.run(["cp", temp_path, output_path])
+                    os.unlink(temp_path)  # Remove the temp file
+                    logger.info(f"Secure screenshot saved to {output_path}")
+                    return output_path
+                else:
+                    logger.error("Scrcpy created an empty screenshot file")
+                    os.unlink(temp_path)
+                    return None
+            else:
+                logger.error("Failed to create scrcpy screenshot")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error taking secure screenshot: {e}")
+            return None

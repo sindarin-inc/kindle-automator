@@ -26,6 +26,7 @@ class Driver:
             logger.info("Initializing Driver")
             self.driver = None
             self.device_id = None
+            self.automator = None  # Reference to the automator instance
             Driver._initialized = True
 
     def _get_emulator_device_id(self) -> Optional[str]:

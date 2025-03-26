@@ -147,3 +147,10 @@ test-fixtures:
 	@curl -X POST http://localhost:4098/fixtures \
 		-H "Content-Type: application/json" \
 		-v
+
+# Test secure screenshot (auth screen)
+test-secure-screenshot:
+	@echo "Testing secure screenshot on auth screen..."
+	@curl http://localhost:4098/screenshot \
+		-H "Accept: application/json" \
+		-v
