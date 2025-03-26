@@ -10,6 +10,7 @@
       - bridge-utils
       - libglu1-mesa-dev
       - openjdk-17-jdk
+      - scrcpy
     state: present
     update_cache: yes
   become: yes
@@ -80,7 +81,7 @@
 
 - name: Install required Android SDK components
   shell: |
-    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager "platform-tools" "emulator" "{{ sys_img }}"
+    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "emulator" "{{ sys_img }}" "extras;google;m2repository" "extras;android;m2repository"
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
@@ -101,6 +102,13 @@
   environment:
     ANDROID_SDK_ROOT: "{{ android_home }}"
     ANDROID_AVD_HOME: "{{ android_home }}/avd"
+    
+- name: Ensure AVD config directory exists
+  file:
+    path: "{{ android_home }}/avd/{{ avd_name }}.avd"
+    state: directory
+    mode: "0755"
+  become: yes
 
 - name: Configure AVD settings for better performance
   lineinfile:
@@ -126,10 +134,26 @@
     - { regex: "^showWindow=.*", line: "showWindow=no" }
     - { regex: "^hw.arc.autologin=.*", line: "hw.arc.autologin=no" }
     - { regex: "^snapshot.present=.*", line: "snapshot.present=no" }
-    - {
-        regex: "^disk.dataPartition.size=.*",
-        line: "disk.dataPartition.size=6G",
-      }
+    - { regex: "^disk.dataPartition.size=.*", line: "disk.dataPartition.size=6G" }
+    # Add ARM translation support
+    - { regex: "^PlayStore.enabled=.*", line: "PlayStore.enabled=true" }
+    - { regex: "^image.sysdir.1=.*", line: "image.sysdir.1=system-images/android-33/google_apis_playstore/x86_64/" }
+    - { regex: "^tag.id=.*", line: "tag.id=google_apis_playstore" }
+    - { regex: "^tag.display=.*", line: "tag.display=Google Play" }
+  become: yes
+  
+- name: Add ARM translation support to AVD config
+  lineinfile:
+    path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
+    line: "{{ item }}"
+    state: present
+  with_items:
+    - "hw.cpu.arch=x86_64"
+    - "ro.kernel.qemu.gles=1"
+    - "skin.dynamic=yes"
+    - "skin.name=1080x1920"
+    - "skin.path=_no_skin"
+    - "skin.path.backup=_no_skin"
   become: yes
 
 - name: Restart ADB Server
@@ -147,6 +171,9 @@
       [Service]
       User={{ ansible_user }}
       WorkingDirectory={{ android_home }}
+      Environment="ANDROID_SDK_ROOT={{ android_home }}"
+      Environment="ANDROID_AVD_HOME={{ android_home }}/avd"
+      Environment="ANDROID_HOME={{ android_home }}"
       ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -accel off -no-snapshot -no-snapshot-load -no-snapshot-save -writable-system -selinux disabled -qemu -enable-kvm
       Restart=always
       StandardOutput=journal
@@ -193,9 +220,25 @@
 - name: Download and install libhoudini for ARM translation
   shell: |
     wget -O {{ android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
+    
+    # Remount system as read-write
+    {{ android_home }}/platform-tools/adb root
+    {{ android_home }}/platform-tools/adb remount
+    
+    # Enable ARM translation
+    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
+    
+    # Push libhoudini and set permissions
     {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib/
     {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib64/
+    {{ android_home }}/platform-tools/adb shell chmod 644 /system/lib/libhoudini.so
+    {{ android_home }}/platform-tools/adb shell chmod 644 /system/lib64/libhoudini.so
+    
+    # Reboot to apply changes
     {{ android_home }}/platform-tools/adb reboot
+    
+    # Wait for reboot to complete
+    sleep 30
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
@@ -226,10 +269,35 @@
 
 - name: Install Kindle APK
   shell: |
-    {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk
+    # Ensure Android is fully booted
+    timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+      echo "Waiting for emulator to fully boot..."
+      sleep 5
+    done'
+    
+    # Enable ARM translation
+    {{ android_home }}/platform-tools/adb root
+    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
+    {{ android_home }}/platform-tools/adb shell settings put global package_verifier_enable 0
+    
+    # Try to install ARM apk (try multiple approaches)
+    echo "Installing via normal method..."
+    {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk || true
+    
+    echo "Checking if app was installed..."
+    {{ android_home }}/platform-tools/adb shell pm list packages | grep kindle
+    
+    if [ $? -ne 0 ]; then
+      echo "First attempt failed, trying with armeabi-v7a..."
+      {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk || true
+    fi
+    
+    echo "Final package check..."
+    {{ android_home }}/platform-tools/adb shell pm list packages | grep kindle
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
 
 - name: Launch Kindle app
   shell: |
