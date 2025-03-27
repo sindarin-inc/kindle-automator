@@ -322,15 +322,47 @@ class Driver:
                     options.allow_invisible_elements = True
                     options.enable_multi_windows = True
                     options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
+                    # Set connection timeout - 5 seconds should be enough but not too long
+                    options.set_capability("uiautomator2ServerLaunchTimeout", 5000)  # 5 seconds timeout for UiAutomator2 server launch
+                    # Leave this higher since we need time for ADB commands during actual operations
                     options.set_capability("adbExecTimeout", 120000)  # 120 seconds timeout for ADB commands
+                    options.set_capability("connectionTimeout", 5000)  # 5 seconds for connection timeout
 
-                    self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
-                    logger.info("Driver initialized successfully")
+                    # Use shorter timeout on webdriver initialization
+                    import socket
+                    original_timeout = socket.getdefaulttimeout()
+                    socket.setdefaulttimeout(5)  # 5 second timeout
+                    try:
+                        self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
+                        logger.info("Driver initialized successfully")
+                    finally:
+                        socket.setdefaulttimeout(original_timeout)  # Restore original timeout
 
-                    # Force a state check after driver initialization
-                    self.driver.current_activity  # This will force Appium to check connection
-
-                    return True
+                    # Force a state check after driver initialization with a timeout
+                    import threading
+                    import concurrent.futures
+                    
+                    def check_connection():
+                        self.driver.current_activity  # This will force Appium to check connection
+                        return True
+                    
+                    # Run the check with a timeout
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(check_connection)
+                        try:
+                            result = future.result(timeout=5)  # 5 second timeout
+                            logger.info("Connection check successful")
+                            return True
+                        except concurrent.futures.TimeoutError:
+                            logger.error("Connection check timed out after 5 seconds")
+                            try:
+                                # Try to quit the driver that may be in a bad state
+                                if self.driver:
+                                    self.driver.quit()
+                            except:
+                                pass
+                            self.driver = None
+                            raise TimeoutError("Connection check timed out")
 
                 except Exception as e:
                     logger.info(f"Failed to initialize driver (attempt {attempt}/3): {e}")

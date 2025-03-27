@@ -81,6 +81,22 @@ lint:
 	black --line-length 110 .
 	flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
 	
+# User account switching
+
+load-user1:
+	@echo "Loading user1 account..."
+	@curl -X POST http://localhost:4098/switch-user \
+		-H "Content-Type: application/json" \
+		-d '{"email": "sam@solreader.com"}' \
+		-v
+
+load-user2:
+	@echo "Loading user2 account..."
+	@curl -X POST http://localhost:4098/switch-user \
+		-H "Content-Type: application/json" \
+		-d '{"email": "samuel@ofbrooklyn.com"}' \
+		-v
+	
 # Ansible
 
 provision:

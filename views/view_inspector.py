@@ -307,14 +307,57 @@ class ViewInspector:
 
             # Directly check for specific library elements
             logger.info("   Directly checking for library view elements...")
+            found_library_element = False
+            
+            # First check the more accurate tab selection because library_root_view exists for both tabs
+            if self._is_tab_selected("LIBRARY"):
+                logger.info("   LIBRARY tab is selected, confirming we are in library view")
+                filepath = store_page_source(self.driver.page_source, "library_tab_selected")
+                logger.info(f"Stored page source with library tab selected at: {filepath}")
+                return AppView.LIBRARY
+                
+            # If LIBRARY tab is not selected, check if HOME tab is selected
+            if self._is_tab_selected("HOME"):
+                logger.info("   HOME tab is selected, we are in home view not library view")
+                filepath = store_page_source(self.driver.page_source, "home_tab_selected")
+                logger.info(f"Stored page source with home tab selected at: {filepath}")
+                # We need to exclude library_root_view for home view since it's shared
+                for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
+                    # Skip the root view since it's the same for home and library
+                    if "library_root_view" in locator:
+                        continue
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        if element.is_displayed():
+                            logger.info(f"   Found library-specific element: {strategy}={locator}")
+                            found_library_element = True
+                    except NoSuchElementException:
+                        pass
+                
+                # Check if home-specific elements are present
+                try:
+                    home_element = self.driver.find_element(AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/home_screenlet_root']")
+                    if home_element.is_displayed():
+                        logger.info("   Found home-specific element: home_screenlet_root")
+                        filepath = store_page_source(self.driver.page_source, "home_view_detected")
+                        logger.info(f"Stored page source with home view detected at: {filepath}")
+                        return AppView.HOME
+                except NoSuchElementException:
+                    pass
+                
+            # Final fallback: check specific elements if tab detection wasn't conclusive
             for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
                 try:
                     element = self.driver.find_element(strategy, locator)
+                    # We need more checks for library_root_view since it's present in both home and library
+                    if "library_root_view" in locator:
+                        # Only accept if the LIBRARY tab is selected
+                        if not self._is_tab_selected("LIBRARY"):
+                            continue
+                    
                     if element.is_displayed():
                         logger.info(f"   Found library view element: {strategy}={locator}")
-                        filepath = store_page_source(
-                            self.driver.page_source, "library_direct_element_detected"
-                        )
+                        filepath = store_page_source(self.driver.page_source, "library_direct_element_detected")
                         logger.info(f"Stored page source with library element detected at: {filepath}")
                         logger.info("Detected LIBRARY view based on direct element detection")
                         return AppView.LIBRARY
