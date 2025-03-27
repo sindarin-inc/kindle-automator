@@ -1,6 +1,7 @@
 ---
 - name: Deploy Kindle Automator server
   hosts: all
+  become: yes
 
   roles:
     - { role: deploy, tags: web }

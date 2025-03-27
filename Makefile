@@ -25,13 +25,7 @@ deploy:
 
 # SSH
 
-ssh-x86:
-	ssh -i ansible/keys/kindle.key root@143.110.225.212
-ssh-x86-2:
-	ssh -i ansible/keys/kindle.key root@164.92.64.106
-ssh-x86-3:
-	ssh -i ansible/keys/kindle.key root@157.180.38.126
-ssh-x86-4:
+ssh:
 	ssh -i ansible/keys/kindle.key root@65.108.97.170
 	
 # Start the Flask server
