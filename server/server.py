@@ -523,9 +523,15 @@ class ScreenshotResource(Resource):
             # Prepare the response data
             response_data = {}
 
-            # Process the screenshot (either base64 encode, add URL, or perform OCR)
-            screenshot_data = process_screenshot_response(image_id, use_base64, perform_ocr)
-            response_data.update(screenshot_data)
+            # Skip screenshot in LIBRARY state unless explicitly requested with save=1
+            current_state = server.automator.state_machine.current_state
+            if current_state == AppState.LIBRARY and not save:
+                logger.info("Skipping screenshot in LIBRARY state since it's not needed")
+                response_data["message"] = "Screenshot skipped in LIBRARY state"
+            else:
+                # Process the screenshot (either base64 encode, add URL, or perform OCR)
+                screenshot_data = process_screenshot_response(image_id, use_base64, perform_ocr)
+                response_data.update(screenshot_data)
 
             # If xml=1, get and save the page source XML
             if include_xml:
@@ -995,10 +1001,15 @@ class AuthResource(Resource):
         server.automator.state_machine.update_current_state()
         current_state = server.automator.state_machine.current_state
 
-        # Take a screenshot for visual feedback (skip if we already know it's incorrect password)
+        # Take a screenshot only for auth-related states, skip for successful auth
         screenshot_data = {}
         screenshot_id = None
-        if not incorrect_password:
+
+        # If authentication was successful and we're in LIBRARY state, skip screenshot
+        if not incorrect_password and current_state == AppState.LIBRARY:
+            logger.info("Authentication successful - skipping screenshot since we're in LIBRARY state")
+        else:
+            # Only take screenshot for errors or non-LIBRARY states
             timestamp = int(time.time())
             screenshot_id = f"auth_screen_{timestamp}"
             screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")

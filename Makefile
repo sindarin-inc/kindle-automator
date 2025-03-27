@@ -96,6 +96,47 @@ load-user2:
 		-H "Content-Type: application/json" \
 		-d '{"email": "samuel@ofbrooklyn.com"}' \
 		-v
+		
+# Troubleshooting backup/restore
+check-backups:
+	@echo "Checking backup files..."
+	@echo "User 1:"
+	@ls -la user_data/sam@solreader.com/ || echo "User1 directory not found"
+	@echo "User 2:"
+	@ls -la user_data/samuel@ofbrooklyn.com/ || echo "User2 directory not found"
+	@echo "Current device:"
+	@adb devices
+	
+test-backup:
+	@echo "Testing direct backup of Kindle app data..."
+	@mkdir -p user_data/test-backup
+	@adb backup -f user_data/test-backup/kindle_test.ab -all -shared com.amazon.kindle
+	@echo "Backup complete. Check size:"
+	@ls -la user_data/test-backup/
+	
+test-backup-list:
+	@echo "Listing Kindle app packages on device..."
+	@adb shell pm list packages | grep -i kindle
+	
+test-app-data:
+	@echo "Checking Kindle app data on device..."
+	@echo "App data directories:"
+	@adb shell ls -la /data/data/com.amazon.kindle/ || echo "Cannot access app data (permissions)"
+	@echo "External storage:"
+	@adb shell ls -la /sdcard/Android/data/com.amazon.kindle/ || echo "No external storage data"
+	@echo "App storage space usage:"
+	@adb shell dumpsys package com.amazon.kindle | grep -A 5 "Package \\["
+	
+reset-user-data:
+	@echo "Resetting user data for testing..."
+	@adb root
+	@adb shell am force-stop com.amazon.kindle
+	@adb shell pm clear com.amazon.kindle
+	@rm -rf user_data/sam@solreader.com user_data/samuel@ofbrooklyn.com
+	@rm -f user_data/users_index.json
+	@mkdir -p user_data/sam@solreader.com/direct_backup user_data/samuel@ofbrooklyn.com/direct_backup
+	@echo "User data reset complete"
+	@echo "Now run 'make server' and login to create fresh account containers"
 	
 # Ansible
 

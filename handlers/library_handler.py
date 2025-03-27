@@ -275,6 +275,14 @@ class LibraryHandler:
             if self._is_list_view():
                 logger.info("Already in list view")
                 return True
+                
+            # Force update state machine to ensure we're recognized as being in LIBRARY state
+            # This is crucial to prevent auth_handler from trying to enter email after view changes
+            if hasattr(self.driver, "automator") and self.driver.automator:
+                automator = self.driver.automator
+                if hasattr(automator, "state_machine") and automator.state_machine:
+                    logger.info("Ensuring state machine recognizes LIBRARY state before view change")
+                    automator.state_machine.update_current_state()
 
             # If we're in grid view, we need to open the view options menu
             if self._is_grid_view():
@@ -365,6 +373,17 @@ class LibraryHandler:
                         )
                     )
                     logger.info("Successfully switched to list view")
+                    
+                    # Force update the state machine to recognize we're still in LIBRARY state
+                    # This prevents auth_handler from trying to enter email
+                    if hasattr(self.driver, "automator") and self.driver.automator:
+                        automator = self.driver.automator
+                        if hasattr(automator, "state_machine") and automator.state_machine:
+                            logger.info("Forcing state update after view change to prevent auth confusion")
+                            automator.state_machine.update_current_state()
+                            
+                    # Add slight delay to ensure UI is settled
+                    time.sleep(1)
                     return True
                 except TimeoutException:
                     logger.error("Timed out waiting for list view")

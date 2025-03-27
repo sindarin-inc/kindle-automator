@@ -263,6 +263,7 @@ In production environments (Linux servers), the emulator starts automatically as
 ## Important files
 
 - `server/server.py`: Flask server on port 4098
+- `server/user_data_manager.py`: Manages user account switching and containerization
 - `views/state_machine.py`: Handles Kindle app states and transitions
 - `views/core/app_state.py`: Kindle views and app states
 - `views/core/avd_profile_manager.py`: Manages AVD profiles for different user accounts
@@ -271,3 +272,71 @@ In production environments (Linux servers), the emulator starts automatically as
 - `handlers/*_handler.py`: Various handlers for different app states
 - `automator.py`: Glue between the Kindle side and the server side, ensuring driver is running
 - `driver.py`: Handles Appium driver initialization and management
+
+## User Account Switching
+
+This feature allows switching between different Amazon accounts without going through the full login flow each time. It uses Android's backup/restore functionality to containerize app data for each user.
+
+### How it works
+
+1. When a user logs in, the system creates a backup of the Kindle app data
+2. When switching users, the current user's data is backed up, app data is cleared, and the new user's data is restored
+3. This preserves all user data including login state, cookies, and book download status
+
+### Usage
+
+```bash
+# Switch to user 1
+make load-user1
+
+# Switch to user 2
+make load-user2
+```
+
+### API Endpoint
+
+```
+POST /switch-user
+Content-Type: application/json
+{
+    "email": "user@example.com"
+}
+```
+
+### Troubleshooting
+
+If user switching isn't working properly, try these steps:
+
+1. Check backup files:
+   ```
+   make check-backups
+   ```
+   Backup files should be larger than 1KB to contain meaningful data.
+
+2. Test direct backup:
+   ```
+   make test-backup
+   ```
+   This creates a test backup to verify Android backup functionality.
+
+3. Check app data:
+   ```
+   make test-app-data
+   ```
+   This shows information about app data on the device.
+
+4. Check package information:
+   ```
+   make test-backup-list
+   ```
+   Lists all Kindle-related packages on the device.
+
+5. Common issues:
+   - Small backup files (47 bytes): This indicates the backup command is running but not actually backing up app data
+   - Permission issues: Make sure Android backup/restore is enabled in developer options
+   - Backup dialog not responding: Try clicking the BACK UP MY DATA button manually when prompted
+
+6. If you're seeing small backup files:
+   - Try running `adb backup -f test_backup.ab -all -shared com.amazon.kindle` manually and see if the dialog appears
+   - Check if your emulator/device has backup enabled in the developer options
+   - Some emulators may not support full backup/restore functionality

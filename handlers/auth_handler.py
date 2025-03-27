@@ -182,6 +182,22 @@ class AuthenticationHandler:
     def _enter_email(self, email: str) -> bool:
         """Enter email and click continue."""
         logger.info("Entering email...")
+        
+        # Double-check we're actually on a sign-in screen before proceeding
+        # This prevents trying to enter email on library/home screens
+        email_field_visible = False
+        for strategy, locator in EMAIL_FIELD_STRATEGIES:
+            try:
+                field = self.driver.find_element(strategy, locator)
+                if field.is_displayed():
+                    email_field_visible = True
+                    break
+            except:
+                continue
+                
+        if not email_field_visible:
+            logger.warning("Not on a sign-in screen - email field not found. Aborting email entry.")
+            return False
 
         try:
             # Wait for and find email field
