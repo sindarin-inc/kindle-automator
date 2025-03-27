@@ -595,14 +595,14 @@ class AuthenticationHandler:
 
             # Take full screenshot using scrcpy to bypass FLAG_SECURE
             # Access the automator through the driver
-            driver_instance = getattr(self.driver, '_driver', None)
-            if driver_instance and hasattr(driver_instance, 'automator'):
+            driver_instance = getattr(self.driver, "_driver", None)
+            if driver_instance and hasattr(driver_instance, "automator"):
                 automator = driver_instance.automator
             else:
                 automator = None
             if not automator:
                 logger.error("Could not access automator from driver session")
-                
+
                 # Fall back to regular screenshot method
                 screenshot_path = os.path.join("screenshots", "temp_full.png")
                 self.driver.save_screenshot(screenshot_path)

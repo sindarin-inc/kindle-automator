@@ -1,7 +1,9 @@
 import argparse
 import logging
 import os
+import re
 import subprocess
+import sys
 import tempfile
 import time
 import traceback
@@ -41,7 +43,7 @@ class KindleAutomator:
         driver = Driver()
         # Set the automator reference in the driver
         driver.automator = self
-        
+
         if not driver.initialize():
             return False
 
@@ -135,13 +137,14 @@ class KindleAutomator:
             self.state_machine.auth_handler.password = password
             
     def take_secure_screenshot(self, output_path=None):
-        """Take screenshot using scrcpy for screens with FLAG_SECURE.
+        """Take screenshot directly with multiple methods for FLAG_SECURE screens.
         
-        This is used for screens like authentication and CAPTCHA where
-        normal screenshot methods are blocked by Android security.
+        This method uses scrcpy 3.1 parameters to capture Android 11 FLAG_SECURE windows:
+        1. Video capture with ffmpeg extraction for FLAG_SECURE
+        2. ADB screencap fallbacks (which likely won't work for FLAG_SECURE)
         
         Args:
-            output_path (str, optional): Path to save the screenshot. If None, 
+            output_path (str, optional): Path to save the screenshot. If None,
                                         a path in the screenshots directory is generated.
         
         Returns:
@@ -153,49 +156,222 @@ class KindleAutomator:
                 filename = f"secure_screenshot_{int(time.time())}.png"
                 output_path = os.path.join(self.screenshots_dir, filename)
                 
-            logger.info(f"Taking secure screenshot using scrcpy, saving to {output_path}")
+            logger.info(f"Taking secure screenshot, saving to {output_path}")
             
-            # Create a temporary file for the screenshot
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-                temp_path = temp_file.name
-            
-            # Use scrcpy to capture a screenshot
-            # The -s parameter specifies the device ID
-            cmd = ["scrcpy", 
-                   "-s", self.device_id, 
-                   "--no-display", 
-                   "--record", temp_path, 
-                   "--record-format", "image",
-                   "--max-fps", "1",
-                   "--no-audio",
-                   "--max-size", "1280"]
-            
-            # Execute the command with a short timeout
-            process = subprocess.Popen(cmd, 
-                                    stdout=subprocess.PIPE, 
-                                    stderr=subprocess.PIPE)
-            
-            # Wait for a short time then terminate the process
-            # This is because scrcpy doesn't have a built-in "take one screenshot and exit" option
+            # Method 1: scrcpy 3.1 video capture with screen-off for FLAG_SECURE
             try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
+                logger.info("Trying scrcpy video capture for FLAG_SECURE...")
+                # First, set up a more compatible environment
+                subprocess.run(f"adb -s {self.device_id} shell settings put global window_animation_scale 0.0", 
+                              shell=True, check=False)
+                subprocess.run(f"adb -s {self.device_id} shell settings put global transition_animation_scale 0.0", 
+                              shell=True, check=False)
+                subprocess.run(f"adb -s {self.device_id} shell settings put global animator_duration_scale 0.0", 
+                              shell=True, check=False)
+                
+                # Use temp video file for scrcpy capture
+                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                    video_path = temp_file.name
+                
+                # Use simplified scrcpy 3.1 parameters for FLAG_SECURE
+                # Get absolute path to scrcpy
+                scrcpy_path = subprocess.check_output(["which", "scrcpy"], text=True).strip()
+                logger.info(f"Using scrcpy at: {scrcpy_path}")
+                
+                # Set up environment to ensure proper execution
+                env = os.environ.copy()
+                # Add Homebrew paths if they're not already in PATH
+                brew_path = "/opt/homebrew/bin"
+                if brew_path not in env.get("PATH", ""):
+                    env["PATH"] = f"{brew_path}:{env.get('PATH', '')}"
+                logger.info(f"Using PATH: {env['PATH']}")
+                
+                # Define scrcpy command with minimal parameters
+                scrcpy_cmd = [
+                    scrcpy_path,
+                    "-s", self.device_id,
+                    "--no-playback",          # For scrcpy 3.1
+                    "--record", video_path,   # Record as video
+                    "--no-audio",             # No audio needed
+                    "--turn-screen-off"       # Critical for FLAG_SECURE
+                ]
+                
+                logger.info(f"Running scrcpy command: {' '.join(scrcpy_cmd)}")
+                process = subprocess.Popen(scrcpy_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                
+                # Wait for scrcpy to capture the video
+                time.sleep(5)
                 process.terminate()
                 
-            # Copy the temp screenshot to the desired location
-            if os.path.exists(temp_path):
-                if os.path.getsize(temp_path) > 0:  # Ensure the file is not empty
-                    subprocess.run(["cp", temp_path, output_path])
-                    os.unlink(temp_path)  # Remove the temp file
-                    logger.info(f"Secure screenshot saved to {output_path}")
-                    return output_path
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+                
+                # Capture and log output
+                stdout, stderr = process.communicate()
+                if stdout:
+                    logger.info(f"scrcpy stdout: {stdout}")
+                if stderr:
+                    logger.info(f"scrcpy stderr: {stderr}")
+                
+                # Extract first frame from video if video was created
+                if os.path.exists(video_path):
+                    logger.info(f"Checking video file: {video_path}, size: {os.path.getsize(video_path)} bytes")
+                    
+                    if os.path.getsize(video_path) > 1000:
+                        logger.info("Video captured, extracting first frame with ffmpeg...")
+                        # Extract first frame as image using ffmpeg
+                        try:
+                            # Ensure we have enough time to read the video file
+                            time.sleep(0.5)
+                            
+                            # Get full paths to ensure correct execution
+                            ffmpeg_path = subprocess.check_output(["which", "ffmpeg"], 
+                                                                text=True).strip()
+                            logger.info(f"Using ffmpeg at: {ffmpeg_path}")
+                            
+                            # Extract the first frame
+                            ffmpeg_cmd = [
+                                ffmpeg_path, 
+                                "-i", video_path, 
+                                "-frames:v", "1", 
+                                "-y",  # Overwrite output file if it exists
+                                output_path
+                            ]
+                            
+                            # Run with more detailed output and the same environment
+                            result = subprocess.run(ffmpeg_cmd, check=False, 
+                                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                 text=True, env=env)
+                            
+                            logger.info(f"ffmpeg stdout: {result.stdout}")
+                            logger.info(f"ffmpeg stderr: {result.stderr}")
+                            
+                            # Check if image extraction succeeded
+                            if os.path.exists(output_path):
+                                logger.info(f"Output file created: {output_path}, size: {os.path.getsize(output_path)} bytes")
+                                if os.path.getsize(output_path) > 1000:
+                                    logger.info(f"Screenshot saved to {output_path} using scrcpy with ffmpeg extraction")
+                                    # Clean up temp file
+                                    os.unlink(video_path)
+                                    return output_path
+                                else:
+                                    logger.error(f"Output file too small: {os.path.getsize(output_path)} bytes")
+                            else:
+                                logger.error(f"Output file was not created: {output_path}")
+                        except Exception as e:
+                            logger.error(f"ffmpeg frame extraction failed: {e}")
+                    else:
+                        logger.error(f"Video file too small: {os.path.getsize(video_path)} bytes")
                 else:
-                    logger.error("Scrcpy created an empty screenshot file")
-                    os.unlink(temp_path)
-                    return None
-            else:
-                logger.error("Failed to create scrcpy screenshot")
-                return None
+                    logger.error(f"Video file not created: {video_path}")
+                
+                # Clean up temp file if it exists
+                if os.path.exists(video_path):
+                    os.unlink(video_path)
+            except Exception as e:
+                logger.error(f"scrcpy video method failed: {e}")
+            
+            # Method 2: Alternative scrcpy parameters
+            try:
+                logger.info("Trying alternative scrcpy method...")
+                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                    alt_video_path = temp_file.name
+                
+                # Alternative simplified scrcpy parameters
+                alt_cmd = [
+                    scrcpy_path,  # Use the path we already found
+                    "-s", self.device_id,
+                    "--no-playback",
+                    "--record", alt_video_path,
+                    "--legacy-paste"         # Alternative mode that might help
+                ]
+                
+                logger.info(f"Running alternative scrcpy command: {' '.join(alt_cmd)}")
+                alt_process = subprocess.Popen(alt_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                time.sleep(5)
+                alt_process.terminate()
+                
+                try:
+                    alt_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+                
+                # Capture and log output
+                alt_stdout, alt_stderr = alt_process.communicate()
+                if alt_stdout:
+                    logger.info(f"Alternative scrcpy stdout: {alt_stdout}")
+                if alt_stderr:
+                    logger.info(f"Alternative scrcpy stderr: {alt_stderr}")
+                
+                # Extract frame if video was captured
+                if os.path.exists(alt_video_path) and os.path.getsize(alt_video_path) > 1000:
+                    try:
+                        # Wait to ensure the file is accessible
+                        time.sleep(0.5)
+                        
+                        # Extract the first frame
+                        alt_ffmpeg_cmd = [
+                            "ffmpeg", 
+                            "-i", alt_video_path, 
+                            "-frames:v", "1", 
+                            "-y",
+                            output_path
+                        ]
+                        
+                        alt_ffmpeg_result = subprocess.run(alt_ffmpeg_cmd, check=False, 
+                                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                 text=True, env=env)
+                        
+                        # Log ffmpeg output
+                        if alt_ffmpeg_result.stdout:
+                            logger.info(f"Alternative ffmpeg stdout: {alt_ffmpeg_result.stdout}")
+                        if alt_ffmpeg_result.stderr:
+                            logger.info(f"Alternative ffmpeg stderr: {alt_ffmpeg_result.stderr}")
+                        
+                        if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                            logger.info(f"Screenshot saved to {output_path} using alternative scrcpy method")
+                            os.unlink(alt_video_path)
+                            return output_path
+                    except Exception as inner_e:
+                        logger.error(f"Alternative ffmpeg extraction failed: {inner_e}")
+                    
+                # Clean up temp file if it exists
+                if os.path.exists(alt_video_path):
+                    os.unlink(alt_video_path)
+            except Exception as e:
+                logger.error(f"Alternative scrcpy method failed: {e}")
+            
+            # Method 3: Direct ADB exec-out method (fallback, likely won't work with FLAG_SECURE)
+            try:
+                logger.info("Trying direct adb exec-out method...")
+                cmd = f"adb -s {self.device_id} exec-out screencap -p > {output_path}"
+                subprocess.run(cmd, shell=True, timeout=5, check=False)
+                
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                    logger.info(f"Screenshot saved to {output_path} using adb exec-out")
+                    return output_path
+            except Exception as e:
+                logger.error(f"Direct ADB method failed: {e}")
+            
+            # Method 4: ADB temp file method (fallback, likely won't work with FLAG_SECURE)
+            try:
+                logger.info("Trying adb temp file method...")
+                device_temp = "/data/local/tmp/screenshot.png"
+                subprocess.run(f"adb -s {self.device_id} shell screencap -p {device_temp}", 
+                             shell=True, check=False, timeout=5)
+                subprocess.run(f"adb -s {self.device_id} pull {device_temp} {output_path}", 
+                             shell=True, check=False, timeout=5)
+                
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                    logger.info(f"Screenshot saved to {output_path} using adb temp file")
+                    return output_path
+            except Exception as e:
+                logger.error(f"ADB temp file method failed: {e}")
+                
+            logger.error("All screenshot methods failed")
+            return None
                 
         except Exception as e:
             logger.error(f"Error taking secure screenshot: {e}")

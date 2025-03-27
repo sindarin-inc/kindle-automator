@@ -635,7 +635,7 @@ class LibraryHandler:
                                                 continue
 
                                         # Only return a match if titles actually match
-                                        if self._title_match(book_info['title'], target_title):
+                                        if self._title_match(book_info["title"], target_title):
                                             logger.info(f"Found match for '{target_title}'")
                                             return parent_container, button, book_info
                                         else:
@@ -866,11 +866,11 @@ class LibraryHandler:
         """
         if not title1 or not title2:
             return False
-            
+
         # For exact matching, normalize both titles and compare
         norm1 = self._normalize_title(title1)
         norm2 = self._normalize_title(title2)
-        
+
         # Only return true for exact matches after normalization
         return norm1 == norm2
 

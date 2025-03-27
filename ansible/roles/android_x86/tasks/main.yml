@@ -11,6 +11,7 @@
       - libglu1-mesa-dev
       - openjdk-17-jdk
       - scrcpy
+      - ffmpeg        # Required for extracting frames from scrcpy video captures
     state: present
     update_cache: yes
   become: yes
@@ -102,7 +103,7 @@
   environment:
     ANDROID_SDK_ROOT: "{{ android_home }}"
     ANDROID_AVD_HOME: "{{ android_home }}/avd"
-    
+
 - name: Ensure AVD config directory exists
   file:
     path: "{{ android_home }}/avd/{{ avd_name }}.avd"
@@ -134,14 +135,20 @@
     - { regex: "^showWindow=.*", line: "showWindow=no" }
     - { regex: "^hw.arc.autologin=.*", line: "hw.arc.autologin=no" }
     - { regex: "^snapshot.present=.*", line: "snapshot.present=no" }
-    - { regex: "^disk.dataPartition.size=.*", line: "disk.dataPartition.size=6G" }
+    - {
+        regex: "^disk.dataPartition.size=.*",
+        line: "disk.dataPartition.size=6G",
+      }
     # Add ARM translation support
     - { regex: "^PlayStore.enabled=.*", line: "PlayStore.enabled=true" }
-    - { regex: "^image.sysdir.1=.*", line: "image.sysdir.1=system-images/android-33/google_apis_playstore/x86_64/" }
+    - {
+        regex: "^image.sysdir.1=.*",
+        line: "image.sysdir.1=system-images/android-30/google_apis_playstore/x86_64/",
+      }
     - { regex: "^tag.id=.*", line: "tag.id=google_apis_playstore" }
     - { regex: "^tag.display=.*", line: "tag.display=Google Play" }
   become: yes
-  
+
 - name: Add ARM translation support to AVD config
   lineinfile:
     path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
@@ -220,23 +227,23 @@
 - name: Download and install libhoudini for ARM translation
   shell: |
     wget -O {{ android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
-    
+
     # Remount system as read-write
     {{ android_home }}/platform-tools/adb root
     {{ android_home }}/platform-tools/adb remount
-    
+
     # Enable ARM translation
     {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
-    
+
     # Push libhoudini and set permissions
     {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib/
     {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib64/
     {{ android_home }}/platform-tools/adb shell chmod 644 /system/lib/libhoudini.so
     {{ android_home }}/platform-tools/adb shell chmod 644 /system/lib64/libhoudini.so
-    
+
     # Reboot to apply changes
     {{ android_home }}/platform-tools/adb reboot
-    
+
     # Wait for reboot to complete
     sleep 30
   become: yes
@@ -267,41 +274,200 @@
   become: yes
   tags: apk
 
-- name: Install Kindle APK
+- name: Check emulator status and capabilities
   shell: |
-    # Ensure Android is fully booted
-    timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
-      echo "Waiting for emulator to fully boot..."
-      sleep 5
-    done'
-    
-    # Enable ARM translation
-    {{ android_home }}/platform-tools/adb root
-    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
-    {{ android_home }}/platform-tools/adb shell settings put global package_verifier_enable 0
-    
-    # Try to install ARM apk (try multiple approaches)
-    echo "Installing via normal method..."
-    {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk || true
-    
-    echo "Checking if app was installed..."
-    {{ android_home }}/platform-tools/adb shell pm list packages | grep kindle
-    
-    if [ $? -ne 0 ]; then
-      echo "First attempt failed, trying with armeabi-v7a..."
-      {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk || true
-    fi
-    
-    echo "Final package check..."
-    {{ android_home }}/platform-tools/adb shell pm list packages | grep kindle
+    # Display emulator version and capabilities
+    {{ android_home }}/emulator/emulator -version
+
+    # Check if the emulator supports ARM translation
+    {{ android_home }}/emulator/emulator -accel-check
+
+    # Display available ABIs
+    {{ android_home }}/platform-tools/adb shell getprop ro.product.cpu.abilist
+
+    # Check if libhoudini is installed
+    {{ android_home }}/platform-tools/adb shell ls -la /system/lib/libhoudini.so || echo "libhoudini.so not found"
+    {{ android_home }}/platform-tools/adb shell ls -la /system/lib64/libhoudini.so || echo "libhoudini.so not found in lib64"
+
+    # Check ARM translation status
+    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm
+    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm64
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
   ignore_errors: yes
+  tags: apk
 
-- name: Launch Kindle app
+- name: Ensure Android emulator is fully booted
   shell: |
-    {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle -c android.intent.category.LAUNCHER 1
+    timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+      echo "Waiting for emulator to fully boot..."
+      sleep 5
+    done'
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+  tags: apk
+
+- name: Check ARM translation status
+  shell: |
+    # Ensure emulator is running and accessible
+    {{ android_home }}/platform-tools/adb wait-for-device
+
+    # Enable ARM translation in system settings
+    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
+    {{ android_home }}/platform-tools/adb shell settings put global package_verifier_enable 0
+
+    # Display current ARM translation status for debugging
+    echo "=== ARM Translation Status ==="
+    echo "Available ABIs:"
+    {{ android_home }}/platform-tools/adb shell getprop ro.product.cpu.abilist
+
+    echo "Native Bridge:"
+    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.native.bridge || echo "Not set"
+
+    echo "ARM on x86 Translation:"
+    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm || echo "Not set"
+    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm64 || echo "Not set"
+
+    echo "Checking for libhoudini:"
+    {{ android_home }}/platform-tools/adb shell ls -l /system/lib/libhoudini* 2>/dev/null || echo "Not found"
+
+    # Ensure system image has appropriate Google APIs with ARM translation
+    echo "=== System Image Details ==="
+    {{ android_home }}/platform-tools/adb shell getprop | grep -E 'build|abi|sdk|arm|bridge'
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+  tags: apk
+
+- name: Prepare AVD for ARM compatibility
+  shell: |
+    # Only modify AVD config.ini, not the system partition
+    AVD_CONFIG="{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
+    CONFIG_CHANGES=0
+
+    # Check and set ARM translation settings
+    if ! grep -q "ro.dalvik.vm.isa.arm=x86" "$AVD_CONFIG"; then
+      echo "ro.dalvik.vm.isa.arm=x86" >> "$AVD_CONFIG"
+      echo "Added arm translation setting"
+      CONFIG_CHANGES=1
+    fi
+
+    if ! grep -q "ro.dalvik.vm.isa.arm64=x86_64" "$AVD_CONFIG"; then
+      echo "ro.dalvik.vm.isa.arm64=x86_64" >> "$AVD_CONFIG"
+      echo "Added arm64 translation setting"
+      CONFIG_CHANGES=1
+    fi
+
+    if ! grep -q "ro.enable.native.bridge.exec=1" "$AVD_CONFIG"; then
+      echo "ro.enable.native.bridge.exec=1" >> "$AVD_CONFIG"
+      echo "Added native bridge exec setting"
+      CONFIG_CHANGES=1
+    fi
+
+    # Ensure Play Store is enabled for ARM translation
+    if ! grep -q "PlayStore.enabled=true" "$AVD_CONFIG"; then
+      echo "PlayStore.enabled=true" >> "$AVD_CONFIG"
+      echo "Enabled Play Store for ARM translation"
+      CONFIG_CHANGES=1
+    fi
+
+    # Only restart if we made changes
+    if [ $CONFIG_CHANGES -eq 1 ]; then
+      echo "Restarting emulator with new settings..."
+      {{ android_home }}/platform-tools/adb emu kill
+      sleep 5
+      
+      # Restart emulator service
+      systemctl restart android-emulator
+      
+      # Wait for emulator to restart
+      echo "Waiting for emulator to restart..."
+      timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
+        sleep 2
+        echo -n "."
+      done'
+      echo " Complete!"
+    else
+      echo "No AVD configuration changes needed"
+    fi
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+  tags: apk
+
+- name: Install Kindle APK
+  shell: |
+    # Ensure device is available
+    {{ android_home }}/platform-tools/adb wait-for-device
+
+    # Set permissive settings
+    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
+    {{ android_home }}/platform-tools/adb shell settings put global package_verifier_enable 0
+
+    # Enable ARM binary translation without changing system partition
+    # This uses pre-installed native bridge libraries in the Google Play system image
+
+    # Print current settings for debugging
+    echo "Current device configuration:"
+    {{ android_home }}/platform-tools/adb devices -l
+    {{ android_home }}/platform-tools/adb shell getprop ro.product.cpu.abilist
+
+    # Check if Kindle is already installed
+    if {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
+      echo "Kindle app is already installed, skipping installation"
+    else
+      # Attempt to install Kindle APK
+      echo "Installing Kindle APK..."
+      
+      # Verify APK exists
+      if [ ! -f "{{ android_home }}/apk/kindle.apk" ]; then
+        echo "Kindle APK not found at {{ android_home }}/apk/kindle.apk"
+        exit 1
+      fi
+      
+      # Try simple install first
+      {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk
+      
+      # If that failed, try with ARM ABI explicitly
+      if ! {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
+        echo "Standard install failed, trying with ARM compatibility mode..."
+        {{ android_home }}/platform-tools/adb install -r -t {{ android_home }}/apk/kindle.apk
+      fi
+      
+      # Check if it succeeded
+      if {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
+        echo "Kindle app installed successfully"
+      else
+        echo "====== INSTALLATION FAILED ======"
+        echo "Unable to install Kindle APK. Printing debug info:"
+        {{ android_home }}/platform-tools/adb shell getprop | grep -E 'abi|bridge|cpu'
+        {{ android_home }}/platform-tools/adb shell pm list packages
+        echo "Reinstalling system image with proper ARM translation may be required."
+      fi
+    fi
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+  tags: apk
+
+- name: Launch Kindle app
+  shell: |
+    # Check if Kindle is installed
+    if {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
+      echo "Launching Kindle app"
+      {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle -c android.intent.category.LAUNCHER 1
+    else
+      echo "Kindle app not found on device"
+      exit 1
+    fi
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
+  ignore_errors: yes
+  tags: apk

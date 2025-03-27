@@ -49,6 +49,10 @@ class ViewInspector:
         os.makedirs(self.screenshots_dir, exist_ok=True)
         self.app_package = "com.amazon.kindle"
         self.app_activity = "com.amazon.kindle.UpgradePage"
+        # Get automator reference from driver if available
+        self.automator = getattr(driver, "_driver", None)
+        if self.automator:
+            self.automator = getattr(self.automator, "automator", None)
 
     def set_driver(self, driver):
         """Sets the Appium driver instance"""
@@ -369,8 +373,22 @@ class ViewInspector:
             # Also save a screenshot for visual debugging
             try:
                 screenshot_path = os.path.join(self.screenshots_dir, "unknown_view.png")
-                self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
+
+                # Try to use secure screenshot method if we have automator reference
+                success = False
+                if self.automator and hasattr(self.automator, "take_secure_screenshot"):
+                    logger.info("Attempting secure screenshot for unknown view...")
+                    secure_path = self.automator.take_secure_screenshot(screenshot_path)
+                    if secure_path:
+                        logger.info(f"Saved secure screenshot of unknown view to {secure_path}")
+                        success = True
+                    else:
+                        logger.warning("Secure screenshot failed, falling back to standard method")
+
+                # Fall back to standard method if secure screenshot failed or not available
+                if not success:
+                    self.driver.save_screenshot(screenshot_path)
+                    logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
             except Exception as e:
                 logger.error(f"Failed to save screenshot: {e}")
 
@@ -384,8 +402,22 @@ class ViewInspector:
             self._dump_page_source()
             try:
                 screenshot_path = os.path.join(self.screenshots_dir, "error_view.png")
-                self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Saved screenshot of error state to {screenshot_path}")
+
+                # Try to use secure screenshot method if we have automator reference
+                success = False
+                if self.automator and hasattr(self.automator, "take_secure_screenshot"):
+                    logger.info("Attempting secure screenshot for error view...")
+                    secure_path = self.automator.take_secure_screenshot(screenshot_path)
+                    if secure_path:
+                        logger.info(f"Saved secure screenshot of error view to {secure_path}")
+                        success = True
+                    else:
+                        logger.warning("Secure screenshot failed, falling back to standard method")
+
+                # Fall back to standard method if secure screenshot failed or not available
+                if not success:
+                    self.driver.save_screenshot(screenshot_path)
+                    logger.info(f"Saved screenshot of error state to {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to save error screenshot: {screenshot_error}")
             return AppView.UNKNOWN

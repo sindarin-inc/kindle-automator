@@ -59,7 +59,9 @@ class KindleStateMachine:
             # If we have a server reference and we're not in reading state but have a current book
             # Clear the current book to ensure state consistency
             if server and self.current_state != AppState.READING and server.current_book:
-                logger.info(f"Not in reading state ({self.current_state}) but have current book tracked - clearing it")
+                logger.info(
+                    f"Not in reading state ({self.current_state}) but have current book tracked - clearing it"
+                )
                 server.clear_current_book()
 
             if self.current_state == AppState.LIBRARY:
