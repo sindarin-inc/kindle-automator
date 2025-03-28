@@ -20,7 +20,6 @@ from handlers.test_fixtures_handler import TestFixturesHandler
 from server.logging_config import setup_logger
 from server.request_logger import setup_request_logger
 from server.response_handler import handle_automator_response
-from server.user_data_manager import UserDataManager
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -47,7 +46,6 @@ class AutomationServer:
         self.appium_process = None
         self.pid_dir = "logs"
         self.current_book = None  # Track the currently open book title
-        self.user_data_manager = None  # Will be initialized when we have a device ID
         os.makedirs(self.pid_dir, exist_ok=True)
 
         # Initialize the AVD profile manager
@@ -229,20 +227,9 @@ def ensure_automator_healthy(f):
                             "error": "Failed to initialize driver automatically. Call /initialize first."
                         }, 500
 
-                # Make sure user_data_manager is initialized
-                if not server.user_data_manager and server.automator.device_id:
-                    logger.info("Initializing user data manager")
-                    server.user_data_manager = UserDataManager(
-                        server.automator.device_id, server.automator.driver
-                    )
-
                 # Ensure driver is running
                 if not server.automator.ensure_driver_running():
                     return {"error": "Failed to ensure driver is running"}, 500
-
-                # Make sure user_data_manager has the current driver
-                if server.user_data_manager and server.automator.driver:
-                    server.user_data_manager.set_driver(server.automator.driver)
 
                 # Execute the function
                 return f(*args, **kwargs)

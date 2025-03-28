@@ -648,13 +648,13 @@ class AVDProfileManager:
                 stderr=subprocess.PIPE
             )
             
-            # Wait for emulator to boot with more frequent checks and shorter timeout
+            # Wait for emulator to boot with more frequent checks
             logger.info("Waiting for emulator to boot...")
-            deadline = time.time() + 60  # 60 seconds total timeout
+            deadline = time.time() + 120  # 120 seconds total timeout (increased from 60)
             last_progress_time = time.time()
             device_found = False
-            no_progress_timeout = 30  # 30 seconds with no progress triggers termination
-            check_interval = 2  # Check every 2 seconds
+            no_progress_timeout = 60  # 60 seconds with no progress triggers termination (increased from 30)
+            check_interval = 1  # Check every 1 second (more frequent checks)
             
             while time.time() < deadline:
                 try:
@@ -672,7 +672,8 @@ class AVDProfileManager:
                             device_found = True
                             last_progress_time = time.time()
                     
-                    # Check if boot is completed
+                    # Check several boot progress indicators to be more sensitive
+                    # First check boot_completed
                     boot_completed = subprocess.run(
                         [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
                         check=False,
@@ -683,10 +684,42 @@ class AVDProfileManager:
                     
                     # If we get any response, even if not "1", update progress time
                     if boot_completed.stdout:
-                        logger.debug(f"Boot progress: [{boot_completed.stdout.strip()}]")
+                        logger.debug(f"Boot progress (sys.boot_completed): [{boot_completed.stdout.strip()}]")
                         last_progress_time = time.time()
-                        
-                    # Only consider boot complete when we get "1"
+                    
+                    # Check init.svc.bootanim property which indicates boot animation status
+                    boot_anim = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "init.svc.bootanim"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    
+                    if boot_anim.stdout:
+                        logger.debug(f"Boot animation status: [{boot_anim.stdout.strip()}]")
+                        # 'stopped' means the boot animation has finished
+                        if boot_anim.stdout.strip() == "stopped":
+                            logger.info("Boot animation has stopped, emulator is likely almost ready")
+                            last_progress_time = time.time()
+                    
+                    # Check if launcher is ready - another indicator of boot progress
+                    try:
+                        launcher_check = subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "shell", "pidof", "com.android.launcher3"],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=2
+                        )
+                        if launcher_check.stdout.strip():
+                            logger.debug(f"Launcher is running: [{launcher_check.stdout.strip()}]")
+                            last_progress_time = time.time()
+                    except Exception as launcher_e:
+                        # Just continue if this check fails
+                        pass
+                                            
+                    # Only consider boot complete when we get "1" for sys.boot_completed
                     if boot_completed.stdout.strip() == "1":
                         logger.info("Emulator booted successfully")
                         
@@ -715,10 +748,37 @@ class AVDProfileManager:
                     # Log but continue polling
                     logger.debug(f"Exception during boot check: {e}")
                     
-                # Check for no progress with the shorter timeout
+                # Check for no progress with the timeout
                 elapsed_since_progress = time.time() - last_progress_time
                 if elapsed_since_progress > no_progress_timeout:
-                    logger.warning(f"No progress detected for {elapsed_since_progress:.1f} seconds, cleaning up emulator")
+                    logger.warning(f"No progress detected for {elapsed_since_progress:.1f} seconds, collecting debug info before cleanup")
+                    
+                    # Collect debug information before terminating
+                    try:
+                        # Check boot state again
+                        boot_state = subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
+                            check=False, capture_output=True, text=True, timeout=3
+                        )
+                        logger.warning(f"Final boot_completed state: [{boot_state.stdout.strip()}]")
+                        
+                        # Get list of running services
+                        services = subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "shell", "getprop | grep init.svc"],
+                            check=False, capture_output=True, text=True, timeout=3
+                        )
+                        logger.warning(f"Running services: {services.stdout.strip()}")
+                        
+                        # Check emulator process status
+                        if process.poll() is not None:
+                            logger.warning(f"Emulator process already terminated with return code: {process.returncode}")
+                            if process.stderr:
+                                stderr_output = process.stderr.read().decode('utf-8', errors='replace')
+                                logger.warning(f"Emulator stderr: {stderr_output}")
+                    except Exception as debug_e:
+                        logger.warning(f"Error collecting debug info: {debug_e}")
+                    
+                    logger.warning("Cleaning up emulator after no progress detected")
                     
                     # Terminate the emulator process
                     try:
