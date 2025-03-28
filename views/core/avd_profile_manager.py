@@ -387,280 +387,6 @@ class AVDProfileManager:
                     
         return self.current_profile
         
-    def create_new_avd(self, email: str) -> Tuple[bool, str]:
-        """
-        Create a new AVD for the given email.
-        
-        Returns:
-            Tuple[bool, str]: (success, avd_name)
-        """
-        # Generate a unique AVD name based on the email
-        email_prefix = email.split('@')[0].replace('.', '_')
-        avd_name = f"KindleAVD_{email_prefix}"
-        
-        # Check if an AVD with this name already exists
-        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-        if os.path.exists(avd_path):
-            logger.info(f"AVD {avd_name} already exists, reusing it")
-            return True, avd_name
-            
-        try:
-            # Get list of available system images
-            logger.info("Getting list of available system images")
-            try:
-                list_cmd = [
-                    f"{self.android_home}/cmdline-tools/latest/bin/sdkmanager",
-                    "--list"
-                ]
-                
-                env = os.environ.copy()
-                env["ANDROID_SDK_ROOT"] = self.android_home
-                
-                result = subprocess.run(
-                    list_cmd,
-                    env=env,
-                    check=False,
-                    text=True,
-                    capture_output=True,
-                    timeout=30
-                )
-                
-                # Parse available system images
-                available_images = []
-                output_lines = result.stdout.split("\n")
-                for line in output_lines:
-                    if "system-images;" in line:
-                        # Extract the system image path
-                        parts = line.strip().split("|")
-                        if len(parts) > 0:
-                            img_path = parts[0].strip()
-                            available_images.append(img_path)
-                
-                # Get a compatible system image based on host architecture
-                sys_img = self.get_compatible_system_image(available_images)
-                
-                if not sys_img:
-                    # Always use x86_64 images for all platforms
-                    sys_img = "system-images;android-30;google_apis_playstore;x86_64"
-                    logger.info(f"No compatible system image found, will install {sys_img} for all hosts")
-                
-                # Try to install the system image if we have one selected
-                if sys_img:
-                    # Try to install the system image
-                    logger.info(f"Installing system image: {sys_img}")
-                    install_cmd = [
-                        f"{self.android_home}/cmdline-tools/latest/bin/sdkmanager",
-                        "--install", sys_img
-                    ]
-                    
-                    install_result = subprocess.run(
-                        install_cmd,
-                        env=env,
-                        check=False,
-                        text=True,
-                        input="y\n",  # Auto-accept license
-                        capture_output=True,
-                        timeout=300  # 5 minutes timeout for installation
-                    )
-                    
-                    if install_result.returncode != 0:
-                        logger.error(f"Failed to install system image: {install_result.stderr}")
-                        return False, f"Failed to install system image: {install_result.stderr}"
-                else:
-                    logger.error("No compatible system image found and failed to select a fallback")
-                    return False, "No compatible system image found for your architecture"
-                        
-            except Exception as e:
-                logger.error(f"Error getting available system images: {e}")
-                # Fallback to x86_64 for all platforms
-                sys_img = "system-images;android-30;google_apis;x86_64"
-                logger.info("Using fallback x86_64 system image")
-            
-            logger.info(f"Using system image: {sys_img}")
-            
-            # Create new AVD
-            logger.info(f"Creating new AVD named {avd_name} for email {email}")
-            
-            # Set environment variables
-            env = os.environ.copy()
-            env["ANDROID_SDK_ROOT"] = self.android_home
-            env["ANDROID_AVD_HOME"] = self.avd_dir
-            
-            # Build AVD creation command
-            create_cmd = [
-                f"{self.android_home}/cmdline-tools/latest/bin/avdmanager",
-                "create", "avd",
-                "-n", avd_name,
-                "-k", sys_img,
-                "--device", "pixel_5",
-                "--force"
-            ]
-            
-            logger.info(f"Creating AVD with command: {' '.join(create_cmd)}")
-            
-            # Execute AVD creation command
-            process = subprocess.run(
-                create_cmd,
-                env=env,
-                check=False,
-                text=True,
-                capture_output=True
-            )
-            
-            if process.returncode != 0:
-                logger.error(f"Failed to create AVD: {process.stderr}")
-                return False, f"Failed to create AVD: {process.stderr}"
-            
-            # Configure AVD settings for better performance
-            self._configure_avd(avd_name)
-            
-            # Verify that the AVD is compatible with the host architecture
-            config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
-            try:
-                # Read the config file to double-check architecture settings
-                if os.path.exists(config_path):
-                    with open(config_path, 'r') as f:
-                        config_content = f.read()
-                        
-                    # Check for architecture mismatch
-                    if self.host_arch == 'arm64' and "x86" in config_content:
-                        logger.warning(f"AVD {avd_name} may have x86 settings on an arm64 host. Forcing arm64 config...")
-                        
-                        # Use a more direct approach to fix the config
-                        with open(config_path, 'w') as f:
-                            fixed_content = config_content.replace("x86_64", "arm64-v8a")
-                            fixed_content = fixed_content.replace("hw.cpu.arch=x86", "hw.cpu.arch=arm64-v8a")
-                            
-                            # Update system image path 
-                            lines = fixed_content.split("\n")
-                            updated_lines = []
-                            for line in lines:
-                                if line.startswith("image.sysdir.1=") and "x86" in line:
-                                    updated_lines.append("image.sysdir.1=system-images/android-30/google_apis/arm64-v8a/")
-                                else:
-                                    updated_lines.append(line)
-                                    
-                            f.write("\n".join(updated_lines))
-                        
-                        logger.info("Forced arm64 configuration for AVD")
-                else:
-                    logger.warning(f"AVD config file not found at {config_path}")
-            except Exception as e:
-                logger.error(f"Error verifying AVD architecture compatibility: {e}")
-            
-            return True, avd_name
-            
-        except Exception as e:
-            logger.error(f"Error creating new AVD: {e}")
-            return False, str(e)
-            
-    def _configure_avd(self, avd_name: str) -> None:
-        """Configure AVD settings for better performance."""
-        config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
-        if not os.path.exists(config_path):
-            logger.error(f"AVD config file not found at {config_path}")
-            return
-            
-        try:
-            # Read existing config
-            with open(config_path, 'r') as f:
-                config_lines = f.readlines()
-                
-            # Always use x86_64 for all host types
-            # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
-            # as the Android emulator doesn't properly support ARM64 emulation yet
-            cpu_arch = "x86_64"
-            sysdir = "system-images/android-30/google_apis_playstore/x86_64/"
-            
-            logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
-            
-            # Special handling for cloud linux servers
-            if self.host_arch == 'x86_64' and os.path.exists('/etc/os-release'):
-                # This is likely a Linux server
-                logger.info("Detected Linux x86_64 host - using standard x86_64 configuration")
-                
-            logger.info(f"Configuring AVD {avd_name} for {self.host_arch} host with {cpu_arch} CPU architecture")
-                
-            # Define settings to update
-            settings = {
-                "hw.ramSize": "4096",
-                "hw.cpu.ncore": "4",
-                "hw.gpu.enabled": "yes",
-                "hw.gpu.mode": "swiftshader",
-                "hw.audioInput": "no",
-                "hw.audioOutput": "no",
-                "hw.gps": "no",
-                "hw.camera.back": "none",
-                "hw.keyboard": "yes",
-                "hw.fastboot": "no",
-                "hw.arc": "false",
-                "hw.useext4": "yes",
-                "kvm.enabled": "no",
-                "showWindow": "no",
-                "hw.arc.autologin": "no",
-                "snapshot.present": "no",
-                "disk.dataPartition.size": "6G",
-                "PlayStore.enabled": "true",
-                "image.sysdir.1": sysdir,
-                "tag.id": "google_apis_playstore" if "playstore" in sysdir else "google_apis",
-                "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
-                "hw.cpu.arch": cpu_arch,
-                "ro.kernel.qemu.gles": "1",
-                "skin.dynamic": "yes",
-                "skin.name": "1080x1920",
-                "skin.path": "_no_skin",
-                "skin.path.backup": "_no_skin"
-            }
-            
-            # For arm64 hosts, make sure we're not trying to use x86_64
-            if self.host_arch == 'arm64':
-                # Remove any x86 settings
-                keys_to_remove = []
-                for line in config_lines:
-                    if "=" in line:
-                        key, value = line.split("=", 1)
-                        if "x86" in value and key not in keys_to_remove:
-                            keys_to_remove.append(key)
-                            
-                # Log what we're removing
-                if keys_to_remove:
-                    logger.info(f"Removing incompatible x86 settings: {', '.join(keys_to_remove)}")
-            
-            # Update config file
-            new_config_lines = []
-            for line in config_lines:
-                if "=" in line:
-                    key = line.split('=')[0]
-                    if key in settings:
-                        new_config_lines.append(f"{key}={settings[key]}\n")
-                        del settings[key]
-                    else:
-                        # Skip lines with x86 values on arm64 hosts
-                        if self.host_arch == 'arm64' and "x86" in line:
-                            continue
-                        new_config_lines.append(line)
-                else:
-                    new_config_lines.append(line)
-                    
-            # Add any remaining settings
-            for key, value in settings.items():
-                new_config_lines.append(f"{key}={value}\n")
-                
-            # Write back to file
-            with open(config_path, 'w') as f:
-                f.writelines(new_config_lines)
-                
-            logger.info(f"Updated AVD configuration for {avd_name}")
-            
-        except Exception as e:
-            logger.error(f"Error configuring AVD: {e}")
-            
-    def register_profile(self, email: str, avd_name: str) -> None:
-        """Register a profile by associating an email with an AVD name."""
-        self.profiles_index[email] = avd_name
-        self._save_profiles_index()
-        logger.info(f"Registered profile for {email} with AVD {avd_name}")
-        
     def is_emulator_running(self) -> bool:
         """Check if an emulator is currently running."""
         try:
@@ -722,6 +448,29 @@ class AVDProfileManager:
             return False 
         except Exception as e:
             logger.error(f"Error checking if emulator is ready: {e}")
+            return False
+    
+    def _force_cleanup_emulators(self):
+        """Force kill all emulator processes and reset adb."""
+        logger.warning("Force cleaning up any running emulators")
+        try:
+            # Kill all emulator processes forcefully
+            subprocess.run(["pkill", "-9", "-f", "emulator"], check=False, timeout=5)
+            
+            # Kill all qemu processes too
+            subprocess.run(["pkill", "-9", "-f", "qemu"], check=False, timeout=5)
+            
+            # Force reset adb server
+            subprocess.run([f"{self.android_home}/platform-tools/adb", "kill-server"], 
+                        check=False, timeout=5)
+            time.sleep(1)
+            subprocess.run([f"{self.android_home}/platform-tools/adb", "start-server"], 
+                        check=False, timeout=5)
+            
+            logger.info("Emulator cleanup completed")
+            return True
+        except Exception as e:
+            logger.error(f"Error during emulator cleanup: {e}")
             return False
             
     def stop_emulator(self) -> bool:
@@ -799,29 +548,6 @@ class AVDProfileManager:
             logger.error(f"Error stopping emulator: {e}")
             return False
             
-    def _force_cleanup_emulators(self):
-        """Force kill all emulator processes and reset adb."""
-        logger.warning("Force cleaning up any running emulators")
-        try:
-            # Kill all emulator processes forcefully
-            subprocess.run(["pkill", "-9", "-f", "emulator"], check=False, timeout=5)
-            
-            # Kill all qemu processes too
-            subprocess.run(["pkill", "-9", "-f", "qemu"], check=False, timeout=5)
-            
-            # Force reset adb server
-            subprocess.run([f"{self.android_home}/platform-tools/adb", "kill-server"], 
-                        check=False, timeout=5)
-            time.sleep(1)
-            subprocess.run([f"{self.android_home}/platform-tools/adb", "start-server"], 
-                        check=False, timeout=5)
-            
-            logger.info("Emulator cleanup completed")
-            return True
-        except Exception as e:
-            logger.error(f"Error during emulator cleanup: {e}")
-            return False
-    
     def start_emulator(self, avd_name: str) -> bool:
         """
         Start the specified AVD in headless mode.
@@ -1019,202 +745,251 @@ class AVDProfileManager:
             # Force cleanup all emulators
             self._force_cleanup_emulators()
             return False
-            
-            # Check if process exited with architecture error
-            if process.poll() is not None:
-                stdout, stderr = process.communicate()
-                error_msg = stderr.decode() if stderr else 'No error message'
-                logger.error(f"Emulator process exited prematurely: {error_msg}")
-                
-                # If there's an architecture mismatch error, try to fix it and restart
-                if "Avd's CPU Architecture" in error_msg and "not supported" in error_msg:
-                    logger.warning("Architecture mismatch detected. Attempting to fix AVD config...")
                     
-                    # On ARM Macs, we need a different approach
-                    if self.host_arch == 'arm64':
-                        logger.warning("On ARM Mac, trying a different approach...")
-                        try:
-                            # Delete the AVD completely and recreate it with ARM image
-                            logger.info(f"Deleting AVD {avd_name} to recreate with compatible settings")
-                            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-                            avd_ini = os.path.join(self.avd_dir, f"{avd_name}.ini")
-                                
-                                # Delete the AVD files if they exist
-                                if os.path.exists(avd_path):
-                                    shutil.rmtree(avd_path, ignore_errors=True)
-                                if os.path.exists(avd_ini):
-                                    os.remove(avd_ini)
-                                    
-                                # Try alternative approach - use arch x86_64 command
-                                logger.info("Attempting to use ARM system image...")
-                                
-                                # Try with ARM image
-                                env = os.environ.copy()
-                                env["ANDROID_SDK_ROOT"] = self.android_home
-                                env["ANDROID_AVD_HOME"] = self.avd_dir
-                                
-                                # Install ARM image if needed
-                                arm_img = "system-images;android-30;google_apis;arm64-v8a"
-                                logger.info(f"Installing {arm_img} for ARM-native emulation")
-                                subprocess.run(
-                                    [f"{self.android_home}/cmdline-tools/latest/bin/sdkmanager", 
-                                     "--install", arm_img],
-                                    env=env,
-                                    input="y\n".encode(),
-                                    check=False,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE
-                                )
-                                
-                                # Create AVD with ARM image
-                                create_cmd = [
-                                    f"{self.android_home}/cmdline-tools/latest/bin/avdmanager",
-                                    "create", "avd",
-                                    "-n", avd_name,
-                                    "-k", arm_img,
-                                    "--device", "pixel_5",
-                                    "--force"
-                                ]
-                                
-                                logger.info(f"Creating ARM-native AVD with: {' '.join(create_cmd)}")
-                                subprocess.run(
-                                    create_cmd,
-                                    env=env,
-                                    check=False,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE
-                                )
-                                
-                                # Configure AVD for ARM operation
-                                if os.path.exists(config_path):
-                                    with open(config_path, 'w') as f:
-                                        f.write("hw.cpu.arch=arm64-v8a\n")
-                                        f.write("image.sysdir.1=system-images/android-30/google_apis/arm64-v8a/\n")
-                                        f.write("PlayStore.enabled=true\n")
-                                        f.write("hw.ramSize=4096\n")
-                                        f.write("showWindow=no\n")
-                                        f.write("hw.keyboard=yes\n")
-                                
-                                # Try starting with ARM-native mode
-                                logger.info("Retrying with ARM-native emulation...")
-                                # Now try using qemu-system-aarch64 directly as a last resort
-                                qemu_cmd = [
-                                    f"{self.android_home}/emulator/qemu/darwin-aarch64/qemu-system-aarch64",
-                                    "-avd", avd_name,
-                                    "-no-window",
-                                    "-no-audio",
-                                    "-no-boot-anim"
-                                ]
-                                
-                                logger.info(f"Testing QEMU direct command: {' '.join(qemu_cmd)}")
-                                process = subprocess.Popen(
-                                    qemu_cmd,
-                                    env=env,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE
-                                )
-                                
-                                # Wait a bit to see if it starts
-                                time.sleep(10)
-                                
-                                # Check if process is still running
-                                if process.poll() is None:
-                                    logger.info("QEMU direct approach seems to be working...")
-                                    # Wait for emulator to boot
-                                    deadline = time.time() + 120
-                                    while time.time() < deadline:
-                                        try:
-                                            boot_completed = subprocess.run(
-                                                [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
-                                                check=False,
-                                                capture_output=True,
-                                                text=True
-                                            )
-                                            if boot_completed.stdout.strip() == "1":
-                                                logger.info("Emulator booted successfully using QEMU direct approach")
-                                                return True
-                                        except Exception:
-                                            # Ignore exceptions during boot polling
-                                            pass
-                                        time.sleep(5)
-                                else:
-                                    stdout, stderr = process.communicate()
-                                    logger.error(f"QEMU direct approach failed: {stderr.decode() if stderr else 'No error'}")
-                            except Exception as e:
-                                logger.error(f"Failed during ARM-native approach: {e}")
-                        
-                        # If we get here, try the standard x86_64 approach again
-                        try:
-                            # Create config.ini if it doesn't exist
-                            if not os.path.exists(config_path):
-                                # Create parent directory if needed
-                                os.makedirs(os.path.dirname(config_path), exist_ok=True)
-                                # Create basic config file with x86_64 architecture
-                                with open(config_path, 'w') as f:
-                                    f.write("hw.cpu.arch=x86_64\n")
-                                    f.write("image.sysdir.1=system-images/android-30/google_apis_playstore/x86_64/\n")
-                                    f.write("PlayStore.enabled=true\n")
-                                    f.write("hw.ramSize=4096\n")
-                                    f.write("showWindow=no\n")
-                            
-                            # Force x86_64 architecture for all hosts
-                            self._configure_avd(avd_name)
-                            
-                            # Use a simplified command line as a last resort
-                            if self.host_arch == 'arm64':
-                                logger.info("Trying simplified command line as last resort")
-                                alternate_cmd = ["arch", "-x86_64", "sh", "-c", 
-                                               f"cd {self.android_home}/emulator && ./emulator @{avd_name} -no-window -gpu swiftshader"]
-                                
-                                logger.info(f"Running simplified command: {' '.join(alternate_cmd)}")
-                                process = subprocess.Popen(
-                                    alternate_cmd,
-                                    env=env,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE
-                                )
-                                
-                                # Wait for emulator boot
-                                time.sleep(5)
-                                
-                                if process.poll() is None:
-                                    # Process is still running, might be working
-                                    logger.info("Simplified command approach seems to be working...")
-                                    deadline = time.time() + 120
-                                    while time.time() < deadline:
-                                        try:
-                                            boot_completed = subprocess.run(
-                                                [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
-                                                check=False,
-                                                capture_output=True,
-                                                text=True
-                                            )
-                                            if boot_completed.stdout.strip() == "1":
-                                                logger.info("Emulator booted successfully using simplified command")
-                                                return True
-                                        except Exception:
-                                            pass
-                                        time.sleep(5)
-                                else:
-                                    stdout, stderr = process.communicate()
-                                    logger.error(f"Simplified approach failed: {stderr.decode() if stderr else 'No error'}")
-                                    
-                            logger.info("Retrying emulator start with fixed x86_64 configuration...")
-                            return self.start_emulator(avd_name)  # Recursive call
-                        except Exception as e:
-                            logger.error(f"Failed to fix AVD config: {e}")
-                    
-                    return False
-                    
-                time.sleep(5)
-                
-            logger.error("Emulator boot timed out")
-            return False
-            
         except Exception as e:
             logger.error(f"Error starting emulator: {e}")
             return False
             
+    def create_new_avd(self, email: str) -> Tuple[bool, str]:
+        """
+        Create a new AVD for the given email.
+        
+        Returns:
+            Tuple[bool, str]: (success, avd_name)
+        """
+        # Generate a unique AVD name based on the email
+        email_prefix = email.split('@')[0].replace('.', '_')
+        avd_name = f"KindleAVD_{email_prefix}"
+        
+        # Check if an AVD with this name already exists
+        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+        if os.path.exists(avd_path):
+            logger.info(f"AVD {avd_name} already exists, reusing it")
+            return True, avd_name
+            
+        try:
+            # Get list of available system images
+            logger.info("Getting list of available system images")
+            try:
+                list_cmd = [
+                    f"{self.android_home}/cmdline-tools/latest/bin/sdkmanager",
+                    "--list"
+                ]
+                
+                env = os.environ.copy()
+                env["ANDROID_SDK_ROOT"] = self.android_home
+                
+                result = subprocess.run(
+                    list_cmd,
+                    env=env,
+                    check=False,
+                    text=True,
+                    capture_output=True,
+                    timeout=30
+                )
+                
+                # Parse available system images
+                available_images = []
+                output_lines = result.stdout.split("\n")
+                for line in output_lines:
+                    if "system-images;" in line:
+                        # Extract the system image path
+                        parts = line.strip().split("|")
+                        if len(parts) > 0:
+                            img_path = parts[0].strip()
+                            available_images.append(img_path)
+                
+                # Get a compatible system image based on host architecture
+                sys_img = self.get_compatible_system_image(available_images)
+                
+                if not sys_img:
+                    # Always use x86_64 images for all platforms
+                    sys_img = "system-images;android-30;google_apis_playstore;x86_64"
+                    logger.info(f"No compatible system image found, will install {sys_img} for all hosts")
+                
+                # Try to install the system image if we have one selected
+                if sys_img:
+                    # Try to install the system image
+                    logger.info(f"Installing system image: {sys_img}")
+                    install_cmd = [
+                        f"{self.android_home}/cmdline-tools/latest/bin/sdkmanager",
+                        "--install", sys_img
+                    ]
+                    
+                    install_result = subprocess.run(
+                        install_cmd,
+                        env=env,
+                        check=False,
+                        text=True,
+                        input="y\n",  # Auto-accept license
+                        capture_output=True,
+                        timeout=300  # 5 minutes timeout for installation
+                    )
+                    
+                    if install_result.returncode != 0:
+                        logger.error(f"Failed to install system image: {install_result.stderr}")
+                        return False, f"Failed to install system image: {install_result.stderr}"
+                else:
+                    logger.error("No compatible system image found and failed to select a fallback")
+                    return False, "No compatible system image found for your architecture"
+                        
+            except Exception as e:
+                logger.error(f"Error getting available system images: {e}")
+                # Fallback to x86_64 for all platforms
+                sys_img = "system-images;android-30;google_apis;x86_64"
+                logger.info("Using fallback x86_64 system image")
+            
+            logger.info(f"Using system image: {sys_img}")
+            
+            # Create new AVD
+            logger.info(f"Creating new AVD named {avd_name} for email {email}")
+            
+            # Set environment variables
+            env = os.environ.copy()
+            env["ANDROID_SDK_ROOT"] = self.android_home
+            env["ANDROID_AVD_HOME"] = self.avd_dir
+            
+            # Build AVD creation command
+            create_cmd = [
+                f"{self.android_home}/cmdline-tools/latest/bin/avdmanager",
+                "create", "avd",
+                "-n", avd_name,
+                "-k", sys_img,
+                "--device", "pixel_5",
+                "--force"
+            ]
+            
+            logger.info(f"Creating AVD with command: {' '.join(create_cmd)}")
+            
+            # Execute AVD creation command
+            process = subprocess.run(
+                create_cmd,
+                env=env,
+                check=False,
+                text=True,
+                capture_output=True
+            )
+            
+            if process.returncode != 0:
+                logger.error(f"Failed to create AVD: {process.stderr}")
+                return False, f"Failed to create AVD: {process.stderr}"
+            
+            # Configure AVD settings for better performance
+            self._configure_avd(avd_name)
+            
+            return True, avd_name
+            
+        except Exception as e:
+            logger.error(f"Error creating new AVD: {e}")
+            return False, str(e)
+            
+    def _configure_avd(self, avd_name: str) -> None:
+        """Configure AVD settings for better performance."""
+        config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
+        if not os.path.exists(config_path):
+            logger.error(f"AVD config file not found at {config_path}")
+            return
+            
+        try:
+            # Read existing config
+            with open(config_path, 'r') as f:
+                config_lines = f.readlines()
+                
+            # Always use x86_64 for all host types
+            # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
+            # as the Android emulator doesn't properly support ARM64 emulation yet
+            cpu_arch = "x86_64"
+            sysdir = "system-images/android-30/google_apis_playstore/x86_64/"
+            
+            logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
+            
+            # Special handling for cloud linux servers
+            if self.host_arch == 'x86_64' and os.path.exists('/etc/os-release'):
+                # This is likely a Linux server
+                logger.info("Detected Linux x86_64 host - using standard x86_64 configuration")
+                
+            logger.info(f"Configuring AVD {avd_name} for {self.host_arch} host with {cpu_arch} CPU architecture")
+                
+            # Define settings to update
+            settings = {
+                "hw.ramSize": "4096",
+                "hw.cpu.ncore": "4",
+                "hw.gpu.enabled": "yes",
+                "hw.gpu.mode": "swiftshader",
+                "hw.audioInput": "no",
+                "hw.audioOutput": "no",
+                "hw.gps": "no",
+                "hw.camera.back": "none",
+                "hw.keyboard": "yes",
+                "hw.fastboot": "no",
+                "hw.arc": "false",
+                "hw.useext4": "yes",
+                "kvm.enabled": "no",
+                "showWindow": "no",
+                "hw.arc.autologin": "no",
+                "snapshot.present": "no",
+                "disk.dataPartition.size": "6G",
+                "PlayStore.enabled": "true",
+                "image.sysdir.1": sysdir,
+                "tag.id": "google_apis_playstore" if "playstore" in sysdir else "google_apis",
+                "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
+                "hw.cpu.arch": cpu_arch,
+                "ro.kernel.qemu.gles": "1",
+                "skin.dynamic": "yes",
+                "skin.name": "1080x1920",
+                "skin.path": "_no_skin",
+                "skin.path.backup": "_no_skin"
+            }
+            
+            # For arm64 hosts, make sure we're not trying to use x86_64
+            if self.host_arch == 'arm64':
+                # Remove any x86 settings
+                keys_to_remove = []
+                for line in config_lines:
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        if "x86" in value and key not in keys_to_remove:
+                            keys_to_remove.append(key)
+                            
+                # Log what we're removing
+                if keys_to_remove:
+                    logger.info(f"Removing incompatible x86 settings: {', '.join(keys_to_remove)}")
+            
+            # Update config file
+            new_config_lines = []
+            for line in config_lines:
+                if "=" in line:
+                    key = line.split('=')[0]
+                    if key in settings:
+                        new_config_lines.append(f"{key}={settings[key]}\n")
+                        del settings[key]
+                    else:
+                        # Skip lines with x86 values on arm64 hosts
+                        if self.host_arch == 'arm64' and "x86" in line:
+                            continue
+                        new_config_lines.append(line)
+                else:
+                    new_config_lines.append(line)
+                    
+            # Add any remaining settings
+            for key, value in settings.items():
+                new_config_lines.append(f"{key}={value}\n")
+                
+            # Write back to file
+            with open(config_path, 'w') as f:
+                f.writelines(new_config_lines)
+                
+            logger.info(f"Updated AVD configuration for {avd_name}")
+            
+        except Exception as e:
+            logger.error(f"Error configuring AVD: {e}")
+            
+    def register_profile(self, email: str, avd_name: str) -> None:
+        """Register a profile by associating an email with an AVD name."""
+        self.profiles_index[email] = avd_name
+        self._save_profiles_index()
+        logger.info(f"Registered profile for {email} with AVD {avd_name}")
+
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """
         Switch to the profile for the given email.
@@ -1335,23 +1110,7 @@ class AVDProfileManager:
                     logger.warning("Forcibly terminating any running emulators")
                     
                     # Force kill all emulator processes
-                    try:
-                        # Kill all emulator processes forcefully
-                        subprocess.run(["pkill", "-9", "-f", "emulator"], check=False, timeout=5)
-                        
-                        # Kill all qemu processes too
-                        subprocess.run(["pkill", "-9", "-f", "qemu"], check=False, timeout=5)
-                        
-                        # Force reset adb server 
-                        subprocess.run([f"{self.android_home}/platform-tools/adb", "kill-server"], 
-                                    check=False, timeout=5)
-                        time.sleep(1)
-                        subprocess.run([f"{self.android_home}/platform-tools/adb", "start-server"], 
-                                    check=False, timeout=5)
-                        
-                        logger.warning("Forcibly terminated all emulator processes")
-                    except Exception as cleanup_e:
-                        logger.error(f"Error during emergency cleanup: {cleanup_e}")
+                    self._force_cleanup_emulators()
                     
                     # Cannot continue with force_new_emulator if we can't clean everything up
                     logger.warning(f"Emulator start failed, tracking profile {email} but fresh emulator required - manual intervention needed")
