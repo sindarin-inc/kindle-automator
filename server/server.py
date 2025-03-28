@@ -5,7 +5,7 @@ import signal
 import subprocess
 import time
 import traceback
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
@@ -47,6 +47,12 @@ class AutomationServer:
         self.pid_dir = "logs"
         self.current_book = None  # Track the currently open book title
         os.makedirs(self.pid_dir, exist_ok=True)
+        
+        # Initialize the AVD profile manager
+        self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
+        from views.core.avd_profile_manager import AVDProfileManager
+        self.profile_manager = AVDProfileManager(base_dir=self.android_home)
+        self.current_email = None
 
     def initialize_automator(self):
         """Initialize automator without credentials or captcha solution"""
@@ -54,6 +60,42 @@ class AutomationServer:
             # Initialize without credentials or captcha - they'll be set when needed
             self.automator = KindleAutomator()
         return self.automator
+    
+    def switch_profile(self, email: str) -> Tuple[bool, str]:
+        """Switch to a profile for the given email address.
+        
+        Args:
+            email: The email address to switch to
+            
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        logger.info(f"Switching to profile for email: {email}")
+        
+        if self.current_email == email:
+            logger.info(f"Already using profile for {email}")
+            return True, f"Already using profile for {email}"
+            
+        # First cleanup existing automator if there is one
+        if self.automator:
+            logger.info("Cleaning up existing automator")
+            self.automator.cleanup()
+            self.automator = None
+            
+        # Switch to the profile for this email
+        success, message = self.profile_manager.switch_profile(email)
+        if not success:
+            logger.error(f"Failed to switch profile: {message}")
+            return False, message
+            
+        # Update current email
+        self.current_email = email
+        
+        # Clear current book since we're switching profiles
+        self.clear_current_book()
+        
+        logger.info(f"Successfully switched to profile for {email}")
+        return True, message
 
     def save_pid(self, name: str, pid: int):
         """Save process ID to file"""
@@ -152,6 +194,17 @@ def ensure_automator_healthy(f):
             try:
                 # Initialize automator if needed
                 if not server.automator:
+                    # If we have a current profile, ensure we're using it
+                    current_profile = server.profile_manager.get_current_profile()
+                    if current_profile:
+                        # Use the existing profile
+                        email = current_profile.get("email")
+                        logger.info(f"Using existing profile for email: {email}")
+                        success, message = server.switch_profile(email)
+                        if not success:
+                            logger.error(f"Failed to switch to existing profile: {message}")
+                            return {"error": f"Failed to switch to existing profile: {message}"}, 500
+                    
                     logger.info("No automator found. Initializing automatically...")
                     server.initialize_automator()
                     if not server.automator.initialize_driver():
@@ -183,16 +236,27 @@ def ensure_automator_healthy(f):
                     # Force a complete driver restart
                     if server.automator:
                         server.automator.cleanup()
-                        server.initialize_automator()
-                        # Clear current book since we're restarting the driver
-                        server.clear_current_book()
-                        if server.automator.initialize_driver():
-                            logger.info(
-                                "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
-                            )
-                            continue  # Retry the operation with the next loop iteration
-                        else:
-                            logger.error("Failed to restart driver after UiAutomator2 crash")
+                        
+                    # If we have a current profile, try to switch to it
+                    current_profile = server.profile_manager.get_current_profile()
+                    if current_profile:
+                        email = current_profile.get("email")
+                        logger.info(f"Attempting to switch back to profile for email: {email}")
+                        success, message = server.switch_profile(email)
+                        if not success:
+                            logger.error(f"Failed to switch back to profile: {message}")
+                            return {"error": f"Failed to switch back to profile: {message}"}, 500
+                    
+                    server.initialize_automator()
+                    # Clear current book since we're restarting the driver
+                    server.clear_current_book()
+                    if server.automator.initialize_driver():
+                        logger.info(
+                            "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
+                        )
+                        continue  # Retry the operation with the next loop iteration
+                    else:
+                        logger.error("Failed to restart driver after UiAutomator2 crash")
 
                 # For non-UiAutomator2 crashes or if restart failed, log and return error
                 logger.error(f"Error in operation (attempt {attempt + 1}/{max_retries}): {e}")
@@ -763,7 +827,6 @@ class TwoFactorResource(Resource):
 
 
 class AuthResource(Resource):
-    @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
         """Authenticate with Amazon username and password"""
@@ -778,6 +841,21 @@ class AuthResource(Resource):
 
         if not email or not password:
             return {"error": "Email and password are required in the request"}, 400
+            
+        # Switch to the profile for this email or create a new one
+        success, message = server.switch_profile(email)
+        if not success:
+            logger.error(f"Failed to switch to profile for {email}: {message}")
+            return {"error": f"Failed to switch to profile: {message}"}, 500
+            
+        # For M1/M2/M4 Macs where the emulator might not start,
+        # we'll still continue with the profile tracking
+            
+        # Now that we've switched profiles, initialize the automator
+        if not server.automator:
+            server.initialize_automator()
+            if not server.automator.initialize_driver():
+                return {"error": "Failed to initialize driver"}, 500
 
         # Check if already authenticated by checking if we're in the library state
         server.automator.state_machine.update_current_state()
@@ -1233,6 +1311,41 @@ class ImageResource(Resource):
         return serve_image(image_id, delete_after=False)
 
 
+class ProfilesResource(Resource):
+    def get(self):
+        """List all available profiles"""
+        profiles = server.profile_manager.list_profiles()
+        current = server.profile_manager.get_current_profile()
+        
+        return {
+            "profiles": profiles,
+            "current": current
+        }, 200
+        
+    def post(self):
+        """Create or delete a profile"""
+        data = request.get_json()
+        action = data.get("action")
+        email = data.get("email")
+        
+        if not email:
+            return {"error": "Email is required"}, 400
+            
+        if action == "create":
+            success, message = server.profile_manager.create_profile(email)
+            return {"success": success, "message": message}, 200 if success else 500
+            
+        elif action == "delete":
+            success, message = server.profile_manager.delete_profile(email)
+            return {"success": success, "message": message}, 200 if success else 500
+            
+        elif action == "switch":
+            success, message = server.switch_profile(email)
+            return {"success": success, "message": message}, 200 if success else 500
+            
+        else:
+            return {"error": f"Invalid action: {action}"}, 400
+
 # Add resources to API
 api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
@@ -1260,6 +1373,7 @@ api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
+api.add_resource(ProfilesResource, "/profiles")
 
 
 def run_server():

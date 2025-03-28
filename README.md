@@ -139,11 +139,130 @@ Now you are ready to proceed with the automation setup and run the scripts.
 
     This will install the Kindle APK and start the Flask server so it's ready to automate the app.
 
+## User Profiles
+
+The system now includes AVD profile management that creates and manages separate Android Virtual Devices for each user account. This allows you to:
+
+- Maintain multiple authenticated Kindle accounts simultaneously
+- Switch between accounts without having to re-authenticate each time
+- Preserve the state of each account, including downloaded books and login credentials
+
+Each time a new email address is sent to the `/auth` endpoint, the system automatically:
+1. Checks if a profile already exists for this email
+2. If it exists, switches to that profile
+3. If not, creates a new AVD profile for the email
+4. Initializes the Kindle app in the selected profile
+
+### Profile Management API Endpoints
+
+- `GET /profiles` - List all available profiles and the current active profile
+- `POST /profiles` - Create, delete, or switch profiles with `action` parameter:
+  - `{"action": "create", "email": "user@example.com"}`
+  - `{"action": "delete", "email": "user@example.com"}`
+  - `{"action": "switch", "email": "user@example.com"}`
+
+### Using AVDs Created in Android Studio
+
+For M1/M2/M4 Mac users who need to create and manage AVDs directly in Android Studio, we've added a special workflow:
+
+1. Create your AVD in Android Studio with your preferred settings
+2. Register the AVD with Kindle Automator using one of the following:
+   ```bash
+   # Interactive registration
+   make register-avd
+   
+   # Complete workflow (recommended)
+   make android-studio-avd
+   ```
+3. Start the emulator manually from Android Studio
+4. Run the Kindle Automator server with:
+   ```bash
+   make server
+   ```
+
+This approach allows you to use manually created AVDs with the profile tracking system. The system will associate your Android Studio AVD with a specific email account and track which one is active, without trying to start the emulator itself.
+
+### Special Notes for M1/M2/M4 Mac Users
+
+Due to compatibility issues with Android emulation on ARM-based Macs, the profile system has been adapted to:
+
+1. Create and track profiles without attempting to start the emulator automatically  
+2. Provide several ways to manage the emulator:
+
+#### Development Workflow Commands
+
+- **Start both emulator and server together**:
+  ```bash
+  make dev
+  ```
+  This single command starts the emulator for the current profile and then launches the server.
+
+- **Start just the emulator for the current profile**:
+  ```bash
+  make run-emulator
+  ```
+  This automatically selects the AVD associated with the current profile (e.g., after using `make profile-switch`).
+
+- **Choose which AVD to start**:
+  ```bash
+  make run-emulator-choose
+  ```
+  This shows a list of all available AVDs and lets you select which one to run.
+
+- **Register an Android Studio AVD**:
+  ```bash
+  make register-avd
+  ```
+  This allows you to associate an Android Studio AVD with an email profile.
+
+#### Typical Development Workflow
+
+1. Create or switch to a profile:
+   ```bash
+   make profile-create EMAIL=user@example.com
+   ```
+   or
+   ```bash
+   make profile-switch EMAIL=user@example.com
+   ```
+
+2. Start everything with one command:
+   ```bash
+   make dev
+   ```
+
+3. Test the API endpoints:
+   ```bash
+   make test-auth EMAIL=user@example.com PASSWORD=yourpassword
+   ```
+
+The system will track which profile is "current" even if the emulator starts separately.
+
+#### Android Studio Workflow (for M4 Macs)
+
+1. Create AVDs directly in Android Studio
+2. Register them with Kindle Automator:
+   ```bash
+   make android-studio-avd
+   ```
+3. Start the emulator from Android Studio
+4. Start the server:
+   ```bash
+   make server
+   ```
+5. Test the API endpoints:
+   ```bash
+   make test-auth EMAIL=user@example.com PASSWORD=yourpassword
+   ```
+
+In production environments (Linux servers), the emulator starts automatically as part of the profile switching process without needing manual intervention.
+
 ## Important files
 
 - `server/server.py`: Flask server on port 4098
 - `views/state_machine.py`: Handles Kindle app states and transitions
 - `views/core/app_state.py`: Kindle views and app states
+- `views/core/avd_profile_manager.py`: Manages AVD profiles for different user accounts
 - `views/transition.py`: Controller between states and handlers
 - `views/view_inspector.py`: App view identifying, interacting with appium driver
 - `handlers/*_handler.py`: Various handlers for different app states
