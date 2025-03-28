@@ -1469,6 +1469,19 @@ def main():
     # Kill any existing processes
     server.kill_existing_process("flask")
     server.kill_existing_process("appium")
+    
+    # Force clean any running emulators
+    try:
+        logger.info("Forcibly cleaning up any existing emulators at startup")
+        subprocess.run(['pkill', '-9', '-f', 'emulator'], check=False, timeout=5)
+        subprocess.run(['pkill', '-9', '-f', 'qemu'], check=False, timeout=5)
+        # Reset adb server to ensure clean state
+        subprocess.run([f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5)
+        time.sleep(1)
+        subprocess.run([f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5)
+        logger.info("Emulator cleanup at startup completed")
+    except Exception as e:
+        logger.error(f"Error during startup emulator cleanup: {e}")
 
     # Start Appium server
     if not server.start_appium():

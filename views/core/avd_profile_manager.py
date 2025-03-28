@@ -30,9 +30,18 @@ class AVDProfileManager:
         self.emulator_map_file = os.path.join(self.profiles_dir, "emulator_device_map.json")
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
         
-        # Detect host architecture
+        # Detect host architecture and operating system
         self.host_arch = self._detect_host_architecture()
-        logger.info(f"Detected host architecture: {self.host_arch}")
+        self.is_macos = platform.system() == "Darwin"
+        self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
+        
+        # Detect if we should use simplified mode (Mac dev environment)
+        self.use_simplified_mode = self.is_macos and self.is_dev_mode
+        if self.use_simplified_mode:
+            logger.info("Mac development environment detected - using simplified emulator mode")
+            logger.info("Will use any available emulator instead of managing profiles")
+        else:
+            logger.info(f"Using full profile management mode for {platform.system()} {self.host_arch}")
         
         # Ensure directories exist
         os.makedirs(self.profiles_dir, exist_ok=True)
@@ -226,13 +235,37 @@ class AVDProfileManager:
         running_emulators = {}
         
         try:
-            # Get list of running emulators with timeout
+            # Try a faster check first
+            logger.debug("Checking for running emulators")
+            
+            # Clear any stale device listings first
+            try:
+                subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "kill-server"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                time.sleep(0.5)
+                subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "start-server"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                logger.debug("Reset adb server before checking devices")
+            except Exception as e:
+                logger.warning(f"Error resetting adb server: {e}")
+            
+            # Get list of running emulators with increased timeout
             result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "devices"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=10  # Increased from 5 to 10
             )
             
             if result.returncode != 0:
@@ -241,37 +274,64 @@ class AVDProfileManager:
                 
             # Parse output to get emulator IDs
             lines = result.stdout.strip().split('\n')
+            
+            logger.debug(f"Raw adb devices output: {result.stdout}")
+            
+            # Keep track of all emulators for better debugging
+            all_devices = []
+            emulator_count = 0
+            
             for line in lines[1:]:  # Skip the first line which is the header
                 if not line.strip():
                     continue
                     
                 parts = line.split('\t')
-                if len(parts) >= 2 and 'emulator' in parts[0]:
-                    emulator_id = parts[0].strip()
+                if len(parts) >= 2:
+                    device_id = parts[0].strip()
+                    device_state = parts[1].strip() if len(parts) > 1 else "unknown"
+                    all_devices.append((device_id, device_state))
                     
-                    # Get the port number from the emulator ID
-                    try:
-                        port = int(emulator_id.split('-')[1])
+                    if 'emulator' in device_id:
+                        emulator_count += 1
+                    
+                    if len(parts) >= 2 and 'emulator' in parts[0]:
+                        emulator_id = parts[0].strip()
+                        device_state = parts[1].strip()
                         
-                        # Query emulator for AVD name with timeout
-                        avd_name = self._get_avd_name_for_emulator(emulator_id)
-                        if avd_name:
-                            running_emulators[avd_name] = emulator_id
+                        logger.debug(f"Found emulator device {emulator_id} in state: {device_state}")
+                        
+                        # Only proceed if the emulator device is actually available (not 'offline')
+                        if device_state != 'offline':
+                            # Get the port number from the emulator ID
+                            try:
+                                port = int(emulator_id.split('-')[1])
+                                
+                                # Query emulator for AVD name with timeout
+                                avd_name = self._get_avd_name_for_emulator(emulator_id)
+                                if avd_name:
+                                    running_emulators[avd_name] = emulator_id
+                                else:
+                                    # If we couldn't get the AVD name but we know an emulator is running,
+                                    # check if it matches our current profile's emulator
+                                    if self.current_profile and self.current_profile.get("avd_name"):
+                                        current_avd = self.current_profile.get("avd_name")
+                                        current_emu_id = self.current_profile.get("emulator_id")
+                                        
+                                        # If we have a matching emulator ID, use that mapping
+                                        if current_emu_id == emulator_id:
+                                            logger.info(f"Using known mapping for current profile: {current_avd} -> {emulator_id}")
+                                            running_emulators[current_avd] = emulator_id
+                                    
+                            except Exception as e:
+                                logger.error(f"Error parsing emulator ID {emulator_id}: {e}")
                         else:
-                            # If we couldn't get the AVD name but we know an emulator is running,
-                            # check if it matches our current profile's emulator
-                            if self.current_profile and self.current_profile.get("avd_name"):
-                                current_avd = self.current_profile.get("avd_name")
-                                current_emu_id = self.current_profile.get("emulator_id")
-                                
-                                # If we have a matching emulator ID, use that mapping
-                                if current_emu_id == emulator_id:
-                                    logger.info(f"Using known mapping for current profile: {current_avd} -> {emulator_id}")
-                                    running_emulators[current_avd] = emulator_id
-                                
-                    except Exception as e:
-                        logger.error(f"Error parsing emulator ID {emulator_id}: {e}")
-                        
+                            logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
+            
+            # Enhanced debug info
+            if all_devices:
+                logger.debug(f"All detected devices: {all_devices}")
+                logger.debug(f"Total devices: {len(all_devices)}, Emulators: {emulator_count}")
+                
             # Log emulator mapping results for debugging
             if running_emulators:
                 logger.info(f"Found running emulators: {running_emulators}")
@@ -1160,6 +1220,75 @@ class AVDProfileManager:
         """
         logger.info(f"Switching to profile for email: {email} (force_new_emulator={force_new_emulator})")
         
+        # Special case: Simplified mode for Mac development environment
+        if self.use_simplified_mode:
+            logger.info("Using simplified mode for Mac development environment")
+            
+            # In simplified mode, we don't manage profiles on Mac dev machines
+            # Just use whatever emulator is running and associate it with this email
+            
+            # Check if any emulator is running
+            if self.is_emulator_running():
+                # If we have a running emulator, just use it
+                running_emulators = self.map_running_emulators()
+                
+                if running_emulators:
+                    # Use the first running emulator we find
+                    avd_name, emulator_id = next(iter(running_emulators.items()))
+                    logger.info(f"Using existing running emulator: {emulator_id} (AVD: {avd_name}) for {email}")
+                    
+                    # Associate this emulator with the profile
+                    if email not in self.profiles_index or self.profiles_index[email] != avd_name:
+                        self.profiles_index[email] = avd_name
+                        self._save_profiles_index()
+                        
+                    # Update current profile
+                    self._save_current_profile(email, avd_name, emulator_id)
+                    
+                    return True, f"Using existing emulator {emulator_id} for {email}"
+                else:
+                    logger.warning("Emulator appears to be running but couldn't identify it")
+            
+            # If no emulator is running or we couldn't identify it, try to find AVD
+            avd_name = self.get_avd_for_email(email)
+            
+            if not avd_name:
+                # Look for any available AVD
+                try:
+                    # List available AVDs
+                    avd_list_cmd = [f"{self.android_home}/emulator/emulator", "-list-avds"]
+                    result = subprocess.run(avd_list_cmd, check=False, capture_output=True, text=True, timeout=5)
+                    available_avds = result.stdout.strip().split('\n')
+                    available_avds = [avd for avd in available_avds if avd.strip()]
+                    
+                    if available_avds:
+                        # Use the first available AVD
+                        avd_name = available_avds[0]
+                        logger.info(f"Using first available AVD: {avd_name} for {email}")
+                        
+                        # Register this AVD with the profile
+                        self.register_profile(email, avd_name)
+                    else:
+                        logger.warning(f"No AVDs found. Please create an AVD in Android Studio")
+                        # Create a placeholder name that will be updated later
+                        avd_name = f"AndroidStudioAVD_{email.split('@')[0]}"
+                        self.register_profile(email, avd_name)
+                except Exception as e:
+                    logger.warning(f"Error listing available AVDs: {e}")
+                    # Create a placeholder AVD name
+                    avd_name = f"AndroidStudioAVD_{email.split('@')[0]}"
+                    self.register_profile(email, avd_name)
+            
+            # Update current profile without trying to start emulator
+            self._save_current_profile(email, avd_name)
+            
+            logger.info(f"In simplified mode, tracking profile for {email} without managing emulator")
+            return True, f"Tracking profile for {email} in simplified mode"
+        
+        #
+        # Normal profile management mode below (for non-Mac or non-dev environments)
+        #
+        
         # If force_new_emulator is True, stop any running emulator first
         if force_new_emulator:
             logger.info("Force new emulator requested, stopping any running emulator")
@@ -1332,13 +1461,54 @@ class AVDProfileManager:
         # Get AVD name
         avd_name = self.profiles_index[email]
         
+        # Special case for Mac development environment
+        if self.use_simplified_mode:
+            logger.info(f"In simplified mode (Mac dev), just removing profile tracking for {email}")
+            
+            # Remove from profiles index
+            del self.profiles_index[email]
+            self._save_profiles_index()
+            
+            # If this is the current profile, clear it
+            if self.current_profile and self.current_profile.get("email") == email:
+                self.current_profile = None
+                if os.path.exists(self.current_profile_file):
+                    os.remove(self.current_profile_file)
+                
+            # Clean up emulator mapping
+            if avd_name in self.emulator_map:
+                del self.emulator_map[avd_name]
+                self._save_emulator_map()
+            
+            logger.info(f"Profile tracking removed for {email} in simplified mode")
+            return True, f"Profile tracking removed for {email}"
+        
+        # Normal profile deletion for server environments
+        
+        # Always ensure any emulators are stopped before deleting the profile
+        # This is important even if it's not the current profile, as the emulator
+        # might still be running from a previous session
+        logger.info(f"Ensuring no emulators are running before deleting profile for {email}")
+        emulator_id = self.get_emulator_id_for_avd(avd_name)
+        if emulator_id:
+            logger.info(f"Found emulator {emulator_id} for AVD {avd_name}, stopping it")
+            
+            # Try specific emulator stop first
+            try:
+                subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
+                    check=False, timeout=5
+                )
+                # Wait briefly for emulator to stop
+                time.sleep(2)
+            except Exception as e:
+                logger.warning(f"Error stopping specific emulator: {e}")
+        
+        # Force cleanup to make sure all emulators are stopped
+        self._force_cleanup_emulators()
+        
         # Check if this is the current profile
         if self.current_profile and self.current_profile.get("email") == email:
-            # Stop the emulator
-            if self.is_emulator_running():
-                if not self.stop_emulator():
-                    return False, "Failed to stop current emulator"
-                    
             # Clear current profile
             self.current_profile = None
             if os.path.exists(self.current_profile_file):
@@ -1350,7 +1520,24 @@ class AVDProfileManager:
         
         if os.path.exists(avd_path):
             try:
-                shutil.rmtree(avd_path)
+                # Make several attempts to delete the directory, 
+                # as it might be temporarily locked by an emulator process
+                for attempt in range(3):
+                    try:
+                        logger.info(f"Attempting to delete AVD directory: {avd_path} (attempt {attempt+1}/3)")
+                        shutil.rmtree(avd_path)
+                        logger.info(f"Successfully deleted AVD directory: {avd_path}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Error deleting AVD directory (attempt {attempt+1}/3): {e}")
+                        # If this isn't the last attempt, wait briefly and retry
+                        if attempt < 2:
+                            time.sleep(1)
+                            # Force cleanup again to ensure no processes are holding locks
+                            self._force_cleanup_emulators()
+                        else:
+                            logger.error(f"Error deleting AVD directory after 3 attempts: {e}")
+                            return False, f"Failed to delete AVD directory: {str(e)}"
             except Exception as e:
                 logger.error(f"Error deleting AVD directory: {e}")
                 return False, f"Failed to delete AVD directory: {str(e)}"
@@ -1358,8 +1545,15 @@ class AVDProfileManager:
         if os.path.exists(avd_ini):
             try:
                 os.remove(avd_ini)
+                logger.info(f"Deleted AVD ini file: {avd_ini}")
             except Exception as e:
                 logger.error(f"Error deleting AVD ini file: {e}")
+        
+        # Clean up emulator mapping
+        if avd_name in self.emulator_map:
+            del self.emulator_map[avd_name]
+            self._save_emulator_map()
+            logger.info(f"Removed {avd_name} from emulator map")
                 
         # Remove from profiles index
         del self.profiles_index[email]
