@@ -29,9 +29,41 @@ class Driver:
             self.automator = None  # Reference to the automator instance
             Driver._initialized = True
 
-    def _get_emulator_device_id(self) -> Optional[str]:
-        """Get the emulator device ID from adb devices."""
+    def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
+        """
+        Get the emulator device ID from adb devices, optionally targeting a specific device.
+        
+        Args:
+            specific_device_id: Optional device ID to specifically connect to (e.g., 'emulator-5554')
+            
+        Returns:
+            Optional[str]: The device ID if found, None otherwise
+        """
         try:
+            # If we have a specific device ID to use, check if it's available first
+            if specific_device_id:
+                logger.info(f"Checking for specific device ID: {specific_device_id}")
+                result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+                if specific_device_id in result.stdout and "device" in result.stdout:
+                    # Verify this is actually a working emulator
+                    try:
+                        verify_result = subprocess.run(
+                            ["adb", "-s", specific_device_id, "shell", "getprop", "ro.product.model"],
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                            timeout=5
+                        )
+                        logger.info(f"Specific device {specific_device_id} verified, model: {verify_result.stdout.strip()}")
+                        return specific_device_id
+                    except Exception as e:
+                        logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
+                        # Continue to regular device search
+                else:
+                    logger.warning(f"Specified device ID {specific_device_id} not found or not ready")
+                    # Continue to regular device search if the specific one isn't available
+            
+            # Regular device search logic
             result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
             for line in result.stdout.splitlines():
                 if "emulator-" in line and "device" in line:
@@ -217,10 +249,40 @@ class Driver:
                     logger.info("Driver already initialized")
                     return True
 
-            # Get device ID first
-            self.device_id = self._get_emulator_device_id()
+            # Get device ID first, using specific device ID from profile if available
+            target_device_id = None
+            
+            # Check if we have a profile manager with a preferred device ID
+            if self.automator and hasattr(self.automator, "profile_manager"):
+                # Get the current profile for device ID info
+                profile = self.automator.profile_manager.get_current_profile()
+                if profile and "emulator_id" in profile:
+                    # Use the device ID from the profile
+                    target_device_id = profile.get("emulator_id")
+                    logger.info(f"Using target device ID from profile: {target_device_id}")
+                elif profile and "avd_name" in profile:
+                    # Try to get device ID from AVD name mapping
+                    avd_name = profile.get("avd_name")
+                    device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
+                    if device_id:
+                        target_device_id = device_id
+                        logger.info(f"Using device ID {target_device_id} for AVD {avd_name}")
+            
+            # Get device ID, preferring the specific one if provided
+            self.device_id = self._get_emulator_device_id(target_device_id)
             if not self.device_id:
                 return False
+                
+            # If we found a device ID, update the current profile with it
+            if self.automator and hasattr(self.automator, "profile_manager") and self.device_id:
+                if self.automator.profile_manager.current_profile:
+                    # Update the current profile with the actual device ID
+                    email = self.automator.profile_manager.current_profile.get("email")
+                    avd_name = self.automator.profile_manager.current_profile.get("avd_name")
+                    
+                    if email and avd_name:
+                        logger.info(f"Updating profile for {email} with device ID: {self.device_id}")
+                        self.automator.profile_manager._save_current_profile(email, avd_name, self.device_id)
 
             # Check if app is installed
             if not self._is_kindle_installed():

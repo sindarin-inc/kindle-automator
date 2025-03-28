@@ -26,6 +26,7 @@ class KindleAutomator:
         self.device_id = None  # Will be set during initialization
         self.library_handler = None
         self.reader_handler = None
+        self.profile_manager = None  # Will be set by server.py
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)

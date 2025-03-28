@@ -59,6 +59,10 @@ class AutomationServer:
         if not self.automator:
             # Initialize without credentials or captcha - they'll be set when needed
             self.automator = KindleAutomator()
+            # Connect profile manager to automator for device ID tracking
+            self.automator.profile_manager = self.profile_manager
+            # Update emulator mappings for current running emulators
+            self.profile_manager.update_emulator_mappings()
         return self.automator
     
     def switch_profile(self, email: str) -> Tuple[bool, str]:

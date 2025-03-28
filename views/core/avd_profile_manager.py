@@ -27,6 +27,7 @@ class AVDProfileManager:
         self.profiles_dir = os.path.join(base_dir, "profiles")
         self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
         self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
+        self.emulator_map_file = os.path.join(self.profiles_dir, "emulator_device_map.json")
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
         
         # Detect host architecture
@@ -39,6 +40,7 @@ class AVDProfileManager:
         # Load profile index if it exists, otherwise create empty one
         self.profiles_index = self._load_profiles_index()
         self.current_profile = self._load_current_profile()
+        self.emulator_map = self._load_emulator_map()
         
     def _detect_host_architecture(self) -> str:
         """
@@ -130,39 +132,215 @@ class AVDProfileManager:
         else:
             return None
             
-    def _save_current_profile(self, email: str, avd_name: str) -> None:
-        """Save current profile to JSON file."""
+    def _load_emulator_map(self) -> Dict[str, str]:
+        """
+        Load the mapping between AVD names and emulator device IDs.
+        
+        Returns:
+            Dict[str, str]: Dictionary mapping AVD names to emulator device IDs.
+        """
+        if os.path.exists(self.emulator_map_file):
+            try:
+                with open(self.emulator_map_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading emulator device map: {e}")
+                return {}
+        else:
+            return {}
+            
+    def _save_current_profile(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
+        """
+        Save current profile to JSON file.
+        
+        Args:
+            email: Email address of the profile
+            avd_name: Name of the AVD
+            emulator_id: Optional emulator device ID (e.g., 'emulator-5554')
+        """
         current = {
             "email": email,
             "avd_name": avd_name,
             "last_used": int(time.time())
         }
+        
+        # Add emulator ID if provided
+        if emulator_id:
+            current["emulator_id"] = emulator_id
+            
+            # Update emulator map
+            self.emulator_map[avd_name] = emulator_id
+            self._save_emulator_map()
+            
         try:
             with open(self.current_profile_file, 'w') as f:
                 json.dump(current, f, indent=2)
             self.current_profile = current
         except Exception as e:
             logger.error(f"Error saving current profile: {e}")
+            
+    def _save_emulator_map(self) -> None:
+        """Save the emulator device map to JSON file."""
+        try:
+            with open(self.emulator_map_file, 'w') as f:
+                json.dump(self.emulator_map, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving emulator device map: {e}")
     
     def get_avd_for_email(self, email: str) -> Optional[str]:
         """Get the AVD name for a given email address."""
         return self.profiles_index.get(email)
         
+    def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
+        """Get the emulator device ID for a given AVD name."""
+        return self.emulator_map.get(avd_name)
+        
+    def get_emulator_id_for_email(self, email: str) -> Optional[str]:
+        """Get the emulator device ID for a given email address."""
+        avd_name = self.get_avd_for_email(email)
+        if avd_name:
+            return self.get_emulator_id_for_avd(avd_name)
+        return None
+        
+    def map_running_emulators(self) -> Dict[str, str]:
+        """
+        Map running emulators to their device IDs.
+        
+        Returns:
+            Dict[str, str]: Mapping of emulator names to device IDs
+        """
+        running_emulators = {}
+        
+        try:
+            # Get list of running emulators
+            result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"Error getting devices: {result.stderr}")
+                return running_emulators
+                
+            # Parse output to get emulator IDs
+            lines = result.stdout.strip().split('\n')
+            for line in lines[1:]:  # Skip the first line which is the header
+                if not line.strip():
+                    continue
+                    
+                parts = line.split('\t')
+                if len(parts) >= 2 and 'emulator' in parts[0]:
+                    emulator_id = parts[0].strip()
+                    
+                    # Get the port number from the emulator ID
+                    try:
+                        port = int(emulator_id.split('-')[1])
+                        
+                        # Query emulator for AVD name
+                        avd_name = self._get_avd_name_for_emulator(emulator_id)
+                        if avd_name:
+                            running_emulators[avd_name] = emulator_id
+                    except Exception as e:
+                        logger.error(f"Error parsing emulator ID {emulator_id}: {e}")
+                        
+            return running_emulators
+        except Exception as e:
+            logger.error(f"Error mapping running emulators: {e}")
+            return running_emulators
+            
+    def _get_avd_name_for_emulator(self, emulator_id: str) -> Optional[str]:
+        """
+        Get the AVD name for a running emulator.
+        
+        Args:
+            emulator_id: The emulator device ID (e.g., 'emulator-5554')
+            
+        Returns:
+            Optional[str]: The AVD name or None if not found
+        """
+        try:
+            # Use adb to get the AVD name via shell getprop
+            result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+                
+            # Alternative approach - try to get product.device property
+            result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", "getprop", "ro.build.product"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # This gives us the device name (e.g., 'pixel'), not the AVD name
+                # We'll need to use this in conjunction with other properties
+                device_name = result.stdout.strip()
+                
+                # Since we can't directly get the AVD name, we'll try to find a match
+                # in our emulator map or return None
+                for avd_name in self.emulator_map:
+                    if device_name.lower() in avd_name.lower():
+                        return avd_name
+        except Exception as e:
+            logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
+            
+        return None
+            
+    def update_emulator_mappings(self) -> None:
+        """Update mappings between AVD names and running emulator IDs."""
+        running_emulators = self.map_running_emulators()
+        
+        # Update emulator map with running emulators
+        if running_emulators:
+            for avd_name, emulator_id in running_emulators.items():
+                self.emulator_map[avd_name] = emulator_id
+                
+            self._save_emulator_map()
+            logger.info(f"Updated emulator mappings: {running_emulators}")
+        
     def list_profiles(self) -> List[Dict]:
         """List all available profiles with their details."""
+        # First update emulator mappings to ensure they're current
+        self.update_emulator_mappings()
+        
         result = []
         for email, avd_name in self.profiles_index.items():
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-            result.append({
+            emulator_id = self.get_emulator_id_for_avd(avd_name)
+            
+            profile_info = {
                 "email": email,
                 "avd_name": avd_name,
                 "exists": os.path.exists(avd_path),
-                "current": self.current_profile and self.current_profile.get("email") == email
-            })
+                "current": self.current_profile and self.current_profile.get("email") == email,
+                "emulator_id": emulator_id
+            }
+            
+            result.append(profile_info)
         return result
         
     def get_current_profile(self) -> Optional[Dict]:
         """Get information about the currently active profile."""
+        if self.current_profile:
+            # Ensure emulator ID is up to date
+            avd_name = self.current_profile.get("avd_name")
+            if avd_name:
+                emulator_id = self.get_emulator_id_for_avd(avd_name)
+                if emulator_id and emulator_id != self.current_profile.get("emulator_id"):
+                    # Update with current emulator ID
+                    self.current_profile["emulator_id"] = emulator_id
+                    
         return self.current_profile
         
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
