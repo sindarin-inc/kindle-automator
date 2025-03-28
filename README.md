@@ -160,6 +160,9 @@ Each time a new email address is sent to the `/auth` endpoint, the system automa
   - `{"action": "create", "email": "user@example.com"}`
   - `{"action": "delete", "email": "user@example.com"}`
   - `{"action": "switch", "email": "user@example.com"}`
+- When using `/auth`, you can add a `recreate` parameter to delete and recreate a profile:
+  - `{"email": "user@example.com", "password": "password123", "recreate": true}`
+  - This is useful when you want to start fresh with a clean profile
 
 ### Using AVDs Created in Android Studio
 

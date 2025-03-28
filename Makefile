@@ -191,7 +191,17 @@ test-auth:
 	@echo "Testing authentication..."
 	@curl -X POST http://localhost:4098/auth \
 		-H "Content-Type: application/json" \
-		-d '{"email": "sam@solreader.com", "password": "JFK0epr!nwb5kjg1ekz"}' \
+		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)"}' \
+		-v
+		
+# Test Auth with recreate
+test-auth-recreate:
+	@echo "Testing authentication with profile recreation..."
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make test-auth-recreate EMAIL=user@example.com PASSWORD=yourpassword" && exit 1)
+	@[ -n "$(PASSWORD)" ] || (echo "ERROR: PASSWORD parameter required. Usage: make test-auth-recreate EMAIL=user@example.com PASSWORD=yourpassword" && exit 1)
+	@curl -X POST http://localhost:4098/auth \
+		-H "Content-Type: application/json" \
+		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)", "recreate": true}' \
 		-v
 
 # Test books endpoint
