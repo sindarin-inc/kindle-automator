@@ -42,6 +42,13 @@ class AVDProfileManager:
         self.current_profile = self._load_current_profile()
         self.emulator_map = self._load_emulator_map()
         
+        # Clean up any corrupted entries in the emulator map
+        # Run this on initialization to fix any existing issues
+        try:
+            self._clean_emulator_map()
+        except Exception as e:
+            logger.error(f"Error cleaning emulator map during initialization: {e}")
+        
     def _detect_host_architecture(self) -> str:
         """
         Detect the host machine's architecture.
@@ -139,15 +146,22 @@ class AVDProfileManager:
         Returns:
             Dict[str, str]: Dictionary mapping AVD names to emulator device IDs.
         """
+        map_data = {}
         if os.path.exists(self.emulator_map_file):
             try:
                 with open(self.emulator_map_file, 'r') as f:
-                    return json.load(f)
+                    map_data = json.load(f)
+                    
+                # Check for corrupted entries in the loaded data
+                has_corrupted = any('\n' in avd_name or avd_name.endswith(' OK') 
+                                  for avd_name in map_data.keys())
+                if has_corrupted:
+                    logger.warning("Found potentially corrupted entries in emulator map file")
+                    # We'll clean it after the class is fully initialized
             except Exception as e:
                 logger.error(f"Error loading emulator device map: {e}")
-                return {}
-        else:
-            return {}
+                
+        return map_data
             
     def _save_current_profile(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
@@ -299,8 +313,28 @@ class AVDProfileManager:
             )
             
             if result.returncode == 0 and result.stdout.strip():
-                avd_name = result.stdout.strip()
-                logger.info(f"Got AVD name {avd_name} directly from emulator {emulator_id}")
+                # Clean the AVD name - remove any newlines or trailing OK messages
+                raw_name = result.stdout.strip()
+                
+                # Clean the name - sometimes it comes with "OK" suffix or newlines
+                if "\n" in raw_name:
+                    # Split by newline and take the first part that's not empty
+                    parts = [p.strip() for p in raw_name.split("\n") if p.strip()]
+                    if parts:
+                        clean_name = parts[0]
+                        logger.info(f"Cleaned AVD name from '{raw_name}' to '{clean_name}'")
+                        avd_name = clean_name
+                    else:
+                        avd_name = raw_name  # Fallback to raw if no good parts
+                else:
+                    avd_name = raw_name
+                
+                # Further cleanup - remove trailing "OK" which sometimes appears
+                if avd_name.endswith(" OK") or avd_name.endswith("\nOK"):
+                    avd_name = avd_name.replace(" OK", "").replace("\nOK", "")
+                    logger.info(f"Removed trailing 'OK' from AVD name: {avd_name}")
+                
+                logger.info(f"Got AVD name '{avd_name}' directly from emulator {emulator_id}")
                 return avd_name
                 
             # Alternative approach - try to get product.device property with short timeout
@@ -341,8 +375,69 @@ class AVDProfileManager:
             
         return None
             
+    def _clean_emulator_map(self) -> None:
+        """Clean up the emulator map to remove any invalid or corrupted entries."""
+        if not self.emulator_map:
+            return
+
+        # Check for invalid AVD names (containing newlines or other issues)
+        to_remove = []
+        to_fix = {}
+        
+        for avd_name, emulator_id in self.emulator_map.items():
+            # Check for newlines in the AVD name
+            if '\n' in avd_name:
+                logger.warning(f"Found invalid AVD name with newline: '{avd_name}'")
+                
+                # Try to find a valid AVD with the same emulator ID in profiles index
+                fix_found = False
+                for email, valid_avd in self.profiles_index.items():
+                    if valid_avd and emulator_id == self.emulator_map.get(valid_avd):
+                        logger.info(f"Found valid replacement: '{valid_avd}' for '{avd_name}'")
+                        to_remove.append(avd_name)
+                        fix_found = True
+                        break
+                
+                # If no valid replacement was found, clean up the name
+                if not fix_found:
+                    clean_name = avd_name.split('\n')[0].strip()
+                    if clean_name:
+                        logger.info(f"Cleaning AVD name from '{avd_name}' to '{clean_name}'")
+                        to_remove.append(avd_name)
+                        to_fix[clean_name] = emulator_id
+                    else:
+                        # If no usable part, mark for removal
+                        to_remove.append(avd_name)
+            
+            # Check if AVD name ends with "OK" which is sometimes erroneously added
+            elif avd_name.endswith(" OK") or avd_name.endswith("\nOK"):
+                clean_name = avd_name.replace(" OK", "").replace("\nOK", "")
+                logger.info(f"Cleaning AVD name from '{avd_name}' to '{clean_name}'")
+                to_remove.append(avd_name)
+                to_fix[clean_name] = emulator_id
+        
+        # Remove bad entries
+        for avd_name in to_remove:
+            if avd_name in self.emulator_map:
+                del self.emulator_map[avd_name]
+                logger.info(f"Removed invalid AVD entry: '{avd_name}'")
+        
+        # Add fixed entries
+        for clean_name, emulator_id in to_fix.items():
+            self.emulator_map[clean_name] = emulator_id
+            logger.info(f"Added fixed AVD entry: '{clean_name}' -> '{emulator_id}'")
+        
+        # Save the cleaned map
+        if to_remove or to_fix:
+            self._save_emulator_map()
+            logger.info("Saved cleaned emulator map")
+
     def update_emulator_mappings(self) -> None:
         """Update mappings between AVD names and running emulator IDs."""
+        # First clean any existing corrupted entries
+        self._clean_emulator_map()
+        
+        # Now map running emulators
         running_emulators = self.map_running_emulators()
         
         # Update emulator map with running emulators
