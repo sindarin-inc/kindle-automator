@@ -1059,7 +1059,15 @@ class AVDProfileManager:
             if self.is_emulator_ready():
                 logger.info(f"Emulator already running and ready for profile {email}")
                 return True, f"Already using profile for {email} with running emulator"
-            
+            else:
+                # Attempt to start the emulator for this profile
+                avd_name = self.current_profile.get("avd_name")
+                if avd_name:
+                    logger.info(f"Emulator not ready for profile {email}, attempting to start it")
+                    if self.start_emulator(avd_name):
+                        logger.info(f"Successfully started emulator for profile {email}")
+                        return True, f"Started emulator for profile {email}"
+                
             # Otherwise continue with normal profile switch
             logger.info(f"Emulator not ready for profile {email}, proceeding with normal switch")
             
