@@ -212,12 +212,13 @@ class AVDProfileManager:
         running_emulators = {}
         
         try:
-            # Get list of running emulators
+            # Get list of running emulators with timeout
             result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "devices"],
                 check=False,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=5
             )
             
             if result.returncode != 0:
@@ -238,13 +239,34 @@ class AVDProfileManager:
                     try:
                         port = int(emulator_id.split('-')[1])
                         
-                        # Query emulator for AVD name
+                        # Query emulator for AVD name with timeout
                         avd_name = self._get_avd_name_for_emulator(emulator_id)
                         if avd_name:
                             running_emulators[avd_name] = emulator_id
+                        else:
+                            # If we couldn't get the AVD name but we know an emulator is running,
+                            # check if it matches our current profile's emulator
+                            if self.current_profile and self.current_profile.get("avd_name"):
+                                current_avd = self.current_profile.get("avd_name")
+                                current_emu_id = self.current_profile.get("emulator_id")
+                                
+                                # If we have a matching emulator ID, use that mapping
+                                if current_emu_id == emulator_id:
+                                    logger.info(f"Using known mapping for current profile: {current_avd} -> {emulator_id}")
+                                    running_emulators[current_avd] = emulator_id
+                                
                     except Exception as e:
                         logger.error(f"Error parsing emulator ID {emulator_id}: {e}")
                         
+            # Log emulator mapping results for debugging
+            if running_emulators:
+                logger.info(f"Found running emulators: {running_emulators}")
+            else:
+                logger.info("No running emulators found")
+                
+            return running_emulators
+        except subprocess.TimeoutExpired:
+            logger.warning("Timeout mapping running emulators")
             return running_emulators
         except Exception as e:
             logger.error(f"Error mapping running emulators: {e}")
@@ -261,37 +283,59 @@ class AVDProfileManager:
             Optional[str]: The AVD name or None if not found
         """
         try:
-            # Use adb to get the AVD name via shell getprop
+            # First check our existing emulator map to avoid ADB calls if possible
+            for avd_name, mapped_id in self.emulator_map.items():
+                if mapped_id == emulator_id:
+                    logger.info(f"Found AVD {avd_name} in existing map for emulator {emulator_id}")
+                    return avd_name
+            
+            # Use adb to get the AVD name via shell getprop with a short timeout
             result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=2  # Very short timeout to avoid hanging
             )
             
             if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
+                avd_name = result.stdout.strip()
+                logger.info(f"Got AVD name {avd_name} directly from emulator {emulator_id}")
+                return avd_name
                 
-            # Alternative approach - try to get product.device property
+            # Alternative approach - try to get product.device property with short timeout
             result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", "getprop", "ro.build.product"],
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=2
             )
             
             if result.returncode == 0 and result.stdout.strip():
                 # This gives us the device name (e.g., 'pixel'), not the AVD name
-                # We'll need to use this in conjunction with other properties
                 device_name = result.stdout.strip()
+                logger.info(f"Got device name {device_name} for emulator {emulator_id}")
                 
-                # Since we can't directly get the AVD name, we'll try to find a match
-                # in our emulator map or return None
+                # Look in our profiles index to find matches
+                for email, avd_name in self.profiles_index.items():
+                    if device_name.lower() in avd_name.lower():
+                        logger.info(f"Matched AVD {avd_name} for device {device_name}")
+                        return avd_name
+                
+                # If not found in profiles, try emulator map
                 for avd_name in self.emulator_map:
                     if device_name.lower() in avd_name.lower():
+                        logger.info(f"Matched AVD {avd_name} from emulator map for device {device_name}")
                         return avd_name
+                        
+                # If we still can't find it but there's only one profile, use that
+                if len(self.profiles_index) == 1:
+                    avd_name = next(iter(self.profiles_index.values()))
+                    logger.info(f"Using only available AVD {avd_name} for emulator {emulator_id}")
+                    return avd_name
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Timeout getting AVD name for emulator {emulator_id}")
         except Exception as e:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
             
@@ -620,13 +664,22 @@ class AVDProfileManager:
     def is_emulator_running(self) -> bool:
         """Check if an emulator is currently running."""
         try:
+            # Execute with a shorter timeout
             result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "devices"],
                 check=False,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=5  # Add a timeout to prevent potential hang
             )
-            return "emulator" in result.stdout
+            
+            # More precise check - look for "emulator-" followed by a port number
+            if result.returncode == 0:
+                return any(line.strip().startswith("emulator-") for line in result.stdout.splitlines())
+            return False
+        except subprocess.TimeoutExpired:
+            logger.warning("Timeout expired while checking if emulator is running, assuming it's not running")
+            return False
         except Exception as e:
             logger.error(f"Error checking if emulator is running: {e}")
             return False
@@ -634,26 +687,39 @@ class AVDProfileManager:
     def is_emulator_ready(self) -> bool:
         """Check if an emulator is running and fully booted."""
         try:
-            # First check if any device is connected
+            # First check if any device is connected with a short timeout
             devices_result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "devices"],
                 check=False,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=5
             )
             
-            if "emulator" not in devices_result.stdout or "device" not in devices_result.stdout:
+            # More precise check for emulator
+            has_emulator = False
+            for line in devices_result.stdout.splitlines():
+                # Looking for "emulator-XXXX device"
+                if line.strip().startswith("emulator-") and "device" in line and not "offline" in line:
+                    has_emulator = True
+                    break
+                
+            if not has_emulator:
                 return False
                 
-            # Check if boot is completed
+            # Check if boot is completed with a timeout
             boot_completed = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
                 check=False,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=5
             )
             
             return boot_completed.stdout.strip() == "1"
+        except subprocess.TimeoutExpired:
+            logger.warning("Timeout expired while checking if emulator is ready, assuming it's not ready")
+            return False 
         except Exception as e:
             logger.error(f"Error checking if emulator is ready: {e}")
             return False
@@ -661,28 +727,74 @@ class AVDProfileManager:
     def stop_emulator(self) -> bool:
         """Stop the currently running emulator."""
         try:
-            # First try graceful shutdown
+            # First do a quick check if emulator is actually running
+            if not self.is_emulator_running():
+                logger.info("No emulator running, nothing to stop")
+                return True
+                
+            # First try graceful shutdown with shorter timeout
+            logger.info("Attempting graceful emulator shutdown")
             subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "emu", "kill"],
-                check=False
+                check=False,
+                timeout=5
             )
             
-            # Wait for emulator to shut down
-            deadline = time.time() + 30
+            # Wait for emulator to shut down with shorter timeout
+            deadline = time.time() + 10  # Reduced from 30 to 10 seconds
+            start_time = time.time()
             while time.time() < deadline:
+                # Check more frequently
+                time.sleep(0.5)
                 if not self.is_emulator_running():
-                    logger.info("Emulator shut down gracefully")
+                    elapsed = time.time() - start_time
+                    logger.info(f"Emulator shut down gracefully in {elapsed:.2f} seconds")
                     return True
-                time.sleep(1)
                 
-            # Force kill if graceful shutdown failed
+            # Try killing specific emulator processes rather than all emulator processes
+            logger.info("Graceful shutdown timed out, trying forceful termination")
+            try:
+                # Get list of running emulators to kill specifically
+                result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                
+                # Parse out emulator IDs and kill them specifically
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:  # Skip header
+                    if not line.strip():
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 2 and 'emulator' in parts[0]:
+                        emulator_id = parts[0].strip()
+                        logger.info(f"Killing specific emulator: {emulator_id}")
+                        subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
+                            check=False,
+                            timeout=3
+                        )
+            except Exception as inner_e:
+                logger.warning(f"Error during specific emulator kill: {inner_e}")
+                        
+            # Force kill as last resort with pkill
             subprocess.run(
                 ["pkill", "-f", "emulator"],
-                check=False
+                check=False,
+                timeout=3
             )
             
-            logger.info("Emulator forcibly terminated")
-            return True
+            # Final check
+            time.sleep(1)
+            if not self.is_emulator_running():
+                logger.info("Emulator forcibly terminated")
+                return True
+            else:
+                logger.warning("Failed to completely terminate emulator processes")
+                return False
         except Exception as e:
             logger.error(f"Error stopping emulator: {e}")
             return False
@@ -695,12 +807,25 @@ class AVDProfileManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            # First check if an emulator is already running
+            # First check if an emulator is already running but do it efficiently
             if self.is_emulator_running():
-                logger.warning("An emulator is already running, stopping it first")
+                # Only stop if it's a different AVD than the one we want to start
+                running_avds = self.map_running_emulators()
+                if avd_name in running_avds:
+                    logger.info(f"Emulator for requested AVD {avd_name} is already running, skipping stop/start")
+                    # Double-check it's ready
+                    if self.is_emulator_ready():
+                        logger.info("Emulator is ready, using existing instance")
+                        return True
+                    logger.info("Emulator is running but not ready, will restart it")
+                
+                logger.warning("A different emulator is running, stopping it first")
+                start_time = time.time()
                 if not self.stop_emulator():
                     logger.error("Failed to stop existing emulator")
                     return False
+                elapsed = time.time() - start_time
+                logger.info(f"Emulator stop operation completed in {elapsed:.2f} seconds")
                     
             # Always force x86_64 architecture for all hosts
             config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
