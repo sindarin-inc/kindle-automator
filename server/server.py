@@ -68,20 +68,22 @@ class AutomationServer:
             self.profile_manager.update_emulator_mappings()
         return self.automator
 
-    def switch_profile(self, email: str) -> Tuple[bool, str]:
+    def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """Switch to a profile for the given email address.
 
         Args:
             email: The email address to switch to
+            force_new_emulator: If True, always stop any running emulator and start a new one
+                               (used with recreate=1 flag)
 
         Returns:
             Tuple[bool, str]: (success, message)
         """
-        logger.info(f"Switching to profile for email: {email}")
+        logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
 
         need_new_automator = True
 
-        if self.current_email == email:
+        if self.current_email == email and not force_new_emulator:
             logger.info(f"Already using profile for {email}")
             # Only skip the profile switch if we have a valid automator
             if self.automator:
@@ -97,7 +99,7 @@ class AutomationServer:
             self.automator = None
 
         # Switch to the profile for this email
-        success, message = self.profile_manager.switch_profile(email)
+        success, message = self.profile_manager.switch_profile(email, force_new_emulator=force_new_emulator)
         if not success:
             logger.error(f"Failed to switch profile: {message}")
             return False, message
