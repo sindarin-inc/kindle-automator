@@ -104,10 +104,26 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
             
             # Wait for emulator to boot - this can take some time
             print("Waiting for emulator to boot (may take a minute or two)...")
-            deadline = time.time() + 120  # 2 minutes timeout
+            deadline = time.time() + 180  # 3 minutes timeout
+            last_progress_time = time.time()
+            device_found = False
+            
             while time.time() < deadline:
                 try:
-                    # Check if the emulator is booted
+                    # First check if the device is visible to adb
+                    if not device_found:
+                        devices_result = subprocess.run(
+                            [f"{ANDROID_SDK_PATH}/platform-tools/adb", "devices"],
+                            check=False,
+                            capture_output=True,
+                            text=True
+                        )
+                        if "emulator" in devices_result.stdout:
+                            print("\nEmulator device detected by adb, waiting for boot to complete...")
+                            device_found = True
+                            last_progress_time = time.time()
+                    
+                    # Check if boot is completed
                     adb_cmd = f"{ANDROID_SDK_PATH}/platform-tools/adb"
                     boot_completed = subprocess.run(
                         [adb_cmd, "shell", "getprop", "sys.boot_completed"],
@@ -116,22 +132,71 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
                         check=False
                     )
                     
+                    # If we get any response, even if not "1", update progress time
+                    if boot_completed.stdout:
+                        last_progress_time = time.time()
+                    
                     if boot_completed.stdout.strip() == "1":
                         print("\nEmulator booted successfully!")
                         print(f"AVD {avd_name} is now running.")
+                        
+                        # Additional verification - check for package manager
+                        try:
+                            print("Verifying system packages...")
+                            pm_check = subprocess.run(
+                                [adb_cmd, "shell", "pm", "list", "packages"],
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            if "android" in pm_check.stdout:
+                                print("System packages verified")
+                            else:
+                                print("WARNING: System packages check failed, but proceeding anyway")
+                        except Exception as e:
+                            print(f"Error checking system packages: {e}")
+                        
+                        # Allow a bit more time for system services to stabilize
+                        print("Waiting 5 seconds for system services to stabilize...")
+                        time.sleep(5)
                         return True
-                except Exception:
+                except Exception as e:
                     # Ignore exceptions during boot polling
                     pass
+                
+                # If no progress for 60 seconds, consider emulator stuck
+                if time.time() - last_progress_time > 60:
+                    print("\nNo progress detected for 60 seconds, emulator may be stuck")
+                    # Don't terminate - in case it's still starting up slowly
+                    break
                 
                 # Print progress indicator
                 sys.stdout.write(".")
                 sys.stdout.flush()
                 time.sleep(2)
-                
+            
             # If we get here, the emulator didn't boot within the timeout
             print("\nTimeout waiting for emulator to boot.")
-            process.terminate()
+            
+            # Last attempt to check if device is actually available despite timeout
+            try:
+                devices_result = subprocess.run(
+                    [f"{ANDROID_SDK_PATH}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True
+                )
+                if "emulator" in devices_result.stdout and "device" in devices_result.stdout:
+                    print("Emulator appears to be running despite boot timeout. Proceeding with caution.")
+                    return True
+            except:
+                pass
+                
+            try:
+                process.terminate()
+            except:
+                pass
             return False
         else:
             # Process exited prematurely

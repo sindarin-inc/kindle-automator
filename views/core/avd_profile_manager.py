@@ -453,6 +453,33 @@ class AVDProfileManager:
             logger.error(f"Error checking if emulator is running: {e}")
             return False
             
+    def is_emulator_ready(self) -> bool:
+        """Check if an emulator is running and fully booted."""
+        try:
+            # First check if any device is connected
+            devices_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True
+            )
+            
+            if "emulator" not in devices_result.stdout or "device" not in devices_result.stdout:
+                return False
+                
+            # Check if boot is completed
+            boot_completed = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
+                check=False,
+                capture_output=True,
+                text=True
+            )
+            
+            return boot_completed.stdout.strip() == "1"
+        except Exception as e:
+            logger.error(f"Error checking if emulator is ready: {e}")
+            return False
+            
     def stop_emulator(self) -> bool:
         """Stop the currently running emulator."""
         try:
@@ -571,21 +598,75 @@ class AVDProfileManager:
             
             # Wait for emulator to boot
             logger.info("Waiting for emulator to boot...")
-            deadline = time.time() + 120  # 2 minutes timeout
+            deadline = time.time() + 180  # 3 minutes timeout
+            last_progress_time = time.time()
+            device_found = False
+            
             while time.time() < deadline:
                 try:
+                    # First check if the device is visible to adb
+                    if not device_found:
+                        devices_result = subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "devices"],
+                            check=False,
+                            capture_output=True,
+                            text=True
+                        )
+                        if "emulator" in devices_result.stdout:
+                            logger.info("Emulator device detected by adb, waiting for boot to complete...")
+                            device_found = True
+                            last_progress_time = time.time()
+                    
+                    # Check if boot is completed
                     boot_completed = subprocess.run(
                         [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
                         check=False,
                         capture_output=True,
                         text=True
                     )
+                    
+                    # If we get any response, even if not "1", update progress time
+                    if boot_completed.stdout:
+                        last_progress_time = time.time()
+                        
+                    # Only consider boot complete when we get "1"
                     if boot_completed.stdout.strip() == "1":
                         logger.info("Emulator booted successfully")
+                        
+                        # Additional verification - check for package manager
+                        try:
+                            pm_check = subprocess.run(
+                                [f"{self.android_home}/platform-tools/adb", "shell", "pm", "list", "packages", "|", "grep", "amazon.kindle"],
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
+                            if "amazon.kindle" in pm_check.stdout:
+                                logger.info("Kindle package confirmed to be installed")
+                            else:
+                                logger.warning("Emulator booted but Kindle package not found. Will proceed anyway.")
+                        except Exception as e:
+                            logger.warning(f"Error checking for Kindle package: {e}")
+                            
+                        # Allow a bit more time for system services to stabilize
+                        logger.info("Waiting 5 seconds for system services to stabilize...")
+                        time.sleep(5)
                         return True
-                except Exception:
-                    # Ignore exceptions during boot polling
+                except Exception as e:
+                    # Log but continue polling
+                    logger.debug(f"Exception during boot check: {e}")
                     pass
+                    
+                # If no progress for 60 seconds, consider emulator stuck
+                if time.time() - last_progress_time > 60:
+                    logger.warning("No progress detected for 60 seconds, emulator may be stuck")
+                    # Kill the process and return false to trigger retry with different approach
+                    try:
+                        process.terminate()
+                    except:
+                        pass
+                    return False
                     
                 # Check if process is still running
                 if process.poll() is not None:
@@ -795,7 +876,14 @@ class AVDProfileManager:
         # Check if this is already the current profile
         if self.current_profile and self.current_profile.get("email") == email:
             logger.info(f"Already using profile for {email}")
-            return True, f"Already using profile for {email}"
+            
+            # If an emulator is already running and ready, just use it
+            if self.is_emulator_ready():
+                logger.info(f"Emulator already running and ready for profile {email}")
+                return True, f"Already using profile for {email} with running emulator"
+            
+            # Otherwise continue with normal profile switch
+            logger.info(f"Emulator not ready for profile {email}, proceeding with normal switch")
             
         # Get AVD name for this email
         avd_name = self.get_avd_for_email(email)
@@ -814,23 +902,37 @@ class AVDProfileManager:
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
         avd_exists = os.path.exists(avd_path)
         
+        # Check if emulator is already running and ready
+        emulator_ready = self.is_emulator_ready()
+        
         # For Mac M1/M2/M4 users where direct emulator launch might fail,
         # we'll just track the profile without trying to start the emulator
         if self.host_arch == 'arm64' and platform.system() == "Darwin":
             logger.info(f"Running on ARM Mac - skipping emulator start, just tracking profile change")
             # Update current profile
             self._save_current_profile(email, avd_name)
+            
+            if emulator_ready:
+                logger.info(f"Found running emulator that appears ready, will use it for profile {email}")
+                return True, f"Switched to profile {email} with existing running emulator"
+                
             if not avd_exists:
                 logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. If using Android Studio AVDs, "
                              f"please run 'make register-avd' to update the AVD name for this profile.")
             return True, f"Switched profile tracking to {email} (AVD: {avd_name})"
             
         # For other platforms, try normal start procedure
-        # Stop the current emulator if running
-        if self.is_emulator_running():
+        # Stop the current emulator if running, but only if not already ready
+        if not emulator_ready and self.is_emulator_running():
             logger.info("Stopping current emulator")
             if not self.stop_emulator():
                 return False, "Failed to stop current emulator"
+        
+        # If emulator is already running and ready, just use it
+        if emulator_ready:
+            logger.info(f"Using already running emulator for profile {email}")
+            self._save_current_profile(email, avd_name)
+            return True, f"Switched to profile {email} with existing running emulator"
         
         # Check if AVD exists before trying to start it
         if not avd_exists:
@@ -843,9 +945,18 @@ class AVDProfileManager:
         # Start the new emulator
         logger.info(f"Starting emulator with AVD {avd_name}")
         if not self.start_emulator(avd_name):
-            # If we can't start the emulator, we'll still update the current profile
-            # so we can track which profile is current even if the emulator isn't running
-            logger.warning(f"Failed to start emulator, but still tracking profile {email}")
+            # If we can't start the emulator but one is actually running, try to use it
+            if self.is_emulator_running():
+                logger.warning(f"Failed to start new emulator but one is running. Trying to use existing emulator for {email}")
+                self._save_current_profile(email, avd_name)
+                # Try to verify the emulator is actually ready
+                if self.is_emulator_ready():
+                    logger.info(f"Existing emulator is ready, using it for profile {email}")
+                    return True, f"Switched to profile {email} with existing running emulator"
+                else:
+                    logger.warning(f"Existing emulator is not ready, but still tracking profile {email}")
+            
+            # Update current profile even if emulator couldn't start
             self._save_current_profile(email, avd_name)
             return True, f"Tracked profile for {email} but emulator failed to start. Try running manually with 'make run-emulator'"
             
