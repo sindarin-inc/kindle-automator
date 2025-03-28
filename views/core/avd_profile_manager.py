@@ -1166,18 +1166,31 @@ class AVDProfileManager:
             logger.error(f"Error starting emulator: {e}")
             return False
             
-    def switch_profile(self, email: str) -> Tuple[bool, str]:
+    def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """
         Switch to the profile for the given email.
         If the profile doesn't exist, create a new one.
         
+        Args:
+            email: The email address to switch to
+            force_new_emulator: If True, always stop any running emulator and start a new one
+                               (used with recreate=1 flag)
+        
         Returns:
             Tuple[bool, str]: (success, message)
         """
-        logger.info(f"Switching to profile for email: {email}")
+        logger.info(f"Switching to profile for email: {email} (force_new_emulator={force_new_emulator})")
+        
+        # If force_new_emulator is True, stop any running emulator first
+        if force_new_emulator:
+            logger.info("Force new emulator requested, stopping any running emulator")
+            if self.is_emulator_running():
+                if not self.stop_emulator():
+                    logger.error("Failed to stop existing emulator")
+                    # We'll try to continue anyway
         
         # Check if this is already the current profile
-        if self.current_profile and self.current_profile.get("email") == email:
+        if self.current_profile and self.current_profile.get("email") == email and not force_new_emulator:
             logger.info(f"Already using profile for {email}")
             
             # If an emulator is already running and ready, just use it
@@ -1239,11 +1252,20 @@ class AVDProfileManager:
             if not self.stop_emulator():
                 return False, "Failed to stop current emulator"
         
-        # If emulator is already running and ready, just use it
-        if emulator_ready:
-            logger.info(f"Using already running emulator for profile {email}")
-            self._save_current_profile(email, avd_name)
-            return True, f"Switched to profile {email} with existing running emulator"
+        # If emulator is already running and ready, check if we should use it
+        if emulator_ready and not force_new_emulator:
+            # We need to verify this emulator belongs to the correct AVD
+            running_avds = self.map_running_emulators()
+            if avd_name in running_avds:
+                logger.info(f"Using already running emulator for profile {email} - confirmed to be correct AVD")
+                self._save_current_profile(email, avd_name)
+                return True, f"Switched to profile {email} with existing running emulator (verified)"
+            else:
+                logger.warning(f"Found running emulator but it doesn't match the expected AVD {avd_name}")
+                logger.info(f"Stopping unrelated emulator to start the correct one")
+                if not self.stop_emulator():
+                    logger.error("Failed to stop unrelated emulator")
+                    # We'll try to continue anyway
         
         # Check if AVD exists before trying to start it
         if not avd_exists:
@@ -1256,16 +1278,23 @@ class AVDProfileManager:
         # Start the new emulator
         logger.info(f"Starting emulator with AVD {avd_name}")
         if not self.start_emulator(avd_name):
-            # If we can't start the emulator but one is actually running, try to use it
-            if self.is_emulator_running():
-                logger.warning(f"Failed to start new emulator but one is running. Trying to use existing emulator for {email}")
-                self._save_current_profile(email, avd_name)
-                # Try to verify the emulator is actually ready
-                if self.is_emulator_ready():
-                    logger.info(f"Existing emulator is ready, using it for profile {email}")
-                    return True, f"Switched to profile {email} with existing running emulator"
+            # If we can't start the emulator but one is actually running
+            if self.is_emulator_running() and not force_new_emulator:
+                # Check if it's the correct AVD for this email
+                running_avds = self.map_running_emulators()
+                if avd_name in running_avds:
+                    logger.warning(f"Failed to start new emulator but found correct running AVD {avd_name}. Will use it for {email}")
+                    self._save_current_profile(email, avd_name)
+                    # Try to verify the emulator is actually ready
+                    if self.is_emulator_ready():
+                        logger.info(f"Existing emulator is ready, using it for profile {email}")
+                        return True, f"Switched to profile {email} with existing running emulator (verified)"
                 else:
-                    logger.warning(f"Existing emulator is not ready, but still tracking profile {email}")
+                    logger.warning(f"Failed to start emulator for {avd_name} and found unrelated running emulator")
+                    # For safety, we should not use an unrelated emulator's data
+                    logger.info(f"Forcing emulator shutdown to prevent data mixing")
+                    self.stop_emulator()
+                    logger.warning(f"Emulator start failed, but still tracking profile {email} - manual intervention needed")
             
             # Update current profile even if emulator couldn't start
             self._save_current_profile(email, avd_name)

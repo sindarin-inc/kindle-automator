@@ -909,7 +909,8 @@ class AuthResource(Resource):
                 logger.info(f"No existing profile found for {email}, skipping delete")
 
         # Switch to the profile for this email or create a new one
-        success, message = server.switch_profile(email)
+        # Pass force_new_emulator=True if recreate was requested to ensure complete profile reset
+        success, message = server.switch_profile(email, force_new_emulator=recreate)
         if not success:
             logger.error(f"Failed to switch to profile for {email}: {message}")
             return {"error": f"Failed to switch to profile: {message}"}, 500
