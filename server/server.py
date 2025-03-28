@@ -476,6 +476,13 @@ class ScreenshotResource(Resource):
             # Check if the use_scrcpy parameter is explicitly set
             use_scrcpy = request.args.get("use_scrcpy", "0") in ("1", "true")
 
+            if (current_state == AppState.UNKNOWN and not use_scrcpy):
+                # If state is unknown, update state first before deciding on screenshot method
+                logger.info("State is UNKNOWN, updating state before choosing screenshot method")
+                server.automator.state_machine.update_current_state()
+                current_state = server.automator.state_machine.current_state
+                logger.info(f"State after update: {current_state}")
+                
             if current_state in auth_states or use_scrcpy:
                 logger.info(
                     f"Using secure screenshot method for auth state: {current_state} or explicit scrcpy request"
