@@ -799,6 +799,29 @@ class AVDProfileManager:
             logger.error(f"Error stopping emulator: {e}")
             return False
             
+    def _force_cleanup_emulators(self):
+        """Force kill all emulator processes and reset adb."""
+        logger.warning("Force cleaning up any running emulators")
+        try:
+            # Kill all emulator processes forcefully
+            subprocess.run(["pkill", "-9", "-f", "emulator"], check=False, timeout=5)
+            
+            # Kill all qemu processes too
+            subprocess.run(["pkill", "-9", "-f", "qemu"], check=False, timeout=5)
+            
+            # Force reset adb server
+            subprocess.run([f"{self.android_home}/platform-tools/adb", "kill-server"], 
+                        check=False, timeout=5)
+            time.sleep(1)
+            subprocess.run([f"{self.android_home}/platform-tools/adb", "start-server"], 
+                        check=False, timeout=5)
+            
+            logger.info("Emulator cleanup completed")
+            return True
+        except Exception as e:
+            logger.error(f"Error during emulator cleanup: {e}")
+            return False
+    
     def start_emulator(self, avd_name: str) -> bool:
         """
         Start the specified AVD in headless mode.
@@ -899,11 +922,13 @@ class AVDProfileManager:
                 stderr=subprocess.PIPE
             )
             
-            # Wait for emulator to boot
+            # Wait for emulator to boot with more frequent checks and shorter timeout
             logger.info("Waiting for emulator to boot...")
-            deadline = time.time() + 180  # 3 minutes timeout
+            deadline = time.time() + 60  # 60 seconds total timeout
             last_progress_time = time.time()
             device_found = False
+            no_progress_timeout = 30  # 30 seconds with no progress triggers termination
+            check_interval = 2  # Check every 2 seconds
             
             while time.time() < deadline:
                 try:
@@ -913,7 +938,8 @@ class AVDProfileManager:
                             [f"{self.android_home}/platform-tools/adb", "devices"],
                             check=False,
                             capture_output=True,
-                            text=True
+                            text=True,
+                            timeout=3
                         )
                         if "emulator" in devices_result.stdout:
                             logger.info("Emulator device detected by adb, waiting for boot to complete...")
@@ -925,11 +951,13 @@ class AVDProfileManager:
                         [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
                         check=False,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        timeout=3
                     )
                     
                     # If we get any response, even if not "1", update progress time
                     if boot_completed.stdout:
+                        logger.debug(f"Boot progress: [{boot_completed.stdout.strip()}]")
                         last_progress_time = time.time()
                         
                     # Only consider boot complete when we get "1"
@@ -943,7 +971,7 @@ class AVDProfileManager:
                                 check=False,
                                 capture_output=True,
                                 text=True,
-                                timeout=10
+                                timeout=3
                             )
                             if "amazon.kindle" in pm_check.stdout:
                                 logger.info("Kindle package confirmed to be installed")
@@ -953,42 +981,63 @@ class AVDProfileManager:
                             logger.warning(f"Error checking for Kindle package: {e}")
                             
                         # Allow a bit more time for system services to stabilize
-                        logger.info("Waiting 5 seconds for system services to stabilize...")
-                        time.sleep(5)
+                        logger.info("Waiting 2 seconds for system services to stabilize...")
+                        time.sleep(2)
                         return True
+                        
                 except Exception as e:
                     # Log but continue polling
                     logger.debug(f"Exception during boot check: {e}")
-                    pass
                     
-                # If no progress for 60 seconds, consider emulator stuck
-                if time.time() - last_progress_time > 60:
-                    logger.warning("No progress detected for 60 seconds, emulator may be stuck")
-                    # Kill the process and return false to trigger retry with different approach
+                # Check for no progress with the shorter timeout
+                elapsed_since_progress = time.time() - last_progress_time
+                if elapsed_since_progress > no_progress_timeout:
+                    logger.warning(f"No progress detected for {elapsed_since_progress:.1f} seconds, cleaning up emulator")
+                    
+                    # Terminate the emulator process
                     try:
                         process.terminate()
-                    except:
-                        pass
-                    return False
-                    
-                # Check if process is still running
-                if process.poll() is not None:
-                    stdout, stderr = process.communicate()
-                    error_msg = stderr.decode() if stderr else 'No error message'
-                    logger.error(f"Emulator process exited prematurely: {error_msg}")
-                    
-                    # If there's an architecture mismatch error, try to fix it and restart
-                    if "Avd's CPU Architecture" in error_msg and "not supported" in error_msg:
-                        logger.warning("Architecture mismatch detected. Attempting to fix AVD config...")
+                    except Exception as term_e:
+                        logger.warning(f"Error terminating process: {term_e}")
                         
-                        # On ARM Macs, we need a different approach
-                        if self.host_arch == 'arm64':
-                            logger.warning("On ARM Mac, trying a different approach...")
-                            try:
-                                # Delete the AVD completely and recreate it with ARM image
-                                logger.info(f"Deleting AVD {avd_name} to recreate with compatible settings")
-                                avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-                                avd_ini = os.path.join(self.avd_dir, f"{avd_name}.ini")
+                    # Force cleanup all emulators
+                    self._force_cleanup_emulators()
+                    return False
+                
+                # Sleep for a shorter time between checks
+                time.sleep(check_interval)
+            
+            # If we get here, we timed out without booting successfully
+            logger.error("Emulator boot timed out after 60 seconds")
+            
+            # Terminate the emulator process
+            try:
+                process.terminate()
+            except:
+                pass
+                
+            # Force cleanup all emulators
+            self._force_cleanup_emulators()
+            return False
+            
+            # Check if process exited with architecture error
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                error_msg = stderr.decode() if stderr else 'No error message'
+                logger.error(f"Emulator process exited prematurely: {error_msg}")
+                
+                # If there's an architecture mismatch error, try to fix it and restart
+                if "Avd's CPU Architecture" in error_msg and "not supported" in error_msg:
+                    logger.warning("Architecture mismatch detected. Attempting to fix AVD config...")
+                    
+                    # On ARM Macs, we need a different approach
+                    if self.host_arch == 'arm64':
+                        logger.warning("On ARM Mac, trying a different approach...")
+                        try:
+                            # Delete the AVD completely and recreate it with ARM image
+                            logger.info(f"Deleting AVD {avd_name} to recreate with compatible settings")
+                            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+                            avd_ini = os.path.join(self.avd_dir, f"{avd_name}.ini")
                                 
                                 # Delete the AVD files if they exist
                                 if os.path.exists(avd_path):
@@ -1278,23 +1327,52 @@ class AVDProfileManager:
         # Start the new emulator
         logger.info(f"Starting emulator with AVD {avd_name}")
         if not self.start_emulator(avd_name):
-            # If we can't start the emulator but one is actually running
-            if self.is_emulator_running() and not force_new_emulator:
-                # Check if it's the correct AVD for this email
-                running_avds = self.map_running_emulators()
-                if avd_name in running_avds:
-                    logger.warning(f"Failed to start new emulator but found correct running AVD {avd_name}. Will use it for {email}")
-                    self._save_current_profile(email, avd_name)
-                    # Try to verify the emulator is actually ready
-                    if self.is_emulator_ready():
-                        logger.info(f"Existing emulator is ready, using it for profile {email}")
-                        return True, f"Switched to profile {email} with existing running emulator (verified)"
-                else:
-                    logger.warning(f"Failed to start emulator for {avd_name} and found unrelated running emulator")
-                    # For safety, we should not use an unrelated emulator's data
-                    logger.info(f"Forcing emulator shutdown to prevent data mixing")
-                    self.stop_emulator()
-                    logger.warning(f"Emulator start failed, but still tracking profile {email} - manual intervention needed")
+            # If we can't start the emulator, we should check if any are running and handle appropriately
+            if self.is_emulator_running():
+                if force_new_emulator:
+                    # If we need a fresh emulator, forcibly kill any running ones
+                    logger.warning(f"Failed to start new emulator for {avd_name} and force_new_emulator=True")
+                    logger.warning("Forcibly terminating any running emulators")
+                    
+                    # Force kill all emulator processes
+                    try:
+                        # Kill all emulator processes forcefully
+                        subprocess.run(["pkill", "-9", "-f", "emulator"], check=False, timeout=5)
+                        
+                        # Kill all qemu processes too
+                        subprocess.run(["pkill", "-9", "-f", "qemu"], check=False, timeout=5)
+                        
+                        # Force reset adb server 
+                        subprocess.run([f"{self.android_home}/platform-tools/adb", "kill-server"], 
+                                    check=False, timeout=5)
+                        time.sleep(1)
+                        subprocess.run([f"{self.android_home}/platform-tools/adb", "start-server"], 
+                                    check=False, timeout=5)
+                        
+                        logger.warning("Forcibly terminated all emulator processes")
+                    except Exception as cleanup_e:
+                        logger.error(f"Error during emergency cleanup: {cleanup_e}")
+                    
+                    # Cannot continue with force_new_emulator if we can't clean everything up
+                    logger.warning(f"Emulator start failed, tracking profile {email} but fresh emulator required - manual intervention needed")
+                    
+                elif not force_new_emulator:
+                    # Only in non-force mode, we might consider using an existing emulator
+                    # Check if it's the correct AVD for this email
+                    running_avds = self.map_running_emulators()
+                    if avd_name in running_avds:
+                        logger.warning(f"Failed to start new emulator but found correct running AVD {avd_name}. Will use it for {email}")
+                        self._save_current_profile(email, avd_name)
+                        # Try to verify the emulator is actually ready
+                        if self.is_emulator_ready():
+                            logger.info(f"Existing emulator is ready, using it for profile {email}")
+                            return True, f"Switched to profile {email} with existing running emulator (verified)"
+                    else:
+                        logger.warning(f"Failed to start emulator for {avd_name} and found unrelated running emulator")
+                        # For safety, we should not use an unrelated emulator's data
+                        logger.info(f"Forcing emulator shutdown to prevent data mixing")
+                        self.stop_emulator()
+                        logger.warning(f"Emulator start failed, but still tracking profile {email} - manual intervention needed")
             
             # Update current profile even if emulator couldn't start
             self._save_current_profile(email, avd_name)
