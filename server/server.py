@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+import platform
 import signal
 import subprocess
 import time
@@ -1470,18 +1471,30 @@ def main():
     server.kill_existing_process("flask")
     server.kill_existing_process("appium")
     
-    # Force clean any running emulators
-    try:
-        logger.info("Forcibly cleaning up any existing emulators at startup")
-        subprocess.run(['pkill', '-9', '-f', 'emulator'], check=False, timeout=5)
-        subprocess.run(['pkill', '-9', '-f', 'qemu'], check=False, timeout=5)
-        # Reset adb server to ensure clean state
-        subprocess.run([f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5)
-        time.sleep(1)
-        subprocess.run([f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5)
-        logger.info("Emulator cleanup at startup completed")
-    except Exception as e:
-        logger.error(f"Error during startup emulator cleanup: {e}")
+    # Detect if we're on Mac in development mode
+    is_mac_dev = platform.system() == "Darwin" and os.environ.get("FLASK_ENV") == "development"
+    
+    # Only force clean emulators on non-Mac development environments
+    if not is_mac_dev:
+        try:
+            logger.info("Forcibly cleaning up any existing emulators at startup")
+            subprocess.run(['pkill', '-9', '-f', 'emulator'], check=False, timeout=5)
+            subprocess.run(['pkill', '-9', '-f', 'qemu'], check=False, timeout=5)
+            # Reset adb server to ensure clean state
+            subprocess.run([f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5)
+            time.sleep(1)
+            subprocess.run([f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5)
+            logger.info("Emulator cleanup at startup completed")
+        except Exception as e:
+            logger.error(f"Error during startup emulator cleanup: {e}")
+    else:
+        logger.info("Mac development environment detected - skipping emulator cleanup to preserve local emulators")
+        # Just reset adb server to ensure clean state, without killing emulators
+        try:
+            subprocess.run([f"{server.android_home}/platform-tools/adb", "devices"], check=False, timeout=5)
+            logger.info("ADB server reset completed, existing emulators preserved")
+        except Exception as e:
+            logger.error(f"Error resetting ADB server: {e}")
 
     # Start Appium server
     if not server.start_appium():
