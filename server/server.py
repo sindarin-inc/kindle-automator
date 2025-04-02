@@ -1461,8 +1461,53 @@ api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(ProfilesResource, "/profiles")
 
 
+def cleanup_resources():
+    """Clean up resources before exiting"""
+    logger.info("Cleaning up resources before shutdown...")
+
+    # Kill any running emulators
+    try:
+        logger.info("Stopping any running emulators")
+        subprocess.run(["pkill", "-f", "emulator"], check=False, timeout=3)
+        subprocess.run(["pkill", "-f", "qemu"], check=False, timeout=3)
+    except Exception as e:
+        logger.error(f"Error stopping emulators during shutdown: {e}")
+
+    # Kill Appium server
+    try:
+        logger.info("Stopping Appium server")
+        server.kill_existing_process("appium")
+    except Exception as e:
+        logger.error(f"Error stopping Appium during shutdown: {e}")
+
+    # Reset ADB server
+    try:
+        logger.info("Resetting ADB server")
+        subprocess.run([f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=3)
+    except Exception as e:
+        logger.error(f"Error resetting ADB during shutdown: {e}")
+
+    logger.info("Cleanup complete, server shutting down")
+
+
+def signal_handler(sig, frame):
+    """Handle termination signals for graceful shutdown"""
+    signal_name = (
+        "SIGINT" if sig == signal.SIGINT else "SIGTERM" if sig == signal.SIGTERM else f"Signal {sig}"
+    )
+    logger.info(f"Received {signal_name}, initiating graceful shutdown...")
+    cleanup_resources()
+    # Exit with success code
+    os._exit(0)
+
+
 def run_server():
     """Run the Flask server"""
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    logger.info("Registered signal handlers for graceful shutdown")
+
     app.run(host="0.0.0.0", port=4098)
 
 

@@ -11,6 +11,12 @@ Environment="ANDROID_SDK_ROOT=/opt/android-sdk"
 Environment="FLASK_ENV=production"
 Environment="PYTHONPATH=/opt/kindle-automator"
 ExecStart=/opt/kindle-automator/venv/bin/python -m server.server
+# Add timeout settings for proper service termination
+TimeoutStartSec=60s
+TimeoutStopSec=15s
+# Use SIGINT for graceful shutdown, then SIGTERM after timeout
+KillMode=mixed
+KillSignal=SIGINT
 Restart=always
 RestartSec=10
 
