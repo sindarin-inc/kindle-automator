@@ -1823,16 +1823,35 @@ class AVDProfileManager:
             return True, f"Switched profile tracking to {email} (AVD: {avd_name})"
 
         # For other platforms, try normal start procedure
-        # For force_new_emulator, always stop any running emulator
+        # Check running emulators more carefully - don't stop emulators unnecessarily
+        running_avds = self.map_running_emulators()
+        
+        # Only restart emulators in specific cases
         if force_new_emulator and self.is_emulator_running():
-            logger.info("Force new emulator requested, stopping current emulator")
+            # Force new emulator was explicitly requested
+            logger.info("Force new emulator explicitly requested, stopping current emulator")
             if not self.stop_emulator():
                 return False, "Failed to stop current emulator"
-        # If not forcing new and emulator is running but not ready, stop it
+        # Only if emulator is running but not ready, and it doesn't match our AVD, stop it
         elif not emulator_ready and self.is_emulator_running():
-            logger.info("Emulator running but not ready, stopping to restart it")
-            if not self.stop_emulator():
-                return False, "Failed to stop current emulator"
+            # Check if the running emulator is related to our AVD or email
+            if avd_name in running_avds:
+                logger.info(f"Found running emulator for AVD {avd_name} but it's not ready yet, waiting for it")
+                # Don't stop it, just wait
+            else:
+                # Check if any running emulator has the email in its name
+                email_match_found = False
+                for running_avd in running_avds.keys():
+                    if self.normalize_email_for_avd(email) in running_avd:
+                        logger.info(f"Found emulator with matching email pattern: {running_avd}, waiting for it")
+                        email_match_found = True
+                        break
+                
+                if not email_match_found:
+                    # No match found, so stop the unrelated emulator
+                    logger.info("Emulator running but not related to this profile, stopping to restart the correct one")
+                    if not self.stop_emulator():
+                        return False, "Failed to stop unrelated emulator"
 
         # If emulator is already running and ready, check if we should use it
         if emulator_ready and not force_new_emulator:
