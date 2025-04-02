@@ -33,13 +33,13 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
 
 # Load .env files with secrets
 if ENVIRONMENT.lower() == "prod":
-    logger.info("Loading prod environment variables")
+    logger.info(f"Loading prod environment variables from {os.path.join(BASE_DIR, '.env.prod')}")
     load_dotenv(os.path.join(BASE_DIR, ".env.prod"), override=True)
 elif ENVIRONMENT.lower() == "staging":
-    logger.info("Loading staging environment variables")
+    logger.info(f"Loading staging environment variables from {os.path.join(BASE_DIR, '.env.staging')}")
     load_dotenv(os.path.join(BASE_DIR, ".env.staging"), override=True)
 else:
-    logger.info("Loading dev environment variables")
+    logger.info(f"Loading dev environment variables from {os.path.join(BASE_DIR, '.env')}")
     load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
 
@@ -1724,19 +1724,23 @@ def main():
     try:
         # Just check device status to make sure ADB is responsive
         subprocess.run(
-            [f"{server.android_home}/platform-tools/adb", "devices"], 
-            check=False, 
+            [f"{server.android_home}/platform-tools/adb", "devices"],
+            check=False,
             timeout=5,
-            capture_output=True
+            capture_output=True,
         )
         logger.info("ADB server is active, emulators preserved")
     except Exception as e:
         logger.warning(f"ADB check failed, will restart ADB server: {e}")
         try:
             # Only if ADB check fails, restart the ADB server
-            subprocess.run([f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5)
+            subprocess.run(
+                [f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5
+            )
             time.sleep(1)
-            subprocess.run([f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5)
+            subprocess.run(
+                [f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5
+            )
             logger.info("ADB server restarted")
         except Exception as adb_e:
             logger.error(f"Error restarting ADB server: {adb_e}")
