@@ -48,6 +48,20 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         server_instance.automator.cleanup()
         server_instance.initialize_automator()
         return server_instance.automator.initialize_driver()
+    
+    def restart_emulator():
+        """Restart the emulator if it's not running properly"""
+        logger.info("Restarting emulator due to device list error")
+        current_profile = server_instance.profile_manager.get_current_profile()
+        if current_profile and "email" in current_profile:
+            email = current_profile["email"]
+            logger.info(f"Attempting to restart emulator for profile: {email}")
+            # Force a new emulator to be created
+            server_instance.switch_profile(email, force_new_emulator=True)
+            return True
+        else:
+            logger.error("No current profile found for restarting emulator")
+            return False
 
     def is_uiautomator_crash(error):
         """Check if the error is a UiAutomator2 server crash"""
@@ -56,6 +70,11 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
             error
         )
+    
+    def is_emulator_missing(error):
+        """Check if the error indicates the emulator is not running"""
+        error_str = str(error)
+        return "Failed to get devices list after multiple attempts" in error_str
 
     # Main retry loop
     for attempt in range(max_retries):
@@ -140,8 +159,30 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                         last_error = retry_error
                 else:
                     logger.error("Failed to reinitialize driver after UiAutomator2 crash")
+            # Special handling for emulator not running or device list error
+            elif is_emulator_missing(e):
+                logger.warning(
+                    f"Emulator not running on attempt {attempt + 1}/{max_retries}. Restarting emulator..."
+                )
+
+                # Try to restart the emulator and immediately retry once more
+                if restart_emulator():
+                    logger.info("Successfully restarted emulator, now restarting driver")
+                    if restart_driver():
+                        logger.info("Successfully restarted driver after emulator restart")
+                        try:
+                            logger.info("Retrying operation after emulator and driver restart")
+                            result = func(*args, **kwargs)
+                            return format_response(result)
+                        except Exception as retry_error:
+                            logger.error(f"Retry after emulator restart failed: {retry_error}")
+                            last_error = retry_error
+                    else:
+                        logger.error("Failed to reinitialize driver after emulator restart")
+                else:
+                    logger.error("Failed to restart emulator")
             else:
-                # Regular error handling for non-UiAutomator2 crashes
+                # Regular error handling for other types of crashes
                 logger.error(f"Attempt {attempt + 1} failed: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
 
