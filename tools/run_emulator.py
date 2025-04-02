@@ -21,15 +21,17 @@ from server.config import ANDROID_SDK_PATH, AVAILABLE_APPROACHES, HOST_ARCHITECT
 PROFILES_DIR = os.path.join(ANDROID_SDK_PATH, "profiles")
 CURRENT_PROFILE_FILE = os.path.join(PROFILES_DIR, "current_profile.json")
 
+
 def get_current_profile() -> Optional[Dict]:
     """Get the current profile from the profile manager."""
     if os.path.exists(CURRENT_PROFILE_FILE):
         try:
-            with open(CURRENT_PROFILE_FILE, 'r') as f:
+            with open(CURRENT_PROFILE_FILE, "r") as f:
                 return json.load(f)
         except Exception as e:
             print(f"Error loading current profile: {e}")
     return None
+
 
 def list_avds() -> List[str]:
     """List all available AVDs."""
@@ -38,7 +40,7 @@ def list_avds() -> List[str]:
             [f"{ANDROID_SDK_PATH}/emulator/emulator", "-list-avds"],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         avds = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         return avds
@@ -46,28 +48,29 @@ def list_avds() -> List[str]:
         print(f"Error listing AVDs: {e}")
         return []
 
+
 def try_approach(avd_name: str, approach: Dict) -> bool:
     """
     Try to start the emulator using a specific approach.
-    
+
     Args:
         avd_name: The name of the AVD to start
         approach: The approach configuration to use
-        
+
     Returns:
         bool: True if the emulator started successfully, False otherwise
     """
     print(f"Trying approach: {approach['name']} - {approach['description']}")
-    
+
     # Set up environment
     env = os.environ.copy()
     env.update(approach.get("environment", {}))
     env["ANDROID_SDK_ROOT"] = ANDROID_SDK_PATH
     env["ANDROID_AVD_HOME"] = f"{ANDROID_SDK_PATH}/avd"
-    
+
     # Check if this is a shell command
     is_shell_command = approach.get("shell_command", False)
-    
+
     # Build command
     if is_shell_command:
         # For shell commands, we need to build the command in a special way
@@ -84,30 +87,26 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
         cmd = cmd_prefix + [f"{ANDROID_SDK_PATH}/emulator/emulator", "-avd", avd_name]
         cmd.extend(approach.get("command_options", []))
         print(f"Running command: {' '.join(cmd)}")
-    
+
     # Try to start the emulator
     try:
         process = subprocess.Popen(
-            cmd,
-            env=env,
-            shell=is_shell_command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            cmd, env=env, shell=is_shell_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        
+
         # Wait a bit to see if the process starts
         time.sleep(5)
-        
+
         # Check if process is still running
         if process.poll() is None:
             print("Process started successfully!")
-            
+
             # Wait for emulator to boot - this can take some time
             print("Waiting for emulator to boot (may take a minute or two)...")
             deadline = time.time() + 180  # 3 minutes timeout
             last_progress_time = time.time()
             device_found = False
-            
+
             while time.time() < deadline:
                 try:
                     # First check if the device is visible to adb
@@ -116,30 +115,30 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
                             [f"{ANDROID_SDK_PATH}/platform-tools/adb", "devices"],
                             check=False,
                             capture_output=True,
-                            text=True
+                            text=True,
                         )
                         if "emulator" in devices_result.stdout:
                             print("\nEmulator device detected by adb, waiting for boot to complete...")
                             device_found = True
                             last_progress_time = time.time()
-                    
+
                     # Check if boot is completed
                     adb_cmd = f"{ANDROID_SDK_PATH}/platform-tools/adb"
                     boot_completed = subprocess.run(
                         [adb_cmd, "shell", "getprop", "sys.boot_completed"],
                         capture_output=True,
                         text=True,
-                        check=False
+                        check=False,
                     )
-                    
+
                     # If we get any response, even if not "1", update progress time
                     if boot_completed.stdout:
                         last_progress_time = time.time()
-                    
+
                     if boot_completed.stdout.strip() == "1":
                         print("\nEmulator booted successfully!")
                         print(f"AVD {avd_name} is now running.")
-                        
+
                         # Additional verification - check for package manager
                         try:
                             print("Verifying system packages...")
@@ -148,7 +147,7 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
                                 check=False,
                                 capture_output=True,
                                 text=True,
-                                timeout=10
+                                timeout=10,
                             )
                             if "android" in pm_check.stdout:
                                 print("System packages verified")
@@ -156,7 +155,7 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
                                 print("WARNING: System packages check failed, but proceeding anyway")
                         except Exception as e:
                             print(f"Error checking system packages: {e}")
-                        
+
                         # Allow a bit more time for system services to stabilize
                         print("Waiting 5 seconds for system services to stabilize...")
                         time.sleep(5)
@@ -164,35 +163,35 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
                 except Exception as e:
                     # Ignore exceptions during boot polling
                     pass
-                
+
                 # If no progress for 60 seconds, consider emulator stuck
                 if time.time() - last_progress_time > 60:
                     print("\nNo progress detected for 60 seconds, emulator may be stuck")
                     # Don't terminate - in case it's still starting up slowly
                     break
-                
+
                 # Print progress indicator
                 sys.stdout.write(".")
                 sys.stdout.flush()
                 time.sleep(2)
-            
+
             # If we get here, the emulator didn't boot within the timeout
             print("\nTimeout waiting for emulator to boot.")
-            
+
             # Last attempt to check if device is actually available despite timeout
             try:
                 devices_result = subprocess.run(
                     [f"{ANDROID_SDK_PATH}/platform-tools/adb", "devices"],
                     check=False,
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 if "emulator" in devices_result.stdout and "device" in devices_result.stdout:
                     print("Emulator appears to be running despite boot timeout. Proceeding with caution.")
                     return True
             except:
                 pass
-                
+
             try:
                 process.terminate()
             except:
@@ -205,10 +204,11 @@ def try_approach(avd_name: str, approach: Dict) -> bool:
             print(f"Stdout: {stdout.decode() if stdout else 'None'}")
             print(f"Stderr: {stderr.decode() if stderr else 'None'}")
             return False
-            
+
     except Exception as e:
         print(f"Error running emulator: {e}")
         return False
+
 
 def main():
     """Main function."""
@@ -218,35 +218,37 @@ def main():
     parser.add_argument("--approach", type=int, help="Approach index to use (default: try all)")
     parser.add_argument("--current", action="store_true", help="Use the current profile's AVD (default)")
     args = parser.parse_args()
-    
+
     if args.list:
         avds = list_avds()
         print("Available AVDs:")
         for i, avd in enumerate(avds):
             print(f"  {i+1}. {avd}")
         return
-    
+
     # Get AVD name from command line or get current profile's AVD
     avd_name = args.avd
-    
+
     # If no AVD is specified, try to use the current profile's AVD
     if not avd_name and (args.current or not args.avd):
         current_profile = get_current_profile()
         if current_profile and "avd_name" in current_profile:
             avd_name = current_profile["avd_name"]
-            print(f"Using current profile's AVD: {avd_name} (email: {current_profile.get('email', 'unknown')})")
-    
+            print(
+                f"Using current profile's AVD: {avd_name} (email: {current_profile.get('email', 'unknown')})"
+            )
+
     # If we still don't have an AVD name, let the user choose
     if not avd_name:
         avds = list_avds()
         if not avds:
             print("No AVDs found. Please create an AVD first.")
             return
-            
+
         print("Available AVDs:")
         for i, avd in enumerate(avds):
             print(f"  {i+1}. {avd}")
-            
+
         while True:
             choice = input("Select an AVD to run (number): ")
             try:
@@ -258,10 +260,10 @@ def main():
                     print(f"Please enter a number between 1 and {len(avds)}")
             except ValueError:
                 print("Please enter a valid number")
-    
+
     print(f"Selected AVD: {avd_name}")
     print(f"Host architecture: {HOST_ARCHITECTURE}")
-    
+
     # Get approach from command line or try all
     if args.approach is not None and 0 <= args.approach < len(AVAILABLE_APPROACHES):
         # Try only the specified approach
@@ -298,8 +300,9 @@ def main():
                 return
             else:
                 print(f"Approach {approach['name']} failed, trying next approach...")
-                
+
         print("\nAll approaches failed to start the emulator.")
+
 
 if __name__ == "__main__":
     main()

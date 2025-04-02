@@ -23,21 +23,23 @@ LOG_LEVEL = "INFO"
 DEFAULT_ANDROID_SDK = "/opt/android-sdk"
 # Alternative for macOS
 if platform.system() == "Darwin":
-    DEFAULT_ANDROID_SDK = os.path.expanduser("~/Library/Android/sdk") 
+    DEFAULT_ANDROID_SDK = os.path.expanduser("~/Library/Android/sdk")
 
 # Get Android SDK path from environment variable or use default
 ANDROID_SDK_PATH = os.environ.get("ANDROID_HOME", DEFAULT_ANDROID_SDK)
 
+
 # Detect host architecture
 def get_host_architecture():
     machine = platform.machine().lower()
-    
-    if machine in ('arm64', 'aarch64'):
-        return 'arm64'
-    elif machine in ('x86_64', 'amd64', 'x64'):
-        return 'x86_64'
+
+    if machine in ("arm64", "aarch64"):
+        return "arm64"
+    elif machine in ("x86_64", "amd64", "x64"):
+        return "x86_64"
     else:
-        return 'unknown'
+        return "unknown"
+
 
 HOST_ARCHITECTURE = get_host_architecture()
 
@@ -52,12 +54,8 @@ EMULATOR_APPROACHES = {
             "system_image": "system-images;android-30;google_apis;arm64-v8a",
             "avd_arch": "arm64-v8a",
             "command_prefix": [],
-            "command_options": [
-                "-gpu", "swiftshader", 
-                "-no-window",
-                "-verbose"
-            ],
-            "environment": {}
+            "command_options": ["-gpu", "swiftshader", "-no-window", "-verbose"],
+            "environment": {},
         },
         # Approach 2: Use x86_64 with arch translation
         {
@@ -66,12 +64,8 @@ EMULATOR_APPROACHES = {
             "system_image": "system-images;android-30;google_apis;x86_64",
             "avd_arch": "x86_64",
             "command_prefix": ["arch", "-x86_64"],
-            "command_options": [
-                "-no-window",
-                "-gpu", "swiftshader", 
-                "-verbose"
-            ],
-            "environment": {}
+            "command_options": ["-no-window", "-gpu", "swiftshader", "-verbose"],
+            "environment": {},
         },
         # Approach 3: Use x86_64 with shell script
         {
@@ -81,10 +75,9 @@ EMULATOR_APPROACHES = {
             "avd_arch": "x86_64",
             "command_prefix": ["arch", "-x86_64", "sh", "-c"],
             "shell_command": True,
-            "environment": {}
-        }
+            "environment": {},
+        },
     ],
-    
     # For x86_64 machines (cloud servers, Intel Macs)
     "x86_64": [
         # Just one straightforward approach
@@ -95,13 +88,16 @@ EMULATOR_APPROACHES = {
             "avd_arch": "x86_64",
             "command_options": [
                 "-no-window",
-                "-gpu", "swiftshader_indirect",
-                "-accel", "on",  
-                "-feature", "KVM" # Will be ignored on non-Linux
+                "-gpu",
+                "swiftshader_indirect",
+                "-accel",
+                "on",
+                "-feature",
+                "KVM",  # Will be ignored on non-Linux
             ],
-            "environment": {}
+            "environment": {},
         }
-    ]
+    ],
 }
 
 # Determine available approaches based on host architecture

@@ -275,7 +275,7 @@ class LibraryHandler:
             if self._is_list_view():
                 logger.info("Already in list view")
                 return True
-                
+
             # Force update state machine to ensure we're recognized as being in LIBRARY state
             # This is crucial to prevent auth_handler from trying to enter email after view changes
             if hasattr(self.driver, "automator") and self.driver.automator:
@@ -373,7 +373,7 @@ class LibraryHandler:
                         )
                     )
                     logger.info("Successfully switched to list view")
-                    
+
                     # Force update the state machine to recognize we're still in LIBRARY state
                     # This prevents auth_handler from trying to enter email
                     if hasattr(self.driver, "automator") and self.driver.automator:
@@ -381,7 +381,7 @@ class LibraryHandler:
                         if hasattr(automator, "state_machine") and automator.state_machine:
                             logger.info("Forcing state update after view change to prevent auth confusion")
                             automator.state_machine.update_current_state()
-                            
+
                     # Add slight delay to ensure UI is settled
                     time.sleep(1)
                     return True
@@ -869,33 +869,33 @@ class LibraryHandler:
         """
         if not title:
             return ""
-            
+
         # First convert to lowercase
         normalized = title.lower()
-        
+
         # Log original title for debugging
         logger.debug(f"Normalizing title: '{title}'")
-        
+
         # Replace less essential characters with spaces
         # Note: we're keeping apostrophes and colons intact for special handling
-        for char in ",;\"!@#$%^&*()[]{}_+=<>?/\\|~`":
+        for char in ',;"!@#$%^&*()[]{}_+=<>?/\\|~`':
             normalized = normalized.replace(char, " ")
-            
+
         # Handle apostrophes specially - keep them but add spaces around them
         # This helps with matching parts before/after apostrophes
         if "'" in normalized:
             normalized = normalized.replace("'", " ' ")
-            
+
         # Handle colons specially - keep them but add spaces around them
         if ":" in normalized:
             normalized = normalized.replace(":", " : ")
-            
+
         # Replace multiple spaces with single space and strip
         normalized = " ".join(normalized.split())
-        
+
         # Log normalized title for debugging
         logger.debug(f"Normalized to: '{normalized}'")
-        
+
         return normalized
 
     def _title_match(self, title1: str, title2: str) -> bool:
@@ -912,21 +912,21 @@ class LibraryHandler:
 
         # Log the normalized titles for debugging
         logger.info(f"Comparing titles: '{norm1}' with '{norm2}'")
-        
+
         # First, try exact match
         if norm1 == norm2:
             logger.info("Exact match found")
             return True
-            
+
         # For books with apostrophes or other special characters, try more lenient matching strategies
         if "'" in title1 or "'" in title2 or ":" in title1 or ":" in title2:
             logger.info("Title contains special characters, using more lenient matching")
-            
+
             # Strategy 1: Check if one contains the other (common when titles are truncated)
             if norm1 in norm2 or norm2 in norm1:
                 logger.info(f"Lenient containment match successful between '{norm1}' and '{norm2}'")
                 return True
-                
+
             # Strategy 2: Split by apostrophe and check parts
             for title, norm, other_norm in [(title1, norm1, norm2), (title2, norm2, norm1)]:
                 if "'" in title:
@@ -934,9 +934,11 @@ class LibraryHandler:
                     for part in parts:
                         clean_part = part.strip()
                         if clean_part and len(clean_part) >= 3 and clean_part.lower() in other_norm:
-                            logger.info(f"Apostrophe part match successful with '{clean_part.lower()}' in '{other_norm}'")
+                            logger.info(
+                                f"Apostrophe part match successful with '{clean_part.lower()}' in '{other_norm}'"
+                            )
                             return True
-            
+
             # Strategy 3: Split by colon and check parts
             for title, norm, other_norm in [(title1, norm1, norm2), (title2, norm2, norm1)]:
                 if ":" in title:
@@ -944,22 +946,24 @@ class LibraryHandler:
                     for part in parts:
                         clean_part = part.strip()
                         if clean_part and len(clean_part) >= 5 and clean_part.lower() in other_norm:
-                            logger.info(f"Colon part match successful with '{clean_part.lower()}' in '{other_norm}'")
+                            logger.info(
+                                f"Colon part match successful with '{clean_part.lower()}' in '{other_norm}'"
+                            )
                             return True
-            
+
             # Strategy 4: Compare significant words in both titles
             words1 = set(w.lower() for w in norm1.split() if len(w) >= 4)
             words2 = set(w.lower() for w in norm2.split() if len(w) >= 4)
-            
+
             # Check if there's substantial word overlap
             common_words = words1.intersection(words2)
             if len(common_words) >= 2 or (len(common_words) >= 1 and len(words1) <= 3 and len(words2) <= 3):
                 logger.info(f"Word overlap match successful with common words: {common_words}")
                 return True
-                
+
             # Strategy 5: Check for distinctive words or phrases
             distinctive_phrases = []
-            
+
             # Add key distinctive phrases from each title
             for title in [title1, title2]:
                 # Get phrases that might be distinctive
@@ -968,19 +972,19 @@ class LibraryHandler:
                         clean_part = part.strip().lower()
                         if clean_part and len(clean_part) >= 5:
                             distinctive_phrases.append(clean_part)
-                
+
                 # Add the first part of each title as a distinctive phrase
                 words = title.strip().split()
                 if len(words) >= 2:
                     first_two_words = " ".join(words[:2]).lower()
                     distinctive_phrases.append(first_two_words)
-            
+
             # Check if any distinctive phrase appears in both titles
             for phrase in distinctive_phrases:
                 if phrase in norm1.lower() and phrase in norm2.lower() and len(phrase) >= 5:
                     logger.info(f"Distinctive phrase match with '{phrase}'")
                     return True
-        
+
         # No match found with any strategy
         return False
 
@@ -988,39 +992,38 @@ class LibraryHandler:
         """
         Fallback method to find a book by attempting various partial matching strategies.
         Used when normal title matching fails.
-        
+
         Returns:
             Tuple of (parent_container, button, book_info) or (None, None, None)
         """
         logger.info(f"Attempting to find book by partial matching: '{book_title}'")
-        
+
         try:
             # Try to find books with similar titles first
             all_books = self._scroll_through_library()
-            
+
             # Save list of available titles for debugging
             book_titles = [book.get("title", "") for book in all_books if book.get("title")]
             logger.info(f"Found {len(book_titles)} books in library: {book_titles}")
-            
+
             # Try different matching strategies
             for book in all_books:
                 if not book.get("title"):
                     continue
-                    
+
                 title = book.get("title")
                 logger.info(f"Comparing with book: '{title}'")
-                
+
                 # 1. Check if target title is part of this book's title or vice versa
-                if (book_title.lower() in title.lower() or 
-                    title.lower() in book_title.lower()):
+                if book_title.lower() in title.lower() or title.lower() in book_title.lower():
                     logger.info(f"Found potential match by containment: '{title}'")
-                    
+
                     # Try to find the book element
                     try:
                         # First try with ID and partial text matching
                         xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{title.split()[0]}')]"
                         elements = self.driver.find_elements(AppiumBy.XPATH, xpath)
-                        
+
                         if elements:
                             logger.info(f"Found {len(elements)} potential matching elements")
                             # Find the parent container
@@ -1028,7 +1031,7 @@ class LibraryHandler:
                                 try:
                                     # Get the parent container (usually 2 levels up)
                                     parent = element.find_element(AppiumBy.XPATH, "../..")
-                                    
+
                                     # Verify this is the right book
                                     if title.split()[0].lower() in element.text.lower():
                                         logger.info(f"Confirmed match for '{title}'")
@@ -1039,42 +1042,42 @@ class LibraryHandler:
                     except Exception as e:
                         logger.debug(f"Error during element search: {e}")
                         continue
-            
+
             # If no matches found yet, try more aggressive matching with distinctive words
             logger.info("Trying more aggressive word-based matching")
-            
+
             # Extract distinctive words from the target title (longer words likely more unique)
             target_words = [w.lower() for w in book_title.split() if len(w) >= 4]
             target_words.sort(key=len, reverse=True)  # Sort by length, longest first
-            
+
             if target_words:
                 logger.info(f"Using distinctive words for matching: {target_words[:3]}")
-                
+
                 # Try to find books containing these distinctive words
                 for word in target_words[:3]:  # Try up to 3 most distinctive words
                     if len(word) < 4:  # Skip short words
                         continue
-                        
+
                     try:
                         # Search by distinctive word
                         xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{word}')]"
                         elements = self.driver.find_elements(AppiumBy.XPATH, xpath)
-                        
+
                         if elements:
                             logger.info(f"Found {len(elements)} elements containing '{word}'")
-                            
+
                             # Check each element
                             for element in elements:
                                 try:
                                     element_text = element.text
                                     logger.info(f"Checking element with text: '{element_text}'")
-                                    
+
                                     # Get the parent container
                                     parent = element.find_element(AppiumBy.XPATH, "../..")
-                                    
+
                                     # Create a book info dict
                                     book_info = {"title": element_text}
-                                    
+
                                     # Extract author if possible
                                     try:
                                         author_element = parent.find_element(
@@ -1083,7 +1086,7 @@ class LibraryHandler:
                                         book_info["author"] = author_element.text
                                     except:
                                         pass
-                                        
+
                                     logger.info(f"Found potential match by word '{word}': {book_info}")
                                     return parent, element, book_info
                                 except Exception as e:
@@ -1092,11 +1095,11 @@ class LibraryHandler:
                     except Exception as e:
                         logger.debug(f"Error searching for word '{word}': {e}")
                         continue
-            
+
             # If we got here, no matching book was found
             logger.warning(f"No matching book found for '{book_title}' using partial matching strategies")
             return None, None, None
-            
+
         except Exception as e:
             logger.error(f"Error in partial book matching: {e}")
             traceback.print_exc()
@@ -1119,16 +1122,16 @@ class LibraryHandler:
 
             # Search for the book
             parent_container, button, book_info = self._scroll_through_library(book_title)
-            
+
             # If standard search failed, try partial matching as fallback
             if not parent_container:
                 logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
                 parent_container, button, book_info = self._find_book_by_partial_match(book_title)
-                
+
                 if not parent_container:
                     logger.error(f"Failed to find book '{book_title}' using all search methods")
                     return False
-                    
+
                 logger.info(f"Found book using partial match fallback: {book_info}")
 
             # Check download status and handle download if needed
@@ -1147,8 +1150,8 @@ class LibraryHandler:
                     try:
                         # Re-find the parent container since the page might have refreshed
                         # Using more reliable XPath that handles apostrophes better
-                        title_text = book_info['title']
-                        
+                        title_text = book_info["title"]
+
                         # For titles with apostrophes, use a more reliable approach
                         if "'" in title_text:
                             # Split by apostrophe and use the part before it
@@ -1161,7 +1164,7 @@ class LibraryHandler:
                         else:
                             # Normal case - use exact text matching
                             xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text}']]"
-                            
+
                         parent_container = self.driver.find_element(AppiumBy.XPATH, xpath)
                         content_desc = parent_container.get_attribute("content-desc")
                         logger.info(
@@ -1219,7 +1222,7 @@ class LibraryHandler:
                 # Try clicking one more time
                 button.click()
                 time.sleep(1)
-                
+
                 # Check again if we left the library view
                 try:
                     self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
@@ -1393,7 +1396,7 @@ class LibraryHandler:
         if "'" in s:
             # Log that we're handling a title with an apostrophe
             logger.info(f"Creating XPath for title with apostrophe: '{s}'")
-            
+
             # Strategy 1: Use a combination of contains() for parts before and after apostrophe
             parts = s.split("'")
             conditions = []
@@ -1404,23 +1407,23 @@ class LibraryHandler:
                     # For each part, clean it up and use meaningful words for matching
                     clean_part = part.strip()
                     words = clean_part.split()
-                    
+
                     if words:
                         # Take the longest words (likely most distinctive) up to 3 words
                         sorted_words = sorted(words, key=len, reverse=True)
-                        distinctive_words = sorted_words[:min(3, len(sorted_words))]
-                        
+                        distinctive_words = sorted_words[: min(3, len(sorted_words))]
+
                         for word in distinctive_words:
                             if len(word) >= 3:  # Only use words of reasonable length for matching
                                 safe_word = word.replace("'", "").replace('"', "")
                                 conditions.append(f"contains(., '{safe_word}')")
-            
+
             # Strategy 2: Also try matching with the text before the apostrophe
             if parts and parts[0]:
                 first_part = parts[0].strip()
                 if first_part and len(first_part) >= 3:
                     conditions.append(f"starts-with(normalize-space(.), '{first_part}')")
-            
+
             # Strategy 3: Alternative for titles that have format "X : Y's Z"
             # Extract the parts around the colon if present
             if ":" in s:
@@ -1443,13 +1446,13 @@ class LibraryHandler:
                 # Last resort: try to match any substantial part of the title
                 words = s.replace("'", " ").split()
                 substantial_words = [w for w in words if len(w) >= 5]
-                
+
                 if substantial_words:
                     word_conditions = [f"contains(., '{word}')" for word in substantial_words[:3]]
                     xpath_expr = " or ".join(word_conditions)
                     logger.info(f"Using substantial word fallback: {xpath_expr}")
                     return xpath_expr
-                
+
                 logger.warning(f"Failed to create reliable XPath for '{s}', using default")
                 return "true()"  # Last resort fallback
         else:

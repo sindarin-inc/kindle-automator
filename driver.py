@@ -32,10 +32,10 @@ class Driver:
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
         Get the emulator device ID from adb devices, optionally targeting a specific device.
-        
+
         Args:
             specific_device_id: Optional device ID to specifically connect to (e.g., 'emulator-5554')
-            
+
         Returns:
             Optional[str]: The device ID if found, None otherwise
         """
@@ -52,9 +52,11 @@ class Driver:
                             capture_output=True,
                             text=True,
                             check=True,
-                            timeout=5
+                            timeout=5,
                         )
-                        logger.info(f"Specific device {specific_device_id} verified, model: {verify_result.stdout.strip()}")
+                        logger.info(
+                            f"Specific device {specific_device_id} verified, model: {verify_result.stdout.strip()}"
+                        )
                         return specific_device_id
                     except Exception as e:
                         logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
@@ -62,7 +64,7 @@ class Driver:
                 else:
                     logger.warning(f"Specified device ID {specific_device_id} not found or not ready")
                     # Continue to regular device search if the specific one isn't available
-            
+
             # Regular device search logic
             result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
             for line in result.stdout.splitlines():
@@ -251,7 +253,7 @@ class Driver:
 
             # Get device ID first, using specific device ID from profile if available
             target_device_id = None
-            
+
             # Check if we have a profile manager with a preferred device ID
             if self.automator and hasattr(self.automator, "profile_manager"):
                 # Get the current profile for device ID info
@@ -267,19 +269,19 @@ class Driver:
                     if device_id:
                         target_device_id = device_id
                         logger.info(f"Using device ID {target_device_id} for AVD {avd_name}")
-            
+
             # Get device ID, preferring the specific one if provided
             self.device_id = self._get_emulator_device_id(target_device_id)
             if not self.device_id:
                 return False
-                
+
             # If we found a device ID, update the current profile with it
             if self.automator and hasattr(self.automator, "profile_manager") and self.device_id:
                 if self.automator.profile_manager.current_profile:
                     # Update the current profile with the actual device ID
                     email = self.automator.profile_manager.current_profile.get("email")
                     avd_name = self.automator.profile_manager.current_profile.get("avd_name")
-                    
+
                     if email and avd_name:
                         logger.info(f"Updating profile for {email} with device ID: {self.device_id}")
                         self.automator.profile_manager._save_current_profile(email, avd_name, self.device_id)
@@ -323,13 +325,16 @@ class Driver:
                     options.enable_multi_windows = True
                     options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
                     # Set connection timeout - 5 seconds should be enough but not too long
-                    options.set_capability("uiautomator2ServerLaunchTimeout", 5000)  # 5 seconds timeout for UiAutomator2 server launch
+                    options.set_capability(
+                        "uiautomator2ServerLaunchTimeout", 5000
+                    )  # 5 seconds timeout for UiAutomator2 server launch
                     # Leave this higher since we need time for ADB commands during actual operations
                     options.set_capability("adbExecTimeout", 120000)  # 120 seconds timeout for ADB commands
                     options.set_capability("connectionTimeout", 5000)  # 5 seconds for connection timeout
 
                     # Use shorter timeout on webdriver initialization
                     import socket
+
                     original_timeout = socket.getdefaulttimeout()
                     socket.setdefaulttimeout(5)  # 5 second timeout
                     try:
@@ -339,13 +344,13 @@ class Driver:
                         socket.setdefaulttimeout(original_timeout)  # Restore original timeout
 
                     # Force a state check after driver initialization with a timeout
-                    import threading
                     import concurrent.futures
-                    
+                    import threading
+
                     def check_connection():
                         self.driver.current_activity  # This will force Appium to check connection
                         return True
-                    
+
                     # Run the check with a timeout
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(check_connection)

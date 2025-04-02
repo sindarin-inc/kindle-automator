@@ -92,17 +92,19 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     isinstance(response, dict)
                     and func.__name__ == "post"
                     and hasattr(args[0], "__class__")
-                    and args[0].__class__.__name__ == "AuthResource" 
+                    and args[0].__class__.__name__ == "AuthResource"
                 ):
                     # Check if this is an auth endpoint with recreate flag
                     try:
                         request_json = args[0].request.get_json(silent=True) or {}
                         if request_json.get("recreate", 0) == 1:
-                            logger.info("Auth with recreate=1 operation - skipping retry to avoid double recreation")
+                            logger.info(
+                                "Auth with recreate=1 operation - skipping retry to avoid double recreation"
+                            )
                             return format_response(result)
                     except Exception as e:
                         logger.warning(f"Error checking for recreate flag: {e}")
-                    
+
                     # Also skip retry for other auth issues to avoid duplicate auth attempts
                     logger.info("Auth operation - avoiding retry for authentication stability")
                     return format_response(result)
