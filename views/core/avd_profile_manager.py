@@ -960,6 +960,12 @@ class AVDProfileManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
+            # First check if the AVD actually exists
+            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+            if not os.path.exists(avd_path):
+                logger.error(f"Cannot start emulator: AVD {avd_name} does not exist at {avd_path}")
+                return False
+                
             # First check if emulators are already running and log the status
             current_emulator_state = self._check_running_emulators(avd_name)
 
@@ -1714,6 +1720,21 @@ class AVDProfileManager:
                 # Attempt to start the emulator for this profile
                 avd_name = self.current_profile.get("avd_name")
                 if avd_name:
+                    # Check if AVD exists before trying to start it
+                    avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+                    if not os.path.exists(avd_path):
+                        logger.error(f"AVD {avd_name} does not exist at {avd_path}. Need to create it first.")
+                        # Try to create the AVD
+                        logger.info(f"Attempting to create AVD for {email}")
+                        success, result = self.create_new_avd(email)
+                        if not success:
+                            logger.error(f"Failed to create AVD: {result}")
+                            return False, f"Failed to create AVD for {email}: {result}"
+                        # Update avd_name with newly created AVD
+                        avd_name = result
+                        self.register_profile(email, avd_name)
+                        logger.info(f"Created new AVD {avd_name} for {email}")
+                        
                     logger.info(f"Emulator not ready for profile {email}, attempting to start it")
                     if self.start_emulator(avd_name):
                         logger.info(f"Successfully started emulator for profile {email}")
@@ -1797,6 +1818,21 @@ class AVDProfileManager:
                 f"Tracked profile for {email} but AVD {avd_name} doesn't exist. Try running 'make register-avd'.",
             )
 
+        # Check if AVD actually exists before trying to start it
+        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+        if not os.path.exists(avd_path):
+            logger.error(f"AVD {avd_name} does not exist. Need to create it first.")
+            # Try to create the AVD
+            logger.info(f"Attempting to create AVD for {email}")
+            success, result = self.create_new_avd(email)
+            if not success:
+                logger.error(f"Failed to create AVD: {result}")
+                return False, f"Failed to create AVD for {email}: {result}"
+            # Update avd_name with newly created AVD
+            avd_name = result
+            self.register_profile(email, avd_name)
+            logger.info(f"Created new AVD {avd_name} for {email}")
+                
         # Start the new emulator
         logger.info(f"Starting emulator with AVD {avd_name}")
         if not self.start_emulator(avd_name):
