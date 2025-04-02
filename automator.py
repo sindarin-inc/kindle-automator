@@ -73,6 +73,44 @@ class KindleAutomator:
             file.write(page_source)
         logger.info(f"Saved current page source ({state_name}) to {file_path}")
 
+    def take_diagnostic_snapshot(self, operation_name="unknown"):
+        """Capture a diagnostic snapshot including screenshot and page source for debugging.
+
+        Args:
+            operation_name: Name of the operation being performed (for filename)
+
+        Returns:
+            bool: True if snapshot was taken successfully, False otherwise
+        """
+        timestamp = int(time.time())
+        try:
+            # Take a screenshot first
+            screenshot_path = os.path.join(self.screenshots_dir, f"{operation_name}_{timestamp}.png")
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Diagnostic screenshot saved to {screenshot_path}")
+
+            # Then get page source
+            try:
+                page_source = self.driver.page_source
+                xml_path = os.path.join(self.screenshots_dir, f"{operation_name}_{timestamp}.xml")
+                with open(xml_path, "w") as f:
+                    f.write(page_source)
+                logger.info(f"Diagnostic page source saved to {xml_path}")
+            except Exception as ps_e:
+                logger.warning(f"Could not capture page source for diagnostic snapshot: {ps_e}")
+
+            # Get current activity name
+            try:
+                current_activity = self.driver.current_activity
+                logger.info(f"Current activity during {operation_name}: {current_activity}")
+            except Exception as act_e:
+                logger.warning(f"Could not get current activity: {act_e}")
+
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to take diagnostic snapshot for {operation_name}: {e}")
+            return False
+
     def transition_to_library(self):
         """Handles the initial app setup and ensures we reach the library view"""
         return self.state_machine.transition_to_library()

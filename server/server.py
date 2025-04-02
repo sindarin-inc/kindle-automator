@@ -236,21 +236,56 @@ def ensure_automator_healthy(f):
                 return f(*args, **kwargs)
 
             except Exception as e:
-                # Check if it's the UiAutomator2 server crash error
-                is_uiautomator_crash = isinstance(
-                    e, selenium_exceptions.WebDriverException
-                ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
-                    e
+                # Check if it's the UiAutomator2 server crash error or other common crash patterns
+                error_message = str(e)
+                is_uiautomator_crash = any(
+                    [
+                        "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
+                        in error_message,
+                        "instrumentation process is not running" in error_message,
+                        "Failed to establish a new connection" in error_message,
+                        "Connection refused" in error_message,
+                        "Connection reset by peer" in error_message,
+                    ]
                 )
 
                 if is_uiautomator_crash and attempt < max_retries - 1:
                     logger.warning(
                         f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
                     )
+                    logger.warning(f"Crash error: {error_message}")
+
+                    # Kill any leftover UiAutomator2 processes directly via ADB
+                    try:
+                        if server.automator and server.automator.device_id:
+                            device_id = server.automator.device_id
+                            logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
+                            subprocess.run(
+                                [f"adb -s {device_id} shell pkill -f uiautomator"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            time.sleep(2)  # Give it time to fully terminate
+                    except Exception as kill_e:
+                        logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")
 
                     # Force a complete driver restart
                     if server.automator:
+                        logger.info("Cleaning up automator resources")
                         server.automator.cleanup()
+
+                    # Reset Appium server state as well
+                    try:
+                        logger.info("Resetting Appium server state")
+                        subprocess.run(["pkill -f 'appium|node'"], shell=True, check=False, timeout=5)
+                        time.sleep(2)  # Wait for processes to terminate
+
+                        logger.info("Restarting Appium server")
+                        if not server.start_appium():
+                            logger.error("Failed to restart Appium server")
+                    except Exception as appium_e:
+                        logger.warning(f"Error while resetting Appium: {appium_e}")
 
                     # If we have a current profile, try to switch to it
                     current_profile = server.profile_manager.get_current_profile()
@@ -262,9 +297,11 @@ def ensure_automator_healthy(f):
                             logger.error(f"Failed to switch back to profile: {message}")
                             return {"error": f"Failed to switch back to profile: {message}"}, 500
 
+                    logger.info("Initializing automator after crash recovery")
                     server.initialize_automator()
                     # Clear current book since we're restarting the driver
                     server.clear_current_book()
+
                     if server.automator.initialize_driver():
                         logger.info(
                             "Successfully restarted driver after UiAutomator2 crash, retrying operation..."

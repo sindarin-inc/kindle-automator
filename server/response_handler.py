@@ -180,6 +180,7 @@ def handle_automator_response(server_instance):
 
     Handles special cases like CAPTCHA requirements and ensures consistent
     response format across all endpoints. Includes retry logic with app relaunch.
+    Also captures diagnostic snapshots before and after operations.
 
     Args:
         server_instance: The AutomationServer instance containing the automator
@@ -189,6 +190,19 @@ def handle_automator_response(server_instance):
         @wraps(f)
         def wrapper(*args, **kwargs):
             start_time = time.time()
+
+            # Get the operation name from the function
+            operation_name = f.__name__
+            if operation_name.startswith("_"):
+                operation_name = operation_name[1:]  # Remove leading underscore
+
+            # Take diagnostic snapshot before operation if driver is ready
+            if server_instance.automator and server_instance.automator.driver:
+                try:
+                    server_instance.automator.take_diagnostic_snapshot(f"pre_{operation_name}")
+                except Exception as snap_e:
+                    logger.warning(f"Failed to take pre-operation snapshot for {operation_name}: {snap_e}")
+
             try:
                 # Wrap the function call in retry logic
                 def wrapped_func():
@@ -203,6 +217,15 @@ def handle_automator_response(server_instance):
 
                     # Get automator from server instance
                     automator = server_instance.automator
+
+                    # Take diagnostic snapshot after successful operation
+                    if automator and automator.driver and status_code < 400:
+                        try:
+                            automator.take_diagnostic_snapshot(f"post_{operation_name}")
+                        except Exception as snap_e:
+                            logger.warning(
+                                f"Failed to take post-operation snapshot for {operation_name}: {snap_e}"
+                            )
 
                     # Check for special states that need handling
                     if automator and automator.state_machine:
@@ -230,8 +253,16 @@ def handle_automator_response(server_instance):
 
             except Exception as e:
                 time_taken = round(time.time() - start_time, 3)
-                logger.error(f"Error in endpoint: {e}")
+                logger.error(f"Error in endpoint {operation_name}: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
+
+                # Take diagnostic snapshot on error if the driver is still alive
+                if server_instance.automator and server_instance.automator.driver:
+                    try:
+                        server_instance.automator.take_diagnostic_snapshot(f"error_{operation_name}")
+                    except Exception as snap_e:
+                        logger.warning(f"Failed to take error snapshot for {operation_name}: {snap_e}")
+
                 return {"error": str(e), "time_taken": time_taken}, 500
 
         return wrapper
