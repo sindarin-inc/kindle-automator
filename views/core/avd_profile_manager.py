@@ -635,6 +635,139 @@ class AVDProfileManager:
             logger.error(f"Error during emulator cleanup: {e}")
             return False
 
+    def _check_running_emulators(self, target_avd_name: str = None) -> dict:
+        """
+        Check for running emulators and their status.
+
+        Args:
+            target_avd_name: Optional AVD name we're looking for
+
+        Returns:
+            dict: Status of running emulators, including matching and other emulators
+        """
+        result = {"any_emulator_running": False, "matching_emulator_id": None, "other_emulators": []}
+
+        try:
+            # Get list of running emulators
+            running_emulators = self.map_running_emulators()
+            logger.info(f"Found running emulators: {running_emulators}")
+
+            if running_emulators:
+                result["any_emulator_running"] = True
+
+                # Check if our target AVD is running
+                if target_avd_name and target_avd_name in running_emulators:
+                    result["matching_emulator_id"] = running_emulators[target_avd_name]
+
+                # Identify other running emulators
+                for avd_name, emulator_id in running_emulators.items():
+                    if not target_avd_name or avd_name != target_avd_name:
+                        result["other_emulators"].append(emulator_id)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error checking running emulators: {e}")
+            return result
+
+    def _is_specific_emulator_ready(self, emulator_id: str) -> bool:
+        """
+        Check if a specific emulator is ready.
+
+        Args:
+            emulator_id: The emulator ID to check (e.g. emulator-5554)
+
+        Returns:
+            bool: True if the emulator is ready, False otherwise
+        """
+        try:
+            # First check if the device is connected
+            devices_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            device_connected = False
+            for line in devices_result.stdout.strip().split("\n"):
+                if emulator_id in line and "device" in line and not "offline" in line:
+                    device_connected = True
+                    break
+
+            if not device_connected:
+                logger.warning(f"Emulator {emulator_id} not found in connected devices")
+                return False
+
+            # Check boot completed with specific emulator ID
+            boot_completed = subprocess.run(
+                [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "shell",
+                    "getprop",
+                    "sys.boot_completed",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            logger.info(f"Boot check for {emulator_id}: [{boot_completed.stdout.strip()}]")
+            return boot_completed.stdout.strip() == "1"
+
+        except Exception as e:
+            logger.error(f"Error checking if emulator {emulator_id} is ready: {e}")
+            return False
+
+    def _stop_specific_emulator(self, emulator_id: str) -> bool:
+        """
+        Stop a specific emulator by ID.
+
+        Args:
+            emulator_id: The emulator ID to stop (e.g. emulator-5554)
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Stopping specific emulator: {emulator_id}")
+
+            # First try graceful shutdown
+            subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
+                check=False,
+                timeout=5,
+            )
+
+            # Wait briefly for emulator to shut down
+            for i in range(10):
+                devices_result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+
+                if emulator_id not in devices_result.stdout:
+                    logger.info(f"Emulator {emulator_id} stopped successfully")
+                    return True
+
+                logger.info(f"Waiting for emulator {emulator_id} to stop... ({i+1}/10)")
+                time.sleep(1)
+
+            # If still running, force kill
+            logger.warning(f"Emulator {emulator_id} didn't stop gracefully, forcing termination")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error stopping emulator {emulator_id}: {e}")
+            return False
+
     def stop_emulator(self) -> bool:
         """Stop the currently running emulator."""
         try:
@@ -710,24 +843,46 @@ class AVDProfileManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            # First check if an emulator is already running but do it efficiently
-            if self.is_emulator_running():
-                # Only stop if it's a different AVD than the one we want to start
-                running_avds = self.map_running_emulators()
-                if avd_name in running_avds:
-                    logger.info(
-                        f"Emulator for requested AVD {avd_name} is already running, skipping stop/start"
-                    )
-                    # Double-check it's ready
-                    if self.is_emulator_ready():
-                        logger.info("Emulator is ready, using existing instance")
-                        return True
-                    logger.info("Emulator is running but not ready, will restart it")
+            # First check if emulators are already running and log the status
+            current_emulator_state = self._check_running_emulators(avd_name)
 
-                logger.warning("A different emulator is running, stopping it first")
+            # Check for matching running emulator
+            if current_emulator_state["matching_emulator_id"]:
+                logger.info(
+                    f"Emulator for requested AVD {avd_name} is already running with ID: {current_emulator_state['matching_emulator_id']}"
+                )
+
+                # Double-check it's ready
+                if self._is_specific_emulator_ready(current_emulator_state["matching_emulator_id"]):
+                    logger.info(
+                        f"Emulator {current_emulator_state['matching_emulator_id']} is ready, using existing instance"
+                    )
+
+                    # Update the mapping to ensure we track this emulator
+                    self.emulator_map[avd_name] = current_emulator_state["matching_emulator_id"]
+                    self._save_emulator_map()
+
+                    return True
+
+                logger.info(
+                    f"Emulator {current_emulator_state['matching_emulator_id']} is running but not ready, will restart it"
+                )
+
+            # If we have other emulators running, stop them before continuing
+            if current_emulator_state["other_emulators"]:
+                logger.warning(
+                    f"Found {len(current_emulator_state['other_emulators'])} other emulator(s) running, stopping them first"
+                )
+                for emu_id in current_emulator_state["other_emulators"]:
+                    logger.info(f"Stopping unrelated emulator: {emu_id}")
+                    self._stop_specific_emulator(emu_id)
+
+            # If any emulators are still running, do a full stop
+            if self.is_emulator_running():
+                logger.warning("Still have running emulators, performing full emulator stop")
                 start_time = time.time()
                 if not self.stop_emulator():
-                    logger.error("Failed to stop existing emulator")
+                    logger.error("Failed to stop existing emulators")
                     return False
                 elapsed = time.time() - start_time
                 logger.info(f"Emulator stop operation completed in {elapsed:.2f} seconds")
@@ -803,6 +958,9 @@ class AVDProfileManager:
                     "KVM",  # Enable KVM (Linux)
                 ]
 
+            # Force a specific port to avoid conflicts with multiple emulators
+            emulator_cmd.extend(["-port", "5554"])
+
             # Start emulator in background
             logger.info(f"Starting emulator with AVD {avd_name}")
             logger.info(f"Using command: {' '.join(emulator_cmd)}")
@@ -811,13 +969,20 @@ class AVDProfileManager:
 
             # Wait for emulator to boot with more frequent checks
             logger.info("Waiting for emulator to boot...")
-            deadline = time.time() + 120  # 120 seconds total timeout (increased from 60)
+            deadline = time.time() + 120  # 120 seconds total timeout
             last_progress_time = time.time()
             device_found = False
+            expected_emulator_id = "emulator-5554"  # We specified port 5554 above
+            boot_check_attempts = 0
             no_progress_timeout = 60  # 60 seconds with no progress triggers termination (increased from 30)
             check_interval = 1  # Check every 1 second (more frequent checks)
 
             while time.time() < deadline:
+                boot_check_attempts += 1
+                logger.info(
+                    f"Emulator boot check attempt #{boot_check_attempts}, elapsed: {int(time.time() - last_progress_time)}s"
+                )
+
                 try:
                     # First check if the device is visible to adb
                     if not device_found:
@@ -828,98 +993,177 @@ class AVDProfileManager:
                             text=True,
                             timeout=3,
                         )
-                        if "emulator" in devices_result.stdout:
-                            logger.info("Emulator device detected by adb, waiting for boot to complete...")
+                        logger.info(f"ADB devices output: {devices_result.stdout.strip()}")
+
+                        if expected_emulator_id in devices_result.stdout:
+                            logger.info(
+                                f"Emulator device {expected_emulator_id} detected by adb, waiting for boot to complete..."
+                            )
                             device_found = True
                             last_progress_time = time.time()
 
-                    # Check several boot progress indicators to be more sensitive
-                    # First check boot_completed
-                    boot_completed = subprocess.run(
-                        [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                    )
+                            # Store the emulator ID mapping now
+                            self.emulator_map[avd_name] = expected_emulator_id
+                            self._save_emulator_map()
+                        elif "emulator" in devices_result.stdout:
+                            logger.info(
+                                f"Some emulator device detected, but not our expected {expected_emulator_id}"
+                            )
 
-                    # If we get any response, even if not "1", update progress time
-                    if boot_completed.stdout:
-                        logger.debug(f"Boot progress (sys.boot_completed): [{boot_completed.stdout.strip()}]")
-                        last_progress_time = time.time()
+                            # Parse the device list to get all emulator IDs
+                            other_emulators = []
+                            for line in devices_result.stdout.strip().split("\n"):
+                                if "emulator-" in line and "device" in line:
+                                    emulator_id = line.split("\t")[0].strip()
+                                    other_emulators.append(emulator_id)
 
-                    # Check init.svc.bootanim property which indicates boot animation status
-                    boot_anim = subprocess.run(
-                        [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "init.svc.bootanim"],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                    )
+                            if other_emulators:
+                                logger.warning(f"Found unexpected emulators: {other_emulators}")
+                                device_found = True  # We'll try to use what we found
+                                last_progress_time = time.time()
+                                expected_emulator_id = other_emulators[0]  # Use the first one
 
-                    if boot_anim.stdout:
-                        logger.debug(f"Boot animation status: [{boot_anim.stdout.strip()}]")
-                        # 'stopped' means the boot animation has finished
-                        if boot_anim.stdout.strip() == "stopped":
-                            logger.info("Boot animation has stopped, emulator is likely almost ready")
-                            last_progress_time = time.time()
+                                # Update the mapping with what we found
+                                logger.info(f"Will use existing emulator {expected_emulator_id}")
+                                self.emulator_map[avd_name] = expected_emulator_id
+                                self._save_emulator_map()
 
-                    # Check if launcher is ready - another indicator of boot progress
-                    try:
-                        launcher_check = subprocess.run(
+                    # Use the expected (or found) emulator ID for all further commands
+                    if device_found:
+                        # Check boot_completed with specific emulator ID
+                        boot_completed = subprocess.run(
                             [
                                 f"{self.android_home}/platform-tools/adb",
+                                "-s",
+                                expected_emulator_id,
                                 "shell",
-                                "pidof",
-                                "com.android.launcher3",
+                                "getprop",
+                                "sys.boot_completed",
                             ],
                             check=False,
                             capture_output=True,
                             text=True,
-                            timeout=2,
+                            timeout=3,
                         )
-                        if launcher_check.stdout.strip():
-                            logger.debug(f"Launcher is running: [{launcher_check.stdout.strip()}]")
+
+                        logger.info(
+                            f"Boot progress for {expected_emulator_id} (sys.boot_completed): [{boot_completed.stdout.strip()}] [{boot_completed.stderr.strip()}]"
+                        )
+
+                        # If we get any response, even if not "1", update progress time
+                        if boot_completed.stdout.strip():
                             last_progress_time = time.time()
-                    except Exception as launcher_e:
-                        # Just continue if this check fails
-                        pass
 
-                    # Only consider boot complete when we get "1" for sys.boot_completed
-                    if boot_completed.stdout.strip() == "1":
-                        logger.info("Emulator booted successfully")
+                        # Check boot animation with specific emulator ID
+                        boot_anim = subprocess.run(
+                            [
+                                f"{self.android_home}/platform-tools/adb",
+                                "-s",
+                                expected_emulator_id,
+                                "shell",
+                                "getprop",
+                                "init.svc.bootanim",
+                            ],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=3,
+                        )
 
-                        # Additional verification - check for package manager
+                        logger.info(
+                            f"Boot animation for {expected_emulator_id}: [{boot_anim.stdout.strip()}] [{boot_anim.stderr.strip()}]"
+                        )
+
+                        if boot_anim.stdout.strip():
+                            last_progress_time = time.time()
+
+                            # 'stopped' means the boot animation has finished
+                            if boot_anim.stdout.strip() == "stopped":
+                                logger.info(
+                                    f"Boot animation on {expected_emulator_id} has stopped, emulator is likely almost ready"
+                                )
+
+                        # Check if launcher is ready with specific emulator ID
                         try:
-                            pm_check = subprocess.run(
+                            launcher_check = subprocess.run(
                                 [
                                     f"{self.android_home}/platform-tools/adb",
+                                    "-s",
+                                    expected_emulator_id,
                                     "shell",
-                                    "pm",
-                                    "list",
-                                    "packages",
-                                    "|",
-                                    "grep",
-                                    "amazon.kindle",
+                                    "pidof",
+                                    "com.android.launcher3",
                                 ],
                                 check=False,
                                 capture_output=True,
                                 text=True,
-                                timeout=3,
+                                timeout=2,
                             )
-                            if "amazon.kindle" in pm_check.stdout:
-                                logger.info("Kindle package confirmed to be installed")
-                            else:
-                                logger.warning(
-                                    "Emulator booted but Kindle package not found. Will proceed anyway."
-                                )
-                        except Exception as e:
-                            logger.warning(f"Error checking for Kindle package: {e}")
 
-                        # Allow a bit more time for system services to stabilize
-                        logger.info("Waiting 2 seconds for system services to stabilize...")
-                        time.sleep(2)
-                        return True
+                            logger.info(
+                                f"Launcher check for {expected_emulator_id}: [{launcher_check.stdout.strip()}] [{launcher_check.stderr.strip()}]"
+                            )
+
+                            if launcher_check.stdout.strip():
+                                logger.info(f"Launcher is running on {expected_emulator_id}")
+                                last_progress_time = time.time()
+                        except Exception as launcher_e:
+                            logger.warning(f"Launcher check failed: {launcher_e}")
+
+                        # Only consider boot complete when we get "1" for sys.boot_completed
+                        if boot_completed.stdout.strip() == "1":
+                            logger.info(f"Emulator {expected_emulator_id} booted successfully")
+
+                            # Additional verification - check for package manager
+                            try:
+                                pm_check = subprocess.run(
+                                    [
+                                        f"{self.android_home}/platform-tools/adb",
+                                        "-s",
+                                        expected_emulator_id,
+                                        "shell",
+                                        "pm",
+                                        "list",
+                                        "packages",
+                                        "|",
+                                        "grep",
+                                        "amazon.kindle",
+                                    ],
+                                    check=False,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=3,
+                                )
+
+                                logger.info(
+                                    f"Package check for {expected_emulator_id}: [{pm_check.stdout.strip()}] [{pm_check.stderr.strip()}]"
+                                )
+
+                                if "amazon.kindle" in pm_check.stdout:
+                                    logger.info(
+                                        f"Kindle package confirmed to be installed on {expected_emulator_id}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Emulator {expected_emulator_id} booted but Kindle package not found. Will proceed anyway."
+                                    )
+                            except Exception as e:
+                                logger.warning(f"Error checking for Kindle package: {e}")
+
+                            # Final success - store the mapping again to be sure
+                            self.emulator_map[avd_name] = expected_emulator_id
+                            self._save_emulator_map()
+
+                            # Allow a bit more time for system services to stabilize
+                            logger.info("Waiting 2 seconds for system services to stabilize...")
+                            time.sleep(2)
+                            return True
+                    else:
+                        logger.warning("Emulator not booted yet, continuing to wait...")
+                        # Show what we have so far
+                        logger.warning(f"Boot progress: {boot_completed.stdout.strip()}")
+                        logger.warning(f"Boot animation: {boot_anim.stdout.strip()}")
+                        logger.warning(f"Launcher: {launcher_check.stdout.strip()}")
 
                 except Exception as e:
                     # Log but continue polling
