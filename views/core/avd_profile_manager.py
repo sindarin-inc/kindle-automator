@@ -290,6 +290,8 @@ class AVDProfileManager:
     def map_running_emulators(self) -> Dict[str, str]:
         """
         Map running emulators to their device IDs.
+        This method never kills or restarts the ADB server if it's already running properly.
+        It only starts the server if the initial version check indicates issues.
 
         Returns:
             Dict[str, str]: Mapping of emulator names to device IDs
@@ -316,39 +318,25 @@ class AVDProfileManager:
                     )
                     if version_check.returncode == 0:
                         logger.debug(f"ADB server already running: {version_check.stdout.strip()}")
+                        # Server is already running correctly, no need to restart it
+                        logger.debug("ADB server is running correctly, skipping restart")
                     else:
                         logger.warning(f"ADB server appears to have issues: {version_check.stderr}")
+                        # Only attempt to start the server if there are issues
+                        logger.debug("Starting ADB server due to issues detected")
+                        start_result = subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "start-server"],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=adb_timeout,
+                        )
+                        if start_result.returncode == 0:
+                            logger.debug("Successfully started ADB server")
+                        else:
+                            logger.warning(f"ADB start-server returned non-zero: {start_result.stderr}")
                 except Exception as ve:
                     logger.warning(f"Error checking ADB version: {ve}")
-
-                # Only restart if necessary (more conservative approach for production)
-                kill_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "kill-server"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=adb_timeout,
-                )
-
-                # Wait longer between operations
-                time.sleep(2)
-
-                # Start with longer timeout
-                start_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "start-server"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=adb_timeout,
-                )
-
-                # Wait for server to be fully ready
-                time.sleep(3)
-
-                if start_result.returncode == 0:
-                    logger.debug("Reset adb server before checking devices")
-                else:
-                    logger.warning(f"ADB start-server returned non-zero: {start_result.stderr}")
             except Exception as e:
                 logger.warning(f"Error resetting adb server: {e}")
 
@@ -755,12 +743,8 @@ class AVDProfileManager:
             # Kill all qemu processes too
             subprocess.run(["pkill", "-9", "-f", "qemu"], check=False, timeout=5)
 
-            # Force reset adb server
-            subprocess.run([f"{self.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5)
-            time.sleep(1)
-            subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5
-            )
+            # No longer force resetting adb server as it can cause issues
+            logger.info("Skipping ADB server reset during cleanup")
 
             logger.info("Emulator cleanup completed")
             return True
