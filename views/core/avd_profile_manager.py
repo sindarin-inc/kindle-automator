@@ -50,6 +50,12 @@ class AVDProfileManager:
         self.profiles_index = self._load_profiles_index()
         self.current_profile = self._load_current_profile()
 
+        # Scan for running emulators with email patterns on initialization
+        try:
+            self.scan_for_avds_with_emails()
+        except Exception as e:
+            logger.warning(f"Error scanning for AVDs with emails on init: {e}")
+
     def normalize_email_for_avd(self, email: str) -> str:
         """
         Normalize an email address to be used in an AVD name.
@@ -491,11 +497,8 @@ class AVDProfileManager:
                         logger.info(f"Matched AVD {avd_name} for device {device_name}")
                         return avd_name
 
-                # If not found in profiles, try emulator map
-                for avd_name in self.emulator_map:
-                    if device_name.lower() in avd_name.lower():
-                        logger.info(f"Matched AVD {avd_name} from emulator map for device {device_name}")
-                        return avd_name
+                # No additional search needed - this code path is obsolete
+                pass
 
                 # If we still can't find it but there's only one profile, use that
                 if len(self.profiles_index) == 1:
@@ -929,9 +932,9 @@ class AVDProfileManager:
                         f"Emulator {current_emulator_state['matching_emulator_id']} is ready, using existing instance"
                     )
 
-                    # Update the mapping to ensure we track this emulator
-                    self.emulator_map[avd_name] = current_emulator_state["matching_emulator_id"]
-                    self._save_emulator_map()
+                    # Update current profile with the emulator ID
+                    if self.current_profile and self.current_profile.get("avd_name") == avd_name:
+                        self.current_profile["emulator_id"] = current_emulator_state["matching_emulator_id"]
 
                     return True
 
@@ -1073,9 +1076,9 @@ class AVDProfileManager:
                             device_found = True
                             last_progress_time = time.time()
 
-                            # Store the emulator ID mapping now
-                            self.emulator_map[avd_name] = expected_emulator_id
-                            self._save_emulator_map()
+                            # Store the emulator ID in current profile if matching
+                            if self.current_profile and self.current_profile.get("avd_name") == avd_name:
+                                self.current_profile["emulator_id"] = expected_emulator_id
                         elif "emulator" in devices_result.stdout:
                             logger.info(
                                 f"Some emulator device detected, but not our expected {expected_emulator_id}"
@@ -1096,8 +1099,7 @@ class AVDProfileManager:
 
                                 # Update the mapping with what we found
                                 logger.info(f"Will use existing emulator {expected_emulator_id}")
-                                self.emulator_map[avd_name] = expected_emulator_id
-                                self._save_emulator_map()
+                                # No longer tracking emulator map
 
                     # Use the expected (or found) emulator ID for all further commands
                     if device_found:
@@ -1222,8 +1224,7 @@ class AVDProfileManager:
                                 logger.warning(f"Error checking for Kindle package: {e}")
 
                             # Final success - store the mapping again to be sure
-                            self.emulator_map[avd_name] = expected_emulator_id
-                            self._save_emulator_map()
+                            # No longer tracking emulator map
 
                             # Allow a bit more time for system services to stabilize
                             logger.info("Waiting 2 seconds for system services to stabilize...")
@@ -1898,9 +1899,7 @@ class AVDProfileManager:
                     os.remove(self.current_profile_file)
 
             # Clean up emulator mapping
-            if avd_name in self.emulator_map:
-                del self.emulator_map[avd_name]
-                self._save_emulator_map()
+            # No longer using emulator_map
 
             logger.info(f"Profile tracking removed for {email} in simplified mode")
             return True, f"Profile tracking removed for {email}"
@@ -1972,10 +1971,8 @@ class AVDProfileManager:
             except Exception as e:
                 logger.error(f"Error deleting AVD ini file: {e}")
 
-        # Clean up emulator mapping
-        if avd_name in self.emulator_map:
-            del self.emulator_map[avd_name]
-            self._save_emulator_map()
+            # Clean up emulator mapping
+            # No longer using emulator_map
             logger.info(f"Removed {avd_name} from emulator map")
 
         # Remove from profiles index
