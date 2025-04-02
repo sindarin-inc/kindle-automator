@@ -63,8 +63,10 @@ class AutomationServer:
             self.automator = KindleAutomator()
             # Connect profile manager to automator for device ID tracking
             self.automator.profile_manager = self.profile_manager
-            # Update emulator mappings for current running emulators
-            self.profile_manager.update_emulator_mappings()
+            # Scan for any AVDs with email patterns in their names and register them
+            discovered = self.profile_manager.scan_for_avds_with_emails()
+            if discovered:
+                logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
         return self.automator
 
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:

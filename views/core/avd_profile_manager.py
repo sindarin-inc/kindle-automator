@@ -28,7 +28,6 @@ class AVDProfileManager:
         self.profiles_dir = os.path.join(base_dir, "profiles")
         self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
         self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
-        self.emulator_map_file = os.path.join(self.profiles_dir, "emulator_device_map.json")
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
 
         # Detect host architecture and operating system
@@ -50,14 +49,52 @@ class AVDProfileManager:
         # Load profile index if it exists, otherwise create empty one
         self.profiles_index = self._load_profiles_index()
         self.current_profile = self._load_current_profile()
-        self.emulator_map = self._load_emulator_map()
 
-        # Clean up any corrupted entries in the emulator map
-        # Run this on initialization to fix any existing issues
-        try:
-            self._clean_emulator_map()
-        except Exception as e:
-            logger.error(f"Error cleaning emulator map during initialization: {e}")
+    def normalize_email_for_avd(self, email: str) -> str:
+        """
+        Normalize an email address to be used in an AVD name.
+
+        Args:
+            email: Email address to normalize
+
+        Returns:
+            str: Normalized email suitable for AVD name
+        """
+        return email.replace("@", "_").replace(".", "_")
+
+    def get_avd_name_from_email(self, email: str) -> str:
+        """
+        Generate a standardized AVD name from an email address.
+
+        Args:
+            email: Email address
+
+        Returns:
+            str: Complete AVD name
+        """
+        email_formatted = self.normalize_email_for_avd(email)
+        return f"KindleAVD_{email_formatted}"
+
+    def extract_email_from_avd_name(self, avd_name: str) -> Optional[str]:
+        """
+        Try to extract an email from an AVD name.
+        This is an approximate reverse of get_avd_name_from_email.
+
+        Args:
+            avd_name: The AVD name to parse
+
+        Returns:
+            Optional[str]: Extracted email or None if pattern doesn't match
+        """
+        if not avd_name.startswith("KindleAVD_"):
+            return None
+
+        # Extract the email part
+        email_part = avd_name[len("KindleAVD_") :]
+
+        # This is imperfect since we can't know where . vs _ were originally
+        # But for simple checking it should be sufficient
+        return email_part
 
     def _detect_host_architecture(self) -> str:
         """
@@ -149,30 +186,34 @@ class AVDProfileManager:
         else:
             return None
 
-    def _load_emulator_map(self) -> Dict[str, str]:
+    def find_running_emulator_for_email(self, email: str) -> Optional[str]:
         """
-        Load the mapping between AVD names and emulator device IDs.
+        Find a running emulator that's associated with a specific email.
+
+        Args:
+            email: The email to find a running emulator for
 
         Returns:
-            Dict[str, str]: Dictionary mapping AVD names to emulator device IDs.
+            Optional[str]: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
         """
-        map_data = {}
-        if os.path.exists(self.emulator_map_file):
-            try:
-                with open(self.emulator_map_file, "r") as f:
-                    map_data = json.load(f)
+        # Get all running emulators
+        running_emulators = self.map_running_emulators()
 
-                # Check for corrupted entries in the loaded data
-                has_corrupted = any(
-                    "\n" in avd_name or avd_name.endswith(" OK") for avd_name in map_data.keys()
-                )
-                if has_corrupted:
-                    logger.warning("Found potentially corrupted entries in emulator map file")
-                    # We'll clean it after the class is fully initialized
-            except Exception as e:
-                logger.error(f"Error loading emulator device map: {e}")
+        if not running_emulators:
+            return None
 
-        return map_data
+        # First try the exact AVD name match based on email
+        target_avd_name = self.get_avd_name_from_email(email)
+        if target_avd_name in running_emulators:
+            return running_emulators[target_avd_name]
+
+        # If not found, look for any AVD name that might contain the normalized email
+        normalized_email = self.normalize_email_for_avd(email)
+        for avd_name, emulator_id in running_emulators.items():
+            if normalized_email in avd_name:
+                return emulator_id
+
+        return None
 
     def _save_current_profile(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
@@ -189,10 +230,6 @@ class AVDProfileManager:
         if emulator_id:
             current["emulator_id"] = emulator_id
 
-            # Update emulator map
-            self.emulator_map[avd_name] = emulator_id
-            self._save_emulator_map()
-
         try:
             with open(self.current_profile_file, "w") as f:
                 json.dump(current, f, indent=2)
@@ -200,28 +237,49 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error saving current profile: {e}")
 
-    def _save_emulator_map(self) -> None:
-        """Save the emulator device map to JSON file."""
-        try:
-            with open(self.emulator_map_file, "w") as f:
-                json.dump(self.emulator_map, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving emulator device map: {e}")
-
     def get_avd_for_email(self, email: str) -> Optional[str]:
-        """Get the AVD name for a given email address."""
-        return self.profiles_index.get(email)
+        """
+        Get the AVD name for a given email address.
+
+        Args:
+            email: Email address to lookup
+
+        Returns:
+            Optional[str]: The associated AVD name or None if not found
+        """
+        # First check if we have a mapping in the profiles index
+        if email in self.profiles_index:
+            return self.profiles_index.get(email)
+
+        # If not found, create a standardized AVD name
+        return self.get_avd_name_from_email(email)
 
     def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
-        """Get the emulator device ID for a given AVD name."""
-        return self.emulator_map.get(avd_name)
+        """
+        Get the emulator device ID for a given AVD name.
+
+        Args:
+            avd_name: Name of the AVD to find
+
+        Returns:
+            Optional[str]: The emulator ID if found, None otherwise
+        """
+        # Look for running emulators with this AVD name
+        running_emulators = self.map_running_emulators()
+        return running_emulators.get(avd_name)
 
     def get_emulator_id_for_email(self, email: str) -> Optional[str]:
-        """Get the emulator device ID for a given email address."""
-        avd_name = self.get_avd_for_email(email)
-        if avd_name:
-            return self.get_emulator_id_for_avd(avd_name)
-        return None
+        """
+        Get the emulator device ID for a given email address.
+
+        Args:
+            email: Email address to find an emulator for
+
+        Returns:
+            Optional[str]: The emulator ID if found, None otherwise
+        """
+        # Use our dedicated method to find running emulator for email
+        return self.find_running_emulator_for_email(email)
 
     def map_running_emulators(self) -> Dict[str, str]:
         """
@@ -300,30 +358,38 @@ class AVDProfileManager:
 
                         # Only proceed if the emulator device is actually available (not 'offline')
                         if device_state != "offline":
-                            # Get the port number from the emulator ID
-                            try:
-                                port = int(emulator_id.split("-")[1])
+                            # Query emulator for AVD name with timeout
+                            avd_name = self._get_avd_name_for_emulator(emulator_id)
+                            if avd_name:
+                                running_emulators[avd_name] = emulator_id
 
-                                # Query emulator for AVD name with timeout
-                                avd_name = self._get_avd_name_for_emulator(emulator_id)
-                                if avd_name:
-                                    running_emulators[avd_name] = emulator_id
-                                else:
-                                    # If we couldn't get the AVD name but we know an emulator is running,
-                                    # check if it matches our current profile's emulator
-                                    if self.current_profile and self.current_profile.get("avd_name"):
-                                        current_avd = self.current_profile.get("avd_name")
-                                        current_emu_id = self.current_profile.get("emulator_id")
+                                # If this AVD name has an email pattern, we might be able to extract the email
+                                extracted_email = self.extract_email_from_avd_name(avd_name)
+                                if extracted_email:
+                                    logger.info(
+                                        f"Found AVD with email pattern: {avd_name} -> {extracted_email}"
+                                    )
 
-                                        # If we have a matching emulator ID, use that mapping
-                                        if current_emu_id == emulator_id:
-                                            logger.info(
-                                                f"Using known mapping for current profile: {current_avd} -> {emulator_id}"
-                                            )
-                                            running_emulators[current_avd] = emulator_id
+                                    # If this email isn't already in our profiles_index, add it
+                                    if extracted_email not in self.profiles_index:
+                                        logger.info(
+                                            f"Adding email {extracted_email} to profiles_index for AVD {avd_name}"
+                                        )
+                                        self.profiles_index[extracted_email] = avd_name
+                                        self._save_profiles_index()
+                            else:
+                                # If we couldn't get the AVD name but we know an emulator is running,
+                                # check if it matches our current profile
+                                if self.current_profile and self.current_profile.get("avd_name"):
+                                    current_avd = self.current_profile.get("avd_name")
+                                    current_emu_id = self.current_profile.get("emulator_id")
 
-                            except Exception as e:
-                                logger.error(f"Error parsing emulator ID {emulator_id}: {e}")
+                                    # If we have a matching emulator ID, use that mapping
+                                    if current_emu_id == emulator_id:
+                                        logger.info(
+                                            f"Using known mapping for current profile: {current_avd} -> {emulator_id}"
+                                        )
+                                        running_emulators[current_avd] = emulator_id
                         else:
                             logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
 
@@ -357,10 +423,11 @@ class AVDProfileManager:
             Optional[str]: The AVD name or None if not found
         """
         try:
-            # First check our existing emulator map to avoid ADB calls if possible
-            for avd_name, mapped_id in self.emulator_map.items():
-                if mapped_id == emulator_id:
-                    logger.info(f"Found AVD {avd_name} in existing map for emulator {emulator_id}")
+            # First check current profile if we have a matching emulator ID
+            if self.current_profile and self.current_profile.get("emulator_id") == emulator_id:
+                avd_name = self.current_profile.get("avd_name")
+                if avd_name:
+                    logger.info(f"Found AVD {avd_name} in current profile for emulator {emulator_id}")
                     return avd_name
 
             # Use adb to get the AVD name via shell getprop with a short timeout
@@ -442,88 +509,53 @@ class AVDProfileManager:
 
         return None
 
-    def _clean_emulator_map(self) -> None:
-        """Clean up the emulator map to remove any invalid or corrupted entries."""
-        if not self.emulator_map:
-            return
+    def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
+        """
+        Update the AVD name associated with an email address.
 
-        # Check for invalid AVD names (containing newlines or other issues)
-        to_remove = []
-        to_fix = {}
+        Args:
+            email: The email address
+            avd_name: The new AVD name to associate with this email
 
-        for avd_name, emulator_id in self.emulator_map.items():
-            # Check for newlines in the AVD name
-            if "\n" in avd_name:
-                logger.warning(f"Found invalid AVD name with newline: '{avd_name}'")
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Update the mapping in profiles_index
+            self.profiles_index[email] = avd_name
+            self._save_profiles_index()
 
-                # Try to find a valid AVD with the same emulator ID in profiles index
-                fix_found = False
-                for email, valid_avd in self.profiles_index.items():
-                    if valid_avd and emulator_id == self.emulator_map.get(valid_avd):
-                        logger.info(f"Found valid replacement: '{valid_avd}' for '{avd_name}'")
-                        to_remove.append(avd_name)
-                        fix_found = True
-                        break
+            # Update current profile if this is the current email
+            if self.current_profile and self.current_profile.get("email") == email:
+                self.current_profile["avd_name"] = avd_name
+                self._save_current_profile(email, avd_name, self.current_profile.get("emulator_id"))
 
-                # If no valid replacement was found, clean up the name
-                if not fix_found:
-                    clean_name = avd_name.split("\n")[0].strip()
-                    if clean_name:
-                        logger.info(f"Cleaning AVD name from '{avd_name}' to '{clean_name}'")
-                        to_remove.append(avd_name)
-                        to_fix[clean_name] = emulator_id
-                    else:
-                        # If no usable part, mark for removal
-                        to_remove.append(avd_name)
-
-            # Check if AVD name ends with "OK" which is sometimes erroneously added
-            elif avd_name.endswith(" OK") or avd_name.endswith("\nOK"):
-                clean_name = avd_name.replace(" OK", "").replace("\nOK", "")
-                logger.info(f"Cleaning AVD name from '{avd_name}' to '{clean_name}'")
-                to_remove.append(avd_name)
-                to_fix[clean_name] = emulator_id
-
-        # Remove bad entries
-        for avd_name in to_remove:
-            if avd_name in self.emulator_map:
-                del self.emulator_map[avd_name]
-                logger.info(f"Removed invalid AVD entry: '{avd_name}'")
-
-        # Add fixed entries
-        for clean_name, emulator_id in to_fix.items():
-            self.emulator_map[clean_name] = emulator_id
-            logger.info(f"Added fixed AVD entry: '{clean_name}' -> '{emulator_id}'")
-
-        # Save the cleaned map
-        if to_remove or to_fix:
-            self._save_emulator_map()
-            logger.info("Saved cleaned emulator map")
-
-    def update_emulator_mappings(self) -> None:
-        """Update mappings between AVD names and running emulator IDs."""
-        # First clean any existing corrupted entries
-        self._clean_emulator_map()
-
-        # Now map running emulators
-        running_emulators = self.map_running_emulators()
-
-        # Update emulator map with running emulators
-        if running_emulators:
-            for avd_name, emulator_id in running_emulators.items():
-                self.emulator_map[avd_name] = emulator_id
-
-            self._save_emulator_map()
-            logger.info(f"Updated emulator mappings: {running_emulators}")
+            logger.info(f"Updated AVD name for {email} to {avd_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating AVD name for {email}: {e}")
+            return False
 
     def list_profiles(self) -> List[Dict]:
-        """List all available profiles with their details."""
-        # First update emulator mappings to ensure they're current
-        self.update_emulator_mappings()
+        """
+        List all available profiles with their details.
+
+        Returns:
+            List[Dict]: List of profile information dictionaries
+        """
+        # First get running emulators
+        running_emulators = self.map_running_emulators()
 
         result = []
         for email, avd_name in self.profiles_index.items():
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-            emulator_id = self.get_emulator_id_for_avd(avd_name)
+
+            # Get emulator ID if the AVD is running
+            emulator_id = running_emulators.get(avd_name)
+
+            # If we didn't find it, check if any running emulator has email in its name
+            if not emulator_id:
+                emulator_id = self.find_running_emulator_for_email(email)
 
             profile_info = {
                 "email": email,
@@ -537,17 +569,56 @@ class AVDProfileManager:
         return result
 
     def get_current_profile(self) -> Optional[Dict]:
-        """Get information about the currently active profile."""
+        """
+        Get information about the currently active profile.
+
+        Returns:
+            Optional[Dict]: Current profile information or None if no profile is active
+        """
         if self.current_profile:
-            # Ensure emulator ID is up to date
+            # Get the current email and AVD name
+            email = self.current_profile.get("email")
             avd_name = self.current_profile.get("avd_name")
-            if avd_name:
-                emulator_id = self.get_emulator_id_for_avd(avd_name)
+
+            if email and avd_name:
+                # Look for a running emulator for this email/AVD
+                emulator_id = self.find_running_emulator_for_email(email)
+
+                # If we found one and it's different from what we have stored, update it
                 if emulator_id and emulator_id != self.current_profile.get("emulator_id"):
-                    # Update with current emulator ID
+                    logger.info(f"Updating emulator ID for current profile: {emulator_id}")
                     self.current_profile["emulator_id"] = emulator_id
+                    self._save_current_profile(email, avd_name, emulator_id)
 
         return self.current_profile
+
+    def scan_for_avds_with_emails(self) -> Dict[str, str]:
+        """
+        Scan all running AVDs to find ones with email patterns in their names.
+        This helps to discover and register email-to-AVD mappings automatically.
+
+        Returns:
+            Dict[str, str]: Dictionary mapping emails to AVD names
+        """
+        # First get all running emulators
+        running_emulators = self.map_running_emulators()
+
+        discovered_mappings = {}
+
+        # Check each AVD name for email patterns
+        for avd_name in running_emulators.keys():
+            email_part = self.extract_email_from_avd_name(avd_name)
+            if email_part:
+                logger.info(f"Found email pattern in AVD name: {avd_name} -> {email_part}")
+                discovered_mappings[email_part] = avd_name
+
+                # Also update our profiles index if this mapping is new
+                if email_part not in self.profiles_index:
+                    logger.info(f"Adding new email-to-AVD mapping: {email_part} -> {avd_name}")
+                    self.profiles_index[email_part] = avd_name
+                    self._save_profiles_index()
+
+        return discovered_mappings
 
     def is_emulator_running(self) -> bool:
         """Check if an emulator is currently running."""
@@ -1253,10 +1324,8 @@ class AVDProfileManager:
         Returns:
             Tuple[bool, str]: (success, avd_name)
         """
-        # Generate a unique AVD name based on the email
-        # Use the full email address with @ symbol converted to underscore
-        email_formatted = email.replace("@", "_").replace(".", "_")
-        avd_name = f"KindleAVD_{email_formatted}"
+        # Generate a unique AVD name based on the email using our utility method
+        avd_name = self.get_avd_name_from_email(email)
 
         # Check if an AVD with this name already exists
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
@@ -1508,8 +1577,21 @@ class AVDProfileManager:
                 running_emulators = self.map_running_emulators()
 
                 if running_emulators:
-                    # Use the first running emulator we find
-                    avd_name, emulator_id = next(iter(running_emulators.items()))
+                    # First check if there's an emulator with this email in the AVD name
+                    emulator_id = self.find_running_emulator_for_email(email)
+                    if emulator_id:
+                        # Find the AVD name for this emulator
+                        for avd, emu_id in running_emulators.items():
+                            if emu_id == emulator_id:
+                                avd_name = avd
+                                break
+                        else:
+                            # Use first available if we couldn't find the matching AVD
+                            avd_name, emulator_id = next(iter(running_emulators.items()))
+                    else:
+                        # Use first available emulator
+                        avd_name, emulator_id = next(iter(running_emulators.items()))
+
                     logger.info(
                         f"Using existing running emulator: {emulator_id} (AVD: {avd_name}) for {email}"
                     )
@@ -1737,9 +1819,47 @@ class AVDProfileManager:
         """
         # Check if profile already exists
         if email in self.profiles_index:
-            return True, f"Profile for {email} already exists"
+            # If the profile exists but doesn't follow our naming convention,
+            # let's generate the standard name and update it
+            current_avd = self.profiles_index[email]
+            standard_avd = self.get_avd_name_from_email(email)
 
-        # Create new AVD
+            if current_avd != standard_avd:
+                logger.info(
+                    f"Profile for {email} exists but with non-standard AVD name. Updating to {standard_avd}"
+                )
+
+                # Check if the existing AVD actually exists
+                existing_path = os.path.join(self.avd_dir, f"{current_avd}.avd")
+                standard_path = os.path.join(self.avd_dir, f"{standard_avd}.avd")
+
+                if os.path.exists(existing_path) and not os.path.exists(standard_path):
+                    # Rename the existing AVD to follow our convention
+                    try:
+                        # Rename the AVD directory
+                        shutil.move(existing_path, standard_path)
+
+                        # Rename the .ini file if it exists
+                        existing_ini = os.path.join(self.avd_dir, f"{current_avd}.ini")
+                        standard_ini = os.path.join(self.avd_dir, f"{standard_avd}.ini")
+                        if os.path.exists(existing_ini):
+                            shutil.move(existing_ini, standard_ini)
+
+                        # Update our profiles_index
+                        self.profiles_index[email] = standard_avd
+                        self._save_profiles_index()
+
+                        logger.info(f"Successfully renamed AVD from {current_avd} to {standard_avd}")
+                        return (
+                            True,
+                            f"Profile for {email} exists, renamed AVD to standard format: {standard_avd}",
+                        )
+                    except Exception as e:
+                        logger.error(f"Error renaming AVD: {e}")
+
+            return True, f"Profile for {email} already exists with AVD: {current_avd}"
+
+        # Create new AVD using our standardized naming
         success, result = self.create_new_avd(email)
         if not success:
             return False, f"Failed to create AVD: {result}"
