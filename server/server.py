@@ -82,14 +82,25 @@ class AutomationServer:
         """
         logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
 
-        need_new_automator = True
-
+        # Check if we're already using this profile with a working emulator
         if self.current_email == email and not force_new_emulator:
             logger.info(f"Already using profile for {email}")
-            # Only skip the profile switch if we have a valid automator
-            if self.automator:
-                logger.info(f"Automator already exists for profile {email}, skipping profile switch")
-                return True, f"Already using profile for {email}"
+            
+            # Check if there's a running emulator for this profile
+            is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
+            
+            if is_running and self.automator:
+                logger.info(f"Automator already exists with running emulator for profile {email}, skipping profile switch")
+                return True, f"Already using profile for {email} with running emulator"
+            elif not is_running and self.automator:
+                # We have an automator but no running emulator - decide what to do
+                if force_new_emulator:
+                    logger.info(f"No running emulator for profile {email}, cleaning up automator for restart")
+                    self.automator.cleanup()
+                    self.automator = None
+                else:
+                    logger.info(f"No running emulator for profile {email}, but have automator - will use on next reconnect")
+                    return True, f"Profile {email} is already active, waiting for reconnection"
             else:
                 logger.info(f"No automator exists for profile {email}, will reinitialize")
 

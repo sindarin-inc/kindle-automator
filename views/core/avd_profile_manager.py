@@ -192,7 +192,7 @@ class AVDProfileManager:
         else:
             return None
 
-    def find_running_emulator_for_email(self, email: str) -> Optional[str]:
+    def find_running_emulator_for_email(self, email: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Find a running emulator that's associated with a specific email.
 
@@ -200,26 +200,42 @@ class AVDProfileManager:
             email: The email to find a running emulator for
 
         Returns:
-            Optional[str]: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
+            Tuple of (is_running, emulator_id, avd_name) where:
+            - is_running: Boolean indicating if a running emulator was found
+            - emulator_id: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
+            - avd_name: The AVD name associated with the email/emulator if found, None otherwise
         """
         # Get all running emulators
         running_emulators = self.map_running_emulators()
 
         if not running_emulators:
-            return None
+            logger.debug(f"No running emulators found for email: {email}")
+            # Get the AVD name for this email even if not running
+            avd_name = self.get_avd_for_email(email)
+            return False, None, avd_name
 
         # First try the exact AVD name match based on email
-        target_avd_name = self.get_avd_name_from_email(email)
-        if target_avd_name in running_emulators:
-            return running_emulators[target_avd_name]
+        avd_name = self.get_avd_for_email(email)
+        if avd_name and avd_name in running_emulators:
+            emulator_id = running_emulators[avd_name]
+            logger.info(f"Found exact AVD match: {avd_name} running on {emulator_id} for email {email}")
+            return True, emulator_id, avd_name
 
         # If not found, look for any AVD name that might contain the normalized email
         normalized_email = self.normalize_email_for_avd(email)
-        for avd_name, emulator_id in running_emulators.items():
-            if normalized_email in avd_name:
-                return emulator_id
+        for running_avd_name, emulator_id in running_emulators.items():
+            if normalized_email in running_avd_name:
+                logger.info(f"Found partial AVD match: {running_avd_name} running on {emulator_id} for email {email}")
+                # If we found a match but it's different from our registered AVD, update the registration
+                if avd_name != running_avd_name:
+                    logger.info(f"Updating AVD mapping for email {email}: {avd_name} -> {running_avd_name}")
+                    self.register_profile(email, running_avd_name)
+                    avd_name = running_avd_name
+                return True, emulator_id, running_avd_name
 
-        return None
+        # No running emulator found for this email
+        logger.debug(f"No running emulator found matching email: {email}")
+        return False, None, avd_name
 
     def _save_current_profile(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
@@ -640,10 +656,10 @@ class AVDProfileManager:
 
             if email and avd_name:
                 # Look for a running emulator for this email/AVD
-                emulator_id = self.find_running_emulator_for_email(email)
+                is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
 
                 # If we found one and it's different from what we have stored, update it
-                if emulator_id and emulator_id != self.current_profile.get("emulator_id"):
+                if is_running and emulator_id and emulator_id != self.current_profile.get("emulator_id"):
                     logger.info(f"Updating emulator ID for current profile: {emulator_id}")
                     self.current_profile["emulator_id"] = emulator_id
                     self._save_current_profile(email, avd_name, emulator_id)
@@ -1768,6 +1784,23 @@ class AVDProfileManager:
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
         avd_exists = os.path.exists(avd_path)
 
+        # First check if there's already a running emulator for this email
+        is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)
+        
+        # If we found a running emulator for this email and we're not forcing a new one
+        if is_running and not force_new_emulator:
+            logger.info(f"Found running emulator {emulator_id} for profile {email} (AVD: {found_avd_name})")
+            # Update the AVD name if it's different from what we expected
+            if found_avd_name != avd_name and found_avd_name is not None:
+                logger.info(f"Updating AVD name for profile {email}: {avd_name} -> {found_avd_name}")
+                avd_name = found_avd_name
+                self.register_profile(email, avd_name)
+            
+            # Save the current profile with the found emulator
+            self._save_current_profile(email, avd_name, emulator_id)
+            logger.info(f"Using existing running emulator for profile {email}")
+            return True, f"Switched to profile {email} with existing running emulator"
+        
         # Check if emulator is already running and ready
         emulator_ready = self.is_emulator_ready()
 
@@ -1790,24 +1823,41 @@ class AVDProfileManager:
             return True, f"Switched profile tracking to {email} (AVD: {avd_name})"
 
         # For other platforms, try normal start procedure
-        # Stop the current emulator if running, but only if not already ready
-        if not emulator_ready and self.is_emulator_running():
-            logger.info("Stopping current emulator")
+        # For force_new_emulator, always stop any running emulator
+        if force_new_emulator and self.is_emulator_running():
+            logger.info("Force new emulator requested, stopping current emulator")
+            if not self.stop_emulator():
+                return False, "Failed to stop current emulator"
+        # If not forcing new and emulator is running but not ready, stop it
+        elif not emulator_ready and self.is_emulator_running():
+            logger.info("Emulator running but not ready, stopping to restart it")
             if not self.stop_emulator():
                 return False, "Failed to stop current emulator"
 
         # If emulator is already running and ready, check if we should use it
         if emulator_ready and not force_new_emulator:
-            # We need to verify this emulator belongs to the correct AVD
+            # We need to verify this emulator belongs to the correct AVD or has the email in its name
             running_avds = self.map_running_emulators()
             if avd_name in running_avds:
                 logger.info(
                     f"Using already running emulator for profile {email} - confirmed to be correct AVD"
                 )
-                self._save_current_profile(email, avd_name)
+                self._save_current_profile(email, avd_name, running_avds[avd_name])
                 return True, f"Switched to profile {email} with existing running emulator (verified)"
             else:
                 logger.warning(f"Found running emulator but it doesn't match the expected AVD {avd_name}")
+                # If we're not forcing a new emulator, check if we can use this one
+                if not force_new_emulator:
+                    # Check if any running emulator has the email in its name
+                    for running_avd, running_emu_id in running_avds.items():
+                        if self.normalize_email_for_avd(email) in running_avd:
+                            logger.info(f"Found emulator with matching email pattern: {running_avd}")
+                            # Update our registration to match the running AVD
+                            self.register_profile(email, running_avd)
+                            self._save_current_profile(email, running_avd, running_emu_id)
+                            return True, f"Switched to profile {email} with existing running emulator (name match)"
+                
+                # If we didn't find a matching emulator or we're forcing a new one, stop the current emulator
                 logger.info(f"Stopping unrelated emulator to start the correct one")
                 if not self.stop_emulator():
                     logger.error("Failed to stop unrelated emulator")
