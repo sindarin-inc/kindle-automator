@@ -340,16 +340,32 @@ class KindleAutomator:
                     logger.info(f"Using PATH: {env['PATH']}")
 
                     # Define scrcpy command with minimal parameters
+                    # Check if scrcpy version supports --no-playback
+                    try:
+                        has_no_playback = "--no-playback" in subprocess.check_output(
+                            [scrcpy_path, "--help"], stderr=subprocess.STDOUT, text=True
+                        )
+                    except Exception:
+                        has_no_playback = False
+
                     scrcpy_cmd = [
                         scrcpy_path,
                         "-s",
                         self.device_id,
-                        "--no-playback",  # For scrcpy 3.1
-                        "--record",
-                        video_path,  # Record as video
-                        "--no-audio",  # No audio needed
-                        "--turn-screen-off",  # Critical for FLAG_SECURE
                     ]
+
+                    # Only add --no-playback if supported
+                    if has_no_playback:
+                        scrcpy_cmd.append("--no-playback")  # For scrcpy 3.1+
+
+                    scrcpy_cmd.extend(
+                        [
+                            "--record",
+                            video_path,  # Record as video
+                            "--no-audio",  # No audio needed
+                            "--turn-screen-off",  # Critical for FLAG_SECURE
+                        ]
+                    )
 
                     logger.info(f"Running scrcpy command: {' '.join(scrcpy_cmd)}")
                     process = subprocess.Popen(

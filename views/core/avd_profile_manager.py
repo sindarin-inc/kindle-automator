@@ -302,36 +302,95 @@ class AVDProfileManager:
 
             # Clear any stale device listings first
             try:
-                subprocess.run(
+                # Use much longer timeouts for production environments
+                adb_timeout = 3
+
+                # First check if ADB server is already running
+                try:
+                    version_check = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "version"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=adb_timeout,
+                    )
+                    if version_check.returncode == 0:
+                        logger.debug(f"ADB server already running: {version_check.stdout.strip()}")
+                    else:
+                        logger.warning(f"ADB server appears to have issues: {version_check.stderr}")
+                except Exception as ve:
+                    logger.warning(f"Error checking ADB version: {ve}")
+
+                # Only restart if necessary (more conservative approach for production)
+                kill_result = subprocess.run(
                     [f"{self.android_home}/platform-tools/adb", "kill-server"],
                     check=False,
                     capture_output=True,
                     text=True,
-                    timeout=3,
+                    timeout=adb_timeout,
                 )
-                time.sleep(0.5)
-                subprocess.run(
+
+                # Wait longer between operations
+                time.sleep(2)
+
+                # Start with longer timeout
+                start_result = subprocess.run(
                     [f"{self.android_home}/platform-tools/adb", "start-server"],
                     check=False,
                     capture_output=True,
                     text=True,
-                    timeout=3,
+                    timeout=adb_timeout,
                 )
-                logger.debug("Reset adb server before checking devices")
+
+                # Wait for server to be fully ready
+                time.sleep(3)
+
+                if start_result.returncode == 0:
+                    logger.debug("Reset adb server before checking devices")
+                else:
+                    logger.warning(f"ADB start-server returned non-zero: {start_result.stderr}")
             except Exception as e:
                 logger.warning(f"Error resetting adb server: {e}")
 
-            # Get list of running emulators with increased timeout
-            result = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "devices"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=10,  # Increased from 5 to 10
-            )
+            # Get list of running emulators with retry mechanism
+            max_retries = 3
+            retry_delay = 5  # seconds
 
-            if result.returncode != 0:
-                logger.error(f"Error getting devices: {result.stderr}")
+            for retry in range(max_retries):
+                try:
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+
+                    if result.returncode == 0:
+                        # Success
+                        if retry > 0:
+                            logger.info(f"Successfully got devices list after {retry+1} attempts")
+                        break
+                    else:
+                        logger.warning(
+                            f"Error getting devices (attempt {retry+1}/{max_retries}): {result.stderr}"
+                        )
+                        if retry < max_retries - 1:
+                            logger.info(f"Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                            # Exponential backoff
+                            retry_delay *= 2
+                except Exception as e:
+                    logger.warning(f"Exception getting devices (attempt {retry+1}/{max_retries}): {e}")
+                    if retry < max_retries - 1:
+                        logger.info(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        # Exponential backoff
+                        retry_delay *= 2
+
+            # After retries, check final result
+            if not hasattr(locals(), "result") or result.returncode != 0:
+                logger.error("Failed to get devices list after multiple attempts")
                 return running_emulators
 
             # Parse output to get emulator IDs
