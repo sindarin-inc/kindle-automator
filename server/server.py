@@ -28,7 +28,7 @@ from views.core.app_state import AppState
 setup_logger()
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
 
 # Load .env files with secrets
