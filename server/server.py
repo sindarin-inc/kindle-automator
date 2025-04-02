@@ -916,26 +916,15 @@ class AuthResource(Resource):
         if not email or not password:
             return {"error": "Email and password are required in the request"}, 400
 
-        # If recreate is requested, delete the profile first
+        # If recreate is requested, we don't actually need to delete the profile
+        # Just force a new emulator with the existing profile
         if recreate:
-            logger.info(f"Recreate requested for {email}, deleting existing profile first")
-            # Check if profile exists
-            avd_name = server.profile_manager.get_avd_for_email(email)
-            if avd_name:
-                # First clean up any existing automator
-                if server.automator:
-                    logger.info("Cleaning up existing automator")
-                    server.automator.cleanup()
-                    server.automator = None
-
-                # Delete the profile
-                success, message = server.profile_manager.delete_profile(email)
-                if success:
-                    logger.info(f"Successfully deleted profile for {email}")
-                else:
-                    logger.warning(f"Failed to delete profile for {email}: {message}")
-            else:
-                logger.info(f"No existing profile found for {email}, skipping delete")
+            logger.info(f"Recreate requested for {email}, cleaning up existing automator")
+            # First clean up any existing automator
+            if server.automator:
+                logger.info("Cleaning up existing automator")
+                server.automator.cleanup()
+                server.automator = None
 
         # Switch to the profile for this email or create a new one
         # Pass force_new_emulator=True if recreate was requested to ensure complete profile reset

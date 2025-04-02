@@ -57,8 +57,15 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             email = current_profile["email"]
             logger.info(f"Attempting to restart emulator for profile: {email}")
             # Force a new emulator to be created
-            server_instance.switch_profile(email, force_new_emulator=True)
-            return True
+            success, _ = server_instance.switch_profile(email, force_new_emulator=True)
+            
+            # Initialize automator
+            if success and not server_instance.automator:
+                logger.info("Initializing automator after emulator restart")
+                server_instance.initialize_automator()
+                server_instance.automator.initialize_driver()
+                
+            return success
         else:
             logger.error("No current profile found for restarting emulator")
             return False
@@ -74,7 +81,11 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
     def is_emulator_missing(error):
         """Check if the error indicates the emulator is not running"""
         error_str = str(error)
-        return "Failed to get devices list after multiple attempts" in error_str
+        return (
+            "Failed to get devices list after multiple attempts" in error_str or 
+            "'NoneType' object has no attribute 'update_current_state'" in error_str or
+            "Failed to initialize driver" in error_str
+        )
 
     # Main retry loop
     for attempt in range(max_retries):
