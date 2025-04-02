@@ -1866,30 +1866,37 @@ class AVDProfileManager:
         # Check if AVD exists before trying to start it
         if not avd_exists:
             logger.warning(
-                f"AVD {avd_name} doesn't exist at {avd_path}. "
-                f"If using Android Studio AVDs, please run 'make register-avd' to update the AVD name."
+                f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it."
             )
-            # Still update the current profile for tracking
-            self._save_current_profile(email, avd_name)
-            return (
-                True,
-                f"Tracked profile for {email} but AVD {avd_name} doesn't exist. Try running 'make register-avd'.",
-            )
-
-        # Check if AVD actually exists before trying to start it
-        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-        if not os.path.exists(avd_path):
-            logger.error(f"AVD {avd_name} does not exist. Need to create it first.")
             # Try to create the AVD
-            logger.info(f"Attempting to create AVD for {email}")
             success, result = self.create_new_avd(email)
             if not success:
                 logger.error(f"Failed to create AVD: {result}")
-                return False, f"Failed to create AVD for {email}: {result}"
+                # Still update the current profile for tracking
+                self._save_current_profile(email, avd_name)
+                return (
+                    False,
+                    f"Failed to create AVD for {email}: {result}",
+                )
+            
             # Update avd_name with newly created AVD
             avd_name = result
             self.register_profile(email, avd_name)
             logger.info(f"Created new AVD {avd_name} for {email}")
+            
+            # Update current profile with new AVD
+            self._save_current_profile(email, avd_name)
+            
+            # Set avd_exists to True since we just created it
+            avd_exists = True
+
+        # Double-check that AVD actually exists before trying to start it
+        # This shouldn't be necessary since we already handled AVD creation above,
+        # but it's here as a safety check
+        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+        if not os.path.exists(avd_path):
+            logger.error(f"AVD {avd_name} still does not exist even after creation attempt. This is unexpected.")
+            return False, f"Failed to create AVD for {email}: AVD still doesn't exist after creation attempt"
                 
         # Start the new emulator
         logger.info(f"Starting emulator with AVD {avd_name}")
