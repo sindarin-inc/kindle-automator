@@ -6,6 +6,7 @@ import signal
 import subprocess
 import time
 import traceback
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from appium.webdriver.common.appiumby import AppiumBy
@@ -24,10 +25,23 @@ from server.response_handler import handle_automator_response
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
-load_dotenv()
-
 setup_logger()
 logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent
+ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
+
+# Load .env files with secrets
+if ENVIRONMENT.lower() == "prod":
+    logger.info("Loading prod environment variables")
+    load_dotenv(os.path.join(BASE_DIR, ".env.prod"), override=True)
+elif ENVIRONMENT.lower() == "staging":
+    logger.info("Loading staging environment variables")
+    load_dotenv(os.path.join(BASE_DIR, ".env.staging"), override=True)
+else:
+    logger.info("Loading dev environment variables")
+    load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
+
 
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
@@ -85,12 +99,14 @@ class AutomationServer:
         # Check if we're already using this profile with a working emulator
         if self.current_email == email and not force_new_emulator:
             logger.info(f"Already using profile for {email}")
-            
+
             # Check if there's a running emulator for this profile
             is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
-            
+
             if is_running and self.automator:
-                logger.info(f"Automator already exists with running emulator for profile {email}, skipping profile switch")
+                logger.info(
+                    f"Automator already exists with running emulator for profile {email}, skipping profile switch"
+                )
                 return True, f"Already using profile for {email} with running emulator"
             elif not is_running and self.automator:
                 # We have an automator but no running emulator - decide what to do
@@ -99,7 +115,9 @@ class AutomationServer:
                     self.automator.cleanup()
                     self.automator = None
                 else:
-                    logger.info(f"No running emulator for profile {email}, but have automator - will use on next reconnect")
+                    logger.info(
+                        f"No running emulator for profile {email}, but have automator - will use on next reconnect"
+                    )
                     return True, f"Profile {email} is already active, waiting for reconnection"
             else:
                 logger.info(f"No automator exists for profile {email}, will reinitialize")
@@ -1478,17 +1496,20 @@ class TextResource(Resource):
             # Make sure we're in the READING state
             server.automator.state_machine.update_current_state()
             current_state = server.automator.state_machine.current_state
-            
+
             if current_state != AppState.READING:
                 return {
                     "error": f"Must be in reading state to extract text, current state: {current_state.name}",
                 }, 400
-            
+
             # Before proceeding, manually check and dismiss the "About this book" slideover
             # This is needed because it can prevent accessing the reading controls
             try:
-                from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, BOTTOM_SHEET_IDENTIFIERS
-                
+                from views.reading.interaction_strategies import (
+                    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
+                    BOTTOM_SHEET_IDENTIFIERS,
+                )
+
                 # Check if About Book slideover is visible
                 about_book_visible = False
                 for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
@@ -1500,10 +1521,10 @@ class TextResource(Resource):
                             break
                     except selenium_exceptions.NoSuchElementException:
                         continue
-                
+
                 if about_book_visible:
                     # Try multiple dismissal methods
-                    
+
                     # Method 1: Try tapping at the very top of the screen
                     window_size = server.automator.driver.get_window_size()
                     center_x = window_size["width"] // 2
@@ -1511,7 +1532,7 @@ class TextResource(Resource):
                     server.automator.driver.tap([(center_x, top_y)])
                     logger.info("Tapped at the very top of the screen to dismiss 'About this book' slideover")
                     time.sleep(1)
-                    
+
                     # Verify if it worked
                     still_visible = False
                     for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
@@ -1522,7 +1543,7 @@ class TextResource(Resource):
                                 break
                         except selenium_exceptions.NoSuchElementException:
                             continue
-                            
+
                     if still_visible:
                         # Method 2: Try swiping down (from 30% to 70% of screen height)
                         logger.info("First dismissal attempt failed. Trying swipe down method...")
@@ -1531,7 +1552,7 @@ class TextResource(Resource):
                         server.automator.driver.swipe(center_x, start_y, center_x, end_y, 300)
                         logger.info("Swiped down to dismiss 'About this book' slideover")
                         time.sleep(1)
-                        
+
                         # Method 3: Try clicking the pill if it exists
                         try:
                             pill = server.automator.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
@@ -1541,7 +1562,7 @@ class TextResource(Resource):
                                 time.sleep(1)
                         except selenium_exceptions.NoSuchElementException:
                             logger.info("Pill not found or not visible")
-                            
+
                     # Report final status
                     still_visible = False
                     for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
@@ -1549,71 +1570,69 @@ class TextResource(Resource):
                             slideover = server.automator.driver.find_element(strategy, locator)
                             if slideover.is_displayed():
                                 still_visible = True
-                                logger.warning("'About this book' slideover is still visible after multiple dismissal attempts")
+                                logger.warning(
+                                    "'About this book' slideover is still visible after multiple dismissal attempts"
+                                )
                                 break
                         except selenium_exceptions.NoSuchElementException:
                             continue
-                            
+
                     if not still_visible:
                         logger.info("Successfully dismissed the 'About this book' slideover")
             except Exception as e:
                 logger.error(f"Error while attempting to dismiss 'About this book' slideover: {e}")
-                
+
             # Save screenshot with unique ID
             screenshot_id = f"text_extract_{int(time.time())}"
             screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
             server.automator.driver.save_screenshot(screenshot_path)
-            
+
             # Get current page number and progress for context
             progress = server.automator.reader_handler.get_reading_progress()
-            
+
             # Process the screenshot with OCR
             try:
                 with open(screenshot_path, "rb") as img_file:
                     image_data = img_file.read()
-                
+
                 # Process the image with OCR
                 ocr_text, error = KindleOCR.process_ocr(image_data)
-                
+
                 # Delete the screenshot file after processing
                 try:
                     os.remove(screenshot_path)
                     logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
                     logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
-                
+
                 if ocr_text:
-                    return {
-                        "success": True,
-                        "progress": progress,
-                        "text": ocr_text
-                    }, 200
+                    return {"success": True, "progress": progress, "text": ocr_text}, 200
                 else:
                     return {
                         "success": False,
                         "progress": progress,
-                        "error": error or "OCR processing failed"
+                        "error": error or "OCR processing failed",
                     }, 500
-                
+
             except Exception as e:
                 logger.error(f"Error processing OCR: {e}")
                 return {
                     "success": False,
                     "progress": progress,
-                    "error": f"Failed to extract text: {str(e)}"
+                    "error": f"Failed to extract text: {str(e)}",
                 }, 500
-                
+
         except Exception as e:
             logger.error(f"Error extracting text: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
-    
+
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
         """Get OCR text of the current reading page without turning the page."""
         return self._extract_text()
-        
+
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
@@ -1668,7 +1687,9 @@ def cleanup_resources():
         except Exception as e:
             logger.error(f"Error stopping emulators during shutdown: {e}")
     else:
-        logger.info("Mac development environment detected - skipping emulator cleanup to preserve local emulators")
+        logger.info(
+            "Mac development environment detected - skipping emulator cleanup to preserve local emulators"
+        )
 
     # Kill Appium server
     try:

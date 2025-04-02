@@ -117,12 +117,13 @@ reset-user-data:
 # Ansible
 
 provision:
-	ansible-playbook ansible/provision.yml -l kindle-automator-2
+	ansible-playbook ansible/provision.yml
 provision-android:
-	ansible-playbook ansible/provision.yml -t android -l kindle-automator-2
+	ansible-playbook ansible/provision.yml -t android
 deploy:
 	ansible-playbook ansible/deploy.yml
-
+env:
+	ansible-playbook ansible/provision.yml -t env
 # SSH
 
 ssh:

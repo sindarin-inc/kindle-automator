@@ -11,17 +11,6 @@
       - zsh
     state: present
 
-- name: Create /srv/sol-web directory
-  file:
-    path: "{{ item }}"
-    state: directory
-    owner: root
-    group: root
-    mode: 0755
-  with_items:
-    - /srv/sol-web/sol
-    - /srv/certs/kindle.sindarin.com
-
 - name: Start Docker service
   service:
     name: docker
@@ -33,20 +22,20 @@
     name: sol-network
     state: present
 
-- name: Copy sol/.env.prod to /srv/sol-web/sol/.env.prod
+- name: Copy .env.prod to /opt/kindle-automator/.env.prod
   copy:
-    src: ../sol/.env.prod
-    dest: /srv/sol-web/sol/.env.prod
+    src: ../.env.prod
+    dest: /opt/kindle-automator/.env.prod
     owner: root
     group: root
     mode: 0644
-  when: "'sol' in inventory_hostname"
+  when: "'kindle' in inventory_hostname"
   tags: env
 
-- name: Copy sol/.env.staging to /srv/sol-web/sol/.env.staging
+- name: Copy .env.staging to /opt/kindle-automator/.env.staging
   copy:
-    src: ../sol/.env.staging
-    dest: /srv/sol-web/sol/.env.staging
+    src: ../.env.staging
+    dest: /opt/kindle-automator/.env.staging
     owner: root
     group: root
     mode: 0644
