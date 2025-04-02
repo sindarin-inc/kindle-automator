@@ -383,8 +383,8 @@ class KindleAutomator:
 
                     # Capture and log output
                     stdout, stderr = process.communicate()
-                    if stdout:
-                        logger.info(f"scrcpy stdout: {stdout}")
+                    # if stdout:
+                    #     logger.info(f"scrcpy stdout: {stdout}")
                     if stderr:
                         logger.info(f"scrcpy stderr: {stderr}")
 
@@ -426,8 +426,8 @@ class KindleAutomator:
                                     env=env,
                                 )
 
-                                logger.info(f"ffmpeg stdout: {result.stdout}")
-                                logger.info(f"ffmpeg stderr: {result.stderr}")
+                                # logger.info(f"ffmpeg stdout: {result.stdout}")
+                                # logger.info(f"ffmpeg stderr: {result.stderr}")
 
                                 # Check if image extraction succeeded
                                 if os.path.exists(output_path):

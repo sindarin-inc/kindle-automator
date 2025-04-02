@@ -29,6 +29,7 @@ from views.library.view_strategies import (
     LIBRARY_VIEW_IDENTIFIERS,
 )
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
+from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIERS
 from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
@@ -157,6 +158,19 @@ class ViewInspector:
                     if element.is_displayed():
                         reading_view_elements_found += 1
                         logger.info(f"   Found reading view element: {strategy}={locator}")
+                except NoSuchElementException:
+                    continue
+                    
+            # Check for "About this book slideover" which indicates reading view with a slideover
+            for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"   Found 'About this book slideover' element: {strategy}={locator}")
+                        logger.info("   This indicates we're in reading view with the about book slideover open")
+                        # Save page source for debugging
+                        store_page_source(self.driver.page_source, "about_book_slideover_detected")
+                        reading_view_elements_found += 1
                 except NoSuchElementException:
                     continue
 
@@ -437,7 +451,7 @@ class ViewInspector:
                     self.driver.save_screenshot(screenshot_path)
                     logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
             except Exception as e:
-                logger.error(f"Failed to save screenshot: {e}")
+                logger.warning(f"Failed to save screenshot: {str(e)[:100]}")
 
             logger.debug("Not in main app view")
             return AppView.UNKNOWN

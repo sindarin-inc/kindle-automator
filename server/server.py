@@ -1469,6 +1469,158 @@ class ProfilesResource(Resource):
             return {"error": f"Invalid action: {action}"}, 400
 
 
+class TextResource(Resource):
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def _extract_text(self):
+        """Shared implementation for extracting text from the current reading page."""
+        try:
+            # Make sure we're in the READING state
+            server.automator.state_machine.update_current_state()
+            current_state = server.automator.state_machine.current_state
+            
+            if current_state != AppState.READING:
+                return {
+                    "error": f"Must be in reading state to extract text, current state: {current_state.name}",
+                }, 400
+            
+            # Before proceeding, manually check and dismiss the "About this book" slideover
+            # This is needed because it can prevent accessing the reading controls
+            try:
+                from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, BOTTOM_SHEET_IDENTIFIERS
+                
+                # Check if About Book slideover is visible
+                about_book_visible = False
+                for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                    try:
+                        slideover = server.automator.driver.find_element(strategy, locator)
+                        if slideover.is_displayed():
+                            about_book_visible = True
+                            logger.info("Found 'About this book' slideover that must be dismissed before OCR")
+                            break
+                    except selenium_exceptions.NoSuchElementException:
+                        continue
+                
+                if about_book_visible:
+                    # Try multiple dismissal methods
+                    
+                    # Method 1: Try tapping at the very top of the screen
+                    window_size = server.automator.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    top_y = int(window_size["height"] * 0.05)  # 5% from top
+                    server.automator.driver.tap([(center_x, top_y)])
+                    logger.info("Tapped at the very top of the screen to dismiss 'About this book' slideover")
+                    time.sleep(1)
+                    
+                    # Verify if it worked
+                    still_visible = False
+                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                        try:
+                            slideover = server.automator.driver.find_element(strategy, locator)
+                            if slideover.is_displayed():
+                                still_visible = True
+                                break
+                        except selenium_exceptions.NoSuchElementException:
+                            continue
+                            
+                    if still_visible:
+                        # Method 2: Try swiping down (from 30% to 70% of screen height)
+                        logger.info("First dismissal attempt failed. Trying swipe down method...")
+                        start_y = int(window_size["height"] * 0.3)
+                        end_y = int(window_size["height"] * 0.7)
+                        server.automator.driver.swipe(center_x, start_y, center_x, end_y, 300)
+                        logger.info("Swiped down to dismiss 'About this book' slideover")
+                        time.sleep(1)
+                        
+                        # Method 3: Try clicking the pill if it exists
+                        try:
+                            pill = server.automator.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
+                            if pill.is_displayed():
+                                pill.click()
+                                logger.info("Clicked pill to dismiss 'About this book' slideover")
+                                time.sleep(1)
+                        except selenium_exceptions.NoSuchElementException:
+                            logger.info("Pill not found or not visible")
+                            
+                    # Report final status
+                    still_visible = False
+                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                        try:
+                            slideover = server.automator.driver.find_element(strategy, locator)
+                            if slideover.is_displayed():
+                                still_visible = True
+                                logger.warning("'About this book' slideover is still visible after multiple dismissal attempts")
+                                break
+                        except selenium_exceptions.NoSuchElementException:
+                            continue
+                            
+                    if not still_visible:
+                        logger.info("Successfully dismissed the 'About this book' slideover")
+            except Exception as e:
+                logger.error(f"Error while attempting to dismiss 'About this book' slideover: {e}")
+                
+            # Save screenshot with unique ID
+            screenshot_id = f"text_extract_{int(time.time())}"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+            server.automator.driver.save_screenshot(screenshot_path)
+            
+            # Get current page number and progress for context
+            progress = server.automator.reader_handler.get_reading_progress()
+            
+            # Process the screenshot with OCR
+            try:
+                with open(screenshot_path, "rb") as img_file:
+                    image_data = img_file.read()
+                
+                # Process the image with OCR
+                ocr_text, error = KindleOCR.process_ocr(image_data)
+                
+                # Delete the screenshot file after processing
+                try:
+                    os.remove(screenshot_path)
+                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
+                except Exception as del_e:
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+                
+                if ocr_text:
+                    return {
+                        "success": True,
+                        "progress": progress,
+                        "text": ocr_text
+                    }, 200
+                else:
+                    return {
+                        "success": False,
+                        "progress": progress,
+                        "error": error or "OCR processing failed"
+                    }, 500
+                
+            except Exception as e:
+                logger.error(f"Error processing OCR: {e}")
+                return {
+                    "success": False,
+                    "progress": progress,
+                    "error": f"Failed to extract text: {str(e)}"
+                }, 500
+                
+        except Exception as e:
+            logger.error(f"Error extracting text: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": str(e)}, 500
+    
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def get(self):
+        """Get OCR text of the current reading page without turning the page."""
+        return self._extract_text()
+        
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def post(self):
+        """POST endpoint for OCR text extraction (identical to GET but allows for future parameters)."""
+        return self._extract_text()
+
+
 # Add resources to API
 api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
@@ -1497,19 +1649,26 @@ api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(ProfilesResource, "/profiles")
+api.add_resource(TextResource, "/text")
 
 
 def cleanup_resources():
     """Clean up resources before exiting"""
     logger.info("Cleaning up resources before shutdown...")
 
-    # Kill any running emulators
-    try:
-        logger.info("Stopping any running emulators")
-        subprocess.run(["pkill", "-f", "emulator"], check=False, timeout=3)
-        subprocess.run(["pkill", "-f", "qemu"], check=False, timeout=3)
-    except Exception as e:
-        logger.error(f"Error stopping emulators during shutdown: {e}")
+    # Detect if we're on Mac in development mode
+    is_mac_dev = platform.system() == "Darwin" and os.environ.get("FLASK_ENV") == "development"
+
+    # Kill any running emulators (skip on Mac development environment)
+    if not is_mac_dev:
+        try:
+            logger.info("Stopping any running emulators")
+            subprocess.run(["pkill", "-f", "emulator"], check=False, timeout=3)
+            subprocess.run(["pkill", "-f", "qemu"], check=False, timeout=3)
+        except Exception as e:
+            logger.error(f"Error stopping emulators during shutdown: {e}")
+    else:
+        logger.info("Mac development environment detected - skipping emulator cleanup to preserve local emulators")
 
     # Kill Appium server
     try:
