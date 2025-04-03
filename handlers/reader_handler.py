@@ -1073,6 +1073,58 @@ class ReaderHandler:
             # Store page source after tapping More tab
             store_page_source(self.driver.page_source, "style_update_after_more_tab")
             
+            # First, expand the slideover to full height by tapping on the handle
+            handle_found = False
+            try:
+                # Look for handle by ID
+                handle = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bottom_sheet_handle")
+                if handle.is_displayed():
+                    # Get position information
+                    location = handle.location
+                    size = handle.size
+                    handle_x = location["x"] + (size["width"] // 2)
+                    handle_y = location["y"] + (size["height"] // 2)
+                    
+                    # Tap the handle
+                    self.driver.tap([(handle_x, handle_y)])
+                    logger.info(f"Tapped slideover handle at ({handle_x}, {handle_y}) to expand fully")
+                    handle_found = True
+                    time.sleep(1)  # Wait for expansion animation
+                else:
+                    logger.warning("Found handle by ID but it's not displayed")
+            except NoSuchElementException:
+                logger.warning("Could not find handle by direct ID")
+            
+            # If we couldn't find the handle by ID, try other strategies
+            if not handle_found:
+                try:
+                    for strategy, locator in STYLE_SHEET_PILL_IDENTIFIERS:
+                        try:
+                            pill = self.driver.find_element(strategy, locator)
+                            if pill.is_displayed():
+                                pill.click()
+                                logger.info(f"Clicked slideover pill {strategy}:{locator} to expand")
+                                handle_found = True
+                                time.sleep(1)
+                                break
+                        except NoSuchElementException:
+                            continue
+                except Exception as e:
+                    logger.warning(f"Error trying to find and click slideover pill: {e}")
+            
+            # If we still couldn't find the handle, try a generic tap where we know it should be
+            if not handle_found:
+                # From the XML we know the handle is at y position around 1251-1364
+                window_size = self.driver.get_window_size()
+                center_x = window_size["width"] // 2
+                handle_y = 1300  # Approximate position based on the XML
+                self.driver.tap([(center_x, handle_y)])
+                logger.info(f"Performed blind tap at ({center_x}, {handle_y}) where handle should be")
+                time.sleep(1)
+            
+            # Store page source after expansion attempt
+            store_page_source(self.driver.page_source, "style_update_after_expand_attempt")
+            
             # 5. Disable "Real-time Text Highlighting"
             self._toggle_checkbox(REALTIME_HIGHLIGHTING_CHECKBOX, False, "Real-time Text Highlighting")
             
@@ -1080,41 +1132,97 @@ class ReaderHandler:
             store_page_source(self.driver.page_source, "style_update_after_highlight_toggle")
             
             # 6. Scroll down to see more options
-            # First get a reference point to scroll from
             try:
-                # Use any visible element on the More tab as a reference point
-                reference_element = None
-                for strategy, locator in REALTIME_HIGHLIGHTING_CHECKBOX:
+                # Look for the ScrollView directly - best strategy
+                try:
+                    scroll_view = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_scrollview_more")
+                    if scroll_view.is_displayed():
+                        logger.info("Found the More tab ScrollView, will perform a scroll to see additional settings")
+                        
+                        # Get the ScrollView dimensions
+                        location = scroll_view.location
+                        size = scroll_view.size
+                        
+                        # Calculate scroll coordinates - scroll up to reveal more options
+                        start_y = location["y"] + (size["height"] * 0.8)  # Start near bottom of visible scrollview
+                        end_y = location["y"] + (size["height"] * 0.2)    # End near top of visible scrollview
+                        scroll_x = location["x"] + (size["width"] // 2)   # Middle of the scrollview width
+                        
+                        # Perform the scroll - scroll up to show elements below
+                        self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
+                        logger.info(f"Scrolled ScrollView from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                        time.sleep(1)
+                except NoSuchElementException:
+                    logger.warning("Could not find the ScrollView by ID, trying alternate approach")
+                    
+                    # Try to find any more tab content
                     try:
-                        element = self.driver.find_element(strategy, locator)
-                        if element.is_displayed():
-                            reference_element = element
-                            break
+                        more_tab_content = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_content")
+                        if more_tab_content.is_displayed():
+                            logger.info("Found the More tab content, will perform a scroll to see additional settings")
+                            location = more_tab_content.location
+                            size = more_tab_content.size
+                            
+                            # Calculate scroll coordinates
+                            start_y = location["y"] + (size["height"] * 0.8)
+                            end_y = location["y"] + (size["height"] * 0.2)
+                            scroll_x = location["x"] + (size["width"] // 2)
+                            
+                            # Perform the scroll
+                            self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
+                            logger.info(f"Scrolled content from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                            time.sleep(1)
                     except NoSuchElementException:
-                        continue
+                        logger.warning("Could not find the More tab content, trying fallback to Real-time highlight element")
                 
-                if reference_element:
-                    # Get the element location
-                    location = reference_element.location
-                    
-                    # Calculate scroll coordinates
-                    start_y = location["y"] + 200  # A bit below our reference element
-                    end_y = location["y"] - 200    # A bit above our reference element
-                    scroll_x = window_size["width"] // 2
-                    
-                    # Scroll down
-                    self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 500)
-                    logger.info(f"Scrolled down from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
-                    time.sleep(1)
-                else:
-                    logger.warning("Could not find reference element for scrolling, will try generic scroll")
-                    # Generic scroll from middle to top quarter
-                    start_y = window_size["height"] // 2
-                    end_y = window_size["height"] // 4
-                    scroll_x = window_size["width"] // 2
-                    self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 500)
-                    logger.info(f"Performed generic scroll from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
-                    time.sleep(1)
+                        # Fallback: Use the Real-time Text Highlighting switch as reference point
+                        highlight_switch = None
+                        for strategy, locator in REALTIME_HIGHLIGHTING_CHECKBOX:
+                            try:
+                                element = self.driver.find_element(strategy, locator)
+                                if element.is_displayed():
+                                    highlight_switch = element
+                                    break
+                            except NoSuchElementException:
+                                continue
+                        
+                        if highlight_switch:
+                            # Get the element location
+                            location = highlight_switch.location
+                            
+                            # Calculate scroll coordinates - scroll from this element up
+                            start_y = location["y"] + 200  # Well below the element
+                            end_y = location["y"] - 400    # Well above the element
+                            scroll_x = window_size["width"] // 2
+                            
+                            # Perform the scroll
+                            self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
+                            logger.info(f"Scrolled from highlight element ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                            time.sleep(1)
+                        else:
+                            # Generic scroll if we can't find any reference points
+                            logger.warning("No reference points found for scrolling, using generic scroll")
+                            screen_height = window_size["height"]
+                            start_y = int(screen_height * 0.8)  # Start at 80% down the screen
+                            end_y = int(screen_height * 0.2)    # End at 20% down the screen 
+                            scroll_x = window_size["width"] // 2
+                            
+                            # Do a longer, slower scroll to ensure we see more options
+                            self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 1000)
+                            logger.info(f"Performed generic scroll from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                            time.sleep(1)
+                
+                # Do a second scroll to ensure we get to the bottom of the options
+                # This helps with different screen sizes and UI layouts
+                time.sleep(0.5)
+                window_size = self.driver.get_window_size()
+                start_y2 = int(window_size["height"] * 0.7)
+                end_y2 = int(window_size["height"] * 0.3)
+                scroll_x2 = window_size["width"] // 2
+                self.driver.swipe(scroll_x2, start_y2, scroll_x2, end_y2, 800)
+                logger.info(f"Performed second scroll from ({scroll_x2}, {start_y2}) to ({scroll_x2}, {end_y2})")
+                time.sleep(1)
+                
             except Exception as e:
                 logger.error(f"Error during scrolling: {e}")
                 # Continue anyway since some devices might show all options without scrolling

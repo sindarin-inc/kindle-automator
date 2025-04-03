@@ -61,6 +61,7 @@ class AVDProfileManager:
         self.profiles_dir = os.path.join(base_dir, "profiles") 
         self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
         self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
+        self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
 
         # Ensure directories exist
         try:
@@ -78,12 +79,14 @@ class AVDProfileManager:
                 self.profiles_dir = os.path.join(self.base_dir, "profiles")
                 self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
                 self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
+                self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
                 os.makedirs(self.profiles_dir, exist_ok=True)
                 logger.info(f"Successfully created fallback directory at {self.profiles_dir}")
 
         # Load profile index if it exists, otherwise create empty one
         self.profiles_index = self._load_profiles_index()
         self.current_profile = self._load_current_profile()
+        self.user_preferences = self._load_user_preferences()
 
         # Scan for running emulators with email patterns on initialization
         try:
@@ -290,11 +293,21 @@ class AVDProfileManager:
         if emulator_id:
             current["emulator_id"] = emulator_id
             
-        # Preserve any additional profile settings if they exist in the current profile
-        if self.current_profile and self.current_profile.get("email") == email:
+        # Load any existing preferences for this email from user_preferences
+        if email in self.user_preferences:
+            # Copy styling preferences from user_preferences to current profile if they exist
+            if "styles_updated" in self.user_preferences[email]:
+                current["styles_updated"] = self.user_preferences[email]["styles_updated"]
+        # Fallback to preserving existing preferences if they exist in the current profile
+        elif self.current_profile and self.current_profile.get("email") == email:
             # Copy over any preferences that should be preserved
             if "styles_updated" in self.current_profile:
                 current["styles_updated"] = self.current_profile["styles_updated"]
+                # Also update user_preferences to ensure consistency
+                if email not in self.user_preferences:
+                    self.user_preferences[email] = {}
+                self.user_preferences[email]["styles_updated"] = self.current_profile["styles_updated"]
+                self._save_user_preferences()
 
         try:
             with open(self.current_profile_file, "w") as f:
@@ -2089,6 +2102,45 @@ class AVDProfileManager:
 
         return True, f"Successfully created profile for {email}"
 
+    def _load_user_preferences(self) -> Dict:
+        """
+        Load user preferences from JSON file or create if it doesn't exist.
+        
+        Returns:
+            Dict: User preferences dictionary mapping email to preferences
+        """
+        if os.path.exists(self.preferences_file):
+            try:
+                with open(self.preferences_file, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading user preferences: {e}")
+                return {}
+        else:
+            # Create an empty preferences file
+            try:
+                with open(self.preferences_file, "w") as f:
+                    json.dump({}, f, indent=2)
+                return {}
+            except Exception as e:
+                logger.error(f"Error creating user preferences file: {e}")
+                return {}
+    
+    def _save_user_preferences(self) -> bool:
+        """
+        Save user preferences to JSON file.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with open(self.preferences_file, "w") as f:
+                json.dump(self.user_preferences, f, indent=2)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving user preferences: {e}")
+            return False
+
     def update_style_preference(self, styles_updated: bool = True) -> bool:
         """
         Update the style preference for the current profile.
@@ -2104,12 +2156,24 @@ class AVDProfileManager:
             return False
             
         try:
-            self.current_profile["styles_updated"] = styles_updated
+            # Get the email for the current profile
             email = self.current_profile.get("email")
-            avd_name = self.current_profile.get("avd_name")
-            emulator_id = self.current_profile.get("emulator_id")
+            if not email:
+                logger.error("Cannot update style preference: current profile has no email")
+                return False
+                
+            # Create or update preferences for this email
+            if email not in self.user_preferences:
+                self.user_preferences[email] = {}
+                
+            # Set the styles_updated preference
+            self.user_preferences[email]["styles_updated"] = styles_updated
             
-            # Save the updated profile
+            # Save preferences to file
+            self._save_user_preferences()
+            
+            # Also update the current profile for backward compatibility
+            self.current_profile["styles_updated"] = styles_updated
             with open(self.current_profile_file, "w") as f:
                 json.dump(self.current_profile, f, indent=2)
                 
@@ -2130,6 +2194,17 @@ class AVDProfileManager:
             logger.debug("No current profile, styles not updated")
             return False
             
+        # Get the email for the current profile
+        email = self.current_profile.get("email")
+        if not email:
+            logger.debug("Current profile has no email, styles not updated")
+            return False
+            
+        # Check for the preference in user_preferences first
+        if email in self.user_preferences and "styles_updated" in self.user_preferences[email]:
+            return self.user_preferences[email]["styles_updated"]
+            
+        # Fall back to current profile for backward compatibility
         return self.current_profile.get("styles_updated", False)
         
     def delete_profile(self, email: str) -> Tuple[bool, str]:
@@ -2162,6 +2237,12 @@ class AVDProfileManager:
 
             # Clean up emulator mapping
             # No longer using emulator_map
+            
+            # Remove from user preferences
+            if email in self.user_preferences:
+                del self.user_preferences[email]
+                self._save_user_preferences()
+                logger.info(f"Removed preferences for {email}")
 
             logger.info(f"Profile tracking removed for {email} in simplified mode")
             return True, f"Profile tracking removed for {email}"
@@ -2240,5 +2321,11 @@ class AVDProfileManager:
         # Remove from profiles index
         del self.profiles_index[email]
         self._save_profiles_index()
+        
+        # Remove from user preferences
+        if email in self.user_preferences:
+            del self.user_preferences[email]
+            self._save_user_preferences()
+            logger.info(f"Removed preferences for {email}")
 
         return True, f"Successfully deleted profile for {email}"
