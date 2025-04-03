@@ -20,6 +20,7 @@ from views.reading.interaction_strategies import (
     CLOSE_BOOK_STRATEGIES,
     FULL_SCREEN_DIALOG_GOT_IT,
     LAST_READ_PAGE_DIALOG_BUTTONS,
+    READING_TOOLBAR_STRATEGIES,
 )
 from views.reading.view_strategies import (
     ABOUT_BOOK_CHECKBOX,
@@ -778,18 +779,57 @@ class ReaderHandler:
             except Exception as e:
                 logger.error(f"Error clicking NOT NOW button: {e}")
 
-        # Try tapping up to 3 times
+        # First check if toolbar is already visible
+        toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
+        if toolbar_visible:
+            logger.info("Toolbar is already visible - proceeding to close book")
+            return self._click_close_book_button()
+
+        # Try alternate toolbar checking with toolbar strategies from interaction_strategies.py
+        toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_STRATEGIES, "toolbar (alt check)")
+        if toolbar_visible:
+            logger.info("Toolbar is already visible (alt check) - proceeding to close book")
+            return self._click_close_book_button()
+
+        # Try multiple different tap patterns to show the toolbar
         max_attempts = 3
         for attempt in range(max_attempts):
             logger.info(f"Attempting to show toolbar (attempt {attempt + 1}/{max_attempts})")
-            self.driver.tap([(center_x, tap_y)])
+            
+            # Try different tap pattern based on attempt number
+            if attempt == 0:
+                # First try: Simple center tap
+                self.driver.tap([(center_x, tap_y)])
+                logger.info(f"Tapped center at ({center_x}, {tap_y})")
+            elif attempt == 1:
+                # Second try: Tap near the top of the page
+                top_y = int(window_size["height"] * 0.25)  # 25% from top
+                self.driver.tap([(center_x, top_y)])
+                logger.info(f"Tapped near top at ({center_x}, {top_y})")
+            else:
+                # Third try: Try a double tap
+                self.driver.tap([(center_x, tap_y)])
+                time.sleep(0.1)  # Brief pause between taps
+                self.driver.tap([(center_x, tap_y)])
+                logger.info(f"Double-tapped center at ({center_x}, {tap_y})")
+            
+            # Generous wait for toolbar to appear
+            time.sleep(0.5)
 
-            # Check if toolbar appeared
+            # Check if toolbar appeared using multiple strategies
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
             if toolbar_visible:
+                logger.info(f"Toolbar successfully appeared on attempt {attempt + 1}")
+                return self._click_close_book_button()
+                
+            # Also check with alternative toolbar identifiers
+            toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_STRATEGIES, "toolbar (alt check)")
+            if toolbar_visible:
+                logger.info(f"Toolbar successfully appeared (alt check) on attempt {attempt + 1}")
                 return self._click_close_book_button()
 
-            # If the toolbar didn't appear, check if a dialog is now visible
+            # Check for and handle interrupting dialogs
+            # Check for Goodreads dialog
             goodreads_dialog_visible, _ = self._check_element_visibility(
                 GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
             )
@@ -807,23 +847,77 @@ class ReaderHandler:
                             self.driver.page_source, "goodreads_dialog_dismissed_during_toolbar"
                         )
 
-                        # Try again to show toolbar after dismissing dialog
+                        # Try again immediately to show toolbar after dismissing dialog
                         self.driver.tap([(center_x, tap_y)])
-                        toolbar_visible, _ = self._check_element_visibility(
-                            READING_TOOLBAR_IDENTIFIERS, "toolbar"
-                        )
+                        time.sleep(0.5)
+                        
+                        # Check if toolbar appeared
+                        toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
                         if toolbar_visible:
+                            logger.info("Toolbar appeared after dismissing Goodreads dialog")
+                            return self._click_close_book_button()
+                            
+                        # Also check with alternative toolbar identifiers
+                        toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_STRATEGIES, "toolbar (alt check)")
+                        if toolbar_visible:
+                            logger.info("Toolbar appeared (alt check) after dismissing Goodreads dialog")
                             return self._click_close_book_button()
                 except NoSuchElementException:
                     logger.error("NOT NOW button not found for Goodreads dialog")
                 except Exception as e:
                     logger.error(f"Error clicking NOT NOW button: {e}")
+            
+            # Check for placemark ribbon which could be blocking our taps
+            placemark_visible, _ = self._check_element_visibility(PLACEMARK_IDENTIFIERS, "placemark ribbon")
+            if placemark_visible:
+                logger.info("Found placemark ribbon - will try tapping elsewhere")
+                # Try tapping in a different location
+                self.driver.tap([(center_x, int(window_size["height"] * 0.75))])  # Lower on screen
+                time.sleep(0.5)
+                
+                # Check if toolbar appeared
+                toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
+                if toolbar_visible:
+                    logger.info("Toolbar appeared after tapping away from placemark")
+                    return self._click_close_book_button()
 
+            # If still nothing, try checking for close book button directly
+            # Sometimes the toolbar is there but not detected with our standard checks
+            close_visible, close_button = self._check_element_visibility(CLOSE_BOOK_STRATEGIES, "close book button")
+            if close_visible:
+                logger.info("Found close book button directly without toolbar visibility check")
+                return self._click_close_book_button()
+                
             if attempt < max_attempts - 1:
-                logger.info("Toolbar not visible, will try again...")
-                continue
-
-        logger.error("Failed to make toolbar visible after all attempts")
+                logger.info("Toolbar not visible, will try again with different tap strategy...")
+                # Slightly longer wait between attempts
+                time.sleep(0.5)
+                
+        # As a last resort attempt, try directly going back using the system back button
+        logger.warning("Could not show toolbar after all attempts - trying system back button as fallback")
+        try:
+            # Press back button
+            self.driver.press_keycode(4)  # Android back button keycode
+            time.sleep(1)
+            
+            # Check if we're still in reading view
+            reading_view = False
+            for strategy, locator in READING_VIEW_IDENTIFIERS[:3]:  # Use just the first few identifiers
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        reading_view = True
+                        break
+                except NoSuchElementException:
+                    continue
+                    
+            if not reading_view:
+                logger.info("Successfully exited reading view using system back button")
+                return True
+        except Exception as e:
+            logger.error(f"Error using system back button: {e}")
+            
+        logger.error("Failed to make toolbar visible or exit reading view after all attempts")
         return False
 
     def _click_close_book_button(self):
