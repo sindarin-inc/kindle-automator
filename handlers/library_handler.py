@@ -120,16 +120,16 @@ class LibraryHandler:
             return True
         except:
             return False
-            
+
     def _is_grid_list_view_dialog_open(self):
         """Check if the Grid/List view selection dialog is open.
-        
+
         This dialog appears when view options is clicked and shows Grid, List, and Collections choices.
         """
         try:
             # Check for multiple identifiers to ensure we're specifically in the Grid/List dialog
             identifiers_found = 0
-            
+
             # Check for VIEW_OPTIONS_DONE_BUTTON_STRATEGIES (DONE button)
             for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
                 try:
@@ -139,7 +139,7 @@ class LibraryHandler:
                         identifiers_found += 1
                 except NoSuchElementException:
                     continue
-            
+
             # Check for LIST_VIEW_OPTION_STRATEGIES
             for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
                 try:
@@ -149,7 +149,7 @@ class LibraryHandler:
                         identifiers_found += 1
                 except NoSuchElementException:
                     continue
-            
+
             # Check for GRID_VIEW_OPTION_STRATEGIES
             for strategy, locator in GRID_VIEW_OPTION_STRATEGIES:
                 try:
@@ -159,7 +159,7 @@ class LibraryHandler:
                         identifiers_found += 1
                 except NoSuchElementException:
                     continue
-                
+
             # Also check for specific view type header text
             try:
                 header = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_type_header")
@@ -168,17 +168,19 @@ class LibraryHandler:
                     identifiers_found += 1
             except NoSuchElementException:
                 pass
-                
+
             # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
             is_dialog_open = identifiers_found >= 2
-            logger.info(f"Grid/List view dialog is{''.join(' open' if is_dialog_open else ' not open')} ({identifiers_found} identifiers found)")
-            
+            logger.info(
+                f"Grid/List view dialog is{''.join(' open' if is_dialog_open else ' not open')} ({identifiers_found} identifiers found)"
+            )
+
             # Capture a screenshot and page source for debugging
             if is_dialog_open:
                 store_page_source(self.driver.page_source, "grid_list_dialog_open")
                 screenshot_path = os.path.join(self.screenshots_dir, "grid_list_dialog.png")
                 self.driver.save_screenshot(screenshot_path)
-                
+
             return is_dialog_open
         except Exception as e:
             logger.error(f"Error checking for Grid/List view dialog: {e}")
@@ -206,7 +208,7 @@ class LibraryHandler:
                     return False
                 logger.info("Successfully handled Grid/List view dialog")
                 time.sleep(0.5)  # Wait for dialog to close
-                
+
             # Check if view options menu is open and close it if needed
             if self._is_view_options_menu_open():
                 logger.info("View options menu is open, closing it first")
@@ -349,7 +351,7 @@ class LibraryHandler:
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is already open, handling it directly")
                 return self.handle_grid_list_view_dialog()
-                
+
             # Check if we're already in list view
             if self._is_list_view():
                 logger.info("Already in list view")
@@ -396,7 +398,7 @@ class LibraryHandler:
                     if not self.handle_grid_list_view_dialog():
                         logger.error("Failed to handle Grid/List view dialog")
                         return False
-                    
+
                     # After handling the dialog, verify we're in list view
                     if self._is_list_view():
                         logger.info("Successfully switched to list view after handling dialog")
@@ -404,10 +406,10 @@ class LibraryHandler:
                     else:
                         logger.error("Still not in list view after handling dialog")
                         return False
-                
+
                 # If we didn't detect the Grid/List dialog, continue with the old approach
                 # (This is a fallback for backward compatibility)
-                
+
                 # Verify the menu is open
                 menu_open = False
                 try:
@@ -554,24 +556,24 @@ class LibraryHandler:
         except Exception as e:
             logger.error(f"Error closing menu: {e}")
             return False
-            
+
     def handle_grid_list_view_dialog(self):
         """Handle the Grid/List view selection dialog by selecting List view and clicking DONE.
-        
+
         This method is called when we detect that the Grid/List view selection dialog is open,
         which can happen when trying to open a book or navigate in the library view.
-        
+
         Returns:
             bool: True if successfully handled the dialog, False otherwise.
         """
         try:
             logger.info("Handling Grid/List view selection dialog...")
-            
+
             # First check if the dialog is actually open
             if not self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is not open, nothing to handle.")
                 return True  # Return True since there's no dialog to handle
-                
+
             # Click the List view option to ensure consistent view
             list_option_clicked = False
             for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
@@ -589,14 +591,16 @@ class LibraryHandler:
                 except Exception as e:
                     logger.error(f"Error clicking List view option: {e}")
                     continue
-            
+
             # If we couldn't click the List view option, it might already be selected or not found
             if not list_option_clicked:
-                logger.warning("Could not click List view option, it might already be selected or not available")
-            
+                logger.warning(
+                    "Could not click List view option, it might already be selected or not available"
+                )
+
             # Now click the DONE button to close the dialog
             done_clicked = False
-            
+
             # Try the VIEW_OPTIONS_DONE_BUTTON_STRATEGIES
             for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
                 try:
@@ -613,7 +617,7 @@ class LibraryHandler:
                 except Exception as e:
                     logger.error(f"Error clicking DONE button: {e}")
                     continue
-            
+
             # If we still couldn't click the DONE button, try VIEW_OPTIONS_DONE_STRATEGIES
             # which include touch_outside
             if not done_clicked:
@@ -621,7 +625,9 @@ class LibraryHandler:
                     try:
                         done_button = self.driver.find_element(strategy, locator)
                         if done_button.is_displayed():
-                            logger.info(f"Clicking DONE button using alternative strategy {strategy}={locator}")
+                            logger.info(
+                                f"Clicking DONE button using alternative strategy {strategy}={locator}"
+                            )
                             done_button.click()
                             done_clicked = True
                             time.sleep(1)  # Wait for dialog to close
@@ -632,7 +638,7 @@ class LibraryHandler:
                     except Exception as e:
                         logger.error(f"Error clicking DONE button with alternative strategy: {e}")
                         continue
-            
+
             # If we still couldn't click the DONE button, try the alternative approach of tapping outside
             if not done_clicked:
                 logger.warning("Could not click DONE button, trying to tap outside the dialog")
@@ -649,7 +655,7 @@ class LibraryHandler:
                     except Exception as e:
                         logger.debug(f"Could not tap outside area: {e}")
                         continue
-                
+
                 # If tapping specific outside area didn't work, try tapping at screen coordinates
                 if not done_clicked:
                     try:
@@ -663,15 +669,15 @@ class LibraryHandler:
                         time.sleep(1)  # Wait for dialog to close
                     except Exception as e:
                         logger.error(f"Error tapping at screen coordinates: {e}")
-            
+
             # Verify the dialog was closed
             if self._is_grid_list_view_dialog_open():
                 logger.error("Failed to close Grid/List view dialog")
                 return False
-            
+
             logger.info("Successfully handled Grid/List view selection dialog")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error handling Grid/List view selection dialog: {e}")
             traceback.print_exc()
@@ -1076,7 +1082,7 @@ class LibraryHandler:
                 if not self.handle_grid_list_view_dialog():
                     logger.error("Failed to handle Grid/List view dialog")
                     # Continue anyway, as navigate_to_library will try again
-            
+
             # Ensure we're in the library view
             if not self.navigate_to_library():
                 logger.error("Failed to navigate to library")
@@ -1086,14 +1092,14 @@ class LibraryHandler:
             if self.check_for_sign_in_button():
                 logger.warning("Library view shows sign-in button - authentication required")
                 return None  # Return None to indicate authentication needed
-            
+
             # Check if Grid/List view dialog is open after navigating to library
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is open after navigation, handling it")
                 if not self.handle_grid_list_view_dialog():
                     logger.error("Failed to handle Grid/List view dialog")
                     # Try to continue anyway
-            
+
             # Check if we're in grid view and switch to list view if needed
             if self._is_grid_view():
                 logger.info("Detected grid view, switching to list view")
@@ -1125,7 +1131,7 @@ class LibraryHandler:
         normalized = title.lower()
 
         # Log original title for debugging
-        logger.debug(f"Normalizing title: '{title}'")
+        # logger.debug(f"Normalizing title: '{title}'")
 
         # Replace less essential characters with spaces
         # Note: we're keeping apostrophes and colons intact for special handling
@@ -1145,7 +1151,7 @@ class LibraryHandler:
         normalized = " ".join(normalized.split())
 
         # Log normalized title for debugging
-        logger.debug(f"Normalized to: '{normalized}'")
+        # logger.debug(f"Normalized to: '{normalized}'")
 
         return normalized
 
@@ -1367,7 +1373,7 @@ class LibraryHandler:
                     return False
                 logger.info("Successfully handled Grid/List view dialog")
                 time.sleep(1)  # Wait for UI to stabilize
-            
+
             # Check if we're in grid view and switch to list view if needed
             if self._is_grid_view():
                 logger.info("Detected grid view, switching to list view")
@@ -1523,7 +1529,7 @@ class LibraryHandler:
                     return False
                 logger.info("Successfully handled Grid/List view dialog")
                 time.sleep(1)  # Wait for UI to stabilize
-                
+
             # Find and click the book button
             if not self.find_book(book_title):
                 logger.error(f"Failed to find book: {book_title}")
