@@ -73,6 +73,44 @@ class KindleAutomator:
             file.write(page_source)
         logger.info(f"Saved current page source ({state_name}) to {file_path}")
 
+    def take_diagnostic_snapshot(self, operation_name="unknown"):
+        """Capture a diagnostic snapshot including screenshot and page source for debugging.
+
+        Args:
+            operation_name: Name of the operation being performed (for filename)
+
+        Returns:
+            bool: True if snapshot was taken successfully, False otherwise
+        """
+        timestamp = int(time.time())
+        try:
+            # Take a screenshot first
+            screenshot_path = os.path.join(self.screenshots_dir, f"{operation_name}_{timestamp}.png")
+            self.driver.save_screenshot(screenshot_path)
+            logger.info(f"Diagnostic screenshot saved to {screenshot_path}")
+
+            # Then get page source
+            try:
+                page_source = self.driver.page_source
+                xml_path = os.path.join(self.screenshots_dir, f"{operation_name}_{timestamp}.xml")
+                with open(xml_path, "w") as f:
+                    f.write(page_source)
+                logger.info(f"Diagnostic page source saved to {xml_path}")
+            except Exception as ps_e:
+                logger.warning(f"Could not capture page source for diagnostic snapshot: {ps_e}")
+
+            # Get current activity name
+            try:
+                current_activity = self.driver.current_activity
+                logger.info(f"Current activity during {operation_name}: {current_activity}")
+            except Exception as act_e:
+                logger.warning(f"Could not get current activity: {act_e}")
+
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to take diagnostic snapshot for {operation_name}: {e}")
+            return False
+
     def transition_to_library(self):
         """Handles the initial app setup and ensures we reach the library view"""
         return self.state_machine.transition_to_library()
@@ -136,7 +174,7 @@ class KindleAutomator:
         if self.state_machine and self.state_machine.auth_handler:
             self.state_machine.auth_handler.email = email
             self.state_machine.auth_handler.password = password
-            
+
     def restart_app(self):
         """Restart the Kindle app"""
         logger.info("Restarting Kindle app")
@@ -149,26 +187,27 @@ class KindleAutomator:
                 else:
                     logger.error("Failed to initialize driver for app restart")
                     return False
-                    
+
             # Force stop the app more reliably with ADB command
             try:
                 if self.device_id:
                     logger.info(f"Force stopping Kindle app with ADB on device {self.device_id}")
                     subprocess.run(
                         ["adb", "-s", self.device_id, "shell", "am", "force-stop", "com.amazon.kindle"],
-                        check=False, timeout=5
+                        check=False,
+                        timeout=5,
                     )
                     time.sleep(1)
             except Exception as adb_error:
                 logger.warning(f"Error using ADB to stop app: {adb_error}. Falling back to driver method.")
-                
+
             # Stop the app using driver method as backup
             try:
                 self.driver.terminate_app("com.amazon.kindle")
                 time.sleep(1)
             except Exception as driver_error:
                 logger.warning(f"Error using driver to terminate app: {driver_error}")
-                
+
             # Start the app again using driver method
             try:
                 self.driver.activate_app("com.amazon.kindle")
@@ -179,38 +218,50 @@ class KindleAutomator:
                 if self.device_id:
                     try:
                         subprocess.run(
-                            ["adb", "-s", self.device_id, "shell", "am", "start", "-n", "com.amazon.kindle/com.amazon.kindle.UpgradePage"],
-                            check=False, timeout=5
+                            [
+                                "adb",
+                                "-s",
+                                self.device_id,
+                                "shell",
+                                "am",
+                                "start",
+                                "-n",
+                                "com.amazon.kindle/com.amazon.kindle.UpgradePage",
+                            ],
+                            check=False,
+                            timeout=5,
                         )
                         logger.info("Started Kindle app with ADB fallback method")
                     except Exception as adb_start_error:
                         logger.error(f"Error using ADB to start app: {adb_start_error}")
                         return False
-            
+
             # Wait for app to initialize
             time.sleep(3)
-            
+
             # Update the state machine
             if self.state_machine:
                 self.state_machine.update_current_state()
-                
-            logger.info(f"App restart completed, current state: {self.state_machine.current_state if self.state_machine else 'unknown'}")
+
+            logger.info(
+                f"App restart completed, current state: {self.state_machine.current_state if self.state_machine else 'unknown'}"
+            )
             return True
         except Exception as e:
             logger.error(f"Error restarting Kindle app: {e}")
             return False
-            
+
     def take_secure_screenshot(self, output_path=None):
         """Take screenshot directly with multiple methods for FLAG_SECURE screens.
-        
+
         This method uses different approaches depending on the current state:
         1. For auth screens (FLAG_SECURE): scrcpy with video capture
         2. For library/reading: Use faster ADB screencap
-        
+
         Args:
             output_path (str, optional): Path to save the screenshot. If None,
                                         a path in the screenshots directory is generated.
-        
+
         Returns:
             str: Path to the saved screenshot or None if screenshot failed
         """
@@ -219,20 +270,22 @@ class KindleAutomator:
                 # Generate a filename if none provided
                 filename = f"secure_screenshot_{int(time.time())}.png"
                 output_path = os.path.join(self.screenshots_dir, filename)
-                
+
             logger.info(f"Taking screenshot, saving to {output_path}")
-            
+
             # Check if we're in a state that needs secure screenshot (FLAG_SECURE)
             # or if we can use the faster ADB method
             needs_secure = False
-            if hasattr(self, 'state_machine') and self.state_machine:
+            if hasattr(self, "state_machine") and self.state_machine:
                 current_state = self.state_machine.current_state
                 auth_states = [
-                    AppState.SIGN_IN, AppState.CAPTCHA, 
-                    AppState.SIGN_IN_PASSWORD, AppState.UNKNOWN
+                    AppState.SIGN_IN,
+                    AppState.CAPTCHA,
+                    AppState.SIGN_IN_PASSWORD,
+                    AppState.UNKNOWN,
                 ]
                 needs_secure = current_state in auth_states
-            
+
             if not needs_secure:
                 # Fast path: Use direct ADB screenshot for non-FLAG_SECURE screens
                 logger.info("Using fast ADB screenshot for non-secure screen")
@@ -240,7 +293,7 @@ class KindleAutomator:
                     # Direct ADB screencap method - much faster
                     cmd = f"adb -s {self.device_id} exec-out screencap -p > {output_path}"
                     subprocess.run(cmd, shell=True, timeout=5, check=True)
-                    
+
                     if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                         logger.info(f"Screenshot saved to {output_path} using fast ADB method")
                         return output_path
@@ -249,26 +302,35 @@ class KindleAutomator:
                 except Exception as e:
                     logger.error(f"Error with fast ADB screenshot: {e}")
                     # Fall through to slower methods
-            
+
             # Slow path: Use scrcpy for FLAG_SECURE screens
             try:
                 logger.info("Trying scrcpy video capture for FLAG_SECURE...")
                 # First, set up a more compatible environment
-                subprocess.run(f"adb -s {self.device_id} shell settings put global window_animation_scale 0.0", 
-                              shell=True, check=False)
-                subprocess.run(f"adb -s {self.device_id} shell settings put global transition_animation_scale 0.0", 
-                              shell=True, check=False)
-                subprocess.run(f"adb -s {self.device_id} shell settings put global animator_duration_scale 0.0", 
-                              shell=True, check=False)
+                subprocess.run(
+                    f"adb -s {self.device_id} shell settings put global window_animation_scale 0.0",
+                    shell=True,
+                    check=False,
+                )
+                subprocess.run(
+                    f"adb -s {self.device_id} shell settings put global transition_animation_scale 0.0",
+                    shell=True,
+                    check=False,
+                )
+                subprocess.run(
+                    f"adb -s {self.device_id} shell settings put global animator_duration_scale 0.0",
+                    shell=True,
+                    check=False,
+                )
                 # Use temp video file for scrcpy capture
-                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
                     video_path = temp_file.name
-                    
+
                     # Use simplified scrcpy 3.1 parameters for FLAG_SECURE
                     # Get absolute path to scrcpy
                     scrcpy_path = subprocess.check_output(["which", "scrcpy"], text=True).strip()
                     logger.info(f"Using scrcpy at: {scrcpy_path}")
-                    
+
                     # Set up environment to ensure proper execution
                     env = os.environ.copy()
                     # Add Homebrew paths if they're not already in PATH
@@ -276,79 +338,113 @@ class KindleAutomator:
                     if brew_path not in env.get("PATH", ""):
                         env["PATH"] = f"{brew_path}:{env.get('PATH', '')}"
                     logger.info(f"Using PATH: {env['PATH']}")
-                    
+
                     # Define scrcpy command with minimal parameters
+                    # Check if scrcpy version supports --no-playback
+                    try:
+                        has_no_playback = "--no-playback" in subprocess.check_output(
+                            [scrcpy_path, "--help"], stderr=subprocess.STDOUT, text=True
+                        )
+                    except Exception:
+                        has_no_playback = False
+
                     scrcpy_cmd = [
                         scrcpy_path,
-                        "-s", self.device_id,
-                        "--no-playback",          # For scrcpy 3.1
-                        "--record", video_path,   # Record as video
-                        "--no-audio",             # No audio needed
-                        "--turn-screen-off"       # Critical for FLAG_SECURE
+                        "-s",
+                        self.device_id,
                     ]
-                    
+
+                    # Only add --no-playback if supported
+                    if has_no_playback:
+                        scrcpy_cmd.append("--no-playback")  # For scrcpy 3.1+
+
+                    scrcpy_cmd.extend(
+                        [
+                            "--record",
+                            video_path,  # Record as video
+                            "--no-audio",  # No audio needed
+                            "--turn-screen-off",  # Critical for FLAG_SECURE
+                        ]
+                    )
+
                     logger.info(f"Running scrcpy command: {' '.join(scrcpy_cmd)}")
-                    process = subprocess.Popen(scrcpy_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-                    
+                    process = subprocess.Popen(
+                        scrcpy_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+                    )
+
                     # Wait for scrcpy to capture the video
                     time.sleep(5)
                     process.terminate()
-                    
+
                     try:
                         process.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         pass
-                    
+
                     # Capture and log output
                     stdout, stderr = process.communicate()
-                    if stdout:
-                        logger.info(f"scrcpy stdout: {stdout}")
+                    # if stdout:
+                    #     logger.info(f"scrcpy stdout: {stdout}")
                     if stderr:
                         logger.info(f"scrcpy stderr: {stderr}")
-                    
+
                     # Extract first frame from video if video was created
                     if os.path.exists(video_path):
-                        logger.info(f"Checking video file: {video_path}, size: {os.path.getsize(video_path)} bytes")
-                        
+                        logger.info(
+                            f"Checking video file: {video_path}, size: {os.path.getsize(video_path)} bytes"
+                        )
+
                         if os.path.getsize(video_path) > 1000:
                             logger.info("Video captured, extracting first frame with ffmpeg...")
                             # Extract first frame as image using ffmpeg
                             try:
                                 # Ensure we have enough time to read the video file
                                 time.sleep(0.5)
-                                
+
                                 # Get full paths to ensure correct execution
-                                ffmpeg_path = subprocess.check_output(["which", "ffmpeg"], 
-                                                                    text=True).strip()
+                                ffmpeg_path = subprocess.check_output(["which", "ffmpeg"], text=True).strip()
                                 logger.info(f"Using ffmpeg at: {ffmpeg_path}")
-                                
+
                                 # Extract the first frame
                                 ffmpeg_cmd = [
-                                    ffmpeg_path, 
-                                    "-i", video_path, 
-                                    "-frames:v", "1", 
+                                    ffmpeg_path,
+                                    "-i",
+                                    video_path,
+                                    "-frames:v",
+                                    "1",
                                     "-y",  # Overwrite output file if it exists
-                                    output_path
+                                    output_path,
                                 ]
-                                
+
                                 # Run with more detailed output and the same environment
-                                result = subprocess.run(ffmpeg_cmd, check=False, 
-                                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                                     text=True, env=env)
-                                
-                                logger.info(f"ffmpeg stdout: {result.stdout}")
-                                logger.info(f"ffmpeg stderr: {result.stderr}")
-                                
+                                result = subprocess.run(
+                                    ffmpeg_cmd,
+                                    check=False,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    text=True,
+                                    env=env,
+                                )
+
+                                # logger.info(f"ffmpeg stdout: {result.stdout}")
+                                # logger.info(f"ffmpeg stderr: {result.stderr}")
+
                                 # Check if image extraction succeeded
                                 if os.path.exists(output_path):
-                                    logger.info(f"Output file created: {output_path}, size: {os.path.getsize(output_path)} bytes")
+                                    logger.info(
+                                        f"Output file created: {output_path}, size: {os.path.getsize(output_path)} bytes"
+                                    )
                                     if os.path.getsize(output_path) > 1000:
-                                        logger.info(f"Screenshot saved to {output_path} using scrcpy with ffmpeg extraction")
+                                        logger.info(
+                                            f"Screenshot saved to {output_path} using scrcpy with ffmpeg extraction"
+                                        )
                                         # Clean up temp file
                                         os.unlink(video_path)
                                         return output_path
                                     else:
-                                        logger.error(f"Output file too small: {os.path.getsize(output_path)} bytes")
+                                        logger.error(
+                                            f"Output file too small: {os.path.getsize(output_path)} bytes"
+                                        )
                                 else:
                                     logger.error(f"Output file was not created: {output_path}")
                             except Exception as e:
@@ -357,113 +453,124 @@ class KindleAutomator:
                             logger.error(f"Video file too small: {os.path.getsize(video_path)} bytes")
                     else:
                         logger.error(f"Video file not created: {video_path}")
-                    
+
                     # Clean up temp file if it exists
                     if os.path.exists(video_path):
                         os.unlink(video_path)
             except Exception as e:
                 logger.error(f"scrcpy video method failed: {e}")
-            
+
             # Method 2: Alternative scrcpy parameters
             try:
                 logger.info("Trying alternative scrcpy method...")
-                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file:
                     alt_video_path = temp_file.name
-                
+
                 # Alternative simplified scrcpy parameters
                 alt_cmd = [
                     scrcpy_path,  # Use the path we already found
-                    "-s", self.device_id,
+                    "-s",
+                    self.device_id,
                     "--no-playback",
-                    "--record", alt_video_path,
-                    "--legacy-paste"         # Alternative mode that might help
+                    "--record",
+                    alt_video_path,
+                    "--legacy-paste",  # Alternative mode that might help
                 ]
-                
+
                 logger.info(f"Running alternative scrcpy command: {' '.join(alt_cmd)}")
-                alt_process = subprocess.Popen(alt_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+                alt_process = subprocess.Popen(
+                    alt_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+                )
                 time.sleep(5)
                 alt_process.terminate()
-                
+
                 try:
                     alt_process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     pass
-                
+
                 # Capture and log output
                 alt_stdout, alt_stderr = alt_process.communicate()
                 if alt_stdout:
                     logger.info(f"Alternative scrcpy stdout: {alt_stdout}")
                 if alt_stderr:
                     logger.info(f"Alternative scrcpy stderr: {alt_stderr}")
-                
+
                 # Extract frame if video was captured
                 if os.path.exists(alt_video_path) and os.path.getsize(alt_video_path) > 1000:
                     try:
                         # Wait to ensure the file is accessible
                         time.sleep(0.5)
-                        
+
                         # Extract the first frame
-                        alt_ffmpeg_cmd = [
-                            "ffmpeg", 
-                            "-i", alt_video_path, 
-                            "-frames:v", "1", 
-                            "-y",
-                            output_path
-                        ]
-                        
-                        alt_ffmpeg_result = subprocess.run(alt_ffmpeg_cmd, check=False, 
-                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                             text=True, env=env)
-                        
+                        alt_ffmpeg_cmd = ["ffmpeg", "-i", alt_video_path, "-frames:v", "1", "-y", output_path]
+
+                        alt_ffmpeg_result = subprocess.run(
+                            alt_ffmpeg_cmd,
+                            check=False,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            env=env,
+                        )
+
                         # Log ffmpeg output
                         if alt_ffmpeg_result.stdout:
                             logger.info(f"Alternative ffmpeg stdout: {alt_ffmpeg_result.stdout}")
                         if alt_ffmpeg_result.stderr:
                             logger.info(f"Alternative ffmpeg stderr: {alt_ffmpeg_result.stderr}")
-                        
+
                         if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                             logger.info(f"Screenshot saved to {output_path} using alternative scrcpy method")
                             os.unlink(alt_video_path)
                             return output_path
                     except Exception as inner_e:
                         logger.error(f"Alternative ffmpeg extraction failed: {inner_e}")
-                    
+
                 # Clean up temp file if it exists
                 if os.path.exists(alt_video_path):
                     os.unlink(alt_video_path)
             except Exception as e:
                 logger.error(f"Alternative scrcpy method failed: {e}")
-            
+
             # Method 3: Direct ADB exec-out method (fallback, likely won't work with FLAG_SECURE)
             try:
                 logger.info("Trying direct adb exec-out method...")
                 cmd = f"adb -s {self.device_id} exec-out screencap -p > {output_path}"
                 subprocess.run(cmd, shell=True, timeout=5, check=False)
-                
+
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                     logger.info(f"Screenshot saved to {output_path} using adb exec-out")
                     return output_path
             except Exception as e:
                 logger.error(f"Direct ADB method failed: {e}")
-            
+
             # Method 4: ADB temp file method (fallback, likely won't work with FLAG_SECURE)
             try:
                 logger.info("Trying adb temp file method...")
                 device_temp = "/data/local/tmp/screenshot.png"
-                subprocess.run(f"adb -s {self.device_id} shell screencap -p {device_temp}", 
-                             shell=True, check=False, timeout=5)
-                subprocess.run(f"adb -s {self.device_id} pull {device_temp} {output_path}", 
-                             shell=True, check=False, timeout=5)
-                
+                subprocess.run(
+                    f"adb -s {self.device_id} shell screencap -p {device_temp}",
+                    shell=True,
+                    check=False,
+                    timeout=5,
+                )
+                subprocess.run(
+                    f"adb -s {self.device_id} pull {device_temp} {output_path}",
+                    shell=True,
+                    check=False,
+                    timeout=5,
+                )
+
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                     logger.info(f"Screenshot saved to {output_path} using adb temp file")
                     return output_path
             except Exception as e:
                 logger.error(f"ADB temp file method failed: {e}")
-                
+
             logger.error("All screenshot methods failed")
             return None
-                
+
         except Exception as e:
             logger.error(f"Error taking secure screenshot: {e}")
             return None

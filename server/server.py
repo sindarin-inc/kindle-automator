@@ -1,10 +1,12 @@
 import base64
 import logging
 import os
+import platform
 import signal
 import subprocess
 import time
 import traceback
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from appium.webdriver.common.appiumby import AppiumBy
@@ -20,14 +22,26 @@ from handlers.test_fixtures_handler import TestFixturesHandler
 from server.logging_config import setup_logger
 from server.request_logger import setup_request_logger
 from server.response_handler import handle_automator_response
-from server.user_data_manager import UserDataManager
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
-load_dotenv()
-
 setup_logger()
 logger = logging.getLogger(__name__)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
+
+# Load .env files with secrets
+if ENVIRONMENT.lower() == "prod":
+    logger.info(f"Loading prod environment variables from {os.path.join(BASE_DIR, '.env.prod')}")
+    load_dotenv(os.path.join(BASE_DIR, ".env.prod"), override=True)
+elif ENVIRONMENT.lower() == "staging":
+    logger.info(f"Loading staging environment variables from {os.path.join(BASE_DIR, '.env.staging')}")
+    load_dotenv(os.path.join(BASE_DIR, ".env.staging"), override=True)
+else:
+    logger.info(f"Loading dev environment variables from {os.path.join(BASE_DIR, '.env')}")
+    load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
+
 
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
@@ -47,7 +61,6 @@ class AutomationServer:
         self.appium_process = None
         self.pid_dir = "logs"
         self.current_book = None  # Track the currently open book title
-        self.user_data_manager = None  # Will be initialized when we have a device ID
         os.makedirs(self.pid_dir, exist_ok=True)
 
         # Initialize the AVD profile manager
@@ -64,8 +77,10 @@ class AutomationServer:
             self.automator = KindleAutomator()
             # Connect profile manager to automator for device ID tracking
             self.automator.profile_manager = self.profile_manager
-            # Update emulator mappings for current running emulators
-            self.profile_manager.update_emulator_mappings()
+            # Scan for any AVDs with email patterns in their names and register them
+            discovered = self.profile_manager.scan_for_avds_with_emails()
+            if discovered:
+                logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
         return self.automator
 
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
@@ -81,14 +96,29 @@ class AutomationServer:
         """
         logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
 
-        need_new_automator = True
-
+        # Check if we're already using this profile with a working emulator
         if self.current_email == email and not force_new_emulator:
             logger.info(f"Already using profile for {email}")
-            # Only skip the profile switch if we have a valid automator
-            if self.automator:
-                logger.info(f"Automator already exists for profile {email}, skipping profile switch")
-                return True, f"Already using profile for {email}"
+
+            # Check if there's a running emulator for this profile
+            is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
+
+            if is_running and self.automator:
+                logger.info(
+                    f"Automator already exists with running emulator for profile {email}, skipping profile switch"
+                )
+                return True, f"Already using profile for {email} with running emulator"
+            elif not is_running and self.automator:
+                # We have an automator but no running emulator - decide what to do
+                if force_new_emulator:
+                    logger.info(f"No running emulator for profile {email}, cleaning up automator for restart")
+                    self.automator.cleanup()
+                    self.automator = None
+                else:
+                    logger.info(
+                        f"No running emulator for profile {email}, but have automator - will use on next reconnect"
+                    )
+                    return True, f"Profile {email} is already active, waiting for reconnection"
             else:
                 logger.info(f"No automator exists for profile {email}, will reinitialize")
 
@@ -229,40 +259,64 @@ def ensure_automator_healthy(f):
                             "error": "Failed to initialize driver automatically. Call /initialize first."
                         }, 500
 
-                # Make sure user_data_manager is initialized
-                if not server.user_data_manager and server.automator.device_id:
-                    logger.info("Initializing user data manager")
-                    server.user_data_manager = UserDataManager(
-                        server.automator.device_id, server.automator.driver
-                    )
-
                 # Ensure driver is running
                 if not server.automator.ensure_driver_running():
                     return {"error": "Failed to ensure driver is running"}, 500
-
-                # Make sure user_data_manager has the current driver
-                if server.user_data_manager and server.automator.driver:
-                    server.user_data_manager.set_driver(server.automator.driver)
 
                 # Execute the function
                 return f(*args, **kwargs)
 
             except Exception as e:
-                # Check if it's the UiAutomator2 server crash error
-                is_uiautomator_crash = isinstance(
-                    e, selenium_exceptions.WebDriverException
-                ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
-                    e
+                # Check if it's the UiAutomator2 server crash error or other common crash patterns
+                error_message = str(e)
+                is_uiautomator_crash = any(
+                    [
+                        "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
+                        in error_message,
+                        "instrumentation process is not running" in error_message,
+                        "Failed to establish a new connection" in error_message,
+                        "Connection refused" in error_message,
+                        "Connection reset by peer" in error_message,
+                    ]
                 )
 
                 if is_uiautomator_crash and attempt < max_retries - 1:
                     logger.warning(
                         f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
                     )
+                    logger.warning(f"Crash error: {error_message}")
+
+                    # Kill any leftover UiAutomator2 processes directly via ADB
+                    try:
+                        if server.automator and server.automator.device_id:
+                            device_id = server.automator.device_id
+                            logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
+                            subprocess.run(
+                                [f"adb -s {device_id} shell pkill -f uiautomator"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            time.sleep(2)  # Give it time to fully terminate
+                    except Exception as kill_e:
+                        logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")
 
                     # Force a complete driver restart
                     if server.automator:
+                        logger.info("Cleaning up automator resources")
                         server.automator.cleanup()
+
+                    # Reset Appium server state as well
+                    try:
+                        logger.info("Resetting Appium server state")
+                        subprocess.run(["pkill -f 'appium|node'"], shell=True, check=False, timeout=5)
+                        time.sleep(2)  # Wait for processes to terminate
+
+                        logger.info("Restarting Appium server")
+                        if not server.start_appium():
+                            logger.error("Failed to restart Appium server")
+                    except Exception as appium_e:
+                        logger.warning(f"Error while resetting Appium: {appium_e}")
 
                     # If we have a current profile, try to switch to it
                     current_profile = server.profile_manager.get_current_profile()
@@ -274,9 +328,11 @@ def ensure_automator_healthy(f):
                             logger.error(f"Failed to switch back to profile: {message}")
                             return {"error": f"Failed to switch back to profile: {message}"}, 500
 
+                    logger.info("Initializing automator after crash recovery")
                     server.initialize_automator()
                     # Clear current book since we're restarting the driver
                     server.clear_current_book()
+
                     if server.automator.initialize_driver():
                         logger.info(
                             "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
@@ -478,13 +534,13 @@ class ScreenshotResource(Resource):
             # Check if the use_scrcpy parameter is explicitly set
             use_scrcpy = request.args.get("use_scrcpy", "0") in ("1", "true")
 
-            if (current_state == AppState.UNKNOWN and not use_scrcpy):
+            if current_state == AppState.UNKNOWN and not use_scrcpy:
                 # If state is unknown, update state first before deciding on screenshot method
                 logger.info("State is UNKNOWN, updating state before choosing screenshot method")
                 server.automator.state_machine.update_current_state()
                 current_state = server.automator.state_machine.current_state
                 logger.info(f"State after update: {current_state}")
-                
+
             if current_state in auth_states or use_scrcpy:
                 logger.info(
                     f"Using secure screenshot method for auth state: {current_state} or explicit scrcpy request"
@@ -889,30 +945,18 @@ class AuthResource(Resource):
         if not email or not password:
             return {"error": "Email and password are required in the request"}, 400
 
-        # If recreate is requested, delete the profile first
+        # If recreate is requested, just clean up the automator but don't force a new emulator
         if recreate:
-            logger.info(f"Recreate requested for {email}, deleting existing profile first")
-            # Check if profile exists
-            avd_name = server.profile_manager.get_avd_for_email(email)
-            if avd_name:
-                # First clean up any existing automator
-                if server.automator:
-                    logger.info("Cleaning up existing automator")
-                    server.automator.cleanup()
-                    server.automator = None
-
-                # Delete the profile
-                success, message = server.profile_manager.delete_profile(email)
-                if success:
-                    logger.info(f"Successfully deleted profile for {email}")
-                else:
-                    logger.warning(f"Failed to delete profile for {email}: {message}")
-            else:
-                logger.info(f"No existing profile found for {email}, skipping delete")
+            logger.info(f"Recreate requested for {email}, cleaning up existing automator")
+            # First clean up any existing automator
+            if server.automator:
+                logger.info("Cleaning up existing automator")
+                server.automator.cleanup()
+                server.automator = None
 
         # Switch to the profile for this email or create a new one
-        # Pass force_new_emulator=True if recreate was requested to ensure complete profile reset
-        success, message = server.switch_profile(email, force_new_emulator=recreate)
+        # We don't force a new emulator - let the profile manager decide if one is needed
+        success, message = server.switch_profile(email, force_new_emulator=False)
         if not success:
             logger.error(f"Failed to switch to profile for {email}: {message}")
             return {"error": f"Failed to switch to profile: {message}"}, 500
@@ -1443,6 +1487,159 @@ class ProfilesResource(Resource):
             return {"error": f"Invalid action: {action}"}, 400
 
 
+class TextResource(Resource):
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def _extract_text(self):
+        """Shared implementation for extracting text from the current reading page."""
+        try:
+            # Make sure we're in the READING state
+            server.automator.state_machine.update_current_state()
+            current_state = server.automator.state_machine.current_state
+
+            if current_state != AppState.READING:
+                return {
+                    "error": f"Must be in reading state to extract text, current state: {current_state.name}",
+                }, 400
+
+            # Before proceeding, manually check and dismiss the "About this book" slideover
+            # This is needed because it can prevent accessing the reading controls
+            try:
+                from views.reading.interaction_strategies import (
+                    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
+                    BOTTOM_SHEET_IDENTIFIERS,
+                )
+
+                # Check if About Book slideover is visible
+                about_book_visible = False
+                for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                    try:
+                        slideover = server.automator.driver.find_element(strategy, locator)
+                        if slideover.is_displayed():
+                            about_book_visible = True
+                            logger.info("Found 'About this book' slideover that must be dismissed before OCR")
+                            break
+                    except selenium_exceptions.NoSuchElementException:
+                        continue
+
+                if about_book_visible:
+                    # Try multiple dismissal methods
+
+                    # Method 1: Try tapping at the very top of the screen
+                    window_size = server.automator.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    top_y = int(window_size["height"] * 0.05)  # 5% from top
+                    server.automator.driver.tap([(center_x, top_y)])
+                    logger.info("Tapped at the very top of the screen to dismiss 'About this book' slideover")
+                    time.sleep(1)
+
+                    # Verify if it worked
+                    still_visible = False
+                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                        try:
+                            slideover = server.automator.driver.find_element(strategy, locator)
+                            if slideover.is_displayed():
+                                still_visible = True
+                                break
+                        except selenium_exceptions.NoSuchElementException:
+                            continue
+
+                    if still_visible:
+                        # Method 2: Try swiping down (from 30% to 70% of screen height)
+                        logger.info("First dismissal attempt failed. Trying swipe down method...")
+                        start_y = int(window_size["height"] * 0.3)
+                        end_y = int(window_size["height"] * 0.7)
+                        server.automator.driver.swipe(center_x, start_y, center_x, end_y, 300)
+                        logger.info("Swiped down to dismiss 'About this book' slideover")
+                        time.sleep(1)
+
+                        # Method 3: Try clicking the pill if it exists
+                        try:
+                            pill = server.automator.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
+                            if pill.is_displayed():
+                                pill.click()
+                                logger.info("Clicked pill to dismiss 'About this book' slideover")
+                                time.sleep(1)
+                        except selenium_exceptions.NoSuchElementException:
+                            logger.info("Pill not found or not visible")
+
+                    # Report final status
+                    still_visible = False
+                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                        try:
+                            slideover = server.automator.driver.find_element(strategy, locator)
+                            if slideover.is_displayed():
+                                still_visible = True
+                                logger.warning(
+                                    "'About this book' slideover is still visible after multiple dismissal attempts"
+                                )
+                                break
+                        except selenium_exceptions.NoSuchElementException:
+                            continue
+
+                    if not still_visible:
+                        logger.info("Successfully dismissed the 'About this book' slideover")
+            except Exception as e:
+                logger.error(f"Error while attempting to dismiss 'About this book' slideover: {e}")
+
+            # Save screenshot with unique ID
+            screenshot_id = f"text_extract_{int(time.time())}"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+            server.automator.driver.save_screenshot(screenshot_path)
+
+            # Get current page number and progress for context
+            progress = server.automator.reader_handler.get_reading_progress()
+
+            # Process the screenshot with OCR
+            try:
+                with open(screenshot_path, "rb") as img_file:
+                    image_data = img_file.read()
+
+                # Process the image with OCR
+                ocr_text, error = KindleOCR.process_ocr(image_data)
+
+                # Delete the screenshot file after processing
+                try:
+                    os.remove(screenshot_path)
+                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
+                except Exception as del_e:
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+
+                if ocr_text:
+                    return {"success": True, "progress": progress, "text": ocr_text}, 200
+                else:
+                    return {
+                        "success": False,
+                        "progress": progress,
+                        "error": error or "OCR processing failed",
+                    }, 500
+
+            except Exception as e:
+                logger.error(f"Error processing OCR: {e}")
+                return {
+                    "success": False,
+                    "progress": progress,
+                    "error": f"Failed to extract text: {str(e)}",
+                }, 500
+
+        except Exception as e:
+            logger.error(f"Error extracting text: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": str(e)}, 500
+
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def get(self):
+        """Get OCR text of the current reading page without turning the page."""
+        return self._extract_text()
+
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def post(self):
+        """POST endpoint for OCR text extraction (identical to GET but allows for future parameters)."""
+        return self._extract_text()
+
+
 # Add resources to API
 api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
@@ -1471,17 +1668,82 @@ api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(ProfilesResource, "/profiles")
+api.add_resource(TextResource, "/text")
+
+
+def cleanup_resources():
+    """Clean up resources before exiting"""
+    logger.info("Cleaning up resources before shutdown...")
+
+    # We intentionally keep emulators running during server shutdown
+    # This allows for faster reconnection when the server is restarted
+    logger.info("Preserving emulators during shutdown for faster reconnection")
+
+    # Kill Appium server only
+    try:
+        logger.info("Stopping Appium server")
+        server.kill_existing_process("appium")
+    except Exception as e:
+        logger.error(f"Error stopping Appium during shutdown: {e}")
+
+    # We don't kill the ADB server either, to maintain connection with emulators
+    logger.info("Cleanup complete, server shutting down (emulators preserved)")
+
+
+def signal_handler(sig, frame):
+    """Handle termination signals for graceful shutdown"""
+    signal_name = (
+        "SIGINT" if sig == signal.SIGINT else "SIGTERM" if sig == signal.SIGTERM else f"Signal {sig}"
+    )
+    logger.info(f"Received {signal_name}, initiating graceful shutdown...")
+    cleanup_resources()
+    # Exit with success code
+    os._exit(0)
 
 
 def run_server():
     """Run the Flask server"""
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    logger.info("Registered signal handlers for graceful shutdown")
+
     app.run(host="0.0.0.0", port=4098)
 
 
 def main():
-    # Kill any existing processes
+    # Kill any Flask processes on the same port and Appium servers
     server.kill_existing_process("flask")
     server.kill_existing_process("appium")
+
+    # Preserve emulators when restarting the server
+    # This allows for faster reconnection and avoids unnecessary restarts
+    logger.info("Preserving emulators during server startup for faster connection")
+
+    # Check ADB connectivity without killing the server or emulators
+    try:
+        # Just check device status to make sure ADB is responsive
+        subprocess.run(
+            [f"{server.android_home}/platform-tools/adb", "devices"],
+            check=False,
+            timeout=5,
+            capture_output=True,
+        )
+        logger.info("ADB server is active, emulators preserved")
+    except Exception as e:
+        logger.warning(f"ADB check failed, will restart ADB server: {e}")
+        try:
+            # Only if ADB check fails, restart the ADB server
+            subprocess.run(
+                [f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5
+            )
+            time.sleep(1)
+            subprocess.run(
+                [f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5
+            )
+            logger.info("ADB server restarted")
+        except Exception as adb_e:
+            logger.error(f"Error restarting ADB server: {adb_e}")
 
     # Start Appium server
     if not server.start_appium():

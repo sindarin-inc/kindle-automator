@@ -14,6 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from handlers.library_handler import LibraryHandler
 from server.logging_config import store_page_source
 from views.reading.interaction_strategies import (
+    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
     BOTTOM_SHEET_IDENTIFIERS,
     CLOSE_BOOK_STRATEGIES,
     FULL_SCREEN_DIALOG_GOT_IT,
@@ -249,6 +250,87 @@ class ReaderHandler:
             logger.info("No Goodreads auto-update dialog found - continuing")
         except Exception as e:
             logger.error(f"Error handling Goodreads dialog: {e}")
+            
+        # Check for and dismiss "About this book" slideover
+        try:
+            store_page_source(self.driver.page_source, "about_book_slideover_check")
+            about_book_visible = False
+            
+            for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                try:
+                    slideover = self.driver.find_element(strategy, locator)
+                    if slideover.is_displayed():
+                        about_book_visible = True
+                        logger.info("Found 'About this book' slideover")
+                        break
+                except NoSuchElementException:
+                    continue
+                
+            if about_book_visible:
+                # Try finding and clicking the pill element to dismiss
+                try:
+                    pill = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
+                    if pill.is_displayed():
+                        pill.click()
+                        logger.info("Clicked pill to dismiss 'About this book' slideover")
+                        time.sleep(1)
+                    else:
+                        logger.info("Pill found but not visible")
+                except NoSuchElementException:
+                    logger.info("Pill not found - trying alternative dismissal method")
+                    
+                    # Try tapping near the top of the screen
+                    window_size = self.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    top_y = int(window_size["height"] * 0.10)  # Tap at approx. 10% from the top
+                    self.driver.tap([(center_x, top_y)])
+                    logger.info("Tapped near top of screen to dismiss 'About this book' slideover")
+                    time.sleep(1)
+                
+                # Verify dismissal
+                still_visible = False
+                for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                    try:
+                        slideover = self.driver.find_element(strategy, locator)
+                        if slideover.is_displayed():
+                            still_visible = True
+                            break
+                    except NoSuchElementException:
+                        continue
+                
+                if still_visible:
+                    logger.info("Slideover still visible - trying another approach")
+                    # Try swiping down to dismiss
+                    window_size = self.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    start_y = int(window_size["height"] * 0.3)
+                    end_y = int(window_size["height"] * 0.7)
+                    self.driver.swipe(center_x, start_y, center_x, end_y, 500)
+                    logger.info("Swiped down to dismiss 'About this book' slideover")
+                    time.sleep(1)
+                    
+                    # Final verification
+                    still_visible = False
+                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                        try:
+                            slideover = self.driver.find_element(strategy, locator)
+                            if slideover.is_displayed():
+                                still_visible = True
+                                break
+                        except NoSuchElementException:
+                            continue
+                    
+                    if still_visible:
+                        logger.warning("'About this book' slideover is still visible after dismissal attempts")
+                    else:
+                        logger.info("'About this book' slideover successfully dismissed")
+                else:
+                    logger.info("'About this book' slideover successfully dismissed")
+                
+                filepath = store_page_source(self.driver.page_source, "after_about_book_dismissal")
+                logger.info(f"Stored page source after dismissal at: {filepath}")
+        except Exception as e:
+            logger.error(f"Error handling 'About this book' slideover: {e}")
 
         # Get current page
         current_page = self.get_current_page()
@@ -524,6 +606,55 @@ class ReaderHandler:
                         logger.error("Bottom sheet dialog is still visible after dismissal")
                         return False
                     logger.info("Bottom sheet successfully dismissed")
+            
+            # Check for and dismiss "About this book" slideover
+            about_book_visible, _ = self._check_element_visibility(
+                ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
+            )
+            if about_book_visible:
+                logger.info("Found 'About this book' slideover - attempting to dismiss")
+                # Try finding the pill element to dismiss it
+                pill_visible, pill = self._check_element_visibility(
+                    [BOTTOM_SHEET_IDENTIFIERS[1]], "bottom sheet pill"
+                )
+                if pill_visible:
+                    pill.click()
+                    logger.info("Clicked pill to dismiss 'About this book' slideover")
+                    time.sleep(1)
+                else:
+                    # If pill not found, try tapping near the top of the screen to dismiss
+                    window_size = self.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    top_y = int(window_size["height"] * 0.10)  # Tap at approx. 10% from the top
+                    self.driver.tap([(center_x, top_y)])
+                    logger.info("Tapped near top of screen to dismiss 'About this book' slideover")
+                    time.sleep(1)
+                
+                # Verify dismissal
+                still_visible, _ = self._check_element_visibility(
+                    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
+                )
+                if still_visible:
+                    logger.info("Slideover still visible - trying another approach")
+                    # Try swiping down to dismiss
+                    window_size = self.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    start_y = int(window_size["height"] * 0.3)
+                    end_y = int(window_size["height"] * 0.7)
+                    self.driver.swipe(center_x, start_y, center_x, end_y, 500)
+                    logger.info("Swiped down to dismiss 'About this book' slideover")
+                    time.sleep(1)
+                    
+                    # Final verification
+                    still_visible, _ = self._check_element_visibility(
+                        ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
+                    )
+                    if still_visible:
+                        logger.error("'About this book' slideover is still visible after dismissal attempts")
+                    else:
+                        logger.info("'About this book' slideover successfully dismissed")
+                else:
+                    logger.info("'About this book' slideover successfully dismissed")
 
             # Check for and dismiss full screen dialog
             dialog_visible, _ = self._check_element_visibility(

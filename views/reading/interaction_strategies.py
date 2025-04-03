@@ -49,6 +49,13 @@ BOTTOM_SHEET_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_pill"),
 ]
 
+# About this book slideover identifiers
+ABOUT_BOOK_SLIDEOVER_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//*[@content-desc='Showing information about this book.']"),
+    (AppiumBy.ID, "com.amazon.kindle:id/readingactions_content_container"),
+    (AppiumBy.XPATH, "//*[@content-desc='Information about this book is expanded. Double tap or swipe down to collapse it']"),
+]
+
 # Close book button
 CLOSE_BOOK_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/menuitem_close_book"),  # Primary strategy

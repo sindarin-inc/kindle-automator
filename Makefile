@@ -15,30 +15,6 @@ profile-help:
 	@echo "  make register-avd                               Register an AVD created in Android Studio"
 	@echo "  make android-studio-avd                         Full workflow for Android Studio AVDs"
 
-# Register an AVD created in Android Studio with a profile
-register-avd:
-	@echo "Registering an AVD created in Android Studio..."
-	@python3 tools/register_avd.py
-
-# Complete workflow for using Android Studio AVDs
-android-studio-avd:
-	@echo "Android Studio AVD Setup Workflow:"
-	@echo "This will register an AVD you've created in Android Studio with Kindle Automator"
-	@echo ""
-	@echo "1. Make sure your AVD is already created in Android Studio"
-	@echo "2. Make sure your AVD is currently running in Android Studio"
-	@echo ""
-	@echo "Starting registration process..."
-	@python3 tools/register_avd.py --current
-
-run-emulator:
-	@echo "Running Android emulator for current profile..."
-	@python3 tools/run_emulator.py --current
-
-run-emulator-choose:
-	@echo "Running Android emulator (choose which AVD to start)..."
-	@python3 tools/run_emulator.py
-	
 # Start both the emulator and server (for development)
 dev:
 	@echo "Starting both emulator and server for development..."
@@ -141,12 +117,13 @@ reset-user-data:
 # Ansible
 
 provision:
-	ansible-playbook ansible/provision.yml -l kindle-automator-2
+	ansible-playbook ansible/provision.yml
 provision-android:
-	ansible-playbook ansible/provision.yml -t android -l kindle-automator-2
+	ansible-playbook ansible/provision.yml -t android
 deploy:
 	ansible-playbook ansible/deploy.yml
-
+env:
+	ansible-playbook ansible/provision.yml -t env
 # SSH
 
 ssh:

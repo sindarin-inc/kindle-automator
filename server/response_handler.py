@@ -48,6 +48,27 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         server_instance.automator.cleanup()
         server_instance.initialize_automator()
         return server_instance.automator.initialize_driver()
+    
+    def restart_emulator():
+        """Restart the emulator if it's not running properly"""
+        logger.info("Restarting emulator due to device list error")
+        current_profile = server_instance.profile_manager.get_current_profile()
+        if current_profile and "email" in current_profile:
+            email = current_profile["email"]
+            logger.info(f"Attempting to restart emulator for profile: {email}")
+            # Force a new emulator to be created
+            success, _ = server_instance.switch_profile(email, force_new_emulator=True)
+            
+            # Initialize automator
+            if success and not server_instance.automator:
+                logger.info("Initializing automator after emulator restart")
+                server_instance.initialize_automator()
+                server_instance.automator.initialize_driver()
+                
+            return success
+        else:
+            logger.error("No current profile found for restarting emulator")
+            return False
 
     def is_uiautomator_crash(error):
         """Check if the error is a UiAutomator2 server crash"""
@@ -55,6 +76,15 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             error, selenium_exceptions.WebDriverException
         ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
             error
+        )
+    
+    def is_emulator_missing(error):
+        """Check if the error indicates the emulator is not running"""
+        error_str = str(error)
+        return (
+            "Failed to get devices list after multiple attempts" in error_str or 
+            "'NoneType' object has no attribute 'update_current_state'" in error_str or
+            "Failed to initialize driver" in error_str
         )
 
     # Main retry loop
@@ -86,6 +116,27 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     and response.get("requires_auth") == True
                 ):
                     logger.info("Authentication required - returning directly without retry")
+                    return format_response(result)
+                # Don't retry auth operations with recreate flag to avoid double recreation
+                elif (
+                    isinstance(response, dict)
+                    and func.__name__ == "post"
+                    and hasattr(args[0], "__class__")
+                    and args[0].__class__.__name__ == "AuthResource"
+                ):
+                    # Check if this is an auth endpoint with recreate flag
+                    try:
+                        request_json = args[0].request.get_json(silent=True) or {}
+                        if request_json.get("recreate", 0) == 1:
+                            logger.info(
+                                "Auth with recreate=1 operation - skipping retry to avoid double recreation"
+                            )
+                            return format_response(result)
+                    except Exception as e:
+                        logger.warning(f"Error checking for recreate flag: {e}")
+
+                    # Also skip retry for other auth issues to avoid duplicate auth attempts
+                    logger.info("Auth operation - avoiding retry for authentication stability")
                     return format_response(result)
                 elif status_code >= 400:
                     # For other errors, include status_code in the response to maintain it through retries
@@ -119,8 +170,30 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                         last_error = retry_error
                 else:
                     logger.error("Failed to reinitialize driver after UiAutomator2 crash")
+            # Special handling for emulator not running or device list error
+            elif is_emulator_missing(e):
+                logger.warning(
+                    f"Emulator not running on attempt {attempt + 1}/{max_retries}. Restarting emulator..."
+                )
+
+                # Try to restart the emulator and immediately retry once more
+                if restart_emulator():
+                    logger.info("Successfully restarted emulator, now restarting driver")
+                    if restart_driver():
+                        logger.info("Successfully restarted driver after emulator restart")
+                        try:
+                            logger.info("Retrying operation after emulator and driver restart")
+                            result = func(*args, **kwargs)
+                            return format_response(result)
+                        except Exception as retry_error:
+                            logger.error(f"Retry after emulator restart failed: {retry_error}")
+                            last_error = retry_error
+                    else:
+                        logger.error("Failed to reinitialize driver after emulator restart")
+                else:
+                    logger.error("Failed to restart emulator")
             else:
-                # Regular error handling for non-UiAutomator2 crashes
+                # Regular error handling for other types of crashes
                 logger.error(f"Attempt {attempt + 1} failed: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
 
@@ -159,6 +232,7 @@ def handle_automator_response(server_instance):
 
     Handles special cases like CAPTCHA requirements and ensures consistent
     response format across all endpoints. Includes retry logic with app relaunch.
+    Also captures diagnostic snapshots before and after operations.
 
     Args:
         server_instance: The AutomationServer instance containing the automator
@@ -168,6 +242,19 @@ def handle_automator_response(server_instance):
         @wraps(f)
         def wrapper(*args, **kwargs):
             start_time = time.time()
+
+            # Get the operation name from the function
+            operation_name = f.__name__
+            if operation_name.startswith("_"):
+                operation_name = operation_name[1:]  # Remove leading underscore
+
+            # Take diagnostic snapshot before operation if driver is ready
+            if server_instance.automator and server_instance.automator.driver:
+                try:
+                    server_instance.automator.take_diagnostic_snapshot(f"pre_{operation_name}")
+                except Exception as snap_e:
+                    logger.warning(f"Failed to take pre-operation snapshot for {operation_name}: {snap_e}")
+
             try:
                 # Wrap the function call in retry logic
                 def wrapped_func():
@@ -182,6 +269,15 @@ def handle_automator_response(server_instance):
 
                     # Get automator from server instance
                     automator = server_instance.automator
+
+                    # Take diagnostic snapshot after successful operation
+                    if automator and automator.driver and status_code < 400:
+                        try:
+                            automator.take_diagnostic_snapshot(f"post_{operation_name}")
+                        except Exception as snap_e:
+                            logger.warning(
+                                f"Failed to take post-operation snapshot for {operation_name}: {snap_e}"
+                            )
 
                     # Check for special states that need handling
                     if automator and automator.state_machine:
@@ -209,8 +305,16 @@ def handle_automator_response(server_instance):
 
             except Exception as e:
                 time_taken = round(time.time() - start_time, 3)
-                logger.error(f"Error in endpoint: {e}")
+                logger.error(f"Error in endpoint {operation_name}: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
+
+                # Take diagnostic snapshot on error if the driver is still alive
+                if server_instance.automator and server_instance.automator.driver:
+                    try:
+                        server_instance.automator.take_diagnostic_snapshot(f"error_{operation_name}")
+                    except Exception as snap_e:
+                        logger.warning(f"Failed to take error snapshot for {operation_name}: {snap_e}")
+
                 return {"error": str(e), "time_taken": time_taken}, 500
 
         return wrapper

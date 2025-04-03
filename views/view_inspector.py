@@ -29,6 +29,7 @@ from views.library.view_strategies import (
     LIBRARY_VIEW_IDENTIFIERS,
 )
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
+from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIERS
 from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
@@ -143,6 +144,67 @@ class ViewInspector:
         except Exception as e:
             logger.debug(f"Error checking view options menu state: {e}")
             return False
+            
+    def _is_grid_list_view_dialog_open(self):
+        """Check if the Grid/List view selection dialog is open.
+        
+        This dialog appears when view options is clicked and shows Grid, List, and Collections choices.
+        """
+        try:
+            # Import these locally to avoid circular imports
+            from views.library.view_strategies import VIEW_OPTIONS_MENU_STRATEGIES
+            from views.library.interaction_strategies import (
+                GRID_VIEW_OPTION_STRATEGIES,
+                LIST_VIEW_OPTION_STRATEGIES,
+            )
+            
+            # Check for multiple identifiers to ensure we're specifically in the Grid/List dialog
+            identifiers_found = 0
+            
+            # Check for VIEW_OPTIONS_MENU_STRATEGIES (DONE button)
+            for strategy, locator in VIEW_OPTIONS_MENU_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"Grid/List dialog element found: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+            
+            # Check for LIST_VIEW_OPTION_STRATEGIES
+            for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"List view option found: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+            
+            # Check for GRID_VIEW_OPTION_STRATEGIES
+            for strategy, locator in GRID_VIEW_OPTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"Grid view option found: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+                
+            # Also check for specific view type header text
+            try:
+                header = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_type_header")
+                if header.is_displayed() and header.text == "View":
+                    logger.debug("View type header found with text 'View'")
+                    identifiers_found += 1
+            except NoSuchElementException:
+                pass
+                
+            # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
+            return identifiers_found >= 2
+        except Exception as e:
+            logger.debug(f"Error checking for Grid/List view dialog: {e}")
+            return False
 
     def get_current_view(self):
         """Determine the current view based on visible elements."""
@@ -157,6 +219,19 @@ class ViewInspector:
                     if element.is_displayed():
                         reading_view_elements_found += 1
                         logger.info(f"   Found reading view element: {strategy}={locator}")
+                except NoSuchElementException:
+                    continue
+                    
+            # Check for "About this book slideover" which indicates reading view with a slideover
+            for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"   Found 'About this book slideover' element: {strategy}={locator}")
+                        logger.info("   This indicates we're in reading view with the about book slideover open")
+                        # Save page source for debugging
+                        store_page_source(self.driver.page_source, "about_book_slideover_detected")
+                        reading_view_elements_found += 1
                 except NoSuchElementException:
                     continue
 
@@ -308,14 +383,14 @@ class ViewInspector:
             # Directly check for specific library elements
             logger.info("   Directly checking for library view elements...")
             found_library_element = False
-            
+
             # First check the more accurate tab selection because library_root_view exists for both tabs
             if self._is_tab_selected("LIBRARY"):
                 logger.info("   LIBRARY tab is selected, confirming we are in library view")
                 filepath = store_page_source(self.driver.page_source, "library_tab_selected")
                 logger.info(f"Stored page source with library tab selected at: {filepath}")
                 return AppView.LIBRARY
-                
+
             # If LIBRARY tab is not selected, check if HOME tab is selected
             if self._is_tab_selected("HOME"):
                 logger.info("   HOME tab is selected, we are in home view not library view")
@@ -333,10 +408,12 @@ class ViewInspector:
                             found_library_element = True
                     except NoSuchElementException:
                         pass
-                
+
                 # Check if home-specific elements are present
                 try:
-                    home_element = self.driver.find_element(AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/home_screenlet_root']")
+                    home_element = self.driver.find_element(
+                        AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/home_screenlet_root']"
+                    )
                     if home_element.is_displayed():
                         logger.info("   Found home-specific element: home_screenlet_root")
                         filepath = store_page_source(self.driver.page_source, "home_view_detected")
@@ -344,7 +421,7 @@ class ViewInspector:
                         return AppView.HOME
                 except NoSuchElementException:
                     pass
-                
+
             # Final fallback: check specific elements if tab detection wasn't conclusive
             for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
                 try:
@@ -354,10 +431,12 @@ class ViewInspector:
                         # Only accept if the LIBRARY tab is selected
                         if not self._is_tab_selected("LIBRARY"):
                             continue
-                    
+
                     if element.is_displayed():
                         logger.info(f"   Found library view element: {strategy}={locator}")
-                        filepath = store_page_source(self.driver.page_source, "library_direct_element_detected")
+                        filepath = store_page_source(
+                            self.driver.page_source, "library_direct_element_detected"
+                        )
                         logger.info(f"Stored page source with library element detected at: {filepath}")
                         logger.info("Detected LIBRARY view based on direct element detection")
                         return AppView.LIBRARY
@@ -373,6 +452,13 @@ class ViewInspector:
             # Check for view options menu (part of library view)
             if self._is_view_options_menu_open():
                 logger.info("   Found view options menu - this is part of library view")
+                return AppView.LIBRARY
+                
+            # Check for Grid/List view dialog (part of library view)
+            if self._is_grid_list_view_dialog_open():
+                logger.info("   Found Grid/List view dialog - this is part of library view")
+                # Store page source for debugging
+                store_page_source(self.driver.page_source, "grid_list_dialog_detected")
                 return AppView.LIBRARY
 
             # Check tab selection for HOME view
@@ -433,7 +519,7 @@ class ViewInspector:
                     self.driver.save_screenshot(screenshot_path)
                     logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
             except Exception as e:
-                logger.error(f"Failed to save screenshot: {e}")
+                logger.warning(f"Failed to save screenshot: {str(e)[:100]}")
 
             logger.debug("Not in main app view")
             return AppView.UNKNOWN

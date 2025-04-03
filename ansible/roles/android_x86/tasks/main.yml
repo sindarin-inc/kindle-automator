@@ -10,7 +10,6 @@
       - bridge-utils
       - libglu1-mesa-dev
       - openjdk-17-jdk
-      - scrcpy
       - ffmpeg        # Required for extracting frames from scrcpy video captures
     state: present
     update_cache: yes

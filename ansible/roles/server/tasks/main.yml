@@ -96,7 +96,7 @@
   register: uiautomator2_installed
   ignore_errors: yes
   changed_when: false
-
+  
 # Create systemd service file
 - name: Create systemd service file
   template:
@@ -104,6 +104,7 @@
     dest: /etc/systemd/system/kindle-automator.service
     mode: "0644"
   notify: restart kindle-automator
+  tags: systemd
 
 # Enable and start the service
 - name: Enable and start kindle-automator service

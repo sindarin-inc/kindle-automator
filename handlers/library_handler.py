@@ -18,6 +18,7 @@ from server.logging_config import store_page_source
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from views.library.interaction_strategies import (
+    GRID_VIEW_OPTION_STRATEGIES,
     LIBRARY_TAB_STRATEGIES,
     LIST_VIEW_OPTION_STRATEGIES,
     MENU_CLOSE_STRATEGIES,
@@ -44,6 +45,7 @@ from views.library.view_strategies import (
     VIEW_OPTIONS_MENU_STRATEGIES,
     WEBVIEW_IDENTIFIERS,
 )
+from views.view_options.interaction_strategies import VIEW_OPTIONS_DONE_STRATEGIES
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 
 logger = logging.getLogger(__name__)
@@ -118,6 +120,69 @@ class LibraryHandler:
             return True
         except:
             return False
+            
+    def _is_grid_list_view_dialog_open(self):
+        """Check if the Grid/List view selection dialog is open.
+        
+        This dialog appears when view options is clicked and shows Grid, List, and Collections choices.
+        """
+        try:
+            # Check for multiple identifiers to ensure we're specifically in the Grid/List dialog
+            identifiers_found = 0
+            
+            # Check for VIEW_OPTIONS_DONE_BUTTON_STRATEGIES (DONE button)
+            for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"Found Grid/List dialog element: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+            
+            # Check for LIST_VIEW_OPTION_STRATEGIES
+            for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"Found List view option: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+            
+            # Check for GRID_VIEW_OPTION_STRATEGIES
+            for strategy, locator in GRID_VIEW_OPTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"Found Grid view option: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+                
+            # Also check for specific view type header text
+            try:
+                header = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_type_header")
+                if header.is_displayed() and header.text == "View":
+                    logger.info("Found View type header with text 'View'")
+                    identifiers_found += 1
+            except NoSuchElementException:
+                pass
+                
+            # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
+            is_dialog_open = identifiers_found >= 2
+            logger.info(f"Grid/List view dialog is{''.join(' open' if is_dialog_open else ' not open')} ({identifiers_found} identifiers found)")
+            
+            # Capture a screenshot and page source for debugging
+            if is_dialog_open:
+                store_page_source(self.driver.page_source, "grid_list_dialog_open")
+                screenshot_path = os.path.join(self.screenshots_dir, "grid_list_dialog.png")
+                self.driver.save_screenshot(screenshot_path)
+                
+            return is_dialog_open
+        except Exception as e:
+            logger.error(f"Error checking for Grid/List view dialog: {e}")
+            return False
 
     def _find_bottom_navigation(self):
         """Find the bottom navigation bar."""
@@ -133,6 +198,15 @@ class LibraryHandler:
     def navigate_to_library(self):
         """Navigate to the library tab"""
         try:
+            # Check if Grid/List view dialog is open and handle it first
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Grid/List view dialog is open, handling it first")
+                if not self.handle_grid_list_view_dialog():
+                    logger.error("Failed to handle Grid/List view dialog")
+                    return False
+                logger.info("Successfully handled Grid/List view dialog")
+                time.sleep(0.5)  # Wait for dialog to close
+                
             # Check if view options menu is open and close it if needed
             if self._is_view_options_menu_open():
                 logger.info("View options menu is open, closing it first")
@@ -271,11 +345,16 @@ class LibraryHandler:
     def switch_to_list_view(self):
         """Switch to list view if not already in it"""
         try:
-            # First check if we're already in list view
+            # First check if the Grid/List view dialog is already open
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Grid/List view dialog is already open, handling it directly")
+                return self.handle_grid_list_view_dialog()
+                
+            # Check if we're already in list view
             if self._is_list_view():
                 logger.info("Already in list view")
                 return True
-                
+
             # Force update state machine to ensure we're recognized as being in LIBRARY state
             # This is crucial to prevent auth_handler from trying to enter email after view changes
             if hasattr(self.driver, "automator") and self.driver.automator:
@@ -310,6 +389,25 @@ class LibraryHandler:
                     logger.error("Failed to click any view options button")
                     return False
 
+                # After clicking the view options button, check if Grid/List dialog is open
+                # and handle it with the dedicated method
+                if self._is_grid_list_view_dialog_open():
+                    logger.info("Grid/List view dialog opened, handling it")
+                    if not self.handle_grid_list_view_dialog():
+                        logger.error("Failed to handle Grid/List view dialog")
+                        return False
+                    
+                    # After handling the dialog, verify we're in list view
+                    if self._is_list_view():
+                        logger.info("Successfully switched to list view after handling dialog")
+                        return True
+                    else:
+                        logger.error("Still not in list view after handling dialog")
+                        return False
+                
+                # If we didn't detect the Grid/List dialog, continue with the old approach
+                # (This is a fallback for backward compatibility)
+                
                 # Verify the menu is open
                 menu_open = False
                 try:
@@ -373,7 +471,7 @@ class LibraryHandler:
                         )
                     )
                     logger.info("Successfully switched to list view")
-                    
+
                     # Force update the state machine to recognize we're still in LIBRARY state
                     # This prevents auth_handler from trying to enter email
                     if hasattr(self.driver, "automator") and self.driver.automator:
@@ -381,7 +479,7 @@ class LibraryHandler:
                         if hasattr(automator, "state_machine") and automator.state_machine:
                             logger.info("Forcing state update after view change to prevent auth confusion")
                             automator.state_machine.update_current_state()
-                            
+
                     # Add slight delay to ensure UI is settled
                     time.sleep(1)
                     return True
@@ -392,10 +490,27 @@ class LibraryHandler:
                     logger.info(f"Stored list view timeout page source at: {filepath}")
                     return False
             else:
-                logger.warning("Neither in grid view nor list view, unable to determine current state")
-                filepath = store_page_source(self.driver.page_source, "unknown_view_state")
-                logger.info(f"Stored unknown view state page source at: {filepath}")
-                return False
+                # Check if we're in the Grid/List view dialog state
+                if self._is_grid_list_view_dialog_open():
+                    logger.info("Detected Grid/List view dialog, handling it directly")
+                    if self.handle_grid_list_view_dialog():
+                        logger.info("Successfully handled Grid/List view dialog")
+                        # After handling the dialog, verify we're in list view
+                        if self._is_list_view():
+                            logger.info("Successfully switched to list view after handling dialog")
+                            return True
+                        else:
+                            logger.warning("Still not in list view after handling dialog, will retry")
+                            # Try once more with the standard approach
+                            return self.switch_to_list_view()
+                    else:
+                        logger.error("Failed to handle Grid/List view dialog")
+                        return False
+                else:
+                    logger.warning("Neither in grid view nor list view, unable to determine current state")
+                    filepath = store_page_source(self.driver.page_source, "unknown_view_state")
+                    logger.info(f"Stored unknown view state page source at: {filepath}")
+                    return False
 
         except Exception as e:
             logger.error(f"Error switching to list view: {e}")
@@ -438,6 +553,128 @@ class LibraryHandler:
             return False
         except Exception as e:
             logger.error(f"Error closing menu: {e}")
+            return False
+            
+    def handle_grid_list_view_dialog(self):
+        """Handle the Grid/List view selection dialog by selecting List view and clicking DONE.
+        
+        This method is called when we detect that the Grid/List view selection dialog is open,
+        which can happen when trying to open a book or navigate in the library view.
+        
+        Returns:
+            bool: True if successfully handled the dialog, False otherwise.
+        """
+        try:
+            logger.info("Handling Grid/List view selection dialog...")
+            
+            # First check if the dialog is actually open
+            if not self._is_grid_list_view_dialog_open():
+                logger.info("Grid/List view dialog is not open, nothing to handle.")
+                return True  # Return True since there's no dialog to handle
+                
+            # Click the List view option to ensure consistent view
+            list_option_clicked = False
+            for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
+                try:
+                    list_option = self.driver.find_element(strategy, locator)
+                    if list_option.is_displayed():
+                        logger.info(f"Clicking List view option using {strategy}={locator}")
+                        list_option.click()
+                        list_option_clicked = True
+                        time.sleep(0.5)  # Short wait for selection to register
+                        break
+                except NoSuchElementException:
+                    logger.debug(f"List view option not found with {strategy}={locator}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error clicking List view option: {e}")
+                    continue
+            
+            # If we couldn't click the List view option, it might already be selected or not found
+            if not list_option_clicked:
+                logger.warning("Could not click List view option, it might already be selected or not available")
+            
+            # Now click the DONE button to close the dialog
+            done_clicked = False
+            
+            # Try the VIEW_OPTIONS_DONE_BUTTON_STRATEGIES
+            for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
+                try:
+                    done_button = self.driver.find_element(strategy, locator)
+                    if done_button.is_displayed():
+                        logger.info(f"Clicking DONE button using {strategy}={locator}")
+                        done_button.click()
+                        done_clicked = True
+                        time.sleep(1)  # Wait for dialog to close
+                        break
+                except NoSuchElementException:
+                    logger.debug(f"DONE button not found with {strategy}={locator}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error clicking DONE button: {e}")
+                    continue
+            
+            # If we still couldn't click the DONE button, try VIEW_OPTIONS_DONE_STRATEGIES
+            # which include touch_outside
+            if not done_clicked:
+                for strategy, locator in VIEW_OPTIONS_DONE_STRATEGIES:
+                    try:
+                        done_button = self.driver.find_element(strategy, locator)
+                        if done_button.is_displayed():
+                            logger.info(f"Clicking DONE button using alternative strategy {strategy}={locator}")
+                            done_button.click()
+                            done_clicked = True
+                            time.sleep(1)  # Wait for dialog to close
+                            break
+                    except NoSuchElementException:
+                        logger.debug(f"DONE button not found with alternative strategy {strategy}={locator}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error clicking DONE button with alternative strategy: {e}")
+                        continue
+            
+            # If we still couldn't click the DONE button, try the alternative approach of tapping outside
+            if not done_clicked:
+                logger.warning("Could not click DONE button, trying to tap outside the dialog")
+                # Try to tap outside the dialog
+                for strategy, locator in [(AppiumBy.ID, "com.amazon.kindle:id/touch_outside")]:
+                    try:
+                        outside_area = self.driver.find_element(strategy, locator)
+                        if outside_area.is_displayed():
+                            logger.info(f"Tapping outside area using {strategy}={locator}")
+                            outside_area.click()
+                            done_clicked = True
+                            time.sleep(1)  # Wait for dialog to close
+                            break
+                    except Exception as e:
+                        logger.debug(f"Could not tap outside area: {e}")
+                        continue
+                
+                # If tapping specific outside area didn't work, try tapping at screen coordinates
+                if not done_clicked:
+                    try:
+                        # Tap in the top-left corner where there's usually nothing in the dialog
+                        screen_size = self.driver.get_window_size()
+                        x = int(screen_size["width"] * 0.1)
+                        y = int(screen_size["height"] * 0.1)
+                        logger.info(f"Tapping at screen coordinates ({x}, {y})")
+                        self.driver.tap([(x, y)])
+                        done_clicked = True
+                        time.sleep(1)  # Wait for dialog to close
+                    except Exception as e:
+                        logger.error(f"Error tapping at screen coordinates: {e}")
+            
+            # Verify the dialog was closed
+            if self._is_grid_list_view_dialog_open():
+                logger.error("Failed to close Grid/List view dialog")
+                return False
+            
+            logger.info("Successfully handled Grid/List view selection dialog")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error handling Grid/List view selection dialog: {e}")
+            traceback.print_exc()
             return False
 
     def _scroll_through_library(self, target_title: str = None):
@@ -833,6 +1070,13 @@ class LibraryHandler:
     def get_book_titles(self):
         """Get a list of all books in the library with their metadata."""
         try:
+            # Check if Grid/List view dialog is open and handle it first
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Grid/List view dialog is open at the start, handling it first")
+                if not self.handle_grid_list_view_dialog():
+                    logger.error("Failed to handle Grid/List view dialog")
+                    # Continue anyway, as navigate_to_library will try again
+            
             # Ensure we're in the library view
             if not self.navigate_to_library():
                 logger.error("Failed to navigate to library")
@@ -842,7 +1086,14 @@ class LibraryHandler:
             if self.check_for_sign_in_button():
                 logger.warning("Library view shows sign-in button - authentication required")
                 return None  # Return None to indicate authentication needed
-
+            
+            # Check if Grid/List view dialog is open after navigating to library
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Grid/List view dialog is open after navigation, handling it")
+                if not self.handle_grid_list_view_dialog():
+                    logger.error("Failed to handle Grid/List view dialog")
+                    # Try to continue anyway
+            
             # Check if we're in grid view and switch to list view if needed
             if self._is_grid_view():
                 logger.info("Detected grid view, switching to list view")
@@ -863,25 +1114,45 @@ class LibraryHandler:
 
     def _normalize_title(self, title: str) -> str:
         """
-        Normalize a title for comparison.
-        Instead of removing all non-alphanumeric chars, we'll keep more characters
-        and focus on substring matching rather than exact matching.
+        Normalize a title for comparison while preserving important characters.
+        This version is more selective about which characters to replace with spaces,
+        keeping some punctuation that might be important for matching.
         """
         if not title:
             return ""
+
         # First convert to lowercase
         normalized = title.lower()
-        # Replace special characters with spaces
-        for char in ",:;\"'!@#$%^&*()[]{}_+-=<>?/\\|~`":
+
+        # Log original title for debugging
+        logger.debug(f"Normalizing title: '{title}'")
+
+        # Replace less essential characters with spaces
+        # Note: we're keeping apostrophes and colons intact for special handling
+        for char in ',;"!@#$%^&*()[]{}_+=<>?/\\|~`':
             normalized = normalized.replace(char, " ")
+
+        # Handle apostrophes specially - keep them but add spaces around them
+        # This helps with matching parts before/after apostrophes
+        if "'" in normalized:
+            normalized = normalized.replace("'", " ' ")
+
+        # Handle colons specially - keep them but add spaces around them
+        if ":" in normalized:
+            normalized = normalized.replace(":", " : ")
+
         # Replace multiple spaces with single space and strip
         normalized = " ".join(normalized.split())
+
+        # Log normalized title for debugging
+        logger.debug(f"Normalized to: '{normalized}'")
+
         return normalized
 
     def _title_match(self, title1: str, title2: str) -> bool:
         """
-        Check if titles match exactly after normalization.
-        Since we're getting titles from the same source, we should require exact matches.
+        Check if titles match, with special handling for titles with apostrophes or colons.
+        More lenient matching for titles with special characters.
         """
         if not title1 or not title2:
             return False
@@ -890,12 +1161,213 @@ class LibraryHandler:
         norm1 = self._normalize_title(title1)
         norm2 = self._normalize_title(title2)
 
-        # Only return true for exact matches after normalization
-        return norm1 == norm2
+        # Log the normalized titles for debugging
+        logger.info(f"Comparing titles: '{norm1}' with '{norm2}'")
+
+        # First, try exact match
+        if norm1 == norm2:
+            logger.info("Exact match found")
+            return True
+
+        # For books with apostrophes or other special characters, try more lenient matching strategies
+        if "'" in title1 or "'" in title2 or ":" in title1 or ":" in title2:
+            logger.info("Title contains special characters, using more lenient matching")
+
+            # Strategy 1: Check if one contains the other (common when titles are truncated)
+            if norm1 in norm2 or norm2 in norm1:
+                logger.info(f"Lenient containment match successful between '{norm1}' and '{norm2}'")
+                return True
+
+            # Strategy 2: Split by apostrophe and check parts
+            for title, norm, other_norm in [(title1, norm1, norm2), (title2, norm2, norm1)]:
+                if "'" in title:
+                    parts = title.split("'")
+                    for part in parts:
+                        clean_part = part.strip()
+                        if clean_part and len(clean_part) >= 3 and clean_part.lower() in other_norm:
+                            logger.info(
+                                f"Apostrophe part match successful with '{clean_part.lower()}' in '{other_norm}'"
+                            )
+                            return True
+
+            # Strategy 3: Split by colon and check parts
+            for title, norm, other_norm in [(title1, norm1, norm2), (title2, norm2, norm1)]:
+                if ":" in title:
+                    parts = title.split(":")
+                    for part in parts:
+                        clean_part = part.strip()
+                        if clean_part and len(clean_part) >= 5 and clean_part.lower() in other_norm:
+                            logger.info(
+                                f"Colon part match successful with '{clean_part.lower()}' in '{other_norm}'"
+                            )
+                            return True
+
+            # Strategy 4: Compare significant words in both titles
+            words1 = set(w.lower() for w in norm1.split() if len(w) >= 4)
+            words2 = set(w.lower() for w in norm2.split() if len(w) >= 4)
+
+            # Check if there's substantial word overlap
+            common_words = words1.intersection(words2)
+            if len(common_words) >= 2 or (len(common_words) >= 1 and len(words1) <= 3 and len(words2) <= 3):
+                logger.info(f"Word overlap match successful with common words: {common_words}")
+                return True
+
+            # Strategy 5: Check for distinctive words or phrases
+            distinctive_phrases = []
+
+            # Add key distinctive phrases from each title
+            for title in [title1, title2]:
+                # Get phrases that might be distinctive
+                if ":" in title:
+                    for part in title.split(":"):
+                        clean_part = part.strip().lower()
+                        if clean_part and len(clean_part) >= 5:
+                            distinctive_phrases.append(clean_part)
+
+                # Add the first part of each title as a distinctive phrase
+                words = title.strip().split()
+                if len(words) >= 2:
+                    first_two_words = " ".join(words[:2]).lower()
+                    distinctive_phrases.append(first_two_words)
+
+            # Check if any distinctive phrase appears in both titles
+            for phrase in distinctive_phrases:
+                if phrase in norm1.lower() and phrase in norm2.lower() and len(phrase) >= 5:
+                    logger.info(f"Distinctive phrase match with '{phrase}'")
+                    return True
+
+        # No match found with any strategy
+        return False
+
+    def _find_book_by_partial_match(self, book_title: str):
+        """
+        Fallback method to find a book by attempting various partial matching strategies.
+        Used when normal title matching fails.
+
+        Returns:
+            Tuple of (parent_container, button, book_info) or (None, None, None)
+        """
+        logger.info(f"Attempting to find book by partial matching: '{book_title}'")
+
+        try:
+            # Try to find books with similar titles first
+            all_books = self._scroll_through_library()
+
+            # Save list of available titles for debugging
+            book_titles = [book.get("title", "") for book in all_books if book.get("title")]
+            logger.info(f"Found {len(book_titles)} books in library: {book_titles}")
+
+            # Try different matching strategies
+            for book in all_books:
+                if not book.get("title"):
+                    continue
+
+                title = book.get("title")
+                logger.info(f"Comparing with book: '{title}'")
+
+                # 1. Check if target title is part of this book's title or vice versa
+                if book_title.lower() in title.lower() or title.lower() in book_title.lower():
+                    logger.info(f"Found potential match by containment: '{title}'")
+
+                    # Try to find the book element
+                    try:
+                        # First try with ID and partial text matching
+                        xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{title.split()[0]}')]"
+                        elements = self.driver.find_elements(AppiumBy.XPATH, xpath)
+
+                        if elements:
+                            logger.info(f"Found {len(elements)} potential matching elements")
+                            # Find the parent container
+                            for element in elements:
+                                try:
+                                    # Get the parent container (usually 2 levels up)
+                                    parent = element.find_element(AppiumBy.XPATH, "../..")
+
+                                    # Verify this is the right book
+                                    if title.split()[0].lower() in element.text.lower():
+                                        logger.info(f"Confirmed match for '{title}'")
+                                        return parent, element, book
+                                except Exception as e:
+                                    logger.debug(f"Error finding parent: {e}")
+                                    continue
+                    except Exception as e:
+                        logger.debug(f"Error during element search: {e}")
+                        continue
+
+            # If no matches found yet, try more aggressive matching with distinctive words
+            logger.info("Trying more aggressive word-based matching")
+
+            # Extract distinctive words from the target title (longer words likely more unique)
+            target_words = [w.lower() for w in book_title.split() if len(w) >= 4]
+            target_words.sort(key=len, reverse=True)  # Sort by length, longest first
+
+            if target_words:
+                logger.info(f"Using distinctive words for matching: {target_words[:3]}")
+
+                # Try to find books containing these distinctive words
+                for word in target_words[:3]:  # Try up to 3 most distinctive words
+                    if len(word) < 4:  # Skip short words
+                        continue
+
+                    try:
+                        # Search by distinctive word
+                        xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{word}')]"
+                        elements = self.driver.find_elements(AppiumBy.XPATH, xpath)
+
+                        if elements:
+                            logger.info(f"Found {len(elements)} elements containing '{word}'")
+
+                            # Check each element
+                            for element in elements:
+                                try:
+                                    element_text = element.text
+                                    logger.info(f"Checking element with text: '{element_text}'")
+
+                                    # Get the parent container
+                                    parent = element.find_element(AppiumBy.XPATH, "../..")
+
+                                    # Create a book info dict
+                                    book_info = {"title": element_text}
+
+                                    # Extract author if possible
+                                    try:
+                                        author_element = parent.find_element(
+                                            AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_author"
+                                        )
+                                        book_info["author"] = author_element.text
+                                    except:
+                                        pass
+
+                                    logger.info(f"Found potential match by word '{word}': {book_info}")
+                                    return parent, element, book_info
+                                except Exception as e:
+                                    logger.debug(f"Error processing element: {e}")
+                                    continue
+                    except Exception as e:
+                        logger.debug(f"Error searching for word '{word}': {e}")
+                        continue
+
+            # If we got here, no matching book was found
+            logger.warning(f"No matching book found for '{book_title}' using partial matching strategies")
+            return None, None, None
+
+        except Exception as e:
+            logger.error(f"Error in partial book matching: {e}")
+            traceback.print_exc()
+            return None, None, None
 
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
+            # First check if we're in the Grid/List view dialog and handle it
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Detected Grid/List view dialog is open, handling it first")
+                if not self.handle_grid_list_view_dialog():
+                    logger.error("Failed to handle Grid/List view dialog")
+                    return False
+                logger.info("Successfully handled Grid/List view dialog")
+                time.sleep(1)  # Wait for UI to stabilize
+            
             # Check if we're in grid view and switch to list view if needed
             if self._is_grid_view():
                 logger.info("Detected grid view, switching to list view")
@@ -910,8 +1382,17 @@ class LibraryHandler:
 
             # Search for the book
             parent_container, button, book_info = self._scroll_through_library(book_title)
+
+            # If standard search failed, try partial matching as fallback
             if not parent_container:
-                return False
+                logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
+                parent_container, button, book_info = self._find_book_by_partial_match(book_title)
+
+                if not parent_container:
+                    logger.error(f"Failed to find book '{book_title}' using all search methods")
+                    return False
+
+                logger.info(f"Found book using partial match fallback: {book_info}")
 
             # Check download status and handle download if needed
             content_desc = parent_container.get_attribute("content-desc")
@@ -928,8 +1409,22 @@ class LibraryHandler:
                 for attempt in range(max_attempts):
                     try:
                         # Re-find the parent container since the page might have refreshed
-                        # Using @text attribute for exact matching
-                        xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{book_info['title']}' ]]"
+                        # Using more reliable XPath that handles apostrophes better
+                        title_text = book_info["title"]
+
+                        # For titles with apostrophes, use a more reliable approach
+                        if "'" in title_text:
+                            # Split by apostrophe and use the part before it
+                            first_part = title_text.split("'")[0].strip()
+                            if first_part:
+                                xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{first_part}')]]"
+                            else:
+                                # Fallback to just match with the ID
+                                xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title']]"
+                        else:
+                            # Normal case - use exact text matching
+                            xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text}']]"
+
                         parent_container = self.driver.find_element(AppiumBy.XPATH, xpath)
                         content_desc = parent_container.get_attribute("content-desc")
                         logger.info(
@@ -973,7 +1468,7 @@ class LibraryHandler:
                 return False
 
             # For already downloaded books, just click and verify
-            logger.info(f"Found downloaded book: {book_info['title']}")
+            logger.info(f"Found downloaded book: {book_info.get('title', 'Unknown title')}")
             button.click()
             logger.info("Clicked book button")
 
@@ -987,6 +1482,17 @@ class LibraryHandler:
                 # Try clicking one more time
                 button.click()
                 time.sleep(1)
+
+                # Check again if we left the library view
+                try:
+                    self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                    logger.error("Still in library view after second click, trying with parent container")
+                    # Try clicking the parent container instead
+                    parent_container.click()
+                    time.sleep(1)
+                except NoSuchElementException:
+                    logger.info("Successfully left library view after second click")
+                    pass
             except NoSuchElementException:
                 logger.info("Successfully left library view")
                 pass
@@ -995,6 +1501,7 @@ class LibraryHandler:
 
         except Exception as e:
             logger.error(f"Error finding book: {e}")
+            traceback.print_exc()
             return False
 
     def open_book(self, book_title: str) -> bool:
@@ -1007,6 +1514,16 @@ class LibraryHandler:
             bool: True if the book was found and opened, False otherwise
         """
         try:
+            # First check if we're in the Grid/List view dialog and handle it before trying to open a book
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Detected Grid/List view dialog is open before opening book, handling it first")
+                if not self.handle_grid_list_view_dialog():
+                    logger.error("Failed to handle Grid/List view dialog")
+                    store_page_source(self.driver.page_source, "failed_to_handle_grid_list_dialog")
+                    return False
+                logger.info("Successfully handled Grid/List view dialog")
+                time.sleep(1)  # Wait for UI to stabilize
+                
             # Find and click the book button
             if not self.find_book(book_title):
                 logger.error(f"Failed to find book: {book_title}")
@@ -1145,22 +1662,69 @@ class LibraryHandler:
         if not s:
             return "''"
 
-        # Use resource-id-based XPath instead of text-based when apostrophes are present
+        # For titles with apostrophes, use a more reliable approach
         if "'" in s:
-            # Use a partial text match instead that doesn't include the apostrophe
-            # Split the string at apostrophes and use contains() for each part
+            # Log that we're handling a title with an apostrophe
+            logger.info(f"Creating XPath for title with apostrophe: '{s}'")
+
+            # Strategy 1: Use a combination of contains() for parts before and after apostrophe
             parts = s.split("'")
             conditions = []
 
+            # Create conditions for non-empty parts, focusing on distinctive words
             for part in parts:
-                if part:  # Only add non-empty parts
-                    conditions.append(f"contains(., '{part}')")
+                if part:
+                    # For each part, clean it up and use meaningful words for matching
+                    clean_part = part.strip()
+                    words = clean_part.split()
 
-            # Join all conditions with 'and'
+                    if words:
+                        # Take the longest words (likely most distinctive) up to 3 words
+                        sorted_words = sorted(words, key=len, reverse=True)
+                        distinctive_words = sorted_words[: min(3, len(sorted_words))]
+
+                        for word in distinctive_words:
+                            if len(word) >= 3:  # Only use words of reasonable length for matching
+                                safe_word = word.replace("'", "").replace('"', "")
+                                conditions.append(f"contains(., '{safe_word}')")
+
+            # Strategy 2: Also try matching with the text before the apostrophe
+            if parts and parts[0]:
+                first_part = parts[0].strip()
+                if first_part and len(first_part) >= 3:
+                    conditions.append(f"starts-with(normalize-space(.), '{first_part}')")
+
+            # Strategy 3: Alternative for titles that have format "X : Y's Z"
+            # Extract the parts around the colon if present
+            if ":" in s:
+                colon_parts = s.split(":")
+                for colon_part in colon_parts:
+                    clean_part = colon_part.strip()
+                    if clean_part and len(clean_part) >= 5:  # Only use substantial parts
+                        # Remove apostrophes for safer matching
+                        safe_part = clean_part.replace("'", "").replace('"', "")
+                        first_words = " ".join(safe_part.split()[:2])  # First two words
+                        if first_words and len(first_words) >= 5:
+                            conditions.append(f"contains(., '{first_words}')")
+
+            # Join conditions with 'or' to be more lenient
             if conditions:
-                return " and ".join(conditions)
+                xpath_expr = " or ".join(conditions)
+                logger.info(f"Generated XPath expression: {xpath_expr}")
+                return xpath_expr
             else:
-                return "true()"  # Fallback if there are no valid parts
+                # Last resort: try to match any substantial part of the title
+                words = s.replace("'", " ").split()
+                substantial_words = [w for w in words if len(w) >= 5]
+
+                if substantial_words:
+                    word_conditions = [f"contains(., '{word}')" for word in substantial_words[:3]]
+                    xpath_expr = " or ".join(word_conditions)
+                    logger.info(f"Using substantial word fallback: {xpath_expr}")
+                    return xpath_expr
+
+                logger.warning(f"Failed to create reliable XPath for '{s}', using default")
+                return "true()"  # Last resort fallback
         else:
             # For strings without apostrophes, use the simple approach
             return f"'{s}'"

@@ -1,0 +1,96 @@
+---
+- name: Install scrcpy build dependencies
+  apt:
+    name:
+      - ffmpeg
+      - libsdl2-2.0-0
+      - adb
+      - gcc
+      - git
+      - pkg-config
+      - meson
+      - ninja-build
+      - cmake
+      - wget
+      - unzip
+      - libavcodec-dev
+      - libavformat-dev
+      - libavutil-dev
+      - libavdevice-dev
+      - libswresample-dev
+      - libsdl2-dev
+      - libssl-dev
+      - libusb-1.0-0-dev
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Create temporary directory for scrcpy
+  file:
+    path: "/tmp/scrcpy-install"
+    state: directory
+    mode: 0755
+  become: yes
+
+- name: Download scrcpy release package
+  get_url:
+    url: "https://github.com/Genymobile/scrcpy/releases/download/v3.2/scrcpy-server-v3.2"
+    dest: "/tmp/scrcpy-install/scrcpy-server"
+    mode: 0755
+  become: yes
+
+- name: Clone scrcpy repository for client
+  git:
+    repo: 'https://github.com/Genymobile/scrcpy.git'
+    dest: '/tmp/scrcpy-install/scrcpy'
+    version: 'v3.2'
+  become: yes
+
+- name: Create directory for prebuilt server
+  file:
+    path: "/tmp/scrcpy-install/scrcpy/build/server"
+    state: directory
+    mode: 0755
+  become: yes
+
+- name: Copy prebuilt server
+  copy:
+    src: "/tmp/scrcpy-install/scrcpy-server"
+    dest: "/tmp/scrcpy-install/scrcpy/build/server/scrcpy-server"
+    mode: 0755
+    remote_src: true
+  become: yes
+
+- name: Build scrcpy with prebuilt server
+  shell: |
+    cd /tmp/scrcpy-install/scrcpy
+    meson setup --buildtype release --strip -Db_lto=true -Dprebuilt_server=../scrcpy-server build
+    cd build
+    ninja
+    ninja install
+  become: yes
+
+- name: Create symbolic link to scrcpy in PATH
+  file:
+    src: /usr/local/bin/scrcpy
+    dest: /usr/bin/scrcpy
+    state: link
+  become: yes
+  ignore_errors: yes
+
+- name: Clean up build directory
+  file:
+    path: "/tmp/scrcpy-install"
+    state: absent
+  become: yes
+
+- name: Verify scrcpy installation
+  shell: |
+    scrcpy --version || echo "scrcpy installation failed"
+  register: scrcpy_version
+  changed_when: false
+  ignore_errors: yes
+
+- name: Display scrcpy version
+  debug:
+    var: scrcpy_version.stdout
