@@ -225,7 +225,9 @@ class AVDProfileManager:
         normalized_email = self.normalize_email_for_avd(email)
         for running_avd_name, emulator_id in running_emulators.items():
             if normalized_email in running_avd_name:
-                logger.info(f"Found partial AVD match: {running_avd_name} running on {emulator_id} for email {email}")
+                logger.info(
+                    f"Found partial AVD match: {running_avd_name} running on {emulator_id} for email {email}"
+                )
                 # If we found a match but it's different from our registered AVD, update the registration
                 if avd_name != running_avd_name:
                     logger.info(f"Updating AVD mapping for email {email}: {avd_name} -> {running_avd_name}")
@@ -989,7 +991,7 @@ class AVDProfileManager:
             if not os.path.exists(avd_path):
                 logger.error(f"Cannot start emulator: AVD {avd_name} does not exist at {avd_path}")
                 return False
-                
+
             # First check if emulators are already running and log the status
             current_emulator_state = self._check_running_emulators(avd_name)
 
@@ -1192,9 +1194,10 @@ class AVDProfileManager:
                             timeout=3,
                         )
 
-                        logger.info(
-                            f"Boot progress for {expected_emulator_id} (sys.boot_completed): [{boot_completed.stdout.strip()}] [{boot_completed.stderr.strip()}]"
-                        )
+                        if boot_check_attempts % 10 == 0:
+                            logger.info(
+                                f"Boot progress for {expected_emulator_id} (sys.boot_completed): [{boot_completed.stdout.strip()}] [{boot_completed.stderr.strip()}]"
+                            )
 
                         # If we get any response, even if not "1", update progress time
                         if boot_completed.stdout.strip():
@@ -1216,9 +1219,10 @@ class AVDProfileManager:
                             timeout=3,
                         )
 
-                        logger.info(
-                            f"Boot animation for {expected_emulator_id}: [{boot_anim.stdout.strip()}] [{boot_anim.stderr.strip()}]"
-                        )
+                        if boot_check_attempts % 10 == 0:
+                            logger.info(
+                                f"Boot animation for {expected_emulator_id}: [{boot_anim.stdout.strip()}] [{boot_anim.stderr.strip()}]"
+                            )
 
                         if boot_anim.stdout.strip():
                             last_progress_time = time.time()
@@ -1246,9 +1250,10 @@ class AVDProfileManager:
                                 timeout=2,
                             )
 
-                            logger.info(
-                                f"Launcher check for {expected_emulator_id}: [{launcher_check.stdout.strip()}] [{launcher_check.stderr.strip()}]"
-                            )
+                            if boot_check_attempts % 10 == 0:
+                                logger.info(
+                                    f"Launcher check for {expected_emulator_id}: [{launcher_check.stdout.strip()}] [{launcher_check.stderr.strip()}]"
+                                )
 
                             if launcher_check.stdout.strip():
                                 logger.info(f"Launcher is running on {expected_emulator_id}")
@@ -1758,7 +1763,7 @@ class AVDProfileManager:
                         avd_name = result
                         self.register_profile(email, avd_name)
                         logger.info(f"Created new AVD {avd_name} for {email}")
-                        
+
                     logger.info(f"Emulator not ready for profile {email}, attempting to start it")
                     if self.start_emulator(avd_name):
                         logger.info(f"Successfully started emulator for profile {email}")
@@ -1786,7 +1791,7 @@ class AVDProfileManager:
 
         # First check if there's already a running emulator for this email
         is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)
-        
+
         # If we found a running emulator for this email and we're not forcing a new one
         if is_running and not force_new_emulator:
             logger.info(f"Found running emulator {emulator_id} for profile {email} (AVD: {found_avd_name})")
@@ -1795,12 +1800,12 @@ class AVDProfileManager:
                 logger.info(f"Updating AVD name for profile {email}: {avd_name} -> {found_avd_name}")
                 avd_name = found_avd_name
                 self.register_profile(email, avd_name)
-            
+
             # Save the current profile with the found emulator
             self._save_current_profile(email, avd_name, emulator_id)
             logger.info(f"Using existing running emulator for profile {email}")
             return True, f"Switched to profile {email} with existing running emulator"
-        
+
         # Check if emulator is already running and ready
         emulator_ready = self.is_emulator_ready()
 
@@ -1825,7 +1830,7 @@ class AVDProfileManager:
         # For other platforms, try normal start procedure
         # Check running emulators more carefully - don't stop emulators unnecessarily
         running_avds = self.map_running_emulators()
-        
+
         # Only restart emulators in specific cases
         if force_new_emulator and self.is_emulator_running():
             # Force new emulator was explicitly requested
@@ -1836,20 +1841,26 @@ class AVDProfileManager:
         elif not emulator_ready and self.is_emulator_running():
             # Check if the running emulator is related to our AVD or email
             if avd_name in running_avds:
-                logger.info(f"Found running emulator for AVD {avd_name} but it's not ready yet, waiting for it")
+                logger.info(
+                    f"Found running emulator for AVD {avd_name} but it's not ready yet, waiting for it"
+                )
                 # Don't stop it, just wait
             else:
                 # Check if any running emulator has the email in its name
                 email_match_found = False
                 for running_avd in running_avds.keys():
                     if self.normalize_email_for_avd(email) in running_avd:
-                        logger.info(f"Found emulator with matching email pattern: {running_avd}, waiting for it")
+                        logger.info(
+                            f"Found emulator with matching email pattern: {running_avd}, waiting for it"
+                        )
                         email_match_found = True
                         break
-                
+
                 if not email_match_found:
                     # No match found, so stop the unrelated emulator
-                    logger.info("Emulator running but not related to this profile, stopping to restart the correct one")
+                    logger.info(
+                        "Emulator running but not related to this profile, stopping to restart the correct one"
+                    )
                     if not self.stop_emulator():
                         return False, "Failed to stop unrelated emulator"
 
@@ -1874,8 +1885,11 @@ class AVDProfileManager:
                             # Update our registration to match the running AVD
                             self.register_profile(email, running_avd)
                             self._save_current_profile(email, running_avd, running_emu_id)
-                            return True, f"Switched to profile {email} with existing running emulator (name match)"
-                
+                            return (
+                                True,
+                                f"Switched to profile {email} with existing running emulator (name match)",
+                            )
+
                 # If we didn't find a matching emulator or we're forcing a new one, stop the current emulator
                 logger.info(f"Stopping unrelated emulator to start the correct one")
                 if not self.stop_emulator():
@@ -1884,9 +1898,7 @@ class AVDProfileManager:
 
         # Check if AVD exists before trying to start it
         if not avd_exists:
-            logger.warning(
-                f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it."
-            )
+            logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
             # Try to create the AVD
             success, result = self.create_new_avd(email)
             if not success:
@@ -1897,15 +1909,15 @@ class AVDProfileManager:
                     False,
                     f"Failed to create AVD for {email}: {result}",
                 )
-            
+
             # Update avd_name with newly created AVD
             avd_name = result
             self.register_profile(email, avd_name)
             logger.info(f"Created new AVD {avd_name} for {email}")
-            
+
             # Update current profile with new AVD
             self._save_current_profile(email, avd_name)
-            
+
             # Set avd_exists to True since we just created it
             avd_exists = True
 
@@ -1914,9 +1926,11 @@ class AVDProfileManager:
         # but it's here as a safety check
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
         if not os.path.exists(avd_path):
-            logger.error(f"AVD {avd_name} still does not exist even after creation attempt. This is unexpected.")
+            logger.error(
+                f"AVD {avd_name} still does not exist even after creation attempt. This is unexpected."
+            )
             return False, f"Failed to create AVD for {email}: AVD still doesn't exist after creation attempt"
-                
+
         # Start the new emulator
         logger.info(f"Starting emulator with AVD {avd_name}")
         if not self.start_emulator(avd_name):

@@ -144,6 +144,67 @@ class ViewInspector:
         except Exception as e:
             logger.debug(f"Error checking view options menu state: {e}")
             return False
+            
+    def _is_grid_list_view_dialog_open(self):
+        """Check if the Grid/List view selection dialog is open.
+        
+        This dialog appears when view options is clicked and shows Grid, List, and Collections choices.
+        """
+        try:
+            # Import these locally to avoid circular imports
+            from views.library.view_strategies import VIEW_OPTIONS_MENU_STRATEGIES
+            from views.library.interaction_strategies import (
+                GRID_VIEW_OPTION_STRATEGIES,
+                LIST_VIEW_OPTION_STRATEGIES,
+            )
+            
+            # Check for multiple identifiers to ensure we're specifically in the Grid/List dialog
+            identifiers_found = 0
+            
+            # Check for VIEW_OPTIONS_MENU_STRATEGIES (DONE button)
+            for strategy, locator in VIEW_OPTIONS_MENU_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"Grid/List dialog element found: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+            
+            # Check for LIST_VIEW_OPTION_STRATEGIES
+            for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"List view option found: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+            
+            # Check for GRID_VIEW_OPTION_STRATEGIES
+            for strategy, locator in GRID_VIEW_OPTION_STRATEGIES:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"Grid view option found: {strategy}={locator}")
+                        identifiers_found += 1
+                except NoSuchElementException:
+                    continue
+                
+            # Also check for specific view type header text
+            try:
+                header = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/view_type_header")
+                if header.is_displayed() and header.text == "View":
+                    logger.debug("View type header found with text 'View'")
+                    identifiers_found += 1
+            except NoSuchElementException:
+                pass
+                
+            # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
+            return identifiers_found >= 2
+        except Exception as e:
+            logger.debug(f"Error checking for Grid/List view dialog: {e}")
+            return False
 
     def get_current_view(self):
         """Determine the current view based on visible elements."""
@@ -391,6 +452,13 @@ class ViewInspector:
             # Check for view options menu (part of library view)
             if self._is_view_options_menu_open():
                 logger.info("   Found view options menu - this is part of library view")
+                return AppView.LIBRARY
+                
+            # Check for Grid/List view dialog (part of library view)
+            if self._is_grid_list_view_dialog_open():
+                logger.info("   Found Grid/List view dialog - this is part of library view")
+                # Store page source for debugging
+                store_page_source(self.driver.page_source, "grid_list_dialog_detected")
                 return AppView.LIBRARY
 
             # Check tab selection for HOME view

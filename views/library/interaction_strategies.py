@@ -26,11 +26,13 @@ MENU_CLOSE_STRATEGIES = [
 ]
 
 LIST_VIEW_OPTION_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/lib_menu_list_view"),  # Direct ID reference for the button
     (AppiumBy.XPATH, "//android.widget.TextView[@text='List']"),
     (AppiumBy.XPATH, "//*[contains(@text, 'List view')]"),
 ]
 
 GRID_VIEW_OPTION_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/lib_menu_grid_view"),  # Direct ID reference for the button
     (AppiumBy.XPATH, "//android.widget.TextView[@text='Grid']"),
     (AppiumBy.XPATH, "//*[contains(@text, 'Grid view')]"),
 ]
