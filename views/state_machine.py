@@ -39,6 +39,25 @@ class KindleStateMachine:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
         self.current_state = AppState.UNKNOWN
+        # Track the last captcha screenshot for use in responses
+        self.last_captcha_screenshot_id = None
+        
+    def get_captcha_screenshot_id(self):
+        """Get the ID of the last captcha screenshot taken.
+        
+        This is used by the response handler to include the correct image URL.
+        If auth_handler has a more recent screenshot, use that.
+        
+        Returns:
+            str: The ID of the last captcha screenshot, or None if no screenshot available
+        """
+        # Check if auth handler has a more recent screenshot
+        if hasattr(self.auth_handler, "last_captcha_screenshot") and self.auth_handler.last_captcha_screenshot:
+            logger.info(f"Using auth handler's captcha screenshot ID: {self.auth_handler.last_captcha_screenshot}")
+            return self.auth_handler.last_captcha_screenshot
+            
+        # Otherwise use our tracked screenshot ID
+        return self.last_captcha_screenshot_id
 
     def _get_current_state(self):
         """Get the current app state using the view inspector."""

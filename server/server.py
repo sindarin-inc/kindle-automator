@@ -1258,12 +1258,14 @@ def serve_image(image_id, delete_after=True):
     """
     try:
         image_path = get_image_path(image_id)
+        logger.info(f"Attempting to serve image from: {image_path}")
 
         if not os.path.exists(image_path):
             logger.error(f"Image not found at path: {image_path}")
             return {"error": "Image not found"}, 404
 
         # Create a response that bypasses Flask-RESTful's serialization
+        logger.info(f"Serving image from: {image_path}")
         response = make_response(send_file(image_path, mimetype="image/png"))
 
         # Delete the file after sending if requested

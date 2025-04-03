@@ -51,6 +51,7 @@ class AuthenticationHandler:
         self.password = password
         self.captcha_solution = captcha_solution
         self.screenshots_dir = "screenshots"
+        self.last_captcha_screenshot = None  # Track the last captcha screenshot path
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
@@ -627,12 +628,14 @@ class AuthenticationHandler:
                     return False
             else:
                 # Use secure screenshot method with scrcpy to bypass FLAG_SECURE
-                # Save directly to temp_full.png first, then we'll crop it
-                screenshot_path = os.path.join("screenshots", "temp_full.png")
+                # Generate a unique timestamped filename for this captcha screenshot
+                timestamp = int(time.time())
+                secure_screenshot_id = f"auth_screen_{timestamp}"
+                final_path = os.path.join("screenshots", f"{secure_screenshot_id}.png")
                 
                 # Always force scrcpy mode for captcha screenshots to bypass FLAG_SECURE
                 secure_path = automator.take_secure_screenshot(
-                    screenshot_path, 
+                    final_path, 
                     force_secure=True  # Force scrcpy usage even if the automator would normally use ADB
                 )
                 
@@ -641,29 +644,20 @@ class AuthenticationHandler:
                     return False
                 
                 logger.info(f"Used scrcpy for secure screenshot at {secure_path}")
-
-            # Get the location and size of the captcha image
-            location = captcha_image.location
-            size = captcha_image.size
-
-            # Open the screenshot and crop to captcha dimensions
-            with Image.open(screenshot_path) as img:
-                # Calculate crop boundaries
-                left = location["x"]
-                top = location["y"]
-                right = left + size["width"]
-                bottom = top + size["height"]
-
-                # Crop the image
-                captcha_img = img.crop((left, top, right, bottom))
-
-                # Save cropped captcha
+                
+                # Store the screenshot ID for use in the response
+                self.last_captcha_screenshot = secure_screenshot_id
+                logger.info(f"Stored captcha screenshot ID: {secure_screenshot_id}")
+                
+                # No need to crop - we'll return the full screenshot for easier captcha viewing
+                # We'll just save a copy as captcha.png for backward compatibility
                 captcha_path = os.path.join("screenshots", "captcha.png")
-                captcha_img.save(captcha_path)
-                logger.info(f"Saved cropped captcha to {captcha_path}")
-
-                # Clean up temp file
-                os.remove(screenshot_path)
+                import shutil
+                try:
+                    shutil.copy(final_path, captcha_path)
+                    logger.info(f"Copied full screenshot to {captcha_path} for backward compatibility")
+                except Exception as e:
+                    logger.warning(f"Error copying to captcha.png: {e}")
 
             # If we have a solution, use it
             if self.captcha_solution:

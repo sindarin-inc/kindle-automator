@@ -138,6 +138,10 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     # Also skip retry for other auth issues to avoid duplicate auth attempts
                     logger.info("Auth operation - avoiding retry for authentication stability")
                     return format_response(result)
+                # Special case: Don't retry captcha responses (403 with captcha_required)
+                elif status_code == 403 and isinstance(response, dict) and response.get("status") == "captcha_required":
+                    logger.info("Captcha required response - passing through without retry")
+                    return format_response(result)
                 elif status_code >= 400:
                     # For other errors, include status_code in the response to maintain it through retries
                     response_with_code = response
@@ -286,10 +290,25 @@ def handle_automator_response(server_instance):
                         # Handle CAPTCHA state
                         if current_state == AppState.CAPTCHA:
                             time_taken = round(time.time() - start_time, 3)
+                            
+                            # Get the screenshot ID directly from the state machine
+                            # This comes from the auth handler's captured screenshot during captcha processing
+                            screenshot_id = automator.state_machine.get_captcha_screenshot_id()
+                            
+                            # Default fallback URL
+                            image_url = "/screenshots/captcha.png"
+                            
+                            # Use the captured screenshot ID if available
+                            if screenshot_id:
+                                image_url = f"/image/{screenshot_id}"
+                                logger.info(f"Using captcha screenshot from auth handler: {image_url}")
+                            else:
+                                logger.warning("No captcha screenshot ID found, using fallback URL")
+                            
                             return {
                                 "status": "captcha_required",
                                 "message": "Authentication requires captcha solution",
-                                "image_url": "/screenshots/captcha.png",
+                                "image_url": image_url,
                                 "time_taken": time_taken,
                             }, 403
 
