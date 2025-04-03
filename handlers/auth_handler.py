@@ -609,28 +609,38 @@ class AuthenticationHandler:
                 logger.error("Could not find captcha image element")
                 return False
 
-            # Take full screenshot using scrcpy to bypass FLAG_SECURE
             # Access the automator through the driver
             driver_instance = getattr(self.driver, "_driver", None)
             if driver_instance and hasattr(driver_instance, "automator"):
                 automator = driver_instance.automator
             else:
                 automator = None
+                
             if not automator:
                 logger.error("Could not access automator from driver session")
-
-                # Fall back to regular screenshot method
+                # Fall back to regular screenshot method, though it will likely fail with FLAG_SECURE
                 screenshot_path = os.path.join("screenshots", "temp_full.png")
-                self.driver.save_screenshot(screenshot_path)
-            else:
-                # Use secure screenshot method
-                screenshot_path = os.path.join("screenshots", "temp_full.png")
-                secure_path = automator.take_secure_screenshot(screenshot_path)
-                if secure_path:
-                    logger.info(f"Used scrcpy for secure screenshot at {secure_path}")
-                else:
-                    logger.warning("Secure screenshot failed, falling back to standard method")
+                try:
                     self.driver.save_screenshot(screenshot_path)
+                except Exception as e:
+                    logger.error(f"Screenshot failed due to FLAG_SECURE: {e}")
+                    return False
+            else:
+                # Use secure screenshot method with scrcpy to bypass FLAG_SECURE
+                # Save directly to temp_full.png first, then we'll crop it
+                screenshot_path = os.path.join("screenshots", "temp_full.png")
+                
+                # Always force scrcpy mode for captcha screenshots to bypass FLAG_SECURE
+                secure_path = automator.take_secure_screenshot(
+                    screenshot_path, 
+                    force_secure=True  # Force scrcpy usage even if the automator would normally use ADB
+                )
+                
+                if not secure_path:
+                    logger.error("Secure screenshot failed even with scrcpy")
+                    return False
+                
+                logger.info(f"Used scrcpy for secure screenshot at {secure_path}")
 
             # Get the location and size of the captcha image
             location = captcha_image.location

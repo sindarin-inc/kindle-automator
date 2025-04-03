@@ -251,7 +251,7 @@ class KindleAutomator:
             logger.error(f"Error restarting Kindle app: {e}")
             return False
 
-    def take_secure_screenshot(self, output_path=None):
+    def take_secure_screenshot(self, output_path=None, force_secure=False):
         """Take screenshot directly with multiple methods for FLAG_SECURE screens.
 
         This method uses different approaches depending on the current state:
@@ -261,6 +261,8 @@ class KindleAutomator:
         Args:
             output_path (str, optional): Path to save the screenshot. If None,
                                         a path in the screenshots directory is generated.
+            force_secure (bool, optional): If True, always use scrcpy method even for
+                                        non-auth screens. Useful for captcha handling.
 
         Returns:
             str: Path to the saved screenshot or None if screenshot failed
@@ -275,8 +277,8 @@ class KindleAutomator:
 
             # Check if we're in a state that needs secure screenshot (FLAG_SECURE)
             # or if we can use the faster ADB method
-            needs_secure = False
-            if hasattr(self, "state_machine") and self.state_machine:
+            needs_secure = force_secure  # Honor force_secure parameter
+            if not needs_secure and hasattr(self, "state_machine") and self.state_machine:
                 current_state = self.state_machine.current_state
                 auth_states = [
                     AppState.SIGN_IN,
