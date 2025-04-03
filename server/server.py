@@ -682,7 +682,22 @@ class NavigationResource(Resource):
 
         if success:
             # Get current page number and progress
-            progress = server.automator.reader_handler.get_reading_progress()
+            # Check if placemark is requested
+            show_placemark = False
+            placemark_param = request.args.get("placemark", "0")
+            if placemark_param.lower() in ("1", "true", "yes"):
+                show_placemark = True
+                logger.info("Placemark mode enabled for navigation")
+                
+            # Also check in POST data
+            if not show_placemark and request.is_json:
+                data = request.get_json(silent=True) or {}
+                placemark_param = data.get("placemark", "0")
+                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
+                    show_placemark = True
+                    logger.info("Placemark mode enabled from POST data for navigation")
+                    
+            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             # Save screenshot with unique ID
             screenshot_id = f"page_{int(time.time())}"
@@ -741,6 +756,15 @@ class BookOpenResource(Resource):
                 # Force base64 encoding for OCR
                 use_base64 = True
                 logger.info("Forcing base64 encoding for OCR processing")
+                
+        # Check if placemark is requested - default is FALSE which means DO NOT show placemark
+        show_placemark = False
+        placemark_param = request.args.get("placemark", "0")
+        if placemark_param and placemark_param.lower() in ("1", "true", "yes"):
+            show_placemark = True
+            logger.info("Placemark mode enabled for this request")
+        else:
+            logger.info("Placemark mode disabled - will avoid tapping to prevent placemark display")
 
         logger.info(f"Opening book: {book_title}")
 
@@ -750,7 +774,7 @@ class BookOpenResource(Resource):
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
             # Get reading progress
-            progress = server.automator.reader_handler.get_reading_progress()
+            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
             logger.info(f"Progress: {progress}")
 
             # Save screenshot with unique ID
@@ -821,7 +845,7 @@ class BookOpenResource(Resource):
             )
         # If we're not already reading the requested book, transition to library and open it
         if server.automator.state_machine.transition_to_library(server=server):
-            success = server.automator.reader_handler.open_book(book_title)
+            success = server.automator.reader_handler.open_book(book_title, show_placemark=show_placemark)
             logger.info(f"Book opened: {success}")
 
             if success:
@@ -837,6 +861,13 @@ class BookOpenResource(Resource):
         """Open a specific book via POST request."""
         data = request.get_json()
         book_title = data.get("title")
+        
+        # Handle placemark parameter from POST data
+        placemark_param = data.get("placemark", "0")
+        if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
+            request.args = request.args.copy()
+            request.args["placemark"] = "1"
+            
         return self._open_book(book_title)
 
     @ensure_automator_healthy
@@ -887,7 +918,22 @@ class StyleResource(Resource):
             server.automator.driver.save_screenshot(screenshot_path)
 
             # Get current page number and progress
-            progress = server.automator.reader_handler.get_reading_progress()
+            # Check if placemark is requested
+            show_placemark = False
+            placemark_param = request.args.get("placemark", "0")
+            if placemark_param.lower() in ("1", "true", "yes"):
+                show_placemark = True
+                logger.info("Placemark mode enabled for style change")
+                
+            # Also check in POST data
+            if not show_placemark and request.is_json:
+                data = request.get_json(silent=True) or {}
+                placemark_param = data.get("placemark", "0")
+                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
+                    show_placemark = True
+                    logger.info("Placemark mode enabled from POST data for style change")
+                    
+            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             response_data = {
                 "success": True,
@@ -1599,7 +1645,22 @@ class TextResource(Resource):
             server.automator.driver.save_screenshot(screenshot_path)
 
             # Get current page number and progress for context
-            progress = server.automator.reader_handler.get_reading_progress()
+            # Check if placemark is requested
+            show_placemark = False
+            placemark_param = request.args.get("placemark", "0")
+            if placemark_param.lower() in ("1", "true", "yes"):
+                show_placemark = True
+                logger.info("Placemark mode enabled for OCR")
+                
+            # Also check in POST data
+            if not show_placemark and request.is_json:
+                data = request.get_json(silent=True) or {}
+                placemark_param = data.get("placemark", "0")
+                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
+                    show_placemark = True
+                    logger.info("Placemark mode enabled from POST data for OCR")
+                    
+            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             # Process the screenshot with OCR
             try:

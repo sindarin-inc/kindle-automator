@@ -62,11 +62,13 @@ class ReaderHandler:
         # Initialize profile manager
         self.profile_manager = AVDProfileManager()
 
-    def open_book(self, book_title: str) -> bool:
+    def open_book(self, book_title: str, show_placemark: bool = False) -> bool:
         """Open a book in the library and wait for reading view to load.
 
         Args:
             book_title (str): Title of the book to open.
+            show_placemark (bool): Whether to tap to display the placemark ribbon. 
+                                  Default is False (don't show placemark).
 
         Returns:
             bool: True if book was successfully opened, False otherwise.
@@ -354,26 +356,57 @@ class ReaderHandler:
         # Check if we need to update reading styles for this profile
         if not self.profile_manager.is_styles_updated():
             logger.info("First-time reading with this profile, updating reading styles...")
-            if self.update_reading_style():
+            if self.update_reading_style(show_placemark=show_placemark):
                 logger.info("Successfully updated reading styles")
             else:
                 logger.warning("Failed to update reading styles")
         else:
             logger.info("Reading styles already updated for this profile, skipping")
+        
+        # Optionally show placemark by tapping center of page
+        if show_placemark:
+            logger.info("Placemark mode enabled - tapping to show placemark ribbon")
+            try:
+                window_size = self.driver.get_window_size()
+                center_x = window_size["width"] // 2
+                center_y = window_size["height"] // 2
+                self.driver.tap([(center_x, center_y)])
+                logger.info("Tapped center of page to show placemark")
+                time.sleep(0.5)  # Brief wait for placemark to appear
+                
+                # Verify placemark is visible
+                placemark_visible, _ = self._check_element_visibility(PLACEMARK_IDENTIFIERS, "placemark ribbon")
+                if placemark_visible:
+                    logger.info("Placemark ribbon successfully displayed")
+                else:
+                    logger.warning("Placemark ribbon not visible after tapping")
+            except Exception as e:
+                logger.error(f"Error showing placemark: {e}")
+        else:
+            logger.info("Placemark mode disabled - skipping center tap")
             
         return True
 
     def get_current_page(self):
-        """Get the current page number"""
+        """Get the current page number without triggering placemark
+        
+        Returns:
+            str: Page number text or None if not found
+        """
         try:
+            # Look for page number without any tapping
             for strategy, locator in PAGE_NUMBER_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     page_text = element.text.strip()
                     logger.info(f"Found page number: {page_text}")
                     return page_text
-                except:
+                except NoSuchElementException:
                     continue
+                except Exception as e:
+                    logger.warning(f"Error getting page text with strategy {strategy}: {e}")
+            
+            # If we get here, we couldn't find the page number element
             return None
         except Exception as e:
             logger.error(f"Error getting page number: {e}")
@@ -423,6 +456,21 @@ class ReaderHandler:
     def turn_page(self, direction: int):
         """Turn to the next/previous page."""
         try:
+            # First check if a placemark is active and close it by tapping in the top area
+            # which won't interfere with navigation
+            try:
+                placemark_visible, _ = self._check_element_visibility(PLACEMARK_IDENTIFIERS, "placemark ribbon")
+                if placemark_visible:
+                    logger.info("Found placemark ribbon - removing it before page turn")
+                    window_size = self.driver.get_window_size()
+                    center_x = window_size["width"] // 2
+                    top_y = int(window_size["height"] * 0.05)  # 5% from top
+                    self.driver.tap([(center_x, top_y)])
+                    logger.info(f"Tapped near top ({center_x}, {top_y}) to close placemark before page turn")
+                    time.sleep(0.5)  # Wait for placemark to disappear
+            except Exception as e:
+                logger.warning(f"Error checking/closing placemark: {e}")
+                
             # Check if we're in reading toolbar view
             for strategy, locator in READING_TOOLBAR_IDENTIFIERS:
                 try:
@@ -471,28 +519,57 @@ class ReaderHandler:
 
         return self.turn_page(-1)
 
-    def get_reading_progress(self):
+    def get_reading_progress(self, show_placemark=False):
         """Get reading progress information
 
+        Args:
+            show_placemark (bool): Whether to use center tap that could trigger placemark.
+                                   If False, skip getting reading progress to avoid placemark.
+                                   
         Returns:
             dict: Dictionary containing:
                 - percentage: Reading progress as percentage (str)
                 - current_page: Current page number (int)
                 - total_pages: Total pages (int)
             or None if progress info couldn't be retrieved
+            or a minimal dict with just page number if show_placemark=False
         """
         opened_controls = False
         try:
-            # First check if we need to show controls
+            # Always try to get basic page info first without tapping
+            page_info = self.get_current_page()
+            logger.info(f"Initial page info: {page_info}")
+            
+            # If placemark is not requested, never tap
+            if not show_placemark:
+                logger.info("Placemark mode disabled - skipping reading progress tap entirely")
+                # Return a minimal set of information
+                if page_info and "Page" in page_info:
+                    try:
+                        parts = page_info.split(' of ')
+                        if len(parts) == 2:
+                            current_page = int(parts[0].replace("Page ", ""))
+                            total_pages = int(parts[1])
+                            return {"percentage": None, "current_page": current_page, "total_pages": total_pages}
+                    except Exception as e:
+                        logger.warning(f"Error parsing basic page info: {e}")
+                # If we can't parse, just return an empty result
+                return {"percentage": None, "current_page": None, "total_pages": None}
+            
+            # If we get here, show_placemark is True - try to get full progress info
+            
+            # First check if we can find progress element directly
             try:
-                # Try to find progress element directly first
                 progress_element = self.driver.find_element(*READING_PROGRESS_IDENTIFIERS[0])
+                logger.info("Found progress element without tapping")
             except NoSuchElementException:
-                # If not found, tap center to show controls
+                logger.info("Progress element not found initially - will need to tap")
+                # Only tap if explicitly requested via show_placemark=True
                 window_size = self.driver.get_window_size()
                 center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
                 center_y = window_size["height"] // 2
                 self.driver.tap([(center_x, center_y)])
+                logger.info("Tapped center to show controls (placemark explicitly enabled)")
                 time.sleep(0.5)  # Wait for controls to appear
 
                 # Wait for toolbar to appear
@@ -554,13 +631,18 @@ class ReaderHandler:
                         total_pages = int(match.group(2))
 
                     # Calculate percentage if not found in text
-                    if not percentage:
+                    if not percentage and current_page is not None and total_pages is not None:
                         calc_percentage = round((current_page / total_pages) * 100)
-                        percentage = f"{calc_percentage}%"
+                        percentage = calc_percentage  # Return as int, not string
                 except Exception as e:
                     logger.error(f"Error parsing page numbers: {e}")
 
-            if opened_controls:
+            if opened_controls and show_placemark:
+                # Only try to close controls by tapping if we're in placemark mode
+                # Otherwise we'd be showing placemark when trying to hide controls
+                window_size = self.driver.get_window_size()
+                center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
+                center_y = window_size["height"] // 2
                 logger.info("Closing reading controls")
                 self.driver.tap([(center_x, center_y)])
 
@@ -938,10 +1020,14 @@ class ReaderHandler:
         logger.error("Could not find close book button")
         return False
 
-    def update_reading_style(self) -> bool:
+    def update_reading_style(self, show_placemark: bool = False) -> bool:
         """
         Update reading styles for the current profile. Should be called after a book is opened.
         This will only update styles if they have not already been updated for this profile.
+        
+        Args:
+            show_placemark (bool): Whether to tap to display the placemark ribbon. 
+                                  Default is False (don't show placemark).
         
         Returns:
             bool: True if the styles were updated successfully or were already updated, False otherwise
@@ -957,16 +1043,28 @@ class ReaderHandler:
             # Store page source before starting
             store_page_source(self.driver.page_source, "style_update_before")
             
-            # 1. Tap center of page to show the placemark view
+            # Calculate screen dimensions for later use
             window_size = self.driver.get_window_size()
             center_x = window_size["width"] // 2
             center_y = window_size["height"] // 2
-            self.driver.tap([(center_x, center_y)])
-            logger.info("Tapped center of page")
-            time.sleep(1)
             
-            # Store page source after tapping center
-            store_page_source(self.driver.page_source, "style_update_after_center_tap")
+            # Only tap to show placemark if explicitly requested
+            if show_placemark:
+                # Tap center of page to show the placemark view
+                self.driver.tap([(center_x, center_y)])
+                logger.info("Tapped center of page to show placemark (placemark mode enabled)")
+                time.sleep(1)
+                
+                # Store page source after tapping center
+                store_page_source(self.driver.page_source, "style_update_after_center_tap")
+            else:
+                logger.info("Skipping center tap (placemark mode disabled)")
+                # We still need to tap to show reading controls to access the style button
+                # This is a tap near the top of the screen that won't trigger a placemark
+                top_y = int(window_size["height"] * 0.05)  # Very top of the screen (5%)
+                self.driver.tap([(center_x, top_y)])
+                logger.info(f"Tapped near top of screen at ({center_x}, {top_y}) to show toolbar without placemark")
+                time.sleep(0.5)
             
             # 2. Tap the Style button
             style_button_found = False
