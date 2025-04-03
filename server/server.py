@@ -688,7 +688,7 @@ class NavigationResource(Resource):
             if placemark_param.lower() in ("1", "true", "yes"):
                 show_placemark = True
                 logger.info("Placemark mode enabled for navigation")
-                
+
             # Also check in POST data
             if not show_placemark and request.is_json:
                 data = request.get_json(silent=True) or {}
@@ -696,7 +696,7 @@ class NavigationResource(Resource):
                 if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for navigation")
-                    
+
             progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             # Save screenshot with unique ID
@@ -756,7 +756,7 @@ class BookOpenResource(Resource):
                 # Force base64 encoding for OCR
                 use_base64 = True
                 logger.info("Forcing base64 encoding for OCR processing")
-                
+
         # Check if placemark is requested - default is FALSE which means DO NOT show placemark
         show_placemark = False
         placemark_param = request.args.get("placemark", "0")
@@ -861,13 +861,13 @@ class BookOpenResource(Resource):
         """Open a specific book via POST request."""
         data = request.get_json()
         book_title = data.get("title")
-        
+
         # Handle placemark parameter from POST data
         placemark_param = data.get("placemark", "0")
         if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
             request.args = request.args.copy()
             request.args["placemark"] = "1"
-            
+
         return self._open_book(book_title)
 
     @ensure_automator_healthy
@@ -924,7 +924,7 @@ class StyleResource(Resource):
             if placemark_param.lower() in ("1", "true", "yes"):
                 show_placemark = True
                 logger.info("Placemark mode enabled for style change")
-                
+
             # Also check in POST data
             if not show_placemark and request.is_json:
                 data = request.get_json(silent=True) or {}
@@ -932,7 +932,7 @@ class StyleResource(Resource):
                 if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for style change")
-                    
+
             progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             response_data = {
@@ -1653,7 +1653,7 @@ class TextResource(Resource):
             if placemark_param.lower() in ("1", "true", "yes"):
                 show_placemark = True
                 logger.info("Placemark mode enabled for OCR")
-                
+
             # Also check in POST data
             if not show_placemark and request.is_json:
                 data = request.get_json(silent=True) or {}
@@ -1661,7 +1661,7 @@ class TextResource(Resource):
                 if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for OCR")
-                    
+
             progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             # Process the screenshot with OCR

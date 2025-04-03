@@ -158,12 +158,18 @@ STYLE_SLIDEOVER_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bottom_sheet"),
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_container"),
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_setting_content"),
-    (AppiumBy.XPATH, "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/aa_menu_v2_setting_content']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/aa_menu_v2_setting_content']",
+    ),
 ]
 
 FONT_SIZE_SLIDER_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_font_slider_seekbar"),
-    (AppiumBy.XPATH, "//android.widget.SeekBar[@resource-id='com.amazon.kindle:id/aa_menu_v2_font_slider_seekbar']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.SeekBar[@resource-id='com.amazon.kindle:id/aa_menu_v2_font_slider_seekbar']",
+    ),
     (AppiumBy.XPATH, "//android.widget.SeekBar[@content-desc='Font Size']"),
 ]
 
@@ -176,76 +182,169 @@ STYLE_SHEET_PILL_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/bottom_sheet_pill"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/bottom_sheet_pill']"),
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bottom_sheet_handle"),
-    (AppiumBy.XPATH, "//android.widget.ImageView[@resource-id='com.amazon.kindle:id/aa_menu_v2_bottom_sheet_handle']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.ImageView[@resource-id='com.amazon.kindle:id/aa_menu_v2_bottom_sheet_handle']",
+    ),
 ]
 
 # Reading preferences checkboxes
 REALTIME_HIGHLIGHTING_CHECKBOX = [
-    (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_real_time_text_highlighting_toggle"),  # Correct ID from XML
+    (
+        AppiumBy.ID,
+        "com.amazon.kindle:id/aa_menu_v2_real_time_text_highlighting_toggle",
+    ),  # Correct ID from XML
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_realtime_highlight_toggle"),  # Alternate ID pattern
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_real_time_text_highlighting_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_realtime_highlight_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_real_time_text_highlighting_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_realtime_highlight_toggle']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_real_time_text_highlighting_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_realtime_highlight_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_real_time_text_highlighting_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_realtime_highlight_toggle']",
+    ),
     (AppiumBy.XPATH, "//android.widget.Switch[contains(@text, 'Real-time Text Highlighting')]"),
     (AppiumBy.XPATH, "//android.widget.CheckBox[contains(@text, 'Real-time Text Highlighting')]"),
-    (AppiumBy.XPATH, "//*[contains(@text, 'Real-time Text Highlighting')]//following-sibling::android.widget.Switch"),
-    (AppiumBy.XPATH, "//*[contains(@text, 'Real-time Text Highlighting')]//following-sibling::android.widget.CheckBox"),
-    (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'Real-time Text Highlighting')]/following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//*[contains(@text, 'Real-time Text Highlighting')]//following-sibling::android.widget.Switch",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//*[contains(@text, 'Real-time Text Highlighting')]//following-sibling::android.widget.CheckBox",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[contains(@content-desc, 'Real-time Text Highlighting')]/following-sibling::android.widget.Switch",
+    ),
 ]
 
 ABOUT_BOOK_CHECKBOX = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_about_book_toggle"),
-    (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_about_this_book_toggle"),  # Alternative pattern based on XML
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_book_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_this_book_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_book_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_this_book_toggle']"),
+    (
+        AppiumBy.ID,
+        "com.amazon.kindle:id/aa_menu_v2_about_this_book_toggle",
+    ),  # Alternative pattern based on XML
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_book_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_this_book_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_book_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_about_this_book_toggle']",
+    ),
     (AppiumBy.XPATH, "//android.widget.Switch[contains(@text, 'About this Book')]"),
     (AppiumBy.XPATH, "//android.widget.CheckBox[contains(@text, 'About this Book')]"),
     (AppiumBy.XPATH, "//*[contains(@text, 'About this Book')]//following-sibling::android.widget.Switch"),
     (AppiumBy.XPATH, "//*[contains(@text, 'About this Book')]//following-sibling::android.widget.CheckBox"),
-    (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'About this Book')]/following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[contains(@content-desc, 'About this Book')]/following-sibling::android.widget.Switch",
+    ),
 ]
 
 PAGE_TURN_ANIMATION_CHECKBOX = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_page_turn_animation_toggle"),
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_page_turn_animation_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_page_turn_animation_toggle']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_page_turn_animation_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_page_turn_animation_toggle']",
+    ),
     (AppiumBy.XPATH, "//android.widget.Switch[contains(@text, 'Page Turn Animation')]"),
     (AppiumBy.XPATH, "//android.widget.CheckBox[contains(@text, 'Page Turn Animation')]"),
     (AppiumBy.XPATH, "//*[contains(@text, 'Page Turn Animation')]//following-sibling::android.widget.Switch"),
-    (AppiumBy.XPATH, "//*[contains(@text, 'Page Turn Animation')]//following-sibling::android.widget.CheckBox"),
-    (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'Page Turn Animation')]/following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//*[contains(@text, 'Page Turn Animation')]//following-sibling::android.widget.CheckBox",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[contains(@content-desc, 'Page Turn Animation')]/following-sibling::android.widget.Switch",
+    ),
     # More generic selector that might help with different UI layouts
-    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Page Turn')]/../following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[contains(@text, 'Page Turn')]/../following-sibling::android.widget.Switch",
+    ),
 ]
 
 POPULAR_HIGHLIGHTS_CHECKBOX = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_popular_highlight_toggle"),
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_popular_highlights_toggle"),  # Alternative pattern
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlight_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlights_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlight_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlights_toggle']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlight_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlights_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlight_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_popular_highlights_toggle']",
+    ),
     (AppiumBy.XPATH, "//android.widget.Switch[contains(@text, 'Popular Highlights')]"),
     (AppiumBy.XPATH, "//android.widget.CheckBox[contains(@text, 'Popular Highlights')]"),
     (AppiumBy.XPATH, "//*[contains(@text, 'Popular Highlights')]//following-sibling::android.widget.Switch"),
-    (AppiumBy.XPATH, "//*[contains(@text, 'Popular Highlights')]//following-sibling::android.widget.CheckBox"),
-    (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'Popular Highlights')]/following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//*[contains(@text, 'Popular Highlights')]//following-sibling::android.widget.CheckBox",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[contains(@content-desc, 'Popular Highlights')]/following-sibling::android.widget.Switch",
+    ),
     # More generic selector that might help with different UI layouts
-    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Popular Highlight')]/../following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[contains(@text, 'Popular Highlight')]/../following-sibling::android.widget.Switch",
+    ),
 ]
 
 HIGHLIGHT_MENU_CHECKBOX = [
     (AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_highlight_menu_toggle"),
-    (AppiumBy.XPATH, "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_highlight_menu_toggle']"),
-    (AppiumBy.XPATH, "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_highlight_menu_toggle']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Switch[@resource-id='com.amazon.kindle:id/aa_menu_v2_highlight_menu_toggle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckBox[@resource-id='com.amazon.kindle:id/aa_menu_v2_highlight_menu_toggle']",
+    ),
     (AppiumBy.XPATH, "//android.widget.Switch[contains(@text, 'Highlight Menu')]"),
     (AppiumBy.XPATH, "//android.widget.CheckBox[contains(@text, 'Highlight Menu')]"),
     (AppiumBy.XPATH, "//*[contains(@text, 'Highlight Menu')]//following-sibling::android.widget.Switch"),
     (AppiumBy.XPATH, "//*[contains(@text, 'Highlight Menu')]//following-sibling::android.widget.CheckBox"),
-    (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'Highlight Menu')]/following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[contains(@content-desc, 'Highlight Menu')]/following-sibling::android.widget.Switch",
+    ),
     # More generic selector that might help with different UI layouts
-    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Highlight Menu')]/../following-sibling::android.widget.Switch"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[contains(@text, 'Highlight Menu')]/../following-sibling::android.widget.Switch",
+    ),
 ]

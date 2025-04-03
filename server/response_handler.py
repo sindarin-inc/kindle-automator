@@ -48,7 +48,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         server_instance.automator.cleanup()
         server_instance.initialize_automator()
         return server_instance.automator.initialize_driver()
-    
+
     def restart_emulator():
         """Restart the emulator if it's not running properly"""
         logger.info("Restarting emulator due to device list error")
@@ -58,13 +58,13 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             logger.info(f"Attempting to restart emulator for profile: {email}")
             # Force a new emulator to be created
             success, _ = server_instance.switch_profile(email, force_new_emulator=True)
-            
+
             # Initialize automator
             if success and not server_instance.automator:
                 logger.info("Initializing automator after emulator restart")
                 server_instance.initialize_automator()
                 server_instance.automator.initialize_driver()
-                
+
             return success
         else:
             logger.error("No current profile found for restarting emulator")
@@ -77,14 +77,14 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
             error
         )
-    
+
     def is_emulator_missing(error):
         """Check if the error indicates the emulator is not running"""
         error_str = str(error)
         return (
-            "Failed to get devices list after multiple attempts" in error_str or 
-            "'NoneType' object has no attribute 'update_current_state'" in error_str or
-            "Failed to initialize driver" in error_str
+            "Failed to get devices list after multiple attempts" in error_str
+            or "'NoneType' object has no attribute 'update_current_state'" in error_str
+            or "Failed to initialize driver" in error_str
         )
 
     # Main retry loop
@@ -139,7 +139,11 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     logger.info("Auth operation - avoiding retry for authentication stability")
                     return format_response(result)
                 # Special case: Don't retry captcha responses (403 with captcha_required)
-                elif status_code == 403 and isinstance(response, dict) and response.get("status") == "captcha_required":
+                elif (
+                    status_code == 403
+                    and isinstance(response, dict)
+                    and response.get("status") == "captcha_required"
+                ):
                     logger.info("Captcha required response - passing through without retry")
                     return format_response(result)
                 elif status_code >= 400:
@@ -290,41 +294,45 @@ def handle_automator_response(server_instance):
                         # Handle CAPTCHA state
                         if current_state == AppState.CAPTCHA:
                             time_taken = round(time.time() - start_time, 3)
-                            
+
                             # Get the screenshot ID directly from the state machine
                             # This comes from the auth handler's captured screenshot during captcha processing
                             screenshot_id = automator.state_machine.get_captcha_screenshot_id()
-                            
+
                             # Default fallback URL
                             image_url = "/screenshots/captcha.png"
-                            
+
                             # Use the captured screenshot ID if available
                             if screenshot_id:
                                 image_url = f"/image/{screenshot_id}"
                                 logger.info(f"Using captcha screenshot from auth handler: {image_url}")
                             else:
                                 logger.warning("No captcha screenshot ID found, using fallback URL")
-                            
+
                             # Check if we have an interactive captcha
                             interactive_captcha = False
                             if hasattr(automator.state_machine.auth_handler, "interactive_captcha_detected"):
-                                interactive_captcha = automator.state_machine.auth_handler.interactive_captcha_detected
-                            
+                                interactive_captcha = (
+                                    automator.state_machine.auth_handler.interactive_captcha_detected
+                                )
+
                             # Create response body with appropriate message
                             response_data = {
                                 "status": "captcha_required",
                                 "time_taken": time_taken,
                                 "image_url": image_url,
                             }
-                            
+
                             if interactive_captcha:
-                                response_data["message"] = "Grid-based image captcha detected - app has been restarted automatically"
+                                response_data["message"] = (
+                                    "Grid-based image captcha detected - app has been restarted automatically"
+                                )
                                 response_data["captcha_type"] = "grid"
                                 response_data["requires_restart"] = True
                             else:
                                 response_data["message"] = "Authentication requires captcha solution"
                                 response_data["captcha_type"] = "text"
-                            
+
                             return response_data, 403
 
                     # Check if this is a known authentication error that shouldn't be retried

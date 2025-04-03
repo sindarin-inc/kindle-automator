@@ -27,13 +27,13 @@ class AVDProfileManager:
         self.host_arch = self._detect_host_architecture()
         self.is_macos = platform.system() == "Darwin"
         self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
-        
+
         # Detect if we should use simplified mode (Mac dev environment)
         self.use_simplified_mode = self.is_macos and self.is_dev_mode
-        
+
         # Get Android home from environment or fallback to default
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
-        
+
         # Use a different base directory for Mac development environments
         if self.use_simplified_mode:
             # Use a directory under the user's home folder to avoid permission issues
@@ -42,7 +42,7 @@ class AVDProfileManager:
             logger.info("Mac development environment detected - using simplified emulator mode")
             logger.info(f"Using {base_dir} for profile storage instead of /opt/android-sdk")
             logger.info("Will use any available emulator instead of managing profiles")
-            
+
             # In macOS, the AVD directory is typically in the .android folder
             # This ensures we're pointing to the right place for AVDs in Android Studio
             if self.android_home:
@@ -56,9 +56,9 @@ class AVDProfileManager:
             logger.info(f"Using full profile management mode for {platform.system()} {self.host_arch}")
             # For non-Mac or non-dev environments, use standard directory structure
             self.avd_dir = os.path.join(base_dir, "avd")
-        
+
         self.base_dir = base_dir
-        self.profiles_dir = os.path.join(base_dir, "profiles") 
+        self.profiles_dir = os.path.join(base_dir, "profiles")
         self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
         self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
         self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
@@ -72,8 +72,11 @@ class AVDProfileManager:
                 raise
             else:
                 # This should rarely happen since we're already trying to use a home directory in simplified mode
-                logger.warning(f"Permission error creating {self.profiles_dir}, falling back to temporary directory")
+                logger.warning(
+                    f"Permission error creating {self.profiles_dir}, falling back to temporary directory"
+                )
                 import tempfile
+
                 temp_dir = tempfile.gettempdir()
                 self.base_dir = os.path.join(temp_dir, "kindle-automator")
                 self.profiles_dir = os.path.join(self.base_dir, "profiles")
@@ -292,7 +295,7 @@ class AVDProfileManager:
         # Add emulator ID if provided
         if emulator_id:
             current["emulator_id"] = emulator_id
-            
+
         # Load any existing preferences for this email from user_preferences
         if email in self.user_preferences:
             # Copy styling preferences from user_preferences to current profile if they exist
@@ -2105,7 +2108,7 @@ class AVDProfileManager:
     def _load_user_preferences(self) -> Dict:
         """
         Load user preferences from JSON file or create if it doesn't exist.
-        
+
         Returns:
             Dict: User preferences dictionary mapping email to preferences
         """
@@ -2125,11 +2128,11 @@ class AVDProfileManager:
             except Exception as e:
                 logger.error(f"Error creating user preferences file: {e}")
                 return {}
-    
+
     def _save_user_preferences(self) -> bool:
         """
         Save user preferences to JSON file.
-        
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -2144,69 +2147,69 @@ class AVDProfileManager:
     def update_style_preference(self, styles_updated: bool = True) -> bool:
         """
         Update the style preference for the current profile.
-        
+
         Args:
             styles_updated: Whether styles have been updated for this profile
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         if not self.current_profile:
             logger.error("Cannot update style preference: no current profile")
             return False
-            
+
         try:
             # Get the email for the current profile
             email = self.current_profile.get("email")
             if not email:
                 logger.error("Cannot update style preference: current profile has no email")
                 return False
-                
+
             # Create or update preferences for this email
             if email not in self.user_preferences:
                 self.user_preferences[email] = {}
-                
+
             # Set the styles_updated preference
             self.user_preferences[email]["styles_updated"] = styles_updated
-            
+
             # Save preferences to file
             self._save_user_preferences()
-            
+
             # Also update the current profile for backward compatibility
             self.current_profile["styles_updated"] = styles_updated
             with open(self.current_profile_file, "w") as f:
                 json.dump(self.current_profile, f, indent=2)
-                
+
             logger.info(f"Updated style preference for {email} to {styles_updated}")
             return True
         except Exception as e:
             logger.error(f"Error updating style preference: {e}")
             return False
-    
+
     def is_styles_updated(self) -> bool:
         """
         Check if styles have been updated for the current profile.
-        
+
         Returns:
             bool: True if styles have been updated, False otherwise
         """
         if not self.current_profile:
             logger.debug("No current profile, styles not updated")
             return False
-            
+
         # Get the email for the current profile
         email = self.current_profile.get("email")
         if not email:
             logger.debug("Current profile has no email, styles not updated")
             return False
-            
+
         # Check for the preference in user_preferences first
         if email in self.user_preferences and "styles_updated" in self.user_preferences[email]:
             return self.user_preferences[email]["styles_updated"]
-            
+
         # Fall back to current profile for backward compatibility
         return self.current_profile.get("styles_updated", False)
-        
+
     def delete_profile(self, email: str) -> Tuple[bool, str]:
         """
         Delete the profile for the given email.
@@ -2237,7 +2240,7 @@ class AVDProfileManager:
 
             # Clean up emulator mapping
             # No longer using emulator_map
-            
+
             # Remove from user preferences
             if email in self.user_preferences:
                 del self.user_preferences[email]
@@ -2321,7 +2324,7 @@ class AVDProfileManager:
         # Remove from profiles index
         del self.profiles_index[email]
         self._save_profiles_index()
-        
+
         # Remove from user preferences
         if email in self.user_preferences:
             del self.user_preferences[email]

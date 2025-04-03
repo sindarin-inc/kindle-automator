@@ -28,6 +28,7 @@ from views.auth.view_strategies import (
     CAPTCHA_VIEW_IDENTIFIERS,
     EMAIL_VIEW_IDENTIFIERS,
     ERROR_VIEW_IDENTIFIERS,
+    INTERACTIVE_CAPTCHA_IDENTIFIERS,
     LIBRARY_VIEW_VERIFICATION_STRATEGIES,
     PASSWORD_VIEW_IDENTIFIERS,
 )
@@ -600,10 +601,12 @@ class AuthenticationHandler:
                     interactive_indicators_found += 1
                 except:
                     continue
-                    
+
             # Special handling for interactive captcha - it's a stronger signal
             if interactive_indicators_found >= 3:
-                logger.info(f"Interactive captcha detected! Found {interactive_indicators_found} interactive indicators")
+                logger.info(
+                    f"Interactive captcha detected! Found {interactive_indicators_found} interactive indicators"
+                )
                 self.interactive_captcha_detected = True
                 return True
 
@@ -617,19 +620,21 @@ class AuthenticationHandler:
         """Handle captcha screen by saving the image using scrcpy and returning."""
         try:
             logger.info("Handling CAPTCHA state...")
-            
+
             # Special handling for grid-based image captcha
             if self.interactive_captcha_detected:
                 logger.error("Grid-based image captcha detected - this requires human interaction")
-                logger.error("This type of grid-based captcha cannot be solved automatically - need to restart app")
-                
+                logger.error(
+                    "This type of grid-based captcha cannot be solved automatically - need to restart app"
+                )
+
                 # We need to restart the app to try and get around this captcha
                 try:
                     # First try to take a screenshot for diagnostic purposes
                     timestamp = int(time.time())
                     screenshot_id = f"interactive_captcha_{timestamp}"
                     screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
-                    
+
                     # Try to get the driver instance
                     driver_instance = getattr(self.driver, "_driver", None)
                     if driver_instance and hasattr(driver_instance, "automator"):
@@ -640,29 +645,29 @@ class AuthenticationHandler:
                             if secure_path:
                                 logger.info(f"Saved interactive captcha screenshot to {secure_path}")
                                 self.last_captcha_screenshot = screenshot_id
-                    
+
                     # Force close the app
                     if hasattr(self.driver, "close_app"):
                         logger.info("Force closing the Kindle app to recover from interactive captcha")
                         self.driver.close_app()
                         time.sleep(2)
-                    
+
                     # Try to launch it again (this would be handled by the restart logic elsewhere)
                     if hasattr(self.driver, "launch_app"):
                         logger.info("Relaunching the Kindle app")
                         self.driver.launch_app()
                         time.sleep(3)
-                    
+
                     # Reset the interactive captcha flag
                     self.interactive_captcha_detected = False
-                    
+
                     # Return False to indicate we need client interaction
                     return False
                 except Exception as restart_e:
                     logger.error(f"Error while trying to restart app after interactive captcha: {restart_e}")
                     # Still return False to indicate we need client interaction
                     return False
-            
+
             # Standard text captcha handling
             # Find the captcha image element
             try:
@@ -679,7 +684,7 @@ class AuthenticationHandler:
                 automator = driver_instance.automator
             else:
                 automator = None
-                
+
             if not automator:
                 logger.error("Could not access automator from driver session")
                 # Fall back to regular screenshot method, though it will likely fail with FLAG_SECURE
@@ -695,27 +700,28 @@ class AuthenticationHandler:
                 timestamp = int(time.time())
                 secure_screenshot_id = f"auth_screen_{timestamp}"
                 final_path = os.path.join("screenshots", f"{secure_screenshot_id}.png")
-                
+
                 # Always force scrcpy mode for captcha screenshots to bypass FLAG_SECURE
                 secure_path = automator.take_secure_screenshot(
-                    final_path, 
-                    force_secure=True  # Force scrcpy usage even if the automator would normally use ADB
+                    final_path,
+                    force_secure=True,  # Force scrcpy usage even if the automator would normally use ADB
                 )
-                
+
                 if not secure_path:
                     logger.error("Secure screenshot failed even with scrcpy")
                     return False
-                
+
                 logger.info(f"Used scrcpy for secure screenshot at {secure_path}")
-                
+
                 # Store the screenshot ID for use in the response
                 self.last_captcha_screenshot = secure_screenshot_id
                 logger.info(f"Stored captcha screenshot ID: {secure_screenshot_id}")
-                
+
                 # No need to crop - we'll return the full screenshot for easier captcha viewing
                 # We'll just save a copy as captcha.png for backward compatibility
                 captcha_path = os.path.join("screenshots", "captcha.png")
                 import shutil
+
                 try:
                     shutil.copy(final_path, captcha_path)
                     logger.info(f"Copied full screenshot to {captcha_path} for backward compatibility")
