@@ -52,6 +52,7 @@ class AuthenticationHandler:
         self.captcha_solution = captcha_solution
         self.screenshots_dir = "screenshots"
         self.last_captcha_screenshot = None  # Track the last captcha screenshot path
+        self.interactive_captcha_detected = False  # Flag for the special interactive captcha case
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
@@ -591,6 +592,21 @@ class AuthenticationHandler:
                 except:
                     continue
 
+            # Also check for interactive captcha specifically
+            interactive_indicators_found = 0
+            for strategy, locator in INTERACTIVE_CAPTCHA_IDENTIFIERS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    interactive_indicators_found += 1
+                except:
+                    continue
+                    
+            # Special handling for interactive captcha - it's a stronger signal
+            if interactive_indicators_found >= 3:
+                logger.info(f"Interactive captcha detected! Found {interactive_indicators_found} interactive indicators")
+                self.interactive_captcha_detected = True
+                return True
+
             # Require at least 3 indicators to be confident it's a captcha screen
             return indicators_found >= 3
         except Exception as e:
@@ -601,12 +617,59 @@ class AuthenticationHandler:
         """Handle captcha screen by saving the image using scrcpy and returning."""
         try:
             logger.info("Handling CAPTCHA state...")
-
+            
+            # Special handling for grid-based image captcha
+            if self.interactive_captcha_detected:
+                logger.error("Grid-based image captcha detected - this requires human interaction")
+                logger.error("This type of grid-based captcha cannot be solved automatically - need to restart app")
+                
+                # We need to restart the app to try and get around this captcha
+                try:
+                    # First try to take a screenshot for diagnostic purposes
+                    timestamp = int(time.time())
+                    screenshot_id = f"interactive_captcha_{timestamp}"
+                    screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
+                    
+                    # Try to get the driver instance
+                    driver_instance = getattr(self.driver, "_driver", None)
+                    if driver_instance and hasattr(driver_instance, "automator"):
+                        automator = driver_instance.automator
+                        if automator:
+                            # Use secure screenshot
+                            secure_path = automator.take_secure_screenshot(screenshot_path, force_secure=True)
+                            if secure_path:
+                                logger.info(f"Saved interactive captcha screenshot to {secure_path}")
+                                self.last_captcha_screenshot = screenshot_id
+                    
+                    # Force close the app
+                    if hasattr(self.driver, "close_app"):
+                        logger.info("Force closing the Kindle app to recover from interactive captcha")
+                        self.driver.close_app()
+                        time.sleep(2)
+                    
+                    # Try to launch it again (this would be handled by the restart logic elsewhere)
+                    if hasattr(self.driver, "launch_app"):
+                        logger.info("Relaunching the Kindle app")
+                        self.driver.launch_app()
+                        time.sleep(3)
+                    
+                    # Reset the interactive captcha flag
+                    self.interactive_captcha_detected = False
+                    
+                    # Return False to indicate we need client interaction
+                    return False
+                except Exception as restart_e:
+                    logger.error(f"Error while trying to restart app after interactive captcha: {restart_e}")
+                    # Still return False to indicate we need client interaction
+                    return False
+            
+            # Standard text captcha handling
             # Find the captcha image element
-            captcha_image = self.driver.find_element(
-                AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"
-            )
-            if not captcha_image:
+            try:
+                captcha_image = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"
+                )
+            except Exception:
                 logger.error("Could not find captcha image element")
                 return False
 

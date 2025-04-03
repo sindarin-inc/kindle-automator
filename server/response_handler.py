@@ -305,12 +305,27 @@ def handle_automator_response(server_instance):
                             else:
                                 logger.warning("No captcha screenshot ID found, using fallback URL")
                             
-                            return {
+                            # Check if we have an interactive captcha
+                            interactive_captcha = False
+                            if hasattr(automator.state_machine.auth_handler, "interactive_captcha_detected"):
+                                interactive_captcha = automator.state_machine.auth_handler.interactive_captcha_detected
+                            
+                            # Create response body with appropriate message
+                            response_data = {
                                 "status": "captcha_required",
-                                "message": "Authentication requires captcha solution",
-                                "image_url": image_url,
                                 "time_taken": time_taken,
-                            }, 403
+                                "image_url": image_url,
+                            }
+                            
+                            if interactive_captcha:
+                                response_data["message"] = "Grid-based image captcha detected - app has been restarted automatically"
+                                response_data["captcha_type"] = "grid"
+                                response_data["requires_restart"] = True
+                            else:
+                                response_data["message"] = "Authentication requires captcha solution"
+                                response_data["captcha_type"] = "text"
+                            
+                            return response_data, 403
 
                     # Check if this is a known authentication error that shouldn't be retried
                     if isinstance(result, dict) and result.get("error_type") == "incorrect_password":

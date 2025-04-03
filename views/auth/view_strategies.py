@@ -38,14 +38,47 @@ CAPTCHA_VIEW_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.view.View[@content-desc='Hear the characters']"),
     # Continue button
     (AppiumBy.XPATH, "//android.widget.Button[@text='Continue' and @hint='verifyCaptcha']"),
+    # Interactive captcha indicators
+    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Choose all the')]"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Confirm']"),
+]
+
+# Grid-based image captcha that we can't solve programmatically
+INTERACTIVE_CAPTCHA_IDENTIFIERS = [
+    # Grid-related UI elements - specific to the image grid captcha
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-waf-box']"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='root']"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='captcha-container']"),
+    # Buttons specific to image grid captcha
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='amzn-btn-verify-internal']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='amzn-btn-refresh-internal']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='amzn-btn-info-internal']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='amzn-btn-audio-internal']"),
+    # Look for multiple numbered buttons (the image grid)
+    (AppiumBy.XPATH, "//android.widget.Button[@text='1']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='2']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='3']"),
+    # Special text elements in grid captcha
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:')]"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Required:')]"),
 ]
 
 CAPTCHA_REQUIRED_INDICATORS = [
+    # Text captcha indicators
     (AppiumBy.XPATH, "//android.webkit.WebView[@text='Authentication required']"),
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Solve this puzzle')]"),
     (AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"),
     (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Enter the letters')]"),
     (AppiumBy.XPATH, "//android.widget.Button[@hint='verifyCaptcha']"),
+    # Interactive captcha indicators - more generic
+    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solve this puzzle')]"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Confirm']"),
+    # Grid-based captcha indicators
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='captcha-container']"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-captcha-header']"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:')]"),
 ]
 
 CAPTCHA_ERROR_MESSAGES = [
