@@ -26,7 +26,6 @@ class RequestBodyLogger:
         # List of sensitive keys to mask
         sensitive_keys = [
             "password",
-            "email",
             "token",
             "secret",
             "key",

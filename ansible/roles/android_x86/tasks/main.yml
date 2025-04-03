@@ -166,41 +166,6 @@
   shell: "{{ android_home }}/platform-tools/adb kill-server && {{ android_home }}/platform-tools/adb start-server"
   become: yes
 
-- name: Create systemd service for Android Emulator
-  copy:
-    dest: /etc/systemd/system/android-emulator.service
-    content: |
-      [Unit]
-      Description=Android Emulator Service
-      After=network.target
-
-      [Service]
-      User={{ ansible_user }}
-      WorkingDirectory={{ android_home }}
-      Environment="ANDROID_SDK_ROOT={{ android_home }}"
-      Environment="ANDROID_AVD_HOME={{ android_home }}/avd"
-      Environment="ANDROID_HOME={{ android_home }}"
-      ExecStart={{ android_home }}/emulator/emulator -avd {{ avd_name }} -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect -accel off -no-snapshot -no-snapshot-load -no-snapshot-save -writable-system -selinux disabled -qemu -enable-kvm
-      Restart=always
-      StandardOutput=journal
-      StandardError=journal
-
-      [Install]
-      WantedBy=multi-user.target
-  become: yes
-
-- name: Reload systemd daemon
-  systemd:
-    daemon_reload: yes
-  become: yes
-
-- name: Enable and start Android Emulator service
-  systemd:
-    name: android-emulator
-    enabled: yes
-    state: started
-  become: yes
-
 - name: Wait for emulator to boot completely
   shell: |
     timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
@@ -380,8 +345,7 @@
       {{ android_home }}/platform-tools/adb emu kill
       sleep 5
       
-      # Restart emulator service
-      systemctl restart android-emulator
+      # The AVD manager will start the emulator, no need to start it manually
       
       # Wait for emulator to restart
       echo "Waiting for emulator to restart..."
