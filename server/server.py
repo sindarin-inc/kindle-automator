@@ -1468,8 +1468,19 @@ class ProfilesResource(Resource):
         action = data.get("action")
         email = data.get("email")
 
+        if action == "reset_styles":
+            # Special case for resetting style preferences without needing an email
+            if server.profile_manager.current_profile:
+                if server.profile_manager.update_style_preference(False):
+                    return {"success": True, "message": "Style preferences reset successfully"}, 200
+                else:
+                    return {"success": False, "message": "Failed to reset style preferences"}, 500
+            else:
+                return {"success": False, "message": "No current profile found"}, 400
+
+        # For all other actions, email is required
         if not email:
-            return {"error": "Email is required"}, 400
+            return {"error": "Email is required for this action"}, 400
 
         if action == "create":
             success, message = server.profile_manager.create_profile(email)

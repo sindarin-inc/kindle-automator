@@ -23,28 +23,63 @@ class AVDProfileManager:
     """
 
     def __init__(self, base_dir: str = "/opt/android-sdk"):
-        self.base_dir = base_dir
-        self.avd_dir = os.path.join(base_dir, "avd")
-        self.profiles_dir = os.path.join(base_dir, "profiles")
-        self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
-        self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
-        self.android_home = os.environ.get("ANDROID_HOME", base_dir)
-
-        # Detect host architecture and operating system
+        # Detect host architecture and operating system first
         self.host_arch = self._detect_host_architecture()
         self.is_macos = platform.system() == "Darwin"
         self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
-
+        
         # Detect if we should use simplified mode (Mac dev environment)
         self.use_simplified_mode = self.is_macos and self.is_dev_mode
+        
+        # Get Android home from environment or fallback to default
+        self.android_home = os.environ.get("ANDROID_HOME", base_dir)
+        
+        # Use a different base directory for Mac development environments
         if self.use_simplified_mode:
+            # Use a directory under the user's home folder to avoid permission issues
+            user_home = os.path.expanduser("~")
+            base_dir = os.path.join(user_home, ".kindle-automator")
             logger.info("Mac development environment detected - using simplified emulator mode")
+            logger.info(f"Using {base_dir} for profile storage instead of /opt/android-sdk")
             logger.info("Will use any available emulator instead of managing profiles")
+            
+            # In macOS, the AVD directory is typically in the .android folder
+            # This ensures we're pointing to the right place for AVDs in Android Studio
+            if self.android_home:
+                logger.info(f"Using Android home from environment: {self.android_home}")
+                self.avd_dir = os.path.join(user_home, ".android", "avd")
+            else:
+                # Fallback if ANDROID_HOME isn't set
+                self.avd_dir = os.path.join(user_home, ".android", "avd")
+                logger.info(f"ANDROID_HOME not set, using default AVD directory: {self.avd_dir}")
         else:
             logger.info(f"Using full profile management mode for {platform.system()} {self.host_arch}")
+            # For non-Mac or non-dev environments, use standard directory structure
+            self.avd_dir = os.path.join(base_dir, "avd")
+        
+        self.base_dir = base_dir
+        self.profiles_dir = os.path.join(base_dir, "profiles") 
+        self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
+        self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
 
         # Ensure directories exist
-        os.makedirs(self.profiles_dir, exist_ok=True)
+        try:
+            os.makedirs(self.profiles_dir, exist_ok=True)
+        except PermissionError:
+            if not self.use_simplified_mode:
+                # If not in simplified mode, re-raise the exception
+                raise
+            else:
+                # This should rarely happen since we're already trying to use a home directory in simplified mode
+                logger.warning(f"Permission error creating {self.profiles_dir}, falling back to temporary directory")
+                import tempfile
+                temp_dir = tempfile.gettempdir()
+                self.base_dir = os.path.join(temp_dir, "kindle-automator")
+                self.profiles_dir = os.path.join(self.base_dir, "profiles")
+                self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
+                self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
+                os.makedirs(self.profiles_dir, exist_ok=True)
+                logger.info(f"Successfully created fallback directory at {self.profiles_dir}")
 
         # Load profile index if it exists, otherwise create empty one
         self.profiles_index = self._load_profiles_index()
@@ -248,11 +283,18 @@ class AVDProfileManager:
             avd_name: Name of the AVD
             emulator_id: Optional emulator device ID (e.g., 'emulator-5554')
         """
+        # Prepare new profile data
         current = {"email": email, "avd_name": avd_name, "last_used": int(time.time())}
 
         # Add emulator ID if provided
         if emulator_id:
             current["emulator_id"] = emulator_id
+            
+        # Preserve any additional profile settings if they exist in the current profile
+        if self.current_profile and self.current_profile.get("email") == email:
+            # Copy over any preferences that should be preserved
+            if "styles_updated" in self.current_profile:
+                current["styles_updated"] = self.current_profile["styles_updated"]
 
         try:
             with open(self.current_profile_file, "w") as f:
@@ -2047,6 +2089,49 @@ class AVDProfileManager:
 
         return True, f"Successfully created profile for {email}"
 
+    def update_style_preference(self, styles_updated: bool = True) -> bool:
+        """
+        Update the style preference for the current profile.
+        
+        Args:
+            styles_updated: Whether styles have been updated for this profile
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not self.current_profile:
+            logger.error("Cannot update style preference: no current profile")
+            return False
+            
+        try:
+            self.current_profile["styles_updated"] = styles_updated
+            email = self.current_profile.get("email")
+            avd_name = self.current_profile.get("avd_name")
+            emulator_id = self.current_profile.get("emulator_id")
+            
+            # Save the updated profile
+            with open(self.current_profile_file, "w") as f:
+                json.dump(self.current_profile, f, indent=2)
+                
+            logger.info(f"Updated style preference for {email} to {styles_updated}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating style preference: {e}")
+            return False
+    
+    def is_styles_updated(self) -> bool:
+        """
+        Check if styles have been updated for the current profile.
+        
+        Returns:
+            bool: True if styles have been updated, False otherwise
+        """
+        if not self.current_profile:
+            logger.debug("No current profile, styles not updated")
+            return False
+            
+        return self.current_profile.get("styles_updated", False)
+        
     def delete_profile(self, email: str) -> Tuple[bool, str]:
         """
         Delete the profile for the given email.
