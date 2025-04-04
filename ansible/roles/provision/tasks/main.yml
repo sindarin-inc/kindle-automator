@@ -22,6 +22,15 @@
     name: sol-network
     state: present
 
+- name: Create /opt/kindle-automator directory
+  file:
+    path: /opt/kindle-automator
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  tags: env
+
 - name: Copy .env.prod to /opt/kindle-automator/.env.prod
   copy:
     src: ../.env.prod
@@ -40,6 +49,7 @@
     group: root
     mode: 0644
   when: "'staging' in inventory_hostname"
+  tags: env
 
 - name: Copy toprc.conf to /root/.toprc
   template:

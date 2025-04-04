@@ -51,6 +51,8 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 app = Flask(__name__)
 api = Api(app)
 
+# We'll define the AutomationServer class below and instantiate it after the class definition
+
 # Set up request and response logging middleware
 setup_request_logger(app)
 
@@ -197,7 +199,11 @@ class AutomationServer:
             self.current_book = None
 
 
+# Create the server instance
 server = AutomationServer()
+
+# Store server instance in app config for access in middleware
+app.config["server_instance"] = server
 
 
 class InitializeResource(Resource):

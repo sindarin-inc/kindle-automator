@@ -33,17 +33,68 @@
     mode: "0400"
   register: deploy_key
 
-# Clone or update the repository
-- name: Clone or update the repository
+# Clean and re-clone repository
+- name: Check repository state
+  stat:
+    path: /opt/kindle-automator/requirements.txt
+  register: repo_files
+
+# Backup .env.prod if it exists
+- name: Backup .env.prod
+  shell: |
+    if [ -f /opt/kindle-automator/.env.prod ]; then
+      cp /opt/kindle-automator/.env.prod /tmp/.env.prod.backup
+    fi
+  changed_when: false
+
+# Backup existing env and venv
+- name: Backup essential files
+  shell: |
+    mkdir -p /tmp/kindle-temp
+    if [ -d /opt/kindle-automator/venv ]; then
+      mv /opt/kindle-automator/venv /tmp/kindle-temp/
+    fi
+  changed_when: false
+
+# Clone repository to a temporary directory
+- name: Clone the repository to temp dir
   git:
     repo: "{{ kindle_repo_url }}"
-    dest: /opt/kindle-automator
+    dest: /tmp/kindle-repo
     version: "{{ kindle_repo_branch | default('main') }}"
-    update: yes
-    force: yes
     key_file: /opt/keys/deploy_key
     accept_hostkey: yes
   register: git_clone
+
+# Move repo contents to final destination
+- name: Move repository to destination
+  shell: |
+    # Delete existing directory contents (but not the directory itself)
+    rm -rf /opt/kindle-automator/*
+    rm -rf /opt/kindle-automator/.* 2>/dev/null || true
+    
+    # Copy from temp repo to destination
+    cp -R /tmp/kindle-repo/. /opt/kindle-automator/
+    
+    # Restore venv folder if it was backed up
+    if [ -d /tmp/kindle-temp/venv ]; then
+      rm -rf /opt/kindle-automator/venv 2>/dev/null || true
+      mv /tmp/kindle-temp/venv /opt/kindle-automator/
+    fi
+    
+    # Clean up
+    rm -rf /tmp/kindle-repo
+    rm -rf /tmp/kindle-temp
+  changed_when: true
+
+# Restore .env.prod if backup exists
+- name: Restore .env.prod
+  shell: |
+    if [ -f /tmp/.env.prod.backup ]; then
+      cp /tmp/.env.prod.backup /opt/kindle-automator/.env.prod
+      rm /tmp/.env.prod.backup
+    fi
+  changed_when: false
 
 # Set up Python virtual environment
 - name: Create Python virtual environment

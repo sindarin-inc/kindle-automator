@@ -4,9 +4,9 @@ import logging
 from functools import wraps
 from io import BytesIO
 
-from flask import Response, g, request
+from flask import Response, current_app, g, request
 
-from server.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, MAGENTA, RESET
+from server.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,21 @@ class RequestBodyLogger:
         """Log the request body."""
         request_data = None
 
+        # Get server instance from the Flask app
+        server_instance = current_app.config.get("server_instance", None)
+        user_info = ""
+
+        # Add user and AVD info if available
+        if server_instance:
+            email = server_instance.current_email or "not_authenticated"
+            current_profile = (
+                server_instance.profile_manager.get_current_profile()
+                if hasattr(server_instance, "profile_manager")
+                else None
+            )
+            avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
+            user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
+
         # For GET requests, use query parameters as the body
         if request.method == "GET" and request.args:
             request_data = RequestBodyLogger.sanitize_sensitive_data(dict(request.args))
@@ -90,31 +105,46 @@ class RequestBodyLogger:
                 json_str = json.dumps(request_data, default=str)
                 if len(json_str) > 500:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{json_str}{RESET}"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                     )
             elif isinstance(request_data, str) and len(request_data) > 500:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{request_data[:500]}{RESET}... (truncated, total {len(request_data)} bytes)"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:500]}{RESET}... (truncated, total {len(request_data)} bytes)"
                 )
             else:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{request_data}{RESET}"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data}{RESET}"
                 )
         else:
-            logger.info(f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]: No body")
+            logger.info(f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: No body")
 
     @staticmethod
     def log_response(response):
         """Log the response body."""
         response_data = None
 
+        # Get server instance from the Flask app
+        server_instance = current_app.config.get("server_instance", None)
+        user_info = ""
+
+        # Add user and AVD info if available
+        if server_instance:
+            email = server_instance.current_email or "not_authenticated"
+            current_profile = (
+                server_instance.profile_manager.get_current_profile()
+                if hasattr(server_instance, "profile_manager")
+                else None
+            )
+            avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
+            user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
+
         if response.direct_passthrough:
             logger.info(
-                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
+                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
             )
             return response
 
@@ -134,34 +164,34 @@ class RequestBodyLogger:
                     json_str = json.dumps(sanitized_data, default=str)
                     if len(json_str) > 500:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
                     if len(json_str) > 500:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
                 if len(response_text) > 500:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
+                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}{response_text}{RESET}"
+                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
                     )
         except UnicodeDecodeError:
             logger.info(
-                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
+                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
             )
 
         return response
