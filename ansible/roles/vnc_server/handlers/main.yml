@@ -1,0 +1,18 @@
+---
+- name: restart xvfb
+  systemd:
+    name: xvfb
+    state: restarted
+    daemon_reload: yes
+
+- name: restart vnc
+  systemd:
+    name: vnc
+    state: restarted
+    daemon_reload: yes
+    
+- name: restart novnc
+  systemd:
+    name: novnc
+    state: restarted
+    daemon_reload: yes
