@@ -348,3 +348,11 @@ HIGHLIGHT_MENU_CHECKBOX = [
         "//android.widget.TextView[contains(@text, 'Highlight Menu')]/../following-sibling::android.widget.Switch",
     ),
 ]
+
+# Word Wise dialog identifiers
+WORD_WISE_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Word Wise']"),
+    (AppiumBy.ID, "com.amazon.kindle:id/wordwise_ftue_layout"),
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/wordwise_ftue_layout']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/wordwise_ftue_title' and @text='Word Wise']"),
+]

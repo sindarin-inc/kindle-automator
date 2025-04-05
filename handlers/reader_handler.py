@@ -21,6 +21,8 @@ from views.reading.interaction_strategies import (
     FULL_SCREEN_DIALOG_GOT_IT,
     LAST_READ_PAGE_DIALOG_BUTTONS,
     READING_TOOLBAR_STRATEGIES,
+    WORD_WISE_DIALOG_IDENTIFIERS,
+    WORD_WISE_NO_THANKS_BUTTON,
 )
 from views.reading.view_strategies import (
     ABOUT_BOOK_CHECKBOX,
@@ -266,6 +268,64 @@ class ReaderHandler:
             logger.info("No Goodreads auto-update dialog found - continuing")
         except Exception as e:
             logger.error(f"Error handling Goodreads dialog: {e}")
+            
+        # Check for and dismiss Word Wise dialog
+        try:
+            # Store the page source before checking for the Word Wise dialog
+            store_page_source(self.driver.page_source, "word_wise_dialog")
+
+            # Check if the Word Wise dialog is present
+            dialog_present = False
+            for strategy, locator in WORD_WISE_DIALOG_IDENTIFIERS:
+                try:
+                    dialog = self.driver.find_element(strategy, locator)
+                    if dialog.is_displayed():
+                        dialog_present = True
+                        logger.info("Found Word Wise dialog")
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if dialog_present:
+                # Find and click the "NO THANKS" button
+                for strategy, locator in WORD_WISE_NO_THANKS_BUTTON:
+                    try:
+                        no_thanks_button = self.driver.find_element(strategy, locator)
+                        if no_thanks_button.is_displayed():
+                            logger.info("Clicking 'NO THANKS' button on Word Wise dialog")
+                            no_thanks_button.click()
+                            time.sleep(0.5)  # Wait for dialog to dismiss
+                            
+                            # Verify dialog is gone
+                            try:
+                                # Check if the Word Wise dialog is still present
+                                still_visible = False
+                                for dialog_strategy, dialog_locator in WORD_WISE_DIALOG_IDENTIFIERS:
+                                    try:
+                                        dialog = self.driver.find_element(dialog_strategy, dialog_locator)
+                                        if dialog.is_displayed():
+                                            still_visible = True
+                                            break
+                                    except NoSuchElementException:
+                                        continue
+                                
+                                if still_visible:
+                                    logger.error("Word Wise dialog still visible after clicking No Thanks")
+                                    return False
+                                else:
+                                    logger.info("Successfully dismissed Word Wise dialog")
+                            except Exception as verify_e:
+                                logger.error(f"Error verifying Word Wise dialog dismissal: {verify_e}")
+                            
+                            filepath = store_page_source(self.driver.page_source, "word_wise_dialog_dismissed")
+                            logger.info(f"Stored Word Wise dialog dismissed page source at: {filepath}")
+                            break
+                    except NoSuchElementException:
+                        continue
+        except NoSuchElementException:
+            logger.info("No Word Wise dialog found - continuing")
+        except Exception as e:
+            logger.error(f"Error handling Word Wise dialog: {e}")
 
         # Check for and dismiss "About this book" slideover
         try:
@@ -836,6 +896,37 @@ class ReaderHandler:
                     logger.error("NOT NOW button not found for Goodreads dialog")
                 except Exception as e:
                     logger.error(f"Error clicking NOT NOW button: {e}")
+                    
+            # Check for and dismiss Word Wise dialog
+            word_wise_dialog_visible, _ = self._check_element_visibility(
+                WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
+            )
+            if word_wise_dialog_visible:
+                logger.info("Found Word Wise dialog - clicking NO THANKS")
+                no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
+                    WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
+                )
+                
+                if no_thanks_button_visible:
+                    no_thanks_button.click()
+                    logger.info("Clicked NO THANKS button")
+                    time.sleep(1)
+                    
+                    # Verify dialog is gone
+                    still_visible, _ = self._check_element_visibility(
+                        WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
+                    )
+                    if still_visible:
+                        logger.error("Word Wise dialog still visible after clicking NO THANKS")
+                    else:
+                        logger.info("Successfully dismissed Word Wise dialog")
+                    
+                    filepath = store_page_source(
+                        self.driver.page_source, "word_wise_dialog_dismissed_navigation"
+                    )
+                    logger.info(f"Stored Word Wise dialog dismissed page source at: {filepath}")
+                else:
+                    logger.error("NO THANKS button not found for Word Wise dialog")
 
             # Now try to make toolbar visible if it isn't already
             return self._show_toolbar_and_close_book()
@@ -870,6 +961,24 @@ class ReaderHandler:
                 logger.error("NOT NOW button not found for Goodreads dialog")
             except Exception as e:
                 logger.error(f"Error clicking NOT NOW button: {e}")
+                
+        # Check if we're looking at the Word Wise dialog
+        word_wise_dialog_visible, _ = self._check_element_visibility(
+            WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
+        )
+        if word_wise_dialog_visible:
+            logger.info("Found Word Wise dialog before showing toolbar - dismissing it first")
+            no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
+                WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
+            )
+            
+            if no_thanks_button_visible:
+                no_thanks_button.click()
+                logger.info("Clicked NO THANKS button")
+                time.sleep(1)
+                store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_toolbar")
+            else:
+                logger.error("NO THANKS button not found for Word Wise dialog")
 
         # First check if toolbar is already visible
         toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
@@ -964,6 +1073,46 @@ class ReaderHandler:
                     logger.error("NOT NOW button not found for Goodreads dialog")
                 except Exception as e:
                     logger.error(f"Error clicking NOT NOW button: {e}")
+                    
+            # Check for Word Wise dialog
+            word_wise_dialog_visible, _ = self._check_element_visibility(
+                WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
+            )
+            if word_wise_dialog_visible:
+                logger.info("Found Word Wise dialog after tapping - dismissing it")
+                no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
+                    WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
+                )
+                
+                if no_thanks_button_visible:
+                    no_thanks_button.click()
+                    logger.info("Clicked NO THANKS button")
+                    time.sleep(1)
+                    store_page_source(
+                        self.driver.page_source, "word_wise_dialog_dismissed_during_toolbar"
+                    )
+                    
+                    # Try again immediately to show toolbar after dismissing dialog
+                    self.driver.tap([(center_x, tap_y)])
+                    time.sleep(0.5)
+                    
+                    # Check if toolbar appeared
+                    toolbar_visible, _ = self._check_element_visibility(
+                        READING_TOOLBAR_IDENTIFIERS, "toolbar"
+                    )
+                    if toolbar_visible:
+                        logger.info("Toolbar appeared after dismissing Word Wise dialog")
+                        return self._click_close_book_button()
+                    
+                    # Also check with alternative toolbar identifiers
+                    toolbar_visible, _ = self._check_element_visibility(
+                        READING_TOOLBAR_STRATEGIES, "toolbar (alt check)"
+                    )
+                    if toolbar_visible:
+                        logger.info("Toolbar appeared (alt check) after dismissing Word Wise dialog")
+                        return self._click_close_book_button()
+                else:
+                    logger.error("NO THANKS button not found for Word Wise dialog")
 
             # Check for placemark ribbon which could be blocking our taps
             placemark_visible, _ = self._check_element_visibility(PLACEMARK_IDENTIFIERS, "placemark ribbon")
