@@ -86,3 +86,15 @@ LAST_READ_PAGE_DIALOG_BUTTONS = [
     (AppiumBy.ID, "android:id/button1"),  # YES button
     (AppiumBy.XPATH, "//android.widget.Button[@text='YES']"),  # Fallback using text
 ]
+
+# Word Wise dialog identifiers
+WORD_WISE_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Word Wise']"),  # Title text
+    (AppiumBy.ID, "com.amazon.kindle:id/wordwise_ftue_layout"),  # Dialog layout
+]
+
+# Word Wise "No Thanks" button
+WORD_WISE_NO_THANKS_BUTTON = [
+    (AppiumBy.ID, "android:id/button2"),  # NO THANKS button by ID
+    (AppiumBy.XPATH, "//android.widget.Button[@text='NO THANKS']"),  # Fallback using text
+]

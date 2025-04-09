@@ -166,15 +166,10 @@
   shell: "{{ android_home }}/platform-tools/adb kill-server && {{ android_home }}/platform-tools/adb start-server"
   become: yes
 
-- name: Wait for emulator to boot completely
-  shell: |
-    timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
-      echo "Waiting for emulator to fully boot..."
-      sleep 5
-    done'
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-  ignore_errors: yes
+# Skip waiting for emulator during provisioning as it's now managed by Flask server
+- name: Note about emulator
+  debug:
+    msg: "The Android emulator will be started by the Flask server for each user session, not during provisioning."
 
 - name: Ensure libhoudini directory exists
   file:
@@ -262,16 +257,10 @@
   ignore_errors: yes
   tags: apk
 
-- name: Ensure Android emulator is fully booted
-  shell: |
-    timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
-      echo "Waiting for emulator to fully boot..."
-      sleep 5
-    done'
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-  ignore_errors: yes
+# Skip waiting for emulator during provisioning as it's now managed by Flask server
+- name: Note about emulator boot
+  debug:
+    msg: "The Android emulator will be started by the Flask server for each user session, not during provisioning."
   tags: apk
 
 - name: Check ARM translation status
@@ -307,7 +296,7 @@
   ignore_errors: yes
   tags: apk
 
-- name: Prepare AVD for ARM compatibility
+- name: Prepare AVD for ARM compatibility and system performance
   shell: |
     # Only modify AVD config.ini, not the system partition
     AVD_CONFIG="{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
@@ -339,7 +328,13 @@
       CONFIG_CHANGES=1
     fi
 
-    # Only restart if we made changes
+    # Disable all system animations for better performance
+    {{ android_home }}/platform-tools/adb shell settings put global window_animation_scale 0.0
+    {{ android_home }}/platform-tools/adb shell settings put global transition_animation_scale 0.0
+    {{ android_home }}/platform-tools/adb shell settings put global animator_duration_scale 0.0
+    echo "Disabled all system animations for better performance"
+
+    # Only restart if we made config.ini changes
     if [ $CONFIG_CHANGES -eq 1 ]; then
       echo "Restarting emulator with new settings..."
       {{ android_home }}/platform-tools/adb emu kill
@@ -347,13 +342,8 @@
       
       # The AVD manager will start the emulator, no need to start it manually
       
-      # Wait for emulator to restart
-      echo "Waiting for emulator to restart..."
-      timeout 60s bash -c 'until {{ android_home }}/platform-tools/adb shell getprop sys.boot_completed | grep -m 1 "1"; do
-        sleep 2
-        echo -n "."
-      done'
-      echo " Complete!"
+      # Skip waiting for emulator during provisioning
+      echo "The emulator will be started by the Flask server for each user session"
     else
       echo "No AVD configuration changes needed"
     fi

@@ -129,6 +129,70 @@ class Driver:
             logger.error(f"Error handling HW overlays: {e}")
             return False
 
+    def _disable_animations(self) -> bool:
+        """Disable all system animations to improve reliability."""
+        try:
+            logger.info(f"Disabling system animations on device {self.device_id}")
+
+            # Disable all three types of Android animations
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "global",
+                    "window_animation_scale",
+                    "0.0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "global",
+                    "transition_animation_scale",
+                    "0.0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "global",
+                    "animator_duration_scale",
+                    "0.0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            logger.info("System animations disabled successfully")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to disable animations: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error disabling animations: {e}")
+            return False
+
     def _cleanup_old_sessions(self):
         """Clean up any existing UiAutomator2 sessions."""
         try:
@@ -299,6 +363,9 @@ class Driver:
 
             # Check and disable hardware overlays
             self._disable_hw_overlays()
+
+            # Disable all system animations
+            self._disable_animations()
 
             # Get Kindle launch activity
             app_activity = self._get_kindle_launch_activity()

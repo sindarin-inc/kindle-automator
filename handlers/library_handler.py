@@ -1478,32 +1478,44 @@ class LibraryHandler:
             button.click()
             logger.info("Clicked book button")
 
-            # Wait a moment for any animations
-            time.sleep(1)
-
-            # Verify the click worked by checking we're no longer in library view
+            # Wait for library view to disappear (we've left it)
             try:
-                self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                WebDriverWait(self.driver, 5).until_not(
+                    EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/library_root_view"))
+                )
+                logger.info("Successfully left library view")
+                return True
+            except TimeoutException:
                 logger.error("Still in library view after clicking book")
                 # Try clicking one more time
                 button.click()
-                time.sleep(1)
 
-                # Check again if we left the library view
+                # Wait again for library view to disappear
                 try:
-                    self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                    WebDriverWait(self.driver, 5).until_not(
+                        EC.presence_of_element_located(
+                            (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                        )
+                    )
+                    logger.info("Successfully left library view after second click")
+                    return True
+                except TimeoutException:
                     logger.error("Still in library view after second click, trying with parent container")
                     # Try clicking the parent container instead
                     parent_container.click()
-                    time.sleep(1)
-                except NoSuchElementException:
-                    logger.info("Successfully left library view after second click")
-                    pass
-            except NoSuchElementException:
-                logger.info("Successfully left library view")
-                pass
 
-            return True
+                    # Wait one more time for library view to disappear
+                    try:
+                        WebDriverWait(self.driver, 5).until_not(
+                            EC.presence_of_element_located(
+                                (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                            )
+                        )
+                        logger.info("Successfully left library view after clicking parent container")
+                        return True
+                    except TimeoutException:
+                        logger.error("Failed to leave library view after multiple attempts")
+                        return False
 
         except Exception as e:
             logger.error(f"Error finding book: {e}")

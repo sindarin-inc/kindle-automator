@@ -1,6 +1,7 @@
 # Kindle Automator Project Guide
 
 ## Commands
+
 - `make server`: Start the Flask server
 - `make deps`: Install dependencies using uv
 - `make lint`: Run isort, black, and flake8
@@ -8,7 +9,15 @@
 - `make reinstall`: Reinstall the application
 - `make kill-server`: Kill server and appium processes
 
+## Ansible Commands
+
+- `ansible-playbook ansible/provision.yml -t vnc`: Setup VNC server role
+- `ansible-playbook ansible/provision.yml -t android-x86`: Setup Android x86 role
+- `ansible-playbook ansible/provision.yml -t server`: Setup server role
+- `ansible-playbook ansible/deploy.yml`: Deploy Flask server to prod
+
 ## Code Style
+
 - **Formatting**: 110 character line length with Black
 - **Imports**: Standard library first, third-party second, local modules last
 - **Naming**: Snake case for functions/variables, PascalCase for classes
@@ -21,6 +30,7 @@
 - **Git commits**: Keep commit messages short and focused on a single change
 
 ## Project Structure
+
 - **server/**: Flask REST API (server.py is the entrypoint)
 - **views/**: App state management, UI interactions, state transitions
 - **handlers/**: Implements actions for different app states

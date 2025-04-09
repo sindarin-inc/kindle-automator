@@ -299,15 +299,17 @@ def handle_automator_response(server_instance):
                             # This comes from the auth handler's captured screenshot during captcha processing
                             screenshot_id = automator.state_machine.get_captcha_screenshot_id()
 
-                            # Default fallback URL
-                            image_url = "/screenshots/captcha.png"
+                            # Default fallback URL - use image endpoint for consistent access
+                            image_url = "/image/captcha"
 
                             # Use the captured screenshot ID if available
                             if screenshot_id:
                                 image_url = f"/image/{screenshot_id}"
                                 logger.info(f"Using captcha screenshot from auth handler: {image_url}")
                             else:
-                                logger.warning("No captcha screenshot ID found, using fallback URL")
+                                logger.info(
+                                    f"No captcha screenshot ID found, using fallback URL: {image_url}"
+                                )
 
                             # Check if we have an interactive captcha
                             interactive_captcha = False
