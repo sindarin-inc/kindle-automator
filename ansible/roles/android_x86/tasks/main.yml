@@ -183,28 +183,11 @@
     path: "{{ android_home }}/libhoudini/libhoudini.so"
   register: libhoudini_check
 
-- name: Download and install libhoudini for ARM translation
+- name: Download libhoudini for ARM translation
   shell: |
     wget -O {{ android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
-
-    # Remount system as read-write
-    {{ android_home }}/platform-tools/adb root
-    {{ android_home }}/platform-tools/adb remount
-
-    # Enable ARM translation
-    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
-
-    # Push libhoudini and set permissions
-    {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib/
-    {{ android_home }}/platform-tools/adb push {{ android_home }}/libhoudini/libhoudini.so /system/lib64/
-    {{ android_home }}/platform-tools/adb shell chmod 644 /system/lib/libhoudini.so
-    {{ android_home }}/platform-tools/adb shell chmod 644 /system/lib64/libhoudini.so
-
-    # Reboot to apply changes
-    {{ android_home }}/platform-tools/adb reboot
-
-    # Wait for reboot to complete
-    sleep 30
+    echo "Downloaded libhoudini.so for ARM translation"
+    echo "The Flask server will handle installation when the emulator is started"
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
@@ -233,24 +216,15 @@
   become: yes
   tags: apk
 
-- name: Check emulator status and capabilities
+- name: Check emulator capabilities (offline check)
   shell: |
     # Display emulator version and capabilities
     {{ android_home }}/emulator/emulator -version
 
-    # Check if the emulator supports ARM translation
+    # Check if the emulator supports acceleration
     {{ android_home }}/emulator/emulator -accel-check
-
-    # Display available ABIs
-    {{ android_home }}/platform-tools/adb shell getprop ro.product.cpu.abilist
-
-    # Check if libhoudini is installed
-    {{ android_home }}/platform-tools/adb shell ls -la /system/lib/libhoudini.so || echo "libhoudini.so not found"
-    {{ android_home }}/platform-tools/adb shell ls -la /system/lib64/libhoudini.so || echo "libhoudini.so not found in lib64"
-
-    # Check ARM translation status
-    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm
-    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm64
+    
+    echo "NOTE: Full capability checks will be performed by the Flask server when the emulator is actually running"
   become: yes
   environment:
     ANDROID_HOME: "{{ android_home }}"
@@ -263,40 +237,12 @@
     msg: "The Android emulator will be started by the Flask server for each user session, not during provisioning."
   tags: apk
 
-- name: Check ARM translation status
-  shell: |
-    # Ensure emulator is running and accessible
-    {{ android_home }}/platform-tools/adb wait-for-device
-
-    # Enable ARM translation in system settings
-    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
-    {{ android_home }}/platform-tools/adb shell settings put global package_verifier_enable 0
-
-    # Display current ARM translation status for debugging
-    echo "=== ARM Translation Status ==="
-    echo "Available ABIs:"
-    {{ android_home }}/platform-tools/adb shell getprop ro.product.cpu.abilist
-
-    echo "Native Bridge:"
-    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.native.bridge || echo "Not set"
-
-    echo "ARM on x86 Translation:"
-    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm || echo "Not set"
-    {{ android_home }}/platform-tools/adb shell getprop ro.dalvik.vm.isa.arm64 || echo "Not set"
-
-    echo "Checking for libhoudini:"
-    {{ android_home }}/platform-tools/adb shell ls -l /system/lib/libhoudini* 2>/dev/null || echo "Not found"
-
-    # Ensure system image has appropriate Google APIs with ARM translation
-    echo "=== System Image Details ==="
-    {{ android_home }}/platform-tools/adb shell getprop | grep -E 'build|abi|sdk|arm|bridge'
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-  ignore_errors: yes
+- name: Note about ARM translation status
+  debug:
+    msg: "ARM translation status will be checked when the emulator is started by the Flask server."
   tags: apk
 
-- name: Prepare AVD for ARM compatibility and system performance
+- name: Prepare AVD config for ARM compatibility
   shell: |
     # Only modify AVD config.ini, not the system partition
     AVD_CONFIG="{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
@@ -328,22 +274,8 @@
       CONFIG_CHANGES=1
     fi
 
-    # Disable all system animations for better performance
-    {{ android_home }}/platform-tools/adb shell settings put global window_animation_scale 0.0
-    {{ android_home }}/platform-tools/adb shell settings put global transition_animation_scale 0.0
-    {{ android_home }}/platform-tools/adb shell settings put global animator_duration_scale 0.0
-    echo "Disabled all system animations for better performance"
-
-    # Only restart if we made config.ini changes
     if [ $CONFIG_CHANGES -eq 1 ]; then
-      echo "Restarting emulator with new settings..."
-      {{ android_home }}/platform-tools/adb emu kill
-      sleep 5
-      
-      # The AVD manager will start the emulator, no need to start it manually
-      
-      # Skip waiting for emulator during provisioning
-      echo "The emulator will be started by the Flask server for each user session"
+      echo "Updated AVD config with ARM translation settings"
     else
       echo "No AVD configuration changes needed"
     fi
@@ -353,55 +285,15 @@
   ignore_errors: yes
   tags: apk
 
-- name: Install Kindle APK
+- name: Verify Kindle APK is ready for installation
   shell: |
-    # Ensure device is available
-    {{ android_home }}/platform-tools/adb wait-for-device
-
-    # Set permissive settings
-    {{ android_home }}/platform-tools/adb shell settings put global hidden_api_policy 1
-    {{ android_home }}/platform-tools/adb shell settings put global package_verifier_enable 0
-
-    # Enable ARM binary translation without changing system partition
-    # This uses pre-installed native bridge libraries in the Google Play system image
-
-    # Print current settings for debugging
-    echo "Current device configuration:"
-    {{ android_home }}/platform-tools/adb devices -l
-    {{ android_home }}/platform-tools/adb shell getprop ro.product.cpu.abilist
-
-    # Check if Kindle is already installed
-    if {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
-      echo "Kindle app is already installed, skipping installation"
+    # Verify APK exists
+    if [ ! -f "{{ android_home }}/apk/kindle.apk" ]; then
+      echo "Kindle APK not found at {{ android_home }}/apk/kindle.apk"
+      exit 1
     else
-      # Attempt to install Kindle APK
-      echo "Installing Kindle APK..."
-      
-      # Verify APK exists
-      if [ ! -f "{{ android_home }}/apk/kindle.apk" ]; then
-        echo "Kindle APK not found at {{ android_home }}/apk/kindle.apk"
-        exit 1
-      fi
-      
-      # Try simple install first
-      {{ android_home }}/platform-tools/adb install -r {{ android_home }}/apk/kindle.apk
-      
-      # If that failed, try with ARM ABI explicitly
-      if ! {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
-        echo "Standard install failed, trying with ARM compatibility mode..."
-        {{ android_home }}/platform-tools/adb install -r -t {{ android_home }}/apk/kindle.apk
-      fi
-      
-      # Check if it succeeded
-      if {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
-        echo "Kindle app installed successfully"
-      else
-        echo "====== INSTALLATION FAILED ======"
-        echo "Unable to install Kindle APK. Printing debug info:"
-        {{ android_home }}/platform-tools/adb shell getprop | grep -E 'abi|bridge|cpu'
-        {{ android_home }}/platform-tools/adb shell pm list packages
-        echo "Reinstalling system image with proper ARM translation may be required."
-      fi
+      echo "Kindle APK is ready at {{ android_home }}/apk/kindle.apk"
+      echo "The Flask server will handle APK installation when the emulator is started"
     fi
   become: yes
   environment:
@@ -409,18 +301,7 @@
   ignore_errors: yes
   tags: apk
 
-- name: Launch Kindle app
-  shell: |
-    # Check if Kindle is installed
-    if {{ android_home }}/platform-tools/adb shell pm list packages | grep -q com.amazon.kindle; then
-      echo "Launching Kindle app"
-      {{ android_home }}/platform-tools/adb shell monkey -p com.amazon.kindle -c android.intent.category.LAUNCHER 1
-    else
-      echo "Kindle app not found on device"
-      exit 1
-    fi
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-  ignore_errors: yes
+- name: Note about Kindle app launching
+  debug:
+    msg: "The Flask server will handle launching the Kindle app when the emulator is started."
   tags: apk

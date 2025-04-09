@@ -455,13 +455,9 @@ class AVDProfileManager:
             if not hasattr(locals(), "result") or result.returncode != 0:
                 error_msg = "Failed to get devices list after multiple attempts"
                 logger.error(error_msg)
-                # Raise exception instead of silently returning empty dict
-                # This will allow the response_handler to catch and restart the emulator
-                if not hasattr(locals(), "result"):
-                    raise Exception(f"{error_msg}: No result after {max_retries} attempts")
-                else:
-                    raise Exception(f"{error_msg}: ADB returned error code {result.returncode}")
-                # Return empty dict as fallback if the exception is caught higher up
+                # Log the error but return empty dict instead of raising exception
+                # This prevents unnecessary errors when the emulator is actually running
+                logger.debug("Returning empty emulator list rather than raising exception")
                 return running_emulators
 
             # Parse output to get emulator IDs

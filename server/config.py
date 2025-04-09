@@ -54,7 +54,7 @@ EMULATOR_APPROACHES = {
             "system_image": "system-images;android-30;google_apis;arm64-v8a",
             "avd_arch": "arm64-v8a",
             "command_prefix": [],
-            "command_options": ["-gpu", "swiftshader", "-no-window", "-verbose"],
+            "command_options": ["-gpu", "swiftshader", "-verbose"],
             "environment": {},
         },
         # Approach 2: Use x86_64 with arch translation
@@ -64,7 +64,7 @@ EMULATOR_APPROACHES = {
             "system_image": "system-images;android-30;google_apis;x86_64",
             "avd_arch": "x86_64",
             "command_prefix": ["arch", "-x86_64"],
-            "command_options": ["-no-window", "-gpu", "swiftshader", "-verbose"],
+            "command_options": ["-gpu", "swiftshader", "-verbose"],
             "environment": {},
         },
         # Approach 3: Use x86_64 with shell script
@@ -87,7 +87,6 @@ EMULATOR_APPROACHES = {
             "system_image": "system-images;android-30;google_apis_playstore;x86_64",
             "avd_arch": "x86_64",
             "command_options": [
-                "-no-window",
                 "-gpu",
                 "swiftshader_indirect",
                 "-accel",
