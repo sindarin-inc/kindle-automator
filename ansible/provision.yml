@@ -4,11 +4,11 @@
   become: yes
 
   roles:
-    - { role: provision, tags: base }
-    - { role: nginx, tags: nginx, when: "'kindle' in inventory_hostname" }
-    - { role: certbot, tags: certbot, when: "'kindle' in inventory_hostname" }
-    - { role: mezmo, tags: mezmo }
-    - { role: android_x86, tags: android-x86 }
-    # - { role: android_arm, tags: android-arm }
-    - { role: scrcpy, tags: scrcpy }
+    # - { role: provision, tags: base }
+    # - { role: nginx, tags: nginx, when: "'kindle' in inventory_hostname" }
+    # - { role: certbot, tags: certbot, when: "'kindle' in inventory_hostname" }
+    # - { role: mezmo, tags: mezmo }
+    # - { role: android_x86, tags: android-x86 }
+    # - { role: scrcpy, tags: scrcpy }
+    # - { role: vnc_server, tags: vnc }
     - { role: server, tags: server }

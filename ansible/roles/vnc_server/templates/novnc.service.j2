@@ -1,0 +1,18 @@
+[Unit]
+Description=noVNC Web VNC Client
+After=network.target vnc.service
+Requires=vnc.service
+
+[Service]
+Type=simple
+User={{ ansible_user }}
+# Use full path for websockify from system packages
+ExecStart=/usr/bin/websockify --web=/opt/novnc 6080 localhost:5900
+# Add options for better performance and security
+# --web-auth is available if you want to add HTTP basic auth later
+Environment=PYTHONPATH=/opt/novnc
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

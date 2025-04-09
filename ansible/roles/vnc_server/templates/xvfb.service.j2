@@ -1,0 +1,11 @@
+[Unit]
+Description=X Virtual Frame Buffer
+After=network.target
+
+[Service]
+User={{ ansible_user }}
+ExecStart=/usr/bin/Xvfb :1 -screen 0 {{ vnc_resolution|default('1280x800x24') }} -ac +extension GLX +render -noreset
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -393,7 +393,6 @@ class AVDProfileManager:
                         timeout=adb_timeout,
                     )
                     if version_check.returncode == 0:
-                        logger.debug(f"ADB server already running: {version_check.stdout.strip()}")
                         # Server is already running correctly, no need to restart it
                         logger.debug("ADB server is running correctly, skipping restart")
                     else:
@@ -1114,8 +1113,31 @@ class AVDProfileManager:
             env["ANDROID_AVD_HOME"] = self.avd_dir
             env["ANDROID_HOME"] = self.android_home
 
+            # Set DISPLAY for VNC if we're on Linux
+            if platform.system() != "Darwin":
+                env["DISPLAY"] = ":1"  # Use Xvfb display for VNC
+
+            # Check if we're on a headless server with VNC
+            vnc_launcher = "/usr/local/bin/vnc-emulator-launcher.sh"
+            use_vnc = os.path.exists(vnc_launcher) and platform.system() != "Darwin"
+
             # Build emulator command with architecture-specific options
-            if self.host_arch == "arm64":
+            if use_vnc:
+                # Use the VNC launcher script for headless server
+                logger.info(f"Using VNC-enabled emulator launcher for AVD {avd_name}")
+                emulator_cmd = [
+                    vnc_launcher,  # VNC launcher script
+                    "-avd",
+                    avd_name,
+                    "-no-audio",
+                    "-writable-system",
+                    "-no-snapshot",
+                    "-no-snapshot-load",
+                    "-no-snapshot-save",
+                    "-port",
+                    "5554",
+                ]
+            elif self.host_arch == "arm64":
                 # For ARM Macs, try to use a different approach
                 # Use arch command to force x86_64 mode via Rosetta 2
                 emulator_cmd = [
@@ -1124,7 +1146,6 @@ class AVDProfileManager:
                     f"{self.android_home}/emulator/emulator",
                     "-avd",
                     avd_name,
-                    "-no-window",
                     "-no-audio",
                     "-no-boot-anim",
                     "-no-metrics",
@@ -1147,7 +1168,6 @@ class AVDProfileManager:
                     f"{self.android_home}/emulator/emulator",
                     "-avd",
                     avd_name,
-                    "-no-window",
                     "-no-audio",
                     "-no-boot-anim",
                     "-no-metrics",
@@ -1322,6 +1342,17 @@ class AVDProfileManager:
                         # Only consider boot complete when we get "1" for sys.boot_completed
                         if boot_completed.stdout.strip() == "1":
                             logger.info(f"Emulator {expected_emulator_id} booted successfully")
+
+                            # If we're using VNC, log the connection info
+                            if use_vnc:
+                                logger.info("VNC server is available for captcha solving")
+                                logger.info(
+                                    "Connect to the server's IP address on port 5900 using any VNC client"
+                                )
+                                logger.info("For web access: http://SERVER_IP:6080/vnc.html")
+                                logger.info(
+                                    "For mobile app integration: http://SERVER_IP:6080/kindle_captcha.html?password=PASSWORD&autoconnect=true"
+                                )
 
                             # Additional verification - check for package manager
                             try:
