@@ -81,14 +81,39 @@ class ReaderHandler:
             logger.error(f"Failed to open book: {book_title}")
             return False
 
-        logger.info(f"Successfully clicked book: {book_title}")
+        logger.info(f"Successfully navigated away from library view")
 
-        # Check for fullscreen dialog that appears after downloading and opening a book
+        # Wait for the reading view to appear
         try:
-            full_screen_dialog = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located(
-                    (AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']")
-                )
+            # Custom wait condition to check for any of the reading view identifiers
+            def reading_view_present(driver):
+                for strategy in READING_VIEW_IDENTIFIERS:
+                    try:
+                        element = driver.find_element(strategy[0], strategy[1])
+                        if element:
+                            logger.info(f"Reading view detected with identifier: {strategy}")
+                            return True
+                    except NoSuchElementException:
+                        pass
+                return False
+
+            # Wait for any reading view element to appear (checks all strategies on each call)
+            WebDriverWait(self.driver, 10).until(reading_view_present)
+            logger.info("Reading view detected successfully")
+        except TimeoutException:
+            logger.error("Failed to detect reading view after 10 seconds")
+            store_page_source(self.driver.page_source, "failed_to_detect_reading_view")
+            return False
+        except Exception as e:
+            logger.error(f"Error while waiting for reading view: {e}")
+            store_page_source(self.driver.page_source, "error_waiting_for_reading_view")
+            return False
+
+        # Check for fullscreen dialog immediately without a long wait
+        try:
+            # Try to find the full screen dialog without waiting
+            full_screen_dialog = self.driver.find_element(
+                AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']"
             )
             logger.info("Detected full screen dialog")
 
@@ -96,32 +121,34 @@ class ReaderHandler:
             got_it_button = self.driver.find_element(AppiumBy.ID, "android:id/ok")
             got_it_button.click()
             logger.info("Clicked 'Got it' on full screen dialog")
-            time.sleep(1)  # Give time for the dialog to close
-        except TimeoutException:
-            logger.info("No full screen dialog detected, continuing...")
-        except NoSuchElementException:
-            logger.warning("Full screen dialog detected but couldn't find 'Got it' button")
 
-        # Wait for reading view to load
-        try:
-            logger.info("Waiting for reading view to load...")
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located(READING_VIEW_IDENTIFIERS[0]))
-            logger.info("Reading view loaded")
-
-            # Wait for page content to load
-            logger.info("Waiting for page content to load...")
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"))
+            # Verify the dialog was dismissed
+            WebDriverWait(self.driver, 2).until_not(
+                EC.presence_of_element_located(
+                    (AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']")
+                )
             )
-            logger.info("Page content loaded")
-
-            # Short wait for content to settle
-            time.sleep(1)
-
+        except NoSuchElementException:
+            # Dialog not present, continue immediately
+            logger.info("No full screen dialog detected, continuing immediately")
         except TimeoutException:
-            filepath = store_page_source(self.driver.page_source, "reading_view_timeout")
-            logger.error(f"Failed to wait for reading view or content, stored page source at: {filepath}")
-            return False
+            logger.warning("Full screen dialog may not have closed properly after clicking 'Got it'")
+        except Exception as e:
+            logger.warning(f"Error handling full screen dialog: {e}")
+
+        # We already confirmed the reading view is loaded above, so no need for additional waiting
+        # Just check for page content container which should be available immediately
+        try:
+            page_content = self.driver.find_element(
+                AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"
+            )
+            if page_content:
+                logger.info("Page content container is ready")
+        except NoSuchElementException:
+            logger.warning("Page content container not immediately found - app may still be loading content")
+        except Exception as e:
+            logger.error(f"Error checking for page content: {e}")
+            # Continue anyway as we already confirmed we're in reading view
 
         # Log the page source
         filepath = store_page_source(self.driver.page_source, "reading_view")
@@ -139,7 +166,6 @@ class ReaderHandler:
                         if pill.is_displayed():
                             pill.click()
                             logger.info("Clicked bottom sheet pill to dismiss")
-                            time.sleep(1)  # Wait for dismiss animation
 
                             # Verify bottom sheet is gone
                             try:
@@ -187,7 +213,6 @@ class ReaderHandler:
                                 if yes_button.is_displayed():
                                     yes_button.click()
                                     logger.info("Clicked YES button")
-                                    time.sleep(0.5)  # Wait for dialog to dismiss
                                     break
                             except NoSuchElementException:
                                 continue
@@ -216,7 +241,6 @@ class ReaderHandler:
                                 if yes_button.is_displayed():
                                     yes_button.click()
                                     logger.info("Clicked YES button")
-                                    time.sleep(0.5)  # Wait for dialog to dismiss
                                     break
                             except NoSuchElementException:
                                 continue
@@ -251,7 +275,6 @@ class ReaderHandler:
                 if not_now_button.is_displayed():
                     logger.info("Clicking 'NOT NOW' button on Goodreads auto-update dialog")
                     not_now_button.click()
-                    time.sleep(0.5)  # Wait for dialog to dismiss
 
                     # Verify dialog is gone
                     try:
@@ -268,7 +291,7 @@ class ReaderHandler:
             logger.info("No Goodreads auto-update dialog found - continuing")
         except Exception as e:
             logger.error(f"Error handling Goodreads dialog: {e}")
-            
+
         # Check for and dismiss Word Wise dialog
         try:
             # Store the page source before checking for the Word Wise dialog
@@ -294,8 +317,7 @@ class ReaderHandler:
                         if no_thanks_button.is_displayed():
                             logger.info("Clicking 'NO THANKS' button on Word Wise dialog")
                             no_thanks_button.click()
-                            time.sleep(0.5)  # Wait for dialog to dismiss
-                            
+
                             # Verify dialog is gone
                             try:
                                 # Check if the Word Wise dialog is still present
@@ -308,7 +330,7 @@ class ReaderHandler:
                                             break
                                     except NoSuchElementException:
                                         continue
-                                
+
                                 if still_visible:
                                     logger.error("Word Wise dialog still visible after clicking No Thanks")
                                     return False
@@ -316,8 +338,10 @@ class ReaderHandler:
                                     logger.info("Successfully dismissed Word Wise dialog")
                             except Exception as verify_e:
                                 logger.error(f"Error verifying Word Wise dialog dismissal: {verify_e}")
-                            
-                            filepath = store_page_source(self.driver.page_source, "word_wise_dialog_dismissed")
+
+                            filepath = store_page_source(
+                                self.driver.page_source, "word_wise_dialog_dismissed"
+                            )
                             logger.info(f"Stored Word Wise dialog dismissed page source at: {filepath}")
                             break
                     except NoSuchElementException:
@@ -896,7 +920,7 @@ class ReaderHandler:
                     logger.error("NOT NOW button not found for Goodreads dialog")
                 except Exception as e:
                     logger.error(f"Error clicking NOT NOW button: {e}")
-                    
+
             # Check for and dismiss Word Wise dialog
             word_wise_dialog_visible, _ = self._check_element_visibility(
                 WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
@@ -906,12 +930,12 @@ class ReaderHandler:
                 no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
                     WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
                 )
-                
+
                 if no_thanks_button_visible:
                     no_thanks_button.click()
                     logger.info("Clicked NO THANKS button")
                     time.sleep(1)
-                    
+
                     # Verify dialog is gone
                     still_visible, _ = self._check_element_visibility(
                         WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
@@ -920,7 +944,7 @@ class ReaderHandler:
                         logger.error("Word Wise dialog still visible after clicking NO THANKS")
                     else:
                         logger.info("Successfully dismissed Word Wise dialog")
-                    
+
                     filepath = store_page_source(
                         self.driver.page_source, "word_wise_dialog_dismissed_navigation"
                     )
@@ -961,7 +985,7 @@ class ReaderHandler:
                 logger.error("NOT NOW button not found for Goodreads dialog")
             except Exception as e:
                 logger.error(f"Error clicking NOT NOW button: {e}")
-                
+
         # Check if we're looking at the Word Wise dialog
         word_wise_dialog_visible, _ = self._check_element_visibility(
             WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
@@ -971,7 +995,7 @@ class ReaderHandler:
             no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
                 WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
             )
-            
+
             if no_thanks_button_visible:
                 no_thanks_button.click()
                 logger.info("Clicked NO THANKS button")
@@ -1073,7 +1097,7 @@ class ReaderHandler:
                     logger.error("NOT NOW button not found for Goodreads dialog")
                 except Exception as e:
                     logger.error(f"Error clicking NOT NOW button: {e}")
-                    
+
             # Check for Word Wise dialog
             word_wise_dialog_visible, _ = self._check_element_visibility(
                 WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
@@ -1083,19 +1107,17 @@ class ReaderHandler:
                 no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
                     WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
                 )
-                
+
                 if no_thanks_button_visible:
                     no_thanks_button.click()
                     logger.info("Clicked NO THANKS button")
                     time.sleep(1)
-                    store_page_source(
-                        self.driver.page_source, "word_wise_dialog_dismissed_during_toolbar"
-                    )
-                    
+                    store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_during_toolbar")
+
                     # Try again immediately to show toolbar after dismissing dialog
                     self.driver.tap([(center_x, tap_y)])
                     time.sleep(0.5)
-                    
+
                     # Check if toolbar appeared
                     toolbar_visible, _ = self._check_element_visibility(
                         READING_TOOLBAR_IDENTIFIERS, "toolbar"
@@ -1103,7 +1125,7 @@ class ReaderHandler:
                     if toolbar_visible:
                         logger.info("Toolbar appeared after dismissing Word Wise dialog")
                         return self._click_close_book_button()
-                    
+
                     # Also check with alternative toolbar identifiers
                     toolbar_visible, _ = self._check_element_visibility(
                         READING_TOOLBAR_STRATEGIES, "toolbar (alt check)"

@@ -90,7 +90,7 @@ LAST_READ_PAGE_DIALOG_BUTTONS = [
 # Word Wise dialog identifiers
 WORD_WISE_DIALOG_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[@text='Word Wise']"),  # Title text
-    (AppiumBy.ID, "com.amazon.kindle:id/wordwise_ftue_layout"),  # Dialog layout 
+    (AppiumBy.ID, "com.amazon.kindle:id/wordwise_ftue_layout"),  # Dialog layout
 ]
 
 # Word Wise "No Thanks" button
