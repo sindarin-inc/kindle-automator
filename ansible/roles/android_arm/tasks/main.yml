@@ -134,6 +134,16 @@
     {{ android_home }}/platform-tools/adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done'
   environment:
     ANDROID_HOME: "{{ android_home }}"
+    
+- name: Disable all system animations for better performance
+  shell: |
+    {{ android_home }}/platform-tools/adb shell settings put global window_animation_scale 0.0
+    {{ android_home }}/platform-tools/adb shell settings put global transition_animation_scale 0.0
+    {{ android_home }}/platform-tools/adb shell settings put global animator_duration_scale 0.0
+    echo "Disabled all system animations for better performance"
+  become: yes
+  environment:
+    ANDROID_HOME: "{{ android_home }}"
 
 - name: Install Kindle APK
   shell: |

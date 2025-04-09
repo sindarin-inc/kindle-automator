@@ -296,7 +296,7 @@
   ignore_errors: yes
   tags: apk
 
-- name: Prepare AVD for ARM compatibility
+- name: Prepare AVD for ARM compatibility and system performance
   shell: |
     # Only modify AVD config.ini, not the system partition
     AVD_CONFIG="{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
@@ -328,7 +328,13 @@
       CONFIG_CHANGES=1
     fi
 
-    # Only restart if we made changes
+    # Disable all system animations for better performance
+    {{ android_home }}/platform-tools/adb shell settings put global window_animation_scale 0.0
+    {{ android_home }}/platform-tools/adb shell settings put global transition_animation_scale 0.0
+    {{ android_home }}/platform-tools/adb shell settings put global animator_duration_scale 0.0
+    echo "Disabled all system animations for better performance"
+
+    # Only restart if we made config.ini changes
     if [ $CONFIG_CHANGES -eq 1 ]; then
       echo "Restarting emulator with new settings..."
       {{ android_home }}/platform-tools/adb emu kill
