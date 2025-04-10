@@ -116,6 +116,7 @@ class EmulatorManager:
         try:
             # Get list of running emulators from device discovery
             from views.core.device_discovery import DeviceDiscovery
+
             device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
             running_emulators = device_discovery.map_running_emulators()
             logger.info(f"Found running emulators: {running_emulators}")
@@ -373,6 +374,7 @@ class EmulatorManager:
                         logger.warning("Found arm64 architecture in AVD. Changing to x86_64...")
                         # Use AVD Creator to reconfigure
                         from views.core.avd_creator import AVDCreator
+
                         avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
                         avd_creator._configure_avd(avd_name)  # Force reconfiguration to x86_64
                 except Exception as e:

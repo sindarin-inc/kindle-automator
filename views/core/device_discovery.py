@@ -49,7 +49,9 @@ class DeviceDiscovery:
         """
         return email.replace("@", "_").replace(".", "_")
 
-    def find_running_emulator_for_email(self, email: str, profiles_index: Dict = None) -> Tuple[bool, Optional[str], Optional[str]]:
+    def find_running_emulator_for_email(
+        self, email: str, profiles_index: Dict = None
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Find a running emulator that's associated with a specific email.
 

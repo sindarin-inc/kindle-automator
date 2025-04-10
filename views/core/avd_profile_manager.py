@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import platform
+import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -428,11 +429,11 @@ class AVDProfileManager:
             Tuple[bool, str]: (success, avd_name)
         """
         return self.avd_creator.create_new_avd(email)
-        
+
     def is_styles_updated(self) -> bool:
         """
         Check if styles have been updated for the current profile.
-        
+
         Returns:
             bool: True if styles have been updated, False otherwise
         """
