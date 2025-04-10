@@ -624,6 +624,125 @@ class ReaderHandler:
         """Turn to the previous page."""
 
         return self.turn_page(-1)
+        
+    def _extract_screenshot_for_ocr(self, prefix):
+        """Take a screenshot and perform OCR on it.
+        
+        Args:
+            prefix: Prefix for the screenshot filename
+            
+        Returns:
+            tuple: (ocr_text, error_message) - OCR text if successful, error message if failed
+        """
+        try:
+            # Give the page a moment to render fully
+            time.sleep(0.5)
+            
+            # Take screenshot
+            screenshot_id = f"{prefix}_{int(time.time())}"
+            screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
+            self.driver.save_screenshot(screenshot_path)
+            
+            # Get OCR text from screenshot
+            ocr_text = None
+            error_msg = None
+            
+            try:
+                with open(screenshot_path, "rb") as img_file:
+                    image_data = img_file.read()
+                
+                # Import the OCR processor
+                from server.server import KindleOCR
+                ocr_text, error_msg = KindleOCR.process_ocr(image_data)
+                
+                # Delete the screenshot file after processing
+                try:
+                    os.remove(screenshot_path)
+                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
+                except Exception as del_e:
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing OCR: {e}")
+                error_msg = str(e)
+                
+            return ocr_text, error_msg
+            
+        except Exception as e:
+            logger.error(f"Error taking screenshot for OCR: {e}")
+            return None, str(e)
+            
+    def preview_page_forward(self):
+        """Preview the next page - turn forward, take OCR screenshot, then turn back."""
+        try:
+            logger.info("Previewing next page")
+            
+            # First turn the page forward
+            success = self.turn_page_forward()
+            if not success:
+                logger.error("Failed to turn page forward during preview")
+                return False, None
+                
+            # Extract text with OCR
+            ocr_text, error_msg = self._extract_screenshot_for_ocr("preview_next")
+                
+            # Now turn the page back to the original
+            back_success = self.turn_page_backward()
+            if not back_success:
+                logger.error("Failed to turn page back to original after preview")
+                # Still continue to return the OCR text
+            
+            if ocr_text:
+                logger.info("Successfully previewed next page and extracted OCR text")
+                return True, ocr_text
+            else:
+                logger.error(f"Failed to extract OCR text from preview: {error_msg}")
+                return False, None
+                
+        except Exception as e:
+            logger.error(f"Error during next page preview: {e}")
+            # Try to turn back to the original page if an error occurred
+            try:
+                self.turn_page_backward()
+            except Exception as turn_back_error:
+                logger.error(f"Failed to turn back to original page after error: {turn_back_error}")
+            return False, None
+            
+    def preview_page_backward(self):
+        """Preview the previous page - turn backward, take OCR screenshot, then turn forward."""
+        try:
+            logger.info("Previewing previous page")
+            
+            # First turn the page backward
+            success = self.turn_page_backward()
+            if not success:
+                logger.error("Failed to turn page backward during preview")
+                return False, None
+                
+            # Extract text with OCR
+            ocr_text, error_msg = self._extract_screenshot_for_ocr("preview_prev")
+                
+            # Now turn the page forward to the original
+            forward_success = self.turn_page_forward()
+            if not forward_success:
+                logger.error("Failed to turn page forward to original after preview")
+                # Still continue to return the OCR text
+            
+            if ocr_text:
+                logger.info("Successfully previewed previous page and extracted OCR text")
+                return True, ocr_text
+            else:
+                logger.error(f"Failed to extract OCR text from preview: {error_msg}")
+                return False, None
+                
+        except Exception as e:
+            logger.error(f"Error during previous page preview: {e}")
+            # Try to turn forward to the original page if an error occurred
+            try:
+                self.turn_page_forward()
+            except Exception as turn_forward_error:
+                logger.error(f"Failed to turn forward to original page after error: {turn_forward_error}")
+            return False, None
 
     def get_reading_progress(self, show_placemark=False):
         """Get reading progress information

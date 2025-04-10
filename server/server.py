@@ -683,6 +683,26 @@ class NavigationResource(Resource):
             success = server.automator.reader_handler.turn_page_forward()
         elif action == "previous_page":
             success = server.automator.reader_handler.turn_page_backward()
+        elif action == "preview_next_page":
+            success, ocr_text = server.automator.reader_handler.preview_page_forward()
+            # Add OCR text to response if available
+            if success and ocr_text:
+                response_data = {"success": True, "ocr_text": ocr_text}
+                # Get reading progress but don't show placemark
+                progress = server.automator.reader_handler.get_reading_progress(show_placemark=False)
+                if progress:
+                    response_data["progress"] = progress
+                return response_data, 200
+        elif action == "preview_previous_page":
+            success, ocr_text = server.automator.reader_handler.preview_page_backward()
+            # Add OCR text to response if available
+            if success and ocr_text:
+                response_data = {"success": True, "ocr_text": ocr_text}
+                # Get reading progress but don't show placemark
+                progress = server.automator.reader_handler.get_reading_progress(show_placemark=False)
+                if progress:
+                    response_data["progress"] = progress
+                return response_data, 200
         else:
             return {"error": f"Invalid action: {action}"}, 400
 
@@ -1741,6 +1761,21 @@ api.add_resource(
     endpoint="navigate_previous",
     resource_class_kwargs={"default_action": "previous_page"},
 )
+
+# Preview endpoints for navigation with OCR and return to original page
+api.add_resource(
+    NavigationResource,
+    "/preview-next",
+    endpoint="preview_next",
+    resource_class_kwargs={"default_action": "preview_next_page"},
+)
+api.add_resource(
+    NavigationResource,
+    "/preview-previous",
+    endpoint="preview_previous",
+    resource_class_kwargs={"default_action": "preview_previous_page"},
+)
+
 api.add_resource(BookOpenResource, "/open-book")
 api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
