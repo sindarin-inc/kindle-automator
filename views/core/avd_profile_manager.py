@@ -428,6 +428,17 @@ class AVDProfileManager:
             Tuple[bool, str]: (success, avd_name)
         """
         return self.avd_creator.create_new_avd(email)
+        
+    def is_styles_updated(self) -> bool:
+        """
+        Check if styles have been updated for the current profile.
+        
+        Returns:
+            bool: True if styles have been updated, False otherwise
+        """
+        if self.current_profile and "styles_updated" in self.current_profile:
+            return self.current_profile["styles_updated"]
+        return False
 
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """
