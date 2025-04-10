@@ -111,23 +111,39 @@ class ReaderHandler:
 
         # Check for fullscreen dialog immediately without a long wait
         try:
-            # Try to find the full screen dialog without waiting
-            full_screen_dialog = self.driver.find_element(
-                AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']"
-            )
-            logger.info("Detected full screen dialog")
-
-            # Click the "Got it" button
-            got_it_button = self.driver.find_element(AppiumBy.ID, "android:id/ok")
-            got_it_button.click()
-            logger.info("Clicked 'Got it' on full screen dialog")
-
-            # Verify the dialog was dismissed
-            WebDriverWait(self.driver, 2).until_not(
-                EC.presence_of_element_located(
-                    (AppiumBy.XPATH, "//android.widget.TextView[@text='Viewing full screen']")
-                )
-            )
+            # Use the existing identifiers from view_strategies.py
+            dialog_present = False
+            for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
+                try:
+                    dialog = self.driver.find_element(strategy, locator)
+                    if dialog.is_displayed():
+                        dialog_present = True
+                        logger.info(f"Detected full screen dialog with {strategy}: {locator}")
+                        break
+                except NoSuchElementException:
+                    continue
+            
+            if dialog_present:
+                # Try to find the "Got it" button using defined strategies
+                for strategy, locator in FULL_SCREEN_DIALOG_GOT_IT:
+                    try:
+                        got_it_button = self.driver.find_element(strategy, locator)
+                        if got_it_button.is_displayed():
+                            got_it_button.click()
+                            logger.info(f"Clicked 'Got it' button with {strategy}: {locator}")
+                            
+                            # Verify the dialog was dismissed
+                            try:
+                                WebDriverWait(self.driver, 2).until_not(
+                                    EC.presence_of_element_located(READING_VIEW_FULL_SCREEN_DIALOG[0])
+                                )
+                                logger.info("Full screen dialog successfully dismissed")
+                            except TimeoutException:
+                                logger.warning("Full screen dialog may not have closed properly after clicking 'Got it'")
+                            
+                            break
+                    except NoSuchElementException:
+                        continue
         except NoSuchElementException:
             # Dialog not present, continue immediately
             logger.info("No full screen dialog detected, continuing immediately")
