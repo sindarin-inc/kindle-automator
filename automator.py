@@ -137,7 +137,7 @@ class KindleAutomator:
 
                 # Check if we're in the app not responding state
                 if self.state_machine:
-                    # Update the current state to check for app not responding
+                    # Skip the diagnostic page source dump here since it's redundant
                     current_state = self.state_machine.update_current_state()
                     if current_state == AppState.APP_NOT_RESPONDING:
                         logger.info("Detected app not responding dialog - restarting app")

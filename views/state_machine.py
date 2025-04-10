@@ -219,14 +219,15 @@ class KindleStateMachine:
             AppState: The current state of the app
         """
         try:
-            # Store page source before determining state
-            source = self.driver.page_source
-            filepath = store_page_source(source, "before_state_detection")
-            logger.info(f"Stored page source before state detection at: {filepath}")
-
-            # Get current state from view inspector
+            # Get current state from view inspector without storing page source first
+            # Only store page source for unknown or ambiguous states
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
+
+            # For HOME and LIBRARY states, trust the detection and return immediately
+            # These are the most common states and we're confident in our detection
+            if self.current_state in [AppState.HOME, AppState.LIBRARY]:
+                return self.current_state
 
             # If we detect READING but we've just clicked close book, make a special check
             if self.current_state == AppState.READING:
@@ -256,13 +257,6 @@ class KindleStateMachine:
                                     f"Found library element {strategy}={locator} despite READING state detection"
                                 )
                                 library_elements_found = True
-                                # Save additional page source for debugging
-                                filepath = store_page_source(
-                                    self.driver.page_source, "reading_with_library_elements"
-                                )
-                                logger.info(
-                                    f"Stored page source with reading/library conflict at: {filepath}"
-                                )
                                 break
                         except Exception:
                             continue
@@ -273,7 +267,7 @@ class KindleStateMachine:
                 else:
                     logger.info(f"Confirmed READING state with {reading_elements_count} strong indicators")
 
-            # If unknown, try to detect specific states
+            # If unknown, try to detect specific states, but only store debug info for unknown state
             if self.current_state == AppState.UNKNOWN:
                 # Store page source for debugging
                 source = self.driver.page_source
@@ -285,12 +279,9 @@ class KindleStateMachine:
                     self.current_state = AppState.LIBRARY
                     logger.info("Detected LIBRARY state from library handler")
 
-                # Check for reading view dialog elements
+                # Check for reading view dialog elements (simplified)
                 try:
-                    from views.reading.view_strategies import (
-                        GO_TO_LOCATION_DIALOG_IDENTIFIERS,
-                        READING_VIEW_IDENTIFIERS,
-                    )
+                    from views.reading.view_strategies import GO_TO_LOCATION_DIALOG_IDENTIFIERS
 
                     # Check for "Go to that location?" dialog
                     for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
@@ -302,18 +293,6 @@ class KindleStateMachine:
                                 break
                         except:
                             continue
-
-                    # Check for other reading view elements if state is still unknown
-                    if self.current_state == AppState.UNKNOWN:
-                        for strategy, locator in READING_VIEW_IDENTIFIERS:
-                            try:
-                                element = self.driver.find_element(strategy, locator)
-                                if element.is_displayed():
-                                    self.current_state = AppState.READING
-                                    logger.info("Detected READING state from reading view elements")
-                                    break
-                            except:
-                                continue
                 except Exception as e:
                     logger.error(f"Error checking for reading state: {e}")
 

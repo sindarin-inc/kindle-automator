@@ -81,30 +81,24 @@ class ViewInspector:
         """Check if a specific tab is currently selected."""
         logger.info(f"   Checking if {tab_name} tab is selected...")
 
-        # Additional logging and page source capture for detailed debugging
-        if tab_name == "LIBRARY":
-            # Save page source when checking for LIBRARY tab selection
-            filepath = store_page_source(self.driver.page_source, "library_tab_check")
-            logger.info(f"Stored page source during library tab check at: {filepath}")
-
-            # Directly check for library view identifiers to aid debugging
-            for strategy, locator in LIBRARY_VIEW_IDENTIFIERS:
+        # Try the most reliable tab selection strategy first (second strategy in the list)
+        try:
+            by, value = (AppiumBy.XPATH, f"//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/{tab_name.lower()}_tab']//android.widget.TextView[@selected='true']")
+            element = self.driver.find_element(by, value)
+            if element.is_displayed():
+                logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
+                return True
+        except NoSuchElementException:
+            # Only try additional strategies if the primary one fails
+            for strategy in get_tab_selection_strategies(tab_name):
                 try:
-                    element = self.driver.find_element(strategy, locator)
-                    # if element.is_displayed():
-                    #     logger.info(f"   Found library view element: {strategy}={locator}")
+                    by, value = strategy
+                    element = self.driver.find_element(by, value)
+                    if element.is_displayed():
+                        logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
+                        return True
                 except NoSuchElementException:
-                    pass
-
-        for strategy in get_tab_selection_strategies(tab_name):
-            try:
-                by, value = strategy
-                element = self.driver.find_element(by, value)
-                if element.is_displayed():
-                    logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
-                    return True
-            except NoSuchElementException:
-                continue
+                    continue
 
         return False
 
@@ -415,33 +409,8 @@ class ViewInspector:
             # If LIBRARY tab is not selected, check if HOME tab is selected
             if self._is_tab_selected("HOME"):
                 logger.info("   HOME tab is selected, we are in home view not library view")
-                filepath = store_page_source(self.driver.page_source, "home_tab_selected")
-                logger.info(f"Stored page source with home tab selected at: {filepath}")
-                # We need to exclude library_root_view for home view since it's shared
-                for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
-                    # Skip the root view since it's the same for home and library
-                    if "library_root_view" in locator:
-                        continue
-                    try:
-                        element = self.driver.find_element(strategy, locator)
-                        if element.is_displayed():
-                            logger.info(f"   Found library-specific element: {strategy}={locator}")
-                            found_library_element = True
-                    except NoSuchElementException:
-                        pass
-
-                # Check if home-specific elements are present
-                try:
-                    home_element = self.driver.find_element(
-                        AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/home_screenlet_root']"
-                    )
-                    if home_element.is_displayed():
-                        logger.info("   Found home-specific element: home_screenlet_root")
-                        filepath = store_page_source(self.driver.page_source, "home_view_detected")
-                        logger.info(f"Stored page source with home view detected at: {filepath}")
-                        return AppView.HOME
-                except NoSuchElementException:
-                    pass
+                # If HOME tab is selected, we're confident we're in HOME view - return immediately
+                return AppView.HOME
 
             # Final fallback: check specific elements if tab detection wasn't conclusive
             for strategy, locator in LIBRARY_VIEW_DETECTION_STRATEGIES:
