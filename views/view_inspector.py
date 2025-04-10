@@ -63,14 +63,42 @@ class ViewInspector:
     def ensure_app_foreground(self):
         """Ensures the Kindle app is in the foreground"""
         try:
+            # Get device ID if available from the automator
+            device_id = None
+            if self.automator and hasattr(self.automator, "device_id"):
+                device_id = self.automator.device_id
+            
             logger.info(f"Bringing {self.app_package} to foreground...")
-            subprocess.run(
-                ["adb", "shell", f"am start -n {self.app_package}/{self.app_activity}"],
+            
+            # Build the ADB command based on whether we have a device ID
+            cmd = ["adb"]
+            if device_id:
+                cmd.extend(["-s", device_id])
+            cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
+            
+            # Run the command
+            result = subprocess.run(
+                cmd,
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            time.sleep(0.5)  # Reduced from 2s to 0.5s
+            logger.info(f"App launch command result: {result.stdout.strip()}")
+            
+            # Give the app a moment to fully initialize
+            time.sleep(2)  # Increased to 2s to ensure app has time to launch
+            
+            # Verify app is now in foreground by checking current activity
+            try:
+                current_activity = self.driver.current_activity
+                logger.info(f"After launch, current activity is: {current_activity}")
+                if current_activity.startswith("com.amazon.kindle"):
+                    logger.info("Successfully verified Kindle app is in foreground")
+                else:
+                    logger.warning(f"App launch verification failed - current activity is: {current_activity}")
+            except Exception as e:
+                logger.warning(f"Could not verify app launch via activity check: {e}")
+            
             logger.info("App brought to foreground")
             return True
         except subprocess.CalledProcessError as e:

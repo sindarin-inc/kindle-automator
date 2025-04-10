@@ -269,7 +269,32 @@ class KindleStateMachine:
 
             # If unknown, try to detect specific states, but only store debug info for unknown state
             if self.current_state == AppState.UNKNOWN:
-                # Store page source for debugging
+                # Check if we're even in the Kindle app by checking current activity
+                try:
+                    current_activity = self.driver.current_activity
+                    logger.info(f"Current activity: {current_activity}")
+                    
+                    # If the current activity is not Kindle (e.g. NexusLauncherActivity), the app has quit
+                    if not current_activity.startswith("com.amazon.kindle"):
+                        logger.warning("App has quit or was not launched - current activity is not Kindle")
+                        
+                        # Try to relaunch the app
+                        if self.view_inspector.ensure_app_foreground():
+                            logger.info("Successfully relaunched Kindle app, waiting for it to initialize...")
+                            time.sleep(2)  # Wait for app to fully initialize
+                            
+                            # Update the state again after relaunch
+                            self.current_state = self._get_current_state()
+                            logger.info(f"After app relaunch, state is: {self.current_state}")
+                            
+                            # If we're now in a known state, return it
+                            if self.current_state != AppState.UNKNOWN:
+                                return self.current_state
+                    
+                except Exception as e:
+                    logger.error(f"Error checking current activity: {e}")
+                
+                # Store page source for debugging if still unknown
                 source = self.driver.page_source
                 filepath = store_page_source(source, "unknown_state")
                 logger.info(f"Stored unknown state page source at: {filepath}")
