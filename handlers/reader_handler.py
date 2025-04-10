@@ -18,6 +18,11 @@ from views.reading.interaction_strategies import (
     ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
     BOTTOM_SHEET_IDENTIFIERS,
     CLOSE_BOOK_STRATEGIES,
+    DOWNLOAD_LIMIT_CHECKEDTEXTVIEW,
+    DOWNLOAD_LIMIT_DEVICE_LIST,
+    DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
+    DOWNLOAD_LIMIT_FIRST_DEVICE,
+    DOWNLOAD_LIMIT_REMOVE_BUTTON,
     FULL_SCREEN_DIALOG_GOT_IT,
     LAST_READ_PAGE_DIALOG_BUTTONS,
     READING_TOOLBAR_STRATEGIES,
@@ -64,6 +69,132 @@ class ReaderHandler:
         # Initialize profile manager
         self.profile_manager = AVDProfileManager()
 
+    def handle_download_limit_dialog(self) -> bool:
+        """Handle the 'Download Limit Reached' dialog by selecting the top device and clicking 'Remove and Download'.
+
+        Returns:
+            bool: True if successfully handled the dialog, False otherwise.
+        """
+        try:
+            # Check if we're on the download limit dialog
+            dialog_found = False
+            for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        dialog_found = True
+                        logger.info("Found Download Limit Reached dialog")
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not dialog_found:
+                logger.info("Download Limit Reached dialog not found")
+                return False
+
+            # Store the page source for debugging
+            store_page_source(self.driver.page_source, "download_limit_dialog_found")
+
+            # Find and tap the first device in the list
+            first_device_tapped = False
+            for strategy, locator in DOWNLOAD_LIMIT_FIRST_DEVICE:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        element.click()
+                        logger.info("Tapped the first device in the list")
+                        first_device_tapped = True
+                        time.sleep(0.5)  # Short wait for UI update
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not first_device_tapped:
+                logger.warning("Could not tap the first device in the list - trying alternative method")
+                # Try an alternative approach if we can't find the specific first device element
+                device_list_found = False
+                for strategy, locator in DOWNLOAD_LIMIT_DEVICE_LIST:
+                    try:
+                        device_list = self.driver.find_element(strategy, locator)
+                        if device_list and device_list.is_displayed():
+                            device_list_found = True
+                            # Find all CheckedTextViews in the list
+                            try:
+                                devices = self.driver.find_elements(*DOWNLOAD_LIMIT_CHECKEDTEXTVIEW[0])
+                                if devices and len(devices) > 0:
+                                    # Click the first device
+                                    devices[0].click()
+                                    logger.info("Tapped the first CheckedTextView device")
+                                    first_device_tapped = True
+                                    time.sleep(0.5)  # Short wait for UI update
+                                else:
+                                    logger.error("No devices found in the list")
+                            except Exception as e:
+                                logger.error(f"Error finding CheckedTextViews: {e}")
+                        break
+                    except NoSuchElementException:
+                        continue
+
+                if not device_list_found:
+                    logger.error("Could not find the device list")
+                    return False
+
+            # Verify the first device is checked
+            store_page_source(self.driver.page_source, "download_limit_after_device_tap")
+
+            # Find and tap the "Remove and Download" button
+            remove_button_tapped = False
+            for strategy, locator in DOWNLOAD_LIMIT_REMOVE_BUTTON:
+                try:
+                    button = self.driver.find_element(strategy, locator)
+                    if button and button.is_displayed():
+                        if button.is_enabled():
+                            button.click()
+                            logger.info("Tapped the Remove and Download button")
+                            remove_button_tapped = True
+                            time.sleep(2)  # Wait for download to start
+                            break
+                        else:
+                            logger.warning(
+                                "Remove and Download button is disabled - make sure a device is selected"
+                            )
+                            # Try tapping the first device again to ensure it's selected
+                            try:
+                                for strategy, locator in DOWNLOAD_LIMIT_FIRST_DEVICE:
+                                    element = self.driver.find_element(strategy, locator)
+                                    if element and element.is_displayed():
+                                        element.click()
+                                        logger.info("Retapped the first device to ensure selection")
+                                        time.sleep(1)  # Longer wait to ensure UI updates
+                                        # Try the button again
+                                        if button.is_enabled():
+                                            button.click()
+                                            logger.info("Tapped the now-enabled Remove and Download button")
+                                            remove_button_tapped = True
+                                            time.sleep(2)  # Wait for download to start
+                                            break
+                            except Exception as retry_e:
+                                logger.error(f"Error retapping device: {retry_e}")
+                except NoSuchElementException:
+                    continue
+
+            if not remove_button_tapped:
+                logger.error("Could not tap the Remove and Download button")
+                return False
+
+            # Check if the dialog has been dismissed
+            store_page_source(self.driver.page_source, "download_limit_after_remove_tap")
+
+            # Wait for reading view to appear or another dialog
+            time.sleep(5)  # Give it time to download and show reading view
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error handling download limit dialog: {e}")
+            store_page_source(self.driver.page_source, "download_limit_error")
+            return False
+
     def open_book(self, book_title: str, show_placemark: bool = False) -> bool:
         """Open a book in the library and wait for reading view to load.
 
@@ -86,27 +217,76 @@ class ReaderHandler:
         # Wait for the reading view to appear
         try:
             # Custom wait condition to check for any of the reading view identifiers
-            def reading_view_present(driver):
+            # or for the download limit dialog
+            def reading_view_or_download_limit_present(driver):
+                # First check for download limit dialog
+                for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
+                    try:
+                        element = driver.find_element(strategy, locator)
+                        if element and element.is_displayed():
+                            logger.info(
+                                f"Download Limit dialog detected with identifier: {strategy}={locator}"
+                            )
+                            return "download_limit"
+                    except NoSuchElementException:
+                        pass
+
+                # Then check for reading view
                 for strategy in READING_VIEW_IDENTIFIERS:
                     try:
                         element = driver.find_element(strategy[0], strategy[1])
                         if element:
                             logger.info(f"Reading view detected with identifier: {strategy}")
-                            return True
+                            return "reading_view"
                     except NoSuchElementException:
                         pass
                 return False
 
-            # Wait for any reading view element to appear (checks all strategies on each call)
-            WebDriverWait(self.driver, 10).until(reading_view_present)
-            logger.info("Reading view detected successfully")
+            # Wait for either reading view element or download limit dialog to appear
+            result = WebDriverWait(self.driver, 10).until(reading_view_or_download_limit_present)
+
+            # Handle download limit dialog if it appeared
+            if result == "download_limit":
+                logger.info("Download Limit dialog detected - handling it")
+                if self.handle_download_limit_dialog():
+                    logger.info("Successfully handled Download Limit dialog, waiting for reading view")
+                    # Now wait for the reading view after handling the dialog
+                    try:
+
+                        def reading_view_present(driver):
+                            for strategy in READING_VIEW_IDENTIFIERS:
+                                try:
+                                    element = driver.find_element(strategy[0], strategy[1])
+                                    if element:
+                                        logger.info(f"Reading view detected with identifier: {strategy}")
+                                        return True
+                                except NoSuchElementException:
+                                    pass
+                            return False
+
+                        # Wait for reading view now that download limit is handled
+                        WebDriverWait(self.driver, 30).until(
+                            reading_view_present
+                        )  # Longer timeout for download
+                        logger.info("Reading view detected after handling download limit")
+                    except TimeoutException:
+                        logger.error("Failed to detect reading view after handling download limit")
+                        store_page_source(
+                            self.driver.page_source, "failed_to_detect_reading_view_after_download"
+                        )
+                        return False
+                else:
+                    logger.error("Failed to handle Download Limit dialog")
+                    return False
+            else:
+                logger.info("Reading view detected successfully")
         except TimeoutException:
-            logger.error("Failed to detect reading view after 10 seconds")
-            store_page_source(self.driver.page_source, "failed_to_detect_reading_view")
+            logger.error("Failed to detect reading view or download limit dialog after 10 seconds")
+            store_page_source(self.driver.page_source, "failed_to_detect_reading_view_or_download_limit")
             return False
         except Exception as e:
-            logger.error(f"Error while waiting for reading view: {e}")
-            store_page_source(self.driver.page_source, "error_waiting_for_reading_view")
+            logger.error(f"Error while waiting for reading view or download limit: {e}")
+            store_page_source(self.driver.page_source, "error_waiting_for_reading_view_or_download_limit")
             return False
 
         # Check for fullscreen dialog immediately without a long wait

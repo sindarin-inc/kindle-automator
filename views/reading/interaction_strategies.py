@@ -5,6 +5,35 @@ PAGE_TURN_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_content_view"),  # Main content area for tapping
 ]
 
+# Download limit reached dialog elements
+DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='DOWNLOAD LIMIT REACHED']"),
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_title"),
+]
+
+DOWNLOAD_LIMIT_DEVICE_LIST = [
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_device_list"),
+]
+
+DOWNLOAD_LIMIT_FIRST_DEVICE = [
+    (
+        AppiumBy.XPATH,
+        "//android.widget.ListView[@resource-id='com.amazon.kindle:id/rlr_device_list']/android.widget.LinearLayout[1]",
+    ),
+]
+
+DOWNLOAD_LIMIT_CHECKEDTEXTVIEW = [
+    (
+        AppiumBy.XPATH,
+        "//android.widget.CheckedTextView[@resource-id='com.amazon.kindle:id/rlr_list_device_name']",
+    ),
+]
+
+DOWNLOAD_LIMIT_REMOVE_BUTTON = [
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND DOWNLOAD']"),
+]
+
 # UI elements
 READING_TOOLBAR_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_toolbar"),
