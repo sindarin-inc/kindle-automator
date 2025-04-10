@@ -825,50 +825,128 @@ class BookOpenResource(Resource):
         # Reload the current state to be sure
         server.automator.state_machine.update_current_state()
         current_state = server.automator.state_machine.current_state
-        # Check if we're already in the reading state with the requested book
-        if current_state != AppState.READING and server.current_book:
+        
+        # IMPORTANT: For new app installation or first run, current_book may be None
+        # even though we're already in reading state - we need to check that too
+        
+        # If we're already in READING state, we should NOT close the book - get the title!
+        if current_state == AppState.READING:
+            # First, check if we have current_book set
+            if server.current_book:
+                # Compare with the requested book
+                normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
+                normalized_current_title = "".join(
+                    c for c in server.current_book if c.isalnum() or c.isspace()
+                ).lower()
+
+                logger.info(
+                    f"Title comparison: requested='{normalized_request_title}', current='{normalized_current_title}'"
+                )
+
+                # Try exact match first
+                if normalized_request_title == normalized_current_title:
+                    logger.info(f"Already reading book (exact match): {book_title}, returning current state")
+                    return capture_book_state(already_open=True)
+
+                # For longer titles, try to match the first 30+ characters or check if one title contains the other
+                if (
+                    len(normalized_request_title) > 30
+                    and len(normalized_current_title) > 30
+                    and (
+                        normalized_request_title[:30] == normalized_current_title[:30]
+                        or normalized_request_title in normalized_current_title
+                        or normalized_current_title in normalized_request_title
+                    )
+                ):
+                    logger.info(f"Already reading book (partial match): {book_title}, returning current state")
+                    return capture_book_state(already_open=True)
+                    
+                # If we're in reading state but current_book doesn't match, try to get book title from UI
+                logger.info(f"In reading state but current book '{server.current_book}' doesn't match requested '{book_title}'")
+                try:
+                    # Try to get the current book title from the reader UI
+                    current_title_from_ui = server.automator.reader_handler.get_book_title()
+                    if current_title_from_ui:
+                        logger.info(f"Got book title from UI: '{current_title_from_ui}'")
+                        
+                        # Compare with the requested book
+                        normalized_ui_title = "".join(c for c in current_title_from_ui if c.isalnum() or c.isspace()).lower()
+                        
+                        # Check exact match with UI title
+                        if normalized_request_title == normalized_ui_title:
+                            logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
+                            # Update server's current book tracking
+                            server.set_current_book(current_title_from_ui)
+                            return capture_book_state(already_open=True)
+                            
+                        # Check partial match with UI title
+                        if (
+                            len(normalized_request_title) > 30
+                            and len(normalized_ui_title) > 30
+                            and (
+                                normalized_request_title[:30] == normalized_ui_title[:30]
+                                or normalized_request_title in normalized_ui_title
+                                or normalized_ui_title in normalized_request_title
+                            )
+                        ):
+                            logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
+                            # Update server's current book tracking
+                            server.set_current_book(current_title_from_ui)
+                            return capture_book_state(already_open=True)
+                except Exception as e:
+                    logger.warning(f"Failed to get book title from UI: {e}")
+                
+                logger.info(
+                    f"No match found for book: {book_title} ({normalized_request_title}) != {server.current_book}, transitioning to library"
+                )
+            else:
+                # We're in reading state but don't have current_book set - try to get it from UI
+                try:
+                    # Try to get the current book title from the reader UI
+                    current_title_from_ui = server.automator.reader_handler.get_book_title()
+                    if current_title_from_ui:
+                        logger.info(f"In reading state with no tracked book. Got book title from UI: '{current_title_from_ui}'")
+                        
+                        # Compare with the requested book
+                        normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
+                        normalized_ui_title = "".join(c for c in current_title_from_ui if c.isalnum() or c.isspace()).lower()
+                        
+                        # Check exact match with UI title
+                        if normalized_request_title == normalized_ui_title:
+                            logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
+                            # Update server's current book tracking
+                            server.set_current_book(current_title_from_ui)
+                            return capture_book_state(already_open=True)
+                            
+                        # Check partial match with UI title
+                        if (
+                            len(normalized_request_title) > 30
+                            and len(normalized_ui_title) > 30
+                            and (
+                                normalized_request_title[:30] == normalized_ui_title[:30]
+                                or normalized_request_title in normalized_ui_title
+                                or normalized_ui_title in normalized_request_title
+                            )
+                        ):
+                            logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
+                            # Update server's current book tracking
+                            server.set_current_book(current_title_from_ui)
+                            return capture_book_state(already_open=True)
+                except Exception as e:
+                    logger.warning(f"Failed to get book title from UI: {e}")
+        # Not in reading state but have tracked book - clear it
+        elif server.current_book:
             logger.info(
                 f"Not in reading state: {current_state}, but have book '{server.current_book}' tracked - clearing it"
             )
             server.clear_current_book()
 
         logger.info(f"Reloaded current state: {current_state}")
-        if current_state == AppState.READING and server.current_book:
-            # Normalize titles for comparison by removing special characters
-            normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
-            normalized_current_title = "".join(
-                c for c in server.current_book if c.isalnum() or c.isspace()
-            ).lower()
-
-            logger.info(
-                f"Title comparison: requested='{normalized_request_title}', current='{normalized_current_title}'"
-            )
-
-            # Try exact match first
-            if normalized_request_title == normalized_current_title:
-                logger.info(f"Already reading book (exact match): {book_title}, returning current state")
-                return capture_book_state(already_open=True)
-
-            # For longer titles, try to match the first 30+ characters or check if one title contains the other
-            if (
-                len(normalized_request_title) > 30
-                and len(normalized_current_title) > 30
-                and (
-                    normalized_request_title[:30] == normalized_current_title[:30]
-                    or normalized_request_title in normalized_current_title
-                    or normalized_current_title in normalized_request_title
-                )
-            ):
-                logger.info(f"Already reading book (partial match): {book_title}, returning current state")
-                return capture_book_state(already_open=True)
-
-            logger.info(
-                f"No match found for book: {book_title} ({normalized_request_title}) != {server.current_book} ({normalized_current_title}), transitioning to library"
-            )
-        else:
-            logger.info(
-                f"Not already reading book: {book_title} != {server.current_book}, transitioning from {current_state} to library"
-            )
+        
+        # If we get here, we need to go to library and open the book
+        logger.info(
+            f"Not already reading requested book: {book_title} != {server.current_book}, transitioning from {current_state} to library"
+        )
         # If we're not already reading the requested book, transition to library and open it
         if server.automator.state_machine.transition_to_library(server=server):
             success = server.automator.reader_handler.open_book(book_title, show_placemark=show_placemark)
