@@ -112,7 +112,18 @@ class ViewInspector:
         """Check if a specific tab is currently selected."""
         logger.info(f"   Checking if {tab_name} tab is selected...")
 
+        # Check for cached tab selection to avoid redundant checks
+        cache_key = f"{tab_name}_tab_selected"
+        if hasattr(self, "_tab_check_time") and hasattr(self, cache_key):
+            # Use cached result if it's less than 0.5 seconds old
+            time_since_check = time.time() - self._tab_check_time.get(tab_name, 0)
+            if time_since_check < 0.5:
+                cached_result = getattr(self, cache_key)
+                logger.info(f"   Using cached {tab_name} tab selection from {time_since_check:.2f}s ago: {cached_result}")
+                return cached_result
+
         # Try the most reliable tab selection strategy first (second strategy in the list)
+        result = False
         try:
             by, value = (
                 AppiumBy.XPATH,
@@ -121,7 +132,7 @@ class ViewInspector:
             element = self.driver.find_element(by, value)
             if element.is_displayed():
                 logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
-                return True
+                result = True
         except NoSuchElementException:
             # Only try additional strategies if the primary one fails
             for strategy in get_tab_selection_strategies(tab_name):
@@ -130,11 +141,18 @@ class ViewInspector:
                     element = self.driver.find_element(by, value)
                     if element.is_displayed():
                         logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
-                        return True
+                        result = True
+                        break
                 except NoSuchElementException:
                     continue
-
-        return False
+        
+        # Cache the result
+        if not hasattr(self, "_tab_check_time"):
+            self._tab_check_time = {}
+        self._tab_check_time[tab_name] = time.time()
+        setattr(self, cache_key, result)
+        
+        return result
 
     def _dump_page_source(self):
         """Dump the page source for debugging"""
@@ -239,7 +257,28 @@ class ViewInspector:
         """Determine the current view based on visible elements."""
         try:
             logger.info("Determining current view...")
-
+            
+            # Check for HOME tab first as it's the most common state
+            # This helps avoid all the other expensive checks for common cases
+            try:
+                # Check if we have a cached current view (valid for 1 second)
+                if hasattr(self, "_current_view_cache_time") and hasattr(self, "_current_view_cache"):
+                    time_since_check = time.time() - self._current_view_cache_time
+                    if time_since_check < 1.0:
+                        cached_view = self._current_view_cache
+                        logger.info(f"Using cached view from {time_since_check:.2f}s ago: {cached_view}")
+                        return cached_view
+                        
+                # Check for HOME tab first since it's the most common state
+                if self._is_tab_selected("HOME"):
+                    logger.info("Found HOME tab selected, immediately returning HOME view")
+                    # Cache this view detection
+                    self._current_view_cache_time = time.time()
+                    self._current_view_cache = AppView.HOME
+                    return AppView.HOME
+            except Exception as e:
+                logger.warning(f"Error during early HOME tab check: {e}")
+                
             # Check for app not responding dialog first
             app_not_responding_elements = 0
             for strategy, locator in APP_NOT_RESPONDING_DIALOG_IDENTIFIERS:
@@ -256,6 +295,10 @@ class ViewInspector:
                 logger.info("   App not responding dialog detected")
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "app_not_responding")
+                
+                # Cache this view detection
+                self._current_view_cache_time = time.time()
+                self._current_view_cache = AppView.APP_NOT_RESPONDING
                 return AppView.APP_NOT_RESPONDING
 
             # Check for reading view identifiers
@@ -436,13 +479,22 @@ class ViewInspector:
             # First check the more accurate tab selection because library_root_view exists for both tabs
             if self._is_tab_selected("LIBRARY"):
                 logger.info("   LIBRARY tab is selected, confirming we are in library view")
-                filepath = store_page_source(self.driver.page_source, "library_tab_selected")
-                logger.info(f"Stored page source with library tab selected at: {filepath}")
+                # Cache this view detection
+                self._current_view_cache_time = time.time()
+                self._current_view_cache = AppView.LIBRARY
+                
+                # Only store page source in debug mode to reduce I/O
+                if logger.isEnabledFor(logging.DEBUG):
+                    filepath = store_page_source(self.driver.page_source, "library_tab_selected")
+                    logger.debug(f"Stored page source with library tab selected at: {filepath}")
                 return AppView.LIBRARY
 
             # If LIBRARY tab is not selected, check if HOME tab is selected
             if self._is_tab_selected("HOME"):
                 logger.info("   HOME tab is selected, we are in home view not library view")
+                # Cache this view detection
+                self._current_view_cache_time = time.time()
+                self._current_view_cache = AppView.HOME
                 # If HOME tab is selected, we're confident we're in HOME view - return immediately
                 return AppView.HOME
 

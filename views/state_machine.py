@@ -219,10 +219,25 @@ class KindleStateMachine:
             AppState: The current state of the app
         """
         try:
+            # Check if we have a current state we already know about
+            # For HOME and LIBRARY states that were recently detected, avoid redundant checks
+            # within a short timeframe
+            if hasattr(self, "_last_state_check_time") and hasattr(self, "_last_state_value"):
+                time_since_last_check = time.time() - self._last_state_check_time
+                # If we've checked state within the last second and it was HOME or LIBRARY, just return the cached value
+                if time_since_last_check < 1.0 and self._last_state_value in [AppState.HOME, AppState.LIBRARY]:
+                    logger.info(f"Using cached state from {time_since_last_check:.2f}s ago: {self._last_state_value}")
+                    self.current_state = self._last_state_value
+                    return self.current_state
+
             # Get current state from view inspector without storing page source first
             # Only store page source for unknown or ambiguous states
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
+            
+            # Cache the state detection time and value
+            self._last_state_check_time = time.time()
+            self._last_state_value = self.current_state
 
             # For HOME and LIBRARY states, trust the detection and return immediately
             # These are the most common states and we're confident in our detection
