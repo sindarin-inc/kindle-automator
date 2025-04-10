@@ -9,10 +9,27 @@ PAGE_TURN_STRATEGIES = [
 DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[@text='DOWNLOAD LIMIT REACHED']"),
     (AppiumBy.ID, "com.amazon.kindle:id/rlr_title"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'DOWNLOAD LIMIT')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@content-desc, 'download limit reached')]"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.LinearLayout[.//android.widget.TextView[@text='DOWNLOAD LIMIT REACHED']]",
+    ),
+]
+
+DOWNLOAD_LIMIT_ERROR_TEXT = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/rlr_error_title']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[contains(@text, 'Oops! You have reached your download limit')]",
+    ),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'download limit')]"),
 ]
 
 DOWNLOAD_LIMIT_DEVICE_LIST = [
     (AppiumBy.ID, "com.amazon.kindle:id/rlr_device_list"),
+    (AppiumBy.XPATH, "//android.widget.ListView[@resource-id='com.amazon.kindle:id/rlr_device_list']"),
+    (AppiumBy.XPATH, "//android.widget.ListView[.//android.widget.CheckedTextView]"),
 ]
 
 DOWNLOAD_LIMIT_FIRST_DEVICE = [
@@ -20,6 +37,8 @@ DOWNLOAD_LIMIT_FIRST_DEVICE = [
         AppiumBy.XPATH,
         "//android.widget.ListView[@resource-id='com.amazon.kindle:id/rlr_device_list']/android.widget.LinearLayout[1]",
     ),
+    (AppiumBy.XPATH, "//android.widget.ListView/android.widget.LinearLayout[1]"),
+    (AppiumBy.XPATH, "(//android.widget.LinearLayout[.//android.widget.CheckedTextView])[1]"),
 ]
 
 DOWNLOAD_LIMIT_CHECKEDTEXTVIEW = [
@@ -27,11 +46,15 @@ DOWNLOAD_LIMIT_CHECKEDTEXTVIEW = [
         AppiumBy.XPATH,
         "//android.widget.CheckedTextView[@resource-id='com.amazon.kindle:id/rlr_list_device_name']",
     ),
+    (AppiumBy.XPATH, "//android.widget.CheckedTextView"),
+    (AppiumBy.XPATH, "(//android.widget.CheckedTextView)[1]"),
 ]
 
 DOWNLOAD_LIMIT_REMOVE_BUTTON = [
     (AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button"),
     (AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND DOWNLOAD']"),
+    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'REMOVE AND')]"),
+    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'Download')]"),
 ]
 
 # UI elements
