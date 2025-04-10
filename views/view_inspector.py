@@ -19,6 +19,7 @@ from views.auth.view_strategies import (
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
 )
+from views.common.dialog_strategies import APP_NOT_RESPONDING_DIALOG_IDENTIFIERS
 from views.core.app_state import AppState, AppView
 from views.core.tab_strategies import get_tab_selection_strategies
 from views.home.view_strategies import HOME_TAB_IDENTIFIERS, HOME_VIEW_IDENTIFIERS
@@ -210,6 +211,24 @@ class ViewInspector:
         """Determine the current view based on visible elements."""
         try:
             logger.info("Determining current view...")
+
+            # Check for app not responding dialog first
+            app_not_responding_elements = 0
+            for strategy, locator in APP_NOT_RESPONDING_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        app_not_responding_elements += 1
+                        logger.info(f"   Found app not responding element: {strategy}={locator}")
+                except NoSuchElementException:
+                    continue
+
+            # If we found at least 2 elements of the app not responding dialog, we're confident
+            if app_not_responding_elements >= 2:
+                logger.info("   App not responding dialog detected")
+                # Store page source for debugging
+                store_page_source(self.driver.page_source, "app_not_responding")
+                return AppView.APP_NOT_RESPONDING
 
             # Check for reading view identifiers
             reading_view_elements_found = 0

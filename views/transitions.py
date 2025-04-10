@@ -13,6 +13,7 @@ from views.auth.interaction_strategies import (
     LIBRARY_SIGN_IN_STRATEGIES,
 )
 from views.auth.view_strategies import CAPTCHA_ERROR_MESSAGES, EMAIL_VIEW_IDENTIFIERS
+from views.common.dialog_strategies import APP_NOT_RESPONDING_CLOSE_APP_BUTTON
 from views.core.app_state import AppState, AppView
 from views.library.view_strategies import LIBRARY_VIEW_DETECTION_STRATEGIES
 
@@ -132,6 +133,63 @@ class StateTransitions:
         logger.info("Handling CAPTCHA state...")
         return self.auth_handler.sign_in()
 
+    def handle_app_not_responding(self):
+        """Handle APP_NOT_RESPONDING state by clicking 'Close app' button and waiting for app restart."""
+        logger.info("Handling APP_NOT_RESPONDING state - closing and restarting app...")
+
+        try:
+            # Store screenshot and page source for debugging
+            filepath = store_page_source(self.driver.page_source, "app_not_responding_handling")
+            logger.info(f"Stored page source for app not responding at: {filepath}")
+
+            # Click the "Close app" button
+            logger.info("Clicking 'Close app' button")
+            close_button = self.driver.find_element(*APP_NOT_RESPONDING_CLOSE_APP_BUTTON)
+            close_button.click()
+
+            # Wait for app to close
+            time.sleep(2)
+
+            # Restart the app
+            logger.info("App closed, restarting Kindle app...")
+
+            # Get the automator instance if we can
+            automator = getattr(self.driver, "_driver", None)
+            if automator:
+                automator = getattr(automator, "automator", None)
+
+            if automator and hasattr(automator, "restart_app"):
+                # Use the automator's restart_app method
+                logger.info("Using automator.restart_app() to restart app...")
+                if automator.restart_app():
+                    logger.info("App restarted successfully")
+                    time.sleep(3)  # Wait for app to initialize
+                    return True
+                else:
+                    logger.error("Failed to restart app with automator.restart_app()")
+                    return False
+            else:
+                # Fallback to using the view inspector's ensure_app_foreground
+                logger.info("No automator reference found, using ensure_app_foreground...")
+                if self.view_inspector.ensure_app_foreground():
+                    logger.info("App brought to foreground")
+                    time.sleep(3)  # Wait for app to initialize
+                    return True
+                else:
+                    logger.error("Failed to restart app with ensure_app_foreground")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error handling app not responding: {e}")
+            # Try restarting the app anyway as a last resort
+            try:
+                if self.view_inspector.ensure_app_foreground():
+                    logger.info("Recovered from error by bringing app to foreground")
+                    return True
+            except Exception as e2:
+                logger.error(f"Failed to recover: {e2}")
+            return False
+
     def get_handler_for_state(self, state):
         """Get the appropriate handler method for a given state.
 
@@ -151,6 +209,7 @@ class StateTransitions:
             AppState.LIBRARY: self.handle_library,
             AppState.READING: self.handle_reading,
             AppState.CAPTCHA: self._handle_captcha,  # Add new CAPTCHA handler
+            AppState.APP_NOT_RESPONDING: self.handle_app_not_responding,  # Add app not responding handler
         }
 
         handler = handlers.get(state)

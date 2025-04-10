@@ -31,3 +31,22 @@ FULLSCREEN_DIALOG_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
     (AppiumBy.ID, "android:id/ok"),
 ]
+
+# Dialog detection strategies for "App not responding" dialog
+APP_NOT_RESPONDING_DIALOG_IDENTIFIERS = [
+    # The title that says "Kindle isn't responding"
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/alertTitle' and contains(@text, 'Kindle isn')]",
+    ),
+    # The "Close app" button
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/aerr_close' and @text='Close app']"),
+    # The "Wait" button
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/aerr_wait' and @text='Wait']"),
+]
+
+# Dialog interaction strategies
+APP_NOT_RESPONDING_CLOSE_APP_BUTTON = (
+    AppiumBy.XPATH,
+    "//android.widget.Button[@resource-id='android:id/aerr_close' and @text='Close app']",
+)

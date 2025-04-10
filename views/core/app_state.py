@@ -17,6 +17,7 @@ class AppState(Enum):
     LIBRARY_SIGN_IN = auto()  # Library view with sign in button
     READING = auto()  # Book reading view
     CAPTCHA = auto()  # Captcha verification screen
+    APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
 
 
 class AppView(Enum):
@@ -31,3 +32,4 @@ class AppView(Enum):
     LIBRARY_SIGN_IN = auto()
     READING = auto()
     CAPTCHA = auto()  # Captcha verification screen
+    APP_NOT_RESPONDING = auto()  # App not responding dialog is showing

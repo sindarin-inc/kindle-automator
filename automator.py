@@ -11,7 +11,8 @@ import traceback
 from driver import Driver
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
-from views.state_machine import AppState, KindleStateMachine
+from views.core.app_state import AppState
+from views.state_machine import KindleStateMachine
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,27 @@ class KindleAutomator:
             try:
                 self.driver.current_activity
                 logger.info("Driver is healthy")
+
+                # Check if we're in the app not responding state
+                if self.state_machine:
+                    # Update the current state to check for app not responding
+                    current_state = self.state_machine.update_current_state()
+                    if current_state == AppState.APP_NOT_RESPONDING:
+                        logger.info("Detected app not responding dialog - restarting app")
+                        # Handle the app not responding state by using the appropriate handler
+                        handler = self.state_machine.transitions.get_handler_for_state(current_state)
+                        if handler:
+                            result = handler()
+                            if result:
+                                logger.info("Successfully handled app not responding state")
+                                return True
+                            else:
+                                logger.error(
+                                    "Failed to handle app not responding state, reinitializing driver"
+                                )
+                                self.cleanup()
+                                return self.initialize_driver()
+
                 return True
             except Exception as e:
                 logger.info(f"Driver is unhealthy ({e}), reinitializing...")
