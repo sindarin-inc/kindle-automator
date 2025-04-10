@@ -966,6 +966,11 @@ class AVDProfileManager:
 
     def stop_emulator(self) -> bool:
         """Stop the currently running emulator."""
+        # Always preserve emulators when server is stopping
+        if self.use_simplified_mode:
+            logger.info("Always preserving emulators in simplified mode for faster reconnection")
+            return True
+
         try:
             # First do a quick check if emulator is actually running
             if not self.is_emulator_running():
@@ -1814,13 +1819,17 @@ class AVDProfileManager:
         # Normal profile management mode below (for non-Mac or non-dev environments)
         #
 
-        # If force_new_emulator is True, stop any running emulator first
+        # If force_new_emulator is True, we would normally stop any running emulator
+        # But in simplified mode (Mac development), we always preserve emulators
         if force_new_emulator:
-            logger.info("Force new emulator requested, stopping any running emulator")
-            if self.is_emulator_running():
-                if not self.stop_emulator():
-                    logger.error("Failed to stop existing emulator")
-                    # We'll try to continue anyway
+            if self.use_simplified_mode:
+                logger.info("Force new emulator requested, but preserving emulator in simplified mode")
+            else:
+                logger.info("Force new emulator requested, stopping any running emulator")
+                if self.is_emulator_running():
+                    if not self.stop_emulator():
+                        logger.error("Failed to stop existing emulator")
+                        # We'll try to continue anyway
 
         # Check if this is already the current profile
         if self.current_profile and self.current_profile.get("email") == email and not force_new_emulator:

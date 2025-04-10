@@ -142,9 +142,9 @@ test-init:
 		-d '{"email": "test@example.com", "password": "test123"}' \
 		-v
 
-# Optional helper target to kill existing processes
+# Optional helper target to kill existing server processes (not the emulator)
 kill-server:
-	@echo "Killing existing server processes..."
+	@echo "Killing existing server processes (preserving emulator)..."
 	@-kill $$(lsof -t -i:4098) 2>/dev/null || true
 	@pkill -f "appium" || true
 
