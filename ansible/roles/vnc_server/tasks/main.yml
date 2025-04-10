@@ -20,13 +20,13 @@
     repo: https://github.com/novnc/noVNC.git
     dest: /opt/novnc
     version: master
-    
+
 - name: Copy noVNC configuration file for mobile embedding
   copy:
     src: novnc-config.js
     dest: /opt/novnc/app/config.js
-    mode: '0644'
-    
+    mode: "0644"
+
 - name: Create mobile-optimized HTML file for WebView embedding
   copy:
     content: |
@@ -36,7 +36,12 @@
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
           <title>Kindle Captcha Solver</title>
-          <link rel="stylesheet" href="app/styles/lite.css">
+          <!-- Use base noVNC CSS files instead of lite.css which doesn't exist -->
+          <link rel="stylesheet" href="app/styles/base.css">
+          <!-- Load core libraries -->
+          <script src="core/util/events.js"></script>
+          <script src="app/localization.js"></script>
+          <script src="core/rfb.js"></script>
           <script type="module" crossorigin="anonymous">
               // Auto-connect to VNC
               window.addEventListener('load', function() {
@@ -52,30 +57,39 @@
                   let autoconnect = urlParams.get('autoconnect') !== 'false';
                   let resize = urlParams.get('resize') || 'scale';
                   
-                  // Configure connection
-                  let rfb;
-                  const rfbConfig = {
-                      credentials: {
-                          password: password
-                      },
-                      wsProtocols: ['binary'],
-                      showDotCursor: true,
-                      autoconnect: autoconnect,
-                      scaleViewport: resize === 'scale',
-                      resizeSession: resize === 'remote',
-                      clipViewport: false,
-                      quality: 6,
-                      compressionLevel: 2,
-                      repeaterId: '',
-                      shared: true,
-                      showContextMenu: true,
-                      viewOnly: false
-                  };
+                  // Use noVNC's RFB directly since we're not importing UI
+                  const target = document.getElementById('screen');
+                  const rfb = new RFB(target, `ws://${host}:6080/${path}`);
                   
-                  // Connect to WebSocket
-                  const wsUrl = `ws://${host}:6080/${path}`;
-                  import('./app/ui.js').then((ui) => {
-                      rfb = ui.connect(wsUrl, rfbConfig);
+                  // Set credentials
+                  rfb.credentials = { password: password };
+                  
+                  // Set connection properties
+                  rfb.viewOnly = false;
+                  rfb.scaleViewport = resize === 'scale';
+                  rfb.resizeSession = resize === 'remote';
+                  rfb.clipViewport = false;
+                  rfb.qualityLevel = 6;
+                  rfb.compressionLevel = 2;
+                  rfb.showDotCursor = true;
+                  rfb.background = "#000000";
+                  
+                  // Connect if autoconnect is enabled
+                  if (autoconnect) {
+                      rfb.connect();
+                  }
+                  
+                  // Add event listeners for connection status
+                  rfb.addEventListener("connect", () => {
+                      console.log("Connected to VNC");
+                  });
+                  
+                  rfb.addEventListener("disconnect", (e) => {
+                      console.log("Disconnected from VNC: " + e.detail.reason);
+                      // Auto reconnect after 3 seconds
+                      if (autoconnect) {
+                          setTimeout(() => rfb.connect(), 3000);
+                      }
                   });
               });
           </script>
@@ -107,28 +121,28 @@
       </body>
       </html>
     dest: /opt/novnc/kindle_captcha.html
-    mode: '0644'
-    
+    mode: "0644"
+
 - name: Install websockify for noVNC
   apt:
-    name: 
+    name:
       - python3-websockify
-      - python3-numpy  # Required by websockify
+      - python3-numpy # Required by websockify
     state: present
-    
+
 - name: Create log file for x11vnc
   file:
     path: /var/log/x11vnc.log
     state: touch
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: '0644'
+    mode: "0644"
 
 - name: Create VNC server configuration directory
   file:
     path: /home/{{ ansible_user }}/.vnc
     state: directory
-    mode: '0755'
+    mode: "0755"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
 
@@ -138,35 +152,35 @@
     content: "{{ vnc_password }}"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: '0600'
+    mode: "0600"
   no_log: true
 
 - name: Create Xvfb service file
   template:
     src: xvfb.service.j2
     dest: /etc/systemd/system/xvfb.service
-    mode: '0644'
+    mode: "0644"
   notify: restart xvfb
 
 - name: Create VNC service file
   template:
     src: vnc.service.j2
     dest: /etc/systemd/system/vnc.service
-    mode: '0644'
+    mode: "0644"
   notify: restart vnc
-  
+
 - name: Create noVNC web service file
   template:
     src: novnc.service.j2
     dest: /etc/systemd/system/novnc.service
-    mode: '0644'
+    mode: "0644"
   notify: restart novnc
 
 - name: Create helper script for emulator with VNC display
   template:
     src: vnc-emulator-launcher.sh.j2
     dest: /usr/local/bin/vnc-emulator-launcher.sh
-    mode: '0755'
+    mode: "0755"
 
 - name: Enable and start Xvfb service
   systemd:
@@ -181,73 +195,67 @@
     enabled: yes
     state: started
     daemon_reload: yes
-    
+
 - name: Enable and start noVNC service
   systemd:
     name: novnc
     enabled: yes
     state: started
     daemon_reload: yes
-    
-- name: Copy AVD profile manager patch script
-  copy:
-    src: patch-avd-profile-manager.py
-    dest: /usr/local/bin/patch-avd-profile-manager.py
-    mode: '0755'
-    
+
 - name: Add instructions to README
   copy:
     content: |
       # VNC Setup for Kindle Automator
-      
+
       The VNC server has been set up to allow remote viewing of the Android emulator.
-      
+
       ## Connection Options
-      
+
       ### Option 1: Web Browser (Recommended for mobile devices)
       Access the emulator through a web browser at:
       ```
       http://{{ ansible_host }}:6080/vnc.html
       ```
-      
+
       This works on any device with a modern web browser (iOS, Android, desktop).
       Password: {{ vnc_password }}
-      
+
       ### Option 2: Mobile-Optimized Interface
       For the best mobile experience, use our custom interface:
       ```
       http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}
       ```
-      
+
       This is designed specifically for captcha solving with:
       - Auto-connection
       - Mobile-optimized UI
       - Responsive scaling
-      
+
       ### Option 3: Native VNC Client
       Connect using any VNC client:
       - Host: {{ ansible_host }}
       - Port: 5900
       - Password: {{ vnc_password }}
-      
+
       ## Mobile App Integration
-      
+
       To embed the VNC viewer in your mobile app, use a WebView with this URL:
       ```
       http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}&autoconnect=true
       ```
-      
+
       This provides a lightweight VNC viewer perfect for embedding in mobile applications.
-      
+
       ### WebView Implementation (Example)
-      
+
       ```java
       // Android example
       WebView webView = findViewById(R.id.webView);
       webView.getSettings().setJavaScriptEnabled(true);
       webView.loadUrl("http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}&autoconnect=true");
       ```
-      
+
       ```swift
       // iOS example
       let webView = WKWebView()
@@ -255,6 +263,6 @@
       webView.load(URLRequest(url: url))
       ```
     dest: /home/{{ ansible_user }}/VNC_SETUP.md
-    mode: '0644'
+    mode: "0644"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
