@@ -374,39 +374,60 @@ class Driver:
 
             # First, dump the device state to help debug initialization issues
             try:
-                # Check device status and dump XML 
+                # Check device status and dump XML
                 logger.info("Checking device state before driver initialization...")
                 import os
+
                 from server.logging_config import store_page_source
-                
+
                 # Dump the current screen content via uiautomator
                 try:
                     # Create dumps directory if it doesn't exist
                     os.makedirs("fixtures/dumps", exist_ok=True)
-                    
+
                     # Create a UI dump using uiautomator2
-                    dump_cmd = ["adb", "-s", self.device_id, "shell", "uiautomator dump /sdcard/window_dump.xml"]
+                    dump_cmd = [
+                        "adb",
+                        "-s",
+                        self.device_id,
+                        "shell",
+                        "uiautomator dump /sdcard/window_dump.xml",
+                    ]
                     result = subprocess.run(dump_cmd, check=True, capture_output=True, text=True)
-                    
+
                     # Pull the file
-                    pull_cmd = ["adb", "-s", self.device_id, "pull", "/sdcard/window_dump.xml", "fixtures/dumps/pre_driver_init.xml"]
+                    pull_cmd = [
+                        "adb",
+                        "-s",
+                        self.device_id,
+                        "pull",
+                        "/sdcard/window_dump.xml",
+                        "fixtures/dumps/pre_driver_init.xml",
+                    ]
                     result = subprocess.run(pull_cmd, check=True, capture_output=True, text=True)
                     logger.info("Saved pre-initialization UI dump to fixtures/dumps/pre_driver_init.xml")
-                    
+
                     # Also take a screenshot
                     screenshot_cmd = ["adb", "-s", self.device_id, "shell", "screencap -p /sdcard/screen.png"]
                     result = subprocess.run(screenshot_cmd, check=True, capture_output=True, text=True)
-                    
+
                     # Pull the screenshot
                     os.makedirs("screenshots", exist_ok=True)
-                    pull_screenshot_cmd = ["adb", "-s", self.device_id, "pull", "/sdcard/screen.png", "screenshots/pre_driver_init.png"]
+                    pull_screenshot_cmd = [
+                        "adb",
+                        "-s",
+                        self.device_id,
+                        "pull",
+                        "/sdcard/screen.png",
+                        "screenshots/pre_driver_init.png",
+                    ]
                     result = subprocess.run(pull_screenshot_cmd, check=True, capture_output=True, text=True)
                     logger.info("Saved pre-initialization screenshot to screenshots/pre_driver_init.png")
                 except Exception as e:
                     logger.warning(f"Failed to dump device UI state: {e}")
             except Exception as e:
                 logger.warning(f"Exception getting device state: {e}")
-                
+
             # Initialize driver with retry logic
             for attempt in range(1, 6):  # Increase to 5 attempts
                 try:
@@ -418,7 +439,9 @@ class Driver:
                     options.device_name = self.device_id
                     options.app_package = "com.amazon.kindle"
                     options.app_activity = app_activity
-                    options.app_wait_activity = "com.amazon.kindle.*,com.amazon.kcp.*"  # Add com.amazon.kcp.* activities
+                    options.app_wait_activity = (
+                        "com.amazon.kindle.*,com.amazon.kcp.*"  # Add com.amazon.kcp.* activities
+                    )
                     options.no_reset = True
                     options.auto_grant_permissions = True
                     options.enable_multi_windows = True
@@ -461,29 +484,59 @@ class Driver:
                             return True
                         except concurrent.futures.TimeoutError:
                             logger.error("Connection check timed out after 15 seconds")
-                            
+
                             # Try to dump device state again to diagnose the issue
                             try:
                                 logger.info("Trying to capture device state after timeout...")
-                                dump_cmd = ["adb", "-s", self.device_id, "shell", "uiautomator dump /sdcard/window_dump_after_timeout.xml"]
+                                dump_cmd = [
+                                    "adb",
+                                    "-s",
+                                    self.device_id,
+                                    "shell",
+                                    "uiautomator dump /sdcard/window_dump_after_timeout.xml",
+                                ]
                                 result = subprocess.run(dump_cmd, check=True, capture_output=True, text=True)
-                                
+
                                 # Pull the file
-                                pull_cmd = ["adb", "-s", self.device_id, "pull", "/sdcard/window_dump_after_timeout.xml", "fixtures/dumps/post_timeout.xml"]
+                                pull_cmd = [
+                                    "adb",
+                                    "-s",
+                                    self.device_id,
+                                    "pull",
+                                    "/sdcard/window_dump_after_timeout.xml",
+                                    "fixtures/dumps/post_timeout.xml",
+                                ]
                                 result = subprocess.run(pull_cmd, check=True, capture_output=True, text=True)
                                 logger.info("Saved post-timeout UI dump to fixtures/dumps/post_timeout.xml")
-                                
+
                                 # Also take a screenshot
-                                screenshot_cmd = ["adb", "-s", self.device_id, "shell", "screencap -p /sdcard/screen_after_timeout.png"]
-                                result = subprocess.run(screenshot_cmd, check=True, capture_output=True, text=True)
-                                
+                                screenshot_cmd = [
+                                    "adb",
+                                    "-s",
+                                    self.device_id,
+                                    "shell",
+                                    "screencap -p /sdcard/screen_after_timeout.png",
+                                ]
+                                result = subprocess.run(
+                                    screenshot_cmd, check=True, capture_output=True, text=True
+                                )
+
                                 # Pull the screenshot
-                                pull_screenshot_cmd = ["adb", "-s", self.device_id, "pull", "/sdcard/screen_after_timeout.png", "screenshots/post_timeout.png"]
-                                result = subprocess.run(pull_screenshot_cmd, check=True, capture_output=True, text=True)
+                                pull_screenshot_cmd = [
+                                    "adb",
+                                    "-s",
+                                    self.device_id,
+                                    "pull",
+                                    "/sdcard/screen_after_timeout.png",
+                                    "screenshots/post_timeout.png",
+                                ]
+                                result = subprocess.run(
+                                    pull_screenshot_cmd, check=True, capture_output=True, text=True
+                                )
                                 logger.info("Saved post-timeout screenshot to screenshots/post_timeout.png")
                             except Exception as e:
                                 logger.warning(f"Failed to capture post-timeout device state: {e}")
-                            
+
                             try:
                                 # Try to quit the driver that may be in a bad state
                                 if self.driver:
@@ -500,30 +553,70 @@ class Driver:
                         retry_delay = attempt * 2  # 2, 4, 6, 8 seconds
                         logger.info(f"Waiting {retry_delay} seconds before retrying...")
                         time.sleep(retry_delay)
-                        
+
                         # Dump device state between retries to see what's happening
                         try:
                             logger.info(f"Dumping device state before retry {attempt+1}...")
-                            dump_cmd = ["adb", "-s", self.device_id, "shell", "uiautomator dump /sdcard/retry_dump.xml"]
+                            dump_cmd = [
+                                "adb",
+                                "-s",
+                                self.device_id,
+                                "shell",
+                                "uiautomator dump /sdcard/retry_dump.xml",
+                            ]
                             result = subprocess.run(dump_cmd, check=True, capture_output=True, text=True)
-                            
-                            pull_cmd = ["adb", "-s", self.device_id, "pull", "/sdcard/retry_dump.xml", f"fixtures/dumps/retry_{attempt}_dump.xml"]
+
+                            pull_cmd = [
+                                "adb",
+                                "-s",
+                                self.device_id,
+                                "pull",
+                                "/sdcard/retry_dump.xml",
+                                f"fixtures/dumps/retry_{attempt}_dump.xml",
+                            ]
                             result = subprocess.run(pull_cmd, check=True, capture_output=True, text=True)
                             logger.info(f"Saved retry dump to fixtures/dumps/retry_{attempt}_dump.xml")
-                            
+
                             # Also take a screenshot
-                            screenshot_cmd = ["adb", "-s", self.device_id, "shell", "screencap -p /sdcard/retry_screen.png"]
-                            result = subprocess.run(screenshot_cmd, check=True, capture_output=True, text=True)
-                            
-                            pull_screenshot_cmd = ["adb", "-s", self.device_id, "pull", "/sdcard/retry_screen.png", f"screenshots/retry_{attempt}_screen.png"]
-                            result = subprocess.run(pull_screenshot_cmd, check=True, capture_output=True, text=True)
+                            screenshot_cmd = [
+                                "adb",
+                                "-s",
+                                self.device_id,
+                                "shell",
+                                "screencap -p /sdcard/retry_screen.png",
+                            ]
+                            result = subprocess.run(
+                                screenshot_cmd, check=True, capture_output=True, text=True
+                            )
+
+                            pull_screenshot_cmd = [
+                                "adb",
+                                "-s",
+                                self.device_id,
+                                "pull",
+                                "/sdcard/retry_screen.png",
+                                f"screenshots/retry_{attempt}_screen.png",
+                            ]
+                            result = subprocess.run(
+                                pull_screenshot_cmd, check=True, capture_output=True, text=True
+                            )
                             logger.info(f"Saved retry screenshot to screenshots/retry_{attempt}_screen.png")
-                            
+
                             # Try to launch Kindle app directly before the next retry
                             if attempt > 1:  # Only do this after the first retry fails
-                                launch_cmd = ["adb", "-s", self.device_id, "shell", f"am start -n com.amazon.kindle/{app_activity}"]
-                                result = subprocess.run(launch_cmd, check=True, capture_output=True, text=True)
-                                logger.info(f"Explicitly launched Kindle app before retry: {result.stdout.strip()}")
+                                launch_cmd = [
+                                    "adb",
+                                    "-s",
+                                    self.device_id,
+                                    "shell",
+                                    f"am start -n com.amazon.kindle/{app_activity}",
+                                ]
+                                result = subprocess.run(
+                                    launch_cmd, check=True, capture_output=True, text=True
+                                )
+                                logger.info(
+                                    f"Explicitly launched Kindle app before retry: {result.stdout.strip()}"
+                                )
                                 time.sleep(2)  # Give the app a moment to start
                         except Exception as dump_error:
                             logger.warning(f"Failed to dump device state before retry: {dump_error}")
@@ -534,7 +627,9 @@ class Driver:
                         logger.info("1. Appium server is running (start with 'appium')")
                         logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
                         logger.info("3. Android device/emulator is connected (check with 'adb devices')")
-                        logger.info("4. Check the XML dumps and screenshots in fixtures/dumps/ and screenshots/ for debugging")
+                        logger.info(
+                            "4. Check the XML dumps and screenshots in fixtures/dumps/ and screenshots/ for debugging"
+                        )
                         return False
 
         except Exception as e:

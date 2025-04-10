@@ -225,8 +225,13 @@ class KindleStateMachine:
             if hasattr(self, "_last_state_check_time") and hasattr(self, "_last_state_value"):
                 time_since_last_check = time.time() - self._last_state_check_time
                 # If we've checked state within the last second and it was HOME or LIBRARY, just return the cached value
-                if time_since_last_check < 1.0 and self._last_state_value in [AppState.HOME, AppState.LIBRARY]:
-                    logger.info(f"Using cached state from {time_since_last_check:.2f}s ago: {self._last_state_value}")
+                if time_since_last_check < 1.0 and self._last_state_value in [
+                    AppState.HOME,
+                    AppState.LIBRARY,
+                ]:
+                    logger.info(
+                        f"Using cached state from {time_since_last_check:.2f}s ago: {self._last_state_value}"
+                    )
                     self.current_state = self._last_state_value
                     return self.current_state
 
@@ -234,7 +239,7 @@ class KindleStateMachine:
             # Only store page source for unknown or ambiguous states
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
-            
+
             # Cache the state detection time and value
             self._last_state_check_time = time.time()
             self._last_state_value = self.current_state
@@ -291,7 +296,10 @@ class KindleStateMachine:
 
                     # If the current activity is not Kindle (e.g. NexusLauncherActivity), the app has quit
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
-                    if not (current_activity.startswith("com.amazon.kindle") or current_activity.startswith("com.amazon.kcp")):
+                    if not (
+                        current_activity.startswith("com.amazon.kindle")
+                        or current_activity.startswith("com.amazon.kcp")
+                    ):
                         logger.warning("App has quit or was not launched - current activity is not Kindle")
 
                         # Try to relaunch the app

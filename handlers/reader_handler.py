@@ -458,15 +458,76 @@ class ReaderHandler:
                             return False
 
                         # Wait for reading view now that download limit is handled
-                        WebDriverWait(self.driver, 30).until(
-                            reading_view_present
-                        )  # Longer timeout for download
-                        logger.info("Reading view detected after handling download limit")
-                    except TimeoutException:
-                        logger.error("Failed to detect reading view after handling download limit")
-                        store_page_source(
-                            self.driver.page_source, "failed_to_detect_reading_view_after_download"
-                        )
+                        try:
+                            WebDriverWait(self.driver, 30).until(
+                                reading_view_present
+                            )  # Longer timeout for download
+                            logger.info("Reading view detected after handling download limit")
+                        except TimeoutException:
+                            # If we timeout waiting for the reading view, we might be back at the library
+                            # Let's check if we're back in the library view
+                            store_page_source(self.driver.page_source, "after_download_limit_timeout")
+                            logger.info(
+                                "Checking if we're back at the library view after download limit handling..."
+                            )
+
+                            # Check for library view elements
+                            try:
+                                library_view = False
+                                try:
+                                    # Check for library view root
+                                    library_element = self.driver.find_element(
+                                        AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                    )
+                                    if library_element.is_displayed():
+                                        library_view = True
+                                except:
+                                    # Try another library indicator
+                                    try:
+                                        library_tab = self.driver.find_element(
+                                            AppiumBy.XPATH,
+                                            "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab selected']",
+                                        )
+                                        if library_tab.is_displayed():
+                                            library_view = True
+                                    except:
+                                        pass
+
+                                if library_view:
+                                    logger.info(
+                                        "We're back at the library view after handling download limit"
+                                    )
+                                    logger.info("Attempting to open the book again...")
+
+                                    # Retry opening the book one more time
+                                    if self.library_handler.open_book(book_title):
+                                        logger.info(
+                                            "Successfully reopened book after download limit handling"
+                                        )
+                                        # Now wait for reading view again
+                                        try:
+                                            WebDriverWait(self.driver, 15).until(reading_view_present)
+                                            logger.info("Reading view detected after reopening book")
+                                            return True
+                                        except TimeoutException:
+                                            logger.error("Failed to detect reading view after reopening book")
+                                            store_page_source(
+                                                self.driver.page_source, "failed_reopen_after_download_limit"
+                                            )
+                                    else:
+                                        logger.error("Failed to reopen book after handling download limit")
+                            except Exception as back_to_lib_e:
+                                logger.error(f"Error checking if back at library: {back_to_lib_e}")
+
+                            # If we're still here, we failed
+                            logger.error("Failed to detect reading view after handling download limit")
+                            store_page_source(
+                                self.driver.page_source, "failed_to_detect_reading_view_after_download"
+                            )
+                            return False
+                    except Exception as e:
+                        logger.error(f"Error while waiting for reading view after download limit: {e}")
+                        store_page_source(self.driver.page_source, "error_waiting_after_download_limit")
                         return False
                 else:
                     logger.error("Failed to handle Download Limit dialog")

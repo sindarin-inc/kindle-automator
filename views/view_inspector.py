@@ -93,7 +93,9 @@ class ViewInspector:
                 current_activity = self.driver.current_activity
                 logger.info(f"After launch, current activity is: {current_activity}")
                 # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
-                if current_activity.startswith("com.amazon.kindle") or current_activity.startswith("com.amazon.kcp"):
+                if current_activity.startswith("com.amazon.kindle") or current_activity.startswith(
+                    "com.amazon.kcp"
+                ):
                     logger.info("Successfully verified Kindle app is in foreground")
                 else:
                     logger.warning(
@@ -119,7 +121,9 @@ class ViewInspector:
             time_since_check = time.time() - self._tab_check_time.get(tab_name, 0)
             if time_since_check < 0.5:
                 cached_result = getattr(self, cache_key)
-                logger.info(f"   Using cached {tab_name} tab selection from {time_since_check:.2f}s ago: {cached_result}")
+                logger.info(
+                    f"   Using cached {tab_name} tab selection from {time_since_check:.2f}s ago: {cached_result}"
+                )
                 return cached_result
 
         # Try the most reliable tab selection strategy first (second strategy in the list)
@@ -145,13 +149,13 @@ class ViewInspector:
                         break
                 except NoSuchElementException:
                     continue
-        
+
         # Cache the result
         if not hasattr(self, "_tab_check_time"):
             self._tab_check_time = {}
         self._tab_check_time[tab_name] = time.time()
         setattr(self, cache_key, result)
-        
+
         return result
 
     def _dump_page_source(self):
@@ -257,7 +261,7 @@ class ViewInspector:
         """Determine the current view based on visible elements."""
         try:
             logger.info("Determining current view...")
-            
+
             # Check for HOME tab first as it's the most common state
             # This helps avoid all the other expensive checks for common cases
             try:
@@ -268,7 +272,7 @@ class ViewInspector:
                         cached_view = self._current_view_cache
                         logger.info(f"Using cached view from {time_since_check:.2f}s ago: {cached_view}")
                         return cached_view
-                        
+
                 # Check for HOME tab first since it's the most common state
                 if self._is_tab_selected("HOME"):
                     logger.info("Found HOME tab selected, immediately returning HOME view")
@@ -278,7 +282,7 @@ class ViewInspector:
                     return AppView.HOME
             except Exception as e:
                 logger.warning(f"Error during early HOME tab check: {e}")
-                
+
             # Check for app not responding dialog first
             app_not_responding_elements = 0
             for strategy, locator in APP_NOT_RESPONDING_DIALOG_IDENTIFIERS:
@@ -295,7 +299,7 @@ class ViewInspector:
                 logger.info("   App not responding dialog detected")
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "app_not_responding")
-                
+
                 # Cache this view detection
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.APP_NOT_RESPONDING
@@ -482,7 +486,7 @@ class ViewInspector:
                 # Cache this view detection
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.LIBRARY
-                
+
                 # Only store page source in debug mode to reduce I/O
                 if logger.isEnabledFor(logging.DEBUG):
                     filepath = store_page_source(self.driver.page_source, "library_tab_selected")
