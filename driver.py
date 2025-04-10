@@ -391,19 +391,19 @@ class Driver:
                     options.allow_invisible_elements = True
                     options.enable_multi_windows = True
                     options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
-                    # Set connection timeout - 5 seconds should be enough but not too long
+                    # Set longer timeouts to avoid connection issues
                     options.set_capability(
-                        "uiautomator2ServerLaunchTimeout", 5000
-                    )  # 5 seconds timeout for UiAutomator2 server launch
+                        "uiautomator2ServerLaunchTimeout", 20000
+                    )  # 20 seconds timeout for UiAutomator2 server launch
                     # Leave this higher since we need time for ADB commands during actual operations
                     options.set_capability("adbExecTimeout", 120000)  # 120 seconds timeout for ADB commands
-                    options.set_capability("connectionTimeout", 5000)  # 5 seconds for connection timeout
+                    options.set_capability("connectionTimeout", 20000)  # 20 seconds for connection timeout
 
-                    # Use shorter timeout on webdriver initialization
+                    # Use longer timeout on webdriver initialization
                     import socket
 
                     original_timeout = socket.getdefaulttimeout()
-                    socket.setdefaulttimeout(5)  # 5 second timeout
+                    socket.setdefaulttimeout(20)  # 20 second timeout
                     try:
                         self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
                         logger.info("Driver initialized successfully")
