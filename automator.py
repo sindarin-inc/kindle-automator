@@ -58,22 +58,23 @@ class KindleAutomator:
         # Initialize handlers
         self.library_handler = LibraryHandler(self.driver)
         self.reader_handler = ReaderHandler(self.driver)
-        
+
         # Verify app is in foreground - sometimes it quits after driver connects
         try:
             current_activity = self.driver.current_activity
             logger.info(f"After driver initialization, current activity: {current_activity}")
-            
+
             # If we're not in the Kindle app, try to relaunch it
-            if not current_activity.startswith("com.amazon.kindle"):
+            # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
+            if not (current_activity.startswith("com.amazon.kindle") or current_activity.startswith("com.amazon.kcp")):
                 logger.warning("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
                     logger.info("Successfully launched Kindle app after initialization")
-                    
+
                     # Verify we're back in the app
                     current_activity = self.driver.current_activity
                     logger.info(f"New current activity after relaunch: {current_activity}")
-                    if not current_activity.startswith("com.amazon.kindle"):
+                    if not (current_activity.startswith("com.amazon.kindle") or current_activity.startswith("com.amazon.kcp")):
                         logger.error("Failed to bring Kindle app to foreground after relaunch attempt")
                         return False
         except Exception as e:

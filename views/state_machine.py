@@ -273,27 +273,28 @@ class KindleStateMachine:
                 try:
                     current_activity = self.driver.current_activity
                     logger.info(f"Current activity: {current_activity}")
-                    
+
                     # If the current activity is not Kindle (e.g. NexusLauncherActivity), the app has quit
-                    if not current_activity.startswith("com.amazon.kindle"):
+                    # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
+                    if not (current_activity.startswith("com.amazon.kindle") or current_activity.startswith("com.amazon.kcp")):
                         logger.warning("App has quit or was not launched - current activity is not Kindle")
-                        
+
                         # Try to relaunch the app
                         if self.view_inspector.ensure_app_foreground():
                             logger.info("Successfully relaunched Kindle app, waiting for it to initialize...")
                             time.sleep(2)  # Wait for app to fully initialize
-                            
+
                             # Update the state again after relaunch
                             self.current_state = self._get_current_state()
                             logger.info(f"After app relaunch, state is: {self.current_state}")
-                            
+
                             # If we're now in a known state, return it
                             if self.current_state != AppState.UNKNOWN:
                                 return self.current_state
-                    
+
                 except Exception as e:
                     logger.error(f"Error checking current activity: {e}")
-                
+
                 # Store page source for debugging if still unknown
                 source = self.driver.page_source
                 filepath = store_page_source(source, "unknown_state")
@@ -306,7 +307,9 @@ class KindleStateMachine:
 
                 # Check for reading view dialog elements (simplified)
                 try:
-                    from views.reading.view_strategies import GO_TO_LOCATION_DIALOG_IDENTIFIERS
+                    from views.reading.view_strategies import (
+                        GO_TO_LOCATION_DIALOG_IDENTIFIERS,
+                    )
 
                     # Check for "Go to that location?" dialog
                     for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:

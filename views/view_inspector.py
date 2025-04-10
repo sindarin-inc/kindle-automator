@@ -67,15 +67,15 @@ class ViewInspector:
             device_id = None
             if self.automator and hasattr(self.automator, "device_id"):
                 device_id = self.automator.device_id
-            
+
             logger.info(f"Bringing {self.app_package} to foreground...")
-            
+
             # Build the ADB command based on whether we have a device ID
             cmd = ["adb"]
             if device_id:
                 cmd.extend(["-s", device_id])
             cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
-            
+
             # Run the command
             result = subprocess.run(
                 cmd,
@@ -84,21 +84,24 @@ class ViewInspector:
                 text=True,
             )
             logger.info(f"App launch command result: {result.stdout.strip()}")
-            
+
             # Give the app a moment to fully initialize
             time.sleep(2)  # Increased to 2s to ensure app has time to launch
-            
+
             # Verify app is now in foreground by checking current activity
             try:
                 current_activity = self.driver.current_activity
                 logger.info(f"After launch, current activity is: {current_activity}")
-                if current_activity.startswith("com.amazon.kindle"):
+                # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
+                if current_activity.startswith("com.amazon.kindle") or current_activity.startswith("com.amazon.kcp"):
                     logger.info("Successfully verified Kindle app is in foreground")
                 else:
-                    logger.warning(f"App launch verification failed - current activity is: {current_activity}")
+                    logger.warning(
+                        f"App launch verification failed - current activity is: {current_activity}"
+                    )
             except Exception as e:
                 logger.warning(f"Could not verify app launch via activity check: {e}")
-            
+
             logger.info("App brought to foreground")
             return True
         except subprocess.CalledProcessError as e:
@@ -111,7 +114,10 @@ class ViewInspector:
 
         # Try the most reliable tab selection strategy first (second strategy in the list)
         try:
-            by, value = (AppiumBy.XPATH, f"//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/{tab_name.lower()}_tab']//android.widget.TextView[@selected='true']")
+            by, value = (
+                AppiumBy.XPATH,
+                f"//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/{tab_name.lower()}_tab']//android.widget.TextView[@selected='true']",
+            )
             element = self.driver.find_element(by, value)
             if element.is_displayed():
                 logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")

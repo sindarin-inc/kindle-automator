@@ -1561,6 +1561,74 @@ class LibraryHandler:
                 filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
                 logger.info(f"Stored unknown library timeout page source at: {filepath}")
                 logger.error(f"Failed to wait for reading view: {e}")
+
+                # After the timeout, let's specifically check for Download Limit dialog
+                # which might have appeared after the initial wait
+                logger.info("Checking specifically for Download Limit dialog after timeout...")
+                try:
+                    # Import download limit identifiers here to avoid circular imports
+                    from views.reading.interaction_strategies import (
+                        DOWNLOAD_LIMIT_DEVICE_LIST,
+                        DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
+                        DOWNLOAD_LIMIT_ERROR_TEXT,
+                        DOWNLOAD_LIMIT_REMOVE_BUTTON,
+                    )
+
+                    # Check for download limit dialog title
+                    for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element and element.is_displayed():
+                                logger.info(
+                                    f"Download Limit dialog found after timeout: {strategy}={locator}"
+                                )
+                                return True  # ReaderHandler will handle the dialog
+                        except:
+                            pass
+
+                    # Check for error text
+                    for strategy, locator in DOWNLOAD_LIMIT_ERROR_TEXT:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element and element.is_displayed():
+                                logger.info(
+                                    f"Download Limit error text found after timeout: {strategy}={locator}"
+                                )
+                                return True  # ReaderHandler will handle the dialog
+                        except:
+                            pass
+
+                    # Final check - look for device list + button combination
+                    device_list = None
+                    for dl_strategy, dl_locator in DOWNLOAD_LIMIT_DEVICE_LIST:
+                        try:
+                            el = self.driver.find_element(dl_strategy, dl_locator)
+                            if el.is_displayed():
+                                device_list = True
+                                break
+                        except:
+                            pass
+
+                    button = None
+                    for btn_strategy, btn_locator in DOWNLOAD_LIMIT_REMOVE_BUTTON:
+                        try:
+                            el = self.driver.find_element(btn_strategy, btn_locator)
+                            if el.is_displayed():
+                                button = True
+                                break
+                        except:
+                            pass
+
+                    if device_list and button:
+                        logger.info("Found Download Limit dialog (device list + button) after timeout")
+                        return True  # ReaderHandler will handle the dialog
+
+                    logger.info("No Download Limit dialog found after explicit check")
+
+                except Exception as dl_e:
+                    logger.error(f"Error checking for Download Limit dialog: {dl_e}")
+
+                # We didn't find the Download Limit dialog, so return failure
                 return False
 
         except Exception as e:
