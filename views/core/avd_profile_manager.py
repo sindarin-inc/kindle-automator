@@ -440,6 +440,48 @@ class AVDProfileManager:
         if self.current_profile and "styles_updated" in self.current_profile:
             return self.current_profile["styles_updated"]
         return False
+        
+    def update_style_preference(self, is_updated: bool) -> bool:
+        """
+        Update the styles_updated preference for the current profile.
+        
+        Args:
+            is_updated: Boolean indicating whether styles have been updated
+            
+        Returns:
+            bool: True if the update was successful, False otherwise
+        """
+        try:
+            if not self.current_profile:
+                logger.warning("No current profile to update style preference for")
+                return False
+                
+            email = self.current_profile.get("email")
+            if not email:
+                logger.warning("Current profile has no email to update style preference for")
+                return False
+                
+            # Update the current profile
+            self.current_profile["styles_updated"] = is_updated
+            
+            # Also update user preferences to ensure persistence
+            if email not in self.user_preferences:
+                self.user_preferences[email] = {}
+            self.user_preferences[email]["styles_updated"] = is_updated
+            
+            # Save changes to both files
+            self._save_current_profile(
+                email, 
+                self.current_profile.get("avd_name", ""), 
+                self.current_profile.get("emulator_id")
+            )
+            self._save_user_preferences()
+            
+            logger.info(f"Successfully updated style preference for {email} to {is_updated}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating style preference: {e}")
+            return False
 
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """
