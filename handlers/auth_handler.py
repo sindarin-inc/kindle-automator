@@ -364,40 +364,53 @@ class AuthenticationHandler:
                     # No error box found, continue with other checks
                     pass
 
-                # Check if the sign-in button is disabled, which indicates an error state
+                # Check if the sign-in button is disabled, which *might* indicate an authentication in progress
+                # or an error state - we need to carefully distinguish between these states
                 try:
                     sign_in_button = driver.find_element(
                         AppiumBy.XPATH, "//android.widget.Button[@text='Sign in' and @enabled='false']"
                     )
                     if sign_in_button:
-                        logger.info("Sign-in button is disabled, indicating an authentication error")
+                        logger.info("Sign-in button is disabled, could be processing authentication...")
 
-                        # Check for any error messages in the page
-                        try:
-                            # Store page source for debugging
-                            filepath = store_page_source(driver.page_source, "auth_error_disabled_button")
-                            logger.info(f"Stored auth error page source at: {filepath}")
+                        # First check if we have any explicit error messages
+                        error_found = False
+                        for strategy in AUTH_ERROR_STRATEGIES:
+                            try:
+                                error = driver.find_element(*strategy)
+                                if error and error.text.strip():
+                                    logger.error(
+                                        f"Found error message with disabled button: {error.text.strip()}"
+                                    )
+                                    error_found = True
+                                    return (LoginVerificationState.ERROR, error.text.strip())
+                            except:
+                                continue
 
-                            # Look for any error text in the page
-                            for strategy in AUTH_ERROR_STRATEGIES:
-                                try:
-                                    error = driver.find_element(*strategy)
-                                    if error and error.text.strip():
-                                        logger.error(
-                                            f"Found error message with disabled button: {error.text.strip()}"
-                                        )
-                                        return (LoginVerificationState.ERROR, error.text.strip())
-                                except:
-                                    continue
-
-                            # If no specific error message found, return a generic error
-                            return (
-                                LoginVerificationState.INCORRECT_PASSWORD,
-                                "Authentication failed - incorrect credentials",
+                        # If no error text was found, this could be an in-progress authentication
+                        # Return None to continue waiting rather than immediately failing
+                        if not error_found:
+                            # Store page source for debugging but continue waiting
+                            filepath = store_page_source(driver.page_source, "auth_button_disabled_waiting")
+                            logger.info(
+                                f"Stored authentication state page source with disabled button at: {filepath}"
                             )
-                        except Exception as e:
-                            logger.error(f"Error checking for error messages: {e}")
-                            return (LoginVerificationState.ERROR, "Authentication failed")
+
+                            # Check for library view indicators first - maybe we're actually logged in
+                            # despite the sign-in button still being visible in the DOM
+                            for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
+                                try:
+                                    element = driver.find_element(by, locator)
+                                    if element and element.is_displayed():
+                                        logger.info(
+                                            f"Found library view element '{locator}' while sign-in button is disabled"
+                                        )
+                                        return LoginVerificationState.SUCCESS
+                                except:
+                                    pass
+
+                            # Return None to keep waiting
+                            return None
                 except:
                     # No disabled sign-in button found, continue with other checks
                     pass
@@ -528,7 +541,55 @@ class AuthenticationHandler:
                     return False
 
             except TimeoutException:
-                # If we timeout, log the page source to see what's visible
+                # If we timeout, check what state we're in before giving up
+                # First, check if we can find any library view indicators
+                for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
+                    try:
+                        element = self.driver.find_element(by, locator)
+                        if element and element.is_displayed():
+                            logger.info(
+                                f"Found library view element '{locator}' after timeout - login successful"
+                            )
+                            return True
+                    except:
+                        continue
+
+                # Check if we still have a disabled sign-in button
+                try:
+                    sign_in_button = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.Button[@text='Sign in' and @enabled='false']"
+                    )
+                    # Check if we have any error messages
+                    error_found = False
+                    for strategy in AUTH_ERROR_STRATEGIES:
+                        try:
+                            error_elem = self.driver.find_element(*strategy)
+                            if error_elem and error_elem.text.strip():
+                                error_found = True
+                                break
+                        except:
+                            continue
+
+                    if sign_in_button and not error_found:
+                        # We have a disabled button but no error messages - likely still processing
+                        logger.warning("Authentication still processing after timeout - continuing to wait")
+                        # Try waiting a bit longer (extra 10 seconds)
+                        time.sleep(10)
+                        # Check one more time for library view
+                        for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
+                            try:
+                                element = self.driver.find_element(by, locator)
+                                if element and element.is_displayed():
+                                    logger.info(
+                                        f"Found library view element '{locator}' after extended wait - login successful"
+                                    )
+                                    return True
+                            except:
+                                continue
+                except:
+                    pass
+
+                # If we reach here, we truly timed out
                 filepath = store_page_source(self.driver.page_source, "auth_login_timeout")
                 logger.info(f"Stored unknown timeout page source at: {filepath}")
 
