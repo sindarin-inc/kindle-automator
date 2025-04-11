@@ -1,5 +1,6 @@
 import base64
 import logging
+import concurrent.futures
 import os
 import platform
 import signal
@@ -1489,52 +1490,49 @@ class KindleOCR:
             # Initialize Mistral client
             client = Mistral(api_key=api_key)
 
-            try:
-                # Process the image with OCR with a 10 second timeout
+            # Implement our own timeout using ThreadPoolExecutor
+            TIMEOUT_SECONDS = 10
+            
+            # Define the OCR function that will run in a separate thread
+            def run_ocr():
                 ocr_response = client.ocr.process(
                     model="mistral-ocr-latest",
                     document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
-                    timeout=10  # 10 second timeout
                 )
-
-                # Extract and return the OCR text
-                logger.info(f"OCR response: {ocr_response}")
+                
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
-                    return page.markdown, None
-                else:
-                    error_msg = "No OCR response or no pages found"
-                    logger.error(error_msg)
-                    return None, error_msg
+                    return page.markdown
+                return None
+            
+            # Execute with timeout
+            try:
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    # Submit the OCR task to the executor
+                    future = executor.submit(run_ocr)
                     
-            except TimeoutError as te:
-                error_msg = "OCR request timed out after 10 seconds"
-                logger.error(f"{error_msg}: {te}")
-                return None, error_msg
-                
-            except requests.exceptions.Timeout as rt:
-                error_msg = "OCR request timed out after 10 seconds"
-                logger.error(f"{error_msg}: {rt}")
-                return None, error_msg
-                
-            except requests.exceptions.ReadTimeout as rrt:
-                error_msg = "OCR request read timed out after 10 seconds"
-                logger.error(f"{error_msg}: {rrt}")
-                return None, error_msg
-                
-            except requests.exceptions.ConnectTimeout as ct:
-                error_msg = "OCR request connection timed out after 10 seconds"
-                logger.error(f"{error_msg}: {ct}")
-                return None, error_msg
-                
-            except urllib3.exceptions.ReadTimeoutError as urte:
-                error_msg = "OCR request urllib3 read timed out after 10 seconds"
-                logger.error(f"{error_msg}: {urte}")
-                return None, error_msg
-                
-            except urllib3.exceptions.ConnectTimeoutError as ucte:
-                error_msg = "OCR request urllib3 connection timed out after 10 seconds"
-                logger.error(f"{error_msg}: {ucte}")
+                    try:
+                        # Wait for the result with a timeout
+                        ocr_text = future.result(timeout=TIMEOUT_SECONDS)
+                        
+                        if ocr_text:
+                            logger.info("OCR processing successful")
+                            return ocr_text, None
+                        else:
+                            error_msg = "No OCR response or no pages found"
+                            logger.error(error_msg)
+                            return None, error_msg
+                            
+                    except concurrent.futures.TimeoutError:
+                        # Cancel the future if it times out
+                        future.cancel()
+                        error_msg = f"OCR request timed out after {TIMEOUT_SECONDS} seconds"
+                        logger.error(error_msg)
+                        return None, error_msg
+                        
+            except Exception as e:
+                error_msg = f"Error during OCR processing with timeout: {e}"
+                logger.error(error_msg)
                 return None, error_msg
 
         except Exception as e:
