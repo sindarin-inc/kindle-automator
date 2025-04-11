@@ -9,6 +9,8 @@ import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import requests
+import urllib3
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
 from flask import Flask, make_response, redirect, request, send_file
@@ -1487,20 +1489,52 @@ class KindleOCR:
             # Initialize Mistral client
             client = Mistral(api_key=api_key)
 
-            # Process the image with OCR
-            ocr_response = client.ocr.process(
-                model="mistral-ocr-latest",
-                document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
-            )
+            try:
+                # Process the image with OCR with a 10 second timeout
+                ocr_response = client.ocr.process(
+                    model="mistral-ocr-latest",
+                    document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
+                    timeout=10  # 10 second timeout
+                )
 
-            # Extract and return the OCR text
-            logger.info(f"OCR response: {ocr_response}")
-            if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
-                page = ocr_response.pages[0]
-                return page.markdown, None
-            else:
-                error_msg = "No OCR response or no pages found"
-                logger.error(error_msg)
+                # Extract and return the OCR text
+                logger.info(f"OCR response: {ocr_response}")
+                if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
+                    page = ocr_response.pages[0]
+                    return page.markdown, None
+                else:
+                    error_msg = "No OCR response or no pages found"
+                    logger.error(error_msg)
+                    return None, error_msg
+                    
+            except TimeoutError as te:
+                error_msg = "OCR request timed out after 10 seconds"
+                logger.error(f"{error_msg}: {te}")
+                return None, error_msg
+                
+            except requests.exceptions.Timeout as rt:
+                error_msg = "OCR request timed out after 10 seconds"
+                logger.error(f"{error_msg}: {rt}")
+                return None, error_msg
+                
+            except requests.exceptions.ReadTimeout as rrt:
+                error_msg = "OCR request read timed out after 10 seconds"
+                logger.error(f"{error_msg}: {rrt}")
+                return None, error_msg
+                
+            except requests.exceptions.ConnectTimeout as ct:
+                error_msg = "OCR request connection timed out after 10 seconds"
+                logger.error(f"{error_msg}: {ct}")
+                return None, error_msg
+                
+            except urllib3.exceptions.ReadTimeoutError as urte:
+                error_msg = "OCR request urllib3 read timed out after 10 seconds"
+                logger.error(f"{error_msg}: {urte}")
+                return None, error_msg
+                
+            except urllib3.exceptions.ConnectTimeoutError as ucte:
+                error_msg = "OCR request urllib3 connection timed out after 10 seconds"
+                logger.error(f"{error_msg}: {ucte}")
                 return None, error_msg
 
         except Exception as e:
