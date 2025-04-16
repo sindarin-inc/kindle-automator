@@ -2,12 +2,57 @@ import logging
 import time
 import traceback
 from functools import wraps
+from typing import Optional
 
 from selenium.common import exceptions as selenium_exceptions
 
 from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
+
+# Utility function to get email and handle fallbacks consistently
+def get_email_with_fallbacks(server_instance, use_helper=True) -> Optional[str]:
+    """
+    Get sindarin_email with consistent fallbacks across functions.
+    
+    Args:
+        server_instance: The AutomationServer instance
+        use_helper: Whether to use the get_sindarin_email helper function
+        
+    Returns:
+        The email to use, or None if not found
+    """
+    # Get sindarin_email from request
+    from flask import request
+    
+    if use_helper:
+        # Import the helper function from server.py
+        from server.server import get_sindarin_email
+        sindarin_email = get_sindarin_email(default_email=server_instance.current_email)
+    else:
+        # Direct extraction (fallback if the import fails)
+        sindarin_email = None
+        if 'sindarin_email' in request.args:
+            sindarin_email = request.args.get('sindarin_email')
+        elif request.is_json:
+            data_dict = request.get_json(silent=True) or {}
+            if 'sindarin_email' in data_dict:
+                sindarin_email = data_dict.get('sindarin_email')
+        elif 'sindarin_email' in request.form:
+            sindarin_email = request.form.get('sindarin_email')
+            
+        # Use current_email as fallback
+        if not sindarin_email:
+            sindarin_email = server_instance.current_email
+            
+    # Fall back to current profile if still no email
+    if not sindarin_email:
+        current_profile = server_instance.profile_manager.get_current_profile()
+        if current_profile and "email" in current_profile:
+            sindarin_email = current_profile["email"]
+            logger.debug(f"Using email from current profile: {sindarin_email}")
+            
+    return sindarin_email
 
 
 def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
@@ -29,6 +74,12 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         """Format response with time taken"""
         time_taken = round(time.time() - start_time, 3)
 
+        # Handle Flask Response objects (e.g., from serve_image)
+        import flask
+        from flask import Response
+        if isinstance(result, (flask.Response, Response)):
+            return result
+            
         if isinstance(result, tuple) and len(result) == 2:
             response, status_code = result
             if isinstance(response, dict):
@@ -40,35 +91,59 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         return result
 
     def restart_driver():
-        """Restart the Appium driver"""
-        if not server_instance.automator:
-            server_instance.initialize_automator()
-            return server_instance.automator.initialize_driver()
+        """Restart the Appium driver for the current email"""
+        # Get sindarin_email using our utility function with fallbacks
+        sindarin_email = get_email_with_fallbacks(server_instance)
+            
+        if not sindarin_email:
+            logger.error("No email found to restart driver")
+            return False
+                
+        # Set this as the current email
+        server_instance.current_email = sindarin_email
+        
+        # Check if we have an automator for this email
+        if sindarin_email not in server_instance.automators or not server_instance.automators[sindarin_email]:
+            logger.info(f"Initializing automator for {sindarin_email}")
+            automator = server_instance.initialize_automator(sindarin_email)
+            return automator.initialize_driver() if automator else False
 
-        server_instance.automator.cleanup()
-        server_instance.initialize_automator()
-        return server_instance.automator.initialize_driver()
+        # Clean up existing automator
+        automator = server_instance.automators[sindarin_email]
+        if automator:
+            automator.cleanup()
+            server_instance.automators[sindarin_email] = None
+            
+        # Initialize new automator
+        automator = server_instance.initialize_automator(sindarin_email)
+        return automator.initialize_driver() if automator else False
 
     def restart_emulator():
         """Restart the emulator if it's not running properly"""
         logger.info("Restarting emulator due to device list error")
-        current_profile = server_instance.profile_manager.get_current_profile()
-        if current_profile and "email" in current_profile:
-            email = current_profile["email"]
-            logger.info(f"Attempting to restart emulator for profile: {email}")
-            # Force a new emulator to be created
-            success, _ = server_instance.switch_profile(email, force_new_emulator=True)
-
-            # Initialize automator
-            if success and not server_instance.automator:
-                logger.info("Initializing automator after emulator restart")
-                server_instance.initialize_automator()
-                server_instance.automator.initialize_driver()
-
-            return success
-        else:
-            logger.error("No current profile found for restarting emulator")
+        
+        # Get sindarin_email using our utility function with fallbacks
+        sindarin_email = get_email_with_fallbacks(server_instance)
+            
+        if not sindarin_email:
+            logger.error("No email found to restart emulator")
             return False
+                
+        # Set as current email 
+        server_instance.current_email = sindarin_email
+            
+        logger.info(f"Attempting to restart emulator for profile: {sindarin_email}")
+        # Force a new emulator to be created
+        success, _ = server_instance.switch_profile(sindarin_email, force_new_emulator=True)
+
+        # Initialize automator
+        if success:
+            logger.info(f"Initializing automator after emulator restart for {sindarin_email}")
+            automator = server_instance.initialize_automator(sindarin_email)
+            if automator:
+                automator.initialize_driver()
+
+        return success
 
     def is_uiautomator_crash(error):
         """Check if the error is a UiAutomator2 server crash"""
@@ -241,9 +316,10 @@ def handle_automator_response(server_instance):
     Handles special cases like CAPTCHA requirements and ensures consistent
     response format across all endpoints. Includes retry logic with app relaunch.
     Also captures diagnostic snapshots before and after operations.
+    Works with the multi-emulator approach.
 
     Args:
-        server_instance: The AutomationServer instance containing the automator
+        server_instance: The AutomationServer instance containing the automators
     """
 
     def decorator(f):
@@ -256,10 +332,22 @@ def handle_automator_response(server_instance):
             if operation_name.startswith("_"):
                 operation_name = operation_name[1:]  # Remove leading underscore
 
+            # Get sindarin_email using our utility function with fallbacks
+            sindarin_email = get_email_with_fallbacks(server_instance)
+
+            # Get the appropriate automator instance
+            automator = None
+            if sindarin_email and hasattr(server_instance, "automators"):
+                automator = server_instance.automators.get(sindarin_email)
+            
+            # For backward compatibility
+            if not automator and hasattr(server_instance, "automator"):
+                automator = server_instance.automator
+
             # Take diagnostic snapshot before operation if driver is ready
-            if server_instance.automator and server_instance.automator.driver:
+            if automator and hasattr(automator, 'driver') and automator.driver:
                 try:
-                    server_instance.automator.take_diagnostic_snapshot(f"pre_{operation_name}")
+                    automator.take_diagnostic_snapshot(f"pre_{operation_name}")
                 except Exception as snap_e:
                     logger.warning(f"Failed to take pre-operation snapshot for {operation_name}: {snap_e}")
 
@@ -268,6 +356,12 @@ def handle_automator_response(server_instance):
                 def wrapped_func():
                     # Get the original response from the endpoint
                     response = f(*args, **kwargs)
+                    
+                    # Handle Flask Response objects directly
+                    import flask
+                    from flask import Response
+                    if isinstance(response, (flask.Response, Response)):
+                        return response
 
                     # If response is already a tuple with status code, unpack it
                     if isinstance(response, tuple):
@@ -275,11 +369,8 @@ def handle_automator_response(server_instance):
                     else:
                         result, status_code = response, 200
 
-                    # Get automator from server instance
-                    automator = server_instance.automator
-
                     # Take diagnostic snapshot after successful operation
-                    if automator and automator.driver and status_code < 400:
+                    if automator and hasattr(automator, 'driver') and automator.driver and status_code < 400:
                         try:
                             automator.take_diagnostic_snapshot(f"post_{operation_name}")
                         except Exception as snap_e:
@@ -288,7 +379,7 @@ def handle_automator_response(server_instance):
                             )
 
                     # Check for special states that need handling
-                    if automator and automator.state_machine:
+                    if automator and hasattr(automator, 'state_machine') and automator.state_machine:
                         current_state = automator.state_machine.current_state
 
                         # Handle CAPTCHA state
@@ -353,9 +444,9 @@ def handle_automator_response(server_instance):
                 logger.error(f"Traceback: {traceback.format_exc()}")
 
                 # Take diagnostic snapshot on error if the driver is still alive
-                if server_instance.automator and server_instance.automator.driver:
+                if automator and hasattr(automator, 'driver') and automator.driver:
                     try:
-                        server_instance.automator.take_diagnostic_snapshot(f"error_{operation_name}")
+                        automator.take_diagnostic_snapshot(f"error_{operation_name}")
                     except Exception as snap_e:
                         logger.warning(f"Failed to take error snapshot for {operation_name}: {snap_e}")
 

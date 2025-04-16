@@ -192,9 +192,21 @@ class EmulatorManager:
             logger.error(f"Error checking if emulator {emulator_id} is ready: {e}")
             return False
 
+    def stop_specific_emulator(self, emulator_id: str) -> bool:
+        """
+        Stop a specific emulator by ID. Public method for external use.
+
+        Args:
+            emulator_id: The emulator ID to stop (e.g. emulator-5554)
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self._stop_specific_emulator(emulator_id)
+        
     def _stop_specific_emulator(self, emulator_id: str) -> bool:
         """
-        Stop a specific emulator by ID.
+        Stop a specific emulator by ID. Internal implementation.
 
         Args:
             emulator_id: The emulator ID to stop (e.g. emulator-5554)

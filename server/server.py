@@ -8,14 +8,15 @@ import subprocess
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from functools import wraps
 
 import requests
 import urllib3
+import flask
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
-from flask import Flask, make_response, redirect, request, send_file, jsonify
+from flask import Flask, Response, make_response, redirect, request, send_file, jsonify
 from flask_restful import Api, Resource
 from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
@@ -55,6 +56,39 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 app = Flask(__name__)
 api = Api(app)
 
+# Utility function to extract sindarin_email from any request
+def get_sindarin_email(default_email: Optional[str] = None) -> Optional[str]:
+    """
+    Extract sindarin_email from request (query params, JSON body, or form data).
+    
+    Args:
+        default_email: Default email to return if not found in request
+        
+    Returns:
+        The extracted email or the default email if not found
+    """
+    sindarin_email = None
+    
+    # Check in URL parameters
+    if 'sindarin_email' in request.args:
+        sindarin_email = request.args.get('sindarin_email')
+        logger.debug(f"Found sindarin_email in URL parameters: {sindarin_email}")
+    
+    # Check in JSON body if present
+    elif request.is_json:
+        data = request.get_json(silent=True) or {}
+        if 'sindarin_email' in data:
+            sindarin_email = data.get('sindarin_email')
+            logger.debug(f"Found sindarin_email in JSON body: {sindarin_email}")
+    
+    # Check in form data
+    elif 'sindarin_email' in request.form:
+        sindarin_email = request.form.get('sindarin_email')
+        logger.debug(f"Found sindarin_email in form data: {sindarin_email}")
+    
+    # Return either found email or default
+    return sindarin_email or default_email
+
 # We'll define the AutomationServer class below and instantiate it after the class definition
 
 # Set up request and response logging middleware
@@ -64,25 +98,12 @@ setup_request_logger(app)
 def ensure_user_profile_loaded(f):
     @wraps(f)
     def middleware(*args, **kwargs):
-        # Get sindarin_email from request data (either query params, form data, or JSON body)
-        sindarin_email = None
-
-        # Check in URL parameters
-        if 'sindarin_email' in request.args:
-            sindarin_email = request.args.get('sindarin_email')
-            logger.info(f"Found sindarin_email in URL parameters: {sindarin_email}")
+        # Get sindarin_email from request data using our utility function
+        sindarin_email = get_sindarin_email()
         
-        # Check in JSON body if present
-        elif request.is_json:
-            data = request.get_json(silent=True) or {}
-            if 'sindarin_email' in data:
-                sindarin_email = data.get('sindarin_email')
-                logger.info(f"Found sindarin_email in JSON body: {sindarin_email}")
-        
-        # Check in form data
-        elif 'sindarin_email' in request.form:
-            sindarin_email = request.form.get('sindarin_email')
-            logger.info(f"Found sindarin_email in form data: {sindarin_email}")
+        # If sindarin_email was found, log it at INFO level
+        if sindarin_email:
+            logger.info(f"Found sindarin_email in request: {sindarin_email}")
         
         # If no sindarin_email found, don't attempt to load a profile and continue
         if not sindarin_email:
@@ -107,23 +128,35 @@ def ensure_user_profile_loaded(f):
         # Check if the AVD is already running for this email
         is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(sindarin_email)
         
-        if not avd_exists:
+        # Skip AVD existence check in development environment on macOS
+        is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
+        
+        if not avd_exists and not is_mac_dev:
             # AVD doesn't exist - require the user to call /auth first to create it
             logger.warning(f"No AVD exists for email {sindarin_email}, user must authenticate first to create profile")
-            return jsonify({
-                "error": "No AVD profile found for this email",
-                "message": "You need to authenticate first using the /auth endpoint to create a profile",
-                "requires_auth": True
-            }), 401
+            return {"error": "No AVD profile found for this email",
+                    "message": "You need to authenticate first using the /auth endpoint to create a profile",
+                    "requires_auth": True}, 401
+        elif not avd_exists and is_mac_dev:
+            logger.info(f"In macOS dev environment: bypassing AVD existence check for {sindarin_email}")
+            # Try to create a mock AVD profile mapping for this email
+            server.profile_manager.register_email_to_avd(sindarin_email, "Pixel_API_30")
                 
-        # At this point, an AVD exists for this user but may not be loaded
-        # If we already have an active session with the correct profile, continue
-        if server.current_email == sindarin_email and server.automator:
-            logger.info(f"Already using profile for email: {sindarin_email}")
+        # Check if we already have a working automator for this email
+        automator = server.automators.get(sindarin_email)
+        if automator and hasattr(automator, 'driver') and automator.driver:
+            # Set as current email for backward compatibility
+            server.current_email = sindarin_email
+            logger.info(f"Already have automator for email: {sindarin_email}")
+            
             # If the emulator is running for this profile, we're good to go
             if is_running:
                 logger.debug(f"Emulator already running for {sindarin_email}")
-                return f(*args, **kwargs)
+                result = f(*args, **kwargs)
+                # Handle Flask Response objects appropriately
+                if isinstance(result, (flask.Response, Response)):
+                    return result
+                return result
         
         # Need to switch to this profile - server.switch_profile handles both:
         # 1. Switching to an existing profile 
@@ -133,38 +166,47 @@ def ensure_user_profile_loaded(f):
         
         if not success:
             logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
-            return jsonify({
-                "error": f"Failed to load profile: {message}",
-                "message": "There was an error loading this user profile"
-            }), 500
+            return {"error": f"Failed to load profile: {message}",
+                    "message": "There was an error loading this user profile"}, 500
             
         logger.info(f"Successfully switched to profile for {sindarin_email}")
+        
+        # Get the automator for this email
+        automator = server.automators.get(sindarin_email)
+        
         # Profile switch was successful, initialize automator if needed
-        if not server.automator:
-            logger.info("Initializing automator for switched profile")
-            server.initialize_automator()
+        if not automator:
+            logger.info(f"Initializing automator for {sindarin_email}")
+            automator = server.initialize_automator(sindarin_email)
+            
+            if not automator:
+                logger.error(f"Failed to initialize automator for {sindarin_email}")
+                return {"error": f"Failed to initialize automator for {sindarin_email}",
+                        "message": "Could not create automator instance"}, 500
             
             # Try initializing the driver if needed
-            if not server.automator.driver:
-                if not server.automator.initialize_driver():
-                    logger.error("Failed to initialize driver for switched profile")
-                    return jsonify({
-                        "error": "Failed to initialize driver for switched profile",
-                        "message": "The device could not be connected"
-                    }), 500
+            if not automator.driver:
+                if not automator.initialize_driver():
+                    logger.error(f"Failed to initialize driver for {sindarin_email}")
+                    return {"error": f"Failed to initialize driver for {sindarin_email}",
+                            "message": "The device could not be connected"}, 500
                     
         # Continue with the original endpoint handler
-        return f(*args, **kwargs)
+        result = f(*args, **kwargs)
+        # Handle Flask Response objects appropriately
+        if isinstance(result, (flask.Response, Response)):
+            return result
+        return result
             
     return middleware
 
 
 class AutomationServer:
     def __init__(self):
-        self.automator: Optional[KindleAutomator] = None
+        self.automators = {}  # Dictionary to track multiple automators by email
         self.appium_process = None
         self.pid_dir = "logs"
-        self.current_book = None  # Track the currently open book title
+        self.current_books = {}  # Track the currently open book title for each email
         os.makedirs(self.pid_dir, exist_ok=True)
 
         # Initialize the AVD profile manager
@@ -172,27 +214,59 @@ class AutomationServer:
         from views.core.avd_profile_manager import AVDProfileManager
 
         self.profile_manager = AVDProfileManager(base_dir=self.android_home)
-        self.current_email = None
+        self.current_email = None  # Current active email for backward compatibility
 
-    def initialize_automator(self):
-        """Initialize automator without credentials or captcha solution"""
-        if not self.automator:
-            # Initialize without credentials or captcha - they'll be set when needed
-            self.automator = KindleAutomator()
-            # Connect profile manager to automator for device ID tracking
-            self.automator.profile_manager = self.profile_manager
-            # Scan for any AVDs with email patterns in their names and register them
-            discovered = self.profile_manager.scan_for_avds_with_emails()
-            if discovered:
-                logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
-        return self.automator
+    @property
+    def automator(self):
+        """Get the current automator instance for the active email. 
+        For backward compatibility with existing code."""
+        if self.current_email and self.current_email in self.automators:
+            return self.automators[self.current_email]
+        return None
+
+    def initialize_automator(self, email=None):
+        """Initialize automator without credentials or captcha solution.
+        
+        Args:
+            email: The email for which to initialize an automator. If None, uses current_email.
+        
+        Returns:
+            The automator instance
+        """
+        # If no email specified, use current_email
+        target_email = email or self.current_email
+        
+        if not target_email:
+            logger.warning("No target email provided for automator initialization")
+            return None
+            
+        # Check if we already have an automator for this email
+        if target_email in self.automators and self.automators[target_email]:
+            logger.info(f"Using existing automator for {target_email}")
+            return self.automators[target_email]
+            
+        # Initialize a new automator
+        logger.info(f"Initializing new automator for {target_email}")
+        automator = KindleAutomator()
+        # Connect profile manager to automator for device ID tracking
+        automator.profile_manager = self.profile_manager
+        
+        # Store the automator
+        self.automators[target_email] = automator
+        
+        # Scan for any AVDs with email patterns in their names and register them
+        discovered = self.profile_manager.scan_for_avds_with_emails()
+        if discovered:
+            logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
+            
+        return automator
 
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """Switch to a profile for the given email address.
 
         Args:
             email: The email address to switch to
-            force_new_emulator: If True, always stop any running emulator and start a new one
+            force_new_emulator: If True, always stop any emulator for this email and start a new one
                                (used with recreate=1 flag)
 
         Returns:
@@ -200,49 +274,39 @@ class AutomationServer:
         """
         logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
 
-        # Check if we're already using this profile with a working emulator
-        if self.current_email == email and not force_new_emulator:
-            logger.info(f"Already using profile for {email}")
+        # Set this as the current active email
+        self.current_email = email
 
-            # Check if there's a running emulator for this profile
-            is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
+        # Check if there's a running emulator for this profile
+        is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
 
-            if is_running and self.automator:
+        # Check if we already have an automator for this email
+        if email in self.automators and self.automators[email]:
+            if is_running and not force_new_emulator:
                 logger.info(
                     f"Automator already exists with running emulator for profile {email}, skipping profile switch"
                 )
                 return True, f"Already using profile for {email} with running emulator"
-            elif not is_running and self.automator:
-                # We have an automator but no running emulator - decide what to do
-                if force_new_emulator:
-                    logger.info(f"No running emulator for profile {email}, cleaning up automator for restart")
-                    self.automator.cleanup()
-                    self.automator = None
-                else:
-                    logger.info(
-                        f"No running emulator for profile {email}, but have automator - will use on next reconnect"
-                    )
-                    return True, f"Profile {email} is already active, waiting for reconnection"
-            else:
-                logger.info(f"No automator exists for profile {email}, will reinitialize")
-
-        # First cleanup existing automator if there is one
-        if self.automator:
-            logger.info("Cleaning up existing automator")
-            self.automator.cleanup()
-            self.automator = None
-
-        # Switch to the profile for this email
+            elif not is_running and not force_new_emulator:
+                # We have an automator but no running emulator
+                logger.info(
+                    f"No running emulator for profile {email}, but have automator - will use on next reconnect"
+                )
+                return True, f"Profile {email} is already active, waiting for reconnection"
+            elif force_new_emulator:
+                # Need to recreate the automator
+                logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
+                self.automators[email].cleanup()
+                self.automators[email] = None
+        
+        # Switch to the profile for this email - this will not stop other emulators
         success, message = self.profile_manager.switch_profile(email, force_new_emulator=force_new_emulator)
         if not success:
             logger.error(f"Failed to switch profile: {message}")
             return False, message
 
-        # Update current email
-        self.current_email = email
-
         # Clear current book since we're switching profiles
-        self.clear_current_book()
+        self.clear_current_book(email)
 
         logger.info(f"Successfully switched to profile for {email}")
         return True, message
@@ -289,16 +353,42 @@ class AutomationServer:
             logger.error(f"Failed to start Appium server: {e}")
             return False
 
-    def set_current_book(self, book_title):
-        """Set the currently open book title"""
-        self.current_book = book_title
-        logger.info(f"Set current book to: {book_title}")
+    def set_current_book(self, book_title, email=None):
+        """Set the currently open book title for a specific email
 
-    def clear_current_book(self):
-        """Clear the currently open book tracking variable"""
-        if self.current_book:
-            logger.info(f"Cleared current book: {self.current_book}")
-            self.current_book = None
+        Args:
+            book_title: The title of the book
+            email: The email to associate with this book. If None, uses current_email.
+        """
+        target_email = email or self.current_email
+        if not target_email:
+            logger.warning("No email specified for set_current_book")
+            return
+            
+        self.current_books[target_email] = book_title
+        logger.info(f"Set current book for {target_email} to: {book_title}")
+
+    def clear_current_book(self, email=None):
+        """Clear the currently open book tracking variable for a specific email
+
+        Args:
+            email: The email for which to clear the book. If None, uses current_email.
+        """
+        target_email = email or self.current_email
+        if not target_email:
+            logger.warning("No email specified for clear_current_book")
+            return
+            
+        if target_email in self.current_books:
+            logger.info(f"Cleared current book for {target_email}: {self.current_books[target_email]}")
+            del self.current_books[target_email]
+    
+    @property
+    def current_book(self):
+        """Get the current book for the active email. For backward compatibility."""
+        if self.current_email and self.current_email in self.current_books:
+            return self.current_books[self.current_email]
+        return None
 
 
 # Create the server instance
@@ -339,40 +429,63 @@ class InitializeResource(Resource):
 
 
 def ensure_automator_healthy(f):
-    """Decorator to ensure automator is initialized and healthy before each operation."""
+    """Decorator to ensure automator is initialized and healthy before each operation.
+    Works with the multi-emulator approach by getting the sindarin_email from the request.
+    """
 
     def wrapper(*args, **kwargs):
         max_retries = 3  # Allow more retries for UiAutomator2 crashes
+        
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email(default_email=server.current_email)
+            
+        # If we still don't have an email after checking current_email, try the current profile
+        if not sindarin_email:
+            # Try to get from current profile
+            current_profile = server.profile_manager.get_current_profile()
+            if current_profile:
+                sindarin_email = current_profile.get("email")
+                logger.debug(f"Using email from current profile: {sindarin_email}")
+            
+        if not sindarin_email:
+            logger.error("No sindarin_email found in request or current state")
+            return {"error": "No email provided to identify which profile to use"}, 400
+        
+        # Ensure this is set as the current email for backward compatibility
+        server.current_email = sindarin_email
 
         for attempt in range(max_retries):
             try:
+                # Get the automator for this email
+                automator = server.automators.get(sindarin_email)
+                
                 # Initialize automator if needed
-                if not server.automator:
-                    # If we have a current profile, ensure we're using it
-                    current_profile = server.profile_manager.get_current_profile()
-                    if current_profile:
-                        # Use the existing profile
-                        email = current_profile.get("email")
-                        logger.info(f"Using existing profile for email: {email}")
-                        success, message = server.switch_profile(email)
-                        if not success:
-                            logger.error(f"Failed to switch to existing profile: {message}")
-                            return {"error": f"Failed to switch to existing profile: {message}"}, 500
-
-                    logger.info("No automator found. Initializing automatically...")
-                    server.initialize_automator()
-                    if not server.automator.initialize_driver():
-                        logger.error("Failed to initialize driver automatically")
+                if not automator:
+                    logger.info(f"No automator found for {sindarin_email}. Initializing automatically...")
+                    automator = server.initialize_automator(sindarin_email)
+                    if not automator:
+                        logger.error(f"Failed to initialize automator for {sindarin_email}")
+                        return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
+                        
+                    if not automator.initialize_driver():
+                        logger.error(f"Failed to initialize driver for {sindarin_email}")
                         return {
-                            "error": "Failed to initialize driver automatically. Call /initialize first."
+                            "error": f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
                         }, 500
 
                 # Ensure driver is running
-                if not server.automator.ensure_driver_running():
-                    return {"error": "Failed to ensure driver is running"}, 500
+                if not automator.ensure_driver_running():
+                    logger.error(f"Failed to ensure driver is running for {sindarin_email}")
+                    return {"error": f"Failed to ensure driver is running for {sindarin_email}"}, 500
 
                 # Execute the function
-                return f(*args, **kwargs)
+                result = f(*args, **kwargs)
+                
+                # Special handling for Flask Response objects to prevent JSON serialization errors
+                if isinstance(result, (flask.Response, Response)):
+                    return result
+                    
+                return result
 
             except Exception as e:
                 # Check if it's the UiAutomator2 server crash error or other common crash patterns
@@ -396,8 +509,9 @@ def ensure_automator_healthy(f):
 
                     # Kill any leftover UiAutomator2 processes directly via ADB
                     try:
-                        if server.automator and server.automator.device_id:
-                            device_id = server.automator.device_id
+                        automator = server.automators.get(sindarin_email)
+                        if automator and automator.device_id:
+                            device_id = automator.device_id
                             logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
                             subprocess.run(
                                 [f"adb -s {device_id} shell pkill -f uiautomator"],
@@ -409,10 +523,12 @@ def ensure_automator_healthy(f):
                     except Exception as kill_e:
                         logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")
 
-                    # Force a complete driver restart
-                    if server.automator:
-                        logger.info("Cleaning up automator resources")
-                        server.automator.cleanup()
+                    # Force a complete driver restart for this email
+                    automator = server.automators.get(sindarin_email)
+                    if automator:
+                        logger.info(f"Cleaning up automator resources for {sindarin_email}")
+                        automator.cleanup()
+                        server.automators[sindarin_email] = None
 
                     # Reset Appium server state as well
                     try:
@@ -426,22 +542,19 @@ def ensure_automator_healthy(f):
                     except Exception as appium_e:
                         logger.warning(f"Error while resetting Appium: {appium_e}")
 
-                    # If we have a current profile, try to switch to it
-                    current_profile = server.profile_manager.get_current_profile()
-                    if current_profile:
-                        email = current_profile.get("email")
-                        logger.info(f"Attempting to switch back to profile for email: {email}")
-                        success, message = server.switch_profile(email)
-                        if not success:
-                            logger.error(f"Failed to switch back to profile: {message}")
-                            return {"error": f"Failed to switch back to profile: {message}"}, 500
+                    # Try to switch back to the profile
+                    logger.info(f"Attempting to switch back to profile for email: {sindarin_email}")
+                    success, message = server.switch_profile(sindarin_email)
+                    if not success:
+                        logger.error(f"Failed to switch back to profile: {message}")
+                        return {"error": f"Failed to switch back to profile: {message}"}, 500
 
-                    logger.info("Initializing automator after crash recovery")
-                    server.initialize_automator()
+                    logger.info(f"Initializing automator after crash recovery for {sindarin_email}")
+                    automator = server.initialize_automator(sindarin_email)
                     # Clear current book since we're restarting the driver
-                    server.clear_current_book()
+                    server.clear_current_book(sindarin_email)
 
-                    if server.automator.initialize_driver():
+                    if automator and automator.initialize_driver():
                         logger.info(
                             "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
                         )
@@ -632,16 +745,27 @@ class ScreenshotResource(Resource):
         use_base64 = is_base64_requested()
         if perform_ocr and not use_base64:
             use_base64 = True
+            
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email(default_email=server.current_email)
+            
+        if not sindarin_email:
+            return {"error": "No email provided to identify which profile to use"}, 400
+            
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            return {"error": f"No automator found for {sindarin_email}"}, 404
 
         # Generate a unique filename with timestamp to avoid caching issues
         timestamp = int(time.time())
         filename = f"current_screen_{timestamp}.png"
-        screenshot_path = os.path.join(server.automator.screenshots_dir, filename)
+        screenshot_path = os.path.join(automator.screenshots_dir, filename)
 
         # Take the screenshot
         try:
             # Check if we're in an auth-related state where we need to use secure screenshot
-            current_state = server.automator.state_machine.current_state
+            current_state = automator.state_machine.current_state
             auth_states = [AppState.SIGN_IN, AppState.CAPTCHA, AppState.LIBRARY_SIGN_IN, AppState.UNKNOWN]
 
             # Check if the use_scrcpy parameter is explicitly set
@@ -650,8 +774,8 @@ class ScreenshotResource(Resource):
             if current_state == AppState.UNKNOWN and not use_scrcpy:
                 # If state is unknown, update state first before deciding on screenshot method
                 logger.info("State is UNKNOWN, updating state before choosing screenshot method")
-                server.automator.state_machine.update_current_state()
-                current_state = server.automator.state_machine.current_state
+                automator.state_machine.update_current_state()
+                current_state = automator.state_machine.current_state
                 logger.info(f"State after update: {current_state}")
 
             if current_state in auth_states or use_scrcpy:
@@ -659,12 +783,12 @@ class ScreenshotResource(Resource):
                     f"Using secure screenshot method for auth state: {current_state} or explicit scrcpy request"
                 )
                 # First attempt with secure screenshot method
-                secure_path = server.automator.take_secure_screenshot(screenshot_path)
+                secure_path = automator.take_secure_screenshot(screenshot_path)
                 if not secure_path:
                     # Try with standard method as fallback but catch FLAG_SECURE exceptions
                     logger.warning("Secure screenshot failed, falling back to standard method")
                     try:
-                        server.automator.driver.save_screenshot(screenshot_path)
+                        automator.driver.save_screenshot(screenshot_path)
                     except Exception as inner_e:
                         # If this fails too, we'll log the error but continue with response processing
                         # so the error is properly reported to the client
@@ -672,7 +796,7 @@ class ScreenshotResource(Resource):
                         failed = "Failed to take screenshot - FLAG_SECURE may be set"
             else:
                 # Use standard screenshot for non-auth screens
-                server.automator.driver.save_screenshot(screenshot_path)
+                automator.driver.save_screenshot(screenshot_path)
         except Exception as e:
             logger.error(f"Error taking screenshot: {e}")
             failed = "Failed to take screenshot"
@@ -702,7 +826,7 @@ class ScreenshotResource(Resource):
             response_data = {}
 
             # Skip screenshot in LIBRARY state unless explicitly requested with save=1
-            current_state = server.automator.state_machine.current_state
+            current_state = automator.state_machine.current_state
             if current_state == AppState.LIBRARY and not save:
                 logger.info("Skipping screenshot in LIBRARY state since it's not needed")
                 response_data["message"] = "Screenshot skipped in LIBRARY state"
@@ -715,7 +839,7 @@ class ScreenshotResource(Resource):
             if include_xml:
                 try:
                     # Get page source from the driver
-                    page_source = server.automator.driver.page_source
+                    page_source = automator.driver.page_source
 
                     # Store the XML with the same base name as the screenshot
                     xml_filename = f"{image_id}.xml"
@@ -876,11 +1000,22 @@ class NavigationResource(Resource):
 
 
 class BookOpenResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
     def _open_book(self, book_title):
         """Open a specific book - shared implementation for GET and POST."""
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email(default_email=server.current_email)
+            
+        if not sindarin_email:
+            return {"error": "No email provided to identify which profile to use"}, 400
+            
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            return {"error": f"No automator found for {sindarin_email}"}, 404
+            
+        # Set this as the current email for backward compatibility
+        server.current_email = sindarin_email
+        
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
@@ -910,14 +1045,14 @@ class BookOpenResource(Resource):
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
             # Get reading progress
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
             logger.info(f"Progress: {progress}")
 
             # Save screenshot with unique ID
             screenshot_id = f"page_{int(time.time())}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
+            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
             time.sleep(0.5)
-            server.automator.driver.save_screenshot(screenshot_path)
+            automator.driver.save_screenshot(screenshot_path)
 
             # Create response data with progress info
             response_data = {"success": True, "progress": progress}
@@ -933,20 +1068,23 @@ class BookOpenResource(Resource):
             return response_data, 200
 
         # Reload the current state to be sure
-        server.automator.state_machine.update_current_state()
-        current_state = server.automator.state_machine.current_state
+        automator.state_machine.update_current_state()
+        current_state = automator.state_machine.current_state
         
         # IMPORTANT: For new app installation or first run, current_book may be None
         # even though we're already in reading state - we need to check that too
         
+        # Get current book for this email
+        current_book = server.current_books.get(sindarin_email)
+        
         # If we're already in READING state, we should NOT close the book - get the title!
         if current_state == AppState.READING:
             # First, check if we have current_book set
-            if server.current_book:
+            if current_book:
                 # Compare with the requested book
                 normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
                 normalized_current_title = "".join(
-                    c for c in server.current_book if c.isalnum() or c.isspace()
+                    c for c in current_book if c.isalnum() or c.isspace()
                 ).lower()
 
                 logger.info(
@@ -972,10 +1110,10 @@ class BookOpenResource(Resource):
                     return capture_book_state(already_open=True)
                     
                 # If we're in reading state but current_book doesn't match, try to get book title from UI
-                logger.info(f"In reading state but current book '{server.current_book}' doesn't match requested '{book_title}'")
+                logger.info(f"In reading state but current book '{current_book}' doesn't match requested '{book_title}'")
                 try:
                     # Try to get the current book title from the reader UI
-                    current_title_from_ui = server.automator.reader_handler.get_book_title()
+                    current_title_from_ui = automator.reader_handler.get_book_title()
                     if current_title_from_ui:
                         logger.info(f"Got book title from UI: '{current_title_from_ui}'")
                         
@@ -986,7 +1124,7 @@ class BookOpenResource(Resource):
                         if normalized_request_title == normalized_ui_title:
                             logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui)
+                            server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
                             
                         # Check partial match with UI title
@@ -1001,19 +1139,19 @@ class BookOpenResource(Resource):
                         ):
                             logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui)
+                            server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
                 
                 logger.info(
-                    f"No match found for book: {book_title} ({normalized_request_title}) != {server.current_book}, transitioning to library"
+                    f"No match found for book: {book_title} ({normalized_request_title}) != {current_book}, transitioning to library"
                 )
             else:
                 # We're in reading state but don't have current_book set - try to get it from UI
                 try:
                     # Try to get the current book title from the reader UI
-                    current_title_from_ui = server.automator.reader_handler.get_book_title()
+                    current_title_from_ui = automator.reader_handler.get_book_title()
                     if current_title_from_ui:
                         logger.info(f"In reading state with no tracked book. Got book title from UI: '{current_title_from_ui}'")
                         
@@ -1025,7 +1163,7 @@ class BookOpenResource(Resource):
                         if normalized_request_title == normalized_ui_title:
                             logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui)
+                            server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
                             
                         # Check partial match with UI title
@@ -1040,38 +1178,37 @@ class BookOpenResource(Resource):
                         ):
                             logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui)
+                            server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
         # Not in reading state but have tracked book - clear it
-        elif server.current_book:
+        elif current_book:
             logger.info(
-                f"Not in reading state: {current_state}, but have book '{server.current_book}' tracked - clearing it"
+                f"Not in reading state: {current_state}, but have book '{current_book}' tracked - clearing it"
             )
-            server.clear_current_book()
+            server.clear_current_book(sindarin_email)
 
         logger.info(f"Reloaded current state: {current_state}")
         
         # If we get here, we need to go to library and open the book
         logger.info(
-            f"Not already reading requested book: {book_title} != {server.current_book}, transitioning from {current_state} to library"
+            f"Not already reading requested book: {book_title} != {current_book}, transitioning from {current_state} to library"
         )
         # If we're not already reading the requested book, transition to library and open it
-        if server.automator.state_machine.transition_to_library(server=server):
-            success = server.automator.reader_handler.open_book(book_title, show_placemark=show_placemark)
+        if automator.state_machine.transition_to_library(server=server):
+            success = automator.reader_handler.open_book(book_title, show_placemark=show_placemark)
             logger.info(f"Book opened: {success}")
 
             if success:
                 # Set the current book in the server state
-                server.set_current_book(book_title)
+                server.set_current_book(book_title, sindarin_email)
                 return capture_book_state()
 
         return {"error": "Failed to open book"}, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
     def post(self):
         """Open a specific book via POST request."""
         data = request.get_json()
@@ -1083,15 +1220,25 @@ class BookOpenResource(Resource):
             request.args = request.args.copy()
             request.args["placemark"] = "1"
 
-        return self._open_book(book_title)
+        # Call the implementation without the handle_automator_response decorator
+        # since it might return a Response object that can't be JSON serialized
+        result = self._open_book(book_title)
+        
+        # Directly return the result, as Flask can handle Response objects
+        return result
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
     def get(self):
         """Open a specific book via GET request."""
         book_title = request.args.get("title")
-        return self._open_book(book_title)
+        
+        # Call the implementation without the handle_automator_response decorator
+        # since it might return a Response object that can't be JSON serialized
+        result = self._open_book(book_title)
+        
+        # Directly return the result, as Flask can handle Response objects
+        return result
 
 
 class StyleResource(Resource):
@@ -1506,13 +1653,18 @@ def serve_image(image_id, delete_after=True):
         response = make_response(send_file(image_path, mimetype="image/png"))
 
         # Delete the file after sending if requested
+        # We need to set up a callback to delete the file after the response is sent
         if delete_after:
-            try:
-                os.remove(image_path)
-                logger.info(f"Deleted image: {image_path}")
-            except Exception as e:
-                logger.error(f"Failed to delete image {image_path}: {e}")
+            @response.call_on_close
+            def on_close():
+                try:
+                    if os.path.exists(image_path):
+                        os.remove(image_path)
+                        logger.info(f"Deleted image: {image_path}")
+                except Exception as e:
+                    logger.error(f"Failed to delete image {image_path}: {e}")
 
+        # Return the response object directly
         return response
 
     except Exception as e:
@@ -1761,10 +1913,12 @@ def process_screenshot_response(screenshot_id, use_base64=False, perform_ocr=Fal
 class ImageResource(Resource):
     def get(self, image_id):
         """Get an image by ID and delete it after serving."""
+        # Don't use the @handle_automator_response decorator as it can't handle Flask Response objects
         return serve_image(image_id, delete_after=False)
 
     def post(self, image_id):
         """Get an image by ID without deleting it."""
+        # Don't use the @handle_automator_response decorator as it can't handle Flask Response objects
         return serve_image(image_id, delete_after=False)
 
 
@@ -1773,11 +1927,33 @@ class ProfilesResource(Resource):
         """List all available profiles"""
         profiles = server.profile_manager.list_profiles()
         current = server.profile_manager.get_current_profile()
-
-        return {"profiles": profiles, "current": current}, 200
+        
+        # Get additional info about running emulators
+        running_emulators = server.profile_manager.device_discovery.map_running_emulators()
+        
+        # Add information about which automators are active
+        active_automators = {}
+        for email, automator in server.automators.items():
+            if automator and hasattr(automator, 'driver') and automator.driver:
+                is_running = True
+                device_id = automator.device_id if hasattr(automator, 'device_id') else None
+                current_book = server.current_books.get(email) if email in server.current_books else None
+                
+                active_automators[email] = {
+                    "device_id": device_id,
+                    "is_running": is_running,
+                    "current_book": current_book
+                }
+        
+        return {
+            "profiles": profiles, 
+            "current": current, 
+            "running_emulators": running_emulators,
+            "active_automators": active_automators
+        }, 200
 
     def post(self):
-        """Create or delete a profile"""
+        """Create, delete or manage a profile"""
         data = request.get_json()
         action = data.get("action")
         email = data.get("email")
@@ -1791,6 +1967,26 @@ class ProfilesResource(Resource):
                     return {"success": False, "message": "Failed to reset style preferences"}, 500
             else:
                 return {"success": False, "message": "No current profile found"}, 400
+        
+        elif action == "list_active":
+            # List all active emulators with their details
+            running_emulators = server.profile_manager.device_discovery.map_running_emulators()
+            active_automators = {}
+            
+            for email, automator in server.automators.items():
+                if automator and hasattr(automator, 'driver') and automator.driver:
+                    device_id = automator.device_id if hasattr(automator, 'device_id') else None
+                    current_book = server.current_books.get(email) if email in server.current_books else None
+                    
+                    active_automators[email] = {
+                        "device_id": device_id,
+                        "current_book": current_book
+                    }
+            
+            return {
+                "running_emulators": running_emulators,
+                "active_automators": active_automators
+            }, 200
 
         # For all other actions, email is required
         if not email:
@@ -1807,6 +2003,29 @@ class ProfilesResource(Resource):
         elif action == "switch":
             success, message = server.switch_profile(email)
             return {"success": success, "message": message}, 200 if success else 500
+            
+        elif action == "stop_emulator":
+            # Find the running emulator for this email
+            is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(email)
+            
+            if not is_running:
+                return {"success": False, "message": f"No running emulator found for {email}"}, 404
+                
+            # Stop the emulator
+            success = server.profile_manager.stop_emulator(emulator_id)
+            
+            # Clean up the automator if it exists
+            if email in server.automators and server.automators[email]:
+                server.automators[email].cleanup()
+                server.automators[email] = None
+                
+            # Clear current book
+            server.clear_current_book(email)
+            
+            if success:
+                return {"success": True, "message": f"Stopped emulator for {email}"}, 200
+            else:
+                return {"success": False, "message": f"Failed to stop emulator for {email}"}, 500
 
         else:
             return {"error": f"Invalid action: {action}"}, 400
@@ -2031,9 +2250,25 @@ def cleanup_resources():
     """Clean up resources before exiting"""
     logger.info("Cleaning up resources before shutdown...")
 
-    # We intentionally keep emulators running during server shutdown
-    # This allows for faster reconnection when the server is restarted
-    logger.info("Preserving emulators during shutdown for faster reconnection")
+    # We intentionally keep all emulators running during server shutdown
+    # This allows for faster reconnection when the server is restarted,
+    # and supports the multi-emulator approach
+    logger.info("Preserving all emulators during shutdown for faster reconnection")
+    
+    # Cleanup automator instances but don't stop emulators
+    for email, automator in server.automators.items():
+        if automator:
+            try:
+                # Just clean up the automator, not the emulator
+                logger.info(f"Cleaning up automator for {email} (preserving emulator)")
+                # Don't call automator.cleanup() as it would stop the emulator
+                # Instead, just set it to None to release resources
+                automator.driver = None
+            except Exception as e:
+                logger.error(f"Error cleaning up automator for {email}: {e}")
+    
+    # Clear all automators
+    server.automators.clear()
 
     # Kill Appium server only
     try:
@@ -2043,7 +2278,7 @@ def cleanup_resources():
         logger.error(f"Error stopping Appium during shutdown: {e}")
 
     # We don't kill the ADB server either, to maintain connection with emulators
-    logger.info("Cleanup complete, server shutting down (emulators preserved)")
+    logger.info("Cleanup complete, server shutting down (all emulators preserved)")
 
 
 def signal_handler(sig, frame):
