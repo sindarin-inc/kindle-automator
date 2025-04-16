@@ -9,12 +9,13 @@ import time
 import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from functools import wraps
 
 import requests
 import urllib3
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
-from flask import Flask, make_response, redirect, request, send_file
+from flask import Flask, make_response, redirect, request, send_file, jsonify
 from flask_restful import Api, Resource
 from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
@@ -58,6 +59,104 @@ api = Api(app)
 
 # Set up request and response logging middleware
 setup_request_logger(app)
+
+# Middleware function to check and load user profile based on sindarin_email
+def ensure_user_profile_loaded(f):
+    @wraps(f)
+    def middleware(*args, **kwargs):
+        # Get sindarin_email from request data (either query params, form data, or JSON body)
+        sindarin_email = None
+
+        # Check in URL parameters
+        if 'sindarin_email' in request.args:
+            sindarin_email = request.args.get('sindarin_email')
+            logger.info(f"Found sindarin_email in URL parameters: {sindarin_email}")
+        
+        # Check in JSON body if present
+        elif request.is_json:
+            data = request.get_json(silent=True) or {}
+            if 'sindarin_email' in data:
+                sindarin_email = data.get('sindarin_email')
+                logger.info(f"Found sindarin_email in JSON body: {sindarin_email}")
+        
+        # Check in form data
+        elif 'sindarin_email' in request.form:
+            sindarin_email = request.form.get('sindarin_email')
+            logger.info(f"Found sindarin_email in form data: {sindarin_email}")
+        
+        # If no sindarin_email found, don't attempt to load a profile and continue
+        if not sindarin_email:
+            logger.debug("No sindarin_email provided in request, continuing without profile check")
+            return f(*args, **kwargs)
+        
+        # Check if a server instance exists (it should always be available after app startup)
+        if not hasattr(app, 'config') or 'server_instance' not in app.config:
+            logger.error("Server instance not available in app.config")
+            return jsonify({"error": "Server configuration error"}), 500
+        
+        server = app.config['server_instance']
+        
+        # Check if this profile exists by looking for an AVD
+        # This doesn't create the AVD - just checks if it's registered or exists
+        avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
+        
+        # Check if AVD file path exists
+        avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
+        avd_exists = os.path.exists(avd_path)
+        
+        # Check if the AVD is already running for this email
+        is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(sindarin_email)
+        
+        if not avd_exists:
+            # AVD doesn't exist - require the user to call /auth first to create it
+            logger.warning(f"No AVD exists for email {sindarin_email}, user must authenticate first to create profile")
+            return jsonify({
+                "error": "No AVD profile found for this email",
+                "message": "You need to authenticate first using the /auth endpoint to create a profile",
+                "requires_auth": True
+            }), 401
+                
+        # At this point, an AVD exists for this user but may not be loaded
+        # If we already have an active session with the correct profile, continue
+        if server.current_email == sindarin_email and server.automator:
+            logger.info(f"Already using profile for email: {sindarin_email}")
+            # If the emulator is running for this profile, we're good to go
+            if is_running:
+                logger.debug(f"Emulator already running for {sindarin_email}")
+                return f(*args, **kwargs)
+        
+        # Need to switch to this profile - server.switch_profile handles both:
+        # 1. Switching to an existing profile 
+        # 2. Loading a profile with a running emulator
+        logger.info(f"Switching to profile for email: {sindarin_email}")
+        success, message = server.switch_profile(sindarin_email)
+        
+        if not success:
+            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
+            return jsonify({
+                "error": f"Failed to load profile: {message}",
+                "message": "There was an error loading this user profile"
+            }), 500
+            
+        logger.info(f"Successfully switched to profile for {sindarin_email}")
+        # Profile switch was successful, initialize automator if needed
+        if not server.automator:
+            logger.info("Initializing automator for switched profile")
+            server.initialize_automator()
+            
+            # Try initializing the driver if needed
+            if not server.automator.driver:
+                if not server.automator.initialize_driver():
+                    logger.error("Failed to initialize driver for switched profile")
+                    return jsonify({
+                        "error": "Failed to initialize driver for switched profile",
+                        "message": "The device could not be connected"
+                    }), 500
+                    
+        # Continue with the original endpoint handler
+        return f(*args, **kwargs)
+            
+    return middleware
 
 
 class AutomationServer:
@@ -362,6 +461,7 @@ def ensure_automator_healthy(f):
 
 
 class StateResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     def get(self):
         try:
@@ -377,6 +477,7 @@ class StateResource(Resource):
 
 
 class CaptchaResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
@@ -385,6 +486,7 @@ class CaptchaResource(Resource):
         # intercept if we're in CAPTCHA state
         return {"status": "no_captcha"}, 200
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
@@ -406,6 +508,7 @@ class CaptchaResource(Resource):
 
 
 class BooksResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def _get_books(self):
@@ -503,6 +606,7 @@ class BooksResource(Resource):
 
 class ScreenshotResource(Resource):
     # Only use the automator_healthy decorator without the response handler for direct image responses
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
@@ -649,6 +753,7 @@ class NavigationResource(Resource):
         self.default_action = default_action
         super().__init__()
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self, action=None):
@@ -747,6 +852,7 @@ class NavigationResource(Resource):
 
         return {"error": "Navigation failed"}, 500
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
@@ -770,6 +876,7 @@ class NavigationResource(Resource):
 
 
 class BookOpenResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def _open_book(self, book_title):
@@ -962,6 +1069,7 @@ class BookOpenResource(Resource):
 
         return {"error": "Failed to open book"}, 500
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
@@ -977,6 +1085,7 @@ class BookOpenResource(Resource):
 
         return self._open_book(book_title)
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
@@ -986,6 +1095,7 @@ class BookOpenResource(Resource):
 
 
 class StyleResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
@@ -1057,6 +1167,7 @@ class StyleResource(Resource):
 
 
 class TwoFactorResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
@@ -1076,12 +1187,29 @@ class TwoFactorResource(Resource):
 
 
 class AuthResource(Resource):
+    @ensure_user_profile_loaded
     @handle_automator_response(server)
     def post(self):
         """Authenticate with Amazon username and password"""
         data = request.get_json()
-        email = data.get("email")
+        amazon_email = data.get("email")
         password = data.get("password")
+        
+        # Get sindarin_email from request - this is the profile name we'll use
+        sindarin_email = None
+        if 'sindarin_email' in request.args:
+            sindarin_email = request.args.get('sindarin_email')
+        elif request.is_json and 'sindarin_email' in data:
+            sindarin_email = data.get('sindarin_email')
+        elif 'sindarin_email' in request.form:
+            sindarin_email = request.form.get('sindarin_email')
+        
+        # If sindarin_email not provided, use amazon_email for backwards compatibility
+        if not sindarin_email:
+            sindarin_email = amazon_email
+            logger.info(f"No sindarin_email provided, using Amazon email as profile identifier: {sindarin_email}")
+        else:
+            logger.info(f"Using sindarin_email for profile: {sindarin_email}")
 
         # Check if recreate parameter is provided
         recreate = False
@@ -1093,14 +1221,14 @@ class AuthResource(Resource):
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
-        logger.info(f"Authenticating with email: {email}")
+        logger.info(f"Authenticating with Amazon account: {amazon_email}, profile: {sindarin_email}")
 
-        if not email or not password:
+        if not amazon_email or not password:
             return {"error": "Email and password are required in the request"}, 400
 
         # If recreate is requested, just clean up the automator but don't force a new emulator
         if recreate:
-            logger.info(f"Recreate requested for {email}, cleaning up existing automator")
+            logger.info(f"Recreate requested for {sindarin_email}, cleaning up existing automator")
             # First clean up any existing automator
             if server.automator:
                 logger.info("Cleaning up existing automator")
@@ -1109,9 +1237,10 @@ class AuthResource(Resource):
 
         # Switch to the profile for this email or create a new one
         # We don't force a new emulator - let the profile manager decide if one is needed
-        success, message = server.switch_profile(email, force_new_emulator=False)
+        # We use sindarin_email here for profile identification
+        success, message = server.switch_profile(sindarin_email, force_new_emulator=False)
         if not success:
-            logger.error(f"Failed to switch to profile for {email}: {message}")
+            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
             return {"error": f"Failed to switch to profile: {message}"}, 500
 
         # For M1/M2/M4 Macs where the emulator might not start,
@@ -1156,8 +1285,8 @@ class AuthResource(Resource):
                 logger.error(f"Error clicking on LIBRARY tab: {e}")
                 # Continue with normal authentication process
 
-        # Update credentials using the dedicated method
-        server.automator.update_credentials(email, password)
+        # Update credentials using the dedicated method - always use Amazon email for auth
+        server.automator.update_credentials(amazon_email, password)
 
         # First try to reach sign-in state if we're not already there
         if current_state != AppState.SIGN_IN:
@@ -1328,6 +1457,7 @@ class AuthResource(Resource):
 
 
 class FixturesResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
@@ -1683,6 +1813,7 @@ class ProfilesResource(Resource):
 
 
 class TextResource(Resource):
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def _extract_text(self):
