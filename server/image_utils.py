@@ -182,34 +182,29 @@ class KindleOCR:
             
         for attempt in range(self.max_retries):
             try:
-                # Define a function to call the Mistral API
-                def call_mistral_api():
-                    return self.client.chat(
-                        model="mistral-large-latest",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": "Extract all visible text from this Kindle app screenshot. Return ONLY the text content, with proper paragraphs preserved.",
-                                    },
-                                    {
-                                        "type": "image",
-                                        "image": base64_image,
-                                    },
-                                ],
-                            }
-                        ],
-                        max_tokens=1024,
-                    )
-                    
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    # Submit the function as the callable
-                    future = executor.submit(call_mistral_api)
-                    # Wait for the result with a timeout
-                    response = future.result(timeout=max_timeout)
-                    return True, response.choices[0].message.content
+                # Direct call to Mistral API
+                response = self.client.chat(
+                    model="mistral-large-latest",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Extract all visible text from this Kindle app screenshot. Return ONLY the text content, with proper paragraphs preserved.",
+                                },
+                                {
+                                    "type": "image",
+                                    "image": base64_image,
+                                },
+                            ],
+                        }
+                    ],
+                    max_tokens=1024,
+                )
+                
+                # Extract the text content from the response
+                return True, response.choices[0].message.content
                     
             except concurrent.futures.TimeoutError:
                 logger.warning(
