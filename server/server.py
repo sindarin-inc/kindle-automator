@@ -445,6 +445,28 @@ class BookOpenResource(Resource):
 
         if not book_title:
             return {"error": "Book title is required"}, 400
+            
+        # Check if OCR is requested (either in query params or JSON body)
+        perform_ocr = False
+        if "ocr" in query_params and query_params.get("ocr") in ("1", "true"):
+            perform_ocr = True
+            logger.info("OCR requested in query parameters")
+        elif data and "ocr" in data:
+            ocr_value = data.get("ocr")
+            if isinstance(ocr_value, bool):
+                perform_ocr = ocr_value
+            elif isinstance(ocr_value, str) and ocr_value.lower() in ("1", "true"):
+                perform_ocr = True
+            elif isinstance(ocr_value, int) and ocr_value == 1:
+                perform_ocr = True
+            if perform_ocr:
+                logger.info("OCR requested in JSON body")
+                
+        # For OCR, we need base64 encoding of the image
+        use_base64 = False
+        if perform_ocr:
+            use_base64 = True
+            logger.info("Forcing base64 encoding for OCR processing")
 
         # Get position parameter if provided
         position = 0
@@ -484,6 +506,7 @@ class BookOpenResource(Resource):
 
             # Capture book state with screenshot
             screenshot_id = None
+            screenshot_path = None
             try:
                 screenshot_path = os.path.join(
                     server.automator.screenshots_dir, f"book_screen_{int(time.time())}.png"
@@ -501,6 +524,25 @@ class BookOpenResource(Resource):
                 "progress": reading_progress,
             }
 
+            # Process OCR if requested using the existing function
+            if perform_ocr and screenshot_path and os.path.exists(screenshot_path):
+                from server.image_utils import process_screenshot_response
+                
+                # Process the screenshot with OCR
+                ocr_result, _ = process_screenshot_response(
+                    screenshot_path=screenshot_path,
+                    perform_ocr=True,
+                    use_base64=False,
+                    automator=server.automator
+                )
+                
+                # Add results to the response
+                if "text" in ocr_result:
+                    response["ocr_text"] = ocr_result["text"]
+                elif "ocr_error" in ocr_result:
+                    response["ocr_error"] = ocr_result["ocr_error"]
+            
+            # Add screenshot info regardless of OCR
             if screenshot_id:
                 response["screenshot_id"] = screenshot_id
                 response["image_url"] = f"/image/{screenshot_id}"
@@ -541,6 +583,7 @@ class BookOpenResource(Resource):
 
         # Capture book state with screenshot
         screenshot_id = None
+        screenshot_path = None
         try:
             screenshot_path = os.path.join(
                 server.automator.screenshots_dir, f"book_screen_{int(time.time())}.png"
@@ -557,7 +600,26 @@ class BookOpenResource(Resource):
             "book_title": book_title,
             "progress": reading_progress,
         }
-
+        
+        # Process OCR if requested using the existing function
+        if perform_ocr and screenshot_path and os.path.exists(screenshot_path):
+            from server.image_utils import process_screenshot_response
+            
+            # Process the screenshot with OCR
+            ocr_result, _ = process_screenshot_response(
+                screenshot_path=screenshot_path,
+                perform_ocr=True,
+                use_base64=False,
+                automator=server.automator
+            )
+            
+            # Add results to the response
+            if "text" in ocr_result:
+                response["ocr_text"] = ocr_result["text"]
+            elif "ocr_error" in ocr_result:
+                response["ocr_error"] = ocr_result["ocr_error"]
+        
+        # Add screenshot info regardless of OCR
         if screenshot_id:
             response["screenshot_id"] = screenshot_id
             response["image_url"] = f"/image/{screenshot_id}"
