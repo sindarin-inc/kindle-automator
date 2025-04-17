@@ -161,8 +161,17 @@ def ensure_user_profile_loaded(f):
         # Need to switch to this profile - server.switch_profile handles both:
         # 1. Switching to an existing profile 
         # 2. Loading a profile with a running emulator
-        logger.info(f"Switching to profile for email: {sindarin_email}")
-        success, message = server.switch_profile(sindarin_email)
+        
+        # Get our currently active profile (before switching)
+        current_profile = server.profile_manager.get_current_profile()
+        current_email = current_profile.get("email") if current_profile else None
+        
+        # If we're switching to a different email than what's in current_profile.json,
+        # then force a new emulator to ensure we get the correct profile
+        force_new_emulator = (current_email is not None and current_email != sindarin_email)
+        
+        logger.info(f"Switching to profile for email: {sindarin_email} (forcing new emulator: {force_new_emulator})")
+        success, message = server.switch_profile(sindarin_email, force_new_emulator=force_new_emulator)
         
         if not success:
             logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
@@ -289,10 +298,25 @@ class AutomationServer:
                 return True, f"Already using profile for {email} with running emulator"
             elif not is_running and not force_new_emulator:
                 # We have an automator but no running emulator
-                logger.info(
-                    f"No running emulator for profile {email}, but have automator - will use on next reconnect"
-                )
-                return True, f"Profile {email} is already active, waiting for reconnection"
+                # Get current profile to check if we're actually switching between users
+                current_profile = self.profile_manager.get_current_profile()
+                current_email = current_profile.get("email") if current_profile else None
+                
+                # If current profile email is different from target email, we should force start a new emulator
+                if current_email and current_email != email:
+                    logger.info(
+                        f"Current profile is for {current_email} but requested {email} - forcing new emulator"
+                    )
+                    # Cleanup existing automator for this email since we're starting fresh
+                    self.automators[email].cleanup()
+                    self.automators[email] = None
+                    # Will continue below to create a new emulator
+                else:
+                    # Same user, just no running emulator - wait for reconnect
+                    logger.info(
+                        f"No running emulator for profile {email}, but have automator - will use on next reconnect"
+                    )
+                    return True, f"Profile {email} is already active, waiting for reconnection"
             elif force_new_emulator:
                 # Need to recreate the automator
                 logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
