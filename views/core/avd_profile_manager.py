@@ -407,11 +407,11 @@ class AVDProfileManager:
         self.profiles_index[email] = avd_name
         self._save_profiles_index()
         logger.info(f"Registered profile for {email} with AVD {avd_name}")
-        
+
     def register_email_to_avd(self, email: str, default_avd_name: str = "Pixel_API_30") -> None:
         """
         Register an email to an AVD for development purposes.
-        
+
         Args:
             email: The email to register
             default_avd_name: Default AVD name to use if no AVD can be found
@@ -420,60 +420,58 @@ class AVDProfileManager:
         if email in self.profiles_index:
             logger.info(f"Email {email} already registered to AVD {self.profiles_index[email]}")
             return
-            
+
         # Next, try to find any running emulator to use
         running_emulators = self.device_discovery.map_running_emulators()
-        
+
         if running_emulators:
             # Use the first available running emulator
             avd_name, emulator_id = next(iter(running_emulators.items()))
             logger.info(f"Registering email {email} to running emulator with AVD {avd_name}")
             self.profiles_index[email] = avd_name
             self._save_profiles_index()
-            
+
             # Also update current profile
             self._save_current_profile(email, avd_name, emulator_id)
             return
-        
+
         # If no running emulator, check for available AVDs
         try:
             # List available AVDs
             avd_list_cmd = [f"{self.android_home}/emulator/emulator", "-list-avds"]
-            result = subprocess.run(
-                avd_list_cmd, check=False, capture_output=True, text=True, timeout=5
-            )
+            result = subprocess.run(avd_list_cmd, check=False, capture_output=True, text=True, timeout=5)
             available_avds = result.stdout.strip().split("\n")
             available_avds = [avd for avd in available_avds if avd.strip()]
-            
+
             if available_avds:
                 # Use the first available AVD
                 avd_name = available_avds[0]
                 logger.info(f"Registering email {email} to available AVD {avd_name}")
                 self.profiles_index[email] = avd_name
                 self._save_profiles_index()
-                
+
                 # Update current profile without emulator ID (not running yet)
                 self._save_current_profile(email, avd_name)
                 return
         except Exception as e:
             logger.warning(f"Error listing available AVDs: {e}")
-        
+
         # Fallback to default AVD name
         logger.info(f"Registering email {email} to default AVD {default_avd_name}")
         self.profiles_index[email] = default_avd_name
         self._save_profiles_index()
-        
+
         # Update current profile without emulator ID
         self._save_current_profile(email, default_avd_name)
 
     def stop_emulator(self, device_id: str = None) -> bool:
         """
         Stop an emulator by device ID or the currently running emulator.
-        
+
         Args:
             device_id: Optional device ID to stop a specific emulator.
                        If None, stops whatever emulator is running.
-                       
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -510,14 +508,14 @@ class AVDProfileManager:
         if self.current_profile and "styles_updated" in self.current_profile:
             return self.current_profile["styles_updated"]
         return False
-        
+
     def update_style_preference(self, is_updated: bool) -> bool:
         """
         Update the styles_updated preference for the current profile.
-        
+
         Args:
             is_updated: Boolean indicating whether styles have been updated
-            
+
         Returns:
             bool: True if the update was successful, False otherwise
         """
@@ -525,28 +523,26 @@ class AVDProfileManager:
             if not self.current_profile:
                 logger.warning("No current profile to update style preference for")
                 return False
-                
+
             email = self.current_profile.get("email")
             if not email:
                 logger.warning("Current profile has no email to update style preference for")
                 return False
-                
+
             # Update the current profile
             self.current_profile["styles_updated"] = is_updated
-            
+
             # Also update user preferences to ensure persistence
             if email not in self.user_preferences:
                 self.user_preferences[email] = {}
             self.user_preferences[email]["styles_updated"] = is_updated
-            
+
             # Save changes to both files
             self._save_current_profile(
-                email, 
-                self.current_profile.get("avd_name", ""), 
-                self.current_profile.get("emulator_id")
+                email, self.current_profile.get("avd_name", ""), self.current_profile.get("emulator_id")
             )
             self._save_user_preferences()
-            
+
             logger.info(f"Successfully updated style preference for {email} to {is_updated}")
             return True
         except Exception as e:
@@ -560,7 +556,7 @@ class AVDProfileManager:
         1. Try to find a running emulator for this email first
         2. If not found, start a new emulator for this profile
         3. No longer stop other emulators unless explicitly forced
-        
+
         Args:
             email: The email address to switch to
             force_new_emulator: If True, always stop any existing emulator for this profile and start a new one
@@ -678,7 +674,9 @@ class AVDProfileManager:
 
         # If we found a running emulator for this email but need to force a new one
         if is_running and force_new_emulator:
-            logger.info(f"Found running emulator {emulator_id} for profile {email}, but force_new_emulator=True")
+            logger.info(
+                f"Found running emulator {emulator_id} for profile {email}, but force_new_emulator=True"
+            )
             logger.info(f"Stopping emulator {emulator_id} to start a fresh one")
             # Stop only this specific emulator, not others
             if not self.stop_emulator(emulator_id):
@@ -687,7 +685,7 @@ class AVDProfileManager:
             # Clear the is_running flag so we'll start a new emulator
             is_running = False
             emulator_id = None
-        
+
         # If we found a running emulator for this email and aren't forcing a new one, use it
         if is_running and not force_new_emulator:
             logger.info(f"Found running emulator {emulator_id} for profile {email} (AVD: {found_avd_name})")

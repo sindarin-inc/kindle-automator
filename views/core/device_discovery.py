@@ -70,6 +70,7 @@ class DeviceDiscovery:
 
         if not running_emulators:
             logger.debug(f"No running emulators found for email: {email}")
+            logger.debug(f"Running emulators: {running_emulators}")
             # Get the AVD name for this email from profiles_index or generate a standard one
             avd_name = None
             if profiles_index and email in profiles_index:
@@ -305,7 +306,9 @@ class DeviceDiscovery:
 
             # After retries, check final result
             if not hasattr(locals(), "result") or result.returncode != 0:
-                error_msg = "Failed to get devices list after multiple attempts"
+                error_msg = (
+                    f"Failed to get devices list after multiple attempts: {result.stderr}/{result.stdout}"
+                )
                 logger.error(error_msg)
                 # Log the error but return empty dict instead of raising exception
                 # This prevents unnecessary errors when the emulator is actually running

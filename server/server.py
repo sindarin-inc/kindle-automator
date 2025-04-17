@@ -1,22 +1,17 @@
-import base64
-import logging
 import concurrent.futures
+import logging
 import os
 import platform
-import signal
-import subprocess
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
-from functools import wraps
+from typing import Any, Dict, List, Optional, Tuple
 
-import requests
-import urllib3
 import flask
+import requests
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
-from flask import Flask, Response, make_response, redirect, request, send_file, jsonify
+from flask import Flask, Response, jsonify, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
 from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
@@ -24,16 +19,31 @@ from selenium.common import exceptions as selenium_exceptions
 from automator import KindleAutomator
 from handlers.auth_handler import LoginVerificationState
 from handlers.test_fixtures_handler import TestFixturesHandler
+from server.automation_server import AutomationServer
+from server.config import BASE_DIR  # Import constants from config
+from server.image_utils import (
+    KindleOCR,
+    get_image_path,
+    is_base64_requested,
+    is_ocr_requested,
+    process_screenshot_response,
+    serve_image,
+)
 from server.logging_config import setup_logger
+from server.middleware import (
+    ensure_automator_healthy,
+    ensure_user_profile_loaded,
+    get_sindarin_email,
+)
 from server.request_logger import setup_request_logger
 from server.response_handler import handle_automator_response
 from views.core.app_state import AppState
 
-# Load environment variables from .env file
+# Set up logging
 setup_logger()
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Environment setup
 ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
 
 # Load .env files with secrets
@@ -47,355 +57,24 @@ else:
     logger.info(f"Loading dev environment variables from {os.path.join(BASE_DIR, '.env')}")
     load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
-
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
-# We'll handle captcha solutions at runtime when passed via API, not from environment
-
+# Set up Flask application
 app = Flask(__name__)
 api = Api(app)
-
-# Utility function to extract sindarin_email from any request
-def get_sindarin_email(default_email: Optional[str] = None) -> Optional[str]:
-    """
-    Extract sindarin_email from request (query params, JSON body, or form data).
-    
-    Args:
-        default_email: Default email to return if not found in request
-        
-    Returns:
-        The extracted email or the default email if not found
-    """
-    sindarin_email = None
-    
-    # Check in URL parameters
-    if 'sindarin_email' in request.args:
-        sindarin_email = request.args.get('sindarin_email')
-        logger.debug(f"Found sindarin_email in URL parameters: {sindarin_email}")
-    
-    # Check in JSON body if present
-    elif request.is_json:
-        data = request.get_json(silent=True) or {}
-        if 'sindarin_email' in data:
-            sindarin_email = data.get('sindarin_email')
-            logger.debug(f"Found sindarin_email in JSON body: {sindarin_email}")
-    
-    # Check in form data
-    elif 'sindarin_email' in request.form:
-        sindarin_email = request.form.get('sindarin_email')
-        logger.debug(f"Found sindarin_email in form data: {sindarin_email}")
-    
-    # Return either found email or default
-    return sindarin_email or default_email
-
-# We'll define the AutomationServer class below and instantiate it after the class definition
-
-# Set up request and response logging middleware
-setup_request_logger(app)
-
-# Middleware function to check and load user profile based on sindarin_email
-def ensure_user_profile_loaded(f):
-    @wraps(f)
-    def middleware(*args, **kwargs):
-        # Get sindarin_email from request data using our utility function
-        sindarin_email = get_sindarin_email()
-        
-        # If sindarin_email was found, log it at INFO level
-        if sindarin_email:
-            logger.info(f"Found sindarin_email in request: {sindarin_email}")
-        
-        # If no sindarin_email found, don't attempt to load a profile and continue
-        if not sindarin_email:
-            logger.debug("No sindarin_email provided in request, continuing without profile check")
-            return f(*args, **kwargs)
-        
-        # Check if a server instance exists (it should always be available after app startup)
-        if not hasattr(app, 'config') or 'server_instance' not in app.config:
-            logger.error("Server instance not available in app.config")
-            return jsonify({"error": "Server configuration error"}), 500
-        
-        server = app.config['server_instance']
-        
-        # Check if this profile exists by looking for an AVD
-        # This doesn't create the AVD - just checks if it's registered or exists
-        avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
-        
-        # Check if AVD file path exists
-        avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
-        avd_exists = os.path.exists(avd_path)
-        
-        # Check if the AVD is already running for this email
-        is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(sindarin_email)
-        
-        # Skip AVD existence check in development environment on macOS
-        is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
-        
-        if not avd_exists and not is_mac_dev:
-            # AVD doesn't exist - require the user to call /auth first to create it
-            logger.warning(f"No AVD exists for email {sindarin_email}, user must authenticate first to create profile")
-            return {"error": "No AVD profile found for this email",
-                    "message": "You need to authenticate first using the /auth endpoint to create a profile",
-                    "requires_auth": True}, 401
-        elif not avd_exists and is_mac_dev:
-            logger.info(f"In macOS dev environment: bypassing AVD existence check for {sindarin_email}")
-            # Try to create a mock AVD profile mapping for this email
-            server.profile_manager.register_email_to_avd(sindarin_email, "Pixel_API_30")
-                
-        # Check if we already have a working automator for this email
-        automator = server.automators.get(sindarin_email)
-        if automator and hasattr(automator, 'driver') and automator.driver:
-            # Set as current email for backward compatibility
-            server.current_email = sindarin_email
-            logger.info(f"Already have automator for email: {sindarin_email}")
-            
-            # If the emulator is running for this profile, we're good to go
-            if is_running:
-                logger.debug(f"Emulator already running for {sindarin_email}")
-                result = f(*args, **kwargs)
-                # Handle Flask Response objects appropriately
-                if isinstance(result, (flask.Response, Response)):
-                    return result
-                return result
-        
-        # Need to switch to this profile - server.switch_profile handles both:
-        # 1. Switching to an existing profile 
-        # 2. Loading a profile with a running emulator
-        logger.info(f"Switching to profile for email: {sindarin_email}")
-        success, message = server.switch_profile(sindarin_email)
-        
-        if not success:
-            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
-            return {"error": f"Failed to load profile: {message}",
-                    "message": "There was an error loading this user profile"}, 500
-            
-        logger.info(f"Successfully switched to profile for {sindarin_email}")
-        
-        # Get the automator for this email
-        automator = server.automators.get(sindarin_email)
-        
-        # Profile switch was successful, initialize automator if needed
-        if not automator:
-            logger.info(f"Initializing automator for {sindarin_email}")
-            automator = server.initialize_automator(sindarin_email)
-            
-            if not automator:
-                logger.error(f"Failed to initialize automator for {sindarin_email}")
-                return {"error": f"Failed to initialize automator for {sindarin_email}",
-                        "message": "Could not create automator instance"}, 500
-            
-            # Try initializing the driver if needed
-            if not automator.driver:
-                if not automator.initialize_driver():
-                    logger.error(f"Failed to initialize driver for {sindarin_email}")
-                    return {"error": f"Failed to initialize driver for {sindarin_email}",
-                            "message": "The device could not be connected"}, 500
-                    
-        # Continue with the original endpoint handler
-        result = f(*args, **kwargs)
-        # Handle Flask Response objects appropriately
-        if isinstance(result, (flask.Response, Response)):
-            return result
-        return result
-            
-    return middleware
-
-
-class AutomationServer:
-    def __init__(self):
-        self.automators = {}  # Dictionary to track multiple automators by email
-        self.appium_process = None
-        self.pid_dir = "logs"
-        self.current_books = {}  # Track the currently open book title for each email
-        os.makedirs(self.pid_dir, exist_ok=True)
-
-        # Initialize the AVD profile manager
-        self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
-        from views.core.avd_profile_manager import AVDProfileManager
-
-        self.profile_manager = AVDProfileManager(base_dir=self.android_home)
-        self.current_email = None  # Current active email for backward compatibility
-
-    @property
-    def automator(self):
-        """Get the current automator instance for the active email. 
-        For backward compatibility with existing code."""
-        if self.current_email and self.current_email in self.automators:
-            return self.automators[self.current_email]
-        return None
-
-    def initialize_automator(self, email=None):
-        """Initialize automator without credentials or captcha solution.
-        
-        Args:
-            email: The email for which to initialize an automator. If None, uses current_email.
-        
-        Returns:
-            The automator instance
-        """
-        # If no email specified, use current_email
-        target_email = email or self.current_email
-        
-        if not target_email:
-            logger.warning("No target email provided for automator initialization")
-            return None
-            
-        # Check if we already have an automator for this email
-        if target_email in self.automators and self.automators[target_email]:
-            logger.info(f"Using existing automator for {target_email}")
-            return self.automators[target_email]
-            
-        # Initialize a new automator
-        logger.info(f"Initializing new automator for {target_email}")
-        automator = KindleAutomator()
-        # Connect profile manager to automator for device ID tracking
-        automator.profile_manager = self.profile_manager
-        
-        # Store the automator
-        self.automators[target_email] = automator
-        
-        # Scan for any AVDs with email patterns in their names and register them
-        discovered = self.profile_manager.scan_for_avds_with_emails()
-        if discovered:
-            logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
-            
-        return automator
-
-    def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
-        """Switch to a profile for the given email address.
-
-        Args:
-            email: The email address to switch to
-            force_new_emulator: If True, always stop any emulator for this email and start a new one
-                               (used with recreate=1 flag)
-
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
-
-        # Set this as the current active email
-        self.current_email = email
-
-        # Check if there's a running emulator for this profile
-        is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
-
-        # Check if we already have an automator for this email
-        if email in self.automators and self.automators[email]:
-            if is_running and not force_new_emulator:
-                logger.info(
-                    f"Automator already exists with running emulator for profile {email}, skipping profile switch"
-                )
-                return True, f"Already using profile for {email} with running emulator"
-            elif not is_running and not force_new_emulator:
-                # We have an automator but no running emulator
-                logger.info(
-                    f"No running emulator for profile {email}, but have automator - will use on next reconnect"
-                )
-                return True, f"Profile {email} is already active, waiting for reconnection"
-            elif force_new_emulator:
-                # Need to recreate the automator
-                logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
-                self.automators[email].cleanup()
-                self.automators[email] = None
-        
-        # Switch to the profile for this email - this will not stop other emulators
-        success, message = self.profile_manager.switch_profile(email, force_new_emulator=force_new_emulator)
-        if not success:
-            logger.error(f"Failed to switch profile: {message}")
-            return False, message
-
-        # Clear current book since we're switching profiles
-        self.clear_current_book(email)
-
-        logger.info(f"Successfully switched to profile for {email}")
-        return True, message
-
-    def save_pid(self, name: str, pid: int):
-        """Save process ID to file"""
-        pid_file = os.path.join(self.pid_dir, f"{name}.pid")
-        try:
-            with open(pid_file, "w") as f:
-                f.write(str(pid))
-            # Set file permissions to be readable by all
-            os.chmod(pid_file, 0o644)
-        except Exception as e:
-            logger.error(f"Error saving PID file: {e}")
-
-    def kill_existing_process(self, name: str):
-        """Kill existing process if running on port 4098"""
-        try:
-            if name == "flask":
-                # Use lsof to find process on port 4098
-                pid = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
-                if pid:
-                    os.kill(int(pid), signal.SIGTERM)
-                    logger.info(f"Killed existing flask process with PID {pid}")
-            elif name == "appium":
-                subprocess.run(["pkill", "-f", "appium"], check=False)
-                logger.info("Killed existing appium processes")
-        except subprocess.CalledProcessError:
-            logger.info(f"No existing {name} process found")
-        except Exception as e:
-            logger.error(f"Error killing {name} process: {e}")
-
-    def start_appium(self):
-        """Start Appium server and save PID"""
-        self.kill_existing_process("appium")
-        try:
-            self.appium_process = subprocess.Popen(
-                ["appium"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            self.save_pid("appium", self.appium_process.pid)
-            logger.info(f"Started Appium server with PID {self.appium_process.pid}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start Appium server: {e}")
-            return False
-
-    def set_current_book(self, book_title, email=None):
-        """Set the currently open book title for a specific email
-
-        Args:
-            book_title: The title of the book
-            email: The email to associate with this book. If None, uses current_email.
-        """
-        target_email = email or self.current_email
-        if not target_email:
-            logger.warning("No email specified for set_current_book")
-            return
-            
-        self.current_books[target_email] = book_title
-        logger.info(f"Set current book for {target_email} to: {book_title}")
-
-    def clear_current_book(self, email=None):
-        """Clear the currently open book tracking variable for a specific email
-
-        Args:
-            email: The email for which to clear the book. If None, uses current_email.
-        """
-        target_email = email or self.current_email
-        if not target_email:
-            logger.warning("No email specified for clear_current_book")
-            return
-            
-        if target_email in self.current_books:
-            logger.info(f"Cleared current book for {target_email}: {self.current_books[target_email]}")
-            del self.current_books[target_email]
-    
-    @property
-    def current_book(self):
-        """Get the current book for the active email. For backward compatibility."""
-        if self.current_email and self.current_email in self.current_books:
-            return self.current_books[self.current_email]
-        return None
-
 
 # Create the server instance
 server = AutomationServer()
 
 # Store server instance in app config for access in middleware
 app.config["server_instance"] = server
+
+# Set up request and response logging middleware
+setup_request_logger(app)
+
+
+# === RESOURCE CLASSES (ENDPOINTS) ===
 
 
 class InitializeResource(Resource):
@@ -426,151 +105,6 @@ class InitializeResource(Resource):
         except Exception as e:
             logger.error(f"Initialization error: {e}")
             return {"error": str(e)}, 500
-
-
-def ensure_automator_healthy(f):
-    """Decorator to ensure automator is initialized and healthy before each operation.
-    Works with the multi-emulator approach by getting the sindarin_email from the request.
-    """
-
-    def wrapper(*args, **kwargs):
-        max_retries = 3  # Allow more retries for UiAutomator2 crashes
-        
-        # Get sindarin_email from request to determine which automator to use
-        sindarin_email = get_sindarin_email(default_email=server.current_email)
-            
-        # If we still don't have an email after checking current_email, try the current profile
-        if not sindarin_email:
-            # Try to get from current profile
-            current_profile = server.profile_manager.get_current_profile()
-            if current_profile:
-                sindarin_email = current_profile.get("email")
-                logger.debug(f"Using email from current profile: {sindarin_email}")
-            
-        if not sindarin_email:
-            logger.error("No sindarin_email found in request or current state")
-            return {"error": "No email provided to identify which profile to use"}, 400
-        
-        # Ensure this is set as the current email for backward compatibility
-        server.current_email = sindarin_email
-
-        for attempt in range(max_retries):
-            try:
-                # Get the automator for this email
-                automator = server.automators.get(sindarin_email)
-                
-                # Initialize automator if needed
-                if not automator:
-                    logger.info(f"No automator found for {sindarin_email}. Initializing automatically...")
-                    automator = server.initialize_automator(sindarin_email)
-                    if not automator:
-                        logger.error(f"Failed to initialize automator for {sindarin_email}")
-                        return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
-                        
-                    if not automator.initialize_driver():
-                        logger.error(f"Failed to initialize driver for {sindarin_email}")
-                        return {
-                            "error": f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
-                        }, 500
-
-                # Ensure driver is running
-                if not automator.ensure_driver_running():
-                    logger.error(f"Failed to ensure driver is running for {sindarin_email}")
-                    return {"error": f"Failed to ensure driver is running for {sindarin_email}"}, 500
-
-                # Execute the function
-                result = f(*args, **kwargs)
-                
-                # Special handling for Flask Response objects to prevent JSON serialization errors
-                if isinstance(result, (flask.Response, Response)):
-                    return result
-                    
-                return result
-
-            except Exception as e:
-                # Check if it's the UiAutomator2 server crash error or other common crash patterns
-                error_message = str(e)
-                is_uiautomator_crash = any(
-                    [
-                        "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
-                        in error_message,
-                        "instrumentation process is not running" in error_message,
-                        "Failed to establish a new connection" in error_message,
-                        "Connection refused" in error_message,
-                        "Connection reset by peer" in error_message,
-                    ]
-                )
-
-                if is_uiautomator_crash and attempt < max_retries - 1:
-                    logger.warning(
-                        f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
-                    )
-                    logger.warning(f"Crash error: {error_message}")
-
-                    # Kill any leftover UiAutomator2 processes directly via ADB
-                    try:
-                        automator = server.automators.get(sindarin_email)
-                        if automator and automator.device_id:
-                            device_id = automator.device_id
-                            logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
-                            subprocess.run(
-                                [f"adb -s {device_id} shell pkill -f uiautomator"],
-                                shell=True,
-                                check=False,
-                                timeout=5,
-                            )
-                            time.sleep(2)  # Give it time to fully terminate
-                    except Exception as kill_e:
-                        logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")
-
-                    # Force a complete driver restart for this email
-                    automator = server.automators.get(sindarin_email)
-                    if automator:
-                        logger.info(f"Cleaning up automator resources for {sindarin_email}")
-                        automator.cleanup()
-                        server.automators[sindarin_email] = None
-
-                    # Reset Appium server state as well
-                    try:
-                        logger.info("Resetting Appium server state")
-                        subprocess.run(["pkill -f 'appium|node'"], shell=True, check=False, timeout=5)
-                        time.sleep(2)  # Wait for processes to terminate
-
-                        logger.info("Restarting Appium server")
-                        if not server.start_appium():
-                            logger.error("Failed to restart Appium server")
-                    except Exception as appium_e:
-                        logger.warning(f"Error while resetting Appium: {appium_e}")
-
-                    # Try to switch back to the profile
-                    logger.info(f"Attempting to switch back to profile for email: {sindarin_email}")
-                    success, message = server.switch_profile(sindarin_email)
-                    if not success:
-                        logger.error(f"Failed to switch back to profile: {message}")
-                        return {"error": f"Failed to switch back to profile: {message}"}, 500
-
-                    logger.info(f"Initializing automator after crash recovery for {sindarin_email}")
-                    automator = server.initialize_automator(sindarin_email)
-                    # Clear current book since we're restarting the driver
-                    server.clear_current_book(sindarin_email)
-
-                    if automator and automator.initialize_driver():
-                        logger.info(
-                            "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
-                        )
-                        continue  # Retry the operation with the next loop iteration
-                    else:
-                        logger.error("Failed to restart driver after UiAutomator2 crash")
-
-                # For non-UiAutomator2 crashes or if restart failed, log and return error
-                logger.error(f"Error in operation (attempt {attempt + 1}/{max_retries}): {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-
-                # On the last attempt, return the error
-                if attempt == max_retries - 1:
-                    return {"error": str(e)}, 500
-
-    return wrapper
 
 
 class StateResource(Resource):
@@ -745,13 +279,13 @@ class ScreenshotResource(Resource):
         use_base64 = is_base64_requested()
         if perform_ocr and not use_base64:
             use_base64 = True
-            
+
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email(default_email=server.current_email)
-            
+
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
-            
+
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
@@ -799,446 +333,248 @@ class ScreenshotResource(Resource):
                 automator.driver.save_screenshot(screenshot_path)
         except Exception as e:
             logger.error(f"Error taking screenshot: {e}")
-            failed = "Failed to take screenshot"
+            failed = str(e)
 
-        # Get the image ID for URLs
-        image_id = os.path.splitext(filename)[0]
-
-        # Default is to return the image directly unless explicitly requested otherwise
-        logger.info(
-            f"save: {save}, include_xml: {include_xml}, use_base64: {use_base64}, perform_ocr: {perform_ocr}"
+        # Process the response for various modes (base64, URL, OCR)
+        response_data, status_code = process_screenshot_response(
+            screenshot_path=screenshot_path if not failed else None,
+            include_xml=include_xml,
+            perform_ocr=perform_ocr,
+            use_base64=use_base64,
+            automator=automator,
         )
 
-        # If OCR is requested, we need the JSON response path
-        if perform_ocr:
-            logger.info("OCR requested, forcing JSON response path")
-        elif not save and not include_xml and not use_base64:
-            # For direct image responses, don't use the automator response handler
-            # since it can't handle Flask Response objects
-            if failed:
-                return {"error": failed, "screenshot_url": None, "xml_url": None}, 200
-            return serve_image(image_id, delete_after=False)
-
-        # For JSON responses, we can wrap with the automator response handler
-        @handle_automator_response(server)
-        def get_screenshot_json():
-            # Prepare the response data
-            response_data = {}
-
-            # Skip screenshot in LIBRARY state unless explicitly requested with save=1
-            current_state = automator.state_machine.current_state
-            if current_state == AppState.LIBRARY and not save:
-                logger.info("Skipping screenshot in LIBRARY state since it's not needed")
-                response_data["message"] = "Screenshot skipped in LIBRARY state"
-            else:
-                # Process the screenshot (either base64 encode, add URL, or perform OCR)
-                screenshot_data = process_screenshot_response(image_id, use_base64, perform_ocr)
-                response_data.update(screenshot_data)
-
-            # If xml=1, get and save the page source XML
-            if include_xml:
-                try:
-                    # Get page source from the driver
-                    page_source = automator.driver.page_source
-
-                    # Store the XML with the same base name as the screenshot
-                    xml_filename = f"{image_id}.xml"
-                    from server.logging_config import store_page_source
-
-                    xml_path = store_page_source(page_source, image_id)
-                    logger.info(f"Stored page source XML at {xml_path}")
-
-                    # Add the XML URL to the response
-                    # Assuming the XML will be served via a dedicated endpoint or file location
-                    xml_url = f"/fixtures/dumps/{xml_filename}"
-                    response_data["xml_url"] = xml_url
-                except Exception as xml_error:
-                    logger.error(f"Error getting page source XML: {xml_error}")
-                    response_data["xml_error"] = str(xml_error)
-
-            # OCR is now handled by process_screenshot_response
-
-            # Return the response as a tuple that the decorator can handle
-            if failed:
-                response_data["error"] = failed
-                return response_data, 500
-            return response_data, 200
-
-        # Call the nested function with automator response handling
-        response, status_code = get_screenshot_json()
         if failed:
-            response["error"] = failed
-            return response, status_code
-        return response, status_code
+            response_data["error"] = failed
+            status_code = 500
+
+        return response_data, status_code
 
 
 class NavigationResource(Resource):
-    def __init__(self, default_action=None):
-        self.default_action = default_action
-        super().__init__()
-
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
-    def post(self, action=None):
-        """Handle page navigation"""
-        # Use provided action parameter if available
-        if action is None:
-            # Otherwise check if we have a default action from initialization
-            if self.default_action:
-                action = self.default_action
-            else:
-                # Fall back to action from request JSON
-                data = request.get_json()
-                action = data.get("action")
+    def post(self):
+        """Navigate to a specific section"""
+        data = request.get_json()
+        destination = data.get("destination", "").lower()
+        valid_destinations = ["library", "home", "more"]
 
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
-        if use_base64:
-            logger.info("Base64 parameter is provided, will return base64 encoded image")
-        else:
-            logger.info("Base64 parameter is not provided, will return URL to image")
+        if not destination:
+            return {"error": "No destination specified"}, 400
 
-        # Check if OCR is requested
-        perform_ocr = is_ocr_requested()
-        if perform_ocr:
-            logger.info("OCR requested, will process image with OCR")
-            if not use_base64:
-                # Force base64 encoding for OCR
-                use_base64 = True
-                logger.info("Forcing base64 encoding for OCR processing")
+        if destination not in valid_destinations:
+            return {"error": f"Invalid destination. Choose from: {', '.join(valid_destinations)}"}, 400
 
-        if not action:
-            return {"error": "Navigation action is required"}, 400
-
-        if action == "next_page":
-            success = server.automator.reader_handler.turn_page_forward()
-        elif action == "previous_page":
-            success = server.automator.reader_handler.turn_page_backward()
-        elif action == "preview_next_page":
-            success, ocr_text = server.automator.reader_handler.preview_page_forward()
-            # Add OCR text to response if available
-            if success and ocr_text:
-                response_data = {"success": True, "ocr_text": ocr_text}
-                # Get reading progress but don't show placemark
-                progress = server.automator.reader_handler.get_reading_progress(show_placemark=False)
-                if progress:
-                    response_data["progress"] = progress
-                return response_data, 200
-        elif action == "preview_previous_page":
-            success, ocr_text = server.automator.reader_handler.preview_page_backward()
-            # Add OCR text to response if available
-            if success and ocr_text:
-                response_data = {"success": True, "ocr_text": ocr_text}
-                # Get reading progress but don't show placemark
-                progress = server.automator.reader_handler.get_reading_progress(show_placemark=False)
-                if progress:
-                    response_data["progress"] = progress
-                return response_data, 200
-        else:
-            return {"error": f"Invalid action: {action}"}, 400
+        # Handle different destinations
+        if destination == "library":
+            success = server.automator.state_machine.transition_to_library()
+        elif destination == "home":
+            success = server.automator.state_machine.transition_to_home()
+        elif destination == "more":
+            # TODO: Implement "More" section navigation
+            return {"error": "Navigation to 'More' section not yet implemented"}, 501
 
         if success:
-            # Get current page number and progress
-            # Check if placemark is requested
-            show_placemark = False
-            placemark_param = request.args.get("placemark", "0")
-            if placemark_param.lower() in ("1", "true", "yes"):
-                show_placemark = True
-                logger.info("Placemark mode enabled for navigation")
-
-            # Also check in POST data
-            if not show_placemark and request.is_json:
-                data = request.get_json(silent=True) or {}
-                placemark_param = data.get("placemark", "0")
-                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-                    show_placemark = True
-                    logger.info("Placemark mode enabled from POST data for navigation")
-
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
-
-            # Save screenshot with unique ID
-            screenshot_id = f"page_{int(time.time())}"
-            time.sleep(0.5)
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            server.automator.driver.save_screenshot(screenshot_path)
-
-            response_data = {
-                "success": True,
-                "progress": progress,
-            }
-
-            # Process the screenshot (either base64 encode, add URL, or OCR)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
-            response_data.update(screenshot_data)
-
-            return response_data, 200
-
-        return {"error": "Navigation failed"}, 500
+            server.automator.state_machine.update_current_state()
+            current_state = server.automator.state_machine.current_state
+            return {"status": "success", "current_state": current_state.name}, 200
+        else:
+            # If navigation failed, return the current state
+            server.automator.state_machine.update_current_state()
+            current_state = server.automator.state_machine.current_state
+            return {
+                "error": f"Failed to navigate to {destination}",
+                "current_state": current_state.name,
+            }, 400
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
-        """Handle navigation via GET requests, using query parameters or default_action"""
-        # Check if action is provided in query parameters
-        action = request.args.get("action")
+        """Get or use device back button for navigation"""
+        # Check if this is a back button request
+        if "back" in request.args and request.args.get("back") in ("1", "true"):
+            logger.info("Using device back button")
+            try:
+                server.automator.press_back_button()
+                # Update state after back button
+                server.automator.state_machine.update_current_state()
+                current_state = server.automator.state_machine.current_state
+                # For books, also capture the progress
+                progress = None
+                if current_state == AppState.READING:
+                    try:
+                        progress = server.automator.reader_handler.get_reading_progress()
+                    except Exception as p_err:
+                        logger.warning(f"Failed to get reading progress: {p_err}")
 
-        # If no action in query params, use the default action configured for this endpoint
-        if not action:
-            if not self.default_action:
-                return {"error": "Navigation action is required"}, 400
-            action = self.default_action
+                return {
+                    "status": "success",
+                    "action": "back",
+                    "current_state": current_state.name,
+                    "progress": progress,
+                }, 200
 
-        # Since we're using query params and moving them to POST,
-        # we don't need to do anything special here - the POST method
-        # already checks for the presence of base64 and ocr in both
-        # query params and request body.
+            except Exception as e:
+                logger.error(f"Error using back button: {e}")
+                return {"error": f"Failed to use back button: {str(e)}"}, 500
 
-        # Pass the action to the post method to handle navigation
-        return self.post(action)
+        # If no specific action, just return the current state
+        server.automator.state_machine.update_current_state()
+        current_state = server.automator.state_machine.current_state
+        return {"current_state": current_state.name}, 200
 
 
 class BookOpenResource(Resource):
-    def _open_book(self, book_title):
-        """Open a specific book - shared implementation for GET and POST."""
-        # Get sindarin_email from request to determine which automator to use
-        sindarin_email = get_sindarin_email(default_email=server.current_email)
-            
-        if not sindarin_email:
-            return {"error": "No email provided to identify which profile to use"}, 400
-            
-        # Get the appropriate automator
-        automator = server.automators.get(sindarin_email)
-        if not automator:
-            return {"error": f"No automator found for {sindarin_email}"}, 404
-            
-        # Set this as the current email for backward compatibility
-        server.current_email = sindarin_email
-        
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
+    @ensure_user_profile_loaded
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def _open_book(self):
+        """Open a book by title"""
+        data = request.get_json() if request.is_json else None
+        query_params = request.args
 
-        # Check if OCR is requested
-        perform_ocr = is_ocr_requested()
-        if perform_ocr:
-            logger.info("OCR requested for open-book, will process image with OCR")
-            if not use_base64:
-                # Force base64 encoding for OCR
-                use_base64 = True
-                logger.info("Forcing base64 encoding for OCR processing")
-
-        # Check if placemark is requested - default is FALSE which means DO NOT show placemark
-        show_placemark = False
-        placemark_param = request.args.get("placemark", "0")
-        if placemark_param and placemark_param.lower() in ("1", "true", "yes"):
-            show_placemark = True
-            logger.info("Placemark mode enabled for this request")
-        else:
-            logger.info("Placemark mode disabled - will avoid tapping to prevent placemark display")
-
-        logger.info(f"Opening book: {book_title}")
+        # Get book title from either JSON body or query parameters
+        book_title = None
+        if data and "title" in data:
+            book_title = data.get("title")
+        elif "title" in query_params:
+            book_title = query_params.get("title")
 
         if not book_title:
-            return {"error": "Book title is required in the request"}, 400
+            return {"error": "Book title is required"}, 400
 
-        # Common function to capture progress and screenshot
-        def capture_book_state(already_open=False):
-            # Get reading progress
-            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
-            logger.info(f"Progress: {progress}")
+        # Get position parameter if provided
+        position = 0
+        if data and "position" in data:
+            try:
+                position = float(data.get("position", 0))
+            except (ValueError, TypeError):
+                position = 0
+        elif "position" in query_params:
+            try:
+                position = float(query_params.get("position", 0))
+            except (ValueError, TypeError):
+                position = 0
 
-            # Save screenshot with unique ID
-            screenshot_id = f"page_{int(time.time())}"
-            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
-            time.sleep(0.5)
-            automator.driver.save_screenshot(screenshot_path)
+        # Get the current state
+        current_state = server.automator.state_machine.current_state
 
-            # Create response data with progress info
-            response_data = {"success": True, "progress": progress}
+        # Track if we need to go to library first
+        need_to_go_to_library = False
 
-            # Add flag if book was already open
-            if already_open:
-                response_data["already_open"] = True
-
-            # Process the screenshot (either base64 encode, add URL, or OCR)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
-            response_data.update(screenshot_data)
-
-            return response_data, 200
-
-        # Reload the current state to be sure
-        automator.state_machine.update_current_state()
-        current_state = automator.state_machine.current_state
-        
-        # IMPORTANT: For new app installation or first run, current_book may be None
-        # even though we're already in reading state - we need to check that too
-        
-        # Get current book for this email
-        current_book = server.current_books.get(sindarin_email)
-        
-        # If we're already in READING state, we should NOT close the book - get the title!
-        if current_state == AppState.READING:
-            # First, check if we have current_book set
-            if current_book:
-                # Compare with the requested book
-                normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
-                normalized_current_title = "".join(
-                    c for c in current_book if c.isalnum() or c.isspace()
-                ).lower()
-
-                logger.info(
-                    f"Title comparison: requested='{normalized_request_title}', current='{normalized_current_title}'"
-                )
-
-                # Try exact match first
-                if normalized_request_title == normalized_current_title:
-                    logger.info(f"Already reading book (exact match): {book_title}, returning current state")
-                    return capture_book_state(already_open=True)
-
-                # For longer titles, try to match the first 30+ characters or check if one title contains the other
-                if (
-                    len(normalized_request_title) > 30
-                    and len(normalized_current_title) > 30
-                    and (
-                        normalized_request_title[:30] == normalized_current_title[:30]
-                        or normalized_request_title in normalized_current_title
-                        or normalized_current_title in normalized_request_title
-                    )
-                ):
-                    logger.info(f"Already reading book (partial match): {book_title}, returning current state")
-                    return capture_book_state(already_open=True)
-                    
-                # If we're in reading state but current_book doesn't match, try to get book title from UI
-                logger.info(f"In reading state but current book '{current_book}' doesn't match requested '{book_title}'")
-                try:
-                    # Try to get the current book title from the reader UI
-                    current_title_from_ui = automator.reader_handler.get_book_title()
-                    if current_title_from_ui:
-                        logger.info(f"Got book title from UI: '{current_title_from_ui}'")
-                        
-                        # Compare with the requested book
-                        normalized_ui_title = "".join(c for c in current_title_from_ui if c.isalnum() or c.isspace()).lower()
-                        
-                        # Check exact match with UI title
-                        if normalized_request_title == normalized_ui_title:
-                            logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
-                            # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
-                            
-                        # Check partial match with UI title
-                        if (
-                            len(normalized_request_title) > 30
-                            and len(normalized_ui_title) > 30
-                            and (
-                                normalized_request_title[:30] == normalized_ui_title[:30]
-                                or normalized_request_title in normalized_ui_title
-                                or normalized_ui_title in normalized_request_title
-                            )
-                        ):
-                            logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
-                            # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
-                except Exception as e:
-                    logger.warning(f"Failed to get book title from UI: {e}")
-                
-                logger.info(
-                    f"No match found for book: {book_title} ({normalized_request_title}) != {current_book}, transitioning to library"
-                )
+        # If already in reading state with same book, no need to reopen
+        if (
+            current_state == AppState.READING
+            and server.current_book
+            and server.current_book.lower() == book_title.lower()
+        ):
+            # If position is specified and not at beginning, navigate to that position
+            if position > 0:
+                logger.info(f"Already reading '{book_title}'. Navigating to position {position}")
+                success = server.automator.reader_handler.navigate_to_position(position)
+                if not success:
+                    return {"error": f"Failed to navigate to position {position}"}, 500
             else:
-                # We're in reading state but don't have current_book set - try to get it from UI
-                try:
-                    # Try to get the current book title from the reader UI
-                    current_title_from_ui = automator.reader_handler.get_book_title()
-                    if current_title_from_ui:
-                        logger.info(f"In reading state with no tracked book. Got book title from UI: '{current_title_from_ui}'")
-                        
-                        # Compare with the requested book
-                        normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
-                        normalized_ui_title = "".join(c for c in current_title_from_ui if c.isalnum() or c.isspace()).lower()
-                        
-                        # Check exact match with UI title
-                        if normalized_request_title == normalized_ui_title:
-                            logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
-                            # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
-                            
-                        # Check partial match with UI title
-                        if (
-                            len(normalized_request_title) > 30
-                            and len(normalized_ui_title) > 30
-                            and (
-                                normalized_request_title[:30] == normalized_ui_title[:30]
-                                or normalized_request_title in normalized_ui_title
-                                or normalized_ui_title in normalized_request_title
-                            )
-                        ):
-                            logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
-                            # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
-                except Exception as e:
-                    logger.warning(f"Failed to get book title from UI: {e}")
-        # Not in reading state but have tracked book - clear it
-        elif current_book:
-            logger.info(
-                f"Not in reading state: {current_state}, but have book '{current_book}' tracked - clearing it"
+                logger.info(f"Already reading '{book_title}'. No position change needed.")
+
+            reading_progress = server.automator.reader_handler.get_reading_progress()
+
+            # Capture book state with screenshot
+            screenshot_id = None
+            try:
+                screenshot_path = os.path.join(
+                    server.automator.screenshots_dir, f"book_screen_{int(time.time())}.png"
+                )
+                server.automator.driver.save_screenshot(screenshot_path)
+                screenshot_id = os.path.basename(screenshot_path).split(".")[0]
+            except Exception as ss_err:
+                logger.warning(f"Failed to capture book screenshot: {ss_err}")
+
+            response = {
+                "status": "success",
+                "message": f"Already reading {book_title}",
+                "current_state": current_state.name,
+                "book_title": book_title,
+                "progress": reading_progress,
+            }
+
+            if screenshot_id:
+                response["screenshot_id"] = screenshot_id
+                response["image_url"] = f"/image/{screenshot_id}"
+
+            return response, 200
+
+        # If not in LIBRARY state, transition to library first
+        if current_state != AppState.LIBRARY:
+            logger.info(f"Currently in {current_state}, transitioning to LIBRARY first")
+            need_to_go_to_library = True
+            success = server.automator.state_machine.transition_to_library()
+            if not success:
+                return {"error": "Failed to transition to LIBRARY state"}, 500
+
+        # Search for and open the book
+        logger.info(f"Searching for book: '{book_title}'")
+
+        # Open the book - this returns a boolean indicating success
+        success = server.automator.library_handler.open_book(book_title)
+
+        if not success:
+            return {
+                "error": f"Book not found: {book_title}",
+            }, 404
+
+        # Set the current book title
+        server.set_current_book(book_title)
+
+        # If position is specified and not at beginning, navigate to that position
+        if position > 0:
+            logger.info(f"Navigating to position {position} in '{book_title}'")
+            nav_success = server.automator.reader_handler.navigate_to_position(position)
+            if not nav_success:
+                return {"error": f"Opened book but failed to navigate to position {position}"}, 500
+
+        # Get reading progress
+        reading_progress = server.automator.reader_handler.get_reading_progress()
+
+        # Capture book state with screenshot
+        screenshot_id = None
+        try:
+            screenshot_path = os.path.join(
+                server.automator.screenshots_dir, f"book_screen_{int(time.time())}.png"
             )
-            server.clear_current_book(sindarin_email)
+            server.automator.driver.save_screenshot(screenshot_path)
+            screenshot_id = os.path.basename(screenshot_path).split(".")[0]
+        except Exception as ss_err:
+            logger.warning(f"Failed to capture book screenshot: {ss_err}")
 
-        logger.info(f"Reloaded current state: {current_state}")
-        
-        # If we get here, we need to go to library and open the book
-        logger.info(
-            f"Not already reading requested book: {book_title} != {current_book}, transitioning from {current_state} to library"
-        )
-        # If we're not already reading the requested book, transition to library and open it
-        if automator.state_machine.transition_to_library(server=server):
-            success = automator.reader_handler.open_book(book_title, show_placemark=show_placemark)
-            logger.info(f"Book opened: {success}")
+        response = {
+            "status": "success",
+            "message": f"Successfully opened {book_title}"
+            + (f" at position {position}" if position > 0 else ""),
+            "book_title": book_title,
+            "progress": reading_progress,
+        }
 
-            if success:
-                # Set the current book in the server state
-                server.set_current_book(book_title, sindarin_email)
-                return capture_book_state()
+        if screenshot_id:
+            response["screenshot_id"] = screenshot_id
+            response["image_url"] = f"/image/{screenshot_id}"
 
-        return {"error": "Failed to open book"}, 500
+        # If we had to go to library first, add that to the response
+        if need_to_go_to_library:
+            response["navigation_steps"] = ["library", "open_book"]
 
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
+        return response, 200
+
     def post(self):
-        """Open a specific book via POST request."""
-        data = request.get_json()
-        book_title = data.get("title")
+        """Handle POST request to open a book"""
+        return self._open_book()
 
-        # Handle placemark parameter from POST data
-        placemark_param = data.get("placemark", "0")
-        if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-            request.args = request.args.copy()
-            request.args["placemark"] = "1"
-
-        # Call the implementation without the handle_automator_response decorator
-        # since it might return a Response object that can't be JSON serialized
-        result = self._open_book(book_title)
-        
-        # Directly return the result, as Flask can handle Response objects
-        return result
-
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
     def get(self):
-        """Open a specific book via GET request."""
-        book_title = request.args.get("title")
-        
-        # Call the implementation without the handle_automator_response decorator
-        # since it might return a Response object that can't be JSON serialized
-        result = self._open_book(book_title)
-        
-        # Directly return the result, as Flask can handle Response objects
-        return result
+        """Handle GET request to open a book"""
+        return self._open_book()
 
 
 class StyleResource(Resource):
@@ -1246,71 +582,86 @@ class StyleResource(Resource):
     @ensure_automator_healthy
     @handle_automator_response(server)
     def post(self):
-        """Update reading style settings"""
+        """Update reading style (font, font size, margin, etc.)"""
         data = request.get_json()
-        settings = data.get("settings", {})
-        dark_mode = data.get("dark-mode")
 
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
+        if not data:
+            return {"error": "No style settings provided"}, 400
 
-        logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
+        # Check if the automator is in reading state
+        if server.automator.state_machine.current_state != AppState.READING:
+            return {"error": "Cannot update style when not in reading mode"}, 400
 
-        # Update state machine's current state
-        server.automator.state_machine.update_current_state()
+        # Track successful changes
+        applied_changes = {}
+        failed_changes = {}
 
-        # Check if we're in reading state
-        current_state = server.automator.state_machine.current_state
-        if current_state != AppState.READING:
-            return {
-                "error": (
-                    f"Must be reading a book to change style settings, current state: {current_state.name}"
-                ),
-            }, 400
+        # Process font size
+        if "font_size" in data:
+            try:
+                font_size = int(data["font_size"])
+                size_success = server.automator.reader_handler.set_font_size(font_size)
+                if size_success:
+                    applied_changes["font_size"] = font_size
+                else:
+                    failed_changes["font_size"] = "Failed to set font size"
+            except (ValueError, TypeError) as e:
+                failed_changes["font_size"] = f"Invalid font size value: {str(e)}"
 
-        if dark_mode is not None:
-            success = server.automator.reader_handler.set_dark_mode(dark_mode)
-        else:
-            # For now just return success since we haven't implemented other style settings
-            success = True
-            logger.warning("Other style settings not yet implemented")
+        # Process font face
+        if "font" in data:
+            font = data["font"]
+            font_success = server.automator.reader_handler.set_font(font)
+            if font_success:
+                applied_changes["font"] = font
+            else:
+                failed_changes["font"] = f"Failed to set font to {font}"
 
-        if success:
-            # Save screenshot with unique ID
-            screenshot_id = f"style_update_{int(time.time())}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            server.automator.driver.save_screenshot(screenshot_path)
+        # Process theme/color
+        if "theme" in data:
+            theme = data["theme"]
+            theme_success = server.automator.reader_handler.set_theme(theme)
+            if theme_success:
+                applied_changes["theme"] = theme
+            else:
+                failed_changes["theme"] = f"Failed to set theme to {theme}"
 
-            # Get current page number and progress
-            # Check if placemark is requested
-            show_placemark = False
-            placemark_param = request.args.get("placemark", "0")
-            if placemark_param.lower() in ("1", "true", "yes"):
-                show_placemark = True
-                logger.info("Placemark mode enabled for style change")
+        # Process margins
+        if "margin" in data:
+            try:
+                margin = int(data["margin"])
+                margin_success = server.automator.reader_handler.set_margin(margin)
+                if margin_success:
+                    applied_changes["margin"] = margin
+                else:
+                    failed_changes["margin"] = "Failed to set margin"
+            except (ValueError, TypeError) as e:
+                failed_changes["margin"] = f"Invalid margin value: {str(e)}"
 
-            # Also check in POST data
-            if not show_placemark and request.is_json:
-                data = request.get_json(silent=True) or {}
-                placemark_param = data.get("placemark", "0")
-                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-                    show_placemark = True
-                    logger.info("Placemark mode enabled from POST data for style change")
+        # Process line spacing
+        if "spacing" in data:
+            try:
+                spacing = int(data["spacing"])
+                spacing_success = server.automator.reader_handler.set_line_spacing(spacing)
+                if spacing_success:
+                    applied_changes["spacing"] = spacing
+                else:
+                    failed_changes["spacing"] = "Failed to set line spacing"
+            except (ValueError, TypeError) as e:
+                failed_changes["spacing"] = f"Invalid spacing value: {str(e)}"
 
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+        # Create response
+        response = {
+            "status": "success" if len(applied_changes) > 0 else "failure",
+            "applied_changes": applied_changes,
+        }
 
-            response_data = {
-                "success": True,
-                "progress": progress,
-            }
+        if failed_changes:
+            response["failed_changes"] = failed_changes
+            if len(applied_changes) == 0:
+                return response, 500
 
-            # Process the screenshot (either base64 encode or add URL)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-            response_data.update(screenshot_data)
-
-            return response_data, 200
-
-        return {"error": "Failed to update settings"}, 500
+        return response, 200
 
 
 class TwoFactorResource(Resource):
@@ -1322,1035 +673,238 @@ class TwoFactorResource(Resource):
         data = request.get_json()
         code = data.get("code")
 
-        logger.info(f"Submitting 2FA code: {code}")
-
         if not code:
-            return {"error": "2FA code required"}, 400
+            return {"error": "2FA verification code required"}, 400
 
-        success = server.automator.auth_handler.handle_2fa(code)
+        # Check if we're in the right state
+        current_state = server.automator.state_machine.current_state
+        if current_state != LoginVerificationState.OTP_VERIFICATION:
+            return {
+                "error": f"Cannot submit 2FA code in current state: {current_state.name}",
+                "current_state": current_state.name,
+            }, 400
+
+        # Submit the code
+        success = server.automator.auth_handler.submit_otp_code(code)
+
         if success:
-            return {"success": True}, 200
-        return {"error": "Invalid 2FA code"}, 500
+            # Verify we're now signed in
+            server.automator.state_machine.update_current_state()
+            new_state = server.automator.state_machine.current_state
+
+            if new_state == AppState.LIBRARY:
+                return {"status": "success", "current_state": new_state.name}, 200
+            elif new_state == LoginVerificationState.OTP_VERIFICATION:
+                return {"error": "Incorrect verification code", "error_type": "incorrect_code"}, 400
+            else:
+                return {
+                    "status": "partial",
+                    "message": f"Code accepted but not in library state. Current state: {new_state.name}",
+                    "current_state": new_state.name,
+                }, 200
+        else:
+            return {"error": "Failed to submit verification code"}, 500
 
 
 class AuthResource(Resource):
     @ensure_user_profile_loaded
     @handle_automator_response(server)
     def post(self):
-        """Authenticate with Amazon username and password"""
+        """Authenticate with Amazon credentials"""
         data = request.get_json()
-        amazon_email = data.get("email")
+
+        username = data.get("username") or data.get("email")
         password = data.get("password")
-        
-        # Get sindarin_email from request - this is the profile name we'll use
-        sindarin_email = None
-        if 'sindarin_email' in request.args:
-            sindarin_email = request.args.get('sindarin_email')
-        elif request.is_json and 'sindarin_email' in data:
-            sindarin_email = data.get('sindarin_email')
-        elif 'sindarin_email' in request.form:
-            sindarin_email = request.form.get('sindarin_email')
-        
-        # If sindarin_email not provided, use amazon_email for backwards compatibility
-        if not sindarin_email:
-            sindarin_email = amazon_email
-            logger.info(f"No sindarin_email provided, using Amazon email as profile identifier: {sindarin_email}")
-        else:
-            logger.info(f"Using sindarin_email for profile: {sindarin_email}")
+        captcha_solution = data.get("captcha_solution")
+        recreate = data.get("recreate", 0) == 1
 
-        # Check if recreate parameter is provided
-        recreate = False
-        if request.is_json:
-            recreate = data.get("recreate", False)
-        else:
-            recreate = request.args.get("recreate", "0") in ("1", "true")
+        if not username or not password:
+            return {"error": "Username and password are required"}, 400
 
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
+        # Set this as the current email
+        server.current_email = username
+        sindarin_email = username
 
-        logger.info(f"Authenticating with Amazon account: {amazon_email}, profile: {sindarin_email}")
-
-        if not amazon_email or not password:
-            return {"error": "Email and password are required in the request"}, 400
-
-        # If recreate is requested, just clean up the automator but don't force a new emulator
+        # Check if we need to create a new emulator or reuse existing
         if recreate:
-            logger.info(f"Recreate requested for {sindarin_email}, cleaning up existing automator")
-            # First clean up any existing automator
-            if server.automator:
-                logger.info("Cleaning up existing automator")
-                server.automator.cleanup()
-                server.automator = None
+            logger.info(f"Recreate flag set, forcing new emulator for {username}")
+            success, message = server.switch_profile(username, force_new_emulator=True)
+            if not success:
+                logger.error(f"Failed to switch profile with force_new_emulator: {message}")
+                return {"error": f"Failed to initialize profile: {message}"}, 500
 
-        # Switch to the profile for this email or create a new one
-        # We don't force a new emulator - let the profile manager decide if one is needed
-        # We use sindarin_email here for profile identification
-        success, message = server.switch_profile(sindarin_email, force_new_emulator=False)
-        if not success:
-            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
-            return {"error": f"Failed to switch to profile: {message}"}, 500
+        # Initialize automator with credentials
+        automator = server.automators.get(sindarin_email)
 
-        # For M1/M2/M4 Macs where the emulator might not start,
-        # we'll still continue with the profile tracking
+        if not automator:
+            logger.info(f"Initializing automator for {sindarin_email}")
+            automator = server.initialize_automator(sindarin_email)
 
-        # Now that we've switched profiles, initialize the automator
-        if not server.automator:
-            server.initialize_automator()
-            if not server.automator.initialize_driver():
+        if not automator:
+            return {"error": "Failed to initialize automator"}, 500
+
+        # Set credentials
+        automator.email = username
+        automator.password = password
+
+        # Set captcha solution if provided
+        if captcha_solution:
+            automator.captcha_solution = captcha_solution
+
+        # Initialize driver if needed
+        if not automator.driver:
+            logger.info("Initializing driver for authentication")
+            if not automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
 
-        # Check if already authenticated by checking if we're in the library state
-        server.automator.state_machine.update_current_state()
-        current_state = server.automator.state_machine.current_state
+        # Attempt to sign in
+        logger.info(f"Attempting to sign in with {username}")
 
-        # We need to check if we're in the LIBRARY tab (not just home tab with library_root_view)
-        if current_state == AppState.LIBRARY:
-            logger.info("Already authenticated and in library state")
-            return {"success": True, "message": "Already authenticated"}, 200
+        # clear current book since we're authenticating
+        server.clear_current_book(sindarin_email)
 
-        # HOME tab is not considered authenticated yet, we need to switch to LIBRARY
-        elif current_state == AppState.HOME:
-            logger.info("Already logged in but in HOME state, need to switch to LIBRARY to verify books")
+        auth_result = automator.auth_handler.sign_in()
 
-            # Try to click the LIBRARY tab
-            try:
-                library_tab = server.automator.driver.find_element(
-                    AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"
-                )
-                library_tab.click()
-                logger.info("Clicked on LIBRARY tab")
-                time.sleep(1)  # Wait for tab transition
-
-                # Update state after clicking
-                server.automator.state_machine.update_current_state()
-                updated_state = server.automator.state_machine.current_state
-
-                if updated_state == AppState.LIBRARY:
-                    logger.info("Successfully switched to LIBRARY state")
-                    return {"success": True, "message": "Switched to library view"}, 200
-            except Exception as e:
-                logger.error(f"Error clicking on LIBRARY tab: {e}")
-                # Continue with normal authentication process
-
-        # Update credentials using the dedicated method - always use Amazon email for auth
-        server.automator.update_credentials(amazon_email, password)
-
-        # First try to reach sign-in state if we're not already there
-        if current_state != AppState.SIGN_IN:
-            logger.info(f"Not in sign-in state (current: {current_state.name}), attempting to transition")
-            # Use existing state transition mechanisms to get to sign-in state
-            if not server.automator.transition_to_library():
-                # Take a screenshot for visual feedback
-                timestamp = int(time.time())
-                screenshot_id = f"auth_failed_transition_{timestamp}"
-                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                server.automator.driver.save_screenshot(screenshot_path)
-
-                # Update current state
-                server.automator.state_machine.update_current_state()
-                current_state = server.automator.state_machine.current_state
-
-                response_data = {
-                    "success": False,
-                    "message": (
-                        f"Could not transition to authentication state, current state: {current_state.name}"
-                    ),
-                }
-
-                # Process the screenshot (either base64 encode or add URL)
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                response_data.update(screenshot_data)
-
-                return response_data, 500
-
-        # Now proceed with authentication
-        auth_result = server.automator.state_machine.auth_handler.sign_in()
-        logger.debug(f"Authentication result: {auth_result}")
-        # auth_result could be a boolean (success/failure) or tuple with (LoginVerificationState, message)
-
-        # Check if auth_result is a tuple with error information
-        error_message = None
-        incorrect_password = False
-        if isinstance(auth_result, tuple) and len(auth_result) == 2:
-            state, message = auth_result
-            if state in [LoginVerificationState.INCORRECT_PASSWORD, LoginVerificationState.ERROR]:
-                incorrect_password = True
-                error_message = message
-                logger.error(f"Authentication failed with incorrect password: {message}")
-                # Return immediately with error response without retrying
-                return {"success": False, "message": message, "error_type": "incorrect_password"}, 401
-
-        # Update current state after auth attempt
-        server.automator.state_machine.update_current_state()
-        current_state = server.automator.state_machine.current_state
-
-        # Take a screenshot only for auth-related states, skip for successful auth
-        screenshot_data = {}
-        screenshot_id = None
-
-        # If authentication was successful and we're in LIBRARY state, skip screenshot
-        if not incorrect_password and current_state == AppState.LIBRARY:
-            logger.info("Authentication successful - skipping screenshot since we're in LIBRARY state")
+        # Check the result
+        if auth_result == "success":
+            # Successful authentication
+            return {"status": "success", "message": "Successfully authenticated"}, 200
+        elif auth_result == "captcha":
+            # Captcha required - handled by @handle_automator_response decorator
+            return {"status": "captcha_required"}, 403
+        elif auth_result == "incorrect_password":
+            # Incorrect password
+            return {
+                "error": "Authentication failed: Incorrect password",
+                "error_type": "incorrect_password",
+            }, 401
+        elif auth_result == "2fa_required":
+            # 2FA required
+            return {
+                "status": "2fa_required",
+                "message": "Two-factor authentication required",
+                "verification_method": "otp",  # Currently only support OTP
+            }, 200
         else:
-            # Only take screenshot for errors or non-LIBRARY states
-            timestamp = int(time.time())
-            screenshot_id = f"auth_screen_{timestamp}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-
-            try:
-                # Use secure screenshot for auth screens
-                secure_path = server.automator.take_secure_screenshot(screenshot_path)
-                if secure_path:
-                    # Process the screenshot (either base64 encode or add URL)
-                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                    logger.info(f"Saved secure authentication screenshot to {screenshot_path}")
-                else:
-                    # Try standard method as fallback
-                    logger.warning("Secure screenshot failed, trying standard method")
-                    try:
-                        server.automator.driver.save_screenshot(screenshot_path)
-                        # Process the screenshot (either base64 encode or add URL)
-                        screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                        logger.info(
-                            f"Saved authentication screenshot using standard method to {screenshot_path}"
-                        )
-                    except Exception as inner_e:
-                        logger.warning(f"Standard screenshot also failed: {inner_e}")
-            except Exception as e:
-                logger.warning(f"Failed to take authentication screenshot: {e}")
-                # This is expected on secure screens like password entry
-
-        # Check for authentication errors
-        error_message = None
-        try:
-            # Check for error message box - use the strategy defined in ERROR_VIEW_IDENTIFIERS
-            from views.auth.view_strategies import ERROR_VIEW_IDENTIFIERS
-
-            error_strategy, error_locator = ERROR_VIEW_IDENTIFIERS[
-                2
-            ]  # This is the auth-error-message-box strategy
-            error_box = server.automator.driver.find_element(error_strategy, error_locator)
-
-            if error_box:
-                # Try to find specific error messages
-                try:
-                    # Use the strategy from AUTH_ERROR_STRATEGIES
-                    from views.auth.interaction_strategies import AUTH_ERROR_STRATEGIES
-
-                    error_strategy, error_locator = AUTH_ERROR_STRATEGIES[
-                        4
-                    ]  # This is the generic error message view
-                    error_elements = server.automator.driver.find_elements(error_strategy, error_locator)
-                    error_texts = []
-                    for elem in error_elements:
-                        if elem.text and elem.text.strip():
-                            error_texts.append(elem.text.strip())
-
-                    if error_texts:
-                        error_message = " - ".join(error_texts)
-                        logger.error(f"Authentication error: {error_message}")
-                except Exception as e:
-                    logger.error(f"Error extracting message from error box: {e}")
-                    error_message = "Authentication error"
-        except:
-            # No error box found
-            pass
-
-        # Handle different states
-        if current_state == AppState.LIBRARY:
-            response_data = {"success": True, "message": "Authentication successful"}
-            response_data.update(screenshot_data)
-            return response_data, 200
-        elif current_state == AppState.CAPTCHA:
-            response_data = {
-                "success": False,
-                "requires": "captcha",
-                "message": "CAPTCHA required",
-            }
-            response_data.update(screenshot_data)
-            return response_data, 202
-        elif (
-            current_state == AppState.SIGN_IN
-            and auth_result
-            and len(auth_result) >= 1
-            and auth_result[0] == LoginVerificationState.TWO_FACTOR
-        ):
-            response_data = {
-                "success": False,
-                "requires": "2fa",
-                "message": "2FA code required",
-            }
-            response_data.update(screenshot_data)
-            return response_data, 202
-        else:
-            # Return the specific error message if we found one
-            if incorrect_password:
-                # Special case for incorrect password - don't retry
-                return {"success": False, "message": error_message, "error_type": "incorrect_password"}, 401
-            elif error_message:
-                response_data = {
-                    "success": False,
-                    "message": error_message,
-                }
-                response_data.update(screenshot_data)
-                return response_data, 401
-            else:
-                response_data = {
-                    "success": False,
-                    "message": f"Authentication failed, current state: {current_state.name}",
-                }
-                response_data.update(screenshot_data)
-                return response_data, 401
+            # Unknown error
+            return {"error": f"Authentication failed: {auth_result}"}, 500
 
 
 class FixturesResource(Resource):
+    """API for managing test fixtures"""
+
     @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
     def post(self):
-        """Create fixtures for major views"""
+        """Load or record test fixtures"""
         try:
-            fixtures_handler = TestFixturesHandler(server.automator.driver)
-            if fixtures_handler.create_fixtures():
-                return {"status": "success", "message": "Created fixtures for all major views"}, 200
-            return {"error": "Failed to create fixtures"}, 500
+            data = request.get_json()
+            action = data.get("action", "").lower()
+            state = data.get("state", "")
+
+            # Create fixtures handler
+            handler = TestFixturesHandler()
+
+            # Handle different actions
+            if action == "load":
+                if not state:
+                    return {"error": "State name is required for loading fixtures"}, 400
+
+                success = handler.load_state(state)
+                if success:
+                    return {"status": "success", "message": f"Loaded fixtures for state: {state}"}, 200
+                else:
+                    return {"error": f"Failed to load fixtures for state: {state}"}, 500
+
+            elif action == "record":
+                if not state:
+                    return {"error": "State name is required for recording fixtures"}, 400
+
+                # Get XML page source from current state
+                if server.automator and server.automator.driver:
+                    try:
+                        page_source = server.automator.driver.page_source
+                        success = handler.save_state(state, page_source)
+                        if success:
+                            return {
+                                "status": "success",
+                                "message": f"Recorded fixtures for state: {state}",
+                            }, 200
+                        else:
+                            return {"error": f"Failed to record fixtures for state: {state}"}, 500
+                    except Exception as e:
+                        return {"error": f"Error capturing page source: {e}"}, 500
+                else:
+                    return {"error": "No active driver available for capturing state"}, 500
+            else:
+                return {"error": f"Unknown action: {action}. Use 'load' or 'record'."}, 400
 
         except Exception as e:
-            logger.error(f"Error creating fixtures: {e}")
+            logger.error(f"Error in fixtures endpoint: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
-
-
-# Helper function to get image path
-def get_image_path(image_id):
-    """Get full path for an image file."""
-    # Build path to image using project root
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    # Ensure .png extension
-    if not image_id.endswith(".png"):
-        image_id = f"{image_id}.png"
-
-    return os.path.join(project_root, "screenshots", image_id)
-
-
-# Helper function to serve an image with option to delete after serving
-def serve_image(image_id, delete_after=True):
-    """Serve an image by ID with option to delete after serving.
-
-    This function properly handles the Flask response object to work with Flask-RESTful.
-    """
-    try:
-        image_path = get_image_path(image_id)
-        logger.info(f"Attempting to serve image from: {image_path}")
-
-        if not os.path.exists(image_path):
-            logger.error(f"Image not found at path: {image_path}")
-            return {"error": "Image not found"}, 404
-
-        # Create a response that bypasses Flask-RESTful's serialization
-        logger.info(f"Serving image from: {image_path}")
-        response = make_response(send_file(image_path, mimetype="image/png"))
-
-        # Delete the file after sending if requested
-        # We need to set up a callback to delete the file after the response is sent
-        if delete_after:
-            @response.call_on_close
-            def on_close():
-                try:
-                    if os.path.exists(image_path):
-                        os.remove(image_path)
-                        logger.info(f"Deleted image: {image_path}")
-                except Exception as e:
-                    logger.error(f"Failed to delete image {image_path}: {e}")
-
-        # Return the response object directly
-        return response
-
-    except Exception as e:
-        logger.error(f"Error serving image: {e}")
-        return {"error": str(e)}, 500
-
-
-# Helper function to check if base64 is requested
-def is_base64_requested():
-    """Check if base64 format is requested in query parameters or JSON body.
-
-    Returns:
-        Boolean indicating whether base64 was requested
-    """
-    # Check URL query parameters first
-    use_base64 = request.args.get("base64", "0") == "1"
-
-    # If not in URL parameters, check JSON body
-    if not use_base64 and request.is_json:
-        try:
-            json_data = request.get_json(silent=True) or {}
-            base64_param = json_data.get("base64", False)
-            if isinstance(base64_param, bool):
-                use_base64 = base64_param
-            elif isinstance(base64_param, str):
-                use_base64 = base64_param == "1" or base64_param.lower() == "true"
-            elif isinstance(base64_param, int):
-                use_base64 = base64_param == 1
-        except Exception as e:
-            logger.warning(f"Error parsing JSON for base64 parameter: {e}")
-
-    return use_base64
-
-
-# Helper function to check if OCR is requested
-def is_ocr_requested():
-    """Check if OCR is requested in query parameters or JSON body.
-
-    Returns:
-        Boolean indicating whether OCR was requested
-    """
-    # Check URL query parameters first - match exactly how other query params are checked
-    ocr_param = request.args.get("ocr", "0")
-    perform_ocr = ocr_param in ("1", "true")
-
-    logger.debug(f"is_ocr_requested check - query param 'ocr': {ocr_param}, result: {perform_ocr}")
-
-    # If not in URL parameters, check JSON body
-    if not perform_ocr and request.is_json:
-        try:
-            json_data = request.get_json(silent=True) or {}
-            ocr_param = json_data.get("ocr", False)
-            if isinstance(ocr_param, bool):
-                perform_ocr = ocr_param
-            elif isinstance(ocr_param, str):
-                perform_ocr = ocr_param == "1" or ocr_param.lower() == "true"
-            elif isinstance(ocr_param, int):
-                perform_ocr = ocr_param == 1
-            logger.debug(f"is_ocr_requested check - JSON param 'ocr': {ocr_param}, result: {perform_ocr}")
-        except Exception as e:
-            logger.warning(f"Error parsing JSON for OCR parameter: {e}")
-
-    return perform_ocr
-
-
-class KindleOCR:
-    """Utility class for OCR processing of Kindle screenshots."""
-
-    @staticmethod
-    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Process an image with Mistral's OCR API.
-
-        Args:
-            image_content: Either binary content (bytes) or a base64-encoded string
-
-        Returns:
-            A tuple of (OCR text result or None if processing failed, error message if an error occurred)
-        """
-        try:
-            # Determine if the input is already a base64 string or binary data
-            if isinstance(image_content, str):
-                # It's already a base64 string
-                base64_image = image_content
-                # Verify it's valid base64 by attempting to decode a small part
-                try:
-                    base64.b64decode(base64_image[:20])
-                except:
-                    error_msg = "Invalid base64 string provided"
-                    logger.error(error_msg)
-                    return None, error_msg
-            else:
-                # It's binary data, encode it as base64
-                base64_image = base64.b64encode(image_content).decode("utf-8")
-
-            # Get API key from environment variables (loaded from .env)
-            api_key = os.getenv("MISTRAL_API_KEY")
-            if not api_key:
-                error_msg = (
-                    "MISTRAL_API_KEY not found in environment variables. Please add it to your .env file."
-                )
-                logger.error(error_msg)
-                return None, error_msg
-
-            # Initialize Mistral client
-            client = Mistral(api_key=api_key)
-
-            # Implement our own timeout using ThreadPoolExecutor
-            TIMEOUT_SECONDS = 10
-            
-            # Define the OCR function that will run in a separate thread
-            def run_ocr():
-                ocr_response = client.ocr.process(
-                    model="mistral-ocr-latest",
-                    document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
-                )
-                
-                if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
-                    page = ocr_response.pages[0]
-                    return page.markdown
-                return None
-            
-            # Execute with timeout
-            try:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    # Submit the OCR task to the executor
-                    future = executor.submit(run_ocr)
-                    
-                    try:
-                        # Wait for the result with a timeout
-                        ocr_text = future.result(timeout=TIMEOUT_SECONDS)
-                        
-                        if ocr_text:
-                            logger.info("OCR processing successful")
-                            return ocr_text, None
-                        else:
-                            error_msg = "No OCR response or no pages found"
-                            logger.error(error_msg)
-                            return None, error_msg
-                            
-                    except concurrent.futures.TimeoutError:
-                        # Cancel the future if it times out
-                        future.cancel()
-                        error_msg = f"OCR request timed out after {TIMEOUT_SECONDS} seconds"
-                        logger.error(error_msg)
-                        return None, error_msg
-                        
-            except Exception as e:
-                error_msg = f"Error during OCR processing with timeout: {e}"
-                logger.error(error_msg)
-                return None, error_msg
-
-        except Exception as e:
-            error_msg = f"Error processing OCR: {e}"
-            logger.error(error_msg)
-            return None, error_msg
-
-
-# Helper function to handle image encoding for API responses
-def process_screenshot_response(screenshot_id, use_base64=False, perform_ocr=False):
-    """Process screenshot for API response - either adding URL, base64-encoded image, or OCR text.
-
-    Args:
-        screenshot_id: The ID of the screenshot
-        use_base64: Whether to use base64 encoding
-        perform_ocr: Whether to perform OCR on the image
-
-    Returns:
-        Dictionary with screenshot information (URL, base64, or OCR text)
-    """
-    result = {}
-    screenshot_path = get_image_path(screenshot_id)
-    delete_after = use_base64 or perform_ocr  # Delete the image if we're encoding it or OCR'ing it
-
-    # If OCR is requested, we need to process the image
-    if perform_ocr:
-        try:
-            # Read the image file
-            with open(screenshot_path, "rb") as img_file:
-                image_data = img_file.read()
-
-            # Process the image with OCR
-            ocr_text, error = KindleOCR.process_ocr(image_data)
-
-            if ocr_text:
-                # If OCR successful, just add the text to the result and don't include the image
-                # Don't include base64 or URL to save bandwidth and storage
-                result["ocr_text"] = ocr_text
-                # Always delete the image after successful OCR
-                delete_after = True
-            else:
-                # If OCR failed, add the error and fall back to regular image handling
-                result["ocr_error"] = error or "Unknown OCR error"
-                # Fall back to base64 or URL
-                if use_base64:
-                    encoded_image = base64.b64encode(image_data).decode("utf-8")
-                    result["screenshot_base64"] = encoded_image
-                else:
-                    # Return URL to image and don't delete file
-                    image_url = f"/image/{screenshot_id}"
-                    result["screenshot_url"] = image_url
-                    delete_after = False
-        except Exception as e:
-            logger.error(f"Error processing OCR: {e}")
-            result["ocr_error"] = f"Failed to process image for OCR: {str(e)}"
-            # Fall back to regular image handling
-            if use_base64:
-                try:
-                    with open(screenshot_path, "rb") as img_file:
-                        encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-                        result["screenshot_base64"] = encoded_image
-                except Exception as e2:
-                    logger.error(f"Error encoding image to base64: {e2}")
-                    result["error"] = f"Failed to encode image to base64: {str(e2)}"
-            else:
-                # Return URL to image and don't delete file
-                image_url = f"/image/{screenshot_id}"
-                result["screenshot_url"] = image_url
-                delete_after = False
-    elif use_base64:
-        # Base64 encoding without OCR
-        try:
-            with open(screenshot_path, "rb") as img_file:
-                encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-                result["screenshot_base64"] = encoded_image
-        except Exception as e:
-            logger.error(f"Error encoding image to base64: {e}")
-            result["error"] = f"Failed to encode image to base64: {str(e)}"
-    else:
-        # Regular URL handling
-        image_url = f"/image/{screenshot_id}"
-        result["screenshot_url"] = image_url
-        delete_after = False  # Don't delete file when using URL
-
-    # Delete the image file if needed
-    if delete_after:
-        try:
-            os.remove(screenshot_path)
-            logger.info(f"Deleted image after processing: {screenshot_path}")
-        except Exception as e:
-            logger.error(f"Failed to delete image {screenshot_path}: {e}")
-
-    return result
 
 
 class ImageResource(Resource):
+    """API endpoint for serving images by ID"""
+
     def get(self, image_id):
-        """Get an image by ID and delete it after serving."""
-        # Don't use the @handle_automator_response decorator as it can't handle Flask Response objects
-        return serve_image(image_id, delete_after=False)
-
-    def post(self, image_id):
-        """Get an image by ID without deleting it."""
-        # Don't use the @handle_automator_response decorator as it can't handle Flask Response objects
-        return serve_image(image_id, delete_after=False)
+        """Get an image by ID"""
+        delete_after = request.args.get("delete", "0") in ("1", "true")
+        return serve_image(image_id, server, delete_after_serve=delete_after)
 
 
-class ProfilesResource(Resource):
-    def get(self):
-        """List all available profiles"""
-        profiles = server.profile_manager.list_profiles()
-        current = server.profile_manager.get_current_profile()
-        
-        # Get additional info about running emulators
-        running_emulators = server.profile_manager.device_discovery.map_running_emulators()
-        
-        # Add information about which automators are active
-        active_automators = {}
-        for email, automator in server.automators.items():
-            if automator and hasattr(automator, 'driver') and automator.driver:
-                is_running = True
-                device_id = automator.device_id if hasattr(automator, 'device_id') else None
-                current_book = server.current_books.get(email) if email in server.current_books else None
-                
-                active_automators[email] = {
-                    "device_id": device_id,
-                    "is_running": is_running,
-                    "current_book": current_book
-                }
-        
-        return {
-            "profiles": profiles, 
-            "current": current, 
-            "running_emulators": running_emulators,
-            "active_automators": active_automators
-        }, 200
+class XMLResource(Resource):
+    """API endpoint for serving XML files by ID"""
 
-    def post(self):
-        """Create, delete or manage a profile"""
-        data = request.get_json()
-        action = data.get("action")
-        email = data.get("email")
-
-        if action == "reset_styles":
-            # Special case for resetting style preferences without needing an email
-            if server.profile_manager.current_profile:
-                if server.profile_manager.update_style_preference(False):
-                    return {"success": True, "message": "Style preferences reset successfully"}, 200
-                else:
-                    return {"success": False, "message": "Failed to reset style preferences"}, 500
-            else:
-                return {"success": False, "message": "No current profile found"}, 400
-        
-        elif action == "list_active":
-            # List all active emulators with their details
-            running_emulators = server.profile_manager.device_discovery.map_running_emulators()
-            active_automators = {}
-            
-            for email, automator in server.automators.items():
-                if automator and hasattr(automator, 'driver') and automator.driver:
-                    device_id = automator.device_id if hasattr(automator, 'device_id') else None
-                    current_book = server.current_books.get(email) if email in server.current_books else None
-                    
-                    active_automators[email] = {
-                        "device_id": device_id,
-                        "current_book": current_book
-                    }
-            
-            return {
-                "running_emulators": running_emulators,
-                "active_automators": active_automators
-            }, 200
-
-        # For all other actions, email is required
-        if not email:
-            return {"error": "Email is required for this action"}, 400
-
-        if action == "create":
-            success, message = server.profile_manager.create_profile(email)
-            return {"success": success, "message": message}, 200 if success else 500
-
-        elif action == "delete":
-            success, message = server.profile_manager.delete_profile(email)
-            return {"success": success, "message": message}, 200 if success else 500
-
-        elif action == "switch":
-            success, message = server.switch_profile(email)
-            return {"success": success, "message": message}, 200 if success else 500
-            
-        elif action == "stop_emulator":
-            # Find the running emulator for this email
-            is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(email)
-            
-            if not is_running:
-                return {"success": False, "message": f"No running emulator found for {email}"}, 404
-                
-            # Stop the emulator
-            success = server.profile_manager.stop_emulator(emulator_id)
-            
-            # Clean up the automator if it exists
-            if email in server.automators and server.automators[email]:
-                server.automators[email].cleanup()
-                server.automators[email] = None
-                
-            # Clear current book
-            server.clear_current_book(email)
-            
-            if success:
-                return {"success": True, "message": f"Stopped emulator for {email}"}, 200
-            else:
-                return {"success": False, "message": f"Failed to stop emulator for {email}"}, 500
-
-        else:
-            return {"error": f"Invalid action: {action}"}, 400
-
-
-class TextResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def _extract_text(self):
-        """Shared implementation for extracting text from the current reading page."""
+    def get(self, xml_id):
+        """Get an XML file by ID"""
         try:
-            # Make sure we're in the READING state
-            server.automator.state_machine.update_current_state()
-            current_state = server.automator.state_machine.current_state
+            # Look for XML file with this ID in screenshots directory
+            automator = server.automator
+            if not automator:
+                return {"error": "No active automator"}, 500
 
-            if current_state != AppState.READING:
-                return {
-                    "error": f"Must be in reading state to extract text, current state: {current_state.name}",
-                }, 400
+            xml_path = os.path.join(automator.screenshots_dir, f"{xml_id}.xml")
 
-            # Before proceeding, manually check and dismiss the "About this book" slideover
-            # This is needed because it can prevent accessing the reading controls
-            try:
-                from views.reading.interaction_strategies import (
-                    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
-                    BOTTOM_SHEET_IDENTIFIERS,
-                )
+            if not os.path.exists(xml_path):
+                return {"error": f"XML file not found: {xml_id}"}, 404
 
-                # Check if About Book slideover is visible
-                about_book_visible = False
-                for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
-                    try:
-                        slideover = server.automator.driver.find_element(strategy, locator)
-                        if slideover.is_displayed():
-                            about_book_visible = True
-                            logger.info("Found 'About this book' slideover that must be dismissed before OCR")
-                            break
-                    except selenium_exceptions.NoSuchElementException:
-                        continue
-
-                if about_book_visible:
-                    # Try multiple dismissal methods
-
-                    # Method 1: Try tapping at the very top of the screen
-                    window_size = server.automator.driver.get_window_size()
-                    center_x = window_size["width"] // 2
-                    top_y = int(window_size["height"] * 0.05)  # 5% from top
-                    server.automator.driver.tap([(center_x, top_y)])
-                    logger.info("Tapped at the very top of the screen to dismiss 'About this book' slideover")
-                    time.sleep(1)
-
-                    # Verify if it worked
-                    still_visible = False
-                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
-                        try:
-                            slideover = server.automator.driver.find_element(strategy, locator)
-                            if slideover.is_displayed():
-                                still_visible = True
-                                break
-                        except selenium_exceptions.NoSuchElementException:
-                            continue
-
-                    if still_visible:
-                        # Method 2: Try swiping down (from 30% to 70% of screen height)
-                        logger.info("First dismissal attempt failed. Trying swipe down method...")
-                        start_y = int(window_size["height"] * 0.3)
-                        end_y = int(window_size["height"] * 0.7)
-                        server.automator.driver.swipe(center_x, start_y, center_x, end_y, 300)
-                        logger.info("Swiped down to dismiss 'About this book' slideover")
-                        time.sleep(1)
-
-                        # Method 3: Try clicking the pill if it exists
-                        try:
-                            pill = server.automator.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
-                            if pill.is_displayed():
-                                pill.click()
-                                logger.info("Clicked pill to dismiss 'About this book' slideover")
-                                time.sleep(1)
-                        except selenium_exceptions.NoSuchElementException:
-                            logger.info("Pill not found or not visible")
-
-                    # Report final status
-                    still_visible = False
-                    for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
-                        try:
-                            slideover = server.automator.driver.find_element(strategy, locator)
-                            if slideover.is_displayed():
-                                still_visible = True
-                                logger.warning(
-                                    "'About this book' slideover is still visible after multiple dismissal attempts"
-                                )
-                                break
-                        except selenium_exceptions.NoSuchElementException:
-                            continue
-
-                    if not still_visible:
-                        logger.info("Successfully dismissed the 'About this book' slideover")
-            except Exception as e:
-                logger.error(f"Error while attempting to dismiss 'About this book' slideover: {e}")
-
-            # Save screenshot with unique ID
-            screenshot_id = f"text_extract_{int(time.time())}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            server.automator.driver.save_screenshot(screenshot_path)
-
-            # Get current page number and progress for context
-            # Check if placemark is requested
-            show_placemark = False
-            placemark_param = request.args.get("placemark", "0")
-            if placemark_param.lower() in ("1", "true", "yes"):
-                show_placemark = True
-                logger.info("Placemark mode enabled for OCR")
-
-            # Also check in POST data
-            if not show_placemark and request.is_json:
-                data = request.get_json(silent=True) or {}
-                placemark_param = data.get("placemark", "0")
-                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-                    show_placemark = True
-                    logger.info("Placemark mode enabled from POST data for OCR")
-
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
-
-            # Process the screenshot with OCR
-            try:
-                with open(screenshot_path, "rb") as img_file:
-                    image_data = img_file.read()
-
-                # Process the image with OCR
-                ocr_text, error = KindleOCR.process_ocr(image_data)
-
-                # Delete the screenshot file after processing
-                try:
-                    os.remove(screenshot_path)
-                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
-                except Exception as del_e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
-
-                if ocr_text:
-                    return {"success": True, "progress": progress, "text": ocr_text}, 200
-                else:
-                    return {
-                        "success": False,
-                        "progress": progress,
-                        "error": error or "OCR processing failed",
-                    }, 500
-
-            except Exception as e:
-                logger.error(f"Error processing OCR: {e}")
-                return {
-                    "success": False,
-                    "progress": progress,
-                    "error": f"Failed to extract text: {str(e)}",
-                }, 500
-
+            # Return the XML file
+            return send_file(xml_path, mimetype="text/xml")
         except Exception as e:
-            logger.error(f"Error extracting text: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {"error": str(e)}, 500
-
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def get(self):
-        """Get OCR text of the current reading page without turning the page."""
-        return self._extract_text()
-
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def post(self):
-        """POST endpoint for OCR text extraction (identical to GET but allows for future parameters)."""
-        return self._extract_text()
+            logger.error(f"Error serving XML file: {e}")
+            return {"error": f"Failed to serve XML file: {str(e)}"}, 500
 
 
-# Add resources to API
+# Register API resources
 api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
 api.add_resource(ScreenshotResource, "/screenshot")
-# General navigation endpoint that requires a JSON body with action
 api.add_resource(NavigationResource, "/navigate")
-# Specialized navigation endpoints for direct GET requests
-api.add_resource(
-    NavigationResource,
-    "/navigate-next",
-    endpoint="navigate_next",
-    resource_class_kwargs={"default_action": "next_page"},
-)
-api.add_resource(
-    NavigationResource,
-    "/navigate-previous",
-    endpoint="navigate_previous",
-    resource_class_kwargs={"default_action": "previous_page"},
-)
-
-# Preview endpoints for navigation with OCR and return to original page
-api.add_resource(
-    NavigationResource,
-    "/preview-next",
-    endpoint="preview_next",
-    resource_class_kwargs={"default_action": "preview_next_page"},
-)
-api.add_resource(
-    NavigationResource,
-    "/preview-previous",
-    endpoint="preview_previous",
-    resource_class_kwargs={"default_action": "preview_previous_page"},
-)
-
-api.add_resource(BookOpenResource, "/open-book")
+api.add_resource(BookOpenResource, "/open_book", "/open-book")
 api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
-api.add_resource(ProfilesResource, "/profiles")
-api.add_resource(TextResource, "/text")
+api.add_resource(XMLResource, "/xml/<string:xml_id>")
 
 
-def cleanup_resources():
-    """Clean up resources before exiting"""
-    logger.info("Cleaning up resources before shutdown...")
-
-    # We intentionally keep all emulators running during server shutdown
-    # This allows for faster reconnection when the server is restarted,
-    # and supports the multi-emulator approach
-    logger.info("Preserving all emulators during shutdown for faster reconnection")
-    
-    # Cleanup automator instances but don't stop emulators
-    for email, automator in server.automators.items():
-        if automator:
-            try:
-                # Just clean up the automator, not the emulator
-                logger.info(f"Cleaning up automator for {email} (preserving emulator)")
-                # Don't call automator.cleanup() as it would stop the emulator
-                # Instead, just set it to None to release resources
-                automator.driver = None
-            except Exception as e:
-                logger.error(f"Error cleaning up automator for {email}: {e}")
-    
-    # Clear all automators
-    server.automators.clear()
-
-    # Kill Appium server only
-    try:
-        logger.info("Stopping Appium server")
-        server.kill_existing_process("appium")
-    except Exception as e:
-        logger.error(f"Error stopping Appium during shutdown: {e}")
-
-    # We don't kill the ADB server either, to maintain connection with emulators
-    logger.info("Cleanup complete, server shutting down (all emulators preserved)")
-
-
-def signal_handler(sig, frame):
-    """Handle termination signals for graceful shutdown"""
-    signal_name = (
-        "SIGINT" if sig == signal.SIGINT else "SIGTERM" if sig == signal.SIGTERM else f"Signal {sig}"
-    )
-    logger.info(f"Received {signal_name}, initiating graceful shutdown...")
-    cleanup_resources()
-    # Exit with success code
-    os._exit(0)
-
-
-def run_server():
-    """Run the Flask server"""
-    # Register signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    logger.info("Registered signal handlers for graceful shutdown")
-
-    app.run(host="0.0.0.0", port=4098)
-
-
-def main():
-    # Kill any Flask processes on the same port and Appium servers
-    server.kill_existing_process("flask")
-    server.kill_existing_process("appium")
-
-    # Preserve emulators when restarting the server
-    # This allows for faster reconnection and avoids unnecessary restarts
-    logger.info("Preserving emulators during server startup for faster connection")
-
-    # Check ADB connectivity without killing the server or emulators
-    try:
-        # Just check device status to make sure ADB is responsive
-        subprocess.run(
-            [f"{server.android_home}/platform-tools/adb", "devices"],
-            check=False,
-            timeout=5,
-            capture_output=True,
-        )
-        logger.info("ADB server is active, emulators preserved")
-    except Exception as e:
-        logger.warning(f"ADB check failed, will restart ADB server: {e}")
-        try:
-            # Only if ADB check fails, restart the ADB server
-            subprocess.run(
-                [f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5
-            )
-            time.sleep(1)
-            subprocess.run(
-                [f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5
-            )
-            logger.info("ADB server restarted")
-        except Exception as adb_e:
-            logger.error(f"Error restarting ADB server: {adb_e}")
-
-    # Start Appium server
+# Start server when run directly (not imported)
+if __name__ == "__main__":
+    # Set up Appium server
     if not server.start_appium():
-        logger.error("Failed to start Appium server")
-        return
+        logger.error("Failed to start Appium server, exiting")
+        exit(1)
 
-    # Save Flask server PID
+    # Save Flask PID
+    import os
+
     server.save_pid("flask", os.getpid())
 
-    # Run the server directly, regardless of development mode
-    run_server()
+    # Start the server
+    from server.config import HOST, PORT
 
-
-if __name__ == "__main__":
-    # If running in background, write PID to file before starting server
-    if os.getenv("FLASK_ENV") == "development":
-        with open(os.path.join("logs", "flask.pid"), "w") as f:
-            f.write(str(os.getpid()))
-    main()
+    app.run(host=HOST, port=PORT, debug=IS_DEVELOPMENT)

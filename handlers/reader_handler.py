@@ -1341,19 +1341,19 @@ class ReaderHandler:
             except NoSuchElementException:
                 continue
         return False, None
-        
+
     def get_book_title(self):
         """Get the title of the book currently being read.
-        
+
         Returns:
             str: Book title if found, None otherwise
         """
         try:
             logger.info("Trying to get current book title")
-            
+
             # Try to show the reader toolbar to access book info
             visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "reading toolbar")
-            
+
             # If toolbar not visible, try to show it by tapping center
             if not visible:
                 logger.info("Toolbar not visible, attempting to show it")
@@ -1362,22 +1362,24 @@ class ReaderHandler:
                     window_size = self.driver.get_window_size()
                     center_x = window_size["width"] // 2
                     tap_y = window_size["height"] // 2
-                    
+
                     # Try tapping center of screen to show toolbar
                     self.driver.tap([(center_x, tap_y)])
                     logger.info(f"Tapped center at ({center_x}, {tap_y})")
                     time.sleep(0.5)
-                    
+
                     # Check if toolbar appeared
-                    visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "reading toolbar after tap")
+                    visible, _ = self._check_element_visibility(
+                        READING_TOOLBAR_IDENTIFIERS, "reading toolbar after tap"
+                    )
                     if not visible:
                         logger.warning("Failed to show toolbar to get book title")
                 except Exception as e:
                     logger.warning(f"Error showing toolbar: {e}")
-            
+
             # Try different strategies to get the book title
-            
-            # Strategy 1: Try to find title from the reader screen 
+
+            # Strategy 1: Try to find title from the reader screen
             try:
                 # Look for the title in the reader view toolbar
                 title_element = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/ToolbarTitleBar")
@@ -1387,50 +1389,62 @@ class ReaderHandler:
                     return title
             except NoSuchElementException:
                 pass
-                
+
             # Strategy 2: Show book details by clicking menu button and look for title there
             try:
                 # First check if the toolbar is visible
-                visible, toolbar = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "reading toolbar")
-                
+                visible, toolbar = self._check_element_visibility(
+                    READING_TOOLBAR_IDENTIFIERS, "reading toolbar"
+                )
+
                 if visible:
                     # Click on the menu button (three dots) if present
                     try:
-                        menu_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/reader_menu_button")
+                        menu_button = self.driver.find_element(
+                            AppiumBy.ID, "com.amazon.kindle:id/reader_menu_button"
+                        )
                         if menu_button.is_displayed():
                             logger.info("Clicking menu button to show book details")
                             menu_button.click()
                             time.sleep(1)
-                            
+
                             # Look for book title in the menu
                             try:
                                 # Attempt to find About This Book option
-                                about_book = self.driver.find_element(AppiumBy.XPATH, "//android.widget.TextView[@text='About This Book']")
+                                about_book = self.driver.find_element(
+                                    AppiumBy.XPATH, "//android.widget.TextView[@text='About This Book']"
+                                )
                                 if about_book.is_displayed():
                                     about_book.click()
                                     time.sleep(1)
-                                    
+
                                     # Now try to find the book title in the About This Book popup
                                     try:
-                                        title_element = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/about_book_title")
+                                        title_element = self.driver.find_element(
+                                            AppiumBy.ID, "com.amazon.kindle:id/about_book_title"
+                                        )
                                         title = title_element.text
                                         logger.info(f"Found book title from About This Book popup: '{title}'")
-                                        
+
                                         # Close the popup
                                         try:
-                                            close_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/about_book_back_button")
+                                            close_button = self.driver.find_element(
+                                                AppiumBy.ID, "com.amazon.kindle:id/about_book_back_button"
+                                            )
                                             close_button.click()
                                             time.sleep(0.5)
                                         except Exception:
                                             pass
-                                            
+
                                         return title
                                     except NoSuchElementException:
                                         logger.info("Couldn't find title in About This Book popup")
-                                        
+
                                     # Close the popup anyway if we couldn't find the title
                                     try:
-                                        close_button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/about_book_back_button")
+                                        close_button = self.driver.find_element(
+                                            AppiumBy.ID, "com.amazon.kindle:id/about_book_back_button"
+                                        )
                                         close_button.click()
                                         time.sleep(0.5)
                                     except Exception:
@@ -1441,11 +1455,11 @@ class ReaderHandler:
                         logger.info("Couldn't find menu button")
             except Exception as e:
                 logger.warning(f"Error getting title from menu: {e}")
-                
+
             # If we got here, we couldn't find the title
             logger.warning("Could not determine book title")
             return None
-            
+
         except Exception as e:
             logger.error(f"Error getting book title: {e}")
             return None
