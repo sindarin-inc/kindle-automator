@@ -203,7 +203,7 @@ class EmulatorManager:
             bool: True if successful, False otherwise
         """
         return self._stop_specific_emulator(emulator_id)
-
+        
     def _stop_specific_emulator(self, emulator_id: str) -> bool:
         """
         Stop a specific emulator by ID. Internal implementation.

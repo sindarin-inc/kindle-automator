@@ -58,10 +58,10 @@ class KindleAutomator:
         # Initialize handlers
         self.library_handler = LibraryHandler(self.driver)
         self.reader_handler = ReaderHandler(self.driver)
-
+        
         # Set the profile_manager reference in the reader handler
         # This allows it to access the correct profile manager to save style preferences
-        if hasattr(self, "profile_manager") and self.profile_manager:
+        if hasattr(self, 'profile_manager') and self.profile_manager:
             self.reader_handler.profile_manager = self.profile_manager
 
         # Verify app is in foreground - sometimes it quits after driver connects
