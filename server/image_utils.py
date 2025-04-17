@@ -147,44 +147,38 @@ class KindleOCR:
         self.client = Mistral(api_key=self.api_key) if self.api_key else None
         self.max_retries = 3
 
-    def encode_image(self, image_data_or_path):
+    def encode_image(self, image_path):
         """Encode an image as base64.
 
         Args:
-            image_data_or_path: Path to the image file or binary image data
+            image_path: Path to the image file
 
         Returns:
             Base64 encoded image data
         """
-        # Check if input is a string (file path) or bytes (image data)
-        if isinstance(image_data_or_path, str):
-            # Input is a file path
-            with open(image_data_or_path, "rb") as img_file:
-                return base64.b64encode(img_file.read()).decode("utf-8")
-        elif isinstance(image_data_or_path, bytes):
-            # Input is binary data
-            return base64.b64encode(image_data_or_path).decode("utf-8")
-        else:
-            raise TypeError("Input must be a file path or binary image data")
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode("utf-8")
 
-    def _process_with_base64_image(self, base64_image, max_timeout=60):
-        """Internal method to process a base64 encoded image with OCR.
-        
+    def process_image(self, image_path, max_timeout=60):
+        """Process an image with OCR.
+
         Args:
-            base64_image: Base64 encoded image
+            image_path: Path to the image file
             max_timeout: Maximum timeout in seconds
-            
+
         Returns:
             Tuple of (success, text or error)
         """
         if not self.client:
             return False, "Mistral API key not found"
-            
+
+        base64_image = self.encode_image(image_path)
+
         for attempt in range(self.max_retries):
             try:
-                # Define a function to call the Mistral API
-                def call_mistral_api():
-                    return self.client.chat(
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        self.client.chat,
                         model="mistral-large-latest",
                         messages=[
                             {
@@ -203,14 +197,9 @@ class KindleOCR:
                         ],
                         max_tokens=1024,
                     )
-                    
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    # Submit the function as the callable
-                    future = executor.submit(call_mistral_api)
                     # Wait for the result with a timeout
                     response = future.result(timeout=max_timeout)
                     return True, response.choices[0].message.content
-                    
             except concurrent.futures.TimeoutError:
                 logger.warning(
                     f"OCR processing timed out after {max_timeout} seconds (attempt {attempt+1}/{self.max_retries})"
@@ -221,67 +210,8 @@ class KindleOCR:
                 logger.error(f"OCR processing failed on attempt {attempt+1}/{self.max_retries}: {e}")
                 if attempt == self.max_retries - 1:
                     return False, f"OCR processing failed: {str(e)}"
-                    
+
         return False, "OCR processing failed after all retries"
-        
-    def process_image(self, image_path, max_timeout=60):
-        """Process an image with OCR.
-
-        Args:
-            image_path: Path to the image file
-            max_timeout: Maximum timeout in seconds
-
-        Returns:
-            Tuple of (success, text or error)
-        """
-        if not self.client:
-            return False, "Mistral API key not found"
-
-        base64_image = self.encode_image(image_path)
-        return self._process_with_base64_image(base64_image, max_timeout)
-        
-    def process_image_data(self, image_data, max_timeout=60):
-        """Process image data with OCR.
-
-        Args:
-            image_data: Binary image data
-            max_timeout: Maximum timeout in seconds
-
-        Returns:
-            Tuple of (success, text or error)
-        """
-        if not self.client:
-            return False, "Mistral API key not found"
-
-        base64_image = self.encode_image(image_data)
-        return self._process_with_base64_image(base64_image, max_timeout)
-        
-    @staticmethod
-    def process_ocr(image_data, max_timeout=60):
-        """Static method to process image data with OCR.
-        
-        This is a convenience method for direct use without creating an instance.
-        
-        Args:
-            image_data: Binary image data
-            max_timeout: Maximum timeout in seconds
-            
-        Returns:
-            Tuple of (ocr_text, error_message)
-        """
-        # Get API key from environment
-        api_key = os.environ.get("MISTRAL_API_KEY")
-        if not api_key:
-            return None, "Mistral API key not found"
-            
-        # Create instance and process
-        ocr = KindleOCR(api_key=api_key)
-        success, result = ocr.process_image_data(image_data, max_timeout)
-        
-        if success:
-            return result, None
-        else:
-            return None, result
 
 
 def process_screenshot_response(
@@ -348,13 +278,10 @@ def process_screenshot_response(
                 logger.warning("Mistral API key not found for OCR")
                 response_data["ocr_error"] = "OCR requires Mistral API key"
             else:
-                # Create OCR instance and process the image
                 ocr = KindleOCR(api_key=api_key)
                 success, text = ocr.process_image(screenshot_path)
                 if success:
-                    # Use the "ocr_text" key to match previous implementation
-                    response_data["ocr_text"] = text
-                    response_data["text"] = text  # Also keep "text" for backward compatibility
+                    response_data["text"] = text
                 else:
                     response_data["ocr_error"] = text
         except Exception as e:
