@@ -8,10 +8,10 @@ run: server
 profile-help:
 	@echo "Profile Management Commands:"
 	@echo "  make profiles                         List all profiles"
-	@echo "  make profile-create EMAIL=user@example.com      Create a new profile"
-	@echo "  make profile-switch EMAIL=user@example.com      Switch to existing profile"
-	@echo "  make profile-delete EMAIL=user@example.com      Delete a profile"
-	@echo "  make auth EMAIL=user@example.com PASSWORD=pass  Authenticate with a profile"
+	@echo "  make profile-create EMAIL=kindle@solreader.com      Create a new profile"
+	@echo "  make profile-switch EMAIL=kindle@solreader.com      Switch to existing profile"
+	@echo "  make profile-delete EMAIL=kindle@solreader.com      Delete a profile"
+	@echo "  make auth EMAIL=kindle@solreader.com PASSWORD=pass  Authenticate with a profile"
 	@echo "  make run-emulator                               Run emulator for current profile"
 	@echo "  make run-emulator-choose                        Run emulator (choose which AVD)"
 	@echo "  make dev                                        Start both emulator and server"
@@ -238,11 +238,19 @@ test-auth:
 # Test Auth with recreate
 test-auth-recreate:
 	@echo "Testing authentication with profile recreation..."
-	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make test-auth-recreate EMAIL=user@example.com PASSWORD=yourpassword" && exit 1)
-	@[ -n "$(PASSWORD)" ] || (echo "ERROR: PASSWORD parameter required. Usage: make test-auth-recreate EMAIL=user@example.com PASSWORD=yourpassword" && exit 1)
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make test-auth-recreate EMAIL=kindle@solreader.com PASSWORD=yourpassword" && exit 1)
+	@[ -n "$(PASSWORD)" ] || (echo "ERROR: PASSWORD parameter required. Usage: make test-auth-recreate EMAIL=kindle@solreader.com PASSWORD=yourpassword" && exit 1)
 	@curl -X POST http://localhost:4098/auth \
 		-H "Content-Type: application/json" \
 		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)", "recreate": true}' \
+		-v
+
+# Test auth endpoint without auth credentials (for manual VNC authentication)
+test-no-auth:
+	@echo "Authenticating (no auth credentials, manual VNC auth)..."
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make test-no-auth EMAIL=kindle@solreader.com" && exit 1)
+	@curl http://localhost:4098/books?sindarin_email=$(EMAIL) \
+		-H "Accept: application/json" \
 		-v
 
 # Test books endpoint
@@ -275,21 +283,21 @@ profiles:
 
 profile-create:
 	@echo "Creating profile for email: $(EMAIL)"
-	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make profile-create EMAIL=user@example.com" && exit 1)
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make profile-create EMAIL=kindle@solreader.com" && exit 1)
 	@curl -X POST http://localhost:4098/profiles \
 		-H "Content-Type: application/json" \
 		-d '{"action": "create", "email": "$(EMAIL)"}' | jq
 
 profile-switch:
 	@echo "Switching to profile for email: $(EMAIL)"
-	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make profile-switch EMAIL=user@example.com" && exit 1)
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make profile-switch EMAIL=kindle@solreader.com" && exit 1)
 	@curl -X POST http://localhost:4098/profiles \
 		-H "Content-Type: application/json" \
 		-d '{"action": "switch", "email": "$(EMAIL)"}' | jq
 
 profile-delete:
 	@echo "Deleting profile for email: $(EMAIL)"
-	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make profile-delete EMAIL=user@example.com" && exit 1)
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make profile-delete EMAIL=kindle@solreader.com" && exit 1)
 	@curl -X POST http://localhost:4098/profiles \
 		-H "Content-Type: application/json" \
 		-d '{"action": "delete", "email": "$(EMAIL)"}' | jq
@@ -297,8 +305,8 @@ profile-delete:
 # Auth with profile
 auth:
 	@echo "Authenticating with email: $(EMAIL) and password: $(PASSWORD)"
-	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make auth EMAIL=user@example.com PASSWORD=yourpassword" && exit 1)
-	@[ -n "$(PASSWORD)" ] || (echo "ERROR: PASSWORD parameter required. Usage: make auth EMAIL=user@example.com PASSWORD=yourpassword" && exit 1)
+	@[ -n "$(EMAIL)" ] || (echo "ERROR: EMAIL parameter required. Usage: make auth EMAIL=kindle@solreader.com PASSWORD=yourpassword" && exit 1)
+	@[ -n "$(PASSWORD)" ] || (echo "ERROR: PASSWORD parameter required. Usage: make auth EMAIL=kindle@solreader.com PASSWORD=yourpassword" && exit 1)
 	@curl -X POST http://localhost:4098/auth \
 		-H "Content-Type: application/json" \
 		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)"}' | jq

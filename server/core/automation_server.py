@@ -38,10 +38,10 @@ class AutomationServer:
         return None
 
     def initialize_automator(self, email=None):
-        """Initialize automator without credentials or captcha solution.
+        """Initialize automator for VNC-based manual authentication.
 
         Args:
-            email: The email for which to initialize an automator. If None, uses current_email.
+            email: The profile ID for which to initialize an automator. If None, uses current_email.
 
         Returns:
             The automator instance
@@ -50,16 +50,16 @@ class AutomationServer:
         target_email = email or self.current_email
 
         if not target_email:
-            logger.warning("No target email provided for automator initialization")
+            logger.warning("No target profile ID provided for automator initialization")
             return None
 
-        # Check if we already have an automator for this email
+        # Check if we already have an automator for this profile
         if target_email in self.automators and self.automators[target_email]:
-            logger.info(f"Using existing automator for {target_email}")
+            logger.info(f"Using existing automator for profile {target_email}")
             return self.automators[target_email]
 
         # Initialize a new automator
-        logger.info(f"Initializing new automator for {target_email}")
+        logger.info(f"Initializing new automator for profile {target_email}")
         automator = KindleAutomator()
         # Connect profile manager to automator for device ID tracking
         automator.profile_manager = self.profile_manager
@@ -70,7 +70,7 @@ class AutomationServer:
         # Scan for any AVDs with email patterns in their names and register them
         discovered = self.profile_manager.scan_for_avds_with_emails()
         if discovered:
-            logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
+            logger.info(f"Auto-discovered {len(discovered)} profile-to-AVD mappings: {discovered}")
 
         return automator
 

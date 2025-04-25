@@ -79,7 +79,7 @@ class InitializeResource(Resource):
         when needed on other endpoints. It can be used for pre-initialization.
         """
         try:
-            # Initialize automator without credentials - they'll be set during authentication
+            # Initialize automator
             server.initialize_automator()
             success = server.automator.initialize_driver()
 
@@ -89,11 +89,13 @@ class InitializeResource(Resource):
             # Clear the current book since we're reinitializing the app
             server.clear_current_book()
 
+            # Get VNC URL from environment for manual authentication
+            vnc_url = os.environ.get("VNC_URL", "")
+
             return {
                 "status": "initialized",
-                "message": (
-                    "Device initialized. Use /auth endpoint to authenticate with your Amazon credentials."
-                ),
+                "message": "Device initialized. Use /auth endpoint with VNC for manual authentication.",
+                "vnc_url": vnc_url
             }, 200
 
         except Exception as e:
@@ -159,17 +161,18 @@ class BooksResource(Resource):
 
         # Handle different states
         if current_state != AppState.LIBRARY:
-            # Check if we're on the sign-in screen without credentials
+            # Check if we're on the sign-in screen
             if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
-                # Check if we have credentials set
-                if not server.automator.email or not server.automator.password:
-                    logger.info("Authentication required but no credentials are set")
-                    return {
-                        "error": "Authentication required",
-                        "requires_auth": True,
-                        "current_state": current_state.name,
-                        "message": "You need to provide Amazon credentials via the /auth endpoint",
-                    }, 401
+                # Always return VNC URL for authentication
+                vnc_url = os.environ.get("VNC_URL", "")
+                logger.info("Authentication required - providing VNC URL for manual authentication")
+                return {
+                    "error": "Authentication required",
+                    "requires_auth": True,
+                    "current_state": current_state.name,
+                    "message": "Authentication is required via VNC",
+                    "vnc_url": vnc_url,
+                }, 401
 
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
@@ -181,15 +184,16 @@ class BooksResource(Resource):
 
             # Check for auth requirement regardless of transition success
             if new_state == AppState.SIGN_IN:
-                # Check if we have credentials set
-                if not server.automator.email or not server.automator.password:
-                    logger.info("Authentication required after transition attempt but no credentials are set")
-                    return {
-                        "error": "Authentication required",
-                        "requires_auth": True,
-                        "current_state": new_state.name,
-                        "message": "You need to provide Amazon credentials via the /auth endpoint",
-                    }, 401
+                # Always return VNC URL for authentication
+                vnc_url = os.environ.get("VNC_URL", "")
+                logger.info("Authentication required after transition attempt - providing VNC URL")
+                return {
+                    "error": "Authentication required",
+                    "requires_auth": True,
+                    "current_state": new_state.name,
+                    "message": "Authentication is required via VNC",
+                    "vnc_url": vnc_url,
+                }, 401
 
             if transition_success:
                 logger.info("Successfully transitioned to library state")
@@ -198,10 +202,14 @@ class BooksResource(Resource):
 
                 # If books is None, it means authentication is required
                 if books is None:
+                    # Always return VNC URL for authentication
+                    vnc_url = os.environ.get("VNC_URL", "")
+                    logger.info("Authentication required - providing VNC URL for manual authentication")
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
-                        "message": "You need to sign in to access your Kindle library",
+                        "message": "Authentication is required via VNC",
+                        "vnc_url": vnc_url,
                     }, 401
 
                 return {"books": books}, 200
@@ -210,12 +218,15 @@ class BooksResource(Resource):
                 updated_state = server.automator.state_machine.current_state
 
                 if updated_state == AppState.SIGN_IN:
-                    logger.info("Transition failed - authentication required")
+                    # Always return VNC URL for authentication
+                    vnc_url = os.environ.get("VNC_URL", "")
+                    logger.info("Transition failed - authentication required - providing VNC URL")
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
                         "current_state": updated_state.name,
-                        "message": "You need to provide Amazon credentials via the /auth endpoint",
+                        "message": "Authentication is required via VNC",
+                        "vnc_url": vnc_url,
                     }, 401
                 else:
                     return {
@@ -228,10 +239,14 @@ class BooksResource(Resource):
 
         # If books is None, it means authentication is required
         if books is None:
+            # Always return VNC URL for authentication
+            vnc_url = os.environ.get("VNC_URL", "")
+            logger.info("Authentication required - providing VNC URL for manual authentication")
             return {
                 "error": "Authentication required",
                 "requires_auth": True,
-                "message": "You need to sign in to access your Kindle library",
+                "message": "Authentication is required via VNC",
+                "vnc_url": vnc_url,
             }, 401
 
         return {"books": books}, 200
@@ -887,10 +902,8 @@ class AuthResource(Resource):
     @ensure_user_profile_loaded
     @handle_automator_response(server)
     def post(self):
-        """Authenticate with Amazon username and password"""
-        data = request.get_json()
-        amazon_email = data.get("email")
-        password = data.get("password")
+        """Set up a profile for manual authentication via VNC"""
+        data = request.get_json() or {}
 
         # Get sindarin_email from request - this is the profile name we'll use
         sindarin_email = None
@@ -918,11 +931,8 @@ class AuthResource(Resource):
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
-        # Log authentication attempt details - note we now accept missing credentials
-        if amazon_email and password:
-            logger.info(f"Authenticating with Amazon account: {amazon_email}, profile: {sindarin_email}")
-        else:
-            logger.info(f"Setting up profile: {sindarin_email} for manual authentication")
+        # Log authentication attempt details
+        logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
 
         # If recreate is requested, just clean up the automator but don't force a new emulator
         if recreate:
@@ -950,26 +960,17 @@ class AuthResource(Resource):
             if not server.automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
 
-        # Use the prepare_for_authentication method
-        # Update credentials in the auth handler before preparing
-        if amazon_email and password:
-            if server.automator.state_machine.auth_handler:
-                server.automator.state_machine.auth_handler.email = amazon_email
-                server.automator.state_machine.auth_handler.password = password
-                
-        auth_status = server.automator.state_machine.auth_handler.prepare_for_authentication(
-            email=amazon_email,
-            password=password
-        )
-        
+        # Use the prepare_for_authentication method - always using VNC
+        auth_status = server.automator.state_machine.auth_handler.prepare_for_authentication()
+
         logger.info(f"Authentication preparation status: {auth_status}")
-        
+
         # Handle already authenticated cases (LIBRARY or HOME)
         if auth_status.get("already_authenticated", False):
             # If we're in HOME state, try to switch to LIBRARY
             if auth_status.get("state") == "HOME":
                 logger.info("Already logged in but in HOME state, switching to LIBRARY")
-                
+
                 # Try to click the LIBRARY tab
                 try:
                     library_tab = server.automator.driver.find_element(
@@ -978,11 +979,11 @@ class AuthResource(Resource):
                     library_tab.click()
                     logger.info("Clicked on LIBRARY tab")
                     time.sleep(1)  # Wait for tab transition
-                    
+
                     # Update state after clicking
                     server.automator.state_machine.update_current_state()
                     updated_state = server.automator.state_machine.current_state
-                    
+
                     if updated_state == AppState.LIBRARY:
                         logger.info("Successfully switched to LIBRARY state")
                         return {"success": True, "message": "Switched to library view"}, 200
@@ -992,189 +993,46 @@ class AuthResource(Resource):
             else:
                 # We're already in LIBRARY state
                 return {"success": True, "message": "Already authenticated"}, 200
-                
-        # Handle manual login case
-        if auth_status.get("requires_manual_login", False):
-            # If no credentials were provided, we need manual login via VNC
-            if not (amazon_email and password):
-                # Get VNC URL from environment or config
-                vnc_url = os.environ.get("VNC_URL", "")
-                
-                # Prepare manual auth response
-                return {
-                    "success": True,
-                    "manual_login_required": True,
-                    "message": "Ready for manual authentication via VNC",
-                    "vnc_url": vnc_url,
-                    "state": auth_status.get("state", "UNKNOWN")
-                }, 200
-        
-        # For automated login, update credentials if provided
-        if amazon_email and password:
-            # Update credentials using the dedicated method
-            server.automator.update_credentials(amazon_email, password)
-        
-        # Check current state - needs mapped from string to AppState enum
-        current_state_str = auth_status.get("state", "UNKNOWN")
-        current_state = getattr(AppState, current_state_str, AppState.UNKNOWN)
-        
-        # Take a screenshot for visual feedback if we're not authenticated
+
+        # Always use manual login via VNC (no automation of Amazon credentials)
+        # Get VNC URL from environment or config
+        vnc_url = os.environ.get("VNC_URL", "")
+
+        # Take a screenshot for visual feedback
         screenshot_id = None
         screenshot_data = {}
-        if current_state not in [AppState.LIBRARY, AppState.HOME]:
-            timestamp = int(time.time())
-            screenshot_id = f"auth_state_{timestamp}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            try:
-                # Use secure screenshot for auth screens
-                secure_path = server.automator.take_secure_screenshot(screenshot_path)
-                if secure_path:
-                    # Process the screenshot 
-                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                else:
-                    # Try standard screenshot as fallback
-                    server.automator.driver.save_screenshot(screenshot_path)
-                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-            except Exception as e:
-                logger.error(f"Failed to take authentication screenshot: {e}")
-                # Continue with authentication process
-
-        # Now proceed with authentication
-        auth_result = server.automator.state_machine.auth_handler.sign_in()
-        logger.debug(f"Authentication result: {auth_result}")
-        # auth_result could be a boolean (success/failure) or tuple with (LoginVerificationState, message)
-
-        # Check if auth_result is a tuple with error information
-        error_message = None
-        incorrect_password = False
-        if isinstance(auth_result, tuple) and len(auth_result) == 2:
-            state, message = auth_result
-            if state in [LoginVerificationState.INCORRECT_PASSWORD, LoginVerificationState.ERROR]:
-                incorrect_password = True
-                error_message = message
-                logger.error(f"Authentication failed with incorrect password: {message}")
-                # Return immediately with error response without retrying
-                return {"success": False, "message": message, "error_type": "incorrect_password"}, 401
-
-        # Update current state after auth attempt
-        server.automator.state_machine.update_current_state()
         current_state = server.automator.state_machine.current_state
-
-        # If we haven't taken a screenshot yet or authentication failed, take a screenshot
-        if not screenshot_id or incorrect_password or current_state != AppState.LIBRARY:
-            # Only take screenshot for errors or non-LIBRARY states
-            timestamp = int(time.time())
-            screenshot_id = f"auth_screen_{timestamp}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-
-            # Don't take another screenshot if authentication was successful
-            if not incorrect_password and current_state == AppState.LIBRARY:
-                logger.info("Authentication successful - skipping screenshot since we're in LIBRARY state")
-            else:
-                try:
-                    # Use secure screenshot for auth screens
-                    secure_path = server.automator.take_secure_screenshot(screenshot_path)
-                    if secure_path:
-                        # Process the screenshot (either base64 encode or add URL)
-                        screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                        logger.info(f"Saved secure authentication screenshot to {screenshot_path}")
-                    else:
-                        # Try standard method as fallback
-                        logger.warning("Secure screenshot failed, trying standard method")
-                        try:
-                            server.automator.driver.save_screenshot(screenshot_path)
-                            # Process the screenshot (either base64 encode or add URL)
-                            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                            logger.info(
-                                f"Saved authentication screenshot using standard method to {screenshot_path}"
-                            )
-                        except Exception as inner_e:
-                            logger.warning(f"Standard screenshot also failed: {inner_e}")
-                except Exception as e:
-                    logger.warning(f"Failed to take authentication screenshot: {e}")
-                    # This is expected on secure screens like password entry
-
-        # Check for authentication errors
-        error_message = None
+        
+        timestamp = int(time.time())
+        screenshot_id = f"auth_state_{timestamp}"
+        screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
         try:
-            # Check for error message box - use the strategy defined in ERROR_VIEW_IDENTIFIERS
-            from views.auth.view_strategies import ERROR_VIEW_IDENTIFIERS
-
-            error_strategy, error_locator = ERROR_VIEW_IDENTIFIERS[
-                2
-            ]  # This is the auth-error-message-box strategy
-            error_box = server.automator.driver.find_element(error_strategy, error_locator)
-
-            if error_box:
-                # Try to find specific error messages
-                try:
-                    # Use the strategy from AUTH_ERROR_STRATEGIES
-                    from views.auth.interaction_strategies import AUTH_ERROR_STRATEGIES
-
-                    error_strategy, error_locator = AUTH_ERROR_STRATEGIES[
-                        4
-                    ]  # This is the generic error message view
-                    error_elements = server.automator.driver.find_elements(error_strategy, error_locator)
-                    error_texts = []
-                    for elem in error_elements:
-                        if elem.text and elem.text.strip():
-                            error_texts.append(elem.text.strip())
-
-                    if error_texts:
-                        error_message = " - ".join(error_texts)
-                        logger.error(f"Authentication error: {error_message}")
-                except Exception as e:
-                    logger.error(f"Error extracting message from error box: {e}")
-                    error_message = "Authentication error"
-        except:
-            # No error box found
-            pass
-
-        # Handle different states
-        if current_state == AppState.LIBRARY:
-            response_data = {"success": True, "message": "Authentication successful"}
-            response_data.update(screenshot_data)
-            return response_data, 200
-        elif current_state == AppState.CAPTCHA:
-            response_data = {
-                "success": False,
-                "requires": "captcha",
-                "message": "CAPTCHA required",
-            }
-            response_data.update(screenshot_data)
-            return response_data, 202
-        elif (
-            current_state == AppState.SIGN_IN
-            and auth_result
-            and len(auth_result) >= 1
-            and auth_result[0] == LoginVerificationState.TWO_FACTOR
-        ):
-            response_data = {
-                "success": False,
-                "requires": "2fa",
-                "message": "2FA code required",
-            }
-            response_data.update(screenshot_data)
-            return response_data, 202
-        else:
-            # Return the specific error message if we found one
-            if incorrect_password:
-                # Special case for incorrect password - don't retry
-                return {"success": False, "message": error_message, "error_type": "incorrect_password"}, 401
-            elif error_message:
-                response_data = {
-                    "success": False,
-                    "message": error_message,
-                }
-                response_data.update(screenshot_data)
-                return response_data, 401
+            # Use secure screenshot for auth screens
+            secure_path = server.automator.take_secure_screenshot(screenshot_path)
+            if secure_path:
+                # Process the screenshot
+                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
             else:
-                response_data = {
-                    "success": False,
-                    "message": f"Authentication failed, current state: {current_state.name}",
-                }
-                response_data.update(screenshot_data)
-                return response_data, 401
+                # Try standard screenshot as fallback
+                server.automator.driver.save_screenshot(screenshot_path)
+                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+        except Exception as e:
+            logger.error(f"Failed to take authentication screenshot: {e}")
+            
+        # Prepare manual auth response
+        response_data = {
+            "success": True,
+            "manual_login_required": True,
+            "message": "Ready for manual authentication via VNC",
+            "vnc_url": vnc_url,
+            "state": current_state.name,
+        }
+        
+        # Add screenshot data if available
+        if screenshot_data:
+            response_data.update(screenshot_data)
+            
+        return response_data, 200
 
 
 class FixturesResource(Resource):

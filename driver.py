@@ -106,7 +106,6 @@ class Driver:
                 and hasattr(self.automator, "profile_manager")
                 and self.automator.profile_manager.current_profile
             ):
-
                 profile = self.automator.profile_manager.current_profile
                 device_id = profile.get("emulator_id")
 
@@ -162,7 +161,6 @@ class Driver:
                 and hasattr(self.automator, "profile_manager")
                 and self.automator.profile_manager.current_profile
             ):
-
                 profile = self.automator.profile_manager.current_profile
                 email = profile.get("email")
                 avd_name = profile.get("avd_name")
@@ -196,7 +194,6 @@ class Driver:
                 and hasattr(self.automator, "profile_manager")
                 and self.automator.profile_manager.current_profile
             ):
-
                 profile = self.automator.profile_manager.current_profile
                 device_id = profile.get("emulator_id")
 
@@ -278,7 +275,6 @@ class Driver:
                 and hasattr(self.automator, "profile_manager")
                 and self.automator.profile_manager.current_profile
             ):
-
                 profile = self.automator.profile_manager.current_profile
                 device_id = profile.get("emulator_id")
 

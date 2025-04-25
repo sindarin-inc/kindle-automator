@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 
 class KindleAutomator:
     def __init__(self):
-        self.email = None
-        self.password = None
         self.captcha_solution = None
         self.driver = None
         self.state_machine = None
@@ -216,19 +214,7 @@ class KindleAutomator:
             return True
         return False
 
-    def update_credentials(self, email, password):
-        """Update user credentials in the automator and state machine.
-
-        Args:
-            email: The Amazon account email
-            password: The Amazon account password
-        """
-        logger.info(f"Updating credentials for email: {email}")
-        self.email = email
-        self.password = password
-        if self.state_machine and self.state_machine.auth_handler:
-            self.state_machine.auth_handler.email = email
-            self.state_machine.auth_handler.password = password
+    # Removed update_credentials method - no longer needed
 
     def restart_kindle_app(self):
         """Restart the Kindle app to return to sign-in state"""
@@ -305,7 +291,7 @@ class KindleAutomator:
         except Exception as e:
             logger.error(f"Error restarting Kindle app: {e}")
             return False
-            
+
     # Keep original method for backward compatibility
     def restart_app(self):
         """Restart the Kindle app (alias for restart_kindle_app)"""

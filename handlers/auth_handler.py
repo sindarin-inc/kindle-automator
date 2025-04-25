@@ -10,8 +10,8 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from server.logging_config import store_page_source
 from server.config import VNC_URL
+from server.logging_config import store_page_source
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -47,32 +47,26 @@ class LoginVerificationState(Enum):
 
 
 class AuthenticationHandler:
-    def __init__(self, driver, email=None, password=None, captcha_solution=None):
+    def __init__(self, driver, captcha_solution=None):
         self.driver = driver
-        self.email = email
-        self.password = password
         self.captcha_solution = captcha_solution
         self.screenshots_dir = "screenshots"
         self.last_captcha_screenshot = None  # Track the last captcha screenshot path
         self.interactive_captcha_detected = False  # Flag for the special interactive captcha case
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-        
-    def prepare_for_authentication(self, email=None, password=None):
+
+    def prepare_for_authentication(self):
         """
         Prepare the app for authentication by navigating to the sign-in screen if needed.
-        This shared method is used for both automated and manual authentication flows.
-        
-        Args:
-            email (str, optional): Email for authentication if provided
-            password (str, optional): Password for authentication if provided
-            
+        Always requires manual authentication via VNC.
+
         Returns:
             dict: Status information containing:
                 - state: current AppState (LIBRARY, HOME, SIGN_IN, etc.)
-                - requires_manual_login: boolean indicating if manual login is needed
+                - requires_manual_login: boolean indicating if manual login is needed (always True)
                 - already_authenticated: boolean indicating if already logged in
-                - vnc_url: URL to access VNC if manual login is required
+                - vnc_url: URL to access VNC for manual login
         """
         try:
             # Access the automator through the driver to get current state
@@ -84,29 +78,29 @@ class AuthenticationHandler:
                     "state": "UNKNOWN",
                     "requires_manual_login": True,
                     "already_authenticated": False,
-                    "error": "Could not access automator from driver session"
+                    "error": "Could not access automator from driver session",
                 }
-            
+
             # Make sure we have state information
             if not automator.state_machine:
                 return {
                     "state": "UNKNOWN",
                     "requires_manual_login": True,
                     "already_authenticated": False,
-                    "error": "No state machine available"
+                    "error": "No state machine available",
                 }
-                
+
             # Update current state to make sure it's accurate
             automator.state_machine.update_current_state()
             current_state = automator.state_machine.current_state
             state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-            
+
             logger.info(f"Current state before authentication preparation: {state_name}")
-            
+
             # Check if we're already in a logged-in state (LIBRARY or HOME)
             if state_name in ["LIBRARY", "HOME"]:
                 logger.info(f"Already authenticated in {state_name} state")
-                
+
                 # If we're in HOME state, try to navigate to LIBRARY for consistency
                 if state_name == "HOME":
                     try:
@@ -117,41 +111,42 @@ class AuthenticationHandler:
                         library_tab.click()
                         logger.info("Clicked on LIBRARY tab")
                         time.sleep(1)  # Wait for tab transition
-                        
+
                         # Update state after clicking
                         automator.state_machine.update_current_state()
                         updated_state = automator.state_machine.current_state
-                        updated_state_name = updated_state.name if hasattr(updated_state, "name") else str(updated_state)
-                        
+                        updated_state_name = (
+                            updated_state.name if hasattr(updated_state, "name") else str(updated_state)
+                        )
+
                         if updated_state_name == "LIBRARY":
                             logger.info("Successfully navigated to LIBRARY state")
                             state_name = "LIBRARY"
                     except Exception as e:
                         logger.error(f"Error navigating from HOME to LIBRARY: {e}")
                         # Continue with HOME state
-                
+
                 return {
                     "state": state_name,
                     "requires_manual_login": False,
                     "already_authenticated": True,
-                    "vnc_url": ""
+                    "vnc_url": "",
                 }
-            
+
             # Check if we're already on the sign-in screen
             if state_name == "SIGN_IN":
                 logger.info("Already on sign-in screen")
-                # If no credentials provided, require manual login
-                requires_manual = not (self.email and self.password)
+                # Always require manual login
                 return {
                     "state": "SIGN_IN",
-                    "requires_manual_login": requires_manual,
+                    "requires_manual_login": True,
                     "already_authenticated": False,
-                    "vnc_url": VNC_URL if requires_manual else ""
+                    "vnc_url": VNC_URL,
                 }
-                
+
             # We need to navigate to the sign-in screen
             logger.info(f"Need to navigate to sign-in screen from {state_name}")
-            
+
             # Try restarting the app to get to the sign-in screen
             success = False
             try:
@@ -162,33 +157,32 @@ class AuthenticationHandler:
                     logger.error("Automator doesn't have restart_kindle_app method")
             except Exception as e:
                 logger.error(f"Error restarting app: {e}")
-            
+
             # Check if restart succeeded and we're on the sign-in screen
             if success:
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                
+
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to sign-in screen")
-                    # If no credentials provided, require manual login
-                    requires_manual = not (self.email and self.password)
+                    # Always require manual login
                     return {
                         "state": "SIGN_IN",
-                        "requires_manual_login": requires_manual,
+                        "requires_manual_login": True,
                         "already_authenticated": False,
-                        "vnc_url": VNC_URL if requires_manual else ""
+                        "vnc_url": VNC_URL,
                     }
-                    
+
                 # If we reached a library state after restart, we're already logged in
                 if state_name in ["LIBRARY", "HOME"]:
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
                         "already_authenticated": True,
-                        "vnc_url": ""
+                        "vnc_url": "",
                     }
-            
+
             # As a fallback, try to use transition_to_library which may go through auth flow
             try:
                 logger.info("Trying transition_to_library to navigate through auth flow")
@@ -196,38 +190,37 @@ class AuthenticationHandler:
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                
+
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to sign-in screen via transition_to_library")
-                    # If no credentials provided, require manual login
-                    requires_manual = not (self.email and self.password)
+                    # Always require manual login
                     return {
                         "state": "SIGN_IN",
-                        "requires_manual_login": requires_manual,
+                        "requires_manual_login": True,
                         "already_authenticated": False,
-                        "vnc_url": VNC_URL if requires_manual else ""
+                        "vnc_url": VNC_URL,
                     }
-                    
+
                 if state_name in ["LIBRARY", "HOME"]:
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
                         "already_authenticated": True,
-                        "vnc_url": ""
+                        "vnc_url": "",
                     }
             except Exception as e:
                 logger.error(f"Error navigating with transition_to_library: {e}")
-            
-            # If we couldn't reliably get to the sign-in screen, return current state 
+
+            # If we couldn't reliably get to the sign-in screen, return current state
             # and indicate manual login is needed
             return {
                 "state": state_name,
                 "requires_manual_login": True,
                 "already_authenticated": False,
                 "vnc_url": VNC_URL,
-                "error": f"Could not navigate to sign-in screen from {state_name}"
+                "error": f"Could not navigate to sign-in screen from {state_name}",
             }
-            
+
         except Exception as e:
             logger.error(f"Error in prepare_for_authentication: {e}")
             return {
@@ -235,9 +228,9 @@ class AuthenticationHandler:
                 "requires_manual_login": True,
                 "already_authenticated": False,
                 "vnc_url": VNC_URL,
-                "error": str(e)
+                "error": str(e),
             }
-    
+
     def update_captcha_solution(self, solution):
         """Update the captcha solution."""
         self.captcha_solution = solution
@@ -297,46 +290,27 @@ class AuthenticationHandler:
             return False
 
     def sign_in(self):
+        """
+        Manual authentication via VNC is required.
+        
+        Returns:
+            A tuple indicating automated sign-in is not supported
+        """
         try:
-            # Check if we have credentials
-            if not self.email or not self.password:
-                logger.error("No credentials provided for authentication")
-                return (
-                    LoginVerificationState.ERROR,
-                    "No credentials provided - set email and password before authenticating",
-                )
-
-            # Check if we're on the password screen
-            if self._is_password_screen():
-                logger.info("Already on password screen, entering password...")
-                self._enter_password()
-                return self._verify_login()
-
-            # Check for captcha first
+            logger.info("Authentication must be done manually via VNC")
+            
+            # Check for captcha as the only automated support we still provide
             if self._is_captcha_screen():
                 logger.info("Captcha detected!")
                 if not self._handle_captcha():
                     logger.error("Failed to handle captcha")
                     return False
-
-            # Otherwise handle the full sign in flow
-            # Check if we need to select the sign in radio button
-            self._select_sign_in_if_needed()
-
-            # Handle email entry and continue
-            email_result = self._enter_email(self.email)
-            if email_result == "RESTART_AUTH":  # Check for special restart value
-                logger.info("Restarting authentication process...")
-                return False
-            elif isinstance(email_result, str) or not email_result:  # Handle other error cases
-                logger.error(f"Email validation failed: {email_result}")
-                return False
-
-            # Handle password
-            self._enter_password()
-
-            # Verify login success
-            return self._verify_login()
+                    
+            # Return error to indicate VNC is required
+            return (
+                LoginVerificationState.ERROR,
+                "Authentication must be done manually via VNC",
+            )
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
             return False
@@ -363,138 +337,7 @@ class AuthenticationHandler:
         except Exception as e:
             logger.debug(f"No sign in radio button found: {e}")
 
-    def _enter_email(self, email: str) -> bool:
-        """Enter email and click continue."""
-        logger.info("Entering email...")
-
-        # Double-check we're actually on a sign-in screen before proceeding
-        # This prevents trying to enter email on library/home screens
-        email_field_visible = False
-        for strategy, locator in EMAIL_FIELD_STRATEGIES:
-            try:
-                field = self.driver.find_element(strategy, locator)
-                if field.is_displayed():
-                    email_field_visible = True
-                    break
-            except:
-                continue
-
-        if not email_field_visible:
-            logger.warning("Not on a sign-in screen - email field not found. Aborting email entry.")
-            return False
-
-        try:
-            # Wait for and find email field
-            email_field = WebDriverWait(self.driver, 10).until(
-                lambda driver: next(
-                    (
-                        field
-                        for strategy, locator in EMAIL_FIELD_STRATEGIES
-                        if (field := self._try_find_element(strategy, locator))
-                    ),
-                    None,
-                )
-            )
-            if not email_field:
-                raise Exception("Could not find email field")
-
-            email_field.clear()
-            email_field.send_keys(email)
-            logger.info("Successfully entered email")
-
-            # Wait for and click continue button
-            continue_button = WebDriverWait(self.driver, 10).until(
-                lambda driver: next(
-                    (
-                        button
-                        for strategy, locator in CONTINUE_BUTTON_STRATEGIES
-                        if (button := self._try_find_element(strategy, locator))
-                    ),
-                    None,
-                )
-            )
-            if not continue_button:
-                raise Exception("Could not find continue button")
-
-            continue_button.click()
-            logger.info("Successfully clicked continue button")
-
-            # Wait for either password page or error message
-            logger.info("Waiting for password page or error message...")
-            try:
-                WebDriverWait(self.driver, 5).until(
-                    lambda driver: (
-                        # Check for password page
-                        any(
-                            self._try_find_element(strategy, locator)
-                            for strategy, locator in PASSWORD_VIEW_IDENTIFIERS
-                        )
-                        or
-                        # Check for error message
-                        any(
-                            self._try_find_element(AppiumBy.XPATH, strategy)
-                            for strategy in SIGN_IN_ERROR_STRATEGIES
-                        )
-                    )
-                )
-
-                # Now check which one we got
-                for strategy in SIGN_IN_ERROR_STRATEGIES:
-                    error = self._try_find_element(AppiumBy.XPATH, strategy)
-                    if error and error.text.strip():
-                        logger.error(f"Found error message: {error.text.strip()}")
-                        # Close the dialog by clicking the back button
-                        logger.info("Closing authentication dialog...")
-                        self.driver.back()
-                        time.sleep(2)  # Wait for dialog to close
-                        return "RESTART_AUTH"
-
-                # If we get here, we found the password page
-                logger.info("Successfully transitioned to password page")
-                return True
-
-            except TimeoutException:
-                logger.error("Timed out waiting for password page or error message")
-                store_page_source(self.driver.page_source, "auth_email_timeout")
-                return False
-
-        except Exception as e:
-            logger.error(f"Failed during email entry process: {e}")
-            return False
-
-        return True
-
-    def _enter_password(self):
-        """Enter password into password field."""
-        logger.info("Entering password...")
-        try:
-            # Find password field
-            logger.info("Trying to find password field with strategy: xpath")
-            password_field = self.driver.find_element(*PASSWORD_VIEW_IDENTIFIERS[0])
-
-            # Clear and enter password
-            logger.info("Clearing password field...")
-            password_field.clear()
-            logger.info("Entering password...")
-            password_field.send_keys(self.password)
-
-            # Look for sign in button
-            logger.info("Looking for sign in button...")
-            # Use the strategy from PASSWORD_SIGN_IN_BUTTON_STRATEGIES
-            sign_in_strategy, sign_in_locator = PASSWORD_SIGN_IN_BUTTON_STRATEGIES[0]
-            logger.info(f"Trying to find sign in button with strategy: {sign_in_strategy}")
-            sign_in_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((sign_in_strategy, sign_in_locator))
-            )
-
-            # Click sign in button
-            logger.info("Clicking sign in button...")
-            sign_in_button.click()
-            return True
-
-        except Exception as e:
-            logger.error(f"Error entering password: {e}")
-            return False
+    # Email and password methods removed - now using manual VNC authentication only
 
     def _verify_login(self):
         """Verify successful login by waiting for library view to load or detect error conditions."""
@@ -811,7 +654,7 @@ class AuthenticationHandler:
         return False
 
     def _is_password_screen(self):
-        """Check if we're on the password input screen"""
+        """Check if we're on the password input screen - used for state detection only"""
         try:
             for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
                 try:
