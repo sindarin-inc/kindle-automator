@@ -569,6 +569,30 @@ class AVDProfileManager:
         Returns:
             Tuple[bool, str]: (success, message)
         """
+        # If we're forcing a new emulator, reset device settings in the profile
+        if force_new_emulator and email in self.user_preferences:
+            # Reset all device-specific settings for this profile
+            settings_to_reset = ["hw_overlays_disabled", "animations_disabled", "sleep_disabled"]
+            for setting in settings_to_reset:
+                if setting in self.user_preferences[email]:
+                    self.user_preferences[email][setting] = False
+                    logger.info(f"Reset {setting} for {email} due to emulator recreation")
+                    
+            # Save the updated preferences
+            self._save_user_preferences()
+            
+            # Also update current profile if it's for this email
+            if self.current_profile and self.current_profile.get("email") == email:
+                for setting in settings_to_reset:
+                    if setting in self.current_profile:
+                        self.current_profile[setting] = False
+                        
+                # Save the updated current profile
+                self._save_current_profile(
+                    email,
+                    self.current_profile.get("avd_name", ""),
+                    self.current_profile.get("emulator_id")
+                )
         logger.info(f"Switching to profile for email: {email} (force_new_emulator={force_new_emulator})")
 
         # Special case: Simplified mode for Mac development environment
