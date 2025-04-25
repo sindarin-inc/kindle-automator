@@ -5,7 +5,7 @@ This module provides a comprehensive set of ANSI color and style codes
 that can be used to format terminal output text.
 
 Usage:
-    from server.ansi_colors import GREEN, BOLD, RESET
+    from server.utils.ansi_colors import GREEN, BOLD, RESET
     print(f"{GREEN}{BOLD}Success!{RESET} The operation completed.")
 """
 

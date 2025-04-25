@@ -1,8 +1,9 @@
 import logging
-import traceback
-import time
 import subprocess
+import time
+import traceback
 from functools import wraps
+
 import flask
 from flask import Response
 from selenium.common import exceptions as selenium_exceptions
@@ -10,6 +11,7 @@ from selenium.common import exceptions as selenium_exceptions
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
+
 
 def ensure_automator_healthy(f):
     """Decorator to ensure automator is initialized and healthy before each operation.
@@ -20,13 +22,14 @@ def ensure_automator_healthy(f):
     def wrapper(*args, **kwargs):
         # Access server instance from the Flask app
         from flask import current_app as app
-        server = app.config['server_instance']
+
+        server = app.config["server_instance"]
 
         max_retries = 3  # Allow more retries for UiAutomator2 crashes
-        
+
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email(default_email=server.current_email)
-            
+
         # If we still don't have an email after checking current_email, try the current profile
         if not sindarin_email:
             # Try to get from current profile
@@ -34,11 +37,11 @@ def ensure_automator_healthy(f):
             if current_profile:
                 sindarin_email = current_profile.get("email")
                 logger.debug(f"Using email from current profile: {sindarin_email}")
-            
+
         if not sindarin_email:
             logger.error("No sindarin_email found in request or current state")
             return {"error": "No email provided to identify which profile to use"}, 400
-        
+
         # Ensure this is set as the current email for backward compatibility
         server.current_email = sindarin_email
 
@@ -46,7 +49,7 @@ def ensure_automator_healthy(f):
             try:
                 # Get the automator for this email
                 automator = server.automators.get(sindarin_email)
-                
+
                 # Initialize automator if needed
                 if not automator:
                     logger.info(f"No automator found for {sindarin_email}. Initializing automatically...")
@@ -54,11 +57,13 @@ def ensure_automator_healthy(f):
                     if not automator:
                         logger.error(f"Failed to initialize automator for {sindarin_email}")
                         return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
-                        
+
                     if not automator.initialize_driver():
                         logger.error(f"Failed to initialize driver for {sindarin_email}")
                         return {
-                            "error": f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
+                            "error": (
+                                f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
+                            )
                         }, 500
 
                 # Ensure driver is running
@@ -68,11 +73,11 @@ def ensure_automator_healthy(f):
 
                 # Execute the function
                 result = f(*args, **kwargs)
-                
+
                 # Special handling for Flask Response objects to prevent JSON serialization errors
                 if isinstance(result, (flask.Response, Response)):
                     return result
-                    
+
                 return result
 
             except Exception as e:

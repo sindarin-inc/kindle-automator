@@ -6,7 +6,7 @@ from io import BytesIO
 
 from flask import Response, current_app, g, request
 
-from server.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
+from server.utils.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
 
 logger = logging.getLogger(__name__)
 

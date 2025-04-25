@@ -8,7 +8,7 @@ sample text with different colors and styles.
 Run this script directly to see all available colors and styles.
 """
 
-from server.ansi_colors import (  # Basic colors; Bright colors; Dim colors; Background colors; Text styles; Reset; Helper functions
+from server.utils.ansi_colors import (  # Basic colors; Bright colors; Dim colors; Background colors; Text styles; Reset; Helper functions
     BG_BLUE,
     BG_CYAN,
     BG_GREEN,
@@ -125,9 +125,9 @@ if __name__ == "__main__":
     print("\nThis script demonstrates the available colors and styles.")
     print_color_samples()
     print("\nUsage in code:")
-    print("from server.ansi_colors import RED, BOLD, RESET")
+    print("from server.utils.ansi_colors import RED, BOLD, RESET")
     print('print(f"{RED}{BOLD}This is bold red text{RESET} and this is normal text")')
     print("\n# Or using helper functions:")
-    print("from server.ansi_colors import error, success")
+    print("from server.utils.ansi_colors import error, success")
     print('print(f"{error("Error!")} Something went wrong")')
     print('print(f"{success("Success!")} Operation completed")')

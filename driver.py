@@ -101,17 +101,20 @@ class Driver:
         """Disable hardware overlays to improve WebView visibility."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (self.automator and hasattr(self.automator, 'profile_manager') and 
-                self.automator.profile_manager.current_profile):
-                
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and self.automator.profile_manager.current_profile
+            ):
+
                 profile = self.automator.profile_manager.current_profile
                 device_id = profile.get("emulator_id")
-                
+
                 # If this is the same device and we already set hw_overlays_disabled, skip
                 if device_id == self.device_id and profile.get("hw_overlays_disabled", False):
                     logger.info(f"HW overlays already disabled for device {self.device_id}, skipping")
                     return True
-                
+
             # Check current state
             logger.info(f"Checking HW overlays state on device {self.device_id}")
             result = subprocess.run(
@@ -135,7 +138,7 @@ class Driver:
                 capture_output=True,
                 text=True,
             )
-            
+
             # Record this setting in the profile
             self._update_profile_setting("hw_overlays_disabled", True)
             return True
@@ -145,37 +148,40 @@ class Driver:
         except Exception as e:
             logger.error(f"Error handling HW overlays: {e}")
             return False
-            
+
     def _update_profile_setting(self, setting_name: str, value: bool) -> None:
         """Update a setting in the current profile.
-        
+
         Args:
             setting_name: The name of the setting to update
             value: The value to set
         """
         try:
-            if (self.automator and hasattr(self.automator, 'profile_manager') and 
-                self.automator.profile_manager.current_profile):
-                
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and self.automator.profile_manager.current_profile
+            ):
+
                 profile = self.automator.profile_manager.current_profile
                 email = profile.get("email")
                 avd_name = profile.get("avd_name")
-                
+
                 if email and avd_name:
                     # Update the setting in the current profile
                     profile[setting_name] = value
-                    
+
                     # Update the profile in the profile manager
                     emulator_id = profile.get("emulator_id")
                     self.automator.profile_manager._save_current_profile(email, avd_name, emulator_id)
-                    
+
                     # Also update user preferences for persistence
                     if email not in self.automator.profile_manager.user_preferences:
                         self.automator.profile_manager.user_preferences[email] = {}
-                    
+
                     self.automator.profile_manager.user_preferences[email][setting_name] = value
                     self.automator.profile_manager._save_user_preferences()
-                    
+
                     logger.info(f"Updated profile setting {setting_name}={value} for {email}")
         except Exception as e:
             logger.error(f"Error updating profile setting {setting_name}: {e}")
@@ -185,17 +191,20 @@ class Driver:
         """Disable all system animations to improve reliability."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (self.automator and hasattr(self.automator, 'profile_manager') and 
-                self.automator.profile_manager.current_profile):
-                
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and self.automator.profile_manager.current_profile
+            ):
+
                 profile = self.automator.profile_manager.current_profile
                 device_id = profile.get("emulator_id")
-                
+
                 # If this is the same device and we already set animations_disabled, skip
                 if device_id == self.device_id and profile.get("animations_disabled", False):
                     logger.info(f"System animations already disabled for device {self.device_id}, skipping")
                     return True
-            
+
             logger.info(f"Disabling system animations on device {self.device_id}")
 
             # Disable all three types of Android animations
@@ -249,7 +258,7 @@ class Driver:
             )
 
             logger.info("System animations disabled successfully")
-            
+
             # Record this setting in the profile
             self._update_profile_setting("animations_disabled", True)
             return True
@@ -264,17 +273,20 @@ class Driver:
         """Disable sleep and app standby modes to prevent the device and app from sleeping."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (self.automator and hasattr(self.automator, 'profile_manager') and 
-                self.automator.profile_manager.current_profile):
-                
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and self.automator.profile_manager.current_profile
+            ):
+
                 profile = self.automator.profile_manager.current_profile
                 device_id = profile.get("emulator_id")
-                
+
                 # If this is the same device and we already set sleep_disabled, skip
                 if device_id == self.device_id and profile.get("sleep_disabled", False):
                     logger.info(f"Sleep already disabled for device {self.device_id}, skipping")
                     return True
-                    
+
             logger.info(f"Disabling sleep and app standby for device {self.device_id}")
 
             # Set the device to never sleep when plugged in
@@ -333,7 +345,7 @@ class Driver:
             )
 
             logger.info("Sleep and app standby modes disabled successfully")
-            
+
             # Record this setting in the profile
             self._update_profile_setting("sleep_disabled", True)
             return True

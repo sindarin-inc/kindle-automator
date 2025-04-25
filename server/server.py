@@ -1,6 +1,8 @@
+"""Main Kindle Automator server module."""
+
 import base64
-import logging
 import concurrent.futures
+import logging
 import os
 import platform
 import signal
@@ -8,14 +10,14 @@ import subprocess
 import time
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
+import flask
 import requests
 import urllib3
-import flask
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
-from flask import Flask, Response, make_response, redirect, request, send_file, jsonify
+from flask import Flask, Response, jsonify, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
 from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
@@ -23,12 +25,13 @@ from selenium.common import exceptions as selenium_exceptions
 from automator import KindleAutomator
 from handlers.auth_handler import LoginVerificationState
 from handlers.test_fixtures_handler import TestFixturesHandler
+from server.core.automation_server import AutomationServer
 from server.logging_config import setup_logger
+from server.middleware.automator_middleware import ensure_automator_healthy
+from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import get_sindarin_email
-from server.middleware.profile_middleware import ensure_user_profile_loaded
-from server.middleware.automator_middleware import ensure_automator_healthy
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -58,220 +61,8 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 app = Flask(__name__)
 api = Api(app)
 
-# Utility function to extract sindarin_email is now in server.utils.request_utils
-
-# We'll define the AutomationServer class below and instantiate it after the class definition
-
 # Set up request and response logging middleware
 setup_request_logger(app)
-
-# Profile middleware has been moved to server.middleware.profile_middleware
-
-
-class AutomationServer:
-    def __init__(self):
-        self.automators = {}  # Dictionary to track multiple automators by email
-        self.appium_process = None
-        self.pid_dir = "logs"
-        self.current_books = {}  # Track the currently open book title for each email
-        os.makedirs(self.pid_dir, exist_ok=True)
-
-        # Initialize the AVD profile manager
-        self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
-        from views.core.avd_profile_manager import AVDProfileManager
-
-        self.profile_manager = AVDProfileManager(base_dir=self.android_home)
-        self.current_email = None  # Current active email for backward compatibility
-
-    @property
-    def automator(self):
-        """Get the current automator instance for the active email. 
-        For backward compatibility with existing code."""
-        if self.current_email and self.current_email in self.automators:
-            return self.automators[self.current_email]
-        return None
-
-    def initialize_automator(self, email=None):
-        """Initialize automator without credentials or captcha solution.
-        
-        Args:
-            email: The email for which to initialize an automator. If None, uses current_email.
-        
-        Returns:
-            The automator instance
-        """
-        # If no email specified, use current_email
-        target_email = email or self.current_email
-        
-        if not target_email:
-            logger.warning("No target email provided for automator initialization")
-            return None
-            
-        # Check if we already have an automator for this email
-        if target_email in self.automators and self.automators[target_email]:
-            logger.info(f"Using existing automator for {target_email}")
-            return self.automators[target_email]
-            
-        # Initialize a new automator
-        logger.info(f"Initializing new automator for {target_email}")
-        automator = KindleAutomator()
-        # Connect profile manager to automator for device ID tracking
-        automator.profile_manager = self.profile_manager
-        
-        # Store the automator
-        self.automators[target_email] = automator
-        
-        # Scan for any AVDs with email patterns in their names and register them
-        discovered = self.profile_manager.scan_for_avds_with_emails()
-        if discovered:
-            logger.info(f"Auto-discovered {len(discovered)} email-to-AVD mappings: {discovered}")
-            
-        return automator
-
-    def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
-        """Switch to a profile for the given email address.
-
-        Args:
-            email: The email address to switch to
-            force_new_emulator: If True, always stop any emulator for this email and start a new one
-                               (used with recreate=1 flag)
-
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
-
-        # Set this as the current active email
-        self.current_email = email
-
-        # Check if there's a running emulator for this profile
-        is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
-
-        # Check if we already have an automator for this email
-        if email in self.automators and self.automators[email]:
-            if is_running and not force_new_emulator:
-                logger.info(
-                    f"Automator already exists with running emulator for profile {email}, skipping profile switch"
-                )
-                return True, f"Already using profile for {email} with running emulator"
-            elif not is_running and not force_new_emulator:
-                # We have an automator but no running emulator
-                # Get current profile to check if we're actually switching between users
-                current_profile = self.profile_manager.get_current_profile()
-                current_email = current_profile.get("email") if current_profile else None
-                
-                # If current profile email is different from target email, we should force start a new emulator
-                if current_email and current_email != email:
-                    logger.info(
-                        f"Current profile is for {current_email} but requested {email} - forcing new emulator"
-                    )
-                    # Cleanup existing automator for this email since we're starting fresh
-                    self.automators[email].cleanup()
-                    self.automators[email] = None
-                    # Will continue below to create a new emulator
-                else:
-                    # Same user, just no running emulator - wait for reconnect
-                    logger.info(
-                        f"No running emulator for profile {email}, but have automator - will use on next reconnect"
-                    )
-                    return True, f"Profile {email} is already active, waiting for reconnection"
-            elif force_new_emulator:
-                # Need to recreate the automator
-                logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
-                self.automators[email].cleanup()
-                self.automators[email] = None
-        
-        # Switch to the profile for this email - this will not stop other emulators
-        success, message = self.profile_manager.switch_profile(email, force_new_emulator=force_new_emulator)
-        if not success:
-            logger.error(f"Failed to switch profile: {message}")
-            return False, message
-
-        # Clear current book since we're switching profiles
-        self.clear_current_book(email)
-
-        logger.info(f"Successfully switched to profile for {email}")
-        return True, message
-
-    def save_pid(self, name: str, pid: int):
-        """Save process ID to file"""
-        pid_file = os.path.join(self.pid_dir, f"{name}.pid")
-        try:
-            with open(pid_file, "w") as f:
-                f.write(str(pid))
-            # Set file permissions to be readable by all
-            os.chmod(pid_file, 0o644)
-        except Exception as e:
-            logger.error(f"Error saving PID file: {e}")
-
-    def kill_existing_process(self, name: str):
-        """Kill existing process if running on port 4098"""
-        try:
-            if name == "flask":
-                # Use lsof to find process on port 4098
-                pid = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
-                if pid:
-                    os.kill(int(pid), signal.SIGTERM)
-                    logger.info(f"Killed existing flask process with PID {pid}")
-            elif name == "appium":
-                subprocess.run(["pkill", "-f", "appium"], check=False)
-                logger.info("Killed existing appium processes")
-        except subprocess.CalledProcessError:
-            logger.info(f"No existing {name} process found")
-        except Exception as e:
-            logger.error(f"Error killing {name} process: {e}")
-
-    def start_appium(self):
-        """Start Appium server and save PID"""
-        self.kill_existing_process("appium")
-        try:
-            self.appium_process = subprocess.Popen(
-                ["appium"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            self.save_pid("appium", self.appium_process.pid)
-            logger.info(f"Started Appium server with PID {self.appium_process.pid}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start Appium server: {e}")
-            return False
-
-    def set_current_book(self, book_title, email=None):
-        """Set the currently open book title for a specific email
-
-        Args:
-            book_title: The title of the book
-            email: The email to associate with this book. If None, uses current_email.
-        """
-        target_email = email or self.current_email
-        if not target_email:
-            logger.warning("No email specified for set_current_book")
-            return
-            
-        self.current_books[target_email] = book_title
-        logger.info(f"Set current book for {target_email} to: {book_title}")
-
-    def clear_current_book(self, email=None):
-        """Clear the currently open book tracking variable for a specific email
-
-        Args:
-            email: The email for which to clear the book. If None, uses current_email.
-        """
-        target_email = email or self.current_email
-        if not target_email:
-            logger.warning("No email specified for clear_current_book")
-            return
-            
-        if target_email in self.current_books:
-            logger.info(f"Cleared current book for {target_email}: {self.current_books[target_email]}")
-            del self.current_books[target_email]
-    
-    @property
-    def current_book(self):
-        """Get the current book for the active email. For backward compatibility."""
-        if self.current_email and self.current_email in self.current_books:
-            return self.current_books[self.current_email]
-        return None
-
 
 # Create the server instance
 server = AutomationServer()
@@ -308,9 +99,6 @@ class InitializeResource(Resource):
         except Exception as e:
             logger.error(f"Initialization error: {e}")
             return {"error": str(e)}, 500
-
-
-# Automator middleware has been moved to server.middleware.automator_middleware
 
 
 class StateResource(Resource):
@@ -485,13 +273,13 @@ class ScreenshotResource(Resource):
         use_base64 = is_base64_requested()
         if perform_ocr and not use_base64:
             use_base64 = True
-            
+
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email(default_email=server.current_email)
-            
+
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
-            
+
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
@@ -744,18 +532,18 @@ class BookOpenResource(Resource):
         """Open a specific book - shared implementation for GET and POST."""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email(default_email=server.current_email)
-            
+
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
-            
+
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
-            
+
         # Set this as the current email for backward compatibility
         server.current_email = sindarin_email
-        
+
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
@@ -810,19 +598,21 @@ class BookOpenResource(Resource):
         # Reload the current state to be sure
         automator.state_machine.update_current_state()
         current_state = automator.state_machine.current_state
-        
+
         # IMPORTANT: For new app installation or first run, current_book may be None
         # even though we're already in reading state - we need to check that too
-        
+
         # Get current book for this email
         current_book = server.current_books.get(sindarin_email)
-        
+
         # If we're already in READING state, we should NOT close the book - get the title!
         if current_state == AppState.READING:
             # First, check if we have current_book set
             if current_book:
                 # Compare with the requested book
-                normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
+                normalized_request_title = "".join(
+                    c for c in book_title if c.isalnum() or c.isspace()
+                ).lower()
                 normalized_current_title = "".join(
                     c for c in current_book if c.isalnum() or c.isspace()
                 ).lower()
@@ -846,27 +636,35 @@ class BookOpenResource(Resource):
                         or normalized_current_title in normalized_request_title
                     )
                 ):
-                    logger.info(f"Already reading book (partial match): {book_title}, returning current state")
+                    logger.info(
+                        f"Already reading book (partial match): {book_title}, returning current state"
+                    )
                     return capture_book_state(already_open=True)
-                    
+
                 # If we're in reading state but current_book doesn't match, try to get book title from UI
-                logger.info(f"In reading state but current book '{current_book}' doesn't match requested '{book_title}'")
+                logger.info(
+                    f"In reading state but current book '{current_book}' doesn't match requested '{book_title}'"
+                )
                 try:
                     # Try to get the current book title from the reader UI
                     current_title_from_ui = automator.reader_handler.get_book_title()
                     if current_title_from_ui:
                         logger.info(f"Got book title from UI: '{current_title_from_ui}'")
-                        
+
                         # Compare with the requested book
-                        normalized_ui_title = "".join(c for c in current_title_from_ui if c.isalnum() or c.isspace()).lower()
-                        
+                        normalized_ui_title = "".join(
+                            c for c in current_title_from_ui if c.isalnum() or c.isspace()
+                        ).lower()
+
                         # Check exact match with UI title
                         if normalized_request_title == normalized_ui_title:
-                            logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
+                            logger.info(
+                                f"Already reading book (UI title exact match): {book_title}, returning current state"
+                            )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
-                            
+
                         # Check partial match with UI title
                         if (
                             len(normalized_request_title) > 30
@@ -877,13 +675,15 @@ class BookOpenResource(Resource):
                                 or normalized_ui_title in normalized_request_title
                             )
                         ):
-                            logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
+                            logger.info(
+                                f"Already reading book (UI title partial match): {book_title}, returning current state"
+                            )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
-                
+
                 logger.info(
                     f"No match found for book: {book_title} ({normalized_request_title}) != {current_book}, transitioning to library"
                 )
@@ -893,19 +693,27 @@ class BookOpenResource(Resource):
                     # Try to get the current book title from the reader UI
                     current_title_from_ui = automator.reader_handler.get_book_title()
                     if current_title_from_ui:
-                        logger.info(f"In reading state with no tracked book. Got book title from UI: '{current_title_from_ui}'")
-                        
+                        logger.info(
+                            f"In reading state with no tracked book. Got book title from UI: '{current_title_from_ui}'"
+                        )
+
                         # Compare with the requested book
-                        normalized_request_title = "".join(c for c in book_title if c.isalnum() or c.isspace()).lower()
-                        normalized_ui_title = "".join(c for c in current_title_from_ui if c.isalnum() or c.isspace()).lower()
-                        
+                        normalized_request_title = "".join(
+                            c for c in book_title if c.isalnum() or c.isspace()
+                        ).lower()
+                        normalized_ui_title = "".join(
+                            c for c in current_title_from_ui if c.isalnum() or c.isspace()
+                        ).lower()
+
                         # Check exact match with UI title
                         if normalized_request_title == normalized_ui_title:
-                            logger.info(f"Already reading book (UI title exact match): {book_title}, returning current state")
+                            logger.info(
+                                f"Already reading book (UI title exact match): {book_title}, returning current state"
+                            )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
-                            
+
                         # Check partial match with UI title
                         if (
                             len(normalized_request_title) > 30
@@ -916,7 +724,9 @@ class BookOpenResource(Resource):
                                 or normalized_ui_title in normalized_request_title
                             )
                         ):
-                            logger.info(f"Already reading book (UI title partial match): {book_title}, returning current state")
+                            logger.info(
+                                f"Already reading book (UI title partial match): {book_title}, returning current state"
+                            )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
                             return capture_book_state(already_open=True)
@@ -930,7 +740,7 @@ class BookOpenResource(Resource):
             server.clear_current_book(sindarin_email)
 
         logger.info(f"Reloaded current state: {current_state}")
-        
+
         # If we get here, we need to go to library and open the book
         logger.info(
             f"Not already reading requested book: {book_title} != {current_book}, transitioning from {current_state} to library"
@@ -963,7 +773,7 @@ class BookOpenResource(Resource):
         # Call the implementation without the handle_automator_response decorator
         # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
-        
+
         # Directly return the result, as Flask can handle Response objects
         return result
 
@@ -972,11 +782,11 @@ class BookOpenResource(Resource):
     def get(self):
         """Open a specific book via GET request."""
         book_title = request.args.get("title")
-        
+
         # Call the implementation without the handle_automator_response decorator
         # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
-        
+
         # Directly return the result, as Flask can handle Response objects
         return result
 
@@ -1081,20 +891,22 @@ class AuthResource(Resource):
         data = request.get_json()
         amazon_email = data.get("email")
         password = data.get("password")
-        
+
         # Get sindarin_email from request - this is the profile name we'll use
         sindarin_email = None
-        if 'sindarin_email' in request.args:
-            sindarin_email = request.args.get('sindarin_email')
-        elif request.is_json and 'sindarin_email' in data:
-            sindarin_email = data.get('sindarin_email')
-        elif 'sindarin_email' in request.form:
-            sindarin_email = request.form.get('sindarin_email')
-        
+        if "sindarin_email" in request.args:
+            sindarin_email = request.args.get("sindarin_email")
+        elif request.is_json and "sindarin_email" in data:
+            sindarin_email = data.get("sindarin_email")
+        elif "sindarin_email" in request.form:
+            sindarin_email = request.form.get("sindarin_email")
+
         # If sindarin_email not provided, use amazon_email for backwards compatibility
         if not sindarin_email:
             sindarin_email = amazon_email
-            logger.info(f"No sindarin_email provided, using Amazon email as profile identifier: {sindarin_email}")
+            logger.info(
+                f"No sindarin_email provided, using Amazon email as profile identifier: {sindarin_email}"
+            )
         else:
             logger.info(f"Using sindarin_email for profile: {sindarin_email}")
 
@@ -1395,6 +1207,7 @@ def serve_image(image_id, delete_after=True):
         # Delete the file after sending if requested
         # We need to set up a callback to delete the file after the response is sent
         if delete_after:
+
             @response.call_on_close
             def on_close():
                 try:
@@ -1514,29 +1327,29 @@ class KindleOCR:
 
             # Implement our own timeout using ThreadPoolExecutor
             TIMEOUT_SECONDS = 10
-            
+
             # Define the OCR function that will run in a separate thread
             def run_ocr():
                 ocr_response = client.ocr.process(
                     model="mistral-ocr-latest",
                     document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
                 )
-                
+
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
                     return page.markdown
                 return None
-            
+
             # Execute with timeout
             try:
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     # Submit the OCR task to the executor
                     future = executor.submit(run_ocr)
-                    
+
                     try:
                         # Wait for the result with a timeout
                         ocr_text = future.result(timeout=TIMEOUT_SECONDS)
-                        
+
                         if ocr_text:
                             logger.info("OCR processing successful")
                             return ocr_text, None
@@ -1544,14 +1357,14 @@ class KindleOCR:
                             error_msg = "No OCR response or no pages found"
                             logger.error(error_msg)
                             return None, error_msg
-                            
+
                     except concurrent.futures.TimeoutError:
                         # Cancel the future if it times out
                         future.cancel()
                         error_msg = f"OCR request timed out after {TIMEOUT_SECONDS} seconds"
                         logger.error(error_msg)
                         return None, error_msg
-                        
+
             except Exception as e:
                 error_msg = f"Error during OCR processing with timeout: {e}"
                 logger.error(error_msg)
@@ -1667,29 +1480,29 @@ class ProfilesResource(Resource):
         """List all available profiles"""
         profiles = server.profile_manager.list_profiles()
         current = server.profile_manager.get_current_profile()
-        
+
         # Get additional info about running emulators
         running_emulators = server.profile_manager.device_discovery.map_running_emulators()
-        
+
         # Add information about which automators are active
         active_automators = {}
         for email, automator in server.automators.items():
-            if automator and hasattr(automator, 'driver') and automator.driver:
+            if automator and hasattr(automator, "driver") and automator.driver:
                 is_running = True
-                device_id = automator.device_id if hasattr(automator, 'device_id') else None
+                device_id = automator.device_id if hasattr(automator, "device_id") else None
                 current_book = server.current_books.get(email) if email in server.current_books else None
-                
+
                 active_automators[email] = {
                     "device_id": device_id,
                     "is_running": is_running,
-                    "current_book": current_book
+                    "current_book": current_book,
                 }
-        
+
         return {
-            "profiles": profiles, 
-            "current": current, 
+            "profiles": profiles,
+            "current": current,
             "running_emulators": running_emulators,
-            "active_automators": active_automators
+            "active_automators": active_automators,
         }, 200
 
     def post(self):
@@ -1707,26 +1520,20 @@ class ProfilesResource(Resource):
                     return {"success": False, "message": "Failed to reset style preferences"}, 500
             else:
                 return {"success": False, "message": "No current profile found"}, 400
-        
+
         elif action == "list_active":
             # List all active emulators with their details
             running_emulators = server.profile_manager.device_discovery.map_running_emulators()
             active_automators = {}
-            
+
             for email, automator in server.automators.items():
-                if automator and hasattr(automator, 'driver') and automator.driver:
-                    device_id = automator.device_id if hasattr(automator, 'device_id') else None
+                if automator and hasattr(automator, "driver") and automator.driver:
+                    device_id = automator.device_id if hasattr(automator, "device_id") else None
                     current_book = server.current_books.get(email) if email in server.current_books else None
-                    
-                    active_automators[email] = {
-                        "device_id": device_id,
-                        "current_book": current_book
-                    }
-            
-            return {
-                "running_emulators": running_emulators,
-                "active_automators": active_automators
-            }, 200
+
+                    active_automators[email] = {"device_id": device_id, "current_book": current_book}
+
+            return {"running_emulators": running_emulators, "active_automators": active_automators}, 200
 
         # For all other actions, email is required
         if not email:
@@ -1743,25 +1550,25 @@ class ProfilesResource(Resource):
         elif action == "switch":
             success, message = server.switch_profile(email)
             return {"success": success, "message": message}, 200 if success else 500
-            
+
         elif action == "stop_emulator":
             # Find the running emulator for this email
             is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(email)
-            
+
             if not is_running:
                 return {"success": False, "message": f"No running emulator found for {email}"}, 404
-                
+
             # Stop the emulator
             success = server.profile_manager.stop_emulator(emulator_id)
-            
+
             # Clean up the automator if it exists
             if email in server.automators and server.automators[email]:
                 server.automators[email].cleanup()
                 server.automators[email] = None
-                
+
             # Clear current book
             server.clear_current_book(email)
-            
+
             if success:
                 return {"success": True, "message": f"Stopped emulator for {email}"}, 200
             else:
@@ -1994,7 +1801,7 @@ def cleanup_resources():
     # This allows for faster reconnection when the server is restarted,
     # and supports the multi-emulator approach
     logger.info("Preserving all emulators during shutdown for faster reconnection")
-    
+
     # Cleanup automator instances but don't stop emulators
     for email, automator in server.automators.items():
         if automator:
@@ -2006,7 +1813,7 @@ def cleanup_resources():
                 automator.driver = None
             except Exception as e:
                 logger.error(f"Error cleaning up automator for {email}: {e}")
-    
+
     # Clear all automators
     server.automators.clear()
 
