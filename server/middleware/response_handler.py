@@ -7,6 +7,7 @@ from typing import Optional
 from selenium.common import exceptions as selenium_exceptions
 
 from views.core.app_state import AppState
+from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
 
@@ -22,29 +23,9 @@ def get_email_with_fallbacks(server_instance, use_helper=True) -> Optional[str]:
     Returns:
         The email to use, or None if not found
     """
-    # Get sindarin_email from request
-    from flask import request
-    
-    if use_helper:
-        # Import the helper function from server.py
-        from server.server import get_sindarin_email
-        sindarin_email = get_sindarin_email(default_email=server_instance.current_email)
-    else:
-        # Direct extraction (fallback if the import fails)
-        sindarin_email = None
-        if 'sindarin_email' in request.args:
-            sindarin_email = request.args.get('sindarin_email')
-        elif request.is_json:
-            data_dict = request.get_json(silent=True) or {}
-            if 'sindarin_email' in data_dict:
-                sindarin_email = data_dict.get('sindarin_email')
-        elif 'sindarin_email' in request.form:
-            sindarin_email = request.form.get('sindarin_email')
-            
-        # Use current_email as fallback
-        if not sindarin_email:
-            sindarin_email = server_instance.current_email
-            
+    # Get sindarin_email from request using the helper in utils
+    sindarin_email = get_sindarin_email(default_email=server_instance.current_email)
+        
     # Fall back to current profile if still no email
     if not sindarin_email:
         current_profile = server_instance.profile_manager.get_current_profile()

@@ -1,0 +1,161 @@
+import logging
+import traceback
+import time
+import subprocess
+from functools import wraps
+import flask
+from flask import Response
+from selenium.common import exceptions as selenium_exceptions
+
+from server.utils.request_utils import get_sindarin_email
+
+logger = logging.getLogger(__name__)
+
+def ensure_automator_healthy(f):
+    """Decorator to ensure automator is initialized and healthy before each operation.
+    Works with the multi-emulator approach by getting the sindarin_email from the request.
+    """
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        # Access server instance from the Flask app
+        from flask import current_app as app
+        server = app.config['server_instance']
+
+        max_retries = 3  # Allow more retries for UiAutomator2 crashes
+        
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email(default_email=server.current_email)
+            
+        # If we still don't have an email after checking current_email, try the current profile
+        if not sindarin_email:
+            # Try to get from current profile
+            current_profile = server.profile_manager.get_current_profile()
+            if current_profile:
+                sindarin_email = current_profile.get("email")
+                logger.debug(f"Using email from current profile: {sindarin_email}")
+            
+        if not sindarin_email:
+            logger.error("No sindarin_email found in request or current state")
+            return {"error": "No email provided to identify which profile to use"}, 400
+        
+        # Ensure this is set as the current email for backward compatibility
+        server.current_email = sindarin_email
+
+        for attempt in range(max_retries):
+            try:
+                # Get the automator for this email
+                automator = server.automators.get(sindarin_email)
+                
+                # Initialize automator if needed
+                if not automator:
+                    logger.info(f"No automator found for {sindarin_email}. Initializing automatically...")
+                    automator = server.initialize_automator(sindarin_email)
+                    if not automator:
+                        logger.error(f"Failed to initialize automator for {sindarin_email}")
+                        return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
+                        
+                    if not automator.initialize_driver():
+                        logger.error(f"Failed to initialize driver for {sindarin_email}")
+                        return {
+                            "error": f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
+                        }, 500
+
+                # Ensure driver is running
+                if not automator.ensure_driver_running():
+                    logger.error(f"Failed to ensure driver is running for {sindarin_email}")
+                    return {"error": f"Failed to ensure driver is running for {sindarin_email}"}, 500
+
+                # Execute the function
+                result = f(*args, **kwargs)
+                
+                # Special handling for Flask Response objects to prevent JSON serialization errors
+                if isinstance(result, (flask.Response, Response)):
+                    return result
+                    
+                return result
+
+            except Exception as e:
+                # Check if it's the UiAutomator2 server crash error or other common crash patterns
+                error_message = str(e)
+                is_uiautomator_crash = any(
+                    [
+                        "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
+                        in error_message,
+                        "instrumentation process is not running" in error_message,
+                        "Failed to establish a new connection" in error_message,
+                        "Connection refused" in error_message,
+                        "Connection reset by peer" in error_message,
+                    ]
+                )
+
+                if is_uiautomator_crash and attempt < max_retries - 1:
+                    logger.warning(
+                        f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
+                    )
+                    logger.warning(f"Crash error: {error_message}")
+
+                    # Kill any leftover UiAutomator2 processes directly via ADB
+                    try:
+                        automator = server.automators.get(sindarin_email)
+                        if automator and automator.device_id:
+                            device_id = automator.device_id
+                            logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
+                            subprocess.run(
+                                [f"adb -s {device_id} shell pkill -f uiautomator"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            time.sleep(2)  # Give it time to fully terminate
+                    except Exception as kill_e:
+                        logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")
+
+                    # Force a complete driver restart for this email
+                    automator = server.automators.get(sindarin_email)
+                    if automator:
+                        logger.info(f"Cleaning up automator resources for {sindarin_email}")
+                        automator.cleanup()
+                        server.automators[sindarin_email] = None
+
+                    # Reset Appium server state as well
+                    try:
+                        logger.info("Resetting Appium server state")
+                        subprocess.run(["pkill -f 'appium|node'"], shell=True, check=False, timeout=5)
+                        time.sleep(2)  # Wait for processes to terminate
+
+                        logger.info("Restarting Appium server")
+                        if not server.start_appium():
+                            logger.error("Failed to restart Appium server")
+                    except Exception as appium_e:
+                        logger.warning(f"Error while resetting Appium: {appium_e}")
+
+                    # Try to switch back to the profile
+                    logger.info(f"Attempting to switch back to profile for email: {sindarin_email}")
+                    success, message = server.switch_profile(sindarin_email)
+                    if not success:
+                        logger.error(f"Failed to switch back to profile: {message}")
+                        return {"error": f"Failed to switch back to profile: {message}"}, 500
+
+                    logger.info(f"Initializing automator after crash recovery for {sindarin_email}")
+                    automator = server.initialize_automator(sindarin_email)
+                    # Clear current book since we're restarting the driver
+                    server.clear_current_book(sindarin_email)
+
+                    if automator and automator.initialize_driver():
+                        logger.info(
+                            "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
+                        )
+                        continue  # Retry the operation with the next loop iteration
+                    else:
+                        logger.error("Failed to restart driver after UiAutomator2 crash")
+
+                # For non-UiAutomator2 crashes or if restart failed, log and return error
+                logger.error(f"Error in operation (attempt {attempt + 1}/{max_retries}): {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+
+                # On the last attempt, return the error
+                if attempt == max_retries - 1:
+                    return {"error": str(e)}, 500
+
+    return wrapper
