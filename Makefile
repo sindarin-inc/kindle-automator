@@ -1,5 +1,8 @@
 .PHONY: server profile-help register-avd
 
+# Default email for testing - can be overridden with make test-books EMAIL=other@example.com
+EMAIL ?= kindle@solreader.com
+
 run: server
 
 profile-help:
@@ -14,6 +17,10 @@ profile-help:
 	@echo "  make dev                                        Start both emulator and server"
 	@echo "  make register-avd                               Register an AVD created in Android Studio"
 	@echo "  make android-studio-avd                         Full workflow for Android Studio AVDs"
+	@echo ""
+	@echo "Testing Commands (current default EMAIL: $(EMAIL)):"
+	@echo "  make test-books                       Get list of books (defaults to $(EMAIL))"
+	@echo "  make test-books EMAIL=other@example.com         Override default email"
 
 # Start both the emulator and server (for development)
 dev:
@@ -153,13 +160,13 @@ test-navigate:
 	@echo "Testing page navigation..."
 	@curl -X POST http://localhost:4098/navigate \
 		-H "Content-Type: application/json" \
-		-d '{"action": "next_page"}' \
+		-d '{"action": "next_page", "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test screenshot endpoint
 test-screenshot:
 	@echo "Getting current screenshot..."
-	@curl http://localhost:4098/screenshot \
+	@curl http://localhost:4098/screenshot?sindarin_email=$(EMAIL) \
 		-H "Accept: application/json" \
 		-v
 
@@ -170,14 +177,14 @@ test-open-book:
 	@echo "Opening book..."
 	@curl -X POST http://localhost:4098/open-book \
 		-H "Content-Type: application/json" \
-		-d '{"title": "The Design of Everyday Things: Revised and Expanded Edition"}' \
+		-d '{"title": "The Design of Everyday Things: Revised and Expanded Edition", "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 test-next-page:
 	@echo "Navigating to next page..."
 	@curl -X POST http://localhost:4098/navigate \
 		-H "Content-Type: application/json" \
-		-d '{"action": "next_page"}' \
+		-d '{"action": "next_page", "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 test-prev-page: test-previous-page
@@ -185,7 +192,7 @@ test-previous-page:
 	@echo "Navigating to previous page..."
 	@curl -X POST http://localhost:4098/navigate \
 		-H "Content-Type: application/json" \
-		-d '{"action": "previous_page"}' \
+		-d '{"action": "previous_page", "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test style endpoint
@@ -193,7 +200,7 @@ test-style:
 	@echo "Updating style settings..."
 	@curl -X POST http://localhost:4098/style \
 		-H "Content-Type: application/json" \
-		-d '{"settings": {"font_size": "large", "brightness": 80}, "dark-mode": true}' \
+		-d '{"settings": {"font_size": "large", "brightness": 80}, "dark-mode": true, "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test style endpoint
@@ -201,7 +208,7 @@ test-style-light:
 	@echo "Updating style settings to light mode..."
 	@curl -X POST http://localhost:4098/style \
 		-H "Content-Type: application/json" \
-		-d '{"settings": {"font_size": "large", "brightness": 80}, "dark-mode": false}' \
+		-d '{"settings": {"font_size": "large", "brightness": 80}, "dark-mode": false, "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test 2FA endpoint
@@ -209,7 +216,7 @@ test-2fa:
 	@echo "Submitting 2FA code..."
 	@curl -X POST http://localhost:4098/2fa \
 		-H "Content-Type: application/json" \
-		-d '{"code": "123456"}' \
+		-d '{"code": "123456", "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test Captcha endpoint
@@ -217,7 +224,7 @@ test-captcha:
 	@echo "Posting captcha solution..."
 	@curl -X POST http://localhost:4098/captcha \
 		-H "Content-Type: application/json" \
-		-d '{"solution": "4s6cwm"}' \
+		-d '{"solution": "4s6cwm", "sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test Auth endpoint
@@ -241,7 +248,7 @@ test-auth-recreate:
 # Test books endpoint
 test-books:
 	@echo "Getting list of books..."
-	@curl http://localhost:4098/books \
+	@curl http://localhost:4098/books?sindarin_email=$(EMAIL) \
 		-H "Accept: application/json" \
 		-v
 
@@ -251,12 +258,13 @@ test-fixtures:
 	@mkdir -p fixtures/views
 	@curl -X POST http://localhost:4098/fixtures \
 		-H "Content-Type: application/json" \
+		-d '{"sindarin_email": "$(EMAIL)"}' \
 		-v
 
 # Test secure screenshot (auth screen)
 test-secure-screenshot:
 	@echo "Testing secure screenshot on auth screen..."
-	@curl http://localhost:4098/screenshot \
+	@curl http://localhost:4098/screenshot?sindarin_email=$(EMAIL) \
 		-H "Accept: application/json" \
 		-v
 
