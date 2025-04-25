@@ -5,6 +5,11 @@ import platform
 HOST = "0.0.0.0"
 PORT = 4098
 
+# VNC settings
+VNC_HOST = os.environ.get("VNC_HOST", "localhost")
+VNC_PORT = os.environ.get("VNC_PORT", "6080")
+VNC_URL = os.environ.get("VNC_URL", f"http://{VNC_HOST}:{VNC_PORT}/vnc.html")
+
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGS_DIR = os.path.join(BASE_DIR, "logs")

@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
+from server.config import VNC_URL
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -46,7 +47,7 @@ class LoginVerificationState(Enum):
 
 
 class AuthenticationHandler:
-    def __init__(self, driver, email, password, captcha_solution=None):
+    def __init__(self, driver, email=None, password=None, captcha_solution=None):
         self.driver = driver
         self.email = email
         self.password = password
@@ -56,7 +57,187 @@ class AuthenticationHandler:
         self.interactive_captcha_detected = False  # Flag for the special interactive captcha case
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-
+        
+    def prepare_for_authentication(self, email=None, password=None):
+        """
+        Prepare the app for authentication by navigating to the sign-in screen if needed.
+        This shared method is used for both automated and manual authentication flows.
+        
+        Args:
+            email (str, optional): Email for authentication if provided
+            password (str, optional): Password for authentication if provided
+            
+        Returns:
+            dict: Status information containing:
+                - state: current AppState (LIBRARY, HOME, SIGN_IN, etc.)
+                - requires_manual_login: boolean indicating if manual login is needed
+                - already_authenticated: boolean indicating if already logged in
+                - vnc_url: URL to access VNC if manual login is required
+        """
+        try:
+            # Access the automator through the driver to get current state
+            driver_instance = getattr(self.driver, "_driver", None)
+            if driver_instance and hasattr(driver_instance, "automator"):
+                automator = driver_instance.automator
+            else:
+                return {
+                    "state": "UNKNOWN",
+                    "requires_manual_login": True,
+                    "already_authenticated": False,
+                    "error": "Could not access automator from driver session"
+                }
+            
+            # Make sure we have state information
+            if not automator.state_machine:
+                return {
+                    "state": "UNKNOWN",
+                    "requires_manual_login": True,
+                    "already_authenticated": False,
+                    "error": "No state machine available"
+                }
+                
+            # Update current state to make sure it's accurate
+            automator.state_machine.update_current_state()
+            current_state = automator.state_machine.current_state
+            state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+            
+            logger.info(f"Current state before authentication preparation: {state_name}")
+            
+            # Check if we're already in a logged-in state (LIBRARY or HOME)
+            if state_name in ["LIBRARY", "HOME"]:
+                logger.info(f"Already authenticated in {state_name} state")
+                
+                # If we're in HOME state, try to navigate to LIBRARY for consistency
+                if state_name == "HOME":
+                    try:
+                        logger.info("In HOME state, trying to navigate to LIBRARY tab")
+                        library_tab = self.driver.find_element(
+                            AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"
+                        )
+                        library_tab.click()
+                        logger.info("Clicked on LIBRARY tab")
+                        time.sleep(1)  # Wait for tab transition
+                        
+                        # Update state after clicking
+                        automator.state_machine.update_current_state()
+                        updated_state = automator.state_machine.current_state
+                        updated_state_name = updated_state.name if hasattr(updated_state, "name") else str(updated_state)
+                        
+                        if updated_state_name == "LIBRARY":
+                            logger.info("Successfully navigated to LIBRARY state")
+                            state_name = "LIBRARY"
+                    except Exception as e:
+                        logger.error(f"Error navigating from HOME to LIBRARY: {e}")
+                        # Continue with HOME state
+                
+                return {
+                    "state": state_name,
+                    "requires_manual_login": False,
+                    "already_authenticated": True,
+                    "vnc_url": ""
+                }
+            
+            # Check if we're already on the sign-in screen
+            if state_name == "SIGN_IN":
+                logger.info("Already on sign-in screen")
+                # If no credentials provided, require manual login
+                requires_manual = not (self.email and self.password)
+                return {
+                    "state": "SIGN_IN",
+                    "requires_manual_login": requires_manual,
+                    "already_authenticated": False,
+                    "vnc_url": VNC_URL if requires_manual else ""
+                }
+                
+            # We need to navigate to the sign-in screen
+            logger.info(f"Need to navigate to sign-in screen from {state_name}")
+            
+            # Try restarting the app to get to the sign-in screen
+            success = False
+            try:
+                if hasattr(automator, "restart_kindle_app"):
+                    logger.info("Restarting Kindle app to get to sign-in screen")
+                    success = automator.restart_kindle_app()
+                else:
+                    logger.error("Automator doesn't have restart_kindle_app method")
+            except Exception as e:
+                logger.error(f"Error restarting app: {e}")
+            
+            # Check if restart succeeded and we're on the sign-in screen
+            if success:
+                automator.state_machine.update_current_state()
+                current_state = automator.state_machine.current_state
+                state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                
+                if state_name == "SIGN_IN":
+                    logger.info("Successfully navigated to sign-in screen")
+                    # If no credentials provided, require manual login
+                    requires_manual = not (self.email and self.password)
+                    return {
+                        "state": "SIGN_IN",
+                        "requires_manual_login": requires_manual,
+                        "already_authenticated": False,
+                        "vnc_url": VNC_URL if requires_manual else ""
+                    }
+                    
+                # If we reached a library state after restart, we're already logged in
+                if state_name in ["LIBRARY", "HOME"]:
+                    return {
+                        "state": state_name,
+                        "requires_manual_login": False,
+                        "already_authenticated": True,
+                        "vnc_url": ""
+                    }
+            
+            # As a fallback, try to use transition_to_library which may go through auth flow
+            try:
+                logger.info("Trying transition_to_library to navigate through auth flow")
+                automator.transition_to_library()
+                automator.state_machine.update_current_state()
+                current_state = automator.state_machine.current_state
+                state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                
+                if state_name == "SIGN_IN":
+                    logger.info("Successfully navigated to sign-in screen via transition_to_library")
+                    # If no credentials provided, require manual login
+                    requires_manual = not (self.email and self.password)
+                    return {
+                        "state": "SIGN_IN",
+                        "requires_manual_login": requires_manual,
+                        "already_authenticated": False,
+                        "vnc_url": VNC_URL if requires_manual else ""
+                    }
+                    
+                if state_name in ["LIBRARY", "HOME"]:
+                    return {
+                        "state": state_name,
+                        "requires_manual_login": False,
+                        "already_authenticated": True,
+                        "vnc_url": ""
+                    }
+            except Exception as e:
+                logger.error(f"Error navigating with transition_to_library: {e}")
+            
+            # If we couldn't reliably get to the sign-in screen, return current state 
+            # and indicate manual login is needed
+            return {
+                "state": state_name,
+                "requires_manual_login": True,
+                "already_authenticated": False,
+                "vnc_url": VNC_URL,
+                "error": f"Could not navigate to sign-in screen from {state_name}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in prepare_for_authentication: {e}")
+            return {
+                "state": "ERROR",
+                "requires_manual_login": True,
+                "already_authenticated": False,
+                "vnc_url": VNC_URL,
+                "error": str(e)
+            }
+    
     def update_captcha_solution(self, solution):
         """Update the captcha solution."""
         self.captcha_solution = solution

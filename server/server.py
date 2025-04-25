@@ -901,12 +901,10 @@ class AuthResource(Resource):
         elif "sindarin_email" in request.form:
             sindarin_email = request.form.get("sindarin_email")
 
-        # If sindarin_email not provided, use amazon_email for backwards compatibility
+        # Sindarin email is required for profile identification
         if not sindarin_email:
-            sindarin_email = amazon_email
-            logger.info(
-                f"No sindarin_email provided, using Amazon email as profile identifier: {sindarin_email}"
-            )
+            logger.error("No sindarin_email provided for profile identification")
+            return {"error": "sindarin_email is required for profile identification"}, 400
         else:
             logger.info(f"Using sindarin_email for profile: {sindarin_email}")
 
@@ -920,10 +918,11 @@ class AuthResource(Resource):
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
-        logger.info(f"Authenticating with Amazon account: {amazon_email}, profile: {sindarin_email}")
-
-        if not amazon_email or not password:
-            return {"error": "Email and password are required in the request"}, 400
+        # Log authentication attempt details - note we now accept missing credentials
+        if amazon_email and password:
+            logger.info(f"Authenticating with Amazon account: {amazon_email}, profile: {sindarin_email}")
+        else:
+            logger.info(f"Setting up profile: {sindarin_email} for manual authentication")
 
         # If recreate is requested, just clean up the automator but don't force a new emulator
         if recreate:
@@ -951,69 +950,94 @@ class AuthResource(Resource):
             if not server.automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
 
-        # Check if already authenticated by checking if we're in the library state
-        server.automator.state_machine.update_current_state()
-        current_state = server.automator.state_machine.current_state
-
-        # We need to check if we're in the LIBRARY tab (not just home tab with library_root_view)
-        if current_state == AppState.LIBRARY:
-            logger.info("Already authenticated and in library state")
-            return {"success": True, "message": "Already authenticated"}, 200
-
-        # HOME tab is not considered authenticated yet, we need to switch to LIBRARY
-        elif current_state == AppState.HOME:
-            logger.info("Already logged in but in HOME state, need to switch to LIBRARY to verify books")
-
-            # Try to click the LIBRARY tab
+        # Use the prepare_for_authentication method
+        # Update credentials in the auth handler before preparing
+        if amazon_email and password:
+            if server.automator.state_machine.auth_handler:
+                server.automator.state_machine.auth_handler.email = amazon_email
+                server.automator.state_machine.auth_handler.password = password
+                
+        auth_status = server.automator.state_machine.auth_handler.prepare_for_authentication(
+            email=amazon_email,
+            password=password
+        )
+        
+        logger.info(f"Authentication preparation status: {auth_status}")
+        
+        # Handle already authenticated cases (LIBRARY or HOME)
+        if auth_status.get("already_authenticated", False):
+            # If we're in HOME state, try to switch to LIBRARY
+            if auth_status.get("state") == "HOME":
+                logger.info("Already logged in but in HOME state, switching to LIBRARY")
+                
+                # Try to click the LIBRARY tab
+                try:
+                    library_tab = server.automator.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"
+                    )
+                    library_tab.click()
+                    logger.info("Clicked on LIBRARY tab")
+                    time.sleep(1)  # Wait for tab transition
+                    
+                    # Update state after clicking
+                    server.automator.state_machine.update_current_state()
+                    updated_state = server.automator.state_machine.current_state
+                    
+                    if updated_state == AppState.LIBRARY:
+                        logger.info("Successfully switched to LIBRARY state")
+                        return {"success": True, "message": "Switched to library view"}, 200
+                except Exception as e:
+                    logger.error(f"Error clicking on LIBRARY tab: {e}")
+                    # Continue with normal authentication process
+            else:
+                # We're already in LIBRARY state
+                return {"success": True, "message": "Already authenticated"}, 200
+                
+        # Handle manual login case
+        if auth_status.get("requires_manual_login", False):
+            # If no credentials were provided, we need manual login via VNC
+            if not (amazon_email and password):
+                # Get VNC URL from environment or config
+                vnc_url = os.environ.get("VNC_URL", "")
+                
+                # Prepare manual auth response
+                return {
+                    "success": True,
+                    "manual_login_required": True,
+                    "message": "Ready for manual authentication via VNC",
+                    "vnc_url": vnc_url,
+                    "state": auth_status.get("state", "UNKNOWN")
+                }, 200
+        
+        # For automated login, update credentials if provided
+        if amazon_email and password:
+            # Update credentials using the dedicated method
+            server.automator.update_credentials(amazon_email, password)
+        
+        # Check current state - needs mapped from string to AppState enum
+        current_state_str = auth_status.get("state", "UNKNOWN")
+        current_state = getattr(AppState, current_state_str, AppState.UNKNOWN)
+        
+        # Take a screenshot for visual feedback if we're not authenticated
+        screenshot_id = None
+        screenshot_data = {}
+        if current_state not in [AppState.LIBRARY, AppState.HOME]:
+            timestamp = int(time.time())
+            screenshot_id = f"auth_state_{timestamp}"
+            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
             try:
-                library_tab = server.automator.driver.find_element(
-                    AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"
-                )
-                library_tab.click()
-                logger.info("Clicked on LIBRARY tab")
-                time.sleep(1)  # Wait for tab transition
-
-                # Update state after clicking
-                server.automator.state_machine.update_current_state()
-                updated_state = server.automator.state_machine.current_state
-
-                if updated_state == AppState.LIBRARY:
-                    logger.info("Successfully switched to LIBRARY state")
-                    return {"success": True, "message": "Switched to library view"}, 200
+                # Use secure screenshot for auth screens
+                secure_path = server.automator.take_secure_screenshot(screenshot_path)
+                if secure_path:
+                    # Process the screenshot 
+                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                else:
+                    # Try standard screenshot as fallback
+                    server.automator.driver.save_screenshot(screenshot_path)
+                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
             except Exception as e:
-                logger.error(f"Error clicking on LIBRARY tab: {e}")
-                # Continue with normal authentication process
-
-        # Update credentials using the dedicated method - always use Amazon email for auth
-        server.automator.update_credentials(amazon_email, password)
-
-        # First try to reach sign-in state if we're not already there
-        if current_state != AppState.SIGN_IN:
-            logger.info(f"Not in sign-in state (current: {current_state.name}), attempting to transition")
-            # Use existing state transition mechanisms to get to sign-in state
-            if not server.automator.transition_to_library():
-                # Take a screenshot for visual feedback
-                timestamp = int(time.time())
-                screenshot_id = f"auth_failed_transition_{timestamp}"
-                screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-                server.automator.driver.save_screenshot(screenshot_path)
-
-                # Update current state
-                server.automator.state_machine.update_current_state()
-                current_state = server.automator.state_machine.current_state
-
-                response_data = {
-                    "success": False,
-                    "message": (
-                        f"Could not transition to authentication state, current state: {current_state.name}"
-                    ),
-                }
-
-                # Process the screenshot (either base64 encode or add URL)
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                response_data.update(screenshot_data)
-
-                return response_data, 500
+                logger.error(f"Failed to take authentication screenshot: {e}")
+                # Continue with authentication process
 
         # Now proceed with authentication
         auth_result = server.automator.state_machine.auth_handler.sign_in()
@@ -1036,41 +1060,39 @@ class AuthResource(Resource):
         server.automator.state_machine.update_current_state()
         current_state = server.automator.state_machine.current_state
 
-        # Take a screenshot only for auth-related states, skip for successful auth
-        screenshot_data = {}
-        screenshot_id = None
-
-        # If authentication was successful and we're in LIBRARY state, skip screenshot
-        if not incorrect_password and current_state == AppState.LIBRARY:
-            logger.info("Authentication successful - skipping screenshot since we're in LIBRARY state")
-        else:
+        # If we haven't taken a screenshot yet or authentication failed, take a screenshot
+        if not screenshot_id or incorrect_password or current_state != AppState.LIBRARY:
             # Only take screenshot for errors or non-LIBRARY states
             timestamp = int(time.time())
             screenshot_id = f"auth_screen_{timestamp}"
             screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
 
-            try:
-                # Use secure screenshot for auth screens
-                secure_path = server.automator.take_secure_screenshot(screenshot_path)
-                if secure_path:
-                    # Process the screenshot (either base64 encode or add URL)
-                    screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                    logger.info(f"Saved secure authentication screenshot to {screenshot_path}")
-                else:
-                    # Try standard method as fallback
-                    logger.warning("Secure screenshot failed, trying standard method")
-                    try:
-                        server.automator.driver.save_screenshot(screenshot_path)
+            # Don't take another screenshot if authentication was successful
+            if not incorrect_password and current_state == AppState.LIBRARY:
+                logger.info("Authentication successful - skipping screenshot since we're in LIBRARY state")
+            else:
+                try:
+                    # Use secure screenshot for auth screens
+                    secure_path = server.automator.take_secure_screenshot(screenshot_path)
+                    if secure_path:
                         # Process the screenshot (either base64 encode or add URL)
                         screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-                        logger.info(
-                            f"Saved authentication screenshot using standard method to {screenshot_path}"
-                        )
-                    except Exception as inner_e:
-                        logger.warning(f"Standard screenshot also failed: {inner_e}")
-            except Exception as e:
-                logger.warning(f"Failed to take authentication screenshot: {e}")
-                # This is expected on secure screens like password entry
+                        logger.info(f"Saved secure authentication screenshot to {screenshot_path}")
+                    else:
+                        # Try standard method as fallback
+                        logger.warning("Secure screenshot failed, trying standard method")
+                        try:
+                            server.automator.driver.save_screenshot(screenshot_path)
+                            # Process the screenshot (either base64 encode or add URL)
+                            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
+                            logger.info(
+                                f"Saved authentication screenshot using standard method to {screenshot_path}"
+                            )
+                        except Exception as inner_e:
+                            logger.warning(f"Standard screenshot also failed: {inner_e}")
+                except Exception as e:
+                    logger.warning(f"Failed to take authentication screenshot: {e}")
+                    # This is expected on secure screens like password entry
 
         # Check for authentication errors
         error_message = None

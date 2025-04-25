@@ -230,9 +230,9 @@ class KindleAutomator:
             self.state_machine.auth_handler.email = email
             self.state_machine.auth_handler.password = password
 
-    def restart_app(self):
-        """Restart the Kindle app"""
-        logger.info("Restarting Kindle app")
+    def restart_kindle_app(self):
+        """Restart the Kindle app to return to sign-in state"""
+        logger.info("Restarting Kindle app to return to sign-in state")
         try:
             # Check if driver is active
             if not self.driver:
@@ -305,6 +305,11 @@ class KindleAutomator:
         except Exception as e:
             logger.error(f"Error restarting Kindle app: {e}")
             return False
+            
+    # Keep original method for backward compatibility
+    def restart_app(self):
+        """Restart the Kindle app (alias for restart_kindle_app)"""
+        return self.restart_kindle_app()
 
     def take_secure_screenshot(self, output_path=None, force_secure=False):
         """Take screenshot directly with multiple methods for FLAG_SECURE screens.
