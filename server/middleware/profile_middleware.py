@@ -31,6 +31,7 @@ def ensure_user_profile_loaded(f):
 
         # Check if a server instance exists (it should always be available after app startup)
         from flask import current_app as app
+        from flask import request
 
         if not hasattr(app, "config") or "server_instance" not in app.config:
             logger.error("Server instance not available in app.config")
@@ -52,7 +53,10 @@ def ensure_user_profile_loaded(f):
         # Skip AVD existence check in development environment on macOS
         is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
 
-        if not avd_exists and not is_mac_dev:
+        # Check if this is the /auth endpoint - we should allow it to proceed even without an AVD
+        is_auth_endpoint = request.path.endswith("/auth")
+
+        if not avd_exists and not is_mac_dev and not is_auth_endpoint:
             # AVD doesn't exist - require the user to call /auth first to create it
             logger.warning(
                 f"No AVD exists for email {sindarin_email}, user must authenticate first to create profile"
@@ -62,8 +66,11 @@ def ensure_user_profile_loaded(f):
                 "message": "You need to authenticate first using the /auth endpoint to create a profile",
                 "requires_auth": True,
             }, 401
-        elif not avd_exists and is_mac_dev:
-            logger.info(f"In macOS dev environment: bypassing AVD existence check for {sindarin_email}")
+        elif not avd_exists and (is_mac_dev or is_auth_endpoint):
+            if is_auth_endpoint:
+                logger.info(f"Auth endpoint: bypassing AVD existence check for {sindarin_email}")
+            else:
+                logger.info(f"In macOS dev environment: bypassing AVD existence check for {sindarin_email}")
             # Try to create a mock AVD profile mapping for this email
             server.profile_manager.register_email_to_avd(sindarin_email, "Pixel_API_30")
 

@@ -11,8 +11,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.config import VNC_BASE_URL
-from server.utils.request_utils import get_formatted_vnc_url
 from server.logging_config import store_page_source
+from server.utils.request_utils import get_formatted_vnc_url
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -134,7 +134,7 @@ class AuthenticationHandler:
                     current_profile = automator.profile_manager.get_current_profile()
                     if current_profile and "email" in current_profile:
                         email = current_profile["email"]
-                
+
                 return {
                     "state": state_name,
                     "requires_manual_login": False,
@@ -152,10 +152,10 @@ class AuthenticationHandler:
                     current_profile = automator.profile_manager.get_current_profile()
                     if current_profile and "email" in current_profile:
                         email = current_profile["email"]
-                
+
                 # Get the formatted VNC URL with the current email
                 formatted_vnc_url = get_formatted_vnc_url(email)
-                
+
                 return {
                     "state": "SIGN_IN",
                     "requires_manual_login": True,
@@ -183,6 +183,13 @@ class AuthenticationHandler:
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
 
+                # For authenticated states, provide a VNC URL with current email
+                email = ""
+                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                    current_profile = automator.profile_manager.get_current_profile()
+                    if current_profile and "email" in current_profile:
+                        email = current_profile["email"]
+
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to sign-in screen")
                     # Always require manual login
@@ -190,18 +197,11 @@ class AuthenticationHandler:
                         "state": "SIGN_IN",
                         "requires_manual_login": True,
                         "already_authenticated": False,
-                        "vnc_url": VNC_URL,
+                        "vnc_url": get_formatted_vnc_url(email),
                     }
 
                 # If we reached a library state after restart, we're already logged in
                 if state_name in ["LIBRARY", "HOME"]:
-                    # For authenticated states, provide a VNC URL with current email
-                    email = ""
-                    if hasattr(automator, "profile_manager") and automator.profile_manager:
-                        current_profile = automator.profile_manager.get_current_profile()
-                        if current_profile and "email" in current_profile:
-                            email = current_profile["email"]
-                            
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
@@ -226,10 +226,10 @@ class AuthenticationHandler:
                         current_profile = automator.profile_manager.get_current_profile()
                         if current_profile and "email" in current_profile:
                             email = current_profile["email"]
-                    
+
                     # Get the formatted VNC URL with the current email
                     formatted_vnc_url = get_formatted_vnc_url(email)
-                    
+
                     return {
                         "state": "SIGN_IN",
                         "requires_manual_login": True,
@@ -244,7 +244,7 @@ class AuthenticationHandler:
                         current_profile = automator.profile_manager.get_current_profile()
                         if current_profile and "email" in current_profile:
                             email = current_profile["email"]
-                            
+
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
@@ -262,10 +262,10 @@ class AuthenticationHandler:
                 current_profile = automator.profile_manager.get_current_profile()
                 if current_profile and "email" in current_profile:
                     email = current_profile["email"]
-            
+
             # Get the formatted VNC URL with the current email
             formatted_vnc_url = get_formatted_vnc_url(email)
-            
+
             return {
                 "state": state_name,
                 "requires_manual_login": True,
@@ -285,10 +285,10 @@ class AuthenticationHandler:
                         email = current_profile["email"]
             except Exception:
                 pass  # Ignore any errors in getting the email
-            
+
             # Get the formatted VNC URL with the email if available
             formatted_vnc_url = get_formatted_vnc_url(email)
-            
+
             return {
                 "state": "ERROR",
                 "requires_manual_login": True,
@@ -358,20 +358,20 @@ class AuthenticationHandler:
     def sign_in(self):
         """
         Manual authentication via VNC is required.
-        
+
         Returns:
             A tuple indicating automated sign-in is not supported
         """
         try:
             logger.info("Authentication must be done manually via VNC")
-            
+
             # Check for captcha as the only automated support we still provide
             if self._is_captcha_screen():
                 logger.info("Captcha detected!")
                 if not self._handle_captcha():
                     logger.error("Failed to handle captcha")
                     return False
-                    
+
             # Return error to indicate VNC is required
             return (
                 LoginVerificationState.ERROR,
