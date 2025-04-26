@@ -6,9 +6,12 @@ HOST = "0.0.0.0"
 PORT = 4098
 
 # VNC settings
-VNC_HOST = os.environ.get("VNC_HOST", "localhost")
+VNC_HOST = os.environ.get("VNC_HOST", "kindle.sindarin.com")
 VNC_PORT = os.environ.get("VNC_PORT", "6080")
-VNC_URL = os.environ.get("VNC_URL", f"http://{VNC_HOST}:{VNC_PORT}/vnc.html")
+# Base VNC URL without email parameter (for direct access if needed)
+VNC_BASE_URL = os.environ.get("VNC_BASE_URL", f"http://{VNC_HOST}:{VNC_PORT}/vnc.html")
+# VNC_URL now points to our redirect endpoint which handles profile routing
+VNC_URL = os.environ.get("VNC_URL", f"/vnc?sindarin_email={{sindarin_email}}")
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

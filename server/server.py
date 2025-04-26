@@ -25,13 +25,14 @@ from selenium.common import exceptions as selenium_exceptions
 from automator import KindleAutomator
 from handlers.auth_handler import LoginVerificationState
 from handlers.test_fixtures_handler import TestFixturesHandler
+from server.config import VNC_BASE_URL
 from server.core.automation_server import AutomationServer
 from server.logging_config import setup_logger
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
-from server.utils.request_utils import get_sindarin_email
+from server.utils.request_utils import get_formatted_vnc_url, get_sindarin_email
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -89,13 +90,14 @@ class InitializeResource(Resource):
             # Clear the current book since we're reinitializing the app
             server.clear_current_book()
 
-            # Get VNC URL from environment for manual authentication
-            vnc_url = os.environ.get("VNC_URL", "")
+            # Get VNC URL for manual authentication, without email parameter for now
+            # (will be populated by client when they make the auth request)
+            vnc_url = get_formatted_vnc_url()
 
             return {
                 "status": "initialized",
                 "message": "Device initialized. Use /auth endpoint with VNC for manual authentication.",
-                "vnc_url": vnc_url
+                "vnc_url": vnc_url,
             }, 200
 
         except Exception as e:
@@ -163,15 +165,19 @@ class BooksResource(Resource):
         if current_state != AppState.LIBRARY:
             # Check if we're on the sign-in screen
             if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
-                # Always return VNC URL for authentication
-                vnc_url = os.environ.get("VNC_URL", "")
+                # Get current email to include in VNC URL
+                sindarin_email = get_sindarin_email(default_email=server.current_email)
+
+                # Get the formatted VNC URL with the email
+                formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
                     "requires_auth": True,
                     "current_state": current_state.name,
                     "message": "Authentication is required via VNC",
-                    "vnc_url": vnc_url,
+                    "vnc_url": formatted_vnc_url,
                 }, 401
 
             # Try to transition to library state
@@ -184,15 +190,19 @@ class BooksResource(Resource):
 
             # Check for auth requirement regardless of transition success
             if new_state == AppState.SIGN_IN:
-                # Always return VNC URL for authentication
-                vnc_url = os.environ.get("VNC_URL", "")
+                # Get current email to include in VNC URL
+                sindarin_email = get_sindarin_email(default_email=server.current_email)
+
+                # Get the formatted VNC URL with the email
+                formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+
                 logger.info("Authentication required after transition attempt - providing VNC URL")
                 return {
                     "error": "Authentication required",
                     "requires_auth": True,
                     "current_state": new_state.name,
                     "message": "Authentication is required via VNC",
-                    "vnc_url": vnc_url,
+                    "vnc_url": formatted_vnc_url,
                 }, 401
 
             if transition_success:
@@ -202,14 +212,18 @@ class BooksResource(Resource):
 
                 # If books is None, it means authentication is required
                 if books is None:
-                    # Always return VNC URL for authentication
-                    vnc_url = os.environ.get("VNC_URL", "")
+                    # Get current email to include in VNC URL
+                    sindarin_email = get_sindarin_email(default_email=server.current_email)
+
+                    # Get the formatted VNC URL with the email
+                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+
                     logger.info("Authentication required - providing VNC URL for manual authentication")
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
                         "message": "Authentication is required via VNC",
-                        "vnc_url": vnc_url,
+                        "vnc_url": formatted_vnc_url,
                     }, 401
 
                 return {"books": books}, 200
@@ -218,15 +232,19 @@ class BooksResource(Resource):
                 updated_state = server.automator.state_machine.current_state
 
                 if updated_state == AppState.SIGN_IN:
-                    # Always return VNC URL for authentication
-                    vnc_url = os.environ.get("VNC_URL", "")
+                    # Get current email to include in VNC URL
+                    sindarin_email = get_sindarin_email(default_email=server.current_email)
+
+                    # Get the formatted VNC URL with the email
+                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+
                     logger.info("Transition failed - authentication required - providing VNC URL")
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
                         "current_state": updated_state.name,
                         "message": "Authentication is required via VNC",
-                        "vnc_url": vnc_url,
+                        "vnc_url": formatted_vnc_url,
                     }, 401
                 else:
                     return {
@@ -239,14 +257,18 @@ class BooksResource(Resource):
 
         # If books is None, it means authentication is required
         if books is None:
-            # Always return VNC URL for authentication
-            vnc_url = os.environ.get("VNC_URL", "")
+            # Get current email to include in VNC URL
+            sindarin_email = get_sindarin_email(default_email=server.current_email)
+
+            # Get the formatted VNC URL with the email
+            formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+
             logger.info("Authentication required - providing VNC URL for manual authentication")
             return {
                 "error": "Authentication required",
                 "requires_auth": True,
                 "message": "Authentication is required via VNC",
-                "vnc_url": vnc_url,
+                "vnc_url": formatted_vnc_url,
             }, 401
 
         return {"books": books}, 200
@@ -995,14 +1017,14 @@ class AuthResource(Resource):
                 return {"success": True, "message": "Already authenticated"}, 200
 
         # Always use manual login via VNC (no automation of Amazon credentials)
-        # Get VNC URL from environment or config
-        vnc_url = os.environ.get("VNC_URL", "")
+        # Get the formatted VNC URL with the profile email
+        formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
 
         # Take a screenshot for visual feedback
         screenshot_id = None
         screenshot_data = {}
         current_state = server.automator.state_machine.current_state
-        
+
         timestamp = int(time.time())
         screenshot_id = f"auth_state_{timestamp}"
         screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
@@ -1018,20 +1040,20 @@ class AuthResource(Resource):
                 screenshot_data = process_screenshot_response(screenshot_id, use_base64)
         except Exception as e:
             logger.error(f"Failed to take authentication screenshot: {e}")
-            
+
         # Prepare manual auth response
         response_data = {
             "success": True,
             "manual_login_required": True,
             "message": "Ready for manual authentication via VNC",
-            "vnc_url": vnc_url,
+            "vnc_url": formatted_vnc_url,
             "state": current_state.name,
         }
-        
+
         # Add screenshot data if available
         if screenshot_data:
             response_data.update(screenshot_data)
-            
+
         return response_data, 200
 
 
@@ -1671,6 +1693,62 @@ api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
+
+
+# Add new route to handle VNC connections
+@app.route("/vnc")
+def vnc_redirect():
+    """Redirect to VNC connection with appropriate profile parameters.
+    This ensures VNC only accesses the emulator tied to the specified profile email."""
+    sindarin_email = get_sindarin_email(default_email=server.current_email)
+
+    # If no email is provided and server doesn't have a current email, return error
+    if not sindarin_email:
+        return {"error": "No sindarin_email provided to identify which profile to access"}, 400
+
+    logger.info(f"VNC redirect requested for email: {sindarin_email}")
+
+    # Check if we have a profile for this email
+    if server.profile_manager:
+        running_emulators = server.profile_manager.device_discovery.map_running_emulators()
+        is_running, emulator_id, avd_name = server.profile_manager.find_running_emulator_for_email(
+            sindarin_email
+        )
+
+        if not is_running:
+            return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
+
+    # Start with the base VNC URL
+    vnc_url = VNC_BASE_URL
+
+    # Check for special options
+    use_mobile_interface = request.args.get("mobile", "0") in ("1", "true")
+    autoconnect = request.args.get("autoconnect", "0") in ("1", "true")
+
+    # If mobile interface is requested, use the special mobile-optimized HTML
+    if use_mobile_interface:
+        vnc_url = vnc_url.replace("/vnc.html", "/kindle_captcha.html")
+
+    # Construct the query string with sindarin_email
+    query_params = [f"sindarin_email={sindarin_email}"]
+
+    # Add autoconnect parameter for the mobile view if needed
+    if use_mobile_interface and autoconnect:
+        query_params.append("autoconnect=true")
+
+    # Add any other query parameters from the original request
+    for key, value in request.args.items():
+        if key not in ["sindarin_email", "mobile", "autoconnect"]:  # Skip ones we've already handled
+            query_params.append(f"{key}={value}")
+
+    # Construct the final URL with all parameters
+    if "?" in vnc_url:
+        vnc_url = f"{vnc_url}&{'&'.join(query_params)}"
+    else:
+        vnc_url = f"{vnc_url}?{'&'.join(query_params)}"
+
+    # Redirect to the VNC URL
+    return redirect(vnc_url)
 
 
 def cleanup_resources():

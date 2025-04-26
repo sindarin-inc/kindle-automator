@@ -22,8 +22,8 @@ class KindleStateMachine:
         """Initialize the state machine with required handlers."""
         self.driver = driver
         self.view_inspector = ViewInspector(driver)
-        # Initialize auth handler without credentials or captcha - they'll be set later
-        self.auth_handler = AuthenticationHandler(driver, None, None, None)
+        # Initialize auth handler without captcha solution - it'll be set later if needed
+        self.auth_handler = AuthenticationHandler(driver)
         self.library_handler = LibraryHandler(driver)
         self.reader_handler = ReaderHandler(driver)
         self.permissions_handler = PermissionsHandler(driver)

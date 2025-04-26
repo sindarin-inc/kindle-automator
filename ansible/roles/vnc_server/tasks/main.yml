@@ -130,6 +130,8 @@
       - python3-numpy # Required by websockify
     state: present
 
+# Authentication managed by the Flask server's /vnc endpoint
+
 - name: Create log file for x11vnc
   file:
     path: /var/log/x11vnc.log
@@ -213,19 +215,27 @@
       ## Connection Options
 
       ### Option 1: Web Browser (Recommended for mobile devices)
-      Access the emulator through a web browser at:
+      Access the emulator through the secure redirect endpoint:
       ```
-      http://{{ ansible_host }}:6080/vnc.html
+      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com
       ```
 
+      **Important:** This endpoint safely redirects you to the appropriate VNC server based on your profile.
+      The sindarin_email parameter identifies which emulator profile to connect to.
+      Authentication and profile validation is handled entirely by the Flask server's /vnc endpoint.
+      This ensures security and proper isolation between different profiles.
+      
       This works on any device with a modern web browser (iOS, Android, desktop).
       Password: {{ vnc_password }}
 
       ### Option 2: Mobile-Optimized Interface
-      For the best mobile experience, use our custom interface:
+      For the best mobile experience, use our redirect endpoint:
       ```
-      http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}
+      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&mobile=1
       ```
+      
+      **Note:** The sindarin_email parameter is required to specify which profile to connect to.
+      The mobile=1 parameter can be used to request the mobile-optimized interface.
 
       This is designed specifically for captcha solving with:
       - Auto-connection
@@ -242,8 +252,11 @@
 
       To embed the VNC viewer in your mobile app, use a WebView with this URL:
       ```
-      http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}&autoconnect=true
+      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&mobile=1&autoconnect=1
       ```
+      
+      The sindarin_email parameter is required to specify which emulator profile to connect to.
+      Additional parameters can be passed through the redirect to customize your VNC experience.
 
       This provides a lightweight VNC viewer perfect for embedding in mobile applications.
 
@@ -251,15 +264,17 @@
 
       ```java
       // Android example
+      String userEmail = "user@example.com";  // Get from your app's user profile
       WebView webView = findViewById(R.id.webView);
       webView.getSettings().setJavaScriptEnabled(true);
-      webView.loadUrl("http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}&autoconnect=true");
+      webView.loadUrl("http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=" + userEmail + "&mobile=1&autoconnect=1");
       ```
 
       ```swift
       // iOS example
+      let userEmail = "user@example.com"  // Get from your app's user profile
       let webView = WKWebView()
-      let url = URL(string: "http://{{ ansible_host }}:6080/kindle_captcha.html?password={{ vnc_password }}&autoconnect=true")!
+      let url = URL(string: "http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=\(userEmail)&mobile=1&autoconnect=1")!
       webView.load(URLRequest(url: url))
       ```
     dest: /home/{{ ansible_user }}/VNC_SETUP.md

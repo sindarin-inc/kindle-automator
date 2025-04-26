@@ -10,7 +10,8 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from server.config import VNC_URL
+from server.config import VNC_BASE_URL
+from server.utils.request_utils import get_formatted_vnc_url
 from server.logging_config import store_page_source
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
@@ -126,22 +127,40 @@ class AuthenticationHandler:
                         logger.error(f"Error navigating from HOME to LIBRARY: {e}")
                         # Continue with HOME state
 
+                # For authenticated states, still provide a VNC URL for convenience
+                # (it will be ignored by the client if already authenticated)
+                email = ""
+                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                    current_profile = automator.profile_manager.get_current_profile()
+                    if current_profile and "email" in current_profile:
+                        email = current_profile["email"]
+                
                 return {
                     "state": state_name,
                     "requires_manual_login": False,
                     "already_authenticated": True,
-                    "vnc_url": "",
+                    "vnc_url": get_formatted_vnc_url(email),
                 }
 
             # Check if we're already on the sign-in screen
             if state_name == "SIGN_IN":
                 logger.info("Already on sign-in screen")
                 # Always require manual login
+                # Get email from automator's current profile if available
+                email = ""
+                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                    current_profile = automator.profile_manager.get_current_profile()
+                    if current_profile and "email" in current_profile:
+                        email = current_profile["email"]
+                
+                # Get the formatted VNC URL with the current email
+                formatted_vnc_url = get_formatted_vnc_url(email)
+                
                 return {
                     "state": "SIGN_IN",
                     "requires_manual_login": True,
                     "already_authenticated": False,
-                    "vnc_url": VNC_URL,
+                    "vnc_url": formatted_vnc_url,
                 }
 
             # We need to navigate to the sign-in screen
@@ -176,11 +195,18 @@ class AuthenticationHandler:
 
                 # If we reached a library state after restart, we're already logged in
                 if state_name in ["LIBRARY", "HOME"]:
+                    # For authenticated states, provide a VNC URL with current email
+                    email = ""
+                    if hasattr(automator, "profile_manager") and automator.profile_manager:
+                        current_profile = automator.profile_manager.get_current_profile()
+                        if current_profile and "email" in current_profile:
+                            email = current_profile["email"]
+                            
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
                         "already_authenticated": True,
-                        "vnc_url": "",
+                        "vnc_url": get_formatted_vnc_url(email),
                     }
 
             # As a fallback, try to use transition_to_library which may go through auth flow
@@ -194,40 +220,80 @@ class AuthenticationHandler:
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to sign-in screen via transition_to_library")
                     # Always require manual login
+                    # Get email from automator's current profile if available
+                    email = ""
+                    if hasattr(automator, "profile_manager") and automator.profile_manager:
+                        current_profile = automator.profile_manager.get_current_profile()
+                        if current_profile and "email" in current_profile:
+                            email = current_profile["email"]
+                    
+                    # Get the formatted VNC URL with the current email
+                    formatted_vnc_url = get_formatted_vnc_url(email)
+                    
                     return {
                         "state": "SIGN_IN",
                         "requires_manual_login": True,
                         "already_authenticated": False,
-                        "vnc_url": VNC_URL,
+                        "vnc_url": formatted_vnc_url,
                     }
 
                 if state_name in ["LIBRARY", "HOME"]:
+                    # For authenticated states, provide a VNC URL with current email
+                    email = ""
+                    if hasattr(automator, "profile_manager") and automator.profile_manager:
+                        current_profile = automator.profile_manager.get_current_profile()
+                        if current_profile and "email" in current_profile:
+                            email = current_profile["email"]
+                            
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
                         "already_authenticated": True,
-                        "vnc_url": "",
+                        "vnc_url": get_formatted_vnc_url(email),
                     }
             except Exception as e:
                 logger.error(f"Error navigating with transition_to_library: {e}")
 
             # If we couldn't reliably get to the sign-in screen, return current state
             # and indicate manual login is needed
+            # Get email from automator's current profile if available
+            email = ""
+            if hasattr(automator, "profile_manager") and automator.profile_manager:
+                current_profile = automator.profile_manager.get_current_profile()
+                if current_profile and "email" in current_profile:
+                    email = current_profile["email"]
+            
+            # Get the formatted VNC URL with the current email
+            formatted_vnc_url = get_formatted_vnc_url(email)
+            
             return {
                 "state": state_name,
                 "requires_manual_login": True,
                 "already_authenticated": False,
-                "vnc_url": VNC_URL,
+                "vnc_url": formatted_vnc_url,
                 "error": f"Could not navigate to sign-in screen from {state_name}",
             }
 
         except Exception as e:
             logger.error(f"Error in prepare_for_authentication: {e}")
+            # Even in case of error, try to get the email if possible
+            email = ""
+            try:
+                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                    current_profile = automator.profile_manager.get_current_profile()
+                    if current_profile and "email" in current_profile:
+                        email = current_profile["email"]
+            except Exception:
+                pass  # Ignore any errors in getting the email
+            
+            # Get the formatted VNC URL with the email if available
+            formatted_vnc_url = get_formatted_vnc_url(email)
+            
             return {
                 "state": "ERROR",
                 "requires_manual_login": True,
                 "already_authenticated": False,
-                "vnc_url": VNC_URL,
+                "vnc_url": formatted_vnc_url,
                 "error": str(e),
             }
 
