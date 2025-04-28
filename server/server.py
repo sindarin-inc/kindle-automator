@@ -90,14 +90,9 @@ class InitializeResource(Resource):
             # Clear the current book since we're reinitializing the app
             server.clear_current_book()
 
-            # Get VNC URL for manual authentication, without email parameter for now
-            # (will be populated by client when they make the auth request)
-            vnc_url = get_formatted_vnc_url()
-
             return {
                 "status": "initialized",
-                "message": "Device initialized. Use /auth endpoint with VNC for manual authentication.",
-                "vnc_url": vnc_url,
+                "message": "Device initialized. Use /auth endpoint with VNC for manual authentication."
             }, 200
 
         except Exception as e:
@@ -176,8 +171,7 @@ class BooksResource(Resource):
                     "error": "Authentication required",
                     "requires_auth": True,
                     "current_state": current_state.name,
-                    "message": "Authentication is required via VNC",
-                    "vnc_url": formatted_vnc_url,
+                    "message": "Authentication is required via VNC"
                 }, 401
 
             # Try to transition to library state
@@ -201,8 +195,7 @@ class BooksResource(Resource):
                     "error": "Authentication required",
                     "requires_auth": True,
                     "current_state": new_state.name,
-                    "message": "Authentication is required via VNC",
-                    "vnc_url": formatted_vnc_url,
+                    "message": "Authentication is required via VNC"
                 }, 401
 
             if transition_success:
@@ -222,8 +215,7 @@ class BooksResource(Resource):
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
-                        "message": "Authentication is required via VNC",
-                        "vnc_url": formatted_vnc_url,
+                        "message": "Authentication is required via VNC"
                     }, 401
 
                 return {"books": books}, 200
@@ -243,8 +235,7 @@ class BooksResource(Resource):
                         "error": "Authentication required",
                         "requires_auth": True,
                         "current_state": updated_state.name,
-                        "message": "Authentication is required via VNC",
-                        "vnc_url": formatted_vnc_url,
+                        "message": "Authentication is required via VNC"
                     }, 401
                 else:
                     return {
@@ -267,8 +258,7 @@ class BooksResource(Resource):
             return {
                 "error": "Authentication required",
                 "requires_auth": True,
-                "message": "Authentication is required via VNC",
-                "vnc_url": formatted_vnc_url,
+                "message": "Authentication is required via VNC"
             }, 401
 
         return {"books": books}, 200
@@ -1020,39 +1010,14 @@ class AuthResource(Resource):
         # Get the formatted VNC URL with the profile email
         formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
 
-        # Take a screenshot for visual feedback
-        screenshot_id = None
-        screenshot_data = {}
+        # Prepare manual auth response without screenshot
         current_state = server.automator.state_machine.current_state
-
-        timestamp = int(time.time())
-        screenshot_id = f"auth_state_{timestamp}"
-        screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-        try:
-            # Use secure screenshot for auth screens
-            secure_path = server.automator.take_secure_screenshot(screenshot_path)
-            if secure_path:
-                # Process the screenshot
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-            else:
-                # Try standard screenshot as fallback
-                server.automator.driver.save_screenshot(screenshot_path)
-                screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-        except Exception as e:
-            logger.error(f"Failed to take authentication screenshot: {e}")
-
-        # Prepare manual auth response
         response_data = {
             "success": True,
             "manual_login_required": True,
             "message": "Ready for manual authentication via VNC",
-            "vnc_url": formatted_vnc_url,
-            "state": current_state.name,
+            "state": current_state.name
         }
-
-        # Add screenshot data if available
-        if screenshot_data:
-            response_data.update(screenshot_data)
 
         return response_data, 200
 
