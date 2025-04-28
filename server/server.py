@@ -92,7 +92,7 @@ class InitializeResource(Resource):
 
             return {
                 "status": "initialized",
-                "message": "Device initialized. Use /auth endpoint with VNC for manual authentication."
+                "message": "Device initialized. Use /auth endpoint with VNC for manual authentication.",
             }, 200
 
         except Exception as e:
@@ -171,7 +171,7 @@ class BooksResource(Resource):
                     "error": "Authentication required",
                     "requires_auth": True,
                     "current_state": current_state.name,
-                    "message": "Authentication is required via VNC"
+                    "message": "Authentication is required via VNC",
                 }, 401
 
             # Try to transition to library state
@@ -195,7 +195,7 @@ class BooksResource(Resource):
                     "error": "Authentication required",
                     "requires_auth": True,
                     "current_state": new_state.name,
-                    "message": "Authentication is required via VNC"
+                    "message": "Authentication is required via VNC",
                 }, 401
 
             if transition_success:
@@ -215,7 +215,7 @@ class BooksResource(Resource):
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
-                        "message": "Authentication is required via VNC"
+                        "message": "Authentication is required via VNC",
                     }, 401
 
                 return {"books": books}, 200
@@ -235,7 +235,7 @@ class BooksResource(Resource):
                         "error": "Authentication required",
                         "requires_auth": True,
                         "current_state": updated_state.name,
-                        "message": "Authentication is required via VNC"
+                        "message": "Authentication is required via VNC",
                     }, 401
                 else:
                     return {
@@ -258,7 +258,7 @@ class BooksResource(Resource):
             return {
                 "error": "Authentication required",
                 "requires_auth": True,
-                "message": "Authentication is required via VNC"
+                "message": "Authentication is required via VNC",
             }, 401
 
         return {"books": books}, 200
@@ -1016,7 +1016,7 @@ class AuthResource(Resource):
             "success": True,
             "manual_login_required": True,
             "message": "Ready for manual authentication via VNC",
-            "state": current_state.name
+            "state": current_state.name,
         }
 
         return response_data, 200
@@ -1688,23 +1688,18 @@ def vnc_redirect():
     vnc_url = VNC_BASE_URL
 
     # Check for special options
-    use_mobile_interface = request.args.get("mobile", "0") in ("1", "true")
     autoconnect = request.args.get("autoconnect", "0") in ("1", "true")
-
-    # If mobile interface is requested, use the special mobile-optimized HTML
-    if use_mobile_interface:
-        vnc_url = vnc_url.replace("/vnc.html", "/kindle_captcha.html")
 
     # Construct the query string with sindarin_email
     query_params = [f"sindarin_email={sindarin_email}"]
 
     # Add autoconnect parameter for the mobile view if needed
-    if use_mobile_interface and autoconnect:
+    if autoconnect:
         query_params.append("autoconnect=true")
 
     # Add any other query parameters from the original request
     for key, value in request.args.items():
-        if key not in ["sindarin_email", "mobile", "autoconnect"]:  # Skip ones we've already handled
+        if key not in ["sindarin_email", "autoconnect"]:  # Skip ones we've already handled
             query_params.append(f"{key}={value}")
 
     # Construct the final URL with all parameters
