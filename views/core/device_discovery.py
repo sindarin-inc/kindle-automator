@@ -270,6 +270,7 @@ class DeviceDiscovery:
             # Get list of running emulators with retry mechanism
             max_retries = 3
             retry_delay = 5  # seconds
+            result = None
 
             for retry in range(max_retries):
                 try:
@@ -304,9 +305,10 @@ class DeviceDiscovery:
                         retry_delay *= 2
 
             # After retries, check final result
-            if not hasattr(locals(), "result") or result.returncode != 0:
-                error_msg = "Failed to get devices list after multiple attempts"
-                logger.error(error_msg)
+            if not result or result.returncode != 0:
+                logger.error(
+                    f"Failed to get devices list after multiple attempts: {result.returncode if result else 'unknown'} {result.stderr if result else 'unknown'}"
+                )
                 # Log the error but return empty dict instead of raising exception
                 # This prevents unnecessary errors when the emulator is actually running
                 logger.debug("Returning empty emulator list rather than raising exception")

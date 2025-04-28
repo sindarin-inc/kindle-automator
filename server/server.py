@@ -1711,10 +1711,11 @@ def vnc_redirect():
     # Check if we have a profile for this email
     if server.profile_manager:
         running_emulators = server.profile_manager.device_discovery.map_running_emulators()
+        logger.info(f"Running emulators: {running_emulators}")
         is_running, emulator_id, avd_name = server.profile_manager.find_running_emulator_for_email(
             sindarin_email
         )
-
+        logger.info(f"Is running: {is_running}, emulator_id: {emulator_id}, avd_name: {avd_name}")
         if not is_running:
             return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
 
