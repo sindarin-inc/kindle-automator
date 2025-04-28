@@ -8,7 +8,7 @@ PORT = 4098
 # VNC settings
 VNC_HOST = os.environ.get("VNC_HOST", "kindlevnc.sindarin.com")
 # Base VNC URL without email parameter (for direct access if needed)
-VNC_BASE_URL = os.environ.get("VNC_BASE_URL", f"https://{VNC_HOST}/kindle_captcha.html")
+VNC_BASE_URL = os.environ.get("VNC_BASE_URL", f"https://{VNC_HOST}/vnc.html")
 # VNC_URL now points to our redirect endpoint which handles profile routing
 VNC_URL = os.environ.get("VNC_URL", f"/vnc?sindarin_email={{sindarin_email}}")
 
