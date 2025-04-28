@@ -1687,21 +1687,16 @@ def vnc_redirect():
     # Start with the base VNC URL
     vnc_url = VNC_BASE_URL
 
-    # Check for special options
-    autoconnect = request.args.get("autoconnect", "0") in ("1", "true")
-
     # Construct the query string with sindarin_email
-    query_params = [f"sindarin_email={sindarin_email}"]
-
-    # Add autoconnect parameter for the mobile view if needed
-    if autoconnect:
-        query_params.append("autoconnect=true")
-
-    query_params.append("password=changeme")
+    query_params = [
+        f"sindarin_email={sindarin_email}",
+        "autoconnect=true",
+        "password=changeme",
+    ]
 
     # Add any other query parameters from the original request
     for key, value in request.args.items():
-        if key not in ["sindarin_email", "autoconnect"]:  # Skip ones we've already handled
+        if key not in ["sindarin_email", "autoconnect", "password"]:  # Skip ones we've already handled
             query_params.append(f"{key}={value}")
 
     # Construct the final URL with all parameters
