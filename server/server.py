@@ -1697,6 +1697,8 @@ def vnc_redirect():
     if autoconnect:
         query_params.append("autoconnect=true")
 
+    query_params.append("password=changeme")
+
     # Add any other query parameters from the original request
     for key, value in request.args.items():
         if key not in ["sindarin_email", "autoconnect"]:  # Skip ones we've already handled
