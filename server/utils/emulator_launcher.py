@@ -451,8 +451,9 @@ class EmulatorLauncher:
                     "-verbose",
                     "-port",
                     "5554",
+                    "-feature", "-accel",  # Disable hardware acceleration
                     "-gpu",
-                    "swiftshader_indirect",
+                    "swiftshader",
                     "-no-boot-anim",
                 ]
             elif self.host_arch == "arm64":
