@@ -12,6 +12,7 @@
       - nodejs
       - npm
       - git
+      - x11-utils  # Provides xwininfo, xdpyinfo
     state: present
     update_cache: yes
 
@@ -25,102 +26,6 @@
   copy:
     src: novnc-config.js
     dest: /opt/novnc/app/config.js
-    mode: "0644"
-
-- name: Create mobile-optimized HTML file for WebView embedding
-  copy:
-    content: |
-      <!DOCTYPE html>
-      <html>
-      <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-          <title>Kindle Captcha Solver</title>
-          <!-- Use base noVNC CSS files instead of lite.css which doesn't exist -->
-          <link rel="stylesheet" href="app/styles/base.css">
-          <!-- Load core libraries -->
-          <script src="core/util/events.js"></script>
-          <script src="app/localization.js"></script>
-          <script src="core/rfb.js"></script>
-          <script type="module" crossorigin="anonymous">
-              // Auto-connect to VNC
-              window.addEventListener('load', function() {
-                  let urlParams = new URLSearchParams(window.location.search);
-                  let defaultHost = window.location.hostname;
-                  let defaultPort = '5900';
-                  let password = urlParams.get('password') || '';
-                  
-                  // Get connection parameters
-                  let host = urlParams.get('host') || defaultHost;
-                  let port = urlParams.get('port') || defaultPort;
-                  let path = "websockify";
-                  let autoconnect = urlParams.get('autoconnect') !== 'false';
-                  let resize = urlParams.get('resize') || 'scale';
-                  
-                  // Use noVNC's RFB directly since we're not importing UI
-                  const target = document.getElementById('screen');
-                  const rfb = new RFB(target, `ws://${host}:6080/${path}`);
-                  
-                  // Set credentials
-                  rfb.credentials = { password: password };
-                  
-                  // Set connection properties
-                  rfb.viewOnly = false;
-                  rfb.scaleViewport = resize === 'scale';
-                  rfb.resizeSession = resize === 'remote';
-                  rfb.clipViewport = false;
-                  rfb.qualityLevel = 6;
-                  rfb.compressionLevel = 2;
-                  rfb.showDotCursor = true;
-                  rfb.background = "#000000";
-                  
-                  // Connect if autoconnect is enabled
-                  if (autoconnect) {
-                      rfb.connect();
-                  }
-                  
-                  // Add event listeners for connection status
-                  rfb.addEventListener("connect", () => {
-                      console.log("Connected to VNC");
-                  });
-                  
-                  rfb.addEventListener("disconnect", (e) => {
-                      console.log("Disconnected from VNC: " + e.detail.reason);
-                      // Auto reconnect after 3 seconds
-                      if (autoconnect) {
-                          setTimeout(() => rfb.connect(), 3000);
-                      }
-                  });
-              });
-          </script>
-          <style>
-              body {
-                  margin: 0;
-                  padding: 0;
-                  height: 100vh;
-                  background-color: black;
-              }
-              #screen {
-                  width: 100vw;
-                  height: 100vh;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-              }
-              canvas {
-                  max-width: 100%;
-                  max-height: 100%;
-                  object-fit: contain;
-              }
-          </style>
-      </head>
-      <body>
-          <div id="screen">
-              <!-- VNC display will be inserted here -->
-          </div>
-      </body>
-      </html>
-    dest: /opt/novnc/kindle_captcha.html
     mode: "0644"
 
 - name: Install websockify for noVNC
@@ -163,6 +68,18 @@
     dest: /etc/systemd/system/xvfb.service
     mode: "0644"
   notify: restart xvfb
+
+- name: Copy app position finder script
+  copy:
+    src: find-app-position.sh
+    dest: /usr/local/bin/find-app-position.sh
+    mode: "0755"
+
+- name: Copy VNC clipping script
+  copy:
+    src: start-vnc-clipped.sh
+    dest: /usr/local/bin/start-vnc-clipped.sh
+    mode: "0755"
 
 - name: Create VNC service file
   template:
@@ -228,8 +145,24 @@
       This works on any device with a modern web browser (iOS, Android, desktop).
       Password: {{ vnc_password }}
 
-      ### Option 2: Mobile-Optimized Interface
-      For the best mobile experience, use our redirect endpoint:
+      ### Option 2: App-Only View (Recommended)
+      For the most focused view that shows only the Kindle app (360x620), use:
+      ```
+      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&view=app_only
+      ```
+      
+      **Note:** The sindarin_email parameter is required to specify which profile to connect to.
+      The view=app_only parameter requests the app-only interface that crops out all the surrounding black space.
+
+      This is designed specifically for viewing just the Kindle app with:
+      - Exact app dimensions (360x620)
+      - No black borders or extra space
+      - Auto-connection
+      - Mobile-optimized UI
+      - Responsive scaling
+      
+      ### Option 3: Mobile-Optimized Interface
+      For the mobile-optimized experience with full frame, use:
       ```
       http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&mobile=1
       ```
@@ -237,16 +170,14 @@
       **Note:** The sindarin_email parameter is required to specify which profile to connect to.
       The mobile=1 parameter can be used to request the mobile-optimized interface.
 
-      This is designed specifically for captcha solving with:
-      - Auto-connection
-      - Mobile-optimized UI
-      - Responsive scaling
-
-      ### Option 3: Native VNC Client
-      Connect using any VNC client:
+      ### Option 3: Native VNC Client (App-Only View)
+      Connect using any VNC client for a focused view of just the Kindle app:
       - Host: {{ ansible_host }}
       - Port: 5900
       - Password: {{ vnc_password }}
+      
+      **Important**: The VNC server is now configured to only show the Kindle app window (360x620 pixels),
+      not the entire screen. This makes it perfect for viewing on mobile VNC clients.
 
       ## Mobile App Integration
 

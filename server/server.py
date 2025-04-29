@@ -1684,10 +1684,11 @@ def vnc_redirect():
         if not is_running:
             return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
 
-    # Start with the base VNC URL
+    # Check for view type
+    view_type = request.args.get("view", "")
     vnc_url = VNC_BASE_URL
 
-    # Construct the query string with sindarin_email
+    # Construct the query string with sindarin_email and other required params
     query_params = [
         f"sindarin_email={sindarin_email}",
         "autoconnect=true",
@@ -1696,7 +1697,13 @@ def vnc_redirect():
 
     # Add any other query parameters from the original request
     for key, value in request.args.items():
-        if key not in ["sindarin_email", "autoconnect", "password"]:  # Skip ones we've already handled
+        if key not in [
+            "sindarin_email",
+            "autoconnect",
+            "password",
+            "view",
+            "mobile",
+        ]:  # Skip ones we've already handled
             query_params.append(f"{key}={value}")
 
     # Construct the final URL with all parameters

@@ -6,7 +6,7 @@ Requires=xvfb.service
 [Service]
 User={{ ansible_user }}
 Environment=DISPLAY=:1
-ExecStart=/usr/bin/x11vnc -display :1 -forever -shared -rfbport 5900 -passwd {{ vnc_password }} -o /var/log/x11vnc.log
+ExecStart=/usr/local/bin/start-vnc-clipped.sh auto
 Restart=on-failure
 RestartSec=10
 
