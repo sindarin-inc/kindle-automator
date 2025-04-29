@@ -281,7 +281,7 @@ class AVDProfileManager:
         # First check if we have a mapping in the profiles index
         if email in self.profiles_index:
             profile_entry = self.profiles_index.get(email)
-            
+
             # Handle different formats (backward compatibility)
             if isinstance(profile_entry, str):
                 return profile_entry
@@ -290,24 +290,24 @@ class AVDProfileManager:
 
         # If not found, create a standardized AVD name
         return self.get_avd_name_from_email(email)
-        
+
     def get_vnc_instance_for_email(self, email: str) -> Optional[int]:
         """
         Get the VNC instance number assigned to this email profile.
-        
+
         Args:
             email: Email address to lookup
-            
+
         Returns:
             Optional[int]: The VNC instance number or None if not assigned
         """
         if email in self.profiles_index:
             profile_entry = self.profiles_index.get(email)
-            
+
             # Handle different formats
             if isinstance(profile_entry, dict) and "vnc_instance" in profile_entry:
                 return profile_entry["vnc_instance"]
-                
+
         return None
 
     def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
@@ -430,7 +430,7 @@ class AVDProfileManager:
     def register_profile(self, email: str, avd_name: str, vnc_instance: int = None) -> None:
         """
         Register a profile by associating an email with an AVD name.
-        
+
         Args:
             email: The email address to register
             avd_name: The AVD name to associate with this email
@@ -438,19 +438,19 @@ class AVDProfileManager:
         """
         if email not in self.profiles_index:
             self.profiles_index[email] = {}
-        
+
         if isinstance(self.profiles_index[email], str):
             # Convert old format to new format
             old_avd = self.profiles_index[email]
             self.profiles_index[email] = {"avd_name": old_avd}
-        
+
         # Update with new values
         self.profiles_index[email]["avd_name"] = avd_name
-        
+
         # Add VNC instance if provided
         if vnc_instance is not None:
             self.profiles_index[email]["vnc_instance"] = vnc_instance
-            
+
         self._save_profiles_index()
         log_message = f"Registered profile for {email} with AVD {avd_name}"
         if vnc_instance is not None:

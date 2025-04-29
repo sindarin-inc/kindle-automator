@@ -402,11 +402,18 @@ class EmulatorManager:
             if platform.system() != "Darwin":
                 # Default to display :1
                 display_num = 1
-                
+
+                # Try to get email from AVD name using DeviceDiscovery first
+                from views.core.device_discovery import DeviceDiscovery
+
+                device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
+                email = device_discovery.extract_email_from_avd_name(avd_name)
+
                 # Try to get assigned display number for this profile if email is available
                 if email:
                     try:
                         from server.utils.vnc_instance_manager import VNCInstanceManager
+
                         vnc_manager = VNCInstanceManager()
                         profile_display = vnc_manager.get_x_display(email)
                         if profile_display:
@@ -414,38 +421,38 @@ class EmulatorManager:
                             logger.info(f"Using assigned display :{display_num} for profile {email}")
                     except ImportError:
                         logger.warning("VNCInstanceManager not available, will use default display :1")
-                
+
                 env["DISPLAY"] = f":{display_num}"
                 logger.info(f"Setting DISPLAY={env['DISPLAY']} for VNC")
 
             # Check if we're on a headless server with VNC
             # First check for profile-specific VNC launcher script
             profile_vnc_launcher = None
-            
-            # Try to get email from AVD name using DeviceDiscovery
-            from views.core.device_discovery import DeviceDiscovery
-            device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
-            email = device_discovery.extract_email_from_avd_name(avd_name)
-            
+
+            # Email should already be obtained from the code above
+
             if email:
                 # Import VNCInstanceManager to get profile-specific launcher
                 try:
                     from server.utils.vnc_instance_manager import VNCInstanceManager
+
                     vnc_manager = VNCInstanceManager()
-                    
+
                     # Try to get existing VNC instance for this profile
                     profile_vnc_launcher = vnc_manager.get_launcher_script(email)
-                    
+
                     if profile_vnc_launcher:
-                        logger.info(f"Using profile-specific VNC launcher for {email}: {profile_vnc_launcher}")
+                        logger.info(
+                            f"Using profile-specific VNC launcher for {email}: {profile_vnc_launcher}"
+                        )
                 except ImportError:
                     logger.warning("VNCInstanceManager not available, will use default VNC launcher")
-                    
+
             # Fallback to default VNC launcher if no profile-specific launcher found
             default_vnc_launcher = "/usr/local/bin/vnc-emulator-launcher.sh"
             vnc_launcher = profile_vnc_launcher or default_vnc_launcher
             use_vnc = os.path.exists(vnc_launcher) and platform.system() != "Darwin"
-            
+
             # Log which launcher we're using
             if profile_vnc_launcher:
                 logger.info(f"Using profile-specific VNC launcher for {email}: {profile_vnc_launcher}")
