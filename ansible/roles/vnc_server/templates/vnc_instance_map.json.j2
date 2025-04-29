@@ -1,0 +1,15 @@
+{
+  "instances": [
+{% for i in range(1, vnc_instances + 1) %}
+    {
+      "id": {{ i }},
+      "display": {{ i }},
+      "vnc_port": {{ 5900 + i }},
+      "novnc_port": {{ 6080 + i }},
+      "launcher": "/usr/local/bin/vnc-emulator-launcher-{{ i }}.sh",
+      "assigned_profile": null
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  ],
+  "version": 1
+}

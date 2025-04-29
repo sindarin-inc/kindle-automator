@@ -1,0 +1,14 @@
+[Unit]
+Description=VNC Server for Remote Access %i
+After=xvfb@%i.service
+Requires=xvfb@%i.service
+
+[Service]
+User={{ ansible_user }}
+Environment=DISPLAY=:%i
+ExecStart=/usr/bin/x11vnc -display :%i -forever -shared -rfbport {{ 5900 + instance_number|int }} -passwd {{ vnc_password }} -o /var/log/x11vnc-%i.log -noipv6
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

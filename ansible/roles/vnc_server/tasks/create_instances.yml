@@ -1,0 +1,35 @@
+---
+# Task file to create and enable service instances
+
+- name: Set instance number variable
+  set_fact:
+    instance_number: "{{ item }}"
+
+- name: Create helper script for emulator with VNC display for instance {{ instance_number }}
+  template:
+    src: vnc-emulator-launcher@.sh.j2
+    dest: "/usr/local/bin/vnc-emulator-launcher-{{ instance_number }}.sh"
+    mode: "0755"
+  vars:
+    item: "{{ instance_number }}"
+
+- name: Enable and start Xvfb service for instance {{ instance_number }}
+  systemd:
+    name: "xvfb@{{ instance_number }}"
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Enable and start VNC service for instance {{ instance_number }}
+  systemd:
+    name: "vnc@{{ instance_number }}"
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Enable and start noVNC service for instance {{ instance_number }}
+  systemd:
+    name: "novnc@{{ instance_number }}"
+    enabled: yes
+    state: started
+    daemon_reload: yes
