@@ -64,12 +64,6 @@
     mode: "0600"
   no_log: true
 
-- name: Create Xvfb systemd template
-  template:
-    src: xvfb@.service.j2
-    dest: /etc/systemd/system/xvfb@.service
-    mode: "0644"
-  notify: restart xvfb
 
 - name: Copy app position finder script
   copy:
@@ -82,41 +76,6 @@
     src: start-vnc-clipped.sh
     dest: /usr/local/bin/start-vnc-clipped.sh
     mode: "0755"
-- name: Create VNC service file
-  template:
-    src: vnc@.service.j2
-    dest: /etc/systemd/system/vnc@.service
-    mode: "0644"
-  notify: restart vnc
-
-- name: Create noVNC systemd template
-  template:
-    src: novnc@.service.j2
-    dest: /etc/systemd/system/novnc@.service
-    mode: "0644"
-  notify: restart novnc
-
-# Rather than using systemd services which are having issues, create a standalone script
-# that will set up VNC with app clipping
-- name: Create standalone VNC server script
-  template:
-    src: start-standalone-vnc.sh.j2
-    dest: /usr/local/bin/start-standalone-vnc.sh
-    mode: "0755"
-
-- name: Create systemd service for standalone VNC
-  template:
-    src: standalone-vnc.service.j2
-    dest: /etc/systemd/system/standalone-vnc.service
-    mode: "0644"
-
-- name: Enable and start standalone VNC service
-  systemd:
-    name: standalone-vnc
-    enabled: yes
-    state: started
-    daemon_reload: yes
-
 - name: Create VNC instance mapping file
   template:
     src: vnc_instance_map.json.j2
@@ -125,9 +84,29 @@
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
 
-- name: Create instance-specific VNC emulator launcher scripts
-  include_tasks: create_instances.yml
-  loop: "{{ range(1, vnc_instances + 1)|list }}"
+# Remove legacy systemd services that are now managed by Python
+- name: Stop and disable deprecated systemd services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - "xvfb@*.service"
+    - "vnc@*.service" 
+    - "novnc@*.service"
+    - "standalone-vnc.service"
+  ignore_errors: yes
+
+- name: Remove deprecated systemd service files
+  file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - "xvfb@.service"
+    - "vnc@.service"
+    - "novnc@.service"
+    - "standalone-vnc.service"
+  notify: reload systemd
 
 # Create default instance mapping file for initial VNC instance management
 - name: Create VNC instance mapping directory

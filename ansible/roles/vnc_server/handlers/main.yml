@@ -1,21 +1,5 @@
 ---
-- name: restart xvfb
+# Handler for reloading systemd after removing service files
+- name: reload systemd
   systemd:
-    name: "xvfb@{{ item }}"
-    state: restarted
     daemon_reload: yes
-  loop: "{{ range(1, vnc_instances + 1)|list }}"
-
-- name: restart vnc
-  systemd:
-    name: "vnc@{{ item }}"
-    state: restarted
-    daemon_reload: yes
-  loop: "{{ range(1, vnc_instances + 1)|list }}"
-    
-- name: restart novnc
-  systemd:
-    name: "novnc@{{ item }}"
-    state: restarted
-    daemon_reload: yes
-  loop: "{{ range(1, vnc_instances + 1)|list }}"
