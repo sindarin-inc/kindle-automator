@@ -132,6 +132,34 @@
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
 
+- name: Create common VNC emulator launcher script
+  template:
+    src: vnc-emulator-launcher.sh.j2
+    dest: /usr/local/bin/vnc-emulator-launcher.sh
+    mode: "0755"
+
+- name: Create instance-specific VNC emulator launcher scripts
+  include_tasks: create_instances.yml
+  loop: "{{ range(1, vnc_instances + 1)|list }}"
+
+# Create default instance mapping file for initial VNC instance management
+- name: Create VNC instance mapping directory
+  file:
+    path: /opt/kindle-automator
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: Create initial empty VNC instance mapping file
+  copy:
+    content: "{}"
+    dest: /opt/kindle-automator/vnc-instance-mapping.json
+    mode: "0666"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  when: not ansible_check_mode
+
 - name: Add instructions to README
   copy:
     content: |

@@ -3,7 +3,7 @@ from typing import Optional
 
 from flask import request
 
-from server.config import VNC_URL
+from server.config import VNC_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +41,32 @@ def get_sindarin_email(default_email: Optional[str] = None) -> Optional[str]:
     return sindarin_email or default_email
 
 
-def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> str:
+def get_formatted_vnc_url(sindarin_email: Optional[str] = None, view_type: Optional[str] = None) -> str:
     """
-    Format the VNC URL with the given sindarin_email.
+    Format the VNC URL with the given sindarin_email and optional view type.
 
     Args:
         sindarin_email: The email to include in the VNC URL
+        view_type: Optional view type (e.g., 'app_only' for app-only view)
 
     Returns:
-        str: The formatted VNC URL with the sindarin_email parameter
+        str: The formatted VNC URL with query parameters
     """
     if not sindarin_email:
-        # Return the VNC URL without an email parameter
-        return VNC_URL.replace("?sindarin_email={sindarin_email}", "")
+        # Return the VNC URL without parameters
+        return VNC_BASE_URL
 
-    # Format the URL with the sindarin_email
-    return VNC_URL.format(sindarin_email=sindarin_email)
+    # Construct the query string with sindarin_email and other required params
+    query_params = [f"sindarin_email={sindarin_email}", "autoconnect=true", "password=changeme"]
+    
+    # Add view type parameter if specified
+    if view_type:
+        query_params.append(f"view={view_type}")
+
+    # Construct the final URL with all parameters
+    if "?" in VNC_BASE_URL:
+        vnc_url = f"{VNC_BASE_URL}&{'&'.join(query_params)}"
+    else:
+        vnc_url = f"{VNC_BASE_URL}?{'&'.join(query_params)}"
+
+    return vnc_url
