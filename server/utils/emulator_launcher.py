@@ -204,30 +204,37 @@ class EmulatorLauncher:
             if xvfb_check.returncode != 0:
                 # Start Xvfb directly
                 logger.info(f"Starting Xvfb for display :{display_num}")
-                
+
                 # Kill any existing Xvfb process for this display
                 subprocess.run(["pkill", "-f", f"Xvfb :{display_num}"], check=False)
                 # Clean up any lock files
-                subprocess.run(["rm", "-f", f"/tmp/.X{display_num}-lock", f"/tmp/.X11-unix/X{display_num}"], check=False)
-                
+                subprocess.run(
+                    ["rm", "-f", f"/tmp/.X{display_num}-lock", f"/tmp/.X11-unix/X{display_num}"], check=False
+                )
+
                 # Start Xvfb with 1280x800 resolution
                 xvfb_cmd = [
-                    "/usr/bin/Xvfb", 
-                    f":{display_num}", 
-                    "-screen", "0", "1280x800x24", 
-                    "-ac", 
-                    "+extension", "GLX", 
-                    "+render", 
-                    "-noreset"
+                    "/usr/bin/Xvfb",
+                    f":{display_num}",
+                    "-screen",
+                    "0",
+                    "1280x800x24",
+                    "-ac",
+                    "+extension",
+                    "GLX",
+                    "+render",
+                    "-noreset",
                 ]
-                
+
                 with open(f"/var/log/xvfb-{display_num}.log", "w") as f:
                     xvfb_process = subprocess.Popen(xvfb_cmd, stdout=f, stderr=f)
-                    
+
                 time.sleep(2)
-                
+
                 # Verify Xvfb is running
-                xvfb_check = subprocess.run(["pgrep", "-f", f"Xvfb :{display_num}"], capture_output=True, text=True)
+                xvfb_check = subprocess.run(
+                    ["pgrep", "-f", f"Xvfb :{display_num}"], capture_output=True, text=True
+                )
                 if xvfb_check.returncode != 0:
                     logger.error(f"Failed to start Xvfb for display :{display_num}")
                     return False
@@ -242,37 +249,45 @@ class EmulatorLauncher:
             if vnc_check.returncode != 0:
                 # Start VNC directly
                 logger.info(f"Starting VNC service for display :{display_num}")
-                
+
                 # Kill any existing VNC process for this display
                 vnc_port = 5900 + display_num
                 subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
-                
+
                 # Set up environment
                 env = os.environ.copy()
                 env["DISPLAY"] = f":{display_num}"
-                
+
                 # Start x11vnc
                 vnc_cmd = [
                     "/usr/bin/x11vnc",
-                    "-display", f":{display_num}",
+                    "-display",
+                    f":{display_num}",
                     "-forever",
                     "-shared",
-                    "-rfbport", str(vnc_port),
-                    "-rfbauth", "/home/root/.vnc/passwd",
-                    "-cursor", "arrow",
+                    "-rfbport",
+                    str(vnc_port),
+                    "-rfbauth",
+                    "/opt/keys/vnc.pass",  # VNC password file created by Ansible
+                    "-cursor",
+                    "arrow",
                     "-noxdamage",
                     "-noxfixes",
                     "-noipv6",
-                    "-desktop", f"VNC Server :{display_num}",
-                    "-o", f"/var/log/x11vnc-{display_num}.log",
-                    "-bg"
+                    "-desktop",
+                    f"VNC Server :{display_num}",
+                    "-o",
+                    f"/var/log/x11vnc-{display_num}.log",
+                    "-bg",
                 ]
-                
+
                 subprocess.run(vnc_cmd, env=env, check=False, timeout=5)
                 time.sleep(2)
-                
+
                 # Verify VNC is running
-                vnc_check = subprocess.run(["pgrep", "-f", f"x11vnc.*rfbport {vnc_port}"], capture_output=True, text=True)
+                vnc_check = subprocess.run(
+                    ["pgrep", "-f", f"x11vnc.*rfbport {vnc_port}"], capture_output=True, text=True
+                )
                 if vnc_check.returncode != 0:
                     logger.error(f"Failed to start VNC server for display :{display_num}")
                     return False
@@ -355,7 +370,7 @@ class EmulatorLauncher:
                     "-rfbport",
                     str(vnc_port),
                     "-rfbauth",
-                    "/home/root/.vnc/passwd",
+                    "/opt/keys/vnc.pass",  # VNC password file created by Ansible
                     "-clip",
                     clip_region,
                     "-cursor",
@@ -451,7 +466,8 @@ class EmulatorLauncher:
                     "-verbose",
                     "-port",
                     "5554",
-                    "-feature", "-accel",  # Disable hardware acceleration
+                    "-feature",
+                    "-accel",  # Disable hardware acceleration
                     "-gpu",
                     "swiftshader",
                     "-no-boot-anim",
@@ -508,23 +524,20 @@ class EmulatorLauncher:
             os.makedirs(log_dir, exist_ok=True)
             stdout_log = os.path.join(log_dir, f"emulator_{email}_stdout.log")
             stderr_log = os.path.join(log_dir, f"emulator_{email}_stderr.log")
-            
+
             # Start emulator in background with logs
             logger.info(f"Starting emulator for {email} with AVD {avd_name} on display :{display_num}")
             logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
-            with open(stdout_log, 'w') as stdout_file, open(stderr_log, 'w') as stderr_file:
+            with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
                 process = subprocess.Popen(
-                    emulator_cmd, 
-                    env=env, 
-                    stdout=stdout_file, 
+                    emulator_cmd,
+                    env=env,
+                    stdout=stdout_file,
                     stderr=stderr_file,
-                    cwd="/tmp"  # Run in /tmp to avoid permission issues
+                    cwd="/tmp",  # Run in /tmp to avoid permission issues
                 )
-
-            # Wait a moment for emulator to initialize
-            time.sleep(2)
 
             # Use a fixed emulator ID since we're using port 5554
             emulator_id = "emulator-5554"
@@ -532,8 +545,7 @@ class EmulatorLauncher:
             # Store the running emulator info
             self.running_emulators[email] = (emulator_id, display_num)
 
-            # Wait briefly for initialization, then restart VNC with clipping
-            time.sleep(5)
+            # Configure VNC with clipping immediately
             self._restart_vnc_with_clipping(email, display_num)
 
             # Check if emulator process is actually running
@@ -544,8 +556,10 @@ class EmulatorLauncher:
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}")
                 return False, None, None
 
-            # Now should be running
+            # Process is running
             logger.info(f"Emulator process started with PID {process.pid}")
+            logger.info(f"Emulator started for {email} with ID {emulator_id} on display :{display_num}")
+
             return True, emulator_id, display_num
 
         except Exception as e:
@@ -661,9 +675,19 @@ class EmulatorLauncher:
         """
         emulator_id, _ = self.get_running_emulator(email)
         if not emulator_id:
+            logger.info(f"No running emulator found for {email}")
             return False
 
         try:
+            # Check process first - is the emulator still running?
+            ps_check = subprocess.run(
+                ["pgrep", "-f", "qemu-system-x86_64"], check=False, capture_output=True, text=True
+            )
+
+            if ps_check.returncode != 0:
+                logger.info(f"No emulator process found running")
+                return False
+
             # First check if device is connected
             devices_result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "devices"],
@@ -673,7 +697,14 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            if emulator_id not in devices_result.stdout or "device" not in devices_result.stdout:
+            if emulator_id not in devices_result.stdout:
+                logger.info(
+                    f"Emulator {emulator_id} not found in adb devices: {devices_result.stdout.strip()}"
+                )
+                return False
+
+            if "device" not in devices_result.stdout:
+                logger.info(f"Emulator {emulator_id} found but not shown as 'device' state")
                 return False
 
             # Check if boot is completed
@@ -692,7 +723,14 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            return boot_completed.stdout.strip() == "1"
+            result = boot_completed.stdout.strip() == "1"
+            if result:
+                logger.info(f"Emulator {emulator_id} is fully booted (sys.boot_completed=1)")
+            else:
+                logger.info(f"Emulator boot not complete: sys.boot_completed={boot_completed.stdout.strip()}")
+
+            return result
+
         except Exception as e:
             logger.error(f"Error checking if emulator is ready for {email}: {e}")
             return False

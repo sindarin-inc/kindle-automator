@@ -345,18 +345,28 @@ class EmulatorManager:
                     f"Emulator {emulator_id} launched successfully for {avd_name} on display :{display_num}"
                 )
 
-                # Wait for emulator to boot
+                # Wait for emulator to boot with active polling (should take ~7-8 seconds)
                 logger.info("Waiting for emulator to boot...")
-                deadline = time.time() + 120  # 120 seconds timeout
+                deadline = time.time() + 20  # 20 seconds timeout
 
+                # Active polling approach - check every second and log consistently
+                check_count = 0
                 while time.time() < deadline:
+                    check_count += 1
+
+                    # Log every check to provide clear, continuous feedback
+                    logger.info(f"Checking if emulator is ready for {email} (check #{check_count})")
+
+                    # Check if emulator is ready through the launcher
                     if self.emulator_launcher.is_emulator_ready(email):
-                        logger.info(f"Emulator for {email} is ready")
+                        logger.info(f"Emulator for {email} is ready after {check_count} checks")
                         return True
 
-                    time.sleep(1)
+                    # No sleep needed - immediately try again in the next iteration (1 second between logs)
 
-                logger.error(f"Timeout waiting for emulator to boot for {email}")
+                logger.error(
+                    f"Timeout waiting for emulator to boot for {email} after 20 seconds and {check_count} checks"
+                )
                 return False
             else:
                 logger.error(f"Failed to launch emulator for {avd_name}")

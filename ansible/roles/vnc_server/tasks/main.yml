@@ -55,14 +55,34 @@
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
 
-- name: Create simple VNC password file
-  copy:
-    dest: /home/{{ ansible_user }}/.vnc/passwd
-    content: "{{ vnc_password }}"
+# Create a properly encoded VNC password file using x11vnc utility
+- name: Create keys directory
+  file:
+    path: /opt/keys
+    state: directory
+    mode: "0755"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+
+- name: Check if VNC password file exists
+  stat:
+    path: /opt/keys/vnc.pass
+  register: vnc_pass_file
+
+- name: Create VNC password file using x11vnc -storepasswd
+  shell: |
+    x11vnc -storepasswd {{ vnc_password }} /opt/keys/vnc.pass
+  args:
+    creates: /opt/keys/vnc.pass
+  when: not vnc_pass_file.stat.exists
+  no_log: true
+
+- name: Set permissions on VNC password file
+  file:
+    path: /opt/keys/vnc.pass
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0600"
-  no_log: true
 
 
 - name: Copy app position finder script
