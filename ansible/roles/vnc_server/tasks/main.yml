@@ -13,6 +13,7 @@
       - npm
       - git
       - x11-utils  # Provides xwininfo, xdpyinfo
+      - jq          # Used for parsing JSON in scripts
     state: present
     update_cache: yes
 
@@ -37,13 +38,14 @@
 
 # Authentication managed by the Flask server's /vnc endpoint
 
-- name: Create log file for x11vnc
+- name: Create log files for x11vnc instances
   file:
-    path: /var/log/x11vnc.log
+    path: "/var/log/x11vnc-{{ item }}.log"
     state: touch
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0644"
+  loop: "{{ range(1, vnc_instances + 1)|list }}"
 
 - name: Create VNC server configuration directory
   file:
@@ -62,10 +64,10 @@
     mode: "0600"
   no_log: true
 
-- name: Create Xvfb service file
+- name: Create Xvfb systemd template
   template:
-    src: xvfb.service.j2
-    dest: /etc/systemd/system/xvfb.service
+    src: xvfb@.service.j2
+    dest: /etc/systemd/system/xvfb@.service
     mode: "0644"
   notify: restart xvfb
 
@@ -81,63 +83,82 @@
     dest: /usr/local/bin/start-vnc-clipped.sh
     mode: "0755"
 
+- name: Copy VNC profile restart script
+  copy:
+    src: restart-vnc-for-profile.sh
+    dest: /usr/local/bin/restart-vnc-for-profile.sh
+    mode: "0755"
+
 - name: Create VNC service file
   template:
-    src: vnc.service.j2
-    dest: /etc/systemd/system/vnc.service
+    src: vnc@.service.j2
+    dest: /etc/systemd/system/vnc@.service
     mode: "0644"
   notify: restart vnc
 
-- name: Create noVNC web service file
+- name: Create noVNC systemd template
   template:
-    src: novnc.service.j2
-    dest: /etc/systemd/system/novnc.service
+    src: novnc@.service.j2
+    dest: /etc/systemd/system/novnc@.service
     mode: "0644"
   notify: restart novnc
 
-- name: Create helper script for emulator with VNC display
+# Rather than using systemd services which are having issues, create a standalone script
+# that will set up VNC with app clipping
+- name: Create standalone VNC server script
   template:
-    src: vnc-emulator-launcher.sh.j2
-    dest: /usr/local/bin/vnc-emulator-launcher.sh
+    src: start-standalone-vnc.sh.j2
+    dest: /usr/local/bin/start-standalone-vnc.sh
     mode: "0755"
 
-- name: Enable and start Xvfb service
+- name: Create systemd service for standalone VNC
+  template:
+    src: standalone-vnc.service.j2
+    dest: /etc/systemd/system/standalone-vnc.service
+    mode: "0644"
+
+- name: Enable and start standalone VNC service
   systemd:
-    name: xvfb
+    name: standalone-vnc
     enabled: yes
     state: started
     daemon_reload: yes
 
-- name: Enable and start VNC service
-  systemd:
-    name: vnc
-    enabled: yes
-    state: started
-    daemon_reload: yes
-
-- name: Enable and start noVNC service
-  systemd:
-    name: novnc
-    enabled: yes
-    state: started
-    daemon_reload: yes
+- name: Create VNC instance mapping file
+  template:
+    src: vnc_instance_map.json.j2
+    dest: /opt/vnc_instance_map.json
+    mode: "0644"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
 
 - name: Add instructions to README
   copy:
     content: |
-      # VNC Setup for Kindle Automator
+      # Multi-Instance VNC Setup for Kindle Automator
 
-      The VNC server has been set up to allow remote viewing of the Android emulator.
+      The VNC server has been set up with {{ vnc_instances }} instances to allow multiple emulators to run simultaneously.
+
+      ## Display and Port Mappings
+
+      Each emulator runs on its own virtual display with its own VNC server:
+
+      {% for i in range(1, vnc_instances + 1) %}
+      - Instance {{ i }}: 
+          - Display :{{ i }}
+          - VNC Port: {{ 5900 + i }}
+          - noVNC Port: {{ 6080 + i }}
+      {% endfor %}
 
       ## Connection Options
 
       ### Option 1: Web Browser (Recommended for mobile devices)
-      Access the emulator through the secure redirect endpoint:
+      Access your emulator through the secure redirect endpoint:
       ```
       http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com
       ```
 
-      **Important:** This endpoint safely redirects you to the appropriate VNC server based on your profile.
+      **Important:** This endpoint safely redirects you to the appropriate VNC instance based on your profile.
       The sindarin_email parameter identifies which emulator profile to connect to.
       Authentication and profile validation is handled entirely by the Flask server's /vnc endpoint.
       This ensures security and proper isolation between different profiles.
@@ -146,7 +167,7 @@
       Password: {{ vnc_password }}
 
       ### Option 2: App-Only View (Recommended)
-      For the most focused view that shows only the Kindle app (360x620), use:
+      For the most focused view that shows only the Kindle app (360x640), use:
       ```
       http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&view=app_only
       ```
@@ -155,7 +176,7 @@
       The view=app_only parameter requests the app-only interface that crops out all the surrounding black space.
 
       This is designed specifically for viewing just the Kindle app with:
-      - Exact app dimensions (360x620)
+      - Exact app dimensions (360x640)
       - No black borders or extra space
       - Auto-connection
       - Mobile-optimized UI
@@ -170,14 +191,24 @@
       **Note:** The sindarin_email parameter is required to specify which profile to connect to.
       The mobile=1 parameter can be used to request the mobile-optimized interface.
 
-      ### Option 3: Native VNC Client (App-Only View)
-      Connect using any VNC client for a focused view of just the Kindle app:
+      This is designed specifically for captcha solving with:
+      - Auto-connection
+      - Mobile-optimized UI
+      - Responsive scaling
+
+      ### Option 3: Native VNC Client
+      Connect directly to your profile's assigned VNC server:
       - Host: {{ ansible_host }}
-      - Port: 5900
+      - Port: Assigned by the system (5901-5908)
       - Password: {{ vnc_password }}
       
-      **Important**: The VNC server is now configured to only show the Kindle app window (360x620 pixels),
+      **Important**: The VNC server is now configured to only show the Kindle app window (360x640 pixels),
       not the entire screen. This makes it perfect for viewing on mobile VNC clients.
+
+      To find which port your profile is using:
+      ```
+      curl http://{{ ansible_host }}:4098/profiles?email=your_profile_email@example.com
+      ```
 
       ## Mobile App Integration
 

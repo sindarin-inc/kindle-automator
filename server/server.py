@@ -33,6 +33,7 @@ from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import get_formatted_vnc_url, get_sindarin_email
+from server.utils.vnc_instance_manager import VNCInstanceManager
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -1351,6 +1352,22 @@ class ProfilesResource(Resource):
         # Get additional info about running emulators
         running_emulators = server.profile_manager.device_discovery.map_running_emulators()
 
+        # Get VNC instance information for each profile
+        vnc_instances = {}
+        for profile in profiles:
+            email = profile.get("email")
+            if email:
+                # Get VNC instance info
+                instance = vnc_instance_manager.get_instance_for_profile(email)
+                if instance:
+                    vnc_instances[email] = {
+                        "instance_id": instance["id"],
+                        "display": instance["display"],
+                        "vnc_port": instance["vnc_port"],
+                        "novnc_port": instance["novnc_port"],
+                        "launcher": instance["launcher"],
+                    }
+
         # Add information about which automators are active
         active_automators = {}
         for email, automator in server.automators.items():
@@ -1365,11 +1382,40 @@ class ProfilesResource(Resource):
                     "current_book": current_book,
                 }
 
+                # Add VNC instance info if available
+                if email in vnc_instances:
+                    active_automators[email]["vnc_instance"] = vnc_instances[email]
+
+        # Include a specific profile if requested
+        specific_email = request.args.get("email")
+        if specific_email:
+            # Find the specific profile
+            specific_profile = None
+            for profile in profiles:
+                if profile.get("email") == specific_email:
+                    specific_profile = profile
+                    break
+
+            # Include VNC info for this specific profile
+            vnc_info = vnc_instances.get(specific_email, {})
+            automator_info = active_automators.get(specific_email, {})
+
+            if specific_profile:
+                return {
+                    "profile": specific_profile,
+                    "vnc_instance": vnc_info,
+                    "automator": automator_info,
+                    "is_current": current and current.get("email") == specific_email,
+                }, 200
+            else:
+                return {"error": f"Profile {specific_email} not found"}, 404
+
         return {
             "profiles": profiles,
             "current": current,
             "running_emulators": running_emulators,
             "active_automators": active_automators,
+            "vnc_instances": vnc_instances,
         }, 200
 
     def post(self):
@@ -1660,6 +1706,13 @@ api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
 
 
+# Import at the top of the file (with other imports)
+from server.utils.vnc_instance_manager import VNCInstanceManager
+
+# Initialize VNC instance manager
+vnc_instance_manager = VNCInstanceManager()
+
+
 # Add new route to handle VNC connections
 @app.route("/vnc")
 def vnc_redirect():
@@ -1684,6 +1737,34 @@ def vnc_redirect():
         if not is_running:
             return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
 
+        # Get or assign a VNC instance for this profile
+        vnc_instance = None
+
+        # First check if the profile already has a VNC instance assigned
+        vnc_instance_id = server.profile_manager.get_vnc_instance_for_email(sindarin_email)
+
+        if vnc_instance_id:
+            # Profile already has a VNC instance assigned
+            logger.info(f"Profile {sindarin_email} already assigned to VNC instance {vnc_instance_id}")
+            vnc_instance = vnc_instance_manager.get_instance_for_profile(sindarin_email)
+
+        if not vnc_instance:
+            # Assign a new VNC instance to this profile
+            vnc_instance = vnc_instance_manager.assign_instance_to_profile(sindarin_email)
+
+            if vnc_instance:
+                # Update the profile with the assigned VNC instance
+                instance_id = vnc_instance["id"]
+                logger.info(f"Assigned VNC instance {instance_id} to profile {sindarin_email}")
+
+                # Save the VNC instance assignment in the profile
+                server.profile_manager.register_profile(
+                    email=sindarin_email, avd_name=avd_name, vnc_instance=instance_id
+                )
+            else:
+                logger.error(f"Failed to assign VNC instance to profile {sindarin_email}")
+                return {"error": "No VNC instances available"}, 503
+
     # Check for view type
     view_type = request.args.get("view", "")
     vnc_url = VNC_BASE_URL
@@ -1707,13 +1788,29 @@ def vnc_redirect():
             query_params.append(f"{key}={value}")
 
     # Construct the final URL with all parameters
-    if "?" in vnc_url:
-        vnc_url = f"{vnc_url}&{'&'.join(query_params)}"
-    else:
-        vnc_url = f"{vnc_url}?{'&'.join(query_params)}"
+    if query_params:
+        if "?" in novnc_url:
+            novnc_url = f"{novnc_url}&{'&'.join(query_params)}"
+        else:
+            novnc_url = f"{novnc_url}?{'&'.join(query_params)}"
 
+    logger.info(f"Redirecting {sindarin_email} to VNC instance: {novnc_url}")
+
+    # If we have a VNC instance assigned, restart the VNC server to ensure proper app clipping
+    if vnc_instance and platform.system() != "Darwin":
+        try:
+            # Use the restart-vnc-for-profile.sh script to restart the VNC server for this profile
+            restart_cmd = ["/usr/local/bin/restart-vnc-for-profile.sh", sindarin_email]
+            logger.info(f"Restarting VNC server for profile {sindarin_email}...")
+            
+            # Run the command with a short timeout
+            subprocess.run(restart_cmd, timeout=3, check=False)
+            logger.info(f"VNC server restart initiated for profile {sindarin_email}")
+        except Exception as e:
+            logger.warning(f"Failed to restart VNC server for profile {sindarin_email}: {e}")
+    
     # Redirect to the VNC URL
-    return redirect(vnc_url)
+    return redirect(novnc_url)
 
 
 def cleanup_resources():

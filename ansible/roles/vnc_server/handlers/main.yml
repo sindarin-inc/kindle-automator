@@ -1,18 +1,21 @@
 ---
 - name: restart xvfb
   systemd:
-    name: xvfb
+    name: "xvfb@{{ item }}"
     state: restarted
     daemon_reload: yes
+  loop: "{{ range(1, vnc_instances + 1)|list }}"
 
 - name: restart vnc
   systemd:
-    name: vnc
+    name: "vnc@{{ item }}"
     state: restarted
     daemon_reload: yes
+  loop: "{{ range(1, vnc_instances + 1)|list }}"
     
 - name: restart novnc
   systemd:
-    name: novnc
+    name: "novnc@{{ item }}"
     state: restarted
     daemon_reload: yes
+  loop: "{{ range(1, vnc_instances + 1)|list }}"

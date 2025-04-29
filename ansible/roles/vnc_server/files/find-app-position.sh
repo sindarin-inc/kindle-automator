@@ -1,13 +1,17 @@
 #!/bin/bash
 #
-# Script to find the Kindle app position and start x11vnc with the proper clip region
+# Script to find the Kindle app position for VNC clipping
+# Usage: find-app-position.sh [display]
 #
 
-# Use the virtual X display
-export DISPLAY=:1
+# Use the specified display or default to :1
+DISPLAY_ARG="${1:-:1}"
+export DISPLAY="$DISPLAY_ARG"
+
+echo "Finding app position on display $DISPLAY"
 
 # Wait for the app to be fully visible
-sleep 5
+sleep 3
 
 # Try to find the window with "Kindle" in the title or class
 APP_WINDOW=$(xwininfo -root -tree | grep -i kindle)

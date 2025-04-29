@@ -327,12 +327,7 @@ def handle_automator_response(server_instance):
             if not automator and hasattr(server_instance, "automator"):
                 automator = server_instance.automator
 
-            # Take diagnostic snapshot before operation if driver is ready
-            if automator and hasattr(automator, "driver") and automator.driver:
-                try:
-                    automator.take_diagnostic_snapshot(f"pre_{operation_name}")
-                except Exception as snap_e:
-                    logger.warning(f"Failed to take pre-operation snapshot for {operation_name}: {snap_e}")
+            # No longer taking pre-operation snapshots to improve performance
 
             try:
                 # Wrap the function call in retry logic
@@ -353,14 +348,7 @@ def handle_automator_response(server_instance):
                     else:
                         result, status_code = response, 200
 
-                    # Take diagnostic snapshot after successful operation
-                    if automator and hasattr(automator, "driver") and automator.driver and status_code < 400:
-                        try:
-                            automator.take_diagnostic_snapshot(f"post_{operation_name}")
-                        except Exception as snap_e:
-                            logger.warning(
-                                f"Failed to take post-operation snapshot for {operation_name}: {snap_e}"
-                            )
+                    # No longer taking post-operation snapshots to improve performance
 
                     # Check for special states that need handling
                     if automator and hasattr(automator, "state_machine") and automator.state_machine:
@@ -427,7 +415,7 @@ def handle_automator_response(server_instance):
                 logger.error(f"Error in endpoint {operation_name}: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
 
-                # Take diagnostic snapshot on error if the driver is still alive
+                # We still take error snapshots for debugging
                 if automator and hasattr(automator, "driver") and automator.driver:
                     try:
                         automator.take_diagnostic_snapshot(f"error_{operation_name}")
