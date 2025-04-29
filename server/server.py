@@ -1365,7 +1365,7 @@ class ProfilesResource(Resource):
                         "display": instance["display"],
                         "vnc_port": instance["vnc_port"],
                         "novnc_port": instance["novnc_port"],
-                        "launcher": instance["launcher"]
+                        "launcher": instance["launcher"],
                     }
 
         # Add information about which automators are active
@@ -1381,7 +1381,7 @@ class ProfilesResource(Resource):
                     "is_running": is_running,
                     "current_book": current_book,
                 }
-                
+
                 # Add VNC instance info if available
                 if email in vnc_instances:
                     active_automators[email]["vnc_instance"] = vnc_instances[email]
@@ -1395,17 +1395,17 @@ class ProfilesResource(Resource):
                 if profile.get("email") == specific_email:
                     specific_profile = profile
                     break
-                    
+
             # Include VNC info for this specific profile
             vnc_info = vnc_instances.get(specific_email, {})
             automator_info = active_automators.get(specific_email, {})
-            
+
             if specific_profile:
                 return {
                     "profile": specific_profile,
                     "vnc_instance": vnc_info,
                     "automator": automator_info,
-                    "is_current": current and current.get("email") == specific_email
+                    "is_current": current and current.get("email") == specific_email,
                 }, 200
             else:
                 return {"error": f"Profile {specific_email} not found"}, 404
@@ -1415,7 +1415,7 @@ class ProfilesResource(Resource):
             "current": current,
             "running_emulators": running_emulators,
             "active_automators": active_automators,
-            "vnc_instances": vnc_instances
+            "vnc_instances": vnc_instances,
         }, 200
 
     def post(self):
@@ -1712,6 +1712,7 @@ from server.utils.vnc_instance_manager import VNCInstanceManager
 # Initialize VNC instance manager
 vnc_instance_manager = VNCInstanceManager()
 
+
 # Add new route to handle VNC connections
 @app.route("/vnc")
 def vnc_redirect():
@@ -1735,80 +1736,55 @@ def vnc_redirect():
         logger.info(f"Is running: {is_running}, emulator_id: {emulator_id}, avd_name: {avd_name}")
         if not is_running:
             return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
-        
+
         # Get or assign a VNC instance for this profile
         vnc_instance = None
-        
+
         # First check if the profile already has a VNC instance assigned
         vnc_instance_id = server.profile_manager.get_vnc_instance_for_email(sindarin_email)
-        
+
         if vnc_instance_id:
             # Profile already has a VNC instance assigned
             logger.info(f"Profile {sindarin_email} already assigned to VNC instance {vnc_instance_id}")
             vnc_instance = vnc_instance_manager.get_instance_for_profile(sindarin_email)
-        
+
         if not vnc_instance:
             # Assign a new VNC instance to this profile
             vnc_instance = vnc_instance_manager.assign_instance_to_profile(sindarin_email)
-            
+
             if vnc_instance:
                 # Update the profile with the assigned VNC instance
                 instance_id = vnc_instance["id"]
                 logger.info(f"Assigned VNC instance {instance_id} to profile {sindarin_email}")
-                
+
                 # Save the VNC instance assignment in the profile
                 server.profile_manager.register_profile(
-                    email=sindarin_email,
-                    avd_name=avd_name,
-                    vnc_instance=instance_id
+                    email=sindarin_email, avd_name=avd_name, vnc_instance=instance_id
                 )
             else:
                 logger.error(f"Failed to assign VNC instance to profile {sindarin_email}")
                 return {"error": "No VNC instances available"}, 503
 
-    # Get the host name from the request
-    host = request.host.split(':')[0]
-    
-    # Get the noVNC URL for this profile's assigned instance
-    novnc_url = vnc_instance_manager.get_novnc_url(sindarin_email, host)
-    
-    if not novnc_url:
-        # Fallback to the base VNC URL if no specific instance is assigned
-        novnc_url = VNC_BASE_URL
-        logger.warning(f"Using fallback VNC URL for {sindarin_email}")
+    # Check for view type
+    view_type = request.args.get("view", "")
+    vnc_url = VNC_BASE_URL
 
-    # Construct the query string with additional parameters
-    query_params = []
-    
-    # Add VNC password parameter if not already in the query
-    if "password" not in request.args:
-        # Hardcode default VNC password
-        vnc_password = "changeme"
-        
-        try:
-            # Try to get from ansible config
-            ansible_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ansible")
-            config_path = os.path.join(ansible_dir, "roles", "vnc_server", "defaults", "main.yml")
-            
-            if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    for line in f:
-                        if "vnc_password:" in line:
-                            password = line.split(":", 1)[1].strip().strip('"').strip("'")
-                            vnc_password = password
-                            break
-            
-            logger.info(f"Using VNC password from config")
-        except Exception as e:
-            # Fallback to default password
-            logger.warning(f"Could not read VNC password from ansible config: {e}, using default")
-        
-        # Add the password parameter
-        query_params.append(f"password={vnc_password}")
-    
-    # Add any query parameters from the original request
+    # Construct the query string with sindarin_email and other required params
+    query_params = [
+        f"sindarin_email={sindarin_email}",
+        "autoconnect=true",
+        "password=changeme",
+    ]
+
+    # Add any other query parameters from the original request
     for key, value in request.args.items():
-        if key not in ["sindarin_email"]:  # Skip ones we've already handled
+        if key not in [
+            "sindarin_email",
+            "autoconnect",
+            "password",
+            "view",
+            "mobile",
+        ]:  # Skip ones we've already handled
             query_params.append(f"{key}={value}")
 
     # Construct the final URL with all parameters
@@ -1819,7 +1795,7 @@ def vnc_redirect():
             novnc_url = f"{novnc_url}?{'&'.join(query_params)}"
 
     logger.info(f"Redirecting {sindarin_email} to VNC instance: {novnc_url}")
-    
+
     # Redirect to the VNC URL
     return redirect(novnc_url)
 
