@@ -13,6 +13,34 @@
   vars:
     item: "{{ instance_number }}"
 
+- name: Clean up any existing processes for display {{ instance_number }}
+  block:
+    - name: Stop any running services for display {{ instance_number }}
+      systemd:
+        name: "{{ service_name }}"
+        state: stopped
+      loop_control:
+        loop_var: service_name
+      loop:
+        - "vnc@{{ instance_number }}"
+        - "xvfb@{{ instance_number }}"
+        - "novnc@{{ instance_number }}"
+      ignore_errors: yes
+
+    - name: Kill any leftover Xvfb processes for display {{ instance_number }}
+      shell: "pkill -f 'Xvfb :{{ instance_number }}' || true"
+      ignore_errors: yes
+
+    - name: Remove Xvfb lock files for display {{ instance_number }}
+      file:
+        path: "{{ lock_file }}"
+        state: absent
+      loop_control:
+        loop_var: lock_file
+      loop:
+        - "/tmp/.X{{ instance_number }}-lock"
+        - "/tmp/.X11-unix/X{{ instance_number }}"
+
 - name: Enable and start Xvfb service for instance {{ instance_number }}
   systemd:
     name: "xvfb@{{ instance_number }}"

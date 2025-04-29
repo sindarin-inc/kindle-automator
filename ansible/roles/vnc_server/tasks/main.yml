@@ -13,6 +13,7 @@
       - npm
       - git
       - x11-utils  # Provides xwininfo, xdpyinfo
+      - jq          # Used for parsing JSON in scripts
     state: present
     update_cache: yes
 
@@ -82,6 +83,12 @@
     dest: /usr/local/bin/start-vnc-clipped.sh
     mode: "0755"
 
+- name: Copy VNC profile restart script
+  copy:
+    src: restart-vnc-for-profile.sh
+    dest: /usr/local/bin/restart-vnc-for-profile.sh
+    mode: "0755"
+
 - name: Create VNC service file
   template:
     src: vnc@.service.j2
@@ -96,9 +103,26 @@
     mode: "0644"
   notify: restart novnc
 
-- name: Create service instances
-  include_tasks: create_instances.yml
-  loop: "{{ range(1, vnc_instances + 1)|list }}"
+# Rather than using systemd services which are having issues, create a standalone script
+# that will set up VNC with app clipping
+- name: Create standalone VNC server script
+  template:
+    src: start-standalone-vnc.sh.j2
+    dest: /usr/local/bin/start-standalone-vnc.sh
+    mode: "0755"
+
+- name: Create systemd service for standalone VNC
+  template:
+    src: standalone-vnc.service.j2
+    dest: /etc/systemd/system/standalone-vnc.service
+    mode: "0644"
+
+- name: Enable and start standalone VNC service
+  systemd:
+    name: standalone-vnc
+    enabled: yes
+    state: started
+    daemon_reload: yes
 
 - name: Create VNC instance mapping file
   template:
@@ -143,7 +167,7 @@
       Password: {{ vnc_password }}
 
       ### Option 2: App-Only View (Recommended)
-      For the most focused view that shows only the Kindle app (360x620), use:
+      For the most focused view that shows only the Kindle app (360x640), use:
       ```
       http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&view=app_only
       ```
@@ -152,7 +176,7 @@
       The view=app_only parameter requests the app-only interface that crops out all the surrounding black space.
 
       This is designed specifically for viewing just the Kindle app with:
-      - Exact app dimensions (360x620)
+      - Exact app dimensions (360x640)
       - No black borders or extra space
       - Auto-connection
       - Mobile-optimized UI
@@ -178,7 +202,7 @@
       - Port: Assigned by the system (5901-5908)
       - Password: {{ vnc_password }}
       
-      **Important**: The VNC server is now configured to only show the Kindle app window (360x620 pixels),
+      **Important**: The VNC server is now configured to only show the Kindle app window (360x640 pixels),
       not the entire screen. This makes it perfect for viewing on mobile VNC clients.
 
       To find which port your profile is using:

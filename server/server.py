@@ -1796,6 +1796,19 @@ def vnc_redirect():
 
     logger.info(f"Redirecting {sindarin_email} to VNC instance: {novnc_url}")
 
+    # If we have a VNC instance assigned, restart the VNC server to ensure proper app clipping
+    if vnc_instance and platform.system() != "Darwin":
+        try:
+            # Use the restart-vnc-for-profile.sh script to restart the VNC server for this profile
+            restart_cmd = ["/usr/local/bin/restart-vnc-for-profile.sh", sindarin_email]
+            logger.info(f"Restarting VNC server for profile {sindarin_email}...")
+            
+            # Run the command with a short timeout
+            subprocess.run(restart_cmd, timeout=3, check=False)
+            logger.info(f"VNC server restart initiated for profile {sindarin_email}")
+        except Exception as e:
+            logger.warning(f"Failed to restart VNC server for profile {sindarin_email}: {e}")
+    
     # Redirect to the VNC URL
     return redirect(novnc_url)
 
