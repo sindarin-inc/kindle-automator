@@ -58,7 +58,7 @@ def get_formatted_vnc_url(sindarin_email: Optional[str] = None, view_type: Optio
 
     # Construct the query string with sindarin_email and other required params
     query_params = [f"sindarin_email={sindarin_email}", "autoconnect=true", "password=changeme"]
-    
+
     # Add view type parameter if specified
     if view_type:
         query_params.append(f"view={view_type}")

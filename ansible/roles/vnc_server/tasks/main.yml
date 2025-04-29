@@ -82,13 +82,6 @@
     src: start-vnc-clipped.sh
     dest: /usr/local/bin/start-vnc-clipped.sh
     mode: "0755"
-
-- name: Copy VNC profile restart script
-  copy:
-    src: restart-vnc-for-profile.sh
-    dest: /usr/local/bin/restart-vnc-for-profile.sh
-    mode: "0755"
-
 - name: Create VNC service file
   template:
     src: vnc@.service.j2
@@ -131,12 +124,6 @@
     mode: "0644"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-
-- name: Create common VNC emulator launcher script
-  template:
-    src: vnc-emulator-launcher.sh.j2
-    dest: /usr/local/bin/vnc-emulator-launcher.sh
-    mode: "0755"
 
 - name: Create instance-specific VNC emulator launcher scripts
   include_tasks: create_instances.yml

@@ -33,7 +33,6 @@ from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import get_formatted_vnc_url, get_sindarin_email
-from server.utils.vnc_instance_manager import VNCInstanceManager
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -950,11 +949,47 @@ class AuthResource(Resource):
         # If recreate is requested, just clean up the automator but don't force a new emulator
         if recreate:
             logger.info(f"Recreate requested for {sindarin_email}, cleaning up existing automator")
-            # First clean up any existing automator
-            if server.automator:
+            # First check if we have an automator for this email specifically
+            if sindarin_email in server.automators:
+                logger.info(f"Cleaning up existing automator for {sindarin_email}")
+                automator = server.automators[sindarin_email]
+                if automator:
+                    automator.cleanup()
+                    server.automators[sindarin_email] = None
+            # Also check the legacy automator field
+            elif server.automator:
                 logger.info("Cleaning up existing automator")
                 server.automator.cleanup()
                 server.automator = None
+
+        # Initialize variables for Python launcher integration
+        emulator_id = None
+        display_num = None
+        using_python_launcher = False
+
+        # Check if we can use the Python launcher
+        if hasattr(server, "automators") and sindarin_email in server.automators:
+            automator = server.automators.get(sindarin_email)
+            if (
+                automator
+                and hasattr(automator, "emulator_manager")
+                and hasattr(automator.emulator_manager, "use_python_launcher")
+            ):
+                using_python_launcher = automator.emulator_manager.use_python_launcher
+
+                if using_python_launcher:
+                    logger.info(f"Using Python launcher for {sindarin_email}")
+                    # Check if we have a running emulator for this email
+                    if hasattr(automator.emulator_manager, "emulator_launcher"):
+                        emulator_id, display_num = (
+                            automator.emulator_manager.emulator_launcher.get_running_emulator(sindarin_email)
+                        )
+                        if emulator_id:
+                            logger.info(
+                                f"Found running emulator for {sindarin_email}: {emulator_id} on display :{display_num}"
+                            )
+                        else:
+                            logger.info(f"No running emulator found for {sindarin_email}, will launch one")
 
         # Switch to the profile for this email or create a new one
         # We don't force a new emulator - let the profile manager decide if one is needed
@@ -968,13 +1003,39 @@ class AuthResource(Resource):
         # we'll still continue with the profile tracking
 
         # Now that we've switched profiles, initialize the automator
-        if not server.automator:
+        if not server.automators.get(sindarin_email):
             server.initialize_automator()
             if not server.automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
 
+        # Re-check for Python launcher after initialization
+        automator = server.automators.get(sindarin_email)
+        if (
+            automator
+            and hasattr(automator, "emulator_manager")
+            and hasattr(automator.emulator_manager, "use_python_launcher")
+        ):
+            using_python_launcher = automator.emulator_manager.use_python_launcher
+
+            # If using Python launcher and no emulator is running yet, launch one
+            if (
+                using_python_launcher
+                and not emulator_id
+                and hasattr(automator.emulator_manager, "emulator_launcher")
+            ):
+                avd_name = automator.avd_name if hasattr(automator, "avd_name") else None
+                if avd_name:
+                    logger.info(f"Launching emulator for {sindarin_email} with AVD {avd_name}")
+                    success, emulator_id, display_num = (
+                        automator.emulator_manager.emulator_launcher.launch_emulator(avd_name, sindarin_email)
+                    )
+                    if success:
+                        logger.info(f"Successfully launched emulator {emulator_id} on display :{display_num}")
+                    else:
+                        logger.error(f"Failed to launch emulator for {sindarin_email}")
+
         # Use the prepare_for_authentication method - always using VNC
-        auth_status = server.automator.state_machine.auth_handler.prepare_for_authentication()
+        auth_status = automator.state_machine.auth_handler.prepare_for_authentication()
 
         logger.info(f"Authentication preparation status: {auth_status}")
 
@@ -986,7 +1047,7 @@ class AuthResource(Resource):
 
                 # Try to click the LIBRARY tab
                 try:
-                    library_tab = server.automator.driver.find_element(
+                    library_tab = automator.driver.find_element(
                         AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"
                     )
                     library_tab.click()
@@ -994,8 +1055,8 @@ class AuthResource(Resource):
                     time.sleep(1)  # Wait for tab transition
 
                     # Update state after clicking
-                    server.automator.state_machine.update_current_state()
-                    updated_state = server.automator.state_machine.current_state
+                    automator.state_machine.update_current_state()
+                    updated_state = automator.state_machine.current_state
 
                     if updated_state == AppState.LIBRARY:
                         logger.info("Successfully switched to LIBRARY state")
@@ -1012,13 +1073,21 @@ class AuthResource(Resource):
         formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
 
         # Prepare manual auth response without screenshot
-        current_state = server.automator.state_machine.current_state
+        current_state = automator.state_machine.current_state
         response_data = {
             "success": True,
             "manual_login_required": True,
             "message": "Ready for manual authentication via VNC",
             "state": current_state.name,
         }
+
+        # Add Python launcher information to the response if available
+        if using_python_launcher:
+            response_data["using_python_launcher"] = True
+            if emulator_id:
+                response_data["emulator_id"] = emulator_id
+            if display_num:
+                response_data["display_num"] = display_num
 
         return response_data, 200
 
@@ -1352,21 +1421,29 @@ class ProfilesResource(Resource):
         # Get additional info about running emulators
         running_emulators = server.profile_manager.device_discovery.map_running_emulators()
 
-        # Get VNC instance information for each profile
+        # Get VNC and emulator information for each profile
         vnc_instances = {}
         for profile in profiles:
             email = profile.get("email")
-            if email:
-                # Get VNC instance info
-                instance = vnc_instance_manager.get_instance_for_profile(email)
-                if instance:
-                    vnc_instances[email] = {
-                        "instance_id": instance["id"],
-                        "display": instance["display"],
-                        "vnc_port": instance["vnc_port"],
-                        "novnc_port": instance["novnc_port"],
-                        "launcher": instance["launcher"],
-                    }
+            if email and email in server.automators:
+                # Get VNC info using emulator_launcher
+                automator = server.automators.get(email)
+                if (
+                    automator
+                    and hasattr(automator, "emulator_manager")
+                    and hasattr(automator.emulator_manager, "emulator_launcher")
+                ):
+                    emulator_id, display_num = (
+                        automator.emulator_manager.emulator_launcher.get_running_emulator(email)
+                    )
+                    if display_num:
+                        vnc_instances[email] = {
+                            "instance_id": display_num,  # Use display number as instance ID
+                            "display": display_num,
+                            "vnc_port": 5900 + display_num,
+                            "novnc_port": 6080,  # Using standard noVNC port
+                            "emulator_id": emulator_id,
+                        }
 
         # Add information about which automators are active
         active_automators = {}
@@ -1465,17 +1542,29 @@ class ProfilesResource(Resource):
             return {"success": success, "message": message}, 200 if success else 500
 
         elif action == "stop_emulator":
-            # Find the running emulator for this email
-            is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(email)
+            # Find the automator for this email
+            automator = server.automators.get(email)
+            if (
+                not automator
+                or not hasattr(automator, "emulator_manager")
+                or not hasattr(automator.emulator_manager, "emulator_launcher")
+            ):
+                return {"success": False, "message": f"No valid automator found for {email}"}, 404
 
-            if not is_running:
+            # Check if there's a running emulator for this email
+            emulator_id, display_num = automator.emulator_manager.emulator_launcher.get_running_emulator(
+                email
+            )
+            if not emulator_id:
                 return {"success": False, "message": f"No running emulator found for {email}"}, 404
 
-            # Stop the emulator
-            success = server.profile_manager.stop_emulator(emulator_id)
+            # Stop the emulator using the launcher
+            logger.info(f"Stopping emulator for {email} using emulator_launcher")
+            success = automator.emulator_manager.emulator_launcher.stop_emulator(email)
 
             # Clean up the automator if it exists
             if email in server.automators and server.automators[email]:
+                logger.info(f"Cleaning up automator for {email}")
                 server.automators[email].cleanup()
                 server.automators[email] = None
 
@@ -1706,13 +1795,6 @@ api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
 
 
-# Import at the top of the file (with other imports)
-from server.utils.vnc_instance_manager import VNCInstanceManager
-
-# Initialize VNC instance manager
-vnc_instance_manager = VNCInstanceManager()
-
-
 # Add new route to handle VNC connections
 @app.route("/vnc")
 def vnc_redirect():
@@ -1726,47 +1808,36 @@ def vnc_redirect():
 
     logger.info(f"VNC redirect requested for email: {sindarin_email}")
 
-    # Check if we have a profile for this email
-    if server.profile_manager:
-        running_emulators = server.profile_manager.device_discovery.map_running_emulators()
-        logger.info(f"Running emulators: {running_emulators}")
-        is_running, emulator_id, avd_name = server.profile_manager.find_running_emulator_for_email(
-            sindarin_email
-        )
-        logger.info(f"Is running: {is_running}, emulator_id: {emulator_id}, avd_name: {avd_name}")
-        if not is_running:
-            return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
+    # Find the automator for the specified email
+    automator = None
+    if hasattr(server, "automators") and sindarin_email in server.automators:
+        automator = server.automators.get(sindarin_email)
+    else:
+        logger.error(f"No automator found for profile {sindarin_email}")
+        return {"error": f"No automator found for profile {sindarin_email}"}, 404
 
-        # Get or assign a VNC instance for this profile
-        vnc_instance = None
+    # Check if emulator_manager and emulator_launcher exist
+    if (
+        not automator
+        or not hasattr(automator, "emulator_manager")
+        or not hasattr(automator.emulator_manager, "emulator_launcher")
+    ):
+        logger.error(f"Automator for {sindarin_email} does not have emulator_launcher capability")
+        return {"error": f"Automator for {sindarin_email} does not have emulator_launcher capability"}, 500
 
-        # First check if the profile already has a VNC instance assigned
-        vnc_instance_id = server.profile_manager.get_vnc_instance_for_email(sindarin_email)
+    # Get the running emulator from the emulator launcher
+    emulator_id, display_num = automator.emulator_manager.emulator_launcher.get_running_emulator(
+        sindarin_email
+    )
 
-        if vnc_instance_id:
-            # Profile already has a VNC instance assigned
-            logger.info(f"Profile {sindarin_email} already assigned to VNC instance {vnc_instance_id}")
-            vnc_instance = vnc_instance_manager.get_instance_for_profile(sindarin_email)
+    # If no emulator is running, return an error
+    if not emulator_id or not display_num:
+        logger.error(f"No running emulator found for profile {sindarin_email}")
+        return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
 
-        if not vnc_instance:
-            # Assign a new VNC instance to this profile
-            vnc_instance = vnc_instance_manager.assign_instance_to_profile(sindarin_email)
+    logger.info(f"Found running emulator for {sindarin_email}: {emulator_id} on display :{display_num}")
 
-            if vnc_instance:
-                # Update the profile with the assigned VNC instance
-                instance_id = vnc_instance["id"]
-                logger.info(f"Assigned VNC instance {instance_id} to profile {sindarin_email}")
-
-                # Save the VNC instance assignment in the profile
-                server.profile_manager.register_profile(
-                    email=sindarin_email, avd_name=avd_name, vnc_instance=instance_id
-                )
-            else:
-                logger.error(f"Failed to assign VNC instance to profile {sindarin_email}")
-                return {"error": "No VNC instances available"}, 503
-
-    # Check for view type
-    view_type = request.args.get("view", "")
+    # Construct the VNC URL
     vnc_url = VNC_BASE_URL
 
     # Construct the query string with sindarin_email and other required params
@@ -1796,16 +1867,27 @@ def vnc_redirect():
 
     logger.info(f"Redirecting {sindarin_email} to VNC instance: {vnc_url}")
 
-    # If we have a VNC instance assigned, restart the VNC server to ensure proper app clipping
-    if vnc_instance and platform.system() != "Darwin":
+    # Restart the VNC server with proper clipping on Linux
+    if platform.system() != "Darwin":
         try:
-            # Use the restart-vnc-for-profile.sh script to restart the VNC server for this profile
-            restart_cmd = ["/usr/local/bin/restart-vnc-for-profile.sh", sindarin_email]
-            logger.info(f"Restarting VNC server for profile {sindarin_email}...")
+            # Pass the display number to the restart script
+            restart_cmd = ["/usr/local/bin/restart-vnc-for-profile.sh", sindarin_email, str(display_num)]
 
-            # Run the command with a short timeout
-            subprocess.run(restart_cmd, timeout=3, check=False)
+            logger.info(f"Restarting VNC server for profile {sindarin_email} on display :{display_num}...")
+
+            # Run the command with a short timeout and capture output
+            result = subprocess.run(restart_cmd, timeout=10, check=False, capture_output=True, text=True)
             logger.info(f"VNC server restart initiated for profile {sindarin_email}")
+
+            # Log the output for debugging
+            if result.stdout:
+                logger.info(f"VNC restart stdout: {result.stdout}")
+            if result.stderr:
+                logger.warning(f"VNC restart stderr: {result.stderr}")
+
+            # If the restart had an error code, log it
+            if result.returncode != 0:
+                logger.warning(f"VNC restart returned non-zero exit code: {result.returncode}")
         except Exception as e:
             logger.warning(f"Failed to restart VNC server for profile {sindarin_email}: {e}")
 
