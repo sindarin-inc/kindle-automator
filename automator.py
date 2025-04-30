@@ -49,7 +49,7 @@ class KindleAutomator:
 
         self.driver = driver.get_driver()
         self.device_id = driver.get_device_id()
-        
+
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it
         if self.driver and not hasattr(self.driver, "automator"):

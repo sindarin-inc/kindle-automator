@@ -351,7 +351,7 @@ class Driver:
         except Exception as e:
             logger.error(f"Error disabling sleep: {e}")
             return False
-            
+
     def _disable_status_bar(self) -> bool:
         """Hide the status bar at runtime using ADB."""
         try:
@@ -577,7 +577,7 @@ class Driver:
 
             # Disable sleep and app standby to prevent device and app from sleeping
             self._disable_sleep()
-            
+
             # Hide the status bar
             self._disable_status_bar()
 

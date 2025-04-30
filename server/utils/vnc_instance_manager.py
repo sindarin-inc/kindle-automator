@@ -61,7 +61,6 @@ class VNCInstanceManager:
                 with open(self.map_path, "r") as f:
                     data = json.load(f)
                     self.instances = data.get("instances", [])
-                    logger.info(f"Loaded {len(self.instances)} VNC instances from {self.map_path}")
                     return True
             else:
                 # Create a default mapping for development environments
@@ -120,9 +119,6 @@ class VNCInstanceManager:
             if os.path.exists(self.profiles_index_path):
                 with open(self.profiles_index_path, "r") as f:
                     self.profiles_index = json.load(f)
-                    logger.debug(
-                        f"Loaded {len(self.profiles_index)} profiles from {self.profiles_index_path}"
-                    )
             else:
                 logger.debug(f"No profiles index found at {self.profiles_index_path}")
                 self.profiles_index = {}
@@ -156,7 +152,6 @@ class VNCInstanceManager:
             # from AVD name like 'KindleAVD_kindle_solreader_com'
             if avd_id.startswith("KindleAVD_"):
                 unique_id = avd_id[len("KindleAVD_") :]
-                logger.debug(f"Mapped email {email} to AVD ID {avd_id} -> {unique_id}")
                 return unique_id
             else:
                 return avd_id
@@ -185,7 +180,6 @@ class VNCInstanceManager:
             # Now check if any instance is assigned to this AVD ID
             for instance in self.instances:
                 if instance.get("assigned_profile") == avd_id:
-                    logger.info(f"Found VNC instance for {email} via AVD ID {avd_id}")
                     return instance
 
         logger.debug(f"No VNC instance found for {email} (AVD ID: {avd_id if avd_id else 'None'})")

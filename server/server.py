@@ -1113,13 +1113,13 @@ class AuthResource(Resource):
         if automator.driver and not hasattr(automator.driver, "automator"):
             logger.info("Setting automator on driver object for state transitions")
             automator.driver.automator = automator
-            
+
         # This is the critical method that ensures we navigate to AUTH or LIBRARY
         logger.info("Calling prepare_for_authentication to navigate to sign-in screen or library")
         auth_status = automator.state_machine.auth_handler.prepare_for_authentication()
 
         logger.info(f"Authentication preparation status: {auth_status}")
-        
+
         # Check for fatal errors that would prevent continuing
         if auth_status.get("fatal_error", False):
             error_msg = auth_status.get("error", "Unknown fatal error in authentication preparation")
@@ -1154,7 +1154,7 @@ class AuthResource(Resource):
             else:
                 # We're already in LIBRARY state
                 return {"success": True, "message": "Already authenticated"}, 200
-                
+
         # Handle LIBRARY_SIGN_IN state - check if we need to click on the sign-in button
         if auth_status.get("state") == "LIBRARY_SIGN_IN":
             logger.info("Found empty library with sign-in button, clicking it to proceed with authentication")
@@ -1163,14 +1163,14 @@ class AuthResource(Resource):
                 result = automator.state_machine.library_handler.handle_library_sign_in()
                 if result:
                     logger.info("Successfully clicked sign-in button, now on authentication screen")
-                    
+
                     # Update the state after clicking
                     automator.state_machine.update_current_state()
                     current_state = automator.state_machine.current_state
                     state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                    
+
                     logger.info(f"Current state after clicking sign-in button: {state_name}")
-                    
+
                     # Update the auth status with the new state
                     auth_status["state"] = state_name
                     auth_status["requires_manual_login"] = True
@@ -1188,7 +1188,7 @@ class AuthResource(Resource):
         # Prepare manual auth response with details from auth_status
         current_state = automator.state_machine.current_state
         state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-        
+
         # Start with base response information
         response_data = {
             "success": True,
@@ -1197,15 +1197,15 @@ class AuthResource(Resource):
             "state": auth_status.get("state", state_name),
             "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response
         }
-        
+
         # Pass through any additional info from auth_status
         if "error" in auth_status:
             response_data["error_info"] = auth_status["error"]
-            
+
         # If we have custom messages, include them
         if "message" in auth_status:
             response_data["message"] = auth_status["message"]
-            
+
         # Add Python launcher information to the response if available
         if using_python_launcher:
             response_data["using_python_launcher"] = True
@@ -1213,7 +1213,7 @@ class AuthResource(Resource):
                 response_data["emulator_id"] = emulator_id
             if display_num:
                 response_data["display_num"] = display_num
-                
+
         # Log the final response in detail
         logger.info(f"Returning auth response: {response_data}")
 

@@ -79,10 +79,6 @@ def get_formatted_vnc_url(
         # Get the VNC port using either the email or AVD ID
         vnc_port = vnc_manager.get_vnc_port(sindarin_email)
 
-        # Log detailed information about what we're looking up
-        if avd_id:
-            logger.info(f"Email {sindarin_email} maps to AVD ID {avd_id}")
-
         # If port is found, return formatted URL
         if vnc_port:
             vnc_url = f"vnc://{hostname}:{vnc_port}"

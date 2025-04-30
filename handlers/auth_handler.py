@@ -72,37 +72,38 @@ class AuthenticationHandler:
         try:
             # Try multiple ways to access the automator
             automator = None
-            
+
             # Option 1: Check if the driver has an automator attribute directly
             if hasattr(self.driver, "automator"):
                 automator = self.driver.automator
                 logger.info("Found automator directly on driver object")
-            
+
             # Option 2: Check for _driver.automator attribute (old structure)
             elif hasattr(self.driver, "_driver"):
                 driver_instance = self.driver._driver
                 if driver_instance and hasattr(driver_instance, "automator"):
                     automator = driver_instance.automator
                     logger.info("Found automator through _driver attribute")
-            
+
             # Option 3: Look for automator in the session object
             elif hasattr(self.driver, "session"):
                 if hasattr(self.driver.session, "automator"):
                     automator = self.driver.session.automator
                     logger.info("Found automator in session object")
-            
+
             # If we couldn't find the automator, try to get it from Flask's global context
             if not automator:
                 # Try to get from flask app context if available
                 try:
                     from flask import current_app
+
                     server = current_app.config.get("server_instance")
                     if server and hasattr(server, "automator") and server.automator:
                         automator = server.automator
                         logger.info("Using automator from server instance in Flask context")
                 except (ImportError, RuntimeError):
                     logger.warning("Could not access Flask context to get automator")
-            
+
             # If we still don't have an automator, we can't continue
             if not automator:
                 logger.error("Could not access automator from driver session. This should not happen.")
@@ -127,12 +128,66 @@ class AuthenticationHandler:
                     "fatal_error": True,
                 }
 
-            # Update current state to make sure it's accurate
-            automator.state_machine.update_current_state()
-            current_state = automator.state_machine.current_state
-            state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+            # Force a thorough state update to detect LIBRARY_SIGN_IN if present
+            # This is critical to ensure we don't miss the empty library with sign-in button
+            try:
+                # Force view inspector to check specifically for empty library with sign-in button
+                logger.info("Forcing thorough state detection to check for LIBRARY_SIGN_IN state")
 
-            logger.info(f"Current state before authentication preparation: {state_name}")
+                # First check if we can find the sign-in button directly
+                found_sign_in_button = False
+                from views.library.interaction_strategies import (
+                    LIBRARY_SIGN_IN_BUTTON_STRATEGIES,
+                )
+
+                for strategy, locator in LIBRARY_SIGN_IN_BUTTON_STRATEGIES:
+                    try:
+                        button = self.driver.find_element(strategy, locator)
+                        if button.is_displayed():
+                            logger.info(f"Found sign-in button using strategy: {strategy}={locator}")
+                            found_sign_in_button = True
+                            break
+                    except Exception:
+                        continue
+
+                # Now have the state machine update its state
+                automator.state_machine.update_current_state()
+                current_state = automator.state_machine.current_state
+                state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                logger.info(f"Current state before authentication preparation: {state_name}")
+
+                # If we found the sign-in button but state_name isn't LIBRARY_SIGN_IN,
+                # override it because we know we're in LIBRARY_SIGN_IN
+                if found_sign_in_button and state_name != "LIBRARY_SIGN_IN":
+                    logger.info(
+                        f"State machine reports {state_name} but we found sign-in button - overriding to LIBRARY_SIGN_IN"
+                    )
+                    state_name = "LIBRARY_SIGN_IN"
+            except Exception as e:
+                logger.error(f"Error in thorough state detection: {e}")
+                # Fall back to regular state update
+                automator.state_machine.update_current_state()
+                current_state = automator.state_machine.current_state
+                state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                logger.info(f"Current state before authentication preparation: {state_name}")
+
+            # Check for empty library with sign-in button
+            if state_name == "LIBRARY_SIGN_IN":
+                logger.info(
+                    "Found empty library with sign-in button, we'll need to proceed with authentication"
+                )
+                email = ""
+                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                    current_profile = automator.profile_manager.get_current_profile()
+                    if current_profile and "email" in current_profile:
+                        email = current_profile["email"]
+
+                return {
+                    "state": "LIBRARY_SIGN_IN",
+                    "requires_manual_login": True,
+                    "already_authenticated": False,
+                    "vnc_url": get_formatted_vnc_url(email),
+                }
 
             # Check if we're already in a logged-in state (LIBRARY or HOME)
             if state_name in ["LIBRARY", "HOME"]:
@@ -149,7 +204,45 @@ class AuthenticationHandler:
                         logger.info("Clicked on LIBRARY tab")
                         time.sleep(1)  # Wait for tab transition
 
-                        # Update state after clicking
+                        # After clicking LIBRARY tab, check specifically for sign-in button first
+                        # This ensures we detect LIBRARY_SIGN_IN state even if state machine misses it
+                        found_sign_in_button = False
+                        from views.library.interaction_strategies import (
+                            LIBRARY_SIGN_IN_BUTTON_STRATEGIES,
+                        )
+
+                        for strategy, locator in LIBRARY_SIGN_IN_BUTTON_STRATEGIES:
+                            try:
+                                button = self.driver.find_element(strategy, locator)
+                                if button.is_displayed():
+                                    logger.info(
+                                        f"Found sign-in button after LIBRARY tab click using strategy: {strategy}={locator}"
+                                    )
+                                    found_sign_in_button = True
+                                    break
+                            except Exception:
+                                continue
+
+                        # If we found a sign-in button, we're in LIBRARY_SIGN_IN state
+                        if found_sign_in_button:
+                            logger.info(
+                                "Found sign-in button after clicking LIBRARY tab - we're in LIBRARY_SIGN_IN state"
+                            )
+                            # For empty library with sign-in button, return LIBRARY_SIGN_IN state
+                            email = ""
+                            if hasattr(automator, "profile_manager") and automator.profile_manager:
+                                current_profile = automator.profile_manager.get_current_profile()
+                                if current_profile and "email" in current_profile:
+                                    email = current_profile["email"]
+
+                            return {
+                                "state": "LIBRARY_SIGN_IN",
+                                "requires_manual_login": True,
+                                "already_authenticated": False,
+                                "vnc_url": get_formatted_vnc_url(email),
+                            }
+
+                        # If no sign-in button, proceed with normal state update
                         automator.state_machine.update_current_state()
                         updated_state = automator.state_machine.current_state
                         updated_state_name = (
@@ -159,6 +252,22 @@ class AuthenticationHandler:
                         if updated_state_name == "LIBRARY":
                             logger.info("Successfully navigated to LIBRARY state")
                             state_name = "LIBRARY"
+                        # Check if we navigated to empty library with sign-in button
+                        elif updated_state_name == "LIBRARY_SIGN_IN":
+                            logger.info("Navigated to empty library with sign-in button")
+                            # For empty library with sign-in button, return LIBRARY_SIGN_IN state
+                            email = ""
+                            if hasattr(automator, "profile_manager") and automator.profile_manager:
+                                current_profile = automator.profile_manager.get_current_profile()
+                                if current_profile and "email" in current_profile:
+                                    email = current_profile["email"]
+
+                            return {
+                                "state": "LIBRARY_SIGN_IN",
+                                "requires_manual_login": True,
+                                "already_authenticated": False,
+                                "vnc_url": get_formatted_vnc_url(email),
+                            }
                     except Exception as e:
                         logger.error(f"Error navigating from HOME to LIBRARY: {e}")
                         # Continue with HOME state
@@ -181,7 +290,7 @@ class AuthenticationHandler:
             # Check if we're already on the sign-in screen
             if state_name == "SIGN_IN":
                 logger.info("Already on sign-in screen")
-                
+
                 # Always require manual login
                 # Get email from automator's current profile if available
                 email = ""
@@ -261,7 +370,7 @@ class AuthenticationHandler:
             # Check if we've reached a key target state
             if state_name == "SIGN_IN":
                 logger.info("Successfully reached sign-in screen")
-                
+
                 # Always require manual login
                 return {
                     "state": "SIGN_IN",
@@ -286,7 +395,7 @@ class AuthenticationHandler:
             try:
                 # This is a critical operation - we must launch the Kindle app
                 # and either get to sign-in screen or library
-                
+
                 # First, let's make sure the app is active
                 try:
                     logger.info("Ensuring Kindle app is active via activate_app")
@@ -294,12 +403,12 @@ class AuthenticationHandler:
                     time.sleep(3)  # Give it time to launch
                 except Exception as launch_e:
                     logger.warning(f"Error activating Kindle app: {launch_e}")
-                
+
                 # Now attempt transition_to_library which will go through the auth flow if needed
                 logger.info("Executing transition_to_library to navigate through auth flow")
                 transition_result = automator.transition_to_library()
                 logger.info(f"transition_to_library result: {transition_result}")
-                
+
                 # Update our state to see where we are
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
@@ -319,7 +428,7 @@ class AuthenticationHandler:
                 # Handle based on the state we're now in
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to SIGN_IN state")
-                    
+
                     return {
                         "state": "SIGN_IN",
                         "requires_manual_login": True,
@@ -337,25 +446,26 @@ class AuthenticationHandler:
                 else:
                     # We're in some other state - give detailed information
                     logger.warning(f"After transition_to_library, in unexpected state: {state_name}")
-                    
+
                     # Take a screenshot for debugging
                     timestamp = int(time.time())
                     screenshot_path = os.path.join(self.screenshots_dir, f"auth_state_{timestamp}.png")
-                    
+
                     try:
                         self.driver.save_screenshot(screenshot_path)
                         logger.info(f"Saved screenshot of current state: {screenshot_path}")
                     except Exception as ss_err:
                         logger.error(f"Error saving screenshot: {ss_err}")
-                    
+
                     # Try to save page source for debugging
                     try:
                         from server.logging_config import store_page_source
+
                         source_path = store_page_source(self.driver.page_source, f"auth_state_{timestamp}")
                         logger.info(f"Saved page source for debugging: {source_path}")
                     except Exception as ps_err:
                         logger.error(f"Error saving page source: {ps_err}")
-                        
+
                     # Return with the unexpected state
                     return {
                         "state": state_name,
@@ -368,8 +478,9 @@ class AuthenticationHandler:
                 logger.error(f"Error in transition_to_library: {e}")
                 # Capture and log the full stack trace
                 import traceback
+
                 logger.error(f"Traceback: {traceback.format_exc()}")
-                
+
                 # Try one more time to update our state
                 try:
                     automator.state_machine.update_current_state()
@@ -517,7 +628,6 @@ class AuthenticationHandler:
         """
         try:
             logger.info("Authentication must be done manually via VNC")
-
 
             # Check for captcha as the only automated support we still provide
             if self._is_captcha_screen():
@@ -1063,4 +1173,3 @@ class AuthenticationHandler:
             return self.driver.find_element(by, locator)
         except:
             return None
-            

@@ -463,8 +463,6 @@ class EmulatorLauncher:
             # Calculate emulator ID based on port
             emulator_id = f"emulator-{emulator_port}"
 
-            logger.info(f"Using display :{display_num} and emulator port {emulator_port} for {email}")
-
             # Set up environment variables
             env = os.environ.copy()
             env["ANDROID_SDK_ROOT"] = self.android_home
@@ -581,10 +579,6 @@ class EmulatorLauncher:
                 logger.error(f"Emulator process exited immediately with code {exit_code}")
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}")
                 return False, None, None
-
-            # Process is running
-            logger.info(f"Emulator process started with PID {process.pid}")
-            logger.info(f"Emulator started for {email} with ID {emulator_id} on display :{display_num}")
 
             return True, emulator_id, display_num
 
