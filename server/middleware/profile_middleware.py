@@ -20,10 +20,6 @@ def ensure_user_profile_loaded(f):
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
 
-        # If sindarin_email was found, log it at INFO level
-        if sindarin_email:
-            logger.info(f"Found sindarin_email in request: {sindarin_email}")
-
         # If no sindarin_email found, don't attempt to load a profile and continue
         if not sindarin_email:
             logger.debug("No sindarin_email provided in request, continuing without profile check")
@@ -102,9 +98,6 @@ def ensure_user_profile_loaded(f):
         # then force a new emulator to ensure we get the correct profile
         force_new_emulator = current_email is not None and current_email != sindarin_email
 
-        logger.info(
-            f"Switching to profile for email: {sindarin_email} (forcing new emulator: {force_new_emulator})"
-        )
         success, message = server.switch_profile(sindarin_email, force_new_emulator=force_new_emulator)
 
         if not success:

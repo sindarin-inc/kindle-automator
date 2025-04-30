@@ -136,7 +136,6 @@ class DeviceDiscovery:
                     parts = [p.strip() for p in raw_name.split("\n") if p.strip()]
                     if parts:
                         clean_name = parts[0]
-                        logger.info(f"Cleaned AVD name from '{raw_name}' to '{clean_name}'")
                         avd_name = clean_name
                     else:
                         avd_name = raw_name  # Fallback to raw if no good parts
@@ -148,7 +147,6 @@ class DeviceDiscovery:
                     avd_name = avd_name.replace(" OK", "").replace("\nOK", "")
                     logger.info(f"Removed trailing 'OK' from AVD name: {avd_name}")
 
-                logger.info(f"Got AVD name '{avd_name}' directly from emulator {emulator_id}")
                 return avd_name
 
             # Alternative approach - try to get product.device property with short timeout
@@ -228,8 +226,6 @@ class DeviceDiscovery:
 
         try:
             # Try a faster check first
-            logger.debug("Checking for running emulators")
-
             # Clear any stale device listings first
             try:
                 # Use much longer timeouts for production environments
@@ -244,10 +240,7 @@ class DeviceDiscovery:
                         text=True,
                         timeout=adb_timeout,
                     )
-                    if version_check.returncode == 0:
-                        # Server is already running correctly, no need to restart it
-                        logger.debug("ADB server is running correctly, skipping restart")
-                    else:
+                    if version_check.returncode != 0:
                         logger.warning(f"ADB server appears to have issues: {version_check.stderr}")
                         # Only attempt to start the server if there are issues
                         logger.debug("Starting ADB server due to issues detected")
@@ -317,7 +310,7 @@ class DeviceDiscovery:
             # Parse output to get emulator IDs
             lines = result.stdout.strip().split("\n")
 
-            logger.debug(f"Raw adb devices output: {result.stdout}")
+            # logger.debug(f"Raw adb devices output: {result.stdout}")
 
             # Keep track of all emulators for better debugging
             all_devices = []
@@ -340,37 +333,16 @@ class DeviceDiscovery:
                         emulator_id = parts[0].strip()
                         device_state = parts[1].strip()
 
-                        logger.debug(f"Found emulator device {emulator_id} in state: {device_state}")
-
                         # Only proceed if the emulator device is actually available (not 'offline')
                         if device_state != "offline":
                             # Query emulator for AVD name with timeout
                             avd_name = self._get_avd_name_for_emulator(emulator_id)
                             if avd_name:
                                 running_emulators[avd_name] = emulator_id
-
-                                # If this AVD name has an email pattern, we might be able to extract the email
-                                extracted_email = self.extract_email_from_avd_name(avd_name)
-                                if extracted_email:
-                                    logger.info(
-                                        f"Found AVD with email pattern: {avd_name} -> {extracted_email}"
-                                    )
-                                    # Handle mapping in the caller
                             else:
                                 logger.warning(f"Could not determine AVD name for emulator {emulator_id}")
                         else:
                             logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
-
-            # Enhanced debug info
-            if all_devices:
-                logger.debug(f"All detected devices: {all_devices}")
-                logger.debug(f"Total devices: {len(all_devices)}, Emulators: {emulator_count}")
-
-            # Log emulator mapping results for debugging
-            if running_emulators:
-                logger.info(f"Found running emulators: {running_emulators}")
-            else:
-                logger.info("No running emulators found")
 
             return running_emulators
         except subprocess.TimeoutExpired:

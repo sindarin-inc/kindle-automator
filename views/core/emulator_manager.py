@@ -365,7 +365,6 @@ class EmulatorManager:
 
                         # Check if emulator is ready through the launcher
                         if self.emulator_launcher.is_emulator_ready(email):
-                            logger.info(f"Emulator for {email} is ready after {check_count} checks")
                             return True
 
                 logger.error(

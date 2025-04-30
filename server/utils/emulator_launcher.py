@@ -261,9 +261,6 @@ class EmulatorLauncher:
             )
 
             if xvfb_check.returncode != 0:
-                # Start Xvfb directly
-                logger.info(f"Starting Xvfb for display :{display_num}")
-
                 # Kill any existing Xvfb process for this display
                 subprocess.run(["pkill", "-f", f"Xvfb :{display_num}"], check=False)
                 # Clean up any lock files
@@ -297,8 +294,6 @@ class EmulatorLauncher:
                 if xvfb_check.returncode != 0:
                     logger.error(f"Failed to start Xvfb for display :{display_num}")
                     return False
-                else:
-                    logger.info(f"Successfully started Xvfb for display :{display_num}")
 
             # Check if x11vnc is running for this display
             vnc_check = subprocess.run(
@@ -307,8 +302,6 @@ class EmulatorLauncher:
 
             if vnc_check.returncode != 0:
                 # Start VNC directly
-                logger.info(f"Starting VNC service for display :{display_num}")
-
                 # Kill any existing VNC process for this display
                 vnc_port = 5900 + display_num
                 subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
@@ -356,17 +349,15 @@ class EmulatorLauncher:
                             parts = emulator_window_line.split()
                             if parts and parts[0].startswith("0x"):
                                 window_id = parts[0]
-                                logger.info(
-                                    f"Found emulator window ID: {window_id} from line: {emulator_window_line}"
-                                )
+                                # logger.info(
+                                #     f"Found emulator window ID: {window_id} from line: {emulator_window_line}"
+                                # )
 
                         # Log the full list of windows for debugging
-                        logger.info(f"Available windows on display :{display_num}:\n{list_windows.stdout}")
+                        # logger.info(f"Available windows on display :{display_num}:\n{list_windows.stdout}")
 
                     # Just use the window_id we found
-                    if window_id:
-                        logger.info(f"Will use window ID: {window_id} for VNC on display :{display_num}")
-                    else:
+                    if not window_id:
                         logger.warning(
                             f"Could not find any matching window on display :{display_num}, using full display"
                         )
@@ -414,8 +405,6 @@ class EmulatorLauncher:
                 if vnc_check.returncode != 0:
                     logger.error(f"Failed to start VNC server for display :{display_num}")
                     return False
-                else:
-                    logger.info(f"Successfully started VNC server for display :{display_num}")
 
             return True
 
@@ -488,27 +477,34 @@ class EmulatorLauncher:
             # Set DISPLAY for VNC if on Linux
             if platform.system() != "Darwin":
                 env["DISPLAY"] = f":{display_num}"
-                logger.info(f"Setting DISPLAY={env['DISPLAY']} for VNC")
 
             # Common emulator arguments for all platforms
             common_args = [
-                "-avd", avd_name,
+                "-avd",
+                avd_name,
                 "-no-audio",
-                "-no-boot-anim", 
+                "-no-boot-anim",
                 "-no-snapshot",
                 "-no-snapshot-load",
                 "-no-snapshot-save",
                 "-writable-system",
-                "-port", str(emulator_port),
+                "-port",
+                str(emulator_port),
                 # Keyboard configuration - disable soft keyboard
-                "-prop", "hw.keyboard=yes",
-                "-prop", "hw.keyboard.lid=yes",  # Force hardware keyboard mode
-                "-prop", "hw.mainKeys=yes",  # Enable hardware keys
+                "-prop",
+                "hw.keyboard=yes",
+                "-prop",
+                "hw.keyboard.lid=yes",  # Force hardware keyboard mode
+                "-prop",
+                "hw.mainKeys=yes",  # Enable hardware keys
                 # Status bar and nav buttons configuration
-                "-prop", "hw.statusBar=no",  # Disable status bar
-                "-prop", "hw.navButtons=no",  # Disable navigation buttons
+                "-prop",
+                "hw.statusBar=no",  # Disable status bar
+                "-prop",
+                "hw.navButtons=no",  # Disable navigation buttons
                 # Additional keyboard settings to disable soft keyboard
-                "-prop", "qemu.settings.system.show_ime_with_hard_keyboard=0"
+                "-prop",
+                "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
             # Build platform-specific emulator command
@@ -559,8 +555,8 @@ class EmulatorLauncher:
             logger.info(
                 f"Starting emulator for {email} with AVD {avd_name} on display :{display_num} and port {emulator_port}"
             )
-            logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
-            logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
+            # logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
+            # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
                 process = subprocess.Popen(

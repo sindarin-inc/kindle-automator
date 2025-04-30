@@ -70,11 +70,41 @@ class AuthenticationHandler:
                 - vnc_url: URL to access VNC for manual login
         """
         try:
-            # Access the automator through the driver to get current state
-            driver_instance = getattr(self.driver, "_driver", None)
-            if driver_instance and hasattr(driver_instance, "automator"):
-                automator = driver_instance.automator
-            else:
+            # Try multiple ways to access the automator
+            automator = None
+            
+            # Option 1: Check if the driver has an automator attribute directly
+            if hasattr(self.driver, "automator"):
+                automator = self.driver.automator
+                logger.info("Found automator directly on driver object")
+            
+            # Option 2: Check for _driver.automator attribute (old structure)
+            elif hasattr(self.driver, "_driver"):
+                driver_instance = self.driver._driver
+                if driver_instance and hasattr(driver_instance, "automator"):
+                    automator = driver_instance.automator
+                    logger.info("Found automator through _driver attribute")
+            
+            # Option 3: Look for automator in the session object
+            elif hasattr(self.driver, "session"):
+                if hasattr(self.driver.session, "automator"):
+                    automator = self.driver.session.automator
+                    logger.info("Found automator in session object")
+            
+            # If we couldn't find the automator, try to get it from Flask's global context
+            if not automator:
+                # Try to get from flask app context if available
+                try:
+                    from flask import current_app
+                    server = current_app.config.get("server_instance")
+                    if server and hasattr(server, "automator") and server.automator:
+                        automator = server.automator
+                        logger.info("Using automator from server instance in Flask context")
+                except (ImportError, RuntimeError):
+                    logger.warning("Could not access Flask context to get automator")
+            
+            # If we still don't have an automator, we can't continue
+            if not automator:
                 logger.error("Could not access automator from driver session. This should not happen.")
                 # Since we can't continue without an automator, return an error
                 return {

@@ -799,7 +799,6 @@ class AVDProfileManager:
             logger.info(f"Created new AVD {avd_name} for {email}")
 
         # Start the emulator
-        logger.info(f"Starting emulator for profile {email} (AVD: {avd_name})")
         if self.start_emulator(avd_name):
             # We need to get the emulator ID for the started emulator
             started_emulator_id = self.get_emulator_id_for_avd(avd_name)

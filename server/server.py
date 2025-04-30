@@ -1108,6 +1108,12 @@ class AuthResource(Resource):
                         logger.error(f"Failed to launch emulator for {sindarin_email}")
 
         # Use the prepare_for_authentication method - always using VNC
+        # Make sure the driver has access to the automator for state transitions
+        # This fixes the "Could not access automator from driver session" error
+        if automator.driver and not hasattr(automator.driver, "automator"):
+            logger.info("Setting automator on driver object for state transitions")
+            automator.driver.automator = automator
+            
         # This is the critical method that ensures we navigate to AUTH or LIBRARY
         logger.info("Calling prepare_for_authentication to navigate to sign-in screen or library")
         auth_status = automator.state_machine.auth_handler.prepare_for_authentication()
