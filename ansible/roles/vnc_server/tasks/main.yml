@@ -17,24 +17,6 @@
     state: present
     update_cache: yes
 
-- name: Install noVNC web-based VNC client
-  git:
-    repo: https://github.com/novnc/noVNC.git
-    dest: /opt/novnc
-    version: master
-
-- name: Copy noVNC configuration file for mobile embedding
-  copy:
-    src: novnc-config.js
-    dest: /opt/novnc/app/config.js
-    mode: "0644"
-
-- name: Install websockify for noVNC
-  apt:
-    name:
-      - python3-websockify
-      - python3-numpy # Required by websockify
-    state: present
 
 # Authentication managed by the Flask server's /vnc endpoint
 
@@ -91,11 +73,6 @@
     dest: /usr/local/bin/find-app-position.sh
     mode: "0755"
 
-- name: Copy VNC clipping script
-  copy:
-    src: start-vnc-clipped.sh
-    dest: /usr/local/bin/start-vnc-clipped.sh
-    mode: "0755"
 - name: Create VNC instance mapping file
   template:
     src: vnc_instance_map.json.j2
@@ -113,8 +90,6 @@
   loop:
     - "xvfb@*.service"
     - "vnc@*.service" 
-    - "novnc@*.service"
-    - "standalone-vnc.service"
   ignore_errors: yes
 
 - name: Remove deprecated systemd service files
@@ -124,8 +99,6 @@
   loop:
     - "xvfb@.service"
     - "vnc@.service"
-    - "novnc@.service"
-    - "standalone-vnc.service"
   notify: reload systemd
 
 # Create default instance mapping file for initial VNC instance management
@@ -161,98 +134,48 @@
       - Instance {{ i }}: 
           - Display :{{ i }}
           - VNC Port: {{ 5900 + i }}
-          - noVNC Port: {{ 6080 + i }}
       {% endfor %}
 
       ## Connection Options
 
-      ### Option 1: Web Browser (Recommended for mobile devices)
-      Access your emulator through the secure redirect endpoint:
-      ```
-      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com
-      ```
-
-      **Important:** This endpoint safely redirects you to the appropriate VNC instance based on your profile.
-      The sindarin_email parameter identifies which emulator profile to connect to.
-      Authentication and profile validation is handled entirely by the Flask server's /vnc endpoint.
-      This ensures security and proper isolation between different profiles.
-      
-      This works on any device with a modern web browser (iOS, Android, desktop).
-      Password: {{ vnc_password }}
-
-      ### Option 2: App-Only View (Recommended)
-      For the most focused view that shows only the Kindle app (360x640), use:
-      ```
-      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&view=app_only
-      ```
-      
-      **Note:** The sindarin_email parameter is required to specify which profile to connect to.
-      The view=app_only parameter requests the app-only interface that crops out all the surrounding black space.
-
-      This is designed specifically for viewing just the Kindle app with:
-      - Exact app dimensions (360x640)
-      - No black borders or extra space
-      - Auto-connection
-      - Mobile-optimized UI
-      - Responsive scaling
-      
-      ### Option 3: Mobile-Optimized Interface
-      For the mobile-optimized experience with full frame, use:
-      ```
-      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&mobile=1
-      ```
-      
-      **Note:** The sindarin_email parameter is required to specify which profile to connect to.
-      The mobile=1 parameter can be used to request the mobile-optimized interface.
-
-      This is designed specifically for captcha solving with:
-      - Auto-connection
-      - Mobile-optimized UI
-      - Responsive scaling
-
-      ### Option 3: Native VNC Client
+      ### Option 1: Native VNC Client (Recommended)
       Connect directly to your profile's assigned VNC server:
       - Host: {{ ansible_host }}
       - Port: Assigned by the system (5901-5908)
       - Password: {{ vnc_password }}
       
-      **Important**: The VNC server is now configured to only show the Kindle app window (360x640 pixels),
-      not the entire screen. This makes it perfect for viewing on mobile VNC clients.
+      **Important**: The VNC server is configured to show the Kindle app window (360x640 pixels).
+      This makes it perfect for viewing on mobile VNC clients.
+      
+      This works on any VNC client (iOS, Android, desktop).
+      Password: {{ vnc_password }}
 
+      ### Option 2: Port Lookup
       To find which port your profile is using:
       ```
       curl http://{{ ansible_host }}:4098/profiles?email=your_profile_email@example.com
       ```
 
+      This endpoint returns all the necessary connection details including:
+      - VNC port
+      - Display number
+      - Emulator ID
+
       ## Mobile App Integration
 
-      To embed the VNC viewer in your mobile app, use a WebView with this URL:
+      For mobile app integration, you can use any VNC client library:
+      
+      - Android: Use [AndroidVncClient](https://github.com/antlersoft/android-vnc-viewer)
+      - iOS: Use [FMVNC](https://github.com/FancyVCE/FMVNC) or other native VNC libraries
+      
+      Example configuration:
       ```
-      http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=your_profile_email@example.com&mobile=1&autoconnect=1
+      host: {{ ansible_host }}
+      port: [port from profiles endpoint]
+      password: {{ vnc_password }}
       ```
       
-      The sindarin_email parameter is required to specify which emulator profile to connect to.
-      Additional parameters can be passed through the redirect to customize your VNC experience.
-
-      This provides a lightweight VNC viewer perfect for embedding in mobile applications.
-
-      ### WebView Implementation (Example)
-
-      ```java
-      // Android example
-      String userEmail = "user@example.com";  // Get from your app's user profile
-      WebView webView = findViewById(R.id.webView);
-      webView.getSettings().setJavaScriptEnabled(true);
-      webView.loadUrl("http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=" + userEmail + "&mobile=1&autoconnect=1");
-      ```
-
-      ```swift
-      // iOS example
-      let userEmail = "user@example.com"  // Get from your app's user profile
-      let webView = WKWebView()
-      let url = URL(string: "http://{{ ansible_host }}:4098/kindle/vnc?sindarin_email=\(userEmail)&mobile=1&autoconnect=1")!
-      webView.load(URLRequest(url: url))
-      ```
+      The port for each profile can be retrieved from the profiles endpoint as shown above.
     dest: /home/{{ ansible_user }}/VNC_SETUP.md
     mode: "0644"
     owner: "{{ ansible_user }}"

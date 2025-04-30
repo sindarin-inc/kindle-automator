@@ -85,7 +85,6 @@ class VNCInstanceManager:
                 "id": i,
                 "display": i,
                 "vnc_port": 5900 + i,
-                "novnc_port": 6080 + i,
                 "launcher": f"/usr/local/bin/vnc-emulator-launcher-{i}.sh",
                 "assigned_profile": None,
             }
@@ -261,24 +260,6 @@ class VNCInstanceManager:
         logger.info(f"No VNC instance found assigned to profile {email}")
         return False
 
-    def get_novnc_url(self, email: str, host: str = "localhost") -> Optional[str]:
-        """
-        Get the noVNC URL for a profile's assigned instance.
-
-        Args:
-            email: Email address of the profile
-            host: Host name or IP address
-
-        Returns:
-            Optional[str]: The noVNC URL or None if no instance is assigned
-        """
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            port = instance["novnc_port"]
-            # Always include the default VNC password ("changeme")
-            # This will be overridden if a password parameter is provided in the request
-            return f"http://{host}:{port}/vnc.html?autoconnect=true&password=changeme"
-        return None
 
     def get_vnc_port(self, email: str) -> Optional[int]:
         """

@@ -82,7 +82,6 @@ class EmulatorLauncher:
                             "id": i,
                             "display": i,
                             "vnc_port": 5900 + i,
-                            "novnc_port": 6080 + i,
                             "emulator_port": 5554 + ((i - 1) * 2),  # 5554, 5556, 5558, etc.
                             "assigned_profile": None,
                         }

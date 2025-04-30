@@ -46,7 +46,7 @@ def get_formatted_vnc_url(
 ) -> Optional[str]:
     """
     Format the VNC URL with the given sindarin_email.
-    Returns a VNC protocol URL (vnc://hostname:port) rather than a NoVNC HTML URL.
+    Returns a VNC protocol URL (vnc://hostname:port).
 
     Args:
         sindarin_email: The email to include in the VNC URL

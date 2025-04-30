@@ -1516,7 +1516,6 @@ class ProfilesResource(Resource):
                             "instance_id": display_num,  # Use display number as instance ID
                             "display": display_num,
                             "vnc_port": 5900 + display_num,
-                            "novnc_port": 6080,  # Using standard noVNC port
                             "emulator_id": emulator_id,
                         }
 
@@ -1925,16 +1924,12 @@ def vnc_redirect():
     # Construct the query string with sindarin_email and other required params
     query_params = [
         f"sindarin_email={sindarin_email}",
-        "autoconnect=true",
-        "password=changeme",
     ]
 
     # Add any other query parameters from the original request
     for key, value in request.args.items():
         if key not in [
             "sindarin_email",
-            "autoconnect",
-            "password",
             "view",
             "mobile",
         ]:  # Skip ones we've already handled
