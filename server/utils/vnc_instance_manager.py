@@ -36,6 +36,16 @@ class VNCInstanceManager:
         # Ensure profiles directory exists
         os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
         
+        # Path to the profiles index file - same structure as used by AVDProfileManager
+        android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
+        self.profiles_dir = os.path.join(android_home, "profiles")
+        self.profiles_index_path = os.path.join(self.profiles_dir, "profiles_index.json")
+        self.profiles_index = {}  # Email to AVD mapping
+        
+        # Load the profiles index if it exists
+        self._load_profiles_index()
+        
+        # Load VNC instances
         self.load_instances()
 
     def load_instances(self) -> bool:
@@ -99,6 +109,59 @@ class VNCInstanceManager:
             logger.error(f"Error saving VNC instances: {e}")
             return False
 
+    def _load_profiles_index(self) -> Dict:
+        """
+        Load the profiles index file.
+        
+        Returns:
+            Dict: The profiles index mapping (email -> AVD ID)
+        """
+        try:
+            if os.path.exists(self.profiles_index_path):
+                with open(self.profiles_index_path, "r") as f:
+                    self.profiles_index = json.load(f)
+                    logger.debug(f"Loaded {len(self.profiles_index)} profiles from {self.profiles_index_path}")
+            else:
+                logger.debug(f"No profiles index found at {self.profiles_index_path}")
+                self.profiles_index = {}
+        except Exception as e:
+            logger.error(f"Error loading profiles index: {e}")
+            self.profiles_index = {}
+            
+        return self.profiles_index
+            
+    def _get_avd_id_for_email(self, email: str) -> Optional[str]:
+        """
+        Get the AVD ID for a given email from the profiles index.
+        
+        Args:
+            email: The user's email address
+            
+        Returns:
+            Optional[str]: The AVD ID or None if not found
+        """
+        if not email:
+            return None
+            
+        # Check if we need to reload the profiles index
+        if not self.profiles_index:
+            self._load_profiles_index()
+            
+        # Get the AVD ID from the profiles index
+        avd_id = self.profiles_index.get(email)
+        if avd_id:
+            # Extract just the unique identifier part (e.g., 'kindle_solreader_com')
+            # from AVD name like 'KindleAVD_kindle_solreader_com'
+            if avd_id.startswith("KindleAVD_"):
+                unique_id = avd_id[len("KindleAVD_"):]
+                logger.debug(f"Mapped email {email} to AVD ID {avd_id} -> {unique_id}")
+                return unique_id
+            else:
+                return avd_id
+                
+        logger.debug(f"No AVD ID found for email {email}")
+        return None
+        
     def get_instance_for_profile(self, email: str) -> Optional[Dict]:
         """
         Get the VNC instance assigned to a specific profile.
@@ -109,10 +172,21 @@ class VNCInstanceManager:
         Returns:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
-        # First check if any instance is already assigned to this profile
+        # First check if any instance is already assigned to this profile directly
         for instance in self.instances:
             if instance.get("assigned_profile") == email:
                 return instance
+        
+        # If not found, try to get the AVD ID from the profiles index
+        avd_id = self._get_avd_id_for_email(email)
+        if avd_id:
+            # Now check if any instance is assigned to this AVD ID
+            for instance in self.instances:
+                if instance.get("assigned_profile") == avd_id:
+                    logger.info(f"Found VNC instance for {email} via AVD ID {avd_id}")
+                    return instance
+        
+        logger.debug(f"No VNC instance found for {email} (AVD ID: {avd_id if avd_id else 'None'})")
         return None
 
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:

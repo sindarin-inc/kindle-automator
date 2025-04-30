@@ -71,12 +71,30 @@ def get_formatted_vnc_url(
     try:
         # Use the VNCInstanceManager to get the port
         vnc_manager = VNCInstanceManager()
+        
+        # Check if this email has an AVD mapping
+        avd_id = vnc_manager._get_avd_id_for_email(sindarin_email)
+        
+        # Get the VNC port using either the email or AVD ID
         vnc_port = vnc_manager.get_vnc_port(sindarin_email)
         
+        # Log detailed information about what we're looking up
+        if avd_id:
+            logger.info(f"Email {sindarin_email} maps to AVD ID {avd_id}")
+            
+        # If port is found, return formatted URL
         if vnc_port:
-            return f"vnc://{hostname}:{vnc_port}"
+            vnc_url = f"vnc://{hostname}:{vnc_port}"
+            logger.info(f"VNC URL for {sindarin_email}: {vnc_url}")
+            return vnc_url
         else:
-            logger.warning(f"No VNC port found for {sindarin_email}")
+            # List all assigned instances for debugging
+            assigned = {
+                instance.get("assigned_profile"): instance.get("vnc_port") 
+                for instance in vnc_manager.instances
+                if instance.get("assigned_profile")
+            }
+            logger.warning(f"No VNC port found for {sindarin_email}. Current assignments: {assigned}")
             return None
             
     except Exception as e:
