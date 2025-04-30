@@ -43,44 +43,42 @@ def get_sindarin_email(default_email: Optional[str] = None) -> Optional[str]:
 
 def get_formatted_vnc_url(
     sindarin_email: Optional[str] = None, view_type: Optional[str] = None, emulator_id: Optional[str] = None
-) -> str:
+) -> Optional[str]:
     """
-    Format the VNC URL with the given sindarin_email and optional view type.
+    Format the VNC URL with the given sindarin_email.
+    Returns a VNC protocol URL (vnc://hostname:port) rather than a NoVNC HTML URL.
 
     Args:
         sindarin_email: The email to include in the VNC URL
-        view_type: Optional view type (e.g., 'app_only' for app-only view)
-        emulator_id: Optional emulator ID (e.g., 'emulator-5554')
+        view_type: Optional view type (unused in direct VNC protocol URL)
+        emulator_id: Optional emulator ID (unused in direct VNC protocol URL)
 
     Returns:
-        str: The formatted VNC URL with query parameters
+        Optional[str]: The VNC protocol URL for the allocated VNC server, or None if not found
     """
+    # Import needed modules
+    from urllib.parse import urlparse
+    from server.utils.vnc_instance_manager import VNCInstanceManager
+    
+    # Extract hostname from the base URL (removing any port number)
+    hostname = urlparse(VNC_BASE_URL).netloc.split(':')[0]
+    
+    # If no email provided, we can't look up a VNC instance
     if not sindarin_email:
-        # Return the VNC URL without parameters
-        return VNC_BASE_URL
-
-    # Construct the query string with sindarin_email and other required params
-    query_params = [f"sindarin_email={sindarin_email}", "autoconnect=true", "password=changeme"]
-
-    # Add view type parameter if specified
-    if view_type:
-        query_params.append(f"view={view_type}")
-
-    # Add emulator ID and port if specified
-    if emulator_id:
-        query_params.append(f"emulator_id={emulator_id}")
-        # Extract port from emulator ID if possible
-        try:
-            emulator_port = int(emulator_id.split("-")[1])
-            query_params.append(f"emulator_port={emulator_port}")
-        except (ValueError, IndexError):
-            # Skip port if we can't extract it
-            pass
-
-    # Construct the final URL with all parameters
-    if "?" in VNC_BASE_URL:
-        vnc_url = f"{VNC_BASE_URL}&{'&'.join(query_params)}"
-    else:
-        vnc_url = f"{VNC_BASE_URL}?{'&'.join(query_params)}"
-
-    return vnc_url
+        logger.warning("No email provided for VNC URL, cannot determine port")
+        return None
+    
+    try:
+        # Use the VNCInstanceManager to get the port
+        vnc_manager = VNCInstanceManager()
+        vnc_port = vnc_manager.get_vnc_port(sindarin_email)
+        
+        if vnc_port:
+            return f"vnc://{hostname}:{vnc_port}"
+        else:
+            logger.warning(f"No VNC port found for {sindarin_email}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting VNC port for {sindarin_email}: {e}")
+        return None

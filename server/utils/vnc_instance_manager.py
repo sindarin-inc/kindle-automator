@@ -7,7 +7,15 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Default path to VNC instance mapping file
-VNC_INSTANCE_MAP_PATH = "/opt/vnc_instance_map.json"
+# Use the same path as in EmulatorLauncher - in the Android SDK profiles directory
+import os
+DEFAULT_ANDROID_SDK = "/opt/android-sdk"
+if os.environ.get("ANDROID_HOME"):
+    ANDROID_HOME = os.environ.get("ANDROID_HOME")
+else:
+    ANDROID_HOME = DEFAULT_ANDROID_SDK
+PROFILES_DIR = os.path.join(ANDROID_HOME, "profiles")
+VNC_INSTANCE_MAP_PATH = os.path.join(PROFILES_DIR, "vnc_instance_map.json")
 
 
 class VNCInstanceManager:
@@ -24,6 +32,10 @@ class VNCInstanceManager:
         """
         self.map_path = map_path
         self.instances = []
+        
+        # Ensure profiles directory exists
+        os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
+        
         self.load_instances()
 
     def load_instances(self) -> bool:

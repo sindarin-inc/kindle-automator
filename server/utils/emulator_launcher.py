@@ -1,5 +1,5 @@
 """
-Emulator launcher module that handles the coordination between 
+Emulator launcher module that handles the coordination between
 VNC servers, emulators, and the X display numbers.
 """
 
@@ -825,8 +825,6 @@ class EmulatorLauncher:
             result = boot_completed.stdout.strip() == "1"
             if result:
                 logger.info(f"Emulator {emulator_id} is fully booted (sys.boot_completed=1)")
-            else:
-                logger.info(f"Emulator boot not complete: sys.boot_completed={boot_completed.stdout.strip()}")
 
             return result
 
