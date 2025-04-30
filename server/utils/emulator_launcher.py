@@ -317,6 +317,64 @@ class EmulatorLauncher:
                 env = os.environ.copy()
                 env["DISPLAY"] = f":{display_num}"
 
+                # First find the Kindle app window ID using xwininfo
+                try:
+                    # Wait longer for the emulator window to appear
+                    time.sleep(5)
+
+                    # Use xwininfo with -tree to find the emulator window
+                    list_windows = subprocess.run(
+                        ["xwininfo", "-tree", "-root", "-display", f":{display_num}"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=env,
+                        timeout=5,
+                    )
+
+                    window_id = None
+
+                    if list_windows.returncode == 0:
+                        # Look for the Android Emulator window with the Kindle AVD
+                        window_lines = list_windows.stdout.splitlines()
+                        emulator_window_line = None
+
+                        # First, look for an emulator window with KindleAVD in the name
+                        for line in window_lines:
+                            if "Android Emulator" in line and "KindleAVD" in line:
+                                emulator_window_line = line
+                                break
+                        else:
+                            logger.warning(
+                                f"Could not find any matching window on display :{display_num}, using full display"
+                            )
+                            window_id = None
+
+                        # Extract window ID if we found a matching window
+                        if emulator_window_line:
+                            # The window ID is at the beginning of the line, like "0x400007"
+                            parts = emulator_window_line.split()
+                            if parts and parts[0].startswith("0x"):
+                                window_id = parts[0]
+                                logger.info(
+                                    f"Found emulator window ID: {window_id} from line: {emulator_window_line}"
+                                )
+
+                        # Log the full list of windows for debugging
+                        logger.info(f"Available windows on display :{display_num}:\n{list_windows.stdout}")
+
+                    # Just use the window_id we found
+                    if window_id:
+                        logger.info(f"Will use window ID: {window_id} for VNC on display :{display_num}")
+                    else:
+                        logger.warning(
+                            f"Could not find any matching window on display :{display_num}, using full display"
+                        )
+
+                except Exception as e:
+                    logger.warning(f"Error finding Kindle window ID: {e}, using full display")
+                    window_id = None
+
                 # Start x11vnc
                 vnc_cmd = [
                     "/usr/bin/x11vnc",
@@ -333,7 +391,7 @@ class EmulatorLauncher:
                     "-noxdamage",
                     "-noxfixes",
                     "-noipv6",
-                    "-scale", 
+                    "-scale",
                     "1:1",
                     "-desktop",
                     f"Kindle Emulator (Display {display_num})",
@@ -341,6 +399,10 @@ class EmulatorLauncher:
                     f"/var/log/x11vnc-{display_num}.log",
                     "-bg",
                 ]
+
+                # Add -id flag if we found a window ID
+                if window_id:
+                    vnc_cmd.extend(["-id", window_id])
 
                 subprocess.run(vnc_cmd, env=env, check=False, timeout=5)
                 time.sleep(2)
@@ -360,7 +422,6 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
             return False
-
 
     def launch_emulator(self, avd_name: str, email: str = None) -> Tuple[bool, Optional[str], Optional[int]]:
         """
@@ -415,14 +476,14 @@ class EmulatorLauncher:
 
             logger.info(f"Using display :{display_num} and emulator port {emulator_port} for {email}")
 
-            # Ensure VNC is running for this display
-            self._ensure_vnc_running(display_num)
-
             # Set up environment variables
             env = os.environ.copy()
             env["ANDROID_SDK_ROOT"] = self.android_home
             env["ANDROID_AVD_HOME"] = self.avd_dir
             env["ANDROID_HOME"] = self.android_home
+
+            # Launch emulator first so the window is available for xwininfo to find
+            # VNC server will be started after the emulator is launched
 
             # Set DISPLAY for VNC if on Linux
             if platform.system() != "Darwin":
@@ -522,7 +583,9 @@ class EmulatorLauncher:
             # Store the running emulator info with the correct ID based on port
             self.running_emulators[email] = (emulator_id, display_num)
 
-            # VNC is already running from the _ensure_vnc_running call above
+            # Now ensure VNC is running for this display after emulator is launched
+            if platform.system() != "Darwin":
+                self._ensure_vnc_running(display_num)
 
             # Check if emulator process is actually running
             if process.poll() is not None:
