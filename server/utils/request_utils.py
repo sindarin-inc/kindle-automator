@@ -41,13 +41,16 @@ def get_sindarin_email(default_email: Optional[str] = None) -> Optional[str]:
     return sindarin_email or default_email
 
 
-def get_formatted_vnc_url(sindarin_email: Optional[str] = None, view_type: Optional[str] = None) -> str:
+def get_formatted_vnc_url(
+    sindarin_email: Optional[str] = None, view_type: Optional[str] = None, emulator_id: Optional[str] = None
+) -> str:
     """
     Format the VNC URL with the given sindarin_email and optional view type.
 
     Args:
         sindarin_email: The email to include in the VNC URL
         view_type: Optional view type (e.g., 'app_only' for app-only view)
+        emulator_id: Optional emulator ID (e.g., 'emulator-5554')
 
     Returns:
         str: The formatted VNC URL with query parameters
@@ -62,6 +65,17 @@ def get_formatted_vnc_url(sindarin_email: Optional[str] = None, view_type: Optio
     # Add view type parameter if specified
     if view_type:
         query_params.append(f"view={view_type}")
+
+    # Add emulator ID and port if specified
+    if emulator_id:
+        query_params.append(f"emulator_id={emulator_id}")
+        # Extract port from emulator ID if possible
+        try:
+            emulator_port = int(emulator_id.split("-")[1])
+            query_params.append(f"emulator_port={emulator_port}")
+        except (ValueError, IndexError):
+            # Skip port if we can't extract it
+            pass
 
     # Construct the final URL with all parameters
     if "?" in VNC_BASE_URL:

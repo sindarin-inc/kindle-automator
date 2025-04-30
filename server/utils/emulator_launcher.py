@@ -57,9 +57,24 @@ class EmulatorLauncher:
             if os.path.exists(self.vnc_instance_map_path):
                 with open(self.vnc_instance_map_path, "r") as f:
                     self.vnc_instances = json.load(f)
+
+                # Check if the existing instances have emulator_port - migrate if needed
+                need_migration = False
+                for instance in self.vnc_instances["instances"]:
+                    if "emulator_port" not in instance:
+                        need_migration = True
+                        break
+
+                if need_migration:
+                    logger.info("Migrating VNC instance mapping to include emulator ports")
+                    for i, instance in enumerate(self.vnc_instances["instances"]):
+                        # Add emulator port (5554, 5556, 5558, etc.) - each uses 2 consecutive ports
+                        instance["emulator_port"] = 5554 + (i * 2)
+                    self._save_vnc_instance_map()
+
                 logger.info(f"Loaded VNC instance mapping from {self.vnc_instance_map_path}")
             else:
-                # Create default instances
+                # Create default instances with unique emulator ports
                 logger.info(f"Creating default VNC instance mapping at {self.vnc_instance_map_path}")
                 self.vnc_instances = {
                     "instances": [
@@ -68,6 +83,7 @@ class EmulatorLauncher:
                             "display": i,
                             "vnc_port": 5900 + i,
                             "novnc_port": 6080 + i,
+                            "emulator_port": 5554 + ((i - 1) * 2),  # 5554, 5556, 5558, etc.
                             "assigned_profile": None,
                         }
                         for i in range(1, 9)  # Create 8 default instances
@@ -115,6 +131,50 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error getting X display for {email}: {e}")
             return None
+
+    def get_emulator_port(self, email: str) -> Optional[int]:
+        """
+        Get the emulator port for a profile.
+
+        Args:
+            email: The profile email
+
+        Returns:
+            The emulator port or None if not found
+        """
+        try:
+            # First check the VNC instance map
+            for instance in self.vnc_instances["instances"]:
+                if instance["assigned_profile"] == email:
+                    return instance["emulator_port"]
+
+            # No port found
+            return None
+        except Exception as e:
+            logger.error(f"Error getting emulator port for {email}: {e}")
+            return None
+
+    def get_emulator_id(self, email: str) -> Optional[str]:
+        """
+        Get the emulator ID for a profile.
+
+        Args:
+            email: The profile email
+
+        Returns:
+            The emulator ID (e.g. emulator-5554) or None if not found
+        """
+        # First check running emulators
+        if email in self.running_emulators:
+            emulator_id, _ = self.running_emulators[email]
+            return emulator_id
+
+        # Then try to build from port
+        port = self.get_emulator_port(email)
+        if port:
+            return f"emulator-{port}"
+
+        return None
 
     def assign_display_to_profile(self, email: str) -> Optional[int]:
         """
@@ -425,17 +485,27 @@ class EmulatorLauncher:
                 logger.info(f"Emulator already running for {email}: {emulator_id} on display :{display_num}")
                 return True, emulator_id, display_num
 
-            # Get assigned display for this profile
+            # Get assigned display and emulator port for this profile
             display_num = self.get_x_display(email)
+            emulator_port = self.get_emulator_port(email)
 
-            if not display_num:
-                # Assign a new display
-                display_num = self.assign_display_to_profile(email)
-                if not display_num:
-                    logger.error(f"Failed to assign display for {email}, using default display :1")
-                    display_num = 1  # Default to display 1
+            if not display_num or not emulator_port:
+                # Assign a new display and port
+                instance_id = self.assign_display_to_profile(email)
+                if instance_id:
+                    display_num = self.get_x_display(email)
+                    emulator_port = self.get_emulator_port(email)
+                    if not display_num or not emulator_port:
+                        logger.error(f"Failed to get display or port for {email} after assignment")
+                        return False, None, None
+                else:
+                    logger.error(f"Failed to assign display for {email}")
+                    return False, None, None
 
-            logger.info(f"Using display :{display_num} for {email}")
+            # Calculate emulator ID based on port
+            emulator_id = f"emulator-{emulator_port}"
+
+            logger.info(f"Using display :{display_num} and emulator port {emulator_port} for {email}")
 
             # Ensure VNC is running for this display
             self._ensure_vnc_running(display_num)
@@ -453,7 +523,7 @@ class EmulatorLauncher:
 
             # Build emulator command based on host architecture
             if platform.system() != "Darwin":
-                # For Linux, use standard emulator with VNC
+                # For Linux, use standard emulator with VNC with dynamic port
                 emulator_cmd = [
                     f"{self.android_home}/emulator/emulator",
                     "-avd",
@@ -465,7 +535,7 @@ class EmulatorLauncher:
                     "-no-snapshot-save",
                     "-verbose",
                     "-port",
-                    "5554",
+                    str(emulator_port),  # Use the assigned port
                     "-feature",
                     "-accel",  # Disable hardware acceleration
                     "-gpu",
@@ -494,7 +564,7 @@ class EmulatorLauncher:
                     "-accel",
                     "off",
                     "-port",
-                    "5554",
+                    str(emulator_port),  # Use the assigned port
                 ]
             else:
                 # For Intel Macs
@@ -516,7 +586,7 @@ class EmulatorLauncher:
                     "-feature",
                     "HVF",
                     "-port",
-                    "5554",
+                    str(emulator_port),  # Use the assigned port
                 ]
 
             # Create log files for debugging
@@ -526,7 +596,9 @@ class EmulatorLauncher:
             stderr_log = os.path.join(log_dir, f"emulator_{email}_stderr.log")
 
             # Start emulator in background with logs
-            logger.info(f"Starting emulator for {email} with AVD {avd_name} on display :{display_num}")
+            logger.info(
+                f"Starting emulator for {email} with AVD {avd_name} on display :{display_num} and port {emulator_port}"
+            )
             logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
@@ -539,10 +611,7 @@ class EmulatorLauncher:
                     cwd="/tmp",  # Run in /tmp to avoid permission issues
                 )
 
-            # Use a fixed emulator ID since we're using port 5554
-            emulator_id = "emulator-5554"
-
-            # Store the running emulator info
+            # Store the running emulator info with the correct ID based on port
             self.running_emulators[email] = (emulator_id, display_num)
 
             # Configure VNC with clipping immediately
@@ -565,6 +634,28 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error launching emulator for {avd_name}: {e}")
             return False, None, None
+
+    def release_profile(self, email: str) -> bool:
+        """
+        Release the profile assignment in the VNC instance map.
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            for instance in self.vnc_instances["instances"]:
+                if instance["assigned_profile"] == email:
+                    instance["assigned_profile"] = None
+                    self._save_vnc_instance_map()
+                    logger.info(f"Released profile {email} from VNC instance map")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error releasing profile {email}: {e}")
+            return False
 
     def stop_emulator(self, email: str) -> bool:
         """
@@ -608,9 +699,17 @@ class EmulatorLauncher:
                 del self.running_emulators[email]
                 return True
 
-            # Force kill if still running
-            logger.warning(f"Emulator {emulator_id} did not stop gracefully, forcing termination")
-            subprocess.run(["pkill", "-f", "emulator"], check=False, timeout=3)
+            # Force kill if still running - but use the specific emulator port in the pattern
+            # to avoid killing other emulators when multiple are running
+            emulator_port = self.get_emulator_port(email)
+            if emulator_port:
+                logger.warning(
+                    f"Emulator {emulator_id} did not stop gracefully, killing process for port {emulator_port}"
+                )
+                subprocess.run(["pkill", "-f", f"emulator.*-port {emulator_port}"], check=False, timeout=3)
+            else:
+                logger.warning("Could not determine emulator port, using generic kill pattern")
+                subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
 
             # Remove from running emulators
             del self.running_emulators[email]

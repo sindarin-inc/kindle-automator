@@ -354,15 +354,15 @@ class EmulatorManager:
                 last_check_time = 0
                 while time.time() < deadline:
                     current_time = time.time()
-                    
+
                     # Ensure we're not logging more than once per second
                     if current_time - last_check_time >= 1.0:
                         check_count += 1
                         last_check_time = current_time
-                        
+
                         # Log each check with timestamp
                         logger.info(f"Checking if emulator is ready for {email} (check #{check_count})")
-                        
+
                         # Check if emulator is ready through the launcher
                         if self.emulator_launcher.is_emulator_ready(email):
                             logger.info(f"Emulator for {email} is ready after {check_count} checks")

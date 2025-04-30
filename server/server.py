@@ -163,8 +163,22 @@ class BooksResource(Resource):
                 # Get current email to include in VNC URL
                 sindarin_email = get_sindarin_email(default_email=server.current_email)
 
-                # Get the formatted VNC URL with the email
-                formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+                # Get the emulator ID for this email if possible
+                emulator_id = None
+                if sindarin_email and sindarin_email in server.automators:
+                    automator = server.automators.get(sindarin_email)
+                    if (
+                        automator
+                        and hasattr(automator, "emulator_manager")
+                        and hasattr(automator.emulator_manager, "emulator_launcher")
+                    ):
+                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                            sindarin_email
+                        )
+                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                # Get the formatted VNC URL with the email and emulator ID
+                formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
@@ -172,6 +186,7 @@ class BooksResource(Resource):
                     "requires_auth": True,
                     "current_state": current_state.name,
                     "message": "Authentication is required via VNC",
+                    "emulator_id": emulator_id,
                 }, 401
 
             # Try to transition to library state
@@ -187,8 +202,22 @@ class BooksResource(Resource):
                 # Get current email to include in VNC URL
                 sindarin_email = get_sindarin_email(default_email=server.current_email)
 
-                # Get the formatted VNC URL with the email
-                formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+                # Get the emulator ID for this email if possible
+                emulator_id = None
+                if sindarin_email and sindarin_email in server.automators:
+                    automator = server.automators.get(sindarin_email)
+                    if (
+                        automator
+                        and hasattr(automator, "emulator_manager")
+                        and hasattr(automator.emulator_manager, "emulator_launcher")
+                    ):
+                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                            sindarin_email
+                        )
+                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                # Get the formatted VNC URL with the email and emulator ID
+                formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
                 logger.info("Authentication required after transition attempt - providing VNC URL")
                 return {
@@ -196,6 +225,7 @@ class BooksResource(Resource):
                     "requires_auth": True,
                     "current_state": new_state.name,
                     "message": "Authentication is required via VNC",
+                    "emulator_id": emulator_id,
                 }, 401
 
             if transition_success:
@@ -208,14 +238,29 @@ class BooksResource(Resource):
                     # Get current email to include in VNC URL
                     sindarin_email = get_sindarin_email(default_email=server.current_email)
 
-                    # Get the formatted VNC URL with the email
-                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+                    # Get the emulator ID for this email if possible
+                    emulator_id = None
+                    if sindarin_email and sindarin_email in server.automators:
+                        automator = server.automators.get(sindarin_email)
+                        if (
+                            automator
+                            and hasattr(automator, "emulator_manager")
+                            and hasattr(automator.emulator_manager, "emulator_launcher")
+                        ):
+                            emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                                sindarin_email
+                            )
+                            logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                    # Get the formatted VNC URL with the email and emulator ID
+                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
                     logger.info("Authentication required - providing VNC URL for manual authentication")
                     return {
                         "error": "Authentication required",
                         "requires_auth": True,
                         "message": "Authentication is required via VNC",
+                        "emulator_id": emulator_id,
                     }, 401
 
                 return {"books": books}, 200
@@ -227,8 +272,22 @@ class BooksResource(Resource):
                     # Get current email to include in VNC URL
                     sindarin_email = get_sindarin_email(default_email=server.current_email)
 
-                    # Get the formatted VNC URL with the email
-                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+                    # Get the emulator ID for this email if possible
+                    emulator_id = None
+                    if sindarin_email and sindarin_email in server.automators:
+                        automator = server.automators.get(sindarin_email)
+                        if (
+                            automator
+                            and hasattr(automator, "emulator_manager")
+                            and hasattr(automator.emulator_manager, "emulator_launcher")
+                        ):
+                            emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                                sindarin_email
+                            )
+                            logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                    # Get the formatted VNC URL with the email and emulator ID
+                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
                     logger.info("Transition failed - authentication required - providing VNC URL")
                     return {
@@ -236,6 +295,7 @@ class BooksResource(Resource):
                         "requires_auth": True,
                         "current_state": updated_state.name,
                         "message": "Authentication is required via VNC",
+                        "emulator_id": emulator_id,
                     }, 401
                 else:
                     return {
@@ -251,14 +311,27 @@ class BooksResource(Resource):
             # Get current email to include in VNC URL
             sindarin_email = get_sindarin_email(default_email=server.current_email)
 
-            # Get the formatted VNC URL with the email
-            formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+            # Get the emulator ID for this email if possible
+            emulator_id = None
+            if sindarin_email and sindarin_email in server.automators:
+                automator = server.automators.get(sindarin_email)
+                if (
+                    automator
+                    and hasattr(automator, "emulator_manager")
+                    and hasattr(automator.emulator_manager, "emulator_launcher")
+                ):
+                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
+                    logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+            # Get the formatted VNC URL with the email and emulator ID
+            formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
             logger.info("Authentication required - providing VNC URL for manual authentication")
             return {
                 "error": "Authentication required",
                 "requires_auth": True,
                 "message": "Authentication is required via VNC",
+                "emulator_id": emulator_id,
             }, 401
 
         return {"books": books}, 200
@@ -1069,8 +1142,9 @@ class AuthResource(Resource):
                 return {"success": True, "message": "Already authenticated"}, 200
 
         # Always use manual login via VNC (no automation of Amazon credentials)
-        # Get the formatted VNC URL with the profile email
-        formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+        # Get the formatted VNC URL with the profile email and emulator ID
+        # emulator_id is already available from above code
+        formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
         # Prepare manual auth response without screenshot
         current_state = automator.state_machine.current_state
@@ -1890,6 +1964,19 @@ def vnc_redirect():
                 logger.warning(f"VNC restart returned non-zero exit code: {result.returncode}")
         except Exception as e:
             logger.warning(f"Failed to restart VNC server for profile {sindarin_email}: {e}")
+
+    # Add the emulator ID and port to the URL if available
+    if emulator_id:
+        # Extract the port number from emulator ID (e.g., "emulator-5554" -> 5554)
+        try:
+            emulator_port = int(emulator_id.split("-")[1])
+            if "?" in vnc_url:
+                vnc_url = f"{vnc_url}&emulator_id={emulator_id}&emulator_port={emulator_port}"
+            else:
+                vnc_url = f"{vnc_url}?emulator_id={emulator_id}&emulator_port={emulator_port}"
+            logger.info(f"Added emulator ID '{emulator_id}' and port '{emulator_port}' to VNC URL")
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Could not extract port from emulator ID '{emulator_id}': {e}")
 
     # Redirect to the VNC URL
     return redirect(vnc_url)
