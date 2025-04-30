@@ -67,11 +67,6 @@
     mode: "0600"
 
 
-- name: Copy app position finder script
-  copy:
-    src: find-app-position.sh
-    dest: /usr/local/bin/find-app-position.sh
-    mode: "0755"
 
 - name: Create VNC instance mapping file
   template:

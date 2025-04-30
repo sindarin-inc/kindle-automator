@@ -1,6 +1,6 @@
 ---
 # VNC Server configuration
-vnc_resolution: "360x620x24"
+vnc_resolution: "1080x1920x24"
 vnc_port: 5900
 vnc_password: "changeme" # Default password, should be overridden in production
 android_home: "/opt/android-sdk"

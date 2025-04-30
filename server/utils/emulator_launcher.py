@@ -271,13 +271,13 @@ class EmulatorLauncher:
                     ["rm", "-f", f"/tmp/.X{display_num}-lock", f"/tmp/.X11-unix/X{display_num}"], check=False
                 )
 
-                # Start Xvfb with 1280x800 resolution
+                # Start Xvfb with 1080x1920 resolution
                 xvfb_cmd = [
                     "/usr/bin/Xvfb",
                     f":{display_num}",
                     "-screen",
                     "0",
-                    "1280x800x24",
+                    "1080x1920x24",
                     "-ac",
                     "+extension",
                     "GLX",
@@ -333,8 +333,10 @@ class EmulatorLauncher:
                     "-noxdamage",
                     "-noxfixes",
                     "-noipv6",
+                    "-scale", 
+                    "1:1",
                     "-desktop",
-                    f"VNC Server :{display_num}",
+                    f"Kindle Emulator (Display {display_num})",
                     "-o",
                     f"/var/log/x11vnc-{display_num}.log",
                     "-bg",
@@ -359,99 +361,6 @@ class EmulatorLauncher:
             logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
             return False
 
-    def _restart_vnc_with_clipping(self, email: str, display_num: int) -> bool:
-        """
-        Restart the VNC server for the specified email and display with app window clipping.
-
-        Args:
-            email: The user's email address
-            display_num: The X display number
-
-        Returns:
-            True if restart was successful, False otherwise
-        """
-        if platform.system() == "Darwin":
-            # Skip VNC clipping on macOS
-            return True
-
-        try:
-            # Get the VNC port for this display
-            vnc_port = 5900 + display_num
-
-            # Kill existing x11vnc process for this display
-            subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
-            time.sleep(1)
-
-            # Set up the environment
-            env = os.environ.copy()
-            env["DISPLAY"] = f":{display_num}"
-
-            # Try to get app window position for clipping
-            try:
-                app_finder = "/usr/local/bin/find-app-position.sh"
-                if os.path.exists(app_finder) and os.access(app_finder, os.X_OK):
-                    logger.info(f"Using app finder to determine clip region for display :{display_num}")
-                    clip_result = subprocess.run(
-                        [app_finder, f":{display_num}"], env=env, capture_output=True, text=True, check=False
-                    )
-
-                    clip_region = clip_result.stdout.strip()
-                    # Verify it's a valid geometry
-                    if clip_region and "x" in clip_region and "+" in clip_region:
-                        logger.info(f"Using clip region: {clip_region}")
-                    else:
-                        # Default clipping for Kindle app (centered)
-                        logger.info("Using default clip region (center of screen)")
-                        x_pos = 400 - 360 // 2
-                        y_pos = 300 - 640 // 2
-                        clip_region = f"360x640+{x_pos}+{y_pos}"
-                else:
-                    # Default clipping for Kindle app (centered)
-                    logger.info("App finder not available, using default clip region")
-                    x_pos = 400 - 360 // 2
-                    y_pos = 300 - 640 // 2
-                    clip_region = f"360x640+{x_pos}+{y_pos}"
-            except Exception as e:
-                logger.error(f"Error getting clip region: {e}")
-                # Default clipping for Kindle app (centered)
-                x_pos = 400 - 360 // 2
-                y_pos = 300 - 640 // 2
-                clip_region = f"360x640+{x_pos}+{y_pos}"
-
-            # Restart x11vnc with clipping
-            vnc_process = subprocess.Popen(
-                [
-                    "/usr/bin/x11vnc",
-                    "-display",
-                    f":{display_num}",
-                    "-forever",
-                    "-shared",
-                    "-rfbport",
-                    str(vnc_port),
-                    "-rfbauth",
-                    "/opt/keys/vnc.pass",  # VNC password file created by Ansible
-                    "-clip",
-                    clip_region,
-                    "-cursor",
-                    "arrow",
-                    "-noxdamage",
-                    "-noxfixes",
-                    "-noipv6",
-                    "-desktop",
-                    f"Kindle App ({email})",
-                    "-o",
-                    f"/var/log/x11vnc-{display_num}.log",
-                    "-bg",
-                ],
-                env=env,
-            )
-
-            logger.info(f"Restarted VNC server for {email} on display :{display_num} with clipping")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error restarting VNC with clipping for {email} on display :{display_num}: {e}")
-            return False
 
     def launch_emulator(self, avd_name: str, email: str = None) -> Tuple[bool, Optional[str], Optional[int]]:
         """
@@ -613,8 +522,7 @@ class EmulatorLauncher:
             # Store the running emulator info with the correct ID based on port
             self.running_emulators[email] = (emulator_id, display_num)
 
-            # Configure VNC with clipping immediately
-            self._restart_vnc_with_clipping(email, display_num)
+            # VNC is already running from the _ensure_vnc_running call above
 
             # Check if emulator process is actually running
             if process.poll() is not None:
