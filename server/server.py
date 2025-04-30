@@ -1153,7 +1153,7 @@ class AuthResource(Resource):
             "manual_login_required": True,
             "message": "Ready for manual authentication via VNC",
             "state": current_state.name,
-            "vnc_url": formatted_vnc_url, # Include the VNC URL in the response
+            "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response
         }
 
         # Add Python launcher information to the response if available
@@ -1889,7 +1889,7 @@ def vnc_redirect():
     else:
         logger.error(f"No automator found for profile {sindarin_email}")
         return {"error": f"No automator found for profile {sindarin_email}"}, 404
-    
+
     # Check if emulator_manager exists and add it if missing
     if not hasattr(automator, "emulator_manager"):
         logger.warning(f"Automator for {sindarin_email} missing emulator_manager, adding it now")
@@ -1900,7 +1900,7 @@ def vnc_redirect():
         except Exception as e:
             logger.error(f"Failed to add emulator_manager to automator for {sindarin_email}: {e}")
             return {"error": f"Failed to initialize emulator_launcher capability: {e}"}, 500
-    
+
     # Check if emulator_launcher exists
     if not hasattr(automator.emulator_manager, "emulator_launcher"):
         logger.error(f"Automator for {sindarin_email} does not have emulator_launcher capability")
@@ -2049,7 +2049,7 @@ def main():
     # Preserve emulators when restarting the server
     # This allows for faster reconnection and avoids unnecessary restarts
     logger.info("Preserving emulators during server startup for faster connection")
-    
+
     # Ensure all existing automator instances have emulator_manager attached
     logger.info("Ensuring all automators have emulator_manager capability")
     for email, automator in server.automators.items():

@@ -244,6 +244,11 @@ class AVDCreator:
                 "hw.gps": "no",
                 "hw.camera.back": "none",
                 "hw.keyboard": "yes",
+                "hw.keyboard.lid": "yes",  # Disable soft keyboard, force hardware keyboard
+                "hw.keyboard.charmap": "qwerty2",  # Set keyboard layout
+                "hw.mainKeys": "yes",  # Enable hardware keys
+                "hw.statusBar": "no",  # Disable the status bar
+                "hw.navButtons": "no",  # Disable the navigation buttons
                 "hw.fastboot": "no",
                 "hw.arc": "false",
                 "hw.useext4": "yes",

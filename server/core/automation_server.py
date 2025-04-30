@@ -63,7 +63,7 @@ class AutomationServer:
         automator = KindleAutomator()
         # Connect profile manager to automator for device ID tracking
         automator.profile_manager = self.profile_manager
-        
+
         # Pass emulator_manager to automator for VNC integration
         automator.emulator_manager = self.profile_manager.emulator_manager
         logger.info(f"Added emulator_manager to automator for profile {target_email}")
@@ -103,7 +103,7 @@ class AutomationServer:
             if not hasattr(self.automators[email], "emulator_manager"):
                 logger.info(f"Adding missing emulator_manager to existing automator for {email}")
                 self.automators[email].emulator_manager = self.profile_manager.emulator_manager
-            
+
             if is_running and not force_new_emulator:
                 logger.info(
                     f"Automator already exists with running emulator for profile {email}, skipping profile switch"

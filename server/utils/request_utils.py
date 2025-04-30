@@ -58,30 +58,31 @@ def get_formatted_vnc_url(
     """
     # Import needed modules
     from urllib.parse import urlparse
+
     from server.utils.vnc_instance_manager import VNCInstanceManager
-    
+
     # Extract hostname from the base URL (removing any port number)
-    hostname = urlparse(VNC_BASE_URL).netloc.split(':')[0]
-    
+    hostname = urlparse(VNC_BASE_URL).netloc.split(":")[0]
+
     # If no email provided, we can't look up a VNC instance
     if not sindarin_email:
         logger.warning("No email provided for VNC URL, cannot determine port")
         return None
-    
+
     try:
         # Use the VNCInstanceManager to get the port
         vnc_manager = VNCInstanceManager()
-        
+
         # Check if this email has an AVD mapping
         avd_id = vnc_manager._get_avd_id_for_email(sindarin_email)
-        
+
         # Get the VNC port using either the email or AVD ID
         vnc_port = vnc_manager.get_vnc_port(sindarin_email)
-        
+
         # Log detailed information about what we're looking up
         if avd_id:
             logger.info(f"Email {sindarin_email} maps to AVD ID {avd_id}")
-            
+
         # If port is found, return formatted URL
         if vnc_port:
             vnc_url = f"vnc://{hostname}:{vnc_port}"
@@ -90,13 +91,13 @@ def get_formatted_vnc_url(
         else:
             # List all assigned instances for debugging
             assigned = {
-                instance.get("assigned_profile"): instance.get("vnc_port") 
+                instance.get("assigned_profile"): instance.get("vnc_port")
                 for instance in vnc_manager.instances
                 if instance.get("assigned_profile")
             }
             logger.warning(f"No VNC port found for {sindarin_email}. Current assignments: {assigned}")
             return None
-            
+
     except Exception as e:
         logger.error(f"Error getting VNC port for {sindarin_email}: {e}")
         return None

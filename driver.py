@@ -351,6 +351,55 @@ class Driver:
         except Exception as e:
             logger.error(f"Error disabling sleep: {e}")
             return False
+            
+    def _disable_status_bar(self) -> bool:
+        """Hide the status bar at runtime using ADB."""
+        try:
+            # Check if we already applied this setting to the current emulator
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and self.automator.profile_manager.current_profile
+            ):
+                profile = self.automator.profile_manager.current_profile
+                device_id = profile.get("emulator_id")
+
+                # If this is the same device and we already set status_bar_disabled, skip
+                if device_id == self.device_id and profile.get("status_bar_disabled", False):
+                    logger.info(f"Status bar already disabled for device {self.device_id}, skipping")
+                    return True
+
+            logger.info(f"Hiding status bar for device {self.device_id}")
+
+            # Run the ADB command to hide the status bar using immersive mode
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "global",
+                    "policy_control",
+                    "immersive.status=*",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            logger.info("Status bar hidden successfully")
+
+            # Record this setting in the profile
+            self._update_profile_setting("status_bar_disabled", True)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to hide status bar: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error hiding status bar: {e}")
+            return False
 
     def _cleanup_old_sessions(self):
         """Clean up any existing UiAutomator2 sessions."""
@@ -528,6 +577,9 @@ class Driver:
 
             # Disable sleep and app standby to prevent device and app from sleeping
             self._disable_sleep()
+            
+            # Hide the status bar
+            self._disable_status_bar()
 
             # Get Kindle launch activity
             app_activity = self._get_kindle_launch_activity()
