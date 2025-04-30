@@ -990,7 +990,6 @@ class LibraryHandler:
         Returns:
             bool: True if sign-in button is present, False otherwise
         """
-        from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 
         try:
             for strategy, locator in LIBRARY_SIGN_IN_STRATEGIES:
@@ -1038,7 +1037,6 @@ class LibraryHandler:
         Returns:
             bool: True if successfully clicked sign-in button, False otherwise
         """
-        from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 
         try:
             logger.info("Attempting to handle library sign-in...")

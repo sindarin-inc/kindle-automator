@@ -1154,6 +1154,31 @@ class AuthResource(Resource):
             else:
                 # We're already in LIBRARY state
                 return {"success": True, "message": "Already authenticated"}, 200
+                
+        # Handle LIBRARY_SIGN_IN state - check if we need to click on the sign-in button
+        if auth_status.get("state") == "LIBRARY_SIGN_IN":
+            logger.info("Found empty library with sign-in button, clicking it to proceed with authentication")
+            try:
+                # Use the library handler to click the sign-in button
+                result = automator.state_machine.library_handler.handle_library_sign_in()
+                if result:
+                    logger.info("Successfully clicked sign-in button, now on authentication screen")
+                    
+                    # Update the state after clicking
+                    automator.state_machine.update_current_state()
+                    current_state = automator.state_machine.current_state
+                    state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                    
+                    logger.info(f"Current state after clicking sign-in button: {state_name}")
+                    
+                    # Update the auth status with the new state
+                    auth_status["state"] = state_name
+                    auth_status["requires_manual_login"] = True
+                else:
+                    logger.error("Failed to click sign-in button")
+            except Exception as e:
+                logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}")
+                # Continue with normal authentication process
 
         # Always use manual login via VNC (no automation of Amazon credentials)
         # Get the formatted VNC URL with the profile email and emulator ID

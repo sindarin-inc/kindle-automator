@@ -69,7 +69,6 @@ class DeviceDiscovery:
         running_emulators = self.map_running_emulators()
 
         if not running_emulators:
-            logger.debug(f"No running emulators found for email: {email}")
             # Get the AVD name for this email from profiles_index or generate a standard one
             avd_name = None
             if profiles_index and email in profiles_index:

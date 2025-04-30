@@ -636,7 +636,6 @@ class AVDProfileManager:
                 self._save_current_profile(
                     email, self.current_profile.get("avd_name", ""), self.current_profile.get("emulator_id")
                 )
-        logger.info(f"Switching to profile for email: {email} (force_new_emulator={force_new_emulator})")
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:
