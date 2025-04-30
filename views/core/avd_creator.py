@@ -267,6 +267,11 @@ class AVDCreator:
                 "skin.name": "1080x1920",
                 "skin.path": "_no_skin",
                 "skin.path.backup": "_no_skin",
+                # Keyboard settings - try multiple approaches to disable soft keyboard
+                "qemu.keyboard_layout": "us",  # Set US keyboard layout
+                "qemu.enable_keyboard_permission": "yes",  # Enable keyboard permission
+                "qemu.hardware_keyboard_button_type": "power",  # Set hardware keyboard button type
+                "qemu.settings.system.show_ime_with_hard_keyboard": "0",  # Disable IME with hardware keyboard
             }
 
             # For arm64 hosts, make sure we're not trying to use x86_64

@@ -75,20 +75,26 @@ class AuthenticationHandler:
             if driver_instance and hasattr(driver_instance, "automator"):
                 automator = driver_instance.automator
             else:
+                logger.error("Could not access automator from driver session. This should not happen.")
+                # Since we can't continue without an automator, return an error
                 return {
                     "state": "UNKNOWN",
                     "requires_manual_login": True,
                     "already_authenticated": False,
                     "error": "Could not access automator from driver session",
+                    "fatal_error": True,
                 }
 
             # Make sure we have state information
             if not automator.state_machine:
+                logger.error("No state machine available in automator. This should not happen.")
+                # Since we can't continue without a state machine, return an error
                 return {
                     "state": "UNKNOWN",
                     "requires_manual_login": True,
                     "already_authenticated": False,
                     "error": "No state machine available",
+                    "fatal_error": True,
                 }
 
             # Update current state to make sure it's accurate
@@ -145,6 +151,7 @@ class AuthenticationHandler:
             # Check if we're already on the sign-in screen
             if state_name == "SIGN_IN":
                 logger.info("Already on sign-in screen")
+                
                 # Always require manual login
                 # Get email from automator's current profile if available
                 email = ""
@@ -166,96 +173,184 @@ class AuthenticationHandler:
             # We need to navigate to the sign-in screen
             logger.info(f"Need to navigate to sign-in screen from {state_name}")
 
+            # Make sure the Kindle app is running - this is crucial for auth
+            # First check if we need to install the app
+            if hasattr(automator, "ensure_kindle_installed") and callable(automator.ensure_kindle_installed):
+                try:
+                    logger.info("Ensuring Kindle app is installed")
+                    install_result = automator.ensure_kindle_installed()
+                    if install_result:
+                        logger.info("Kindle app is installed and ready")
+                    else:
+                        logger.warning("Could not verify Kindle app installation")
+                except Exception as e:
+                    logger.error(f"Error ensuring Kindle app is installed: {e}")
+
             # Try restarting the app to get to the sign-in screen
             success = False
             try:
                 if hasattr(automator, "restart_kindle_app"):
                     logger.info("Restarting Kindle app to get to sign-in screen")
                     success = automator.restart_kindle_app()
+                    if not success:
+                        logger.warning("restart_kindle_app reported failure, will try alternative approaches")
                 else:
                     logger.error("Automator doesn't have restart_kindle_app method")
+                    # Try to launch app directly as a fallback
+                    try:
+                        logger.info("Attempting to launch Kindle app directly")
+                        automator.driver.activate_app("com.amazon.kindle")
+                        time.sleep(3)  # Give it time to launch
+                        success = True
+                    except Exception as launch_e:
+                        logger.error(f"Error launching Kindle app: {launch_e}")
             except Exception as e:
                 logger.error(f"Error restarting app: {e}")
+                # Try to at least launch the app
+                try:
+                    logger.info("Fallback - attempting to launch Kindle app via activate_app")
+                    automator.driver.activate_app("com.amazon.kindle")
+                    time.sleep(3)  # Give it time to launch
+                    success = True
+                except Exception as activate_e:
+                    logger.error(f"Error activating Kindle app: {activate_e}")
 
-            # Check if restart succeeded and we're on the sign-in screen
-            if success:
+            # Update our state to see where we are
+            automator.state_machine.update_current_state()
+            current_state = automator.state_machine.current_state
+            state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+            logger.info(f"Current state after app launch: {state_name}")
+
+            # For authenticated states, provide a VNC URL with current email
+            email = ""
+            if hasattr(automator, "profile_manager") and automator.profile_manager:
+                current_profile = automator.profile_manager.get_current_profile()
+                if current_profile and "email" in current_profile:
+                    email = current_profile["email"]
+
+            # Check if we've reached a key target state
+            if state_name == "SIGN_IN":
+                logger.info("Successfully reached sign-in screen")
+                
+                # Always require manual login
+                return {
+                    "state": "SIGN_IN",
+                    "requires_manual_login": True,
+                    "already_authenticated": False,
+                    "vnc_url": get_formatted_vnc_url(email),
+                }
+
+            # If we reached a library state after restart, we're already logged in
+            if state_name in ["LIBRARY", "HOME"]:
+                logger.info(f"Already authenticated in {state_name}")
+                return {
+                    "state": state_name,
+                    "requires_manual_login": False,
+                    "already_authenticated": True,
+                    "vnc_url": get_formatted_vnc_url(email),
+                }
+
+            # As a fallback, always try to use transition_to_library which may go through auth flow
+            # This is the most important part - we want to make sure we're in a good state
+            logger.info("Using transition_to_library to ensure we reach AUTH or LIBRARY state")
+            try:
+                # This is a critical operation - we must launch the Kindle app
+                # and either get to sign-in screen or library
+                
+                # First, let's make sure the app is active
+                try:
+                    logger.info("Ensuring Kindle app is active via activate_app")
+                    automator.driver.activate_app("com.amazon.kindle")
+                    time.sleep(3)  # Give it time to launch
+                except Exception as launch_e:
+                    logger.warning(f"Error activating Kindle app: {launch_e}")
+                
+                # Now attempt transition_to_library which will go through the auth flow if needed
+                logger.info("Executing transition_to_library to navigate through auth flow")
+                transition_result = automator.transition_to_library()
+                logger.info(f"transition_to_library result: {transition_result}")
+                
+                # Update our state to see where we are
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                logger.info(f"Current state after transition_to_library: {state_name}")
 
-                # For authenticated states, provide a VNC URL with current email
+                # Get the email for this profile to use in VNC URL
                 email = ""
                 if hasattr(automator, "profile_manager") and automator.profile_manager:
                     current_profile = automator.profile_manager.get_current_profile()
                     if current_profile and "email" in current_profile:
                         email = current_profile["email"]
 
+                # Get the formatted VNC URL with the current email
+                formatted_vnc_url = get_formatted_vnc_url(email)
+
+                # Handle based on the state we're now in
                 if state_name == "SIGN_IN":
-                    logger.info("Successfully navigated to sign-in screen")
-                    # Always require manual login
-                    return {
-                        "state": "SIGN_IN",
-                        "requires_manual_login": True,
-                        "already_authenticated": False,
-                        "vnc_url": get_formatted_vnc_url(email),
-                    }
-
-                # If we reached a library state after restart, we're already logged in
-                if state_name in ["LIBRARY", "HOME"]:
-                    return {
-                        "state": state_name,
-                        "requires_manual_login": False,
-                        "already_authenticated": True,
-                        "vnc_url": get_formatted_vnc_url(email),
-                    }
-
-            # As a fallback, try to use transition_to_library which may go through auth flow
-            try:
-                logger.info("Trying transition_to_library to navigate through auth flow")
-                automator.transition_to_library()
-                automator.state_machine.update_current_state()
-                current_state = automator.state_machine.current_state
-                state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-
-                if state_name == "SIGN_IN":
-                    logger.info("Successfully navigated to sign-in screen via transition_to_library")
-                    # Always require manual login
-                    # Get email from automator's current profile if available
-                    email = ""
-                    if hasattr(automator, "profile_manager") and automator.profile_manager:
-                        current_profile = automator.profile_manager.get_current_profile()
-                        if current_profile and "email" in current_profile:
-                            email = current_profile["email"]
-
-                    # Get the formatted VNC URL with the current email
-                    formatted_vnc_url = get_formatted_vnc_url(email)
-
+                    logger.info("Successfully navigated to SIGN_IN state")
+                    
                     return {
                         "state": "SIGN_IN",
                         "requires_manual_login": True,
                         "already_authenticated": False,
                         "vnc_url": formatted_vnc_url,
                     }
-
-                if state_name in ["LIBRARY", "HOME"]:
-                    # For authenticated states, provide a VNC URL with current email
-                    email = ""
-                    if hasattr(automator, "profile_manager") and automator.profile_manager:
-                        current_profile = automator.profile_manager.get_current_profile()
-                        if current_profile and "email" in current_profile:
-                            email = current_profile["email"]
-
+                elif state_name in ["LIBRARY", "HOME"]:
+                    logger.info(f"Successfully navigated to {state_name} state")
                     return {
                         "state": state_name,
                         "requires_manual_login": False,
                         "already_authenticated": True,
-                        "vnc_url": get_formatted_vnc_url(email),
+                        "vnc_url": formatted_vnc_url,
+                    }
+                else:
+                    # We're in some other state - give detailed information
+                    logger.warning(f"After transition_to_library, in unexpected state: {state_name}")
+                    
+                    # Take a screenshot for debugging
+                    timestamp = int(time.time())
+                    screenshot_path = os.path.join(self.screenshots_dir, f"auth_state_{timestamp}.png")
+                    
+                    try:
+                        self.driver.save_screenshot(screenshot_path)
+                        logger.info(f"Saved screenshot of current state: {screenshot_path}")
+                    except Exception as ss_err:
+                        logger.error(f"Error saving screenshot: {ss_err}")
+                    
+                    # Try to save page source for debugging
+                    try:
+                        from server.logging_config import store_page_source
+                        source_path = store_page_source(self.driver.page_source, f"auth_state_{timestamp}")
+                        logger.info(f"Saved page source for debugging: {source_path}")
+                    except Exception as ps_err:
+                        logger.error(f"Error saving page source: {ps_err}")
+                        
+                    # Return with the unexpected state
+                    return {
+                        "state": state_name,
+                        "requires_manual_login": True,
+                        "already_authenticated": False,
+                        "vnc_url": formatted_vnc_url,
+                        "message": f"In unexpected state after navigation attempt: {state_name}",
                     }
             except Exception as e:
-                logger.error(f"Error navigating with transition_to_library: {e}")
+                logger.error(f"Error in transition_to_library: {e}")
+                # Capture and log the full stack trace
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                
+                # Try one more time to update our state
+                try:
+                    automator.state_machine.update_current_state()
+                    current_state = automator.state_machine.current_state
+                    state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+                    logger.info(f"Current state after error: {state_name}")
+                except Exception as state_err:
+                    logger.error(f"Error getting state after transition error: {state_err}")
+                    state_name = "UNKNOWN"
 
-            # If we couldn't reliably get to the sign-in screen, return current state
-            # and indicate manual login is needed
+            # If we get here, we had some serious issues
             # Get email from automator's current profile if available
             email = ""
             if hasattr(automator, "profile_manager") and automator.profile_manager:
@@ -266,12 +361,40 @@ class AuthenticationHandler:
             # Get the formatted VNC URL with the current email
             formatted_vnc_url = get_formatted_vnc_url(email)
 
+            # Take one final screenshot for debugging
+            try:
+                timestamp = int(time.time())
+                screenshot_path = os.path.join(self.screenshots_dir, f"auth_final_{timestamp}.png")
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Saved final screenshot: {screenshot_path}")
+            except Exception as ss_err:
+                logger.error(f"Error saving final screenshot: {ss_err}")
+
+            # Last attempt - if we're in SIGN_IN, HOME, or LIBRARY, we can still give a focused response
+            if state_name == "SIGN_IN":
+                logger.info("Despite errors, we are in SIGN_IN state")
+                return {
+                    "state": "SIGN_IN",
+                    "requires_manual_login": True,
+                    "already_authenticated": False,
+                    "vnc_url": formatted_vnc_url,
+                }
+            elif state_name in ["LIBRARY", "HOME"]:
+                logger.info(f"Despite errors, we are in {state_name} state")
+                return {
+                    "state": state_name,
+                    "requires_manual_login": False,
+                    "already_authenticated": True,
+                    "vnc_url": formatted_vnc_url,
+                }
+
+            # Last resort - return error with as much info as possible
             return {
                 "state": state_name,
                 "requires_manual_login": True,
                 "already_authenticated": False,
                 "vnc_url": formatted_vnc_url,
-                "error": f"Could not navigate to sign-in screen from {state_name}",
+                "error": f"Failed to navigate to sign-in screen or library from {state_name}",
             }
 
         except Exception as e:
@@ -364,6 +487,7 @@ class AuthenticationHandler:
         """
         try:
             logger.info("Authentication must be done manually via VNC")
+
 
             # Check for captcha as the only automated support we still provide
             if self._is_captcha_screen():
@@ -909,3 +1033,4 @@ class AuthenticationHandler:
             return self.driver.find_element(by, locator)
         except:
             return None
+            

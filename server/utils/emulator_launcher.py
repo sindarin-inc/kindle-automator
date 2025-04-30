@@ -490,73 +490,64 @@ class EmulatorLauncher:
                 env["DISPLAY"] = f":{display_num}"
                 logger.info(f"Setting DISPLAY={env['DISPLAY']} for VNC")
 
-            # Build emulator command based on host architecture
+            # Common emulator arguments for all platforms
+            common_args = [
+                "-avd", avd_name,
+                "-no-audio",
+                "-no-boot-anim", 
+                "-no-snapshot",
+                "-no-snapshot-load",
+                "-no-snapshot-save",
+                "-writable-system",
+                "-port", str(emulator_port),
+                # Keyboard configuration - disable soft keyboard
+                "-prop", "hw.keyboard=yes",
+                "-prop", "hw.keyboard.lid=yes",  # Force hardware keyboard mode
+                "-prop", "hw.mainKeys=yes",  # Enable hardware keys
+                # Status bar and nav buttons configuration
+                "-prop", "hw.statusBar=no",  # Disable status bar
+                "-prop", "hw.navButtons=no",  # Disable navigation buttons
+                # Additional keyboard settings to disable soft keyboard
+                "-prop", "qemu.settings.system.show_ime_with_hard_keyboard=0"
+            ]
+
+            # Build platform-specific emulator command
             if platform.system() != "Darwin":
                 # For Linux, use standard emulator with VNC with dynamic port
                 emulator_cmd = [
                     f"{self.android_home}/emulator/emulator",
-                    "-avd",
-                    avd_name,
-                    "-no-audio",
-                    "-writable-system",
-                    "-no-snapshot",
-                    "-no-snapshot-load",
-                    "-no-snapshot-save",
                     "-verbose",
-                    "-port",
-                    str(emulator_port),  # Use the assigned port
                     "-feature",
                     "-accel",  # Disable hardware acceleration
                     "-gpu",
                     "swiftshader",
-                    "-no-boot-anim",
-                ]
+                ] + common_args
             elif self.host_arch == "arm64":
                 # For ARM Macs, use Rosetta to run x86_64 emulator
                 emulator_cmd = [
                     "arch",
                     "-x86_64",
                     f"{self.android_home}/emulator/emulator",
-                    "-avd",
-                    avd_name,
-                    "-no-audio",
-                    "-no-boot-anim",
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
-                    "-no-snapshot",
-                    "-no-snapshot-load",
-                    "-no-snapshot-save",
-                    "-writable-system",
                     "-feature",
                     "-HVF",  # Disable hardware virtualization
                     "-accel",
                     "off",
-                    "-port",
-                    str(emulator_port),  # Use the assigned port
-                ]
+                ] + common_args
             else:
                 # For Intel Macs
                 emulator_cmd = [
                     f"{self.android_home}/emulator/emulator",
-                    "-avd",
-                    avd_name,
-                    "-no-audio",
-                    "-no-boot-anim",
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
-                    "-no-snapshot",
-                    "-no-snapshot-load",
-                    "-no-snapshot-save",
-                    "-writable-system",
                     "-accel",
                     "on",
                     "-feature",
                     "HVF",
-                    "-port",
-                    str(emulator_port),  # Use the assigned port
-                ]
+                ] + common_args
 
             # Create log files for debugging
             log_dir = "/var/log/emulator"

@@ -1108,9 +1108,17 @@ class AuthResource(Resource):
                         logger.error(f"Failed to launch emulator for {sindarin_email}")
 
         # Use the prepare_for_authentication method - always using VNC
+        # This is the critical method that ensures we navigate to AUTH or LIBRARY
+        logger.info("Calling prepare_for_authentication to navigate to sign-in screen or library")
         auth_status = automator.state_machine.auth_handler.prepare_for_authentication()
 
         logger.info(f"Authentication preparation status: {auth_status}")
+        
+        # Check for fatal errors that would prevent continuing
+        if auth_status.get("fatal_error", False):
+            error_msg = auth_status.get("error", "Unknown fatal error in authentication preparation")
+            logger.error(f"Fatal error in authentication preparation: {error_msg}")
+            return {"success": False, "error": error_msg}, 500
 
         # Handle already authenticated cases (LIBRARY or HOME)
         if auth_status.get("already_authenticated", False):
@@ -1146,16 +1154,27 @@ class AuthResource(Resource):
         # emulator_id is already available from above code
         formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
-        # Prepare manual auth response without screenshot
+        # Prepare manual auth response with details from auth_status
         current_state = automator.state_machine.current_state
+        state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
+        
+        # Start with base response information
         response_data = {
             "success": True,
-            "manual_login_required": True,
-            "message": "Ready for manual authentication via VNC",
-            "state": current_state.name,
+            "manual_login_required": auth_status.get("requires_manual_login", True),
+            "message": auth_status.get("message", "Ready for manual authentication via VNC"),
+            "state": auth_status.get("state", state_name),
             "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response
         }
-
+        
+        # Pass through any additional info from auth_status
+        if "error" in auth_status:
+            response_data["error_info"] = auth_status["error"]
+            
+        # If we have custom messages, include them
+        if "message" in auth_status:
+            response_data["message"] = auth_status["message"]
+            
         # Add Python launcher information to the response if available
         if using_python_launcher:
             response_data["using_python_launcher"] = True
@@ -1163,6 +1182,9 @@ class AuthResource(Resource):
                 response_data["emulator_id"] = emulator_id
             if display_num:
                 response_data["display_num"] = display_num
+                
+        # Log the final response in detail
+        logger.info(f"Returning auth response: {response_data}")
 
         return response_data, 200
 
