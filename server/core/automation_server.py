@@ -116,37 +116,69 @@ class AutomationServer:
                 logger.info(f"Adding missing emulator_manager to existing automator for {email}")
                 self.automators[email].emulator_manager = self.profile_manager.emulator_manager
 
-            if is_running and not force_new_emulator:
+            # Check if the automator's device is actually available via ADB
+            device_available = False
+            if hasattr(self.automators[email], "device_id") and self.automators[email].device_id:
+                # Try to verify if the device is actually available in ADB
+                device_id = self.automators[email].device_id
+                logger.info(f"Verifying if automator's device {device_id} is actually available")
+                try:
+                    # This will throw an exception if the device isn't recognized by ADB
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "-s", device_id, "get-state"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    device_available = result.returncode == 0 and "device" in result.stdout
+                    logger.info(f"Device {device_id} verification: available={device_available}, result={result.stdout.strip()}")
+                except Exception as e:
+                    logger.warning(f"Error checking device {device_id} availability: {e}")
+                    device_available = False
+            
+            # Handle different scenarios based on emulator state
+            if is_running and not force_new_emulator and device_available:
                 logger.info(
                     f"Automator already exists with running emulator for profile {email}, skipping profile switch"
                 )
                 return True, f"Already using profile for {email} with running emulator"
-            elif not is_running and not force_new_emulator:
-                # We have an automator but no running emulator
-                # Get current profile to check if we're actually switching between users
-                current_profile = self.profile_manager.get_current_profile()
-                current_email = current_profile.get("email") if current_profile else None
+            elif not is_running or not device_available:
+                # Either the emulator isn't running or the device isn't available in ADB
+                if not is_running:
+                    logger.info(f"Emulator not running for {email} according to ADB")
+                if not device_available:
+                    logger.info(f"Device ID {self.automators[email].device_id} no longer available in ADB")
+                
+                if not force_new_emulator:
+                    # Get current profile to check if we're actually switching between users
+                    current_profile = self.profile_manager.get_current_profile()
+                    current_email = current_profile.get("email") if current_profile else None
 
-                # If current profile email is different from target email, we should force start a new emulator
-                if current_email and current_email != email:
-                    logger.info(
-                        f"Current profile is for {current_email} but requested {email} - forcing new emulator"
-                    )
-                    # Cleanup existing automator for this email since we're starting fresh
+                    # If current profile email is different from target email, we should force start a new emulator
+                    if current_email and current_email != email:
+                        logger.info(
+                            f"Current profile is for {current_email} but requested {email} - forcing new emulator"
+                        )
+                        # Cleanup existing automator for this email since we're starting fresh
+                        self.automators[email].cleanup()
+                        self.automators[email] = None
+                        # Will continue below to create a new emulator
+                    else:
+                        # We need to force a new emulator since the old one is no longer available
+                        logger.info(
+                            f"Emulator for {email} no longer available, forcing new emulator creation"
+                        )
+                        # Cleanup existing automator
+                        self.automators[email].cleanup()
+                        self.automators[email] = None
+                        # Force a new emulator
+                        force_new_emulator = True
+                else:
+                    # Need to recreate the automator since force_new_emulator is True
+                    logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
                     self.automators[email].cleanup()
                     self.automators[email] = None
-                    # Will continue below to create a new emulator
-                else:
-                    # Same user, just no running emulator - wait for reconnect
-                    logger.info(
-                        f"No running emulator for profile {email}, but have automator - will use on next reconnect"
-                    )
-                    return True, f"Profile {email} is already active, waiting for reconnection"
-            elif force_new_emulator:
-                # Need to recreate the automator
-                logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
-                self.automators[email].cleanup()
-                self.automators[email] = None
 
         # Switch to the profile for this email - this will not stop other emulators
         success, message = self.profile_manager.switch_profile(email, force_new_emulator=force_new_emulator)

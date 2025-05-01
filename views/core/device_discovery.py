@@ -65,8 +65,12 @@ class DeviceDiscovery:
             - emulator_id: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
             - avd_name: The AVD name associated with the email/emulator if found, None otherwise
         """
-        # Get all running emulators
+        # Force refresh running emulator data from ADB to ensure accuracy
+        # This avoids stale emulator information
         running_emulators = self.map_running_emulators()
+        
+        # Debug log the running emulators we found
+        logger.info(f"Current running emulators: {running_emulators}")
 
         if not running_emulators:
             # Get the AVD name for this email from profiles_index or generate a standard one
@@ -307,8 +311,19 @@ class DeviceDiscovery:
 
             # Parse output to get emulator IDs
             lines = result.stdout.strip().split("\n")
-
-            # logger.debug(f"Raw adb devices output: {result.stdout}")
+            
+            # Log the raw output for debugging
+            logger.info(f"Raw adb devices output: {result.stdout}")
+            
+            # Make sure we get valid output - needs at least the header line
+            if len(lines) < 1 or "List of devices attached" not in lines[0]:
+                logger.error(f"Invalid ADB devices output format: {result.stdout}")
+                return running_emulators
+                
+            # If we only have the header line, there are no devices
+            if len(lines) <= 1:
+                logger.info("No devices found in ADB output")
+                return running_emulators
 
             # Keep track of all emulators for better debugging
             all_devices = []
