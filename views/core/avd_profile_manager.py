@@ -343,7 +343,8 @@ class AVDProfileManager:
         Returns:
             Dict[str, str]: Dictionary mapping emails to AVD names
         """
-        return self.device_discovery.scan_for_avds_with_emails(self.profiles_index)
+        result = self.device_discovery.scan_for_avds_with_emails(self.profiles_index)
+        return result
 
     def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
         """
@@ -781,48 +782,19 @@ class AVDProfileManager:
         normalized_avd_name = self.get_avd_name_from_email(email)
         logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
 
-        # Next, try to find any running emulator to use
-        running_emulators = self.device_discovery.map_running_emulators()
-
-        if running_emulators:
-            # Use the first available running emulator
-            avd_name, emulator_id = next(iter(running_emulators.items()))
-            logger.info(f"Registering email {email} to running emulator with AVD {avd_name}")
-            # Use proper registration method instead of direct dict assignment to ensure correct format
-            self.register_profile(email, avd_name)
-
-            # Update profile status
-            self._save_profile_status(email, avd_name, emulator_id)
-            return
-
-        # If no running emulator, check for available AVDs
-        try:
-            # List available AVDs
-            avd_list_cmd = [f"{self.android_home}/emulator/emulator", "-list-avds"]
-            result = subprocess.run(avd_list_cmd, check=False, capture_output=True, text=True, timeout=5)
-            available_avds = result.stdout.strip().split("\n")
-            available_avds = [avd for avd in available_avds if avd.strip()]
-
-            if available_avds:
-                # Use the first available AVD
-                avd_name = available_avds[0]
-                logger.info(f"Registering email {email} to available AVD {avd_name}")
-                # Use proper registration method instead of direct dict assignment to ensure correct format
-                self.register_profile(email, avd_name)
-
-                # Update profile status without emulator ID
-                self._save_profile_status(email, avd_name)
-                return
-        except Exception as e:
-            logger.warning(f"Error listing available AVDs: {e}")
-
-        # Register with our standardized AVD name as fallback
+        # Never use another user's running emulator - always use the standardized AVD name
         logger.info(f"Registering email {email} to standardized AVD {normalized_avd_name}")
-        # Use proper registration method instead of direct dict assignment to ensure correct format
         self.register_profile(email, normalized_avd_name)
 
-        # Update profile status without emulator ID
-        self._save_profile_status(email, normalized_avd_name)
+        # Try to find if this user's AVD is already running
+        running_emulators = self.device_discovery.map_running_emulators()
+        if normalized_avd_name in running_emulators:
+            emulator_id = running_emulators[normalized_avd_name]
+            logger.info(f"Found user's AVD {normalized_avd_name} already running at {emulator_id}")
+            self._save_profile_status(email, normalized_avd_name, emulator_id)
+        else:
+            logger.info(f"User's AVD {normalized_avd_name} is not running yet")
+            self._save_profile_status(email, normalized_avd_name)
 
     def stop_emulator(self, device_id: str = None) -> bool:
         """
@@ -1085,11 +1057,17 @@ class AVDProfileManager:
         # If we found a running emulator for this email and aren't forcing a new one, use it
         if is_running and not force_new_emulator:
             logger.info(f"Found running emulator {emulator_id} for profile {email} (AVD: {found_avd_name})")
-            # Update the AVD name if it's different from what we expected
-            if found_avd_name != avd_name and found_avd_name is not None:
-                logger.info(f"Updating AVD name for profile {email}: {avd_name} -> {found_avd_name}")
-                avd_name = found_avd_name
-                self.register_profile(email, avd_name)
+
+            # Check if the found running emulator's AVD matches what we're expecting for this user
+            # If it doesn't match, we should fail rather than use another user's AVD
+            if found_avd_name != avd_name:
+                logger.warning(
+                    f"Found running emulator uses AVD {found_avd_name}, but user {email} requires {avd_name}"
+                )
+                logger.warning(f"Will not use another user's emulator for {email}")
+                return False, f"Cannot use another user's emulator for {email}"
+
+            # We already verified found_avd_name equals avd_name above, so no need to update it
 
             # Save the profile status with the found emulator
             self._save_profile_status(email, avd_name, emulator_id)

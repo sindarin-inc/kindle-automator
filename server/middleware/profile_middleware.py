@@ -172,9 +172,48 @@ def ensure_user_profile_loaded(f):
         # We no longer have a concept of "current" profile
         # Always use the individual profile for the requested email
 
-        # Always get a fresh emulator instance for the email when needed
-        # force_new_emulator is passed as False by default, but can be set to True via request param
+        # Only use force_new_emulator when explicitly requested with recreate=1
         force_new_emulator = request.args.get("recreate") == "1"
+
+        # Check if the user's AVD is running
+        is_running, emulator_id, found_avd = server.profile_manager.find_running_emulator_for_email(
+            sindarin_email
+        )
+
+        # Get the AVD name for this user
+        avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
+
+        # Check if the AVD exists (whether running or not)
+        avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
+        avd_exists = os.path.exists(avd_path)
+
+        # Special handling for auth endpoint
+        if request.path.endswith("/auth"):
+            if not is_running:
+                if avd_exists:
+                    # AVD exists but isn't running - we'll start it
+                    logger.info(f"AVD {avd_name} for {sindarin_email} exists but is not running")
+                    logger.info(f"Will start existing AVD for {sindarin_email}")
+                    force_new_emulator = False
+                else:
+                    # AVD doesn't exist - create it
+                    logger.info(f"No AVD exists for {sindarin_email} on auth endpoint")
+                    logger.info(f"Will create a new AVD for {sindarin_email}")
+                    force_new_emulator = True
+        else:
+            # For all other endpoints, if the user's AVD isn't running, we should fail
+            if not is_running and not force_new_emulator:
+                logger.error(f"User {sindarin_email}'s AVD ({avd_name}) is not running")
+                if avd_exists:
+                    message = "Your device exists but is not running. Please authenticate first."
+                else:
+                    message = "You don't have a device set up. Please authenticate first to create one."
+
+                return {
+                    "error": f"AVD for {sindarin_email} not running",
+                    "message": message,
+                    "requires_auth": True,
+                }, 400
 
         success, message = server.switch_profile(sindarin_email, force_new_emulator=force_new_emulator)
 

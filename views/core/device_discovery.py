@@ -49,6 +49,31 @@ class DeviceDiscovery:
         """
         return email.replace("@", "_").replace(".", "_")
 
+    def convert_normalized_to_email(self, normalized_email: str) -> str:
+        """
+        Attempt to convert a normalized email (with underscores) back to a real email format.
+        This is an approximate reverse of normalize_email_for_avd.
+
+        The basic strategy is to assume the first underscore is an @ symbol and
+        replace other underscores with dots.
+
+        Args:
+            normalized_email: The normalized email with underscores
+
+        Returns:
+            str: Best guess at the original email format
+        """
+        parts = normalized_email.split("_", 1)
+        if len(parts) != 2:
+            # If there's no underscore, just return as is
+            return normalized_email
+
+        username, domain = parts
+        # Replace remaining underscores with dots
+        domain = domain.replace("_", ".")
+
+        return f"{username}@{domain}"
+
     def find_running_emulator_for_email(
         self, email: str, profiles_index: Dict = None
     ) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -128,25 +153,22 @@ class DeviceDiscovery:
         else:
             logger.info(f"[DEVICE DEBUG] No profile entry found for email: {email}")
 
-        # If not found, try a different approach: look for a direct match on any running emulator
-        # This is a special case for when the emulator is running but not registered properly
-        if running_emulators and len(running_emulators) == 1:
-            logger.info("[DEVICE DEBUG] Only one emulator is running - will use it regardless of name")
-            running_avd_name = next(iter(running_emulators.keys()))
-            emulator_id = running_emulators[running_avd_name]
-            logger.info(f"[DEVICE DEBUG] Using single running emulator: {running_avd_name} on {emulator_id}")
-            return True, emulator_id, running_avd_name
+        # Never use another user's AVD
+        # If we have a specific AVD for this user and it's not running, we should fail
+        if avd_name and avd_name not in running_emulators:
+            logger.info(f"[DEVICE DEBUG] Required AVD {avd_name} for {email} is not running")
 
-        # If not found, look for any AVD name that might contain the normalized email
-        normalized_email = self.normalize_email_for_avd(email)
-        logger.info(f"[DEVICE DEBUG] Looking for partial matches with normalized email: {normalized_email}")
-        for running_avd_name, emulator_id in running_emulators.items():
-            logger.info(f"[DEVICE DEBUG] Checking if {normalized_email} is in {running_avd_name}")
-            if normalized_email in running_avd_name:
+            # If there are any running emulators, log which ones are running for debugging
+            if running_emulators:
                 logger.info(
-                    f"[DEVICE DEBUG] Found partial AVD match: {running_avd_name} running on {emulator_id} for email {email}"
+                    f"[DEVICE DEBUG] Will not use another user's emulator(s): {list(running_emulators.keys())}"
                 )
-                return True, emulator_id, running_avd_name
+
+            # Return failure to find the user's specific AVD
+            return False, None, avd_name
+
+        # We will no longer look for partial matches to avoid using another user's AVD
+        # Only exact matches on the user's registered AVD name are allowed
 
         # No running emulator found for this email
         logger.info(
@@ -257,15 +279,19 @@ class DeviceDiscovery:
 
         # Check each AVD name for email patterns
         for avd_name in running_emulators.keys():
-            email_part = self.extract_email_from_avd_name(avd_name)
-            if email_part:
-                logger.info(f"Found email pattern in AVD name: {avd_name} -> {email_part}")
-                discovered_mappings[email_part] = avd_name
+            normalized_email = self.extract_email_from_avd_name(avd_name)
+            if normalized_email:
+                logger.info(f"Found email pattern in AVD name: {avd_name} -> {normalized_email}")
 
-                # Also update profiles index if provided and this mapping is new
-                if profiles_index is not None and email_part not in profiles_index:
+                # Convert the normalized email back to a real email format
+                # Only add to discovered_mappings for tracking purposes
+                real_email = self.convert_normalized_to_email(normalized_email)
+                discovered_mappings[real_email] = avd_name
+
+                # Also update profiles index if provided and this real email is not already in profiles_index
+                if profiles_index is not None and real_email not in profiles_index:
                     # Use the dictionary format consistent with our new structure
-                    profiles_index[email_part] = {"avd_name": avd_name}
+                    profiles_index[real_email] = {"avd_name": avd_name}
 
         return discovered_mappings
 
