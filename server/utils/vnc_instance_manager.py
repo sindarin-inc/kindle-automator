@@ -85,6 +85,8 @@ class VNCInstanceManager:
                 "id": i,
                 "display": i,
                 "vnc_port": 5900 + i,
+                "appium_port": 4723 + i,
+                "emulator_id": None,  # Will be populated when emulator connects
                 "launcher": f"/usr/local/bin/vnc-emulator-launcher-{i}.sh",
                 "assigned_profile": None,
             }
@@ -187,7 +189,14 @@ class VNCInstanceManager:
         Returns:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
-        # Get the AVD name from profiles_index
+        # Look directly for the email in assigned_profile
+        for instance in self.instances:
+            assigned_profile = instance.get("assigned_profile")
+            if assigned_profile == email:
+                logger.info(f"Found VNC instance {instance.get('id')} for email {email}")
+                return instance
+
+        # For backward compatibility, try to find by AVD name
         avd_name = None
         if email in self.profiles_index:
             profile_entry = self.profiles_index.get(email)
@@ -196,33 +205,23 @@ class VNCInstanceManager:
             elif isinstance(profile_entry, str):
                 avd_name = profile_entry
 
-        # Use the AVD name as the primary identifier to find the instance
         if avd_name:
-            logger.info(f"Looking for VNC instance with assigned_profile={avd_name} for email {email}")
-
-            # Look for an instance with this AVD name
+            logger.info(
+                f"Looking for VNC instance with assigned_profile={avd_name} for email {email} (backward compatibility)"
+            )
             for instance in self.instances:
                 assigned_profile = instance.get("assigned_profile")
                 if assigned_profile == avd_name:
-                    logger.info(f"Found VNC instance {instance.get('id')} with AVD name {avd_name}")
+                    logger.warning(
+                        f"Found VNC instance {instance.get('id')} using legacy AVD name match {avd_name}"
+                    )
+                    # Update to new approach by changing assigned_profile to email
+                    instance["assigned_profile"] = email
+                    self.save_instances()
+                    logger.info(f"Updated assigned_profile from AVD name {avd_name} to email {email}")
                     return instance
 
-            # If not found, log detailed information to help debug
-            logger.error(f"No VNC instance found with assigned_profile={avd_name}")
-            logger.error(
-                f"Available assigned_profile values: {[i.get('assigned_profile') for i in self.instances]}"
-            )
-        else:
-            # We don't have an AVD name - this should be considered an error
-            logger.error(f"Cannot find AVD name for email {email} in profiles_index")
-            logger.error(f"Profiles index contains: {self.profiles_index}")
-
-        # For backward compatibility only, try direct email match
-        for instance in self.instances:
-            if instance.get("assigned_profile") == email:
-                logger.warning(f"Found instance using legacy direct email match for {email}")
-                return instance
-
+        logger.info(f"No VNC instance found for email {email}")
         return None
 
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:
@@ -242,33 +241,15 @@ class VNCInstanceManager:
             logger.info(f"Profile {email} is already assigned to VNC instance {existing['id']}")
             return existing
 
-        # Get the AVD name from profiles_index - we MUST have this to properly assign a VNC instance
-        avd_name = None
-        if email in self.profiles_index:
-            profile_entry = self.profiles_index.get(email)
-            if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                avd_name = profile_entry["avd_name"]
-            elif isinstance(profile_entry, str):
-                avd_name = profile_entry
-
-        if not avd_name:
-            # IMPORTANT: Do not normalize email for fallback
-            # If we can't find the AVD name in profiles_index, log an error and return None
-            logger.error(f"No AVD name found in profiles_index for {email}, cannot assign VNC instance")
-            logger.error(f"AVD must be registered in profiles_index first - aborting assignment")
-            return None
-
-        logger.info(f"Using AVD name {avd_name} as assigned_profile value for email {email}")
-
         # Try to assign the specified instance if provided
         if instance_id is not None:
             for instance in self.instances:
                 if instance["id"] == instance_id:
                     if instance["assigned_profile"] is None:
-                        # Assign this instance with the AVD name
-                        instance["assigned_profile"] = avd_name
+                        # Use the email directly as the assigned_profile value
+                        instance["assigned_profile"] = email
                         self.save_instances()
-                        logger.info(f"Assigned VNC instance {instance_id} to AVD {avd_name} (email {email})")
+                        logger.info(f"Assigned VNC instance {instance_id} to email {email}")
                         return instance
                     else:
                         logger.warning(
@@ -282,10 +263,10 @@ class VNCInstanceManager:
         # Find an available instance to assign
         for instance in self.instances:
             if instance["assigned_profile"] is None:
-                # Found an available instance - use the AVD name
-                instance["assigned_profile"] = avd_name
+                # Found an available instance - use the email directly
+                instance["assigned_profile"] = email
                 self.save_instances()
-                logger.info(f"Assigned VNC instance {instance['id']} to AVD {avd_name} (email {email})")
+                logger.info(f"Assigned VNC instance {instance['id']} to email {email}")
                 return instance
 
         # No available instances
@@ -302,41 +283,15 @@ class VNCInstanceManager:
         Returns:
             bool: True if an instance was released, False otherwise
         """
-        # Get the assigned instance for this profile using get_instance_for_profile
-        # which already handles both AVD name and legacy email lookup
+        # Get the assigned instance for this profile
         instance = self.get_instance_for_profile(email)
         if instance:
             instance_id = instance.get("id")
             assigned_profile = instance.get("assigned_profile")
             instance["assigned_profile"] = None
             self.save_instances()
-            logger.info(
-                f"Released VNC instance {instance_id} from profile {email} (assigned_profile was {assigned_profile})"
-            )
+            logger.info(f"Released VNC instance {instance_id} from profile {email}")
             return True
-
-        # If normal lookup failed, try a direct search for legacy support
-        # Get the AVD name from profiles_index
-        avd_name = self._get_avd_id_for_email(email)
-
-        # Try to find by AVD name first
-        if avd_name:
-            for instance in self.instances:
-                if instance.get("assigned_profile") == avd_name:
-                    instance_id = instance.get("id")
-                    instance["assigned_profile"] = None
-                    self.save_instances()
-                    logger.info(f"Released VNC instance {instance_id} from AVD {avd_name} (email {email})")
-                    return True
-
-        # Then try direct email match for legacy cases
-        for instance in self.instances:
-            if instance.get("assigned_profile") == email:
-                instance_id = instance.get("id")
-                instance["assigned_profile"] = None
-                self.save_instances()
-                logger.info(f"Released VNC instance {instance_id} from legacy email {email}")
-                return True
 
         # No instance found
         logger.info(f"No VNC instance found assigned to profile {email}")
@@ -386,3 +341,52 @@ class VNCInstanceManager:
         if instance:
             return instance["launcher"]
         return None
+
+    def get_appium_port(self, email: str) -> Optional[int]:
+        """
+        Get the Appium port for a profile's assigned instance.
+
+        Args:
+            email: Email address of the profile
+
+        Returns:
+            Optional[int]: The Appium port or None if no instance is assigned
+        """
+        instance = self.get_instance_for_profile(email)
+        if instance and "appium_port" in instance:
+            return instance["appium_port"]
+        return None
+
+    def get_emulator_id(self, email: str) -> Optional[str]:
+        """
+        Get the emulator ID for a profile's assigned instance.
+
+        Args:
+            email: Email address of the profile
+
+        Returns:
+            Optional[str]: The emulator ID or None if not assigned
+        """
+        instance = self.get_instance_for_profile(email)
+        if instance and "emulator_id" in instance:
+            return instance["emulator_id"]
+        return None
+
+    def set_emulator_id(self, email: str, emulator_id: str) -> bool:
+        """
+        Set the emulator ID for a profile's assigned instance.
+
+        Args:
+            email: Email address of the profile
+            emulator_id: The emulator ID to set
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        instance = self.get_instance_for_profile(email)
+        if instance:
+            instance["emulator_id"] = emulator_id
+            self.save_instances()
+            logger.info(f"Set emulator ID {emulator_id} for instance {instance['id']} (email {email})")
+            return True
+        return False

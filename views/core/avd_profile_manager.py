@@ -230,6 +230,8 @@ class AVDProfileManager:
         Save profile status to the user_preferences file.
         This replaces the previous _save_current_profile that used a separate file.
 
+        Also updates the emulator_id in the VNC instance if available.
+
         Args:
             email: Email address of the profile
             avd_name: Name of the AVD
@@ -243,14 +245,20 @@ class AVDProfileManager:
         self.user_preferences[email]["last_used"] = int(time.time())
         self.user_preferences[email]["avd_name"] = avd_name
 
-        # Add emulator ID if provided
+        # Store the emulator ID in the VNC instance where it belongs
         if emulator_id:
-            self.user_preferences[email]["emulator_id"] = emulator_id
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                vnc_manager = VNCInstanceManager()
+                vnc_manager.set_emulator_id(email, emulator_id)
+            except Exception as e:
+                logger.warning(f"Error storing emulator ID in VNC instance: {e}")
+                # Fallback to storing in preferences for backward compatibility
+                self.user_preferences[email]["emulator_id"] = emulator_id
 
         # Save the updated preferences
         self._save_user_preferences()
-
-        logger.debug(f"Saved profile status for {email} with AVD {avd_name}")
 
     def get_avd_for_email(self, email: str) -> Optional[str]:
         """
@@ -298,17 +306,36 @@ class AVDProfileManager:
         """
         Get the Appium port assigned to this email profile.
 
+        This method first checks for a VNC instance assignment, and if found,
+        returns the Appium port from that VNC instance.
+
+        For backward compatibility, it will fall back to the old method of
+        looking in the profiles_index.
+
         Args:
             email: Email address to lookup
 
         Returns:
             Optional[int]: The Appium port or None if not assigned
         """
+        # First try to get the appium_port from the VNC instance manager
+        from server.utils.vnc_instance_manager import VNCInstanceManager
+
+        try:
+            vnc_manager = VNCInstanceManager()
+            appium_port = vnc_manager.get_appium_port(email)
+            if appium_port:
+                return appium_port
+        except Exception as e:
+            logger.warning(f"Error getting Appium port from VNC instance: {e}")
+
+        # Fall back to the old method for backward compatibility
         if email in self.profiles_index:
             profile_entry = self.profiles_index.get(email)
 
             # Handle different formats
             if isinstance(profile_entry, dict) and "appium_port" in profile_entry:
+                logger.warning(f"Using deprecated profiles_index appium_port for {email}")
                 return profile_entry["appium_port"]
 
         return None
@@ -453,39 +480,25 @@ class AVDProfileManager:
         Returns:
             Optional[Dict]: Profile information or None if the profile doesn't exist
         """
-        logger.info(f"[PROFILE DEBUG] get_profile_for_email called with email: {email}")
-
         if not email:
-            logger.warning("[PROFILE DEBUG] get_profile_for_email called with empty email")
+            logger.warning("get_profile_for_email called with empty email")
             return None
 
         # Check if the email exists in profiles_index
         if email not in self.profiles_index:
-            logger.warning(
-                f"[PROFILE DEBUG] Email {email} not found in profiles_index. Available keys: {list(self.profiles_index.keys())}"
-            )
+            logger.warning(f"Email {email} not found in profiles_index")
             return None
 
         # Get the AVD name for this email
         profile_entry = self.profiles_index[email]
-        logger.info(f"[PROFILE DEBUG] Found profile entry for {email}: {profile_entry}")
 
         if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
             avd_name = profile_entry["avd_name"]
-            logger.info(f"[PROFILE DEBUG] Found AVD name in dict format: {avd_name}")
         elif isinstance(profile_entry, str):
             avd_name = profile_entry
-            logger.info(f"[PROFILE DEBUG] Found AVD name in string format: {avd_name}")
         else:
-            logger.error(f"[PROFILE DEBUG] Could not determine AVD name from profile entry for {email}")
+            logger.error(f"Could not determine AVD name from profile entry for {email}")
             return None
-
-        # Look for a running emulator for this email
-        logger.info(f"[PROFILE DEBUG] Looking for running emulator for email {email}")
-        is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
-        logger.info(
-            f"[PROFILE DEBUG] find_running_emulator_for_email result: running={is_running}, emulator_id={emulator_id}"
-        )
 
         # Build profile information
         profile = {
@@ -493,33 +506,55 @@ class AVDProfileManager:
             "avd_name": avd_name,
         }
 
-        # Add emulator info if available
-        if is_running and emulator_id:
-            logger.info(f"[PROFILE DEBUG] Adding emulator_id {emulator_id} to profile for {email}")
-            profile["emulator_id"] = emulator_id
+        # Try to get emulator_id from VNC instance first
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
 
-            # Update stored emulator ID if different from what we have
-            stored_emulator_id = None
-            if email in self.user_preferences:
-                stored_emulator_id = self.user_preferences[email].get("emulator_id")
-                logger.info(f"[PROFILE DEBUG] Found stored emulator_id in preferences: {stored_emulator_id}")
+            vnc_manager = VNCInstanceManager()
+            emulator_id = vnc_manager.get_emulator_id(email)
 
-            if stored_emulator_id != emulator_id:
-                logger.info(f"[PROFILE DEBUG] Updating emulator ID for profile {email}: {emulator_id}")
+            if emulator_id:
+                profile["emulator_id"] = emulator_id
+            else:
+                # If not found in VNC instance, look for a running emulator
+                is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
+
+                if is_running and emulator_id:
+                    profile["emulator_id"] = emulator_id
+
+                    # Update VNC instance with the found emulator ID
+                    vnc_manager.set_emulator_id(email, emulator_id)
+
+                else:
+                    # Fallback to user preferences for backward compatibility
+                    if email in self.user_preferences and "emulator_id" in self.user_preferences[email]:
+                        emulator_id = self.user_preferences[email]["emulator_id"]
+                        profile["emulator_id"] = emulator_id
+
+                        # Move to VNC instance
+                        vnc_manager.set_emulator_id(email, emulator_id)
+        except Exception as e:
+            logger.warning(f"Error getting emulator_id from VNC instance: {e}")
+
+            # Fallback to the original approach
+            is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
+            if is_running and emulator_id:
+                profile["emulator_id"] = emulator_id
                 self._save_profile_status(email, avd_name, emulator_id)
-        else:
-            logger.warning(
-                f"[PROFILE DEBUG] No running emulator found for {email}, profile will not have emulator_id"
-            )
+
+            # Check legacy storage in preferences
+            elif email in self.user_preferences and "emulator_id" in self.user_preferences[email]:
+                emulator_id = self.user_preferences[email]["emulator_id"]
+                profile["emulator_id"] = emulator_id
 
         # Add any preferences if available
         if email in self.user_preferences:
-            logger.info(f"[PROFILE DEBUG] Adding user preferences for {email}")
             for key, value in self.user_preferences[email].items():
-                if key not in profile:
+                if (
+                    key not in profile and key != "emulator_id"
+                ):  # Skip emulator_id which should come from VNC instance
                     profile[key] = value
 
-        logger.info(f"[PROFILE DEBUG] Returning profile for {email}: {profile}")
         return profile
 
     def get_current_profile(self) -> Optional[Dict]:
@@ -531,19 +566,12 @@ class AVDProfileManager:
         Returns:
             Optional[Dict]: Profile information for a running emulator or None if none found
         """
-        logger.info("[PROFILE DEBUG] get_current_profile() called in multi-user system context")
         try:
             # Check for running emulators
             running_emulators = self.device_discovery.map_running_emulators()
-            logger.info(f"[PROFILE DEBUG] Found running emulators: {running_emulators}")
 
             # If there are running emulators, try to find one in our profiles_index
             if running_emulators:
-                # Log profiles_index for debugging
-                logger.info(
-                    f"[PROFILE DEBUG] Current profiles_index keys: {list(self.profiles_index.keys())}"
-                )
-
                 # First, try to find a profile that matches one of the running emulators
                 for email, profile_entry in self.profiles_index.items():
                     # Extract AVD name from profile
@@ -554,9 +582,6 @@ class AVDProfileManager:
                         avd_name = profile_entry["avd_name"]
 
                     if avd_name and avd_name in running_emulators:
-                        logger.info(
-                            f"[PROFILE DEBUG] Found matching profile for running emulator: {email} -> {avd_name}"
-                        )
                         emulator_id = running_emulators[avd_name]
 
                         # Build a profile object with the information we have
@@ -574,28 +599,19 @@ class AVDProfileManager:
                                 if key not in profile:  # Don't overwrite profile
                                     profile[key] = value
 
-                        logger.info(f"[PROFILE DEBUG] Returning profile for {email}: {profile}")
                         return profile
 
                 # If we didn't find a matching profile, just return info about the first running emulator
                 first_avd = list(running_emulators.keys())[0]
-                logger.info(
-                    f"[PROFILE DEBUG] No profile matched running emulators. Using first running emulator: {first_avd}"
-                )
 
                 # Try to extract email from AVD name if possible
-                email = self._extract_email_from_avd_name(first_avd)
+                email = self.extract_email_from_avd_name(first_avd)
                 if not email:
                     # If extraction fails, use a placeholder
                     email = f"unknown_user_for_{first_avd}"
 
                 profile = {"email": email, "avd_name": first_avd, "emulator_id": running_emulators[first_avd]}
-                logger.info(f"[PROFILE DEBUG] Returning synthesized profile: {profile}")
                 return profile
-
-            # Even if we don't find matching emulators, check if we have a device_id in any profile
-            # This helps in cases where the device ID comes from elsewhere but isn't properly tracked in our emulator list
-            logger.info("[PROFILE DEBUG] No matching running emulators found in our tracking")
 
             # Check ADB directly for any connected emulators as a last resort
             try:
@@ -608,7 +624,6 @@ class AVDProfileManager:
                 )
 
                 if result.returncode == 0:
-                    logger.info(f"[PROFILE DEBUG] ADB devices output: {result.stdout}")
                     lines = result.stdout.strip().split("\n")
 
                     for line in lines[1:]:  # Skip header
@@ -618,24 +633,17 @@ class AVDProfileManager:
                         parts = line.split("\t")
                         if len(parts) >= 2 and "emulator" in parts[0] and parts[1].strip() == "device":
                             emulator_id = parts[0].strip()
-                            logger.info(f"[PROFILE DEBUG] Found connected emulator: {emulator_id}")
 
                             # Use any profile with this emulator ID if available
                             for email, prefs in self.user_preferences.items():
                                 if prefs.get("emulator_id") == emulator_id:
                                     avd_name = prefs.get("avd_name")
                                     if avd_name:
-                                        logger.info(
-                                            f"[PROFILE DEBUG] Found matching profile for {emulator_id}: {email}"
-                                        )
                                         profile = {
                                             "email": email,
                                             "avd_name": avd_name,
                                             "emulator_id": emulator_id,
                                         }
-                                        logger.info(
-                                            f"[PROFILE DEBUG] Returning profile from user preferences: {profile}"
-                                        )
                                         return profile
 
                             # If no matching profile found but we have a device, create a synthetic profile
@@ -651,9 +659,6 @@ class AVDProfileManager:
                                 else:
                                     avd_name = f"DefaultAVD_{first_email}"
 
-                                logger.info(
-                                    f"[PROFILE DEBUG] Creating synthetic profile for {first_email} with {emulator_id}"
-                                )
                                 profile = {
                                     "email": first_email,
                                     "avd_name": avd_name,
@@ -662,27 +667,22 @@ class AVDProfileManager:
 
                                 # Save this mapping for future use
                                 self._save_profile_status(first_email, avd_name, emulator_id)
-                                logger.info(f"[PROFILE DEBUG] Returning synthetic profile: {profile}")
                                 return profile
 
                             # If we have an emulator but no profiles at all, create a generic one
-                            logger.info(
-                                f"[PROFILE DEBUG] Creating generic profile for emulator {emulator_id}"
-                            )
                             profile = {
                                 "email": "default_user",
                                 "avd_name": "Default_AVD",
                                 "emulator_id": emulator_id,
                             }
-                            logger.info(f"[PROFILE DEBUG] Returning generic profile: {profile}")
                             return profile
             except Exception as e:
-                logger.error(f"[PROFILE DEBUG] Error checking for connected emulators: {e}")
+                logger.error(f"Error checking for connected emulators: {e}")
 
-            logger.warning("[PROFILE DEBUG] No running emulators or profiles found, returning None")
+            logger.warning("No running emulators or profiles found")
             return None
         except Exception as e:
-            logger.error(f"[PROFILE DEBUG] Error in get_current_profile: {e}")
+            logger.error(f"Error in get_current_profile: {e}")
             return None
 
     def register_profile(
@@ -695,67 +695,34 @@ class AVDProfileManager:
             email: The email address to register
             avd_name: The AVD name to associate with this email
             vnc_instance: Optional VNC instance number to assign to this profile
-            appium_port: Optional Appium port to assign to this profile
+            appium_port: Optional Appium port to assign to this profile (deprecated - use VNC instance instead)
         """
-        logger.info(f"[PROFILE DEBUG] Starting register_profile for email: {email}, avd: {avd_name}")
-        logger.info(f"[PROFILE DEBUG] Current profiles_index keys: {list(self.profiles_index.keys())}")
-
-        # Debug check if the email already exists before we add it
+        # Check if the email already exists before we add it
         if email in self.profiles_index:
-            logger.info(
-                f"[PROFILE DEBUG] Email {email} already exists in profiles_index: {self.profiles_index[email]}"
-            )
-
             if isinstance(self.profiles_index[email], str):
                 # Convert old format to new format
                 old_avd = self.profiles_index[email]
-                logger.info(f"[PROFILE DEBUG] Converting old format '{old_avd}' to new format for {email}")
                 self.profiles_index[email] = {"avd_name": old_avd}
         else:
-            logger.info(f"[PROFILE DEBUG] Adding new entry for {email} in profiles_index")
             self.profiles_index[email] = {}
 
         # Update with new values
-        logger.info(f"[PROFILE DEBUG] Setting AVD name to {avd_name} for {email}")
         self.profiles_index[email]["avd_name"] = avd_name
 
         # Add VNC instance if provided
         if vnc_instance is not None:
-            logger.info(f"[PROFILE DEBUG] Setting VNC instance to {vnc_instance} for {email}")
             self.profiles_index[email]["vnc_instance"] = vnc_instance
 
-        # Add Appium port if provided
+        # Note: appium_port is no longer stored in profiles_index
+        # It should be stored in the VNC instance map instead
         if appium_port is not None:
-            logger.info(f"[PROFILE DEBUG] Setting Appium port to {appium_port} for {email}")
-            self.profiles_index[email]["appium_port"] = appium_port
+            logger.warning(f"appium_port parameter is deprecated. Use VNC instance instead.")
 
         # Save to file
-        logger.info(f"[PROFILE DEBUG] Saving profiles_index to {self.index_file}")
         try:
             self._save_profiles_index()
-            logger.info(f"[PROFILE DEBUG] Successfully saved profiles_index, verifying entry")
-
-            # Verify the entry was saved
-            if email in self.profiles_index:
-                logger.info(f"[PROFILE DEBUG] Verified {email} is in memory copy of profiles_index")
-            else:
-                logger.error(f"[PROFILE DEBUG] {email} is NOT in memory copy of profiles_index!")
-
-            # Verify the file was updated
-            if os.path.exists(self.index_file):
-                try:
-                    with open(self.index_file, "r") as f:
-                        file_data = json.load(f)
-                    if email in file_data:
-                        logger.info(f"[PROFILE DEBUG] Verified {email} is in saved profiles_index file")
-                    else:
-                        logger.error(f"[PROFILE DEBUG] {email} is NOT in saved profiles_index file!")
-                except Exception as verify_e:
-                    logger.error(f"[PROFILE DEBUG] Error verifying file contents: {verify_e}")
-            else:
-                logger.error(f"[PROFILE DEBUG] Index file does not exist at {self.index_file}!")
         except Exception as save_e:
-            logger.error(f"[PROFILE DEBUG] Error saving profiles_index: {save_e}")
+            logger.error(f"Error saving profiles_index: {save_e}")
 
         # Build and log the registration message
         log_message = f"Registered profile for {email} with AVD {avd_name}"
