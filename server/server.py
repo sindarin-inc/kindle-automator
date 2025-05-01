@@ -153,7 +153,18 @@ class BooksResource(Resource):
     @handle_automator_response(server)
     def _get_books(self):
         """Get list of available books with metadata"""
-        current_state = server.automator.state_machine.current_state
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email()
+        
+        if not sindarin_email:
+            return {"error": "No email provided to identify which profile to use"}, 400
+            
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            return {"error": f"No automator found for {sindarin_email}"}, 404
+            
+        current_state = automator.state_machine.current_state
         logger.info(f"Current state when getting books: {current_state}")
 
         # Handle different states
@@ -191,10 +202,10 @@ class BooksResource(Resource):
 
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
-            transition_success = server.automator.state_machine.transition_to_library(server=server)
+            transition_success = automator.state_machine.transition_to_library(server=server)
 
             # Get the updated state after transition attempt
-            new_state = server.automator.state_machine.current_state
+            new_state = automator.state_machine.current_state
             logger.info(f"State after transition attempt: {new_state}")
 
             # Check for auth requirement regardless of transition success
@@ -231,7 +242,7 @@ class BooksResource(Resource):
             if transition_success:
                 logger.info("Successfully transitioned to library state")
                 # Get books with metadata from library handler
-                books = server.automator.library_handler.get_book_titles()
+                books = automator.library_handler.get_book_titles()
 
                 # If books is None, it means authentication is required
                 if books is None:
@@ -266,7 +277,7 @@ class BooksResource(Resource):
                 return {"books": books}, 200
             else:
                 # If transition failed, check for auth requirement
-                updated_state = server.automator.state_machine.current_state
+                updated_state = automator.state_machine.current_state
 
                 if updated_state == AppState.SIGN_IN:
                     # Get current email to include in VNC URL
@@ -304,7 +315,7 @@ class BooksResource(Resource):
                     }, 400
 
         # Get books with metadata from library handler
-        books = server.automator.library_handler.get_book_titles()
+        books = automator.library_handler.get_book_titles()
 
         # If books is None, it means authentication is required
         if books is None:
@@ -510,6 +521,17 @@ class NavigationResource(Resource):
     @handle_automator_response(server)
     def post(self, action=None):
         """Handle page navigation"""
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email()
+        
+        if not sindarin_email:
+            return {"error": "No email provided to identify which profile to use"}, 400
+            
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            return {"error": f"No automator found for {sindarin_email}"}, 404
+        
         # Use provided action parameter if available
         if action is None:
             # Otherwise check if we have a default action from initialization
@@ -540,26 +562,26 @@ class NavigationResource(Resource):
             return {"error": "Navigation action is required"}, 400
 
         if action == "next_page":
-            success = server.automator.reader_handler.turn_page_forward()
+            success = automator.reader_handler.turn_page_forward()
         elif action == "previous_page":
-            success = server.automator.reader_handler.turn_page_backward()
+            success = automator.reader_handler.turn_page_backward()
         elif action == "preview_next_page":
-            success, ocr_text = server.automator.reader_handler.preview_page_forward()
+            success, ocr_text = automator.reader_handler.preview_page_forward()
             # Add OCR text to response if available
             if success and ocr_text:
                 response_data = {"success": True, "ocr_text": ocr_text}
                 # Get reading progress but don't show placemark
-                progress = server.automator.reader_handler.get_reading_progress(show_placemark=False)
+                progress = automator.reader_handler.get_reading_progress(show_placemark=False)
                 if progress:
                     response_data["progress"] = progress
                 return response_data, 200
         elif action == "preview_previous_page":
-            success, ocr_text = server.automator.reader_handler.preview_page_backward()
+            success, ocr_text = automator.reader_handler.preview_page_backward()
             # Add OCR text to response if available
             if success and ocr_text:
                 response_data = {"success": True, "ocr_text": ocr_text}
                 # Get reading progress but don't show placemark
-                progress = server.automator.reader_handler.get_reading_progress(show_placemark=False)
+                progress = automator.reader_handler.get_reading_progress(show_placemark=False)
                 if progress:
                     response_data["progress"] = progress
                 return response_data, 200
@@ -583,13 +605,13 @@ class NavigationResource(Resource):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for navigation")
 
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             # Save screenshot with unique ID
             screenshot_id = f"page_{int(time.time())}"
             time.sleep(0.5)
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            server.automator.driver.save_screenshot(screenshot_path)
+            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+            automator.driver.save_screenshot(screenshot_path)
 
             response_data = {
                 "success": True,
@@ -609,6 +631,17 @@ class NavigationResource(Resource):
     @handle_automator_response(server)
     def get(self):
         """Handle navigation via GET requests, using query parameters or default_action"""
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email()
+        
+        if not sindarin_email:
+            return {"error": "No email provided to identify which profile to use"}, 400
+            
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            return {"error": f"No automator found for {sindarin_email}"}, 404
+            
         # Check if action is provided in query parameters
         action = request.args.get("action")
 
