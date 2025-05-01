@@ -153,29 +153,16 @@ class AutomationServer:
                     logger.info(f"Device ID {self.automators[email].device_id} no longer available in ADB")
 
                 if not force_new_emulator:
-                    # Get current profile to check if we're actually switching between users
-                    current_profile = self.profile_manager.get_current_profile()
-                    current_email = current_profile.get("email") if current_profile else None
+                    # We no longer have a concept of "current" profile
+                    # Always switch to the requested profile if needed
 
-                    # If current profile email is different from target email, we should force start a new emulator
-                    if current_email and current_email != email:
-                        logger.info(
-                            f"Current profile is for {current_email} but requested {email} - forcing new emulator"
-                        )
-                        # Cleanup existing automator for this email since we're starting fresh
-                        self.automators[email].cleanup()
-                        self.automators[email] = None
-                        # Will continue below to create a new emulator
-                    else:
-                        # We need to force a new emulator since the old one is no longer available
-                        logger.info(
-                            f"Emulator for {email} no longer available, forcing new emulator creation"
-                        )
-                        # Cleanup existing automator
-                        self.automators[email].cleanup()
-                        self.automators[email] = None
-                        # Force a new emulator
-                        force_new_emulator = True
+                    # We need to force a new emulator since the old one is no longer available
+                    logger.info(f"Emulator for {email} no longer available, forcing new emulator creation")
+                    # Cleanup existing automator
+                    self.automators[email].cleanup()
+                    self.automators[email] = None
+                    # Force a new emulator
+                    force_new_emulator = True
                 else:
                     # Need to recreate the automator since force_new_emulator is True
                     logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")

@@ -134,13 +134,12 @@ def ensure_user_profile_loaded(f):
         # 1. Switching to an existing profile
         # 2. Loading a profile with a running emulator
 
-        # Get our currently active profile (before switching)
-        current_profile = server.profile_manager.get_current_profile()
-        current_email = current_profile.get("email") if current_profile else None
+        # We no longer have a concept of "current" profile
+        # Always use the individual profile for the requested email
 
-        # If we're switching to a different email than what's in current_profile.json,
-        # then force a new emulator to ensure we get the correct profile
-        force_new_emulator = current_email is not None and current_email != sindarin_email
+        # Always get a fresh emulator instance for the email when needed
+        # force_new_emulator is passed as False by default, but can be set to True via request param
+        force_new_emulator = request.args.get("recreate") == "1"
 
         success, message = server.switch_profile(sindarin_email, force_new_emulator=force_new_emulator)
 

@@ -63,7 +63,7 @@ class AVDProfileManager:
         self.base_dir = base_dir
         self.profiles_dir = os.path.join(base_dir, "profiles")
         self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
-        self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
+        # Removing current_profile_file as we're managing multiple users simultaneously
         self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
 
         # Ensure directories exist
@@ -98,7 +98,7 @@ class AVDProfileManager:
 
         # Load profile index if it exists, otherwise create empty one
         self.profiles_index = self._load_profiles_index()
-        self.current_profile = self._load_current_profile()
+        # Removed current_profile loading as we're managing multiple users simultaneously
         self.user_preferences = self._load_user_preferences()
 
         # Scan for running emulators with email patterns on initialization
@@ -189,17 +189,7 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error saving profiles index: {e}")
 
-    def _load_current_profile(self) -> Optional[Dict]:
-        """Load current profile from JSON file or return None if it doesn't exist."""
-        if os.path.exists(self.current_profile_file):
-            try:
-                with open(self.current_profile_file, "r") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading current profile: {e}")
-                return None
-        else:
-            return None
+    # Removed _load_current_profile method as we're managing multiple users simultaneously
 
     def _load_user_preferences(self) -> Dict[str, Dict]:
         """Load user preferences from JSON file or create if it doesn't exist."""
@@ -236,44 +226,32 @@ class AVDProfileManager:
         """
         return self.device_discovery.find_running_emulator_for_email(email, self.profiles_index)
 
-    def _save_current_profile(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
+    def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
-        Save current profile to JSON file.
+        Save profile status to the user_preferences file.
+        This replaces the previous _save_current_profile that used a separate file.
 
         Args:
             email: Email address of the profile
             avd_name: Name of the AVD
             emulator_id: Optional emulator device ID (e.g., 'emulator-5554')
         """
-        # Prepare new profile data
-        current = {"email": email, "avd_name": avd_name, "last_used": int(time.time())}
+        # Make sure the email exists in user_preferences
+        if email not in self.user_preferences:
+            self.user_preferences[email] = {}
+
+        # Update the user's status
+        self.user_preferences[email]["last_used"] = int(time.time())
+        self.user_preferences[email]["avd_name"] = avd_name
 
         # Add emulator ID if provided
         if emulator_id:
-            current["emulator_id"] = emulator_id
+            self.user_preferences[email]["emulator_id"] = emulator_id
 
-        # Load any existing preferences for this email from user_preferences
-        if email in self.user_preferences:
-            # Copy styling preferences from user_preferences to current profile if they exist
-            if "styles_updated" in self.user_preferences[email]:
-                current["styles_updated"] = self.user_preferences[email]["styles_updated"]
-        # Fallback to preserving existing preferences if they exist in the current profile
-        elif self.current_profile and self.current_profile.get("email") == email:
-            # Copy over any preferences that should be preserved
-            if "styles_updated" in self.current_profile:
-                current["styles_updated"] = self.current_profile["styles_updated"]
-                # Also update user_preferences to ensure consistency
-                if email not in self.user_preferences:
-                    self.user_preferences[email] = {}
-                self.user_preferences[email]["styles_updated"] = self.current_profile["styles_updated"]
-                self._save_user_preferences()
+        # Save the updated preferences
+        self._save_user_preferences()
 
-        try:
-            with open(self.current_profile_file, "w") as f:
-                json.dump(current, f, indent=2)
-            self.current_profile = current
-        except Exception as e:
-            logger.error(f"Error saving current profile: {e}")
+        logger.debug(f"Saved profile status for {email} with AVD {avd_name}")
 
     def get_avd_for_email(self, email: str) -> Optional[str]:
         """
@@ -453,7 +431,7 @@ class AVDProfileManager:
                 "email": email,
                 "avd_name": avd_name,
                 "exists": os.path.exists(avd_path),
-                "current": self.current_profile and self.current_profile.get("email") == email,
+                "current": False,  # No concept of "current" profile anymore
                 "emulator_id": emulator_id,
             }
 
@@ -466,29 +444,84 @@ class AVDProfileManager:
             result.append(profile_info)
         return result
 
-    def get_current_profile(self) -> Optional[Dict]:
+    def get_profile_for_email(self, email: str) -> Optional[Dict]:
         """
-        Get information about the currently active profile.
+        Get information about a specific profile by email.
+        This replaces the previous get_current_profile method that returned a single "current" profile.
+
+        Args:
+            email: The email address to get profile information for
 
         Returns:
-            Optional[Dict]: Current profile information or None if no profile is active
+            Optional[Dict]: Profile information or None if the profile doesn't exist
         """
-        if self.current_profile:
-            # Get the current email and AVD name
-            email = self.current_profile.get("email")
-            avd_name = self.current_profile.get("avd_name")
+        if not email:
+            return None
 
-            if email and avd_name:
-                # Look for a running emulator for this email/AVD
-                is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
+        # Check if the email exists in profiles_index
+        if email not in self.profiles_index:
+            return None
 
-                # If we found one and it's different from what we have stored, update it
-                if is_running and emulator_id and emulator_id != self.current_profile.get("emulator_id"):
-                    logger.info(f"Updating emulator ID for current profile: {emulator_id}")
-                    self.current_profile["emulator_id"] = emulator_id
-                    self._save_current_profile(email, avd_name, emulator_id)
+        # Get the AVD name for this email
+        if isinstance(self.profiles_index[email], dict) and "avd_name" in self.profiles_index[email]:
+            avd_name = self.profiles_index[email]["avd_name"]
+        elif isinstance(self.profiles_index[email], str):
+            avd_name = self.profiles_index[email]
+        else:
+            return None
 
-        return self.current_profile
+        # Look for a running emulator for this email
+        is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
+
+        # Build profile information
+        profile = {
+            "email": email,
+            "avd_name": avd_name,
+        }
+
+        # Add emulator info if available
+        if is_running and emulator_id:
+            profile["emulator_id"] = emulator_id
+
+            # Update stored emulator ID if different from what we have
+            stored_emulator_id = None
+            if email in self.user_preferences:
+                stored_emulator_id = self.user_preferences[email].get("emulator_id")
+
+            if stored_emulator_id != emulator_id:
+                logger.info(f"Updating emulator ID for profile {email}: {emulator_id}")
+                self._save_profile_status(email, avd_name, emulator_id)
+
+        # Add any preferences if available
+        if email in self.user_preferences:
+            for key, value in self.user_preferences[email].items():
+                if key not in profile:
+                    profile[key] = value
+
+        return profile
+
+    # Keep this method for backward compatibility, but make it use the new approach
+    def get_current_profile(self) -> Optional[Dict]:
+        """
+        Get information about the "current" profile (for backward compatibility).
+        This now returns info about the most recently used profile from user_preferences.
+
+        Returns:
+            Optional[Dict]: Profile information or None if no profiles exist
+        """
+        # Find the most recently used profile
+        most_recent_email = None
+        most_recent_time = 0
+
+        for email, prefs in self.user_preferences.items():
+            if "last_used" in prefs and prefs["last_used"] > most_recent_time:
+                most_recent_time = prefs["last_used"]
+                most_recent_email = email
+
+        if most_recent_email:
+            return self.get_profile_for_email(most_recent_email)
+
+        return None
 
     def register_profile(
         self, email: str, avd_name: str, vnc_instance: int = None, appium_port: int = None
@@ -545,7 +578,7 @@ class AVDProfileManager:
         # Create a standardized AVD name for this email first
         normalized_avd_name = self.get_avd_name_from_email(email)
         logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
-        
+
         # Next, try to find any running emulator to use
         running_emulators = self.device_discovery.map_running_emulators()
 
@@ -556,8 +589,8 @@ class AVDProfileManager:
             # Use proper registration method instead of direct dict assignment to ensure correct format
             self.register_profile(email, avd_name)
 
-            # Also update current profile
-            self._save_current_profile(email, avd_name, emulator_id)
+            # Update profile status
+            self._save_profile_status(email, avd_name, emulator_id)
             return
 
         # If no running emulator, check for available AVDs
@@ -575,8 +608,8 @@ class AVDProfileManager:
                 # Use proper registration method instead of direct dict assignment to ensure correct format
                 self.register_profile(email, avd_name)
 
-                # Update current profile without emulator ID (not running yet)
-                self._save_current_profile(email, avd_name)
+                # Update profile status without emulator ID
+                self._save_profile_status(email, avd_name)
                 return
         except Exception as e:
             logger.warning(f"Error listing available AVDs: {e}")
@@ -586,8 +619,8 @@ class AVDProfileManager:
         # Use proper registration method instead of direct dict assignment to ensure correct format
         self.register_profile(email, normalized_avd_name)
 
-        # Update current profile without emulator ID
-        self._save_current_profile(email, normalized_avd_name)
+        # Update profile status without emulator ID
+        self._save_profile_status(email, normalized_avd_name)
 
     def stop_emulator(self, device_id: str = None) -> bool:
         """
@@ -623,49 +656,52 @@ class AVDProfileManager:
         """
         return self.avd_creator.create_new_avd(email)
 
-    def is_styles_updated(self) -> bool:
+    def is_styles_updated(self, email: str = None) -> bool:
         """
-        Check if styles have been updated for the current profile.
+        Check if styles have been updated for a profile.
+
+        Args:
+            email: The email address of the profile to check. If None, returns False.
 
         Returns:
             bool: True if styles have been updated, False otherwise
         """
-        if self.current_profile and "styles_updated" in self.current_profile:
-            return self.current_profile["styles_updated"]
+        if not email:
+            return False
+
+        if email in self.user_preferences and "styles_updated" in self.user_preferences[email]:
+            return self.user_preferences[email]["styles_updated"]
+
         return False
 
-    def update_style_preference(self, is_updated: bool) -> bool:
+    def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
         """
-        Update the styles_updated preference for the current profile.
+        Update the styles_updated preference for a profile.
 
         Args:
             is_updated: Boolean indicating whether styles have been updated
+            email: The email address of the profile to update. If None, returns False.
 
         Returns:
             bool: True if the update was successful, False otherwise
         """
         try:
-            if not self.current_profile:
-                logger.warning("No current profile to update style preference for")
-                return False
-
-            email = self.current_profile.get("email")
             if not email:
-                logger.warning("Current profile has no email to update style preference for")
+                logger.warning("No email provided to update style preference")
                 return False
 
-            # Update the current profile
-            self.current_profile["styles_updated"] = is_updated
+            # Get the AVD name for this email
+            avd_name = self.get_avd_for_email(email)
+            if not avd_name:
+                logger.warning(f"No AVD name found for email {email}")
+                return False
 
-            # Also update user preferences to ensure persistence
+            # Update user preferences to ensure persistence
             if email not in self.user_preferences:
                 self.user_preferences[email] = {}
             self.user_preferences[email]["styles_updated"] = is_updated
 
-            # Save changes to both files
-            self._save_current_profile(
-                email, self.current_profile.get("avd_name", ""), self.current_profile.get("emulator_id")
-            )
+            # Save changes
             self._save_user_preferences()
 
             logger.info(f"Successfully updated style preference for {email} to {is_updated}")
@@ -762,10 +798,10 @@ class AVDProfileManager:
                 # Create a standardized AVD name for this email first
                 normalized_avd_name = self.get_avd_name_from_email(email)
                 logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
-                
+
                 # Register this standardized name first to ensure it's in the profiles_index
                 self.register_profile(email, normalized_avd_name)
-                
+
                 # Now look for any available AVD as a fallback
                 try:
                     # List available AVDs
@@ -792,8 +828,8 @@ class AVDProfileManager:
                     # Use the standardized name we registered
                     avd_name = normalized_avd_name
 
-            # Update current profile without trying to start emulator
-            self._save_current_profile(email, avd_name)
+            # Update profile status without trying to start emulator
+            self._save_profile_status(email, avd_name)
 
             logger.info(f"In simplified mode, tracking profile for {email} without managing emulator")
             return True, f"Tracking profile for {email} in simplified mode"
@@ -809,15 +845,15 @@ class AVDProfileManager:
         # If no AVD exists for this email, create one
         if not avd_name:
             logger.info(f"No AVD found for {email}, creating new one")
-            
+
             # Create a normalized AVD name based on the email
             normalized_avd_name = self.get_avd_name_from_email(email)
             logger.info(f"Generated AVD name {normalized_avd_name} for {email}")
-            
+
             # First register this AVD name in profiles_index so VNC can find it
             self.register_profile(email, normalized_avd_name)
             logger.info(f"Registered AVD {normalized_avd_name} for email {email} in profiles_index")
-            
+
             # Try to create the AVD - even if this fails, we'll have the profile registered
             success, result = self.create_new_avd(email)
             if not success:
@@ -861,8 +897,8 @@ class AVDProfileManager:
                 avd_name = found_avd_name
                 self.register_profile(email, avd_name)
 
-            # Save the current profile with the found emulator
-            self._save_current_profile(email, avd_name, emulator_id)
+            # Save the profile status with the found emulator
+            self._save_profile_status(email, avd_name, emulator_id)
             logger.info(f"Using existing running emulator for profile {email}")
             return True, f"Switched to profile {email} with existing running emulator"
 
@@ -870,8 +906,8 @@ class AVDProfileManager:
         # we'll just track the profile without trying to start the emulator
         if self.host_arch == "arm64" and platform.system() == "Darwin":
             logger.info(f"Running on ARM Mac - skipping emulator start, just tracking profile change")
-            # Update current profile
-            self._save_current_profile(email, avd_name)
+            # Update profile status
+            self._save_profile_status(email, avd_name)
 
             if not avd_exists:
                 logger.warning(
@@ -897,11 +933,11 @@ class AVDProfileManager:
         if self.start_emulator(avd_name):
             # We need to get the emulator ID for the started emulator
             started_emulator_id = self.get_emulator_id_for_avd(avd_name)
-            self._save_current_profile(email, avd_name, started_emulator_id)
+            self._save_profile_status(email, avd_name, started_emulator_id)
             logger.info(f"Successfully started emulator for profile {email}")
             return True, f"Switched to profile {email} with new emulator"
         else:
-            # Failed to start emulator, but still update the current profile for tracking
-            self._save_current_profile(email, avd_name)
-            logger.error(f"Failed to start emulator for profile {email}, but updated current profile")
+            # Failed to start emulator, but still update the profile status for tracking
+            self._save_profile_status(email, avd_name)
+            logger.error(f"Failed to start emulator for profile {email}, but updated profile tracking")
             return False, f"Failed to start emulator for profile {email}"
