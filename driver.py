@@ -111,7 +111,12 @@ class Driver:
                 device_id = profile.get("emulator_id") if profile else None
 
                 # If this is the same device and we already set hw_overlays_disabled, skip
-                if device_id and device_id == self.device_id and profile and profile.get("hw_overlays_disabled", False):
+                if (
+                    device_id
+                    and device_id == self.device_id
+                    and profile
+                    and profile.get("hw_overlays_disabled", False)
+                ):
                     logger.info(f"HW overlays already disabled for device {self.device_id}, skipping")
                     return True
 
@@ -166,7 +171,7 @@ class Driver:
                 if not profile:
                     logger.warning("Cannot update profile setting: no current profile")
                     return
-                    
+
                 email = profile.get("email")
                 avd_name = profile.get("avd_name")
 
@@ -176,7 +181,7 @@ class Driver:
 
                     # Update the profile in the profile manager
                     emulator_id = profile.get("emulator_id")
-                    
+
                     # Check which method is available in profile_manager
                     if hasattr(self.automator.profile_manager, "_save_profile_status"):
                         self.automator.profile_manager._save_profile_status(email, avd_name, emulator_id)
@@ -208,7 +213,12 @@ class Driver:
                 device_id = profile.get("emulator_id") if profile else None
 
                 # If this is the same device and we already set animations_disabled, skip
-                if device_id and device_id == self.device_id and profile and profile.get("animations_disabled", False):
+                if (
+                    device_id
+                    and device_id == self.device_id
+                    and profile
+                    and profile.get("animations_disabled", False)
+                ):
                     logger.info(f"System animations already disabled for device {self.device_id}, skipping")
                     return True
 
@@ -289,7 +299,12 @@ class Driver:
                 device_id = profile.get("emulator_id") if profile else None
 
                 # If this is the same device and we already set sleep_disabled, skip
-                if device_id and device_id == self.device_id and profile and profile.get("sleep_disabled", False):
+                if (
+                    device_id
+                    and device_id == self.device_id
+                    and profile
+                    and profile.get("sleep_disabled", False)
+                ):
                     logger.info(f"Sleep already disabled for device {self.device_id}, skipping")
                     return True
 
@@ -375,7 +390,12 @@ class Driver:
                 device_id = profile.get("emulator_id") if profile else None
 
                 # If this is the same device and we already set status_bar_disabled, skip
-                if device_id and device_id == self.device_id and profile and profile.get("status_bar_disabled", False):
+                if (
+                    device_id
+                    and device_id == self.device_id
+                    and profile
+                    and profile.get("status_bar_disabled", False)
+                ):
                     logger.info(f"Status bar already disabled for device {self.device_id}, skipping")
                     return True
 
@@ -563,40 +583,55 @@ class Driver:
                 logger.info("[DRIVER DEBUG] self.automator exists")
                 if hasattr(self.automator, "profile_manager"):
                     logger.info("[DRIVER DEBUG] profile_manager exists")
-                    
+
                     # Log the type and available methods of profile_manager for debugging
-                    logger.info(f"[DRIVER DEBUG] profile_manager type: {type(self.automator.profile_manager).__name__}")
-                    profile_manager_methods = [method for method in dir(self.automator.profile_manager) 
-                                            if callable(getattr(self.automator.profile_manager, method)) 
-                                            and not method.startswith('__')]
+                    logger.info(
+                        f"[DRIVER DEBUG] profile_manager type: {type(self.automator.profile_manager).__name__}"
+                    )
+                    profile_manager_methods = [
+                        method
+                        for method in dir(self.automator.profile_manager)
+                        if callable(getattr(self.automator.profile_manager, method))
+                        and not method.startswith("__")
+                    ]
                     logger.info(f"[DRIVER DEBUG] profile_manager methods: {profile_manager_methods}")
-                    
+
                     # Check if the profile manager can get a current profile
                     if hasattr(self.automator.profile_manager, "get_current_profile"):
                         logger.info("[DRIVER DEBUG] get_current_profile method exists")
                         profile = self.automator.profile_manager.get_current_profile()
                         logger.info(f"[DRIVER DEBUG] get_current_profile returned: {profile}")
-                        
+
                         if profile:
                             # Update the current profile with the actual device ID
                             email = profile.get("email")
                             avd_name = profile.get("avd_name")
-                            logger.info(f"[DRIVER DEBUG] Profile details - email: {email}, avd_name: {avd_name}")
+                            logger.info(
+                                f"[DRIVER DEBUG] Profile details - email: {email}, avd_name: {avd_name}"
+                            )
 
                             if email and avd_name:
-                                logger.info(f"[DRIVER DEBUG] Updating profile for {email} with device ID: {self.device_id}")
-                                
+                                logger.info(
+                                    f"[DRIVER DEBUG] Updating profile for {email} with device ID: {self.device_id}"
+                                )
+
                                 # Use the appropriate method based on what's available
                                 if hasattr(self.automator.profile_manager, "_save_profile_status"):
                                     logger.info("[DRIVER DEBUG] Using _save_profile_status method")
-                                    self.automator.profile_manager._save_profile_status(email, avd_name, self.device_id)
+                                    self.automator.profile_manager._save_profile_status(
+                                        email, avd_name, self.device_id
+                                    )
                                 elif hasattr(self.automator.profile_manager, "_save_current_profile"):
                                     logger.info("[DRIVER DEBUG] Using _save_current_profile method")
-                                    self.automator.profile_manager._save_current_profile(email, avd_name, self.device_id)
+                                    self.automator.profile_manager._save_current_profile(
+                                        email, avd_name, self.device_id
+                                    )
                                 else:
                                     logger.error("[DRIVER DEBUG] No method found to save profile status")
                             else:
-                                logger.error(f"[DRIVER DEBUG] Missing required profile fields: email={email}, avd_name={avd_name}")
+                                logger.error(
+                                    f"[DRIVER DEBUG] Missing required profile fields: email={email}, avd_name={avd_name}"
+                                )
                         else:
                             logger.error("[DRIVER DEBUG] get_current_profile returned None")
                     else:

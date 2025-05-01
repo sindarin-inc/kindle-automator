@@ -453,20 +453,22 @@ class AVDProfileManager:
             Optional[Dict]: Profile information or None if the profile doesn't exist
         """
         logger.info(f"[PROFILE DEBUG] get_profile_for_email called with email: {email}")
-        
+
         if not email:
             logger.warning("[PROFILE DEBUG] get_profile_for_email called with empty email")
             return None
 
         # Check if the email exists in profiles_index
         if email not in self.profiles_index:
-            logger.warning(f"[PROFILE DEBUG] Email {email} not found in profiles_index. Available keys: {list(self.profiles_index.keys())}")
+            logger.warning(
+                f"[PROFILE DEBUG] Email {email} not found in profiles_index. Available keys: {list(self.profiles_index.keys())}"
+            )
             return None
 
         # Get the AVD name for this email
         profile_entry = self.profiles_index[email]
         logger.info(f"[PROFILE DEBUG] Found profile entry for {email}: {profile_entry}")
-        
+
         if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
             avd_name = profile_entry["avd_name"]
             logger.info(f"[PROFILE DEBUG] Found AVD name in dict format: {avd_name}")
@@ -480,7 +482,9 @@ class AVDProfileManager:
         # Look for a running emulator for this email
         logger.info(f"[PROFILE DEBUG] Looking for running emulator for email {email}")
         is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
-        logger.info(f"[PROFILE DEBUG] find_running_emulator_for_email result: running={is_running}, emulator_id={emulator_id}")
+        logger.info(
+            f"[PROFILE DEBUG] find_running_emulator_for_email result: running={is_running}, emulator_id={emulator_id}"
+        )
 
         # Build profile information
         profile = {
@@ -503,7 +507,9 @@ class AVDProfileManager:
                 logger.info(f"[PROFILE DEBUG] Updating emulator ID for profile {email}: {emulator_id}")
                 self._save_profile_status(email, avd_name, emulator_id)
         else:
-            logger.warning(f"[PROFILE DEBUG] No running emulator found for {email}, profile will not have emulator_id")
+            logger.warning(
+                f"[PROFILE DEBUG] No running emulator found for {email}, profile will not have emulator_id"
+            )
 
         # Add any preferences if available
         if email in self.user_preferences:
@@ -527,14 +533,16 @@ class AVDProfileManager:
         logger.info("[PROFILE DEBUG] get_current_profile() called in multi-user system context")
         try:
             # Check for running emulators
-            running_emulators = self.device_discovery.get_running_emulators()
+            running_emulators = self.device_discovery.map_running_emulators()
             logger.info(f"[PROFILE DEBUG] Found running emulators: {running_emulators}")
-            
+
             # If there are running emulators, try to find one in our profiles_index
             if running_emulators:
                 # Log profiles_index for debugging
-                logger.info(f"[PROFILE DEBUG] Current profiles_index keys: {list(self.profiles_index.keys())}")
-                
+                logger.info(
+                    f"[PROFILE DEBUG] Current profiles_index keys: {list(self.profiles_index.keys())}"
+                )
+
                 # First, try to find a profile that matches one of the running emulators
                 for email, profile_entry in self.profiles_index.items():
                     # Extract AVD name from profile
@@ -543,55 +551,51 @@ class AVDProfileManager:
                         avd_name = profile_entry
                     elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
                         avd_name = profile_entry["avd_name"]
-                    
+
                     if avd_name and avd_name in running_emulators:
-                        logger.info(f"[PROFILE DEBUG] Found matching profile for running emulator: {email} -> {avd_name}")
+                        logger.info(
+                            f"[PROFILE DEBUG] Found matching profile for running emulator: {email} -> {avd_name}"
+                        )
                         emulator_id = running_emulators[avd_name]
-                        
+
                         # Build a profile object with the information we have
-                        profile = {
-                            "email": email,
-                            "avd_name": avd_name,
-                            "emulator_id": emulator_id
-                        }
-                        
+                        profile = {"email": email, "avd_name": avd_name, "emulator_id": emulator_id}
+
                         # Add additional info from profiles_index if available
                         if isinstance(profile_entry, dict):
                             for key, value in profile_entry.items():
                                 if key != "avd_name":  # Avoid duplicate
                                     profile[key] = value
-                        
+
                         # Add user preferences if available
                         if email in self.user_preferences:
                             for key, value in self.user_preferences[email].items():
                                 if key not in profile:  # Don't overwrite profile
                                     profile[key] = value
-                        
+
                         logger.info(f"[PROFILE DEBUG] Returning profile for {email}: {profile}")
                         return profile
-                
+
                 # If we didn't find a matching profile, just return info about the first running emulator
                 first_avd = list(running_emulators.keys())[0]
-                logger.info(f"[PROFILE DEBUG] No profile matched running emulators. Using first running emulator: {first_avd}")
-                
+                logger.info(
+                    f"[PROFILE DEBUG] No profile matched running emulators. Using first running emulator: {first_avd}"
+                )
+
                 # Try to extract email from AVD name if possible
                 email = self._extract_email_from_avd_name(first_avd)
                 if not email:
                     # If extraction fails, use a placeholder
                     email = f"unknown_user_for_{first_avd}"
-                
-                profile = {
-                    "email": email,
-                    "avd_name": first_avd,
-                    "emulator_id": running_emulators[first_avd]
-                }
+
+                profile = {"email": email, "avd_name": first_avd, "emulator_id": running_emulators[first_avd]}
                 logger.info(f"[PROFILE DEBUG] Returning synthesized profile: {profile}")
                 return profile
-            
+
             # Even if we don't find matching emulators, check if we have a device_id in any profile
             # This helps in cases where the device ID comes from elsewhere but isn't properly tracked in our emulator list
             logger.info("[PROFILE DEBUG] No matching running emulators found in our tracking")
-            
+
             # Check ADB directly for any connected emulators as a last resort
             try:
                 result = subprocess.run(
@@ -601,71 +605,79 @@ class AVDProfileManager:
                     text=True,
                     timeout=3,
                 )
-                
+
                 if result.returncode == 0:
                     logger.info(f"[PROFILE DEBUG] ADB devices output: {result.stdout}")
                     lines = result.stdout.strip().split("\n")
-                    
+
                     for line in lines[1:]:  # Skip header
                         if not line.strip():
                             continue
-                            
+
                         parts = line.split("\t")
                         if len(parts) >= 2 and "emulator" in parts[0] and parts[1].strip() == "device":
                             emulator_id = parts[0].strip()
                             logger.info(f"[PROFILE DEBUG] Found connected emulator: {emulator_id}")
-                            
+
                             # Use any profile with this emulator ID if available
                             for email, prefs in self.user_preferences.items():
                                 if prefs.get("emulator_id") == emulator_id:
                                     avd_name = prefs.get("avd_name")
                                     if avd_name:
-                                        logger.info(f"[PROFILE DEBUG] Found matching profile for {emulator_id}: {email}")
+                                        logger.info(
+                                            f"[PROFILE DEBUG] Found matching profile for {emulator_id}: {email}"
+                                        )
                                         profile = {
                                             "email": email,
                                             "avd_name": avd_name,
-                                            "emulator_id": emulator_id
+                                            "emulator_id": emulator_id,
                                         }
-                                        logger.info(f"[PROFILE DEBUG] Returning profile from user preferences: {profile}")
+                                        logger.info(
+                                            f"[PROFILE DEBUG] Returning profile from user preferences: {profile}"
+                                        )
                                         return profile
-                            
+
                             # If no matching profile found but we have a device, create a synthetic profile
                             if self.profiles_index:
                                 # Use the first profile we have and associate it with this device
                                 first_email = next(iter(self.profiles_index.keys()))
                                 profile_entry = self.profiles_index[first_email]
-                                
+
                                 if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
                                     avd_name = profile_entry["avd_name"]
                                 elif isinstance(profile_entry, str):
                                     avd_name = profile_entry
                                 else:
                                     avd_name = f"DefaultAVD_{first_email}"
-                                    
-                                logger.info(f"[PROFILE DEBUG] Creating synthetic profile for {first_email} with {emulator_id}")
+
+                                logger.info(
+                                    f"[PROFILE DEBUG] Creating synthetic profile for {first_email} with {emulator_id}"
+                                )
                                 profile = {
                                     "email": first_email,
                                     "avd_name": avd_name,
-                                    "emulator_id": emulator_id
+                                    "emulator_id": emulator_id,
                                 }
-                                
+
                                 # Save this mapping for future use
                                 self._save_profile_status(first_email, avd_name, emulator_id)
                                 logger.info(f"[PROFILE DEBUG] Returning synthetic profile: {profile}")
                                 return profile
-                            
+
                             # If we have an emulator but no profiles at all, create a generic one
-                            logger.info(f"[PROFILE DEBUG] Creating generic profile for emulator {emulator_id}")
+                            logger.info(
+                                f"[PROFILE DEBUG] Creating generic profile for emulator {emulator_id}"
+                            )
                             profile = {
                                 "email": "default_user",
                                 "avd_name": "Default_AVD",
-                                "emulator_id": emulator_id
+                                "emulator_id": emulator_id,
                             }
                             logger.info(f"[PROFILE DEBUG] Returning generic profile: {profile}")
                             return profile
             except Exception as e:
                 logger.error(f"[PROFILE DEBUG] Error checking for connected emulators: {e}")
-                
+
             logger.warning("[PROFILE DEBUG] No running emulators or profiles found, returning None")
             return None
         except Exception as e:
@@ -686,11 +698,13 @@ class AVDProfileManager:
         """
         logger.info(f"[PROFILE DEBUG] Starting register_profile for email: {email}, avd: {avd_name}")
         logger.info(f"[PROFILE DEBUG] Current profiles_index keys: {list(self.profiles_index.keys())}")
-        
+
         # Debug check if the email already exists before we add it
         if email in self.profiles_index:
-            logger.info(f"[PROFILE DEBUG] Email {email} already exists in profiles_index: {self.profiles_index[email]}")
-            
+            logger.info(
+                f"[PROFILE DEBUG] Email {email} already exists in profiles_index: {self.profiles_index[email]}"
+            )
+
             if isinstance(self.profiles_index[email], str):
                 # Convert old format to new format
                 old_avd = self.profiles_index[email]
@@ -719,13 +733,13 @@ class AVDProfileManager:
         try:
             self._save_profiles_index()
             logger.info(f"[PROFILE DEBUG] Successfully saved profiles_index, verifying entry")
-            
+
             # Verify the entry was saved
             if email in self.profiles_index:
                 logger.info(f"[PROFILE DEBUG] Verified {email} is in memory copy of profiles_index")
             else:
                 logger.error(f"[PROFILE DEBUG] {email} is NOT in memory copy of profiles_index!")
-                
+
             # Verify the file was updated
             if os.path.exists(self.index_file):
                 try:
@@ -741,7 +755,7 @@ class AVDProfileManager:
                 logger.error(f"[PROFILE DEBUG] Index file does not exist at {self.index_file}!")
         except Exception as save_e:
             logger.error(f"[PROFILE DEBUG] Error saving profiles_index: {save_e}")
-            
+
         # Build and log the registration message
         log_message = f"Registered profile for {email} with AVD {avd_name}"
         if vnc_instance is not None:

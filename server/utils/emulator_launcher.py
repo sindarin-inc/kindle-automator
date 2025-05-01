@@ -122,7 +122,11 @@ class EmulatorLauncher:
                 return display_num
 
             # Extract AVD name from email to find the correct profile
-            normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            normalized_form = (
+                "@" not in email
+                and "_" in email
+                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            )
             avd_name = self._extract_avd_name_from_email(email)
 
             # Check the VNC instance map with AVD name
@@ -164,7 +168,11 @@ class EmulatorLauncher:
         """
         try:
             # Extract AVD name from email to find the correct profile
-            normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            normalized_form = (
+                "@" not in email
+                and "_" in email
+                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            )
             avd_name = self._extract_avd_name_from_email(email)
 
             # Look up the port using the AVD name
@@ -230,7 +238,11 @@ class EmulatorLauncher:
         """
         try:
             # Extract AVD name from email to find the correct profile
-            normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            normalized_form = (
+                "@" not in email
+                and "_" in email
+                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            )
             avd_name = self._extract_avd_name_from_email(email)
 
             if not avd_name:
@@ -286,7 +298,7 @@ class EmulatorLauncher:
         try:
             profiles_dir = os.path.join(self.android_home, "profiles")
             profiles_index_path = os.path.join(profiles_dir, "profiles_index.json")
-            
+
             # First check if this email already has an entry in profiles_index
             if os.path.exists(profiles_index_path):
                 with open(profiles_index_path, "r") as f:
@@ -302,10 +314,12 @@ class EmulatorLauncher:
                         return profile_entry["avd_name"]
 
             # No existing entry, detect email format and create appropriate AVD name
-            is_normalized = "@" not in email and "_" in email and (
-                email.endswith("_com") or email.endswith("_org") or email.endswith("_io")
+            is_normalized = (
+                "@" not in email
+                and "_" in email
+                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
             )
-            
+
             # Handle normalized vs. standard email formats
             if is_normalized:
                 # Already normalized email format - just add prefix if needed
@@ -329,23 +343,23 @@ class EmulatorLauncher:
             try:
                 # Ensure profiles directory exists
                 os.makedirs(profiles_dir, exist_ok=True)
-                
+
                 # Create or load profiles_index
                 if os.path.exists(profiles_index_path):
                     with open(profiles_index_path, "r") as f:
                         profiles_index = json.load(f)
                 else:
                     profiles_index = {}
-                
+
                 # Add or update the entry for this email
                 profiles_index[email] = {"avd_name": avd_name}
-                
+
                 # Save to file
                 with open(profiles_index_path, "w") as f:
                     json.dump(profiles_index, f, indent=2)
             except Exception as e:
                 logger.error(f"Error updating profiles_index: {e}")
-                
+
             # Return the AVD name
             logger.info(f"Registered profile for {email} with AVD {avd_name} in profiles_index")
             return avd_name
