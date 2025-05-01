@@ -1181,6 +1181,19 @@ class AuthResource(Resource):
                 # Continue with normal authentication process
 
         # Always use manual login via VNC (no automation of Amazon credentials)
+        # Before getting VNC URL, ensure that VNC server is running
+
+        # Ensure VNC is running for this display if using Python launcher
+        if using_python_launcher and display_num is not None:
+            try:
+                logger.info(f"Ensuring VNC server is running for display {display_num}")
+                if hasattr(automator.emulator_manager, "emulator_launcher"):
+                    # Call _ensure_vnc_running to start Xvfb and x11vnc if needed
+                    automator.emulator_manager.emulator_launcher._ensure_vnc_running(display_num)
+                    logger.info(f"VNC server check/start completed for display {display_num}")
+            except Exception as e:
+                logger.error(f"Error starting VNC server: {e}")
+        
         # Get the formatted VNC URL with the profile email and emulator ID
         # emulator_id is already available from above code
         formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)

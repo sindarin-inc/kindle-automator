@@ -207,7 +207,6 @@ class DeviceDiscovery:
 
                 # Also update profiles index if provided and this mapping is new
                 if profiles_index is not None and email_part not in profiles_index:
-                    logger.info(f"Adding new email-to-AVD mapping: {email_part} -> {avd_name}")
                     profiles_index[email_part] = avd_name
 
         return discovered_mappings
