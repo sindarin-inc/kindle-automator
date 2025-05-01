@@ -74,7 +74,7 @@ def ensure_user_profile_loaded(f):
         automator = server.automators.get(sindarin_email)
         if automator and hasattr(automator, "driver") and automator.driver:
             # Set as current email for backward compatibility
-            server.current_email = sindarin_email
+            # No longer setting current_email as it has been removed
             logger.info(f"Already have automator for email: {sindarin_email}")
 
             # If the emulator is running for this profile, we're good to go

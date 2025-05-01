@@ -28,7 +28,7 @@ def ensure_automator_healthy(f):
         max_retries = 3  # Allow more retries for UiAutomator2 crashes
 
         # Get sindarin_email from request to determine which automator to use
-        sindarin_email = get_sindarin_email(default_email=server.current_email)
+        sindarin_email = get_sindarin_email()
 
         # If we still don't have an email after checking current_email, try the current profile
         if not sindarin_email:
@@ -42,8 +42,7 @@ def ensure_automator_healthy(f):
             logger.error("No sindarin_email found in request or current state")
             return {"error": "No email provided to identify which profile to use"}, 400
 
-        # Ensure this is set as the current email for backward compatibility
-        server.current_email = sindarin_email
+        # No longer setting current_email as it has been removed
 
         for attempt in range(max_retries):
             try:

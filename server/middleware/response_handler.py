@@ -24,8 +24,8 @@ def get_email_with_fallbacks(server_instance, use_helper=True) -> Optional[str]:
     Returns:
         The email to use, or None if not found
     """
-    # Get sindarin_email from request using the helper in utils
-    sindarin_email = get_sindarin_email(default_email=server_instance.current_email)
+    # Get sindarin_email from request using the helper in utils (without a default)
+    sindarin_email = get_sindarin_email()
 
     # Fall back to current profile if still no email
     if not sindarin_email:
@@ -82,8 +82,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             logger.error("No email found to restart driver")
             return False
 
-        # Set this as the current email
-        server_instance.current_email = sindarin_email
+        # No longer setting current_email as it has been removed
 
         # Check if we have an automator for this email
         if sindarin_email not in server_instance.automators or not server_instance.automators[sindarin_email]:
@@ -112,8 +111,7 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             logger.error("No email found to restart emulator")
             return False
 
-        # Set as current email
-        server_instance.current_email = sindarin_email
+        # No longer setting current_email as it has been removed
 
         logger.info(f"Attempting to restart emulator for profile: {sindarin_email}")
         # Force a new emulator to be created

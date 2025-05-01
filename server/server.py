@@ -161,7 +161,7 @@ class BooksResource(Resource):
             # Check if we're on the sign-in screen
             if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
                 # Get current email to include in VNC URL
-                sindarin_email = get_sindarin_email(default_email=server.current_email)
+                sindarin_email = get_sindarin_email()
 
                 # Get the emulator ID for this email if possible
                 emulator_id = None
@@ -200,7 +200,7 @@ class BooksResource(Resource):
             # Check for auth requirement regardless of transition success
             if new_state == AppState.SIGN_IN:
                 # Get current email to include in VNC URL
-                sindarin_email = get_sindarin_email(default_email=server.current_email)
+                sindarin_email = get_sindarin_email()
 
                 # Get the emulator ID for this email if possible
                 emulator_id = None
@@ -236,7 +236,7 @@ class BooksResource(Resource):
                 # If books is None, it means authentication is required
                 if books is None:
                     # Get current email to include in VNC URL
-                    sindarin_email = get_sindarin_email(default_email=server.current_email)
+                    sindarin_email = get_sindarin_email()
 
                     # Get the emulator ID for this email if possible
                     emulator_id = None
@@ -270,7 +270,7 @@ class BooksResource(Resource):
 
                 if updated_state == AppState.SIGN_IN:
                     # Get current email to include in VNC URL
-                    sindarin_email = get_sindarin_email(default_email=server.current_email)
+                    sindarin_email = get_sindarin_email()
 
                     # Get the emulator ID for this email if possible
                     emulator_id = None
@@ -309,7 +309,7 @@ class BooksResource(Resource):
         # If books is None, it means authentication is required
         if books is None:
             # Get current email to include in VNC URL
-            sindarin_email = get_sindarin_email(default_email=server.current_email)
+            sindarin_email = get_sindarin_email()
 
             # Get the emulator ID for this email if possible
             emulator_id = None
@@ -375,7 +375,7 @@ class ScreenshotResource(Resource):
             use_base64 = True
 
         # Get sindarin_email from request to determine which automator to use
-        sindarin_email = get_sindarin_email(default_email=server.current_email)
+        sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
@@ -631,7 +631,7 @@ class BookOpenResource(Resource):
     def _open_book(self, book_title):
         """Open a specific book - shared implementation for GET and POST."""
         # Get sindarin_email from request to determine which automator to use
-        sindarin_email = get_sindarin_email(default_email=server.current_email)
+        sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
@@ -641,8 +641,7 @@ class BookOpenResource(Resource):
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        # Set this as the current email for backward compatibility
-        server.current_email = sindarin_email
+        # No longer setting current_email as it has been removed
 
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
@@ -1951,7 +1950,7 @@ api.add_resource(TextResource, "/text")
 def vnc_redirect():
     """Redirect to VNC connection with appropriate profile parameters.
     This ensures VNC only accesses the emulator tied to the specified profile email."""
-    sindarin_email = get_sindarin_email(default_email=server.current_email)
+    sindarin_email = get_sindarin_email()
 
     # If no email is provided and server doesn't have a current email, return error
     if not sindarin_email:

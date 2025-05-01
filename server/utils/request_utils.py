@@ -69,7 +69,7 @@ def get_formatted_vnc_url(
     # If no email provided, try to get from request
     # This ensures emails aren't mixed up across concurrent requests
     if not sindarin_email:
-        # Try getting from request context, don't fall back to server.current_email
+        # Try getting from request context only - no fallbacks
         sindarin_email = get_sindarin_email()
 
     # If still no email after checking request, we can't look up a VNC instance
