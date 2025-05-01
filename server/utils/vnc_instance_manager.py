@@ -148,13 +148,31 @@ class VNCInstanceManager:
         # Get the AVD ID from the profiles index
         avd_id = self.profiles_index.get(email)
         if avd_id:
-            # Extract just the unique identifier part (e.g., 'kindle_solreader_com')
-            # from AVD name like 'KindleAVD_kindle_solreader_com'
-            if avd_id.startswith("KindleAVD_"):
-                unique_id = avd_id[len("KindleAVD_") :]
-                return unique_id
+            # Handle both string and dictionary formats for backward compatibility
+            if isinstance(avd_id, dict):
+                # If it's a dictionary, look for avd_name key
+                if "avd_name" in avd_id:
+                    avd_name = avd_id["avd_name"]
+                    # Extract unique identifier if it's the full AVD name
+                    if isinstance(avd_name, str) and avd_name.startswith("KindleAVD_"):
+                        return avd_name[len("KindleAVD_"):]
+                    else:
+                        return avd_name
+                else:
+                    # No avd_name key in dictionary
+                    logger.warning(f"AVD ID dictionary for {email} has no avd_name key: {avd_id}")
+                    return None
+            elif isinstance(avd_id, str):
+                # Extract just the unique identifier part (e.g., 'kindle_solreader_com')
+                # from AVD name like 'KindleAVD_kindle_solreader_com'
+                if avd_id.startswith("KindleAVD_"):
+                    return avd_id[len("KindleAVD_"):]
+                else:
+                    return avd_id
             else:
-                return avd_id
+                # Unexpected type
+                logger.warning(f"Unexpected AVD ID type for {email}: {type(avd_id)}")
+                return None
 
         logger.debug(f"No AVD ID found for email {email}")
         return None
@@ -169,17 +187,26 @@ class VNCInstanceManager:
         Returns:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
-        # First check if any instance is already assigned to this profile directly
+        # Try direct match with email
         for instance in self.instances:
-            if instance.get("assigned_profile") == email:
+            assigned_profile = instance.get("assigned_profile")
+            if assigned_profile == email:
+                return instance
+                
+        # Try with email converted to the shortened format (email@domain.com -> email_domain_com)
+        normalized_email = email.replace("@", "_").replace(".", "_")
+        for instance in self.instances:
+            assigned_profile = instance.get("assigned_profile")
+            if assigned_profile == normalized_email:
                 return instance
 
-        # If not found, try to get the AVD ID from the profiles index
+        # If not found through direct matches, try getting AVD ID from profiles index
         avd_id = self._get_avd_id_for_email(email)
         if avd_id:
-            # Now check if any instance is assigned to this AVD ID
+            # Check for instance assigned to this AVD ID
             for instance in self.instances:
-                if instance.get("assigned_profile") == avd_id:
+                assigned_profile = instance.get("assigned_profile")
+                if assigned_profile == avd_id:
                     return instance
 
         logger.debug(f"No VNC instance found for {email} (AVD ID: {avd_id if avd_id else 'None'})")
