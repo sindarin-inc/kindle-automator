@@ -155,7 +155,7 @@ class VNCInstanceManager:
                     avd_name = avd_id["avd_name"]
                     # Extract unique identifier if it's the full AVD name
                     if isinstance(avd_name, str) and avd_name.startswith("KindleAVD_"):
-                        return avd_name[len("KindleAVD_"):]
+                        return avd_name[len("KindleAVD_") :]
                     else:
                         return avd_name
                 else:
@@ -166,7 +166,7 @@ class VNCInstanceManager:
                 # Extract just the unique identifier part (e.g., 'kindle_solreader_com')
                 # from AVD name like 'KindleAVD_kindle_solreader_com'
                 if avd_id.startswith("KindleAVD_"):
-                    return avd_id[len("KindleAVD_"):]
+                    return avd_id[len("KindleAVD_") :]
                 else:
                     return avd_id
             else:
@@ -192,7 +192,7 @@ class VNCInstanceManager:
             assigned_profile = instance.get("assigned_profile")
             if assigned_profile == email:
                 return instance
-                
+
         # Try with email converted to the shortened format (email@domain.com -> email_domain_com)
         normalized_email = email.replace("@", "_").replace(".", "_")
         for instance in self.instances:

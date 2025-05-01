@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import subprocess
 import time
 import traceback
@@ -68,7 +69,44 @@ class ViewInspector:
             if self.automator and hasattr(self.automator, "device_id"):
                 device_id = self.automator.device_id
 
-            logger.info(f"Bringing {self.app_package} to foreground...")
+            # Get device ID from driver if not available from automator
+            if not device_id and hasattr(self.driver, "session") and self.driver.session:
+                device_id = self.driver.session.get("deviceId")
+                if device_id:
+                    logger.info(f"Retrieved device ID {device_id} from driver session")
+
+            # Try to get from driver.command_executor if available
+            if not device_id and hasattr(self.driver, "command_executor"):
+                executor_url = getattr(self.driver.command_executor, "_url", "")
+                if "deviceId=" in executor_url:
+                    # Extract deviceId from URL
+                    matches = re.search(r"deviceId=([^&]+)", executor_url)
+                    if matches:
+                        device_id = matches.group(1)
+                        logger.info(f"Extracted device ID {device_id} from command executor URL")
+
+            logger.info(f"Bringing {self.app_package} to foreground using device_id={device_id}...")
+
+            # Check if we have a device ID
+            if not device_id:
+                logger.warning(
+                    "No device ID available, cannot launch app when multiple emulators are running"
+                )
+                # Try to check how many devices are running
+                try:
+                    adb_result = subprocess.run(
+                        ["adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if "more than one device/emulator" in adb_result.stderr:
+                        logger.error(
+                            "Multiple devices detected but no device ID available - cannot proceed with app launch"
+                        )
+                        return False
+                except Exception as e:
+                    logger.warning(f"Error checking for devices: {e}")
 
             # Build the ADB command based on whether we have a device ID
             cmd = ["adb"]
@@ -76,7 +114,7 @@ class ViewInspector:
                 cmd.extend(["-s", device_id])
             cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
 
-            # Run the command but don't check for errors - sometimes the exit code is 1 
+            # Run the command but don't check for errors - sometimes the exit code is 1
             # even when the app launches successfully
             result = subprocess.run(
                 cmd,
@@ -84,7 +122,7 @@ class ViewInspector:
                 capture_output=True,
                 text=True,
             )
-            
+
             # Log but don't fail on non-zero exit code
             if result.returncode != 0:
                 logger.warning(f"App launch command returned non-zero: {result.returncode}")
@@ -102,10 +140,14 @@ class ViewInspector:
                 logger.info(f"After launch, current activity is: {current_activity}")
                 # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                 # Also handle the Google Play review dialog which can appear over the Kindle app
-                if (current_activity.startswith("com.amazon.kindle") or 
-                    current_activity.startswith("com.amazon.kcp") or
-                    current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"):
-                    logger.info(f"Successfully verified Kindle app is in foreground or has overlay dialog: {current_activity}")
+                if (
+                    current_activity.startswith("com.amazon.kindle")
+                    or current_activity.startswith("com.amazon.kcp")
+                    or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                ):
+                    logger.info(
+                        f"Successfully verified Kindle app is in foreground or has overlay dialog: {current_activity}"
+                    )
                     # Try to dismiss the Google Play review dialog if it's showing
                     if current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity":
                         logger.info("Attempting to dismiss Google Play review dialog...")
@@ -114,18 +156,23 @@ class ViewInspector:
                             # Method 1: Press back button
                             self.driver.press_keycode(4)  # Android back key
                             time.sleep(1)
-                            
+
                             # Method 2: Try to find and click close/cancel buttons
                             for button_text in ["Close", "Cancel", "Not now", "Later", "No thanks"]:
                                 try:
-                                    buttons = self.driver.find_elements(AppiumBy.XPATH, f"//android.widget.Button[contains(@text, '{button_text}')]")
+                                    buttons = self.driver.find_elements(
+                                        AppiumBy.XPATH,
+                                        f"//android.widget.Button[contains(@text, '{button_text}')]",
+                                    )
                                     if buttons:
                                         buttons[0].click()
                                         logger.info(f"Clicked '{button_text}' button to dismiss dialog")
                                         time.sleep(1)
                                         break
                                 except Exception as button_e:
-                                    logger.debug(f"Could not find button with text '{button_text}': {button_e}")
+                                    logger.debug(
+                                        f"Could not find button with text '{button_text}': {button_e}"
+                                    )
                         except Exception as dismiss_e:
                             logger.warning(f"Failed to dismiss review dialog: {dismiss_e}")
                 else:

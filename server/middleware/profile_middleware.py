@@ -111,7 +111,7 @@ def ensure_user_profile_loaded(f):
                     "error": f"Failed to start Appium server for {sindarin_email}",
                     "message": "Could not initialize Appium server",
                 }, 500
-                
+
             logger.info(f"Started Appium server for {sindarin_email} on port {port}")
 
         # Check if we already have a working automator for this email

@@ -309,7 +309,8 @@ class KindleStateMachine:
                     if not (
                         current_activity.startswith("com.amazon.kindle")
                         or current_activity.startswith("com.amazon.kcp")
-                        or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                        or current_activity
+                        == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
                         logger.warning("App has quit or was not launched - current activity is not Kindle")
 

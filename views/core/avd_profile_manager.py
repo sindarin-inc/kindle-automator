@@ -376,7 +376,7 @@ class AVDProfileManager:
             # Check if we have an existing entry and preserve its format
             if email in self.profiles_index:
                 existing_entry = self.profiles_index.get(email)
-                
+
                 # If it's a dictionary, update the avd_name field
                 if isinstance(existing_entry, dict):
                     existing_entry["avd_name"] = avd_name
@@ -387,7 +387,7 @@ class AVDProfileManager:
             else:
                 # Create a new entry in the new format
                 self.profiles_index[email] = {"avd_name": avd_name}
-                
+
             self._save_profiles_index()
 
             # Update current profile if this is the current email
@@ -425,11 +425,11 @@ class AVDProfileManager:
             else:
                 logger.warning(f"Unknown profile entry format for {email}: {profile_entry}")
                 continue
-                
+
             if not avd_name:
                 logger.warning(f"No AVD name found for profile {email}")
                 continue
-                
+
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
 
             # Get emulator ID if the AVD is running
@@ -449,7 +449,7 @@ class AVDProfileManager:
                 "current": self.current_profile and self.current_profile.get("email") == email,
                 "emulator_id": emulator_id,
             }
-            
+
             # Add optional information if available
             if appium_port:
                 profile_info["appium_port"] = appium_port

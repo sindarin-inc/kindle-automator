@@ -270,37 +270,34 @@ class AutomationServer:
             appium_paths = [
                 "appium",  # Try PATH first
                 "/opt/homebrew/bin/appium",  # Common macOS Homebrew location
-                "/usr/local/bin/appium",     # Common Linux/macOS location
-                "/usr/bin/appium",           # Common Linux location
+                "/usr/local/bin/appium",  # Common Linux/macOS location
+                "/usr/bin/appium",  # Common Linux location
                 os.path.expanduser("~/.nvm/versions/node/*/bin/appium"),  # NVM install
-                os.path.expanduser("~/.npm-global/bin/appium")  # NPM global
+                os.path.expanduser("~/.npm-global/bin/appium"),  # NPM global
             ]
-            
+
             # Try each potential path
             appium_cmd = None
             for path in appium_paths:
                 # If path contains a wildcard, try to expand it
                 if "*" in path:
                     import glob
+
                     matching_paths = glob.glob(path)
                     # Sort by version (assuming newer is better)
                     matching_paths.sort(reverse=True)
                     if matching_paths:
                         path = matching_paths[0]
-                
+
                 # Check if the path exists and is executable
                 if path != "appium":  # Skip PATH check
                     if not os.path.exists(path) or not os.access(path, os.X_OK):
                         continue
-                
+
                 # Try to run the command to verify it works
                 try:
                     version_check = subprocess.run(
-                        [path, "--version"], 
-                        capture_output=True, 
-                        text=True, 
-                        check=False,
-                        timeout=2
+                        [path, "--version"], capture_output=True, text=True, check=False, timeout=2
                     )
                     if version_check.returncode == 0:
                         appium_cmd = path
@@ -308,26 +305,31 @@ class AutomationServer:
                         break
                 except (subprocess.SubprocessError, OSError):
                     continue
-            
+
             # If we didn't find Appium, try PATH as a last resort
             if not appium_cmd:
                 appium_cmd = "appium"
                 logger.warning(f"Could not find Appium in standard locations, falling back to PATH")
-            
+
             # Add environment variables to ensure proper Node.js execution
             env = os.environ.copy()
-            
+
             # Ensure these paths are in PATH if they exist
             for bin_path in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
                 if os.path.exists(bin_path) and bin_path not in env.get("PATH", ""):
                     env["PATH"] = f"{bin_path}:{env.get('PATH', '')}"
-            
+
             # Start Appium with more detailed logs
             with open(log_file, "w") as log:
-                logger.info(f"Launching Appium with command: {appium_cmd} --port {port} --base-path /wd/hub --log-level debug")
+                logger.info(
+                    f"Launching Appium with command: {appium_cmd} --port {port} --base-path /wd/hub --log-level debug"
+                )
                 appium_process = subprocess.Popen(
-                    [appium_cmd, "--port", str(port), "--base-path", "/wd/hub", "--log-level", "debug"], 
-                    stdout=log, stderr=log, text=True, env=env
+                    [appium_cmd, "--port", str(port), "--base-path", "/wd/hub", "--log-level", "debug"],
+                    stdout=log,
+                    stderr=log,
+                    text=True,
+                    env=env,
                 )
 
             # Save the PID
@@ -358,7 +360,7 @@ class AutomationServer:
             # Verify Appium is running on this port - try multiple times with increasing delays
             max_retries = 3
             retry_delay = 1  # Start with 1 second, will increase
-            
+
             for attempt in range(max_retries):
                 try:
                     check_result = subprocess.run(
@@ -371,23 +373,28 @@ class AutomationServer:
 
                     # Appium 2.x returns a different format than Appium 1.x
                     # Check for both response formats
-                    
+
                     # Try to parse the response as JSON
                     import json
+
                     try:
                         response_json = json.loads(check_result.stdout)
-                        
+
                         # Check for Appium 1.x format: {"status": 0, ...}
                         if "status" in response_json and response_json["status"] == 0:
-                            logger.info(f"Appium 1.x server successfully started and responsive on port {port}")
+                            logger.info(
+                                f"Appium 1.x server successfully started and responsive on port {port}"
+                            )
                             return True
-                            
+
                         # Check for Appium 2.x format: {"value": {"ready": true, ...}}
                         if "value" in response_json and isinstance(response_json["value"], dict):
                             if response_json["value"].get("ready") == True:
-                                logger.info(f"Appium 2.x server successfully started and responsive on port {port}")
+                                logger.info(
+                                    f"Appium 2.x server successfully started and responsive on port {port}"
+                                )
                                 return True
-                        
+
                         # If we get here, the response is in an unknown format
                         logger.warning(
                             f"Appium server started but returned unknown format on port {port} (attempt {attempt+1}/{max_retries}): {check_result.stdout}"
@@ -395,17 +402,21 @@ class AutomationServer:
                     except json.JSONDecodeError:
                         # Not valid JSON, fallback to string check
                         if '"status":0' in check_result.stdout or '"ready":true' in check_result.stdout:
-                            logger.info(f"Appium server successfully started and responsive on port {port} (string check)")
+                            logger.info(
+                                f"Appium server successfully started and responsive on port {port} (string check)"
+                            )
                             return True
                         else:
                             logger.warning(
                                 f"Appium server started but returned invalid JSON on port {port} (attempt {attempt+1}/{max_retries}): {check_result.stdout}"
                             )
-                    
+
                     # If this is the last attempt, don't continue
                     if attempt == max_retries - 1:
-                        logger.error(f"Appium server failed to respond correctly after {max_retries} attempts")
-                        
+                        logger.error(
+                            f"Appium server failed to respond correctly after {max_retries} attempts"
+                        )
+
                         # Kill the process since it's not working properly
                         if email and email in self.appium_processes:
                             try:
@@ -415,27 +426,29 @@ class AutomationServer:
                                     logger.info(f"Terminated non-responsive Appium process for {email}")
                             except Exception as term_e:
                                 logger.warning(f"Error terminating non-responsive Appium process: {term_e}")
-                        
+
                         return False
-                            
+
                         # Wait with increasing delay before trying again
                         logger.info(f"Waiting {retry_delay}s before checking Appium server again...")
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Exponential backoff
-                        
+
                 except Exception as check_e:
-                    logger.warning(f"Error checking Appium server status (attempt {attempt+1}/{max_retries}): {check_e}")
-                    
+                    logger.warning(
+                        f"Error checking Appium server status (attempt {attempt+1}/{max_retries}): {check_e}"
+                    )
+
                     # If this is the last attempt, don't continue
                     if attempt == max_retries - 1:
                         logger.error(f"Failed to verify Appium server status after {max_retries} attempts")
                         return False
-                        
+
                     # Wait before trying again
                     logger.info(f"Waiting {retry_delay}s before checking Appium server again...")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
-            
+
             # Should never reach here due to returns in the loop
             return False
 

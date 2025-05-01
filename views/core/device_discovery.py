@@ -77,7 +77,7 @@ class DeviceDiscovery:
             avd_name = None
             if profiles_index and email in profiles_index:
                 profile_entry = profiles_index.get(email)
-                
+
                 # Handle different formats (backward compatibility)
                 if isinstance(profile_entry, str):
                     avd_name = profile_entry
@@ -89,13 +89,13 @@ class DeviceDiscovery:
         avd_name = None
         if profiles_index and email in profiles_index:
             profile_entry = profiles_index.get(email)
-            
+
             # Handle different formats (backward compatibility)
             if isinstance(profile_entry, str):
                 avd_name = profile_entry
             elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
                 avd_name = profile_entry["avd_name"]
-                
+
             if avd_name and avd_name in running_emulators:
                 emulator_id = running_emulators[avd_name]
                 logger.info(f"Found exact AVD match: {avd_name} running on {emulator_id} for email {email}")

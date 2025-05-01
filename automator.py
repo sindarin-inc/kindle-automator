@@ -91,7 +91,8 @@ class KindleAutomator:
                     if not (
                         current_activity.startswith("com.amazon.kindle")
                         or current_activity.startswith("com.amazon.kcp")
-                        or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                        or current_activity
+                        == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
                         logger.error("Failed to bring Kindle app to foreground after relaunch attempt")
                         return False
