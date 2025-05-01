@@ -76,13 +76,26 @@ class DeviceDiscovery:
             # Get the AVD name for this email from profiles_index or generate a standard one
             avd_name = None
             if profiles_index and email in profiles_index:
-                avd_name = profiles_index.get(email)
+                profile_entry = profiles_index.get(email)
+                
+                # Handle different formats (backward compatibility)
+                if isinstance(profile_entry, str):
+                    avd_name = profile_entry
+                elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+                    avd_name = profile_entry["avd_name"]
             return False, None, avd_name
 
         # First try the exact AVD name match based on email
         avd_name = None
         if profiles_index and email in profiles_index:
-            avd_name = profiles_index.get(email)
+            profile_entry = profiles_index.get(email)
+            
+            # Handle different formats (backward compatibility)
+            if isinstance(profile_entry, str):
+                avd_name = profile_entry
+            elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+                avd_name = profile_entry["avd_name"]
+                
             if avd_name and avd_name in running_emulators:
                 emulator_id = running_emulators[avd_name]
                 logger.info(f"Found exact AVD match: {avd_name} running on {emulator_id} for email {email}")
@@ -211,7 +224,8 @@ class DeviceDiscovery:
 
                 # Also update profiles index if provided and this mapping is new
                 if profiles_index is not None and email_part not in profiles_index:
-                    profiles_index[email_part] = avd_name
+                    # Use the dictionary format consistent with our new structure
+                    profiles_index[email_part] = {"avd_name": avd_name}
 
         return discovered_mappings
 

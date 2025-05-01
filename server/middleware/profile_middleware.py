@@ -70,6 +70,50 @@ def ensure_user_profile_loaded(f):
             # Try to create a mock AVD profile mapping for this email
             server.profile_manager.register_email_to_avd(sindarin_email, "Pixel_API_30")
 
+        # First check if we need to start a dedicated Appium server for this email
+        if sindarin_email not in server.appium_processes:
+            logger.info(f"Starting dedicated Appium server for {sindarin_email}")
+
+            # Check if we have a stored Appium port for this email
+            stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
+
+            if stored_port:
+                port = stored_port
+                logger.info(f"Using stored Appium port {port} for {sindarin_email}")
+            else:
+                # Calculate a unique port based on email hash if not stored
+                base_port = 4723
+                port_range = 276  # 4999 - 4723
+                email_hash = hash(sindarin_email) % port_range
+                port = base_port + email_hash
+
+                # Store this port in the profile for future use
+                if hasattr(server.profile_manager, "register_profile"):
+                    # Get the AVD name for this email
+                    avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
+                    if avd_name:
+                        # Get existing VNC instance if any
+                        vnc_instance = server.profile_manager.get_vnc_instance_for_email(sindarin_email)
+                        # Register the profile with the new port
+                        server.profile_manager.register_profile(
+                            email=sindarin_email,
+                            avd_name=avd_name,
+                            vnc_instance=vnc_instance,
+                            appium_port=port,
+                        )
+                        logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
+
+            # Start the Appium server on this port and check for success
+            appium_started = server.start_appium(port=port, email=sindarin_email)
+            if not appium_started:
+                logger.error(f"Failed to start Appium server for {sindarin_email} on port {port}")
+                return {
+                    "error": f"Failed to start Appium server for {sindarin_email}",
+                    "message": "Could not initialize Appium server",
+                }, 500
+                
+            logger.info(f"Started Appium server for {sindarin_email} on port {port}")
+
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
         if automator and hasattr(automator, "driver") and automator.driver:

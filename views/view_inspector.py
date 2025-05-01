@@ -76,27 +76,58 @@ class ViewInspector:
                 cmd.extend(["-s", device_id])
             cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
 
-            # Run the command
+            # Run the command but don't check for errors - sometimes the exit code is 1 
+            # even when the app launches successfully
             result = subprocess.run(
                 cmd,
-                check=True,
+                check=False,  # Changed from True to False to avoid exceptions on non-zero exit
                 capture_output=True,
                 text=True,
             )
-            logger.info(f"App launch command result: {result.stdout.strip()}")
+            
+            # Log but don't fail on non-zero exit code
+            if result.returncode != 0:
+                logger.warning(f"App launch command returned non-zero: {result.returncode}")
+                logger.warning(f"Stdout: {result.stdout.strip()}")
+                logger.warning(f"Stderr: {result.stderr.strip()}")
+            else:
+                logger.info(f"App launch command result: {result.stdout.strip()}")
 
-            # Give the app a moment to fully initialize
-            time.sleep(2)  # Increased to 2s to ensure app has time to launch
+            # Give the app more time to fully initialize
+            time.sleep(4)  # Increased to 4s to ensure app has time to launch
 
             # Verify app is now in foreground by checking current activity
             try:
                 current_activity = self.driver.current_activity
                 logger.info(f"After launch, current activity is: {current_activity}")
                 # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
-                if current_activity.startswith("com.amazon.kindle") or current_activity.startswith(
-                    "com.amazon.kcp"
-                ):
-                    logger.info("Successfully verified Kindle app is in foreground")
+                # Also handle the Google Play review dialog which can appear over the Kindle app
+                if (current_activity.startswith("com.amazon.kindle") or 
+                    current_activity.startswith("com.amazon.kcp") or
+                    current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"):
+                    logger.info(f"Successfully verified Kindle app is in foreground or has overlay dialog: {current_activity}")
+                    # Try to dismiss the Google Play review dialog if it's showing
+                    if current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity":
+                        logger.info("Attempting to dismiss Google Play review dialog...")
+                        try:
+                            # Try various methods to dismiss the dialog
+                            # Method 1: Press back button
+                            self.driver.press_keycode(4)  # Android back key
+                            time.sleep(1)
+                            
+                            # Method 2: Try to find and click close/cancel buttons
+                            for button_text in ["Close", "Cancel", "Not now", "Later", "No thanks"]:
+                                try:
+                                    buttons = self.driver.find_elements(AppiumBy.XPATH, f"//android.widget.Button[contains(@text, '{button_text}')]")
+                                    if buttons:
+                                        buttons[0].click()
+                                        logger.info(f"Clicked '{button_text}' button to dismiss dialog")
+                                        time.sleep(1)
+                                        break
+                                except Exception as button_e:
+                                    logger.debug(f"Could not find button with text '{button_text}': {button_e}")
+                        except Exception as dismiss_e:
+                            logger.warning(f"Failed to dismiss review dialog: {dismiss_e}")
                 else:
                     logger.warning(
                         f"App launch verification failed - current activity is: {current_activity}"

@@ -68,6 +68,9 @@ setup_request_logger(app)
 # Create the server instance
 server = AutomationServer()
 
+# Initialize the dictionary to track per-email Appium processes
+server.appium_processes = {}
+
 # Store server instance in app config for access in middleware
 app.config["server_instance"] = server
 
@@ -87,8 +90,19 @@ class InitializeResource(Resource):
             if not success:
                 return {"error": "Failed to initialize driver"}, 500
 
+            # Get the email from the current profile if available
+            email = None
+            if hasattr(server, "profile_manager"):
+                current_profile = server.profile_manager.get_current_profile()
+                if current_profile and "email" in current_profile:
+                    email = current_profile.get("email")
+
             # Clear the current book since we're reinitializing the app
-            server.clear_current_book()
+            if email:
+                server.clear_current_book(email)
+                logger.info(f"Cleared current book for {email} during initialization")
+            else:
+                logger.warning("Could not get email to clear current book during initialization")
 
             return {
                 "status": "initialized",
@@ -2204,9 +2218,11 @@ def run_server():
 
 
 def main():
-    # Kill any Flask processes on the same port and Appium servers
+    # Kill any Flask processes on the same port (but leave Appium servers alone)
     server.kill_existing_process("flask")
-    server.kill_existing_process("appium")
+
+    # We no longer kill all Appium servers at startup since we want
+    # one Appium server per email profile
 
     # Preserve emulators when restarting the server
     # This allows for faster reconnection and avoids unnecessary restarts
@@ -2244,10 +2260,10 @@ def main():
         except Exception as adb_e:
             logger.error(f"Error restarting ADB server: {adb_e}")
 
-    # Start Appium server
-    if not server.start_appium():
-        logger.error("Failed to start Appium server")
-        return
+    # We don't start a global Appium server here anymore
+    # Instead, each user profile gets its own dedicated Appium server
+    # that will be started when that profile is loaded
+    logger.info("Skipping global Appium server startup - using per-profile Appium servers instead")
 
     # Save Flask server PID
     server.save_pid("flask", os.getpid())

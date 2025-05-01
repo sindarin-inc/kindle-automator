@@ -27,6 +27,7 @@ class Driver:
             self.driver = None
             self.device_id = None
             self.automator = None  # Reference to the automator instance
+            self.appium_port = 4723  # Default port, can be overridden
             Driver._initialized = True
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
@@ -676,8 +677,112 @@ class Driver:
                     original_timeout = socket.getdefaulttimeout()
                     socket.setdefaulttimeout(10)  # 10 second timeout - increased from 5
                     try:
-                        self.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
-                        logger.info("Driver initialized successfully")
+                        # Determine Appium port
+                        # If automator has a profile manager with a specific port for this email, use that
+                        if (
+                            self.automator
+                            and hasattr(self.automator, "profile_manager")
+                            and hasattr(self.automator.profile_manager, "get_current_profile")
+                        ):
+                            current_profile = self.automator.profile_manager.get_current_profile()
+                            if current_profile and "email" in current_profile:
+                                email = current_profile["email"]
+                                # Try to get appium_port from server's appium_processes dictionary
+                                try:
+                                    from flask import current_app
+
+                                    server = current_app.config.get("server_instance")
+                                    if (
+                                        server
+                                        and hasattr(server, "appium_processes")
+                                        and email in server.appium_processes
+                                    ):
+                                        self.appium_port = server.appium_processes[email]["port"]
+                                        logger.info(
+                                            f"Using dedicated Appium port {self.appium_port} for email {email}"
+                                        )
+                                except (ImportError, RuntimeError) as e:
+                                    logger.debug(f"Could not access server for Appium port: {e}")
+
+                        # First verify the Appium server is actually responding
+                        # This prevents attempting to connect to a non-responsive server
+                        import requests
+                        import time
+                        max_retries = 3
+                        retry_delay = 1
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                logger.info(f"Checking Appium server status (attempt {attempt+1}/{max_retries})...")
+                                status_response = requests.get(
+                                    f"http://127.0.0.1:{self.appium_port}/wd/hub/status", 
+                                    timeout=5
+                                )
+                                # Handle both Appium 1.x and 2.x response formats
+                                response_json = status_response.json()
+                                
+                                # Check for Appium 1.x format: {"status": 0, ...}
+                                appium1_format = "status" in response_json and response_json["status"] == 0
+                                
+                                # Check for Appium 2.x format: {"value": {"ready": true, ...}}
+                                appium2_format = (
+                                    "value" in response_json and 
+                                    isinstance(response_json["value"], dict) and
+                                    response_json["value"].get("ready") == True
+                                )
+                                
+                                if status_response.status_code == 200 and (appium1_format or appium2_format):
+                                    logger.info(f"Confirmed Appium server is running properly on port {self.appium_port}")
+                                    break
+                                else:
+                                    logger.warning(
+                                        f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries}). "
+                                        f"Status code: {status_response.status_code}, "
+                                        f"Response: {status_response.text}"
+                                    )
+                                    
+                                    # If this is the last retry, raise an exception
+                                    if attempt == max_retries - 1:
+                                        raise Exception(f"Appium server not ready on port {self.appium_port} after {max_retries} attempts")
+                                        
+                                    # Wait before retrying
+                                    time.sleep(retry_delay)
+                                    retry_delay *= 2
+                            except requests.RequestException as e:
+                                if attempt == max_retries - 1:
+                                    logger.error(f"Failed to connect to Appium server on port {self.appium_port} after {max_retries} attempts: {e}")
+                                    
+                                    # Check if we need to start Appium ourselves
+                                    from flask import current_app
+                                    try:
+                                        server = current_app.config.get("server_instance")
+                                        if server:
+                                            logger.info(f"Attempting to start Appium server directly from driver...")
+                                            email = current_profile["email"] if current_profile and "email" in current_profile else None
+                                            if email:
+                                                started = server.start_appium(port=self.appium_port, email=email)
+                                                if not started:
+                                                    logger.error("Failed to start Appium server from driver")
+                                                else:
+                                                    logger.info("Successfully started Appium server from driver")
+                                                    time.sleep(2)  # Give it time to start
+                                                    continue  # Retry the check
+                                    except Exception as start_error:
+                                        logger.error(f"Error starting Appium from driver: {start_error}")
+                                        
+                                    raise Exception(f"Cannot connect to Appium server on port {self.appium_port}: {e}")
+                                
+                                logger.warning(f"Appium connection error (attempt {attempt+1}/{max_retries}): {e}")
+                                time.sleep(retry_delay)
+                                retry_delay *= 2
+                            
+                        # Initialize driver with the options using the specific port
+                        # Make sure to use the correct base path /wd/hub
+                        logger.info(f"Connecting to Appium on port {self.appium_port}")
+                        self.driver = webdriver.Remote(
+                            f"http://127.0.0.1:{self.appium_port}/wd/hub", options=options
+                        )
+                        logger.info(f"Driver initialized successfully on port {self.appium_port}")
                     finally:
                         socket.setdefaulttimeout(original_timeout)  # Restore original timeout
 

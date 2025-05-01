@@ -118,8 +118,18 @@ class StateTransitions:
 
         # If the navigation was successful and we have a server reference, clear the current book
         if result and server:
-            server.clear_current_book()
-            logger.info("Cleared current book in server state after returning to library")
+            # Get the email from the driver's automator if available
+            email = None
+            if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
+                profile = self.driver.automator.profile_manager.get_current_profile()
+                if profile and "email" in profile:
+                    email = profile.get("email")
+
+            if email:
+                server.clear_current_book(email)
+                logger.info(f"Cleared current book for {email} after returning to library")
+            else:
+                logger.warning("Could not get email to clear current book after returning to library")
 
         # If the navigation failed, capture the state to help with debugging
         if not result:

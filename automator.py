@@ -75,9 +75,11 @@ class KindleAutomator:
 
             # If we're not in the Kindle app, try to relaunch it
             # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
+            # Also accept the Google Play review dialog which can appear over the Kindle app
             if not (
                 current_activity.startswith("com.amazon.kindle")
                 or current_activity.startswith("com.amazon.kcp")
+                or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
             ):
                 logger.warning("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
@@ -89,6 +91,7 @@ class KindleAutomator:
                     if not (
                         current_activity.startswith("com.amazon.kindle")
                         or current_activity.startswith("com.amazon.kcp")
+                        or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
                         logger.error("Failed to bring Kindle app to foreground after relaunch attempt")
                         return False
@@ -157,19 +160,41 @@ class KindleAutomator:
         """Ensure the driver is healthy and running, reinitialize if needed."""
         try:
             if not self.driver:
-                # Test if driver is still connected
-                try:
-                    self.driver.current_activity
-                except Exception as e:
-                    logger.info("Driver not connected - reinitializing")
-                    self.cleanup()
-                    return self.initialize_driver()
-                else:
-                    logger.info("Driver already initialized")
+                logger.info("Driver not initialized - initializing now")
+                return self.initialize_driver()
 
             # Basic health check - try to get current activity
             try:
-                self.driver.current_activity
+                # Try a simple operation to verify UiAutomator2 is responsive
+                try:
+                    self.driver.current_activity
+                    logger.info("Driver activity check passed")
+                except Exception as activity_error:
+                    # Check specifically for UiAutomator2 crash indicators
+                    error_message = str(activity_error)
+                    if (
+                        "instrumentation process is not running" in error_message
+                        or "UiAutomator2 server" in error_message
+                        or "An unknown server-side error occurred" in error_message
+                    ):
+                        logger.error(f"UiAutomator2 server crashed: {error_message}")
+                        raise activity_error
+
+                # Additional check - try to get window size
+                try:
+                    window_size = self.driver.get_window_size()
+                    logger.info(f"Driver window size check passed: {window_size}")
+                except Exception as window_error:
+                    # Check specifically for UiAutomator2 crash indicators
+                    error_message = str(window_error)
+                    if (
+                        "instrumentation process is not running" in error_message
+                        or "UiAutomator2 server" in error_message
+                        or "An unknown server-side error occurred" in error_message
+                    ):
+                        logger.error(f"UiAutomator2 server crashed during window size check: {error_message}")
+                        raise window_error
+
                 logger.info("Driver is healthy")
 
                 # Check if we're in the app not responding state
@@ -192,15 +217,37 @@ class KindleAutomator:
                                 self.cleanup()
                                 return self.initialize_driver()
 
+                # Try checking app activity
+                try:
+                    current_activity = self.driver.current_activity
+                    logger.info(f"Current activity check: {current_activity}")
+                    # If we're not in the Kindle app, try to relaunch it
+                    if not (
+                        current_activity.startswith("com.amazon.kindle")
+                        or current_activity.startswith("com.amazon.kcp")
+                    ):
+                        logger.warning("App is not in Kindle foreground, trying to relaunch")
+                        if hasattr(self.state_machine, "view_inspector") and hasattr(
+                            self.state_machine.view_inspector, "ensure_app_foreground"
+                        ):
+                            self.state_machine.view_inspector.ensure_app_foreground()
+                            logger.info("Relaunched Kindle app")
+                except Exception as e:
+                    logger.warning(f"Failed to check current activity: {e}")
+                    # Continue anyway, the app might still be usable
+
                 return True
             except Exception as e:
-                logger.info(f"Driver is unhealthy ({e}), reinitializing...")
-                self.cleanup()  # Clean up old driver
+                logger.error(f"Driver is unhealthy ({e}), reinitializing...")
+                # Clean up the old driver
+                self.cleanup()
+                # Tell the middleware that Appium may need to be restarted
+                if "instrumentation process is not running" in str(e) or "UiAutomator2 server" in str(e):
+                    logger.critical("UiAutomator2 crash detected - Appium server needs restarting")
                 return self.initialize_driver()
-
-        except Exception as e:
-            traceback.print_exc()
-            logger.error(f"Error ensuring driver is running: {e}")
+        except Exception as outer_e:
+            logger.error(f"Unexpected error in ensure_driver_running: {outer_e}")
+            self.cleanup()
             return False
 
     def update_captcha_solution(self, solution):

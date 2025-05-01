@@ -122,17 +122,48 @@ def ensure_automator_healthy(f):
                         automator.cleanup()
                         server.automators[sindarin_email] = None
 
-                    # Reset Appium server state as well
+                    # Reset Appium server state for this specific email
                     try:
-                        logger.info("Resetting Appium server state")
-                        subprocess.run(["pkill -f 'appium|node'"], shell=True, check=False, timeout=5)
-                        time.sleep(2)  # Wait for processes to terminate
+                        logger.info(f"Resetting Appium server state for email {sindarin_email}")
+                        
+                        # Check if we have a stored Appium port for this email
+                        stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
+                        
+                        if stored_port:
+                            port = stored_port
+                            logger.info(f"Using stored Appium port {port} for {sindarin_email}")
+                        else:
+                            # Calculate a unique port based on email hash if not stored
+                            base_port = 4723
+                            port_range = 276  # 4999 - 4723
+                            email_hash = hash(sindarin_email) % port_range
+                            port = base_port + email_hash
+                            
+                            # Store this port in the profile for future use
+                            if hasattr(server.profile_manager, "register_profile"):
+                                # Get the AVD name for this email
+                                avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
+                                if avd_name:
+                                    # Get existing VNC instance if any
+                                    vnc_instance = server.profile_manager.get_vnc_instance_for_email(sindarin_email)
+                                    # Register the profile with the new port
+                                    server.profile_manager.register_profile(
+                                        email=sindarin_email, 
+                                        avd_name=avd_name, 
+                                        vnc_instance=vnc_instance, 
+                                        appium_port=port
+                                    )
+                                    logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
+                        
+                        # Start a dedicated Appium server for this email
+                        logger.info(f"Starting dedicated Appium server for {sindarin_email} on port {port}")
+                        if not server.start_appium(port=port, email=sindarin_email):
+                            logger.error(f"Failed to restart Appium server for {sindarin_email}")
+                            return {"error": f"Failed to start Appium server for {sindarin_email}"}, 500
 
-                        logger.info("Restarting Appium server")
-                        if not server.start_appium():
-                            logger.error("Failed to restart Appium server")
+                        time.sleep(2)  # Wait for the Appium server to start
                     except Exception as appium_e:
-                        logger.warning(f"Error while resetting Appium: {appium_e}")
+                        logger.warning(f"Error while resetting Appium for {sindarin_email}: {appium_e}")
 
                     # Try to switch back to the profile
                     logger.info(f"Attempting to switch back to profile for email: {sindarin_email}")

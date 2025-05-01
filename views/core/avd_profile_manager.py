@@ -310,6 +310,25 @@ class AVDProfileManager:
 
         return None
 
+    def get_appium_port_for_email(self, email: str) -> Optional[int]:
+        """
+        Get the Appium port assigned to this email profile.
+
+        Args:
+            email: Email address to lookup
+
+        Returns:
+            Optional[int]: The Appium port or None if not assigned
+        """
+        if email in self.profiles_index:
+            profile_entry = self.profiles_index.get(email)
+
+            # Handle different formats
+            if isinstance(profile_entry, dict) and "appium_port" in profile_entry:
+                return profile_entry["appium_port"]
+
+        return None
+
     def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
         """
         Get the emulator device ID for a given AVD name.
@@ -354,8 +373,21 @@ class AVDProfileManager:
             bool: True if successful, False otherwise
         """
         try:
-            # Update the mapping in profiles_index
-            self.profiles_index[email] = avd_name
+            # Check if we have an existing entry and preserve its format
+            if email in self.profiles_index:
+                existing_entry = self.profiles_index.get(email)
+                
+                # If it's a dictionary, update the avd_name field
+                if isinstance(existing_entry, dict):
+                    existing_entry["avd_name"] = avd_name
+                    self.profiles_index[email] = existing_entry
+                else:
+                    # Convert string to dictionary format for consistency
+                    self.profiles_index[email] = {"avd_name": avd_name}
+            else:
+                # Create a new entry in the new format
+                self.profiles_index[email] = {"avd_name": avd_name}
+                
             self._save_profiles_index()
 
             # Update current profile if this is the current email
@@ -380,7 +412,24 @@ class AVDProfileManager:
         running_emulators = self.device_discovery.map_running_emulators()
 
         result = []
-        for email, avd_name in self.profiles_index.items():
+        for email, profile_entry in self.profiles_index.items():
+            # Handle different profile entry formats
+            if isinstance(profile_entry, str):
+                avd_name = profile_entry
+                appium_port = None
+                vnc_instance = None
+            elif isinstance(profile_entry, dict):
+                avd_name = profile_entry.get("avd_name")
+                appium_port = profile_entry.get("appium_port")
+                vnc_instance = profile_entry.get("vnc_instance")
+            else:
+                logger.warning(f"Unknown profile entry format for {email}: {profile_entry}")
+                continue
+                
+            if not avd_name:
+                logger.warning(f"No AVD name found for profile {email}")
+                continue
+                
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
 
             # Get emulator ID if the AVD is running
@@ -392,6 +441,7 @@ class AVDProfileManager:
                 if is_running:
                     emulator_id = found_emulator_id
 
+            # Build profile info with all available details
             profile_info = {
                 "email": email,
                 "avd_name": avd_name,
@@ -399,6 +449,12 @@ class AVDProfileManager:
                 "current": self.current_profile and self.current_profile.get("email") == email,
                 "emulator_id": emulator_id,
             }
+            
+            # Add optional information if available
+            if appium_port:
+                profile_info["appium_port"] = appium_port
+            if vnc_instance:
+                profile_info["vnc_instance"] = vnc_instance
 
             result.append(profile_info)
         return result
@@ -427,7 +483,9 @@ class AVDProfileManager:
 
         return self.current_profile
 
-    def register_profile(self, email: str, avd_name: str, vnc_instance: int = None) -> None:
+    def register_profile(
+        self, email: str, avd_name: str, vnc_instance: int = None, appium_port: int = None
+    ) -> None:
         """
         Register a profile by associating an email with an AVD name.
 
@@ -435,6 +493,7 @@ class AVDProfileManager:
             email: The email address to register
             avd_name: The AVD name to associate with this email
             vnc_instance: Optional VNC instance number to assign to this profile
+            appium_port: Optional Appium port to assign to this profile
         """
         if email not in self.profiles_index:
             self.profiles_index[email] = {}
@@ -451,10 +510,16 @@ class AVDProfileManager:
         if vnc_instance is not None:
             self.profiles_index[email]["vnc_instance"] = vnc_instance
 
+        # Add Appium port if provided
+        if appium_port is not None:
+            self.profiles_index[email]["appium_port"] = appium_port
+
         self._save_profiles_index()
         log_message = f"Registered profile for {email} with AVD {avd_name}"
         if vnc_instance is not None:
             log_message += f" on VNC instance {vnc_instance}"
+        if appium_port is not None:
+            log_message += f" with Appium port {appium_port}"
         logger.info(log_message)
 
     def register_email_to_avd(self, email: str, default_avd_name: str = "Pixel_API_30") -> None:

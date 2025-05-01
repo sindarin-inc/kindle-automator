@@ -82,11 +82,20 @@ class KindleStateMachine:
 
             # If we have a server reference and we're not in reading state but have a current book
             # Clear the current book to ensure state consistency
-            if server and self.current_state != AppState.READING and server.current_book:
-                logger.info(
-                    f"Not in reading state ({self.current_state}) but have current book tracked - clearing it"
-                )
-                server.clear_current_book()
+            if server and self.current_state != AppState.READING:
+                # Get the email from our driver instance if possible
+                email = None
+                if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
+                    profile = self.driver.automator.profile_manager.get_current_profile()
+                    if profile and "email" in profile:
+                        email = profile.get("email")
+
+                # Check if there's a current book for this email
+                if email and email in server.current_books:
+                    logger.info(
+                        f"Not in reading state ({self.current_state}) but have current book tracked for {email} - clearing it"
+                    )
+                    server.clear_current_book(email)
 
             if self.current_state == AppState.LIBRARY:
                 logger.info("Successfully reached library state")
@@ -296,9 +305,11 @@ class KindleStateMachine:
 
                     # If the current activity is not Kindle (e.g. NexusLauncherActivity), the app has quit
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
+                    # Also accept the Google Play review dialog which can appear over the Kindle app
                     if not (
                         current_activity.startswith("com.amazon.kindle")
                         or current_activity.startswith("com.amazon.kcp")
+                        or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
                         logger.warning("App has quit or was not launched - current activity is not Kindle")
 
