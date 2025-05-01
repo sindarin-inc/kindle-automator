@@ -132,7 +132,7 @@ def get_formatted_vnc_url(
             if platform.system() != "Darwin":
                 # Get the display number for this profile
                 display_num = None
-                
+
                 # Get the AVD name from profiles_index - this should be used consistently
                 avd_name = None
                 if sindarin_email in vnc_manager.profiles_index:
@@ -143,20 +143,24 @@ def get_formatted_vnc_url(
                         avd_name = profile_entry
                 else:
                     logger.error(f"Email {sindarin_email} not found in profiles_index")
-                    
+
                 # Find instance using the AVD name, which should be the primary identifier
                 if avd_name:
-                    logger.info(f"Looking for VNC instance with assigned_profile matching AVD name: {avd_name}")
+                    logger.info(
+                        f"Looking for VNC instance with assigned_profile matching AVD name: {avd_name}"
+                    )
                     for instance in vnc_manager.instances:
                         if instance.get("assigned_profile") == avd_name:
                             display_num = instance.get("display")
                             logger.info(f"Found display {display_num} for AVD {avd_name}")
                             break
-                    
+
                     if not display_num:
                         # We have an AVD name but can't find a matching instance - this is unexpected
                         logger.error(f"No VNC instance found with assigned_profile={avd_name}")
-                        logger.error(f"Available profiles: {[i.get('assigned_profile') for i in vnc_manager.instances]}")
+                        logger.error(
+                            f"Available profiles: {[i.get('assigned_profile') for i in vnc_manager.instances]}"
+                        )
                 else:
                     # We don't have an AVD name - this is a prerequisite for the system to work
                     logger.error(f"Cannot find AVD name for email {sindarin_email} in profiles_index")

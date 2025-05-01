@@ -45,7 +45,8 @@ class EmulatorLauncher:
         # Ensure profiles directory exists
         os.makedirs(self.profiles_dir, exist_ok=True)
 
-        # Maps emails to (emulator_id, display_num) tuples
+        # Maps AVD names to (emulator_id, display_num) tuples
+        # IMPORTANT: We use AVD names as keys, NOT emails
         self.running_emulators = {}
 
         # Load existing mapping if available
@@ -120,12 +121,31 @@ class EmulatorLauncher:
                 _, display_num = self.running_emulators[email]
                 return display_num
 
-            # Then check the VNC instance map
+            # Extract AVD name from email to find the correct profile
+            avd_name = self._extract_avd_name_from_email(email)
+
+            # Check the VNC instance map with AVD name
+            if avd_name:
+                for instance in self.vnc_instances["instances"]:
+                    if instance["assigned_profile"] == avd_name:
+                        logger.info(f"Found display for {email} with AVD {avd_name}: {instance['display']}")
+                        return instance["display"]
+
+            # For backward compatibility, also try by email
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
+                    logger.warning(
+                        f"Found display using legacy email match for {email}: {instance['display']}"
+                    )
+                    # Update to use AVD name for future lookups
+                    if avd_name:
+                        logger.info(f"Updating legacy email assignment to AVD name {avd_name}")
+                        instance["assigned_profile"] = avd_name
+                        self._save_vnc_instance_map()
                     return instance["display"]
 
             # No display found
+            logger.debug(f"No display found for {email} with AVD {avd_name}")
             return None
         except Exception as e:
             logger.error(f"Error getting X display for {email}: {e}")
@@ -142,12 +162,33 @@ class EmulatorLauncher:
             The emulator port or None if not found
         """
         try:
-            # First check the VNC instance map
+            # Extract AVD name from email to find the correct profile
+            avd_name = self._extract_avd_name_from_email(email)
+
+            # Look up the port using the AVD name
+            if avd_name:
+                for instance in self.vnc_instances["instances"]:
+                    if instance["assigned_profile"] == avd_name:
+                        logger.info(
+                            f"Found emulator port for {email} with AVD {avd_name}: {instance['emulator_port']}"
+                        )
+                        return instance["emulator_port"]
+
+            # For backward compatibility, also try by email
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
+                    logger.warning(
+                        f"Found emulator port using legacy email match for {email}: {instance['emulator_port']}"
+                    )
+                    # Update to use AVD name for future lookups
+                    if avd_name:
+                        logger.info(f"Updating legacy email assignment to AVD name {avd_name}")
+                        instance["assigned_profile"] = avd_name
+                        self._save_vnc_instance_map()
                     return instance["emulator_port"]
 
             # No port found
+            logger.debug(f"No emulator port found for {email} with AVD {avd_name}")
             return None
         except Exception as e:
             logger.error(f"Error getting emulator port for {email}: {e}")
@@ -186,26 +227,83 @@ class EmulatorLauncher:
             The assigned display number or None if assignment failed
         """
         try:
+            # ONLY use the AVD name from profiles_index
+            avd_name = self._extract_avd_name_from_email(email)
+            if not avd_name:
+                logger.error(f"Could not extract AVD name for email {email} from profiles_index")
+                logger.error("Cannot assign display without registered AVD name in profiles_index")
+                return None
+
+            logger.info(f"Using AVD name '{avd_name}' as assigned_profile for email {email}")
+
             # First check if the profile already has an assigned display
             for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == email:
-                    logger.info(f"Profile {email} already assigned to display :{instance['display']}")
+                if instance["assigned_profile"] == avd_name:
+                    logger.info(
+                        f"Profile {email} with AVD {avd_name} already assigned to display :{instance['display']}"
+                    )
+                    return instance["display"]
+                # Also check for legacy email assignment for backward compatibility
+                elif instance["assigned_profile"] == email:
+                    # Update to use AVD name instead
+                    logger.info(f"Found legacy email assignment for {email}, updating to AVD name {avd_name}")
+                    instance["assigned_profile"] = avd_name
+                    self._save_vnc_instance_map()
                     return instance["display"]
 
             # Find an available instance
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] is None:
-                    # Assign this instance to the profile
-                    instance["assigned_profile"] = email
+                    # Assign this instance to the profile using AVD name
+                    instance["assigned_profile"] = avd_name
                     self._save_vnc_instance_map()
-                    logger.info(f"Assigned display :{instance['display']} to profile {email}")
+                    logger.info(f"Assigned display :{instance['display']} to AVD {avd_name} (email {email})")
                     return instance["display"]
 
             # No available instances, return None
-            logger.error(f"No available displays for profile {email}")
+            logger.error(f"No available displays for profile {email} with AVD {avd_name}")
             return None
         except Exception as e:
             logger.error(f"Error assigning display to profile {email}: {e}")
+            return None
+
+    def _extract_avd_name_from_email(self, email: str) -> Optional[str]:
+        """
+        Extract the AVD name for a given email from the profiles index ONLY.
+        We never generate a fallback name to prevent profile mismatches.
+
+        Args:
+            email: The email address
+
+        Returns:
+            The AVD name or None if it couldn't be determined
+        """
+        try:
+            # Try to get the AVD name from profiles_index.json
+            profiles_dir = os.path.join(self.android_home, "profiles")
+            profiles_index_path = os.path.join(profiles_dir, "profiles_index.json")
+
+            # Check if profiles_index exists and try to read it
+            if os.path.exists(profiles_index_path):
+                with open(profiles_index_path, "r") as f:
+                    profiles_index = json.load(f)
+
+                if email in profiles_index:
+                    profile_entry = profiles_index.get(email)
+
+                    # Handle different formats (backward compatibility)
+                    if isinstance(profile_entry, str):
+                        return profile_entry
+                    elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+                        return profile_entry["avd_name"]
+
+            # IMPORTANT: Never create a fallback AVD name here
+            # Only use the officially registered AVD name from profiles_index
+            logger.warning(f"Could not find AVD name for email {email} in profiles_index")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error extracting AVD name for email '{email}': {e}")
             return None
 
     @staticmethod
@@ -430,20 +528,24 @@ class EmulatorLauncher:
                 logger.error(f"AVD {avd_name} does not exist at {avd_path}")
                 return False, None, None
 
-            # Get or extract email
+            # Get or extract email if needed (for logging and display assignment)
             if not email:
                 email = self._extract_email_from_avd_name(avd_name)
                 if not email:
                     logger.warning(f"Could not extract email from AVD name {avd_name}, using 'default'")
                     email = "default"
 
-            # Check if emulator already running for this email
-            if email in self.running_emulators:
-                emulator_id, display_num = self.running_emulators[email]
-                logger.info(f"Emulator already running for {email}: {emulator_id} on display :{display_num}")
+            # IMPORTANT: Use AVD name as key for running_emulators, not email
+            # Check if emulator already running for this AVD
+            if avd_name in self.running_emulators:
+                emulator_id, display_num = self.running_emulators[avd_name]
+                logger.info(
+                    f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
+                )
                 return True, emulator_id, display_num
 
             # Get assigned display and emulator port for this profile
+            # We still need to use email for backward compatibility with VNC instance manager
             display_num = self.get_x_display(email)
             emulator_port = self.get_emulator_port(email)
 
@@ -457,7 +559,7 @@ class EmulatorLauncher:
                         logger.error(f"Failed to get display or port for {email} after assignment")
                         return False, None, None
                 else:
-                    logger.error(f"Failed to assign display for {email}")
+                    logger.error(f"Failed to assign display for {email} - AVD {avd_name}")
                     return False, None, None
 
             # Calculate emulator ID based on port
@@ -546,12 +648,12 @@ class EmulatorLauncher:
             # Create log files for debugging
             log_dir = "/var/log/emulator"
             os.makedirs(log_dir, exist_ok=True)
-            stdout_log = os.path.join(log_dir, f"emulator_{email}_stdout.log")
-            stderr_log = os.path.join(log_dir, f"emulator_{email}_stderr.log")
+            stdout_log = os.path.join(log_dir, f"emulator_{avd_name}_stdout.log")
+            stderr_log = os.path.join(log_dir, f"emulator_{avd_name}_stderr.log")
 
             # Start emulator in background with logs
             logger.info(
-                f"Starting emulator for {email} with AVD {avd_name} on display :{display_num} and port {emulator_port}"
+                f"Starting emulator for AVD {avd_name} (email {email}) on display :{display_num} and port {emulator_port}"
             )
             # logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
@@ -565,8 +667,8 @@ class EmulatorLauncher:
                     cwd="/tmp",  # Run in /tmp to avoid permission issues
                 )
 
-            # Store the running emulator info with the correct ID based on port
-            self.running_emulators[email] = (emulator_id, display_num)
+            # IMPORTANT: Store the running emulator info with the AVD name as key, not email
+            self.running_emulators[avd_name] = (emulator_id, display_num)
 
             # Now ensure VNC is running for this display after emulator is launched
             if platform.system() != "Darwin":
@@ -597,12 +699,26 @@ class EmulatorLauncher:
             True if successful, False otherwise
         """
         try:
+            # Extract AVD name from email to find the correct profile
+            avd_name = self._extract_avd_name_from_email(email)
+
+            # First try to find and release by AVD name
+            for instance in self.vnc_instances["instances"]:
+                if instance["assigned_profile"] == avd_name:
+                    instance["assigned_profile"] = None
+                    self._save_vnc_instance_map()
+                    logger.info(f"Released AVD {avd_name} (email {email}) from VNC instance map")
+                    return True
+
+            # For backward compatibility, also try by email
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
                     instance["assigned_profile"] = None
                     self._save_vnc_instance_map()
-                    logger.info(f"Released profile {email} from VNC instance map")
+                    logger.info(f"Released profile by legacy email {email} from VNC instance map")
                     return True
+
+            logger.warning(f"No VNC instance found for profile {email} with AVD {avd_name}")
             return False
         except Exception as e:
             logger.error(f"Error releasing profile {email}: {e}")
@@ -619,52 +735,110 @@ class EmulatorLauncher:
             True if emulator was stopped, False otherwise
         """
         try:
-            if email not in self.running_emulators:
-                logger.info(f"No running emulator found for {email}")
-                return False
+            # Get the AVD name for this email
+            avd_name = self._extract_avd_name_from_email(email)
 
-            emulator_id, display_num = self.running_emulators[email]
-            logger.info(f"Stopping emulator {emulator_id} for {email} on display :{display_num}")
+            # First try to find emulator by AVD name
+            if avd_name and avd_name in self.running_emulators:
+                emulator_id, display_num = self.running_emulators[avd_name]
+                logger.info(
+                    f"Stopping emulator {emulator_id} for AVD {avd_name} (email {email}) on display :{display_num}"
+                )
 
-            # Use adb to send kill command to emulator
-            subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
-                check=False,
-                timeout=5,
-            )
+                # Use adb to send kill command to emulator
+                subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
+                    check=False,
+                    timeout=5,
+                )
 
-            # Wait briefly for emulator to shut down
-            time.sleep(3)
+                # Wait briefly for emulator to shut down
+                time.sleep(3)
 
-            # Check if emulator is still running
-            check_result = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "devices"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=3,
-            )
+                # Check if emulator is still running
+                check_result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
 
-            if emulator_id not in check_result.stdout:
-                logger.info(f"Emulator {emulator_id} stopped successfully for {email}")
+                if emulator_id not in check_result.stdout:
+                    logger.info(f"Emulator {emulator_id} stopped successfully for AVD {avd_name}")
+                    del self.running_emulators[avd_name]
+                    return True
+
+                # Force kill if still running - but use the specific emulator port in the pattern
+                # to avoid killing other emulators when multiple are running
+                emulator_port = self.get_emulator_port(email)
+                if emulator_port:
+                    logger.warning(
+                        f"Emulator {emulator_id} did not stop gracefully, killing process for port {emulator_port}"
+                    )
+                    subprocess.run(
+                        ["pkill", "-f", f"emulator.*-port {emulator_port}"], check=False, timeout=3
+                    )
+                else:
+                    logger.warning("Could not determine emulator port, using generic kill pattern")
+                    subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
+
+                # Remove from running emulators
+                del self.running_emulators[avd_name]
+                return True
+
+            # For backward compatibility, check using email directly
+            elif email in self.running_emulators:
+                emulator_id, display_num = self.running_emulators[email]
+                logger.info(
+                    f"Stopping emulator {emulator_id} for {email} on display :{display_num} (legacy key)"
+                )
+
+                # Use adb to send kill command to emulator
+                subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
+                    check=False,
+                    timeout=5,
+                )
+
+                # Wait briefly for emulator to shut down
+                time.sleep(3)
+
+                # Check if emulator is still running
+                check_result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+
+                if emulator_id not in check_result.stdout:
+                    logger.info(f"Emulator {emulator_id} stopped successfully for {email}")
+                    del self.running_emulators[email]
+                    return True
+
+                # Force kill if still running
+                emulator_port = self.get_emulator_port(email)
+                if emulator_port:
+                    logger.warning(
+                        f"Emulator {emulator_id} did not stop gracefully, killing process for port {emulator_port}"
+                    )
+                    subprocess.run(
+                        ["pkill", "-f", f"emulator.*-port {emulator_port}"], check=False, timeout=3
+                    )
+                else:
+                    logger.warning("Could not determine emulator port, using generic kill pattern")
+                    subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
+
+                # Remove from running emulators
                 del self.running_emulators[email]
                 return True
 
-            # Force kill if still running - but use the specific emulator port in the pattern
-            # to avoid killing other emulators when multiple are running
-            emulator_port = self.get_emulator_port(email)
-            if emulator_port:
-                logger.warning(
-                    f"Emulator {emulator_id} did not stop gracefully, killing process for port {emulator_port}"
-                )
-                subprocess.run(["pkill", "-f", f"emulator.*-port {emulator_port}"], check=False, timeout=3)
+            # No running emulator found
             else:
-                logger.warning("Could not determine emulator port, using generic kill pattern")
-                subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
-
-            # Remove from running emulators
-            del self.running_emulators[email]
-            return True
+                logger.info(f"No running emulator found for {email} or AVD {avd_name}")
+                return False
 
         except Exception as e:
             logger.error(f"Error stopping emulator for {email}: {e}")
@@ -680,8 +854,22 @@ class EmulatorLauncher:
         Returns:
             Tuple of (emulator_id, display_num) or (None, None) if not found
         """
+        # First try to get the AVD name for this email
+        avd_name = self._extract_avd_name_from_email(email)
+
+        # If we have an AVD name and it's in running_emulators, use that
+        if avd_name and avd_name in self.running_emulators:
+            logger.info(f"Found running emulator for AVD {avd_name} (email {email})")
+            return self.running_emulators[avd_name]
+
+        # For backward compatibility during transition, also check using email
+        # This branch should be removed after full transition to AVD names
         if email in self.running_emulators:
+            logger.warning(
+                f"Found running emulator using legacy email key for {email} - should migrate to AVD name"
+            )
             return self.running_emulators[email]
+
         return None, None
 
     def is_emulator_running(self, email: str) -> bool:
@@ -723,6 +911,7 @@ class EmulatorLauncher:
         Returns:
             True if an emulator is ready, False otherwise
         """
+        # Get the emulator ID using get_running_emulator which handles AVD lookup
         emulator_id, _ = self.get_running_emulator(email)
         if not emulator_id:
             logger.info(f"No running emulator found for {email}")
