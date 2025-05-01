@@ -523,26 +523,65 @@ class AVDProfileManager:
             vnc_instance: Optional VNC instance number to assign to this profile
             appium_port: Optional Appium port to assign to this profile
         """
-        if email not in self.profiles_index:
+        logger.info(f"[PROFILE DEBUG] Starting register_profile for email: {email}, avd: {avd_name}")
+        logger.info(f"[PROFILE DEBUG] Current profiles_index keys: {list(self.profiles_index.keys())}")
+        
+        # Debug check if the email already exists before we add it
+        if email in self.profiles_index:
+            logger.info(f"[PROFILE DEBUG] Email {email} already exists in profiles_index: {self.profiles_index[email]}")
+            
+            if isinstance(self.profiles_index[email], str):
+                # Convert old format to new format
+                old_avd = self.profiles_index[email]
+                logger.info(f"[PROFILE DEBUG] Converting old format '{old_avd}' to new format for {email}")
+                self.profiles_index[email] = {"avd_name": old_avd}
+        else:
+            logger.info(f"[PROFILE DEBUG] Adding new entry for {email} in profiles_index")
             self.profiles_index[email] = {}
 
-        if isinstance(self.profiles_index[email], str):
-            # Convert old format to new format
-            old_avd = self.profiles_index[email]
-            self.profiles_index[email] = {"avd_name": old_avd}
-
         # Update with new values
+        logger.info(f"[PROFILE DEBUG] Setting AVD name to {avd_name} for {email}")
         self.profiles_index[email]["avd_name"] = avd_name
 
         # Add VNC instance if provided
         if vnc_instance is not None:
+            logger.info(f"[PROFILE DEBUG] Setting VNC instance to {vnc_instance} for {email}")
             self.profiles_index[email]["vnc_instance"] = vnc_instance
 
         # Add Appium port if provided
         if appium_port is not None:
+            logger.info(f"[PROFILE DEBUG] Setting Appium port to {appium_port} for {email}")
             self.profiles_index[email]["appium_port"] = appium_port
 
-        self._save_profiles_index()
+        # Save to file
+        logger.info(f"[PROFILE DEBUG] Saving profiles_index to {self.index_file}")
+        try:
+            self._save_profiles_index()
+            logger.info(f"[PROFILE DEBUG] Successfully saved profiles_index, verifying entry")
+            
+            # Verify the entry was saved
+            if email in self.profiles_index:
+                logger.info(f"[PROFILE DEBUG] Verified {email} is in memory copy of profiles_index")
+            else:
+                logger.error(f"[PROFILE DEBUG] {email} is NOT in memory copy of profiles_index!")
+                
+            # Verify the file was updated
+            if os.path.exists(self.index_file):
+                try:
+                    with open(self.index_file, "r") as f:
+                        file_data = json.load(f)
+                    if email in file_data:
+                        logger.info(f"[PROFILE DEBUG] Verified {email} is in saved profiles_index file")
+                    else:
+                        logger.error(f"[PROFILE DEBUG] {email} is NOT in saved profiles_index file!")
+                except Exception as verify_e:
+                    logger.error(f"[PROFILE DEBUG] Error verifying file contents: {verify_e}")
+            else:
+                logger.error(f"[PROFILE DEBUG] Index file does not exist at {self.index_file}!")
+        except Exception as save_e:
+            logger.error(f"[PROFILE DEBUG] Error saving profiles_index: {save_e}")
+            
+        # Build and log the registration message
         log_message = f"Registered profile for {email} with AVD {avd_name}"
         if vnc_instance is not None:
             log_message += f" on VNC instance {vnc_instance}"

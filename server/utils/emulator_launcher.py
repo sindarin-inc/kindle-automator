@@ -122,6 +122,7 @@ class EmulatorLauncher:
                 return display_num
 
             # Extract AVD name from email to find the correct profile
+            normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
             avd_name = self._extract_avd_name_from_email(email)
 
             # Check the VNC instance map with AVD name
@@ -131,14 +132,14 @@ class EmulatorLauncher:
                         logger.info(f"Found display for {email} with AVD {avd_name}: {instance['display']}")
                         return instance["display"]
 
-            # For backward compatibility, also try by email
+            # For backward compatibility, also try by email directly
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
                     logger.warning(
                         f"Found display using legacy email match for {email}: {instance['display']}"
                     )
                     # Update to use AVD name for future lookups
-                    if avd_name:
+                    if avd_name and not normalized_form:
                         logger.info(f"Updating legacy email assignment to AVD name {avd_name}")
                         instance["assigned_profile"] = avd_name
                         self._save_vnc_instance_map()
@@ -163,6 +164,7 @@ class EmulatorLauncher:
         """
         try:
             # Extract AVD name from email to find the correct profile
+            normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
             avd_name = self._extract_avd_name_from_email(email)
 
             # Look up the port using the AVD name
@@ -181,7 +183,7 @@ class EmulatorLauncher:
                         f"Found emulator port using legacy email match for {email}: {instance['emulator_port']}"
                     )
                     # Update to use AVD name for future lookups
-                    if avd_name:
+                    if avd_name and not normalized_form:
                         logger.info(f"Updating legacy email assignment to AVD name {avd_name}")
                         instance["assigned_profile"] = avd_name
                         self._save_vnc_instance_map()
@@ -227,11 +229,17 @@ class EmulatorLauncher:
             The assigned display number or None if assignment failed
         """
         try:
-            # ONLY use the AVD name from profiles_index
+            # Extract AVD name from email to find the correct profile
+            normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
+            if normalized_form:
+                logger.info(f"[PROFILE DEBUG] Detected already-normalized email in assign_display_to_profile: {email}")
+            
             avd_name = self._extract_avd_name_from_email(email)
+            logger.info(f"[PROFILE DEBUG] Got AVD name {avd_name} from _extract_avd_name_from_email")
+
             if not avd_name:
-                logger.error(f"Could not extract AVD name for email {email} from profiles_index")
-                logger.error("Cannot assign display without registered AVD name in profiles_index")
+                logger.error(f"Could not extract AVD name for email {email}")
+                logger.error("Cannot assign display without a valid AVD name")
                 return None
 
             logger.info(f"Using AVD name '{avd_name}' as assigned_profile for email {email}")
@@ -271,65 +279,93 @@ class EmulatorLauncher:
         """
         Extract the AVD name for a given email from the profiles index.
         If not found, create it immediately to ensure it exists.
+        Handles both standard emails and normalized emails (where @ is replaced with _).
 
         Args:
-            email: The email address
+            email: The email address or normalized email format
 
         Returns:
             The AVD name or None if it couldn't be determined
         """
         try:
-            # Try to get the AVD name from profiles_index.json
             profiles_dir = os.path.join(self.android_home, "profiles")
             profiles_index_path = os.path.join(profiles_dir, "profiles_index.json")
-
-            # Check if profiles_index exists and try to read it
+            
+            # First check if this email already has an entry in profiles_index
             if os.path.exists(profiles_index_path):
                 with open(profiles_index_path, "r") as f:
                     profiles_index = json.load(f)
+                    logger.info(f"[PROFILE DEBUG] Loaded profiles_index with keys: {list(profiles_index.keys())}")
 
                 if email in profiles_index:
                     profile_entry = profiles_index.get(email)
+                    logger.info(f"[PROFILE DEBUG] Found entry for {email}: {profile_entry}")
 
                     # Handle different formats (backward compatibility)
                     if isinstance(profile_entry, str):
+                        logger.info(f"[PROFILE DEBUG] Using string format AVD name: {profile_entry}")
                         return profile_entry
                     elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+                        logger.info(f"[PROFILE DEBUG] Using dict format AVD name: {profile_entry['avd_name']}")
                         return profile_entry["avd_name"]
 
-            # The AVD likely already exists, but we need to register it in profiles_index
-            # Use the standard naming convention directly without creating a new AVD
+            # No existing entry, detect email format and create appropriate AVD name
+            is_normalized = "@" not in email and "_" in email and (
+                email.endswith("_com") or email.endswith("_org") or email.endswith("_io")
+            )
+            
+            # Log email format detection for troubleshooting
+            logger.info(f"[PROFILE DEBUG] Email format detection for {email}:")
+            logger.info(f"[PROFILE DEBUG]   - Contains @: {'@' in email}")
+            logger.info(f"[PROFILE DEBUG]   - Contains _: {'_' in email}")
+            logger.info(f"[PROFILE DEBUG]   - Is normalized format: {is_normalized}")
 
-            # The standard format is "KindleAVD_username_domain"
-            # Convert the email: example@domain.com -> KindleAVD_example_domain_com
-            email_parts = email.split("@")
-            if len(email_parts) != 2:
-                logger.error(f"Invalid email format: {email}")
-                return None
+            # Handle normalized vs. standard email formats
+            if is_normalized:
+                # Already normalized email format - just add prefix if needed
+                logger.info(f"[PROFILE DEBUG] Input appears to be already normalized: {email}")
+                avd_name = f"KindleAVD_{email}" if not email.startswith("KindleAVD_") else email
+                logger.info(f"[PROFILE DEBUG] Using AVD name {avd_name} for already normalized email")
+            else:
+                # Standard email format - normalize it
+                email_parts = email.split("@")
+                if len(email_parts) != 2:
+                    logger.error(f"[PROFILE DEBUG] Invalid email format: {email}")
+                    return None
 
-            username, domain = email_parts
-            # Replace dots with underscores in both username and domain
-            username = username.replace(".", "_")
-            domain = domain.replace(".", "_")
-            avd_name = f"KindleAVD_{username}_{domain}"
+                username, domain = email_parts
+                # Replace dots with underscores in both username and domain
+                username = username.replace(".", "_")
+                domain = domain.replace(".", "_")
+                avd_name = f"KindleAVD_{username}_{domain}"
+                logger.info(f"[PROFILE DEBUG] Normalized {email} to {avd_name}")
 
-            logger.info(f"Using standard AVD name {avd_name} for {email}")
+            logger.info(f"[PROFILE DEBUG] Using standard AVD name {avd_name} for {email}")
 
             # Register this profile in profiles_index
-            # Ensure profiles directory exists
-            os.makedirs(profiles_dir, exist_ok=True)
-
-            # Create or update profiles_index
-            if not os.path.exists(profiles_index_path):
-                profiles_index = {}
-
-            # Add or update the entry
-            profiles_index[email] = {"avd_name": avd_name}
-
-            # Save the updated profiles_index
-            with open(profiles_index_path, "w") as f:
-                json.dump(profiles_index, f, indent=2)
-
+            try:
+                # Ensure profiles directory exists
+                os.makedirs(profiles_dir, exist_ok=True)
+                
+                # Create or load profiles_index
+                if os.path.exists(profiles_index_path):
+                    with open(profiles_index_path, "r") as f:
+                        profiles_index = json.load(f)
+                else:
+                    profiles_index = {}
+                    logger.info(f"[PROFILE DEBUG] Created new profiles_index")
+                
+                # Add or update the entry for this email
+                profiles_index[email] = {"avd_name": avd_name}
+                logger.info(f"[PROFILE DEBUG] Added profile entry for {email}")
+                
+                # Save to file
+                with open(profiles_index_path, "w") as f:
+                    json.dump(profiles_index, f, indent=2)
+            except Exception as e:
+                logger.error(f"[PROFILE DEBUG] Error updating profiles_index: {e}")
+                
+            # Return the AVD name
             logger.info(f"Registered profile for {email} with AVD {avd_name} in profiles_index")
             return avd_name
 
