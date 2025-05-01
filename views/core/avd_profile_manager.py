@@ -172,7 +172,14 @@ class AVDProfileManager:
                 logger.error(f"Error loading profiles index: {e}")
                 return {}
         else:
-            return {}
+            logger.info(f"Profiles index not found at {self.index_file}, creating empty index")
+            # Create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
+            # Save an empty profiles index
+            empty_index = {}
+            with open(self.index_file, "w") as f:
+                json.dump(empty_index, f, indent=2)
+            return empty_index
 
     def _save_profiles_index(self) -> None:
         """Save profiles index to JSON file."""
@@ -535,6 +542,10 @@ class AVDProfileManager:
             logger.info(f"Email {email} already registered to AVD {self.profiles_index[email]}")
             return
 
+        # Create a standardized AVD name for this email first
+        normalized_avd_name = self.get_avd_name_from_email(email)
+        logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
+        
         # Next, try to find any running emulator to use
         running_emulators = self.device_discovery.map_running_emulators()
 
@@ -542,8 +553,8 @@ class AVDProfileManager:
             # Use the first available running emulator
             avd_name, emulator_id = next(iter(running_emulators.items()))
             logger.info(f"Registering email {email} to running emulator with AVD {avd_name}")
-            self.profiles_index[email] = avd_name
-            self._save_profiles_index()
+            # Use proper registration method instead of direct dict assignment to ensure correct format
+            self.register_profile(email, avd_name)
 
             # Also update current profile
             self._save_current_profile(email, avd_name, emulator_id)
@@ -561,8 +572,8 @@ class AVDProfileManager:
                 # Use the first available AVD
                 avd_name = available_avds[0]
                 logger.info(f"Registering email {email} to available AVD {avd_name}")
-                self.profiles_index[email] = avd_name
-                self._save_profiles_index()
+                # Use proper registration method instead of direct dict assignment to ensure correct format
+                self.register_profile(email, avd_name)
 
                 # Update current profile without emulator ID (not running yet)
                 self._save_current_profile(email, avd_name)
@@ -570,13 +581,13 @@ class AVDProfileManager:
         except Exception as e:
             logger.warning(f"Error listing available AVDs: {e}")
 
-        # Fallback to default AVD name
-        logger.info(f"Registering email {email} to default AVD {default_avd_name}")
-        self.profiles_index[email] = default_avd_name
-        self._save_profiles_index()
+        # Register with our standardized AVD name as fallback
+        logger.info(f"Registering email {email} to standardized AVD {normalized_avd_name}")
+        # Use proper registration method instead of direct dict assignment to ensure correct format
+        self.register_profile(email, normalized_avd_name)
 
         # Update current profile without emulator ID
-        self._save_current_profile(email, default_avd_name)
+        self._save_current_profile(email, normalized_avd_name)
 
     def stop_emulator(self, device_id: str = None) -> bool:
         """
@@ -748,7 +759,14 @@ class AVDProfileManager:
             avd_name = self.get_avd_for_email(email)
 
             if not avd_name:
-                # Look for any available AVD
+                # Create a standardized AVD name for this email first
+                normalized_avd_name = self.get_avd_name_from_email(email)
+                logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
+                
+                # Register this standardized name first to ensure it's in the profiles_index
+                self.register_profile(email, normalized_avd_name)
+                
+                # Now look for any available AVD as a fallback
                 try:
                     # List available AVDs
                     avd_list_cmd = [f"{self.android_home}/emulator/emulator", "-list-avds"]
@@ -763,18 +781,16 @@ class AVDProfileManager:
                         avd_name = available_avds[0]
                         logger.info(f"Using first available AVD: {avd_name} for {email}")
 
-                        # Register this AVD with the profile
+                        # Update the profile with this AVD
                         self.register_profile(email, avd_name)
                     else:
-                        logger.warning(f"No AVDs found. Please create an AVD in Android Studio")
-                        # Create a placeholder name that will be updated later
-                        avd_name = f"AndroidStudioAVD_{email.split('@')[0]}"
-                        self.register_profile(email, avd_name)
+                        logger.warning(f"No AVDs found. Using standardized AVD name.")
+                        # Use the standardized name we registered
+                        avd_name = normalized_avd_name
                 except Exception as e:
                     logger.warning(f"Error listing available AVDs: {e}")
-                    # Create a placeholder AVD name
-                    avd_name = f"AndroidStudioAVD_{email.split('@')[0]}"
-                    self.register_profile(email, avd_name)
+                    # Use the standardized name we registered
+                    avd_name = normalized_avd_name
 
             # Update current profile without trying to start emulator
             self._save_current_profile(email, avd_name)
@@ -793,11 +809,26 @@ class AVDProfileManager:
         # If no AVD exists for this email, create one
         if not avd_name:
             logger.info(f"No AVD found for {email}, creating new one")
+            
+            # Create a normalized AVD name based on the email
+            normalized_avd_name = self.get_avd_name_from_email(email)
+            logger.info(f"Generated AVD name {normalized_avd_name} for {email}")
+            
+            # First register this AVD name in profiles_index so VNC can find it
+            self.register_profile(email, normalized_avd_name)
+            logger.info(f"Registered AVD {normalized_avd_name} for email {email} in profiles_index")
+            
+            # Try to create the AVD - even if this fails, we'll have the profile registered
             success, result = self.create_new_avd(email)
             if not success:
-                return False, f"Failed to create AVD: {result}"
-            avd_name = result
-            self.register_profile(email, avd_name)
+                logger.warning(f"Failed to create AVD: {result}, but profile was registered")
+                # Set AVD name to the one we registered to continue
+                avd_name = normalized_avd_name
+            else:
+                avd_name = result
+                # Update the profile with the final AVD name if different
+                if avd_name != normalized_avd_name:
+                    self.register_profile(email, avd_name)
 
         # Check if this AVD actually exists - it might not if we're using
         # manually registered AVDs but the Android Studio AVD was renamed or deleted
