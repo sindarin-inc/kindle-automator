@@ -130,12 +130,37 @@ def get_formatted_vnc_url(
         if vnc_port:
             # Skip VNC checks on macOS
             if platform.system() != "Darwin":
-                # First, get the display number for this profile
+                # Get the display number for this profile
                 display_num = None
-                for instance in vnc_manager.instances:
-                    if instance.get("assigned_profile") == sindarin_email:
-                        display_num = instance.get("display")
-                        break
+                
+                # Get the AVD name from profiles_index - this should be used consistently
+                avd_name = None
+                if sindarin_email in vnc_manager.profiles_index:
+                    profile_entry = vnc_manager.profiles_index.get(sindarin_email)
+                    if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+                        avd_name = profile_entry["avd_name"]
+                    elif isinstance(profile_entry, str):
+                        avd_name = profile_entry
+                else:
+                    logger.error(f"Email {sindarin_email} not found in profiles_index")
+                    
+                # Find instance using the AVD name, which should be the primary identifier
+                if avd_name:
+                    logger.info(f"Looking for VNC instance with assigned_profile matching AVD name: {avd_name}")
+                    for instance in vnc_manager.instances:
+                        if instance.get("assigned_profile") == avd_name:
+                            display_num = instance.get("display")
+                            logger.info(f"Found display {display_num} for AVD {avd_name}")
+                            break
+                    
+                    if not display_num:
+                        # We have an AVD name but can't find a matching instance - this is unexpected
+                        logger.error(f"No VNC instance found with assigned_profile={avd_name}")
+                        logger.error(f"Available profiles: {[i.get('assigned_profile') for i in vnc_manager.instances]}")
+                else:
+                    # We don't have an AVD name - this is a prerequisite for the system to work
+                    logger.error(f"Cannot find AVD name for email {sindarin_email} in profiles_index")
+                    logger.error(f"Profile entries available: {vnc_manager.profiles_index}")
 
                 # If we found a display number, ensure VNC is running
                 if display_num:
@@ -160,7 +185,9 @@ def get_formatted_vnc_url(
                     except Exception as e:
                         logger.error(f"Error ensuring VNC server is running: {e}")
                 else:
-                    logger.warning(f"Could not determine display number for email {sindarin_email}")
+                    logger.warning(
+                        f"Could not determine display number for email {sindarin_email}, vnc_manager.instances: {vnc_manager.instances}"
+                    )
 
             # Return the VNC URL
             vnc_url = f"vnc://{hostname}:{vnc_port}"
