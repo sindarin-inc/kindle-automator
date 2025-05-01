@@ -27,49 +27,57 @@ class AutomationServer:
         # Initialize the AVD profile manager
         self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         self.profile_manager = AVDProfileManager(base_dir=self.android_home)
-        self.current_email = None  # Current active email for backward compatibility
 
-    @property
-    def automator(self):
-        """Get the current automator instance for the active email.
-        For backward compatibility with existing code."""
-        if self.current_email and self.current_email in self.automators:
-            return self.automators[self.current_email]
-        return None
+    # automator property has been removed - use get_automator(email) instead
 
-    def initialize_automator(self, email=None):
+    def get_automator(self, email):
+        """Get automator for a specific email.
+
+        Args:
+            email: The email address to get the automator for
+
+        Returns:
+            The automator instance for the given email, or None if not found
+        """
+        if not email:
+            logger.warning("Attempted to get automator with empty email")
+            return None
+
+        return self.automators.get(email)
+
+    def initialize_automator(self, email):
         """Initialize automator for VNC-based manual authentication.
 
         Args:
-            email: The profile ID for which to initialize an automator. If None, uses current_email.
+            email: The profile ID for which to initialize an automator. REQUIRED.
 
         Returns:
-            The automator instance
+            The automator instance or None if no email provided
         """
-        # If no email specified, use current_email
-        target_email = email or self.current_email
-
-        if not target_email:
-            logger.warning("No target profile ID provided for automator initialization")
+        if not email:
+            logger.error("Email parameter is required for initialize_automator")
             return None
 
         # Check if we already have an automator for this profile
-        if target_email in self.automators and self.automators[target_email]:
-            logger.info(f"Using existing automator for profile {target_email}")
-            return self.automators[target_email]
+        if email in self.automators and self.automators[email]:
+            logger.info(f"Using existing automator for profile {email}")
+            return self.automators[email]
 
         # Initialize a new automator
-        logger.info(f"Initializing new automator for profile {target_email}")
+        logger.info(f"Initializing new automator for profile {email}")
         automator = KindleAutomator()
         # Connect profile manager to automator for device ID tracking
         automator.profile_manager = self.profile_manager
 
         # Pass emulator_manager to automator for VNC integration
         automator.emulator_manager = self.profile_manager.emulator_manager
-        logger.info(f"Added emulator_manager to automator for profile {target_email}")
+        logger.info(f"Added emulator_manager to automator for profile {email}")
 
         # Store the automator
-        self.automators[target_email] = automator
+        self.automators[email] = automator
+
+        # current_email field has been removed
+        # Always use explicit email parameters in all operations
 
         # Scan for any AVDs with email patterns in their names and register them
         discovered = self.profile_manager.scan_for_avds_with_emails()
@@ -89,10 +97,14 @@ class AutomationServer:
         Returns:
             Tuple[bool, str]: (success, message)
         """
+        if not email:
+            logger.error("Email parameter is required for switch_profile")
+            return False, "Email parameter is required"
+
         logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
 
-        # Set this as the current active email
-        self.current_email = email
+        # current_email field has been removed
+        # Always use explicit email parameters in all operations
 
         # Check if there's a running emulator for this profile
         is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
@@ -190,39 +202,47 @@ class AutomationServer:
             logger.error(f"Failed to start Appium server: {e}")
             return False
 
-    def set_current_book(self, book_title, email=None):
+    def set_current_book(self, book_title, email):
         """Set the currently open book title for a specific email
 
         Args:
             book_title: The title of the book
-            email: The email to associate with this book. If None, uses current_email.
+            email: The email to associate with this book. REQUIRED.
         """
-        target_email = email or self.current_email
-        if not target_email:
-            logger.warning("No email specified for set_current_book")
+        if not email:
+            logger.error("Email parameter is required for set_current_book")
             return
 
-        self.current_books[target_email] = book_title
-        logger.info(f"Set current book for {target_email} to: {book_title}")
+        self.current_books[email] = book_title
+        logger.info(f"Set current book for {email} to: {book_title}")
 
-    def clear_current_book(self, email=None):
+    def clear_current_book(self, email):
         """Clear the currently open book tracking variable for a specific email
 
         Args:
-            email: The email for which to clear the book. If None, uses current_email.
+            email: The email for which to clear the book. REQUIRED.
         """
-        target_email = email or self.current_email
-        if not target_email:
-            logger.warning("No email specified for clear_current_book")
+        if not email:
+            logger.error("Email parameter is required for clear_current_book")
             return
 
-        if target_email in self.current_books:
-            logger.info(f"Cleared current book for {target_email}: {self.current_books[target_email]}")
-            del self.current_books[target_email]
+        if email in self.current_books:
+            logger.info(f"Cleared current book for {email}: {self.current_books[email]}")
+            del self.current_books[email]
 
-    @property
-    def current_book(self):
-        """Get the current book for the active email. For backward compatibility."""
-        if self.current_email and self.current_email in self.current_books:
-            return self.current_books[self.current_email]
-        return None
+    def get_current_book(self, email):
+        """Get the current book for the specified email.
+
+        Args:
+            email: The email to get the current book for. REQUIRED.
+
+        Returns:
+            str: The title of the current book, or None if no book is open
+        """
+        if not email:
+            logger.error("Email parameter is required for get_current_book")
+            return None
+
+        return self.current_books.get(email)
+
+    # current_book property has been removed - use get_current_book(email) instead

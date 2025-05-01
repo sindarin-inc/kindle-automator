@@ -1148,9 +1148,9 @@ class AuthResource(Resource):
                     if updated_state == AppState.LIBRARY:
                         logger.info("Successfully switched to LIBRARY state")
                         return {
-                            "success": True, 
+                            "success": True,
                             "message": "Switched to library view",
-                            "authorized_kindle_account": True
+                            "authorized_kindle_account": True,
                         }, 200
                 except Exception as e:
                     logger.error(f"Error clicking on LIBRARY tab: {e}")
@@ -1158,9 +1158,9 @@ class AuthResource(Resource):
             else:
                 # We're already in LIBRARY state
                 return {
-                    "success": True, 
+                    "success": True,
                     "message": "Already authenticated",
-                    "authorized_kindle_account": True
+                    "authorized_kindle_account": True,
                 }, 200
 
         # Handle LIBRARY_SIGN_IN state - check if we need to click on the sign-in button
@@ -1201,7 +1201,7 @@ class AuthResource(Resource):
                     logger.info(f"VNC server check/start completed for display {display_num}")
             except Exception as e:
                 logger.error(f"Error starting VNC server: {e}")
-        
+
         # Get the formatted VNC URL with the profile email and emulator ID
         # emulator_id is already available from above code
         formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
@@ -1217,7 +1217,9 @@ class AuthResource(Resource):
             "message": auth_status.get("message", "Ready for manual authentication via VNC"),
             "state": auth_status.get("state", state_name),
             "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response
-            "authorized_kindle_account": auth_status.get("already_authenticated", False),  # Indicates if user is signed in
+            "authorized_kindle_account": auth_status.get(
+                "already_authenticated", False
+            ),  # Indicates if user is signed in
         }
 
         # Pass through any additional info from auth_status

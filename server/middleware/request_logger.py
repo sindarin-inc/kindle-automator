@@ -61,15 +61,26 @@ class RequestBodyLogger:
         server_instance = current_app.config.get("server_instance", None)
         user_info = ""
 
-        # Add user and AVD info if available
+        # Add user and AVD info if available - PRIORITIZE sindarin_email from the request
+        from server.utils.request_utils import get_sindarin_email
+
+        request_email = get_sindarin_email()
+
         if server_instance:
-            email = server_instance.current_email or "not_authenticated"
-            current_profile = (
-                server_instance.profile_manager.get_current_profile()
-                if hasattr(server_instance, "profile_manager")
-                else None
-            )
-            avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
+            email = request_email or server_instance.current_email or "not_authenticated"
+
+            # Get the AVD name specifically for this email, not just the current profile
+            if request_email and hasattr(server_instance, "profile_manager"):
+                avd_name = server_instance.profile_manager.get_avd_for_email(request_email) or "none"
+            else:
+                # Fallback to current profile
+                current_profile = (
+                    server_instance.profile_manager.get_current_profile()
+                    if hasattr(server_instance, "profile_manager")
+                    else None
+                )
+                avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
+
             user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
 
         # For GET requests, use query parameters as the body
@@ -131,15 +142,26 @@ class RequestBodyLogger:
         server_instance = current_app.config.get("server_instance", None)
         user_info = ""
 
-        # Add user and AVD info if available
+        # Add user and AVD info if available - PRIORITIZE sindarin_email from the request
+        from server.utils.request_utils import get_sindarin_email
+
+        request_email = get_sindarin_email()
+
         if server_instance:
-            email = server_instance.current_email or "not_authenticated"
-            current_profile = (
-                server_instance.profile_manager.get_current_profile()
-                if hasattr(server_instance, "profile_manager")
-                else None
-            )
-            avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
+            email = request_email or server_instance.current_email or "not_authenticated"
+
+            # Get the AVD name specifically for this email, not just the current profile
+            if request_email and hasattr(server_instance, "profile_manager"):
+                avd_name = server_instance.profile_manager.get_avd_for_email(request_email) or "none"
+            else:
+                # Fallback to current profile
+                current_profile = (
+                    server_instance.profile_manager.get_current_profile()
+                    if hasattr(server_instance, "profile_manager")
+                    else None
+                )
+                avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
+
             user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
 
         if response.direct_passthrough:
