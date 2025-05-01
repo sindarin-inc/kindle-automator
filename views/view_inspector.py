@@ -52,10 +52,27 @@ class ViewInspector:
         os.makedirs(self.screenshots_dir, exist_ok=True)
         self.app_package = "com.amazon.kindle"
         self.app_activity = "com.amazon.kindle.UpgradePage"
+        # Initialize device_id to None - will be set properly later
+        self.device_id = None
+
         # Get automator reference from driver if available
         self.automator = getattr(driver, "_driver", None)
         if self.automator:
             self.automator = getattr(self.automator, "automator", None)
+
+        # Try to get device_id from the driver or automator
+        if self.automator and hasattr(self.automator, "device_id"):
+            self.device_id = self.automator.device_id
+            logger.info(f"Setting device_id {self.device_id} from automator in ViewInspector initialization")
+
+        # Try other sources for the device_id during initialization
+        if not self.device_id and hasattr(self.driver, "session") and self.driver.session:
+            session_device_id = self.driver.session.get("deviceId")
+            if session_device_id:
+                self.device_id = session_device_id
+                logger.info(
+                    f"Setting device_id {self.device_id} from driver session in ViewInspector initialization"
+                )
 
     def set_driver(self, driver):
         """Sets the Appium driver instance"""
@@ -64,18 +81,33 @@ class ViewInspector:
     def ensure_app_foreground(self):
         """Ensures the Kindle app is in the foreground"""
         try:
-            # Get device ID if available from the automator
+            # Get device ID through multiple methods to ensure we have one
             device_id = None
-            if self.automator and hasattr(self.automator, "device_id"):
-                device_id = self.automator.device_id
 
-            # Get device ID from driver if not available from automator
+            # 1. Try directly from our own class (if manually set)
+            if hasattr(self, "device_id") and self.device_id:
+                device_id = self.device_id
+                logger.info(f"Using device_id {device_id} stored directly on view_inspector")
+
+            # 2. Get from automator
+            if not device_id and self.automator and hasattr(self.automator, "device_id"):
+                device_id = self.automator.device_id
+                logger.info(f"Retrieved device ID {device_id} from automator")
+
+            # 3. Try via _driver.automator.device_id if available
+            if not device_id and hasattr(self.driver, "_driver"):
+                driver_ref = getattr(self.driver, "_driver")
+                if hasattr(driver_ref, "automator") and hasattr(driver_ref.automator, "device_id"):
+                    device_id = driver_ref.automator.device_id
+                    logger.info(f"Retrieved device ID {device_id} from driver._driver.automator")
+
+            # 4. Get device ID from driver session
             if not device_id and hasattr(self.driver, "session") and self.driver.session:
                 device_id = self.driver.session.get("deviceId")
                 if device_id:
                     logger.info(f"Retrieved device ID {device_id} from driver session")
 
-            # Try to get from driver.command_executor if available
+            # 5. Try to get from driver.command_executor if available
             if not device_id and hasattr(self.driver, "command_executor"):
                 executor_url = getattr(self.driver.command_executor, "_url", "")
                 if "deviceId=" in executor_url:
@@ -85,14 +117,33 @@ class ViewInspector:
                         device_id = matches.group(1)
                         logger.info(f"Extracted device ID {device_id} from command executor URL")
 
+            # 6. Try to get device ID from driver.desired_capabilities
+            if not device_id and hasattr(self.driver, "desired_capabilities"):
+                desired_caps = self.driver.desired_capabilities
+                if isinstance(desired_caps, dict) and "deviceName" in desired_caps:
+                    device_id = desired_caps["deviceName"]
+                    logger.info(f"Retrieved device ID {device_id} from desired_capabilities")
+
+            # 7. Check if we can find device ID from attached automator to drivers
+            if not device_id:
+                try:
+                    from driver import Driver
+
+                    driver_instance = Driver()
+                    if hasattr(driver_instance, "device_id") and driver_instance.device_id:
+                        device_id = driver_instance.device_id
+                        logger.info(f"Retrieved device ID {device_id} from Driver singleton")
+                        # Store for future use
+                        self.device_id = device_id
+                except Exception as e:
+                    logger.warning(f"Error accessing Driver singleton: {e}")
+
             logger.info(f"Bringing {self.app_package} to foreground using device_id={device_id}...")
 
-            # Check if we have a device ID
+            # Check if we have a device ID and if multiple devices exist
             if not device_id:
-                logger.warning(
-                    "No device ID available, cannot launch app when multiple emulators are running"
-                )
-                # Try to check how many devices are running
+                logger.warning("No device ID available, checking if we have multiple devices running")
+                # Try to check how many devices are running and possibly identify one
                 try:
                     adb_result = subprocess.run(
                         ["adb", "devices"],
@@ -100,18 +151,47 @@ class ViewInspector:
                         capture_output=True,
                         text=True,
                     )
-                    if "more than one device/emulator" in adb_result.stderr:
+
+                    # Count devices and try to get a single device if possible
+                    device_count = 0
+                    available_devices = []
+
+                    for line in adb_result.stdout.splitlines():
+                        if "device" in line and not "List of devices" in line:
+                            parts = line.split()
+                            if len(parts) >= 1:
+                                device_id_candidate = parts[0].strip()
+                                if device_id_candidate:
+                                    device_count += 1
+                                    available_devices.append(device_id_candidate)
+
+                    logger.info(f"Found {device_count} devices: {available_devices}")
+
+                    if device_count > 1:
                         logger.error(
-                            "Multiple devices detected but no device ID available - cannot proceed with app launch"
+                            f"Multiple devices detected ({device_count}) but no device ID available - cannot proceed with app launch"
                         )
                         return False
+                    elif device_count == 1:
+                        # If only one device is available, use it
+                        device_id = available_devices[0]
+                        logger.info(f"Using the only available device: {device_id}")
+                        # Store for future use
+                        self.device_id = device_id
                 except Exception as e:
                     logger.warning(f"Error checking for devices: {e}")
+
+            # One more check - if we still don't have a device ID but stderr contains "more than one"
+            if not device_id:
+                logger.error("Still no device ID and multiple emulators may be running - cannot proceed")
+                return False
 
             # Build the ADB command based on whether we have a device ID
             cmd = ["adb"]
             if device_id:
                 cmd.extend(["-s", device_id])
+                # Store this device_id for future use
+                self.device_id = device_id
             cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
 
             # Run the command but don't check for errors - sometimes the exit code is 1

@@ -59,6 +59,11 @@ class KindleAutomator:
         # Initialize state machine without credentials or captcha
         self.state_machine = KindleStateMachine(self.driver)
 
+        # Ensure the view_inspector has the device_id directly
+        if self.device_id and hasattr(self.state_machine, "view_inspector"):
+            logger.info(f"Setting device_id {self.device_id} directly on view_inspector")
+            self.state_machine.view_inspector.device_id = self.device_id
+
         # Initialize handlers
         self.library_handler = LibraryHandler(self.driver)
         self.reader_handler = ReaderHandler(self.driver)
