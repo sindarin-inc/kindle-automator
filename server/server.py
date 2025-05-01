@@ -155,15 +155,15 @@ class BooksResource(Resource):
         """Get list of available books with metadata"""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
-        
+
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
-            
+
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
-            
+
         current_state = automator.state_machine.current_state
         logger.info(f"Current state when getting books: {current_state}")
 
@@ -523,15 +523,15 @@ class NavigationResource(Resource):
         """Handle page navigation"""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
-        
+
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
-            
+
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
-        
+
         # Use provided action parameter if available
         if action is None:
             # Otherwise check if we have a default action from initialization
@@ -633,15 +633,15 @@ class NavigationResource(Resource):
         """Handle navigation via GET requests, using query parameters or default_action"""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
-        
+
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to use"}, 400
-            
+
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
-            
+
         # Check if action is provided in query parameters
         action = request.args.get("action")
 
@@ -1045,6 +1045,16 @@ class AuthResource(Resource):
         else:
             recreate = request.args.get("recreate", "0") in ("1", "true")
 
+        # Check if VNC server should be restarted
+        restart_vnc = False
+        if request.is_json:
+            restart_vnc = data.get("restart_vnc", False)
+        else:
+            restart_vnc = request.args.get("restart_vnc", "0") in ("1", "true")
+
+        if restart_vnc:
+            logger.info(f"Restart VNC requested for {sindarin_email}")
+
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
@@ -1234,8 +1244,51 @@ class AuthResource(Resource):
             except Exception as e:
                 logger.error(f"Error starting VNC server: {e}")
 
+        # Handle restart_vnc parameter if set - force kill existing VNC process
+        if restart_vnc:
+            import platform
+            import subprocess
+
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            # Get the display number for this profile
+            logger.info(f"Explicitly restarting VNC server for {sindarin_email}")
+
+            # Skip on macOS
+            if platform.system() != "Darwin":
+                try:
+                    # Get VNC instance manager to find the display
+                    vnc_manager = VNCInstanceManager()
+                    display_num_to_restart = None
+                    vnc_port_to_restart = None
+
+                    for instance in vnc_manager.instances:
+                        if instance.get("assigned_profile") == sindarin_email:
+                            display_num_to_restart = instance.get("display")
+                            vnc_port_to_restart = instance.get("vnc_port")
+                            break
+
+                    if display_num_to_restart:
+                        logger.info(
+                            f"Found display :{display_num_to_restart} for {sindarin_email}, killing existing VNC process"
+                        )
+                        # Kill any existing VNC process for this display
+                        subprocess.run(["pkill", "-f", f"x11vnc.*:{display_num_to_restart}"], check=False)
+                        # Also force kill by port
+                        if vnc_port_to_restart:
+                            subprocess.run(
+                                ["pkill", "-f", f"x11vnc.*rfbport {vnc_port_to_restart}"], check=False
+                            )
+
+                        logger.info(f"Forced VNC restart for display :{display_num_to_restart}")
+                    else:
+                        logger.warning(f"Could not find display number for {sindarin_email}")
+                except Exception as e:
+                    logger.error(f"Error restarting VNC server: {e}")
+
         # Get the formatted VNC URL with the profile email and emulator ID
         # emulator_id is already available from above code
+        # This will also start the VNC server if it's not running
         formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
         # Prepare manual auth response with details from auth_status

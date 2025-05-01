@@ -58,6 +58,9 @@ def get_formatted_vnc_url(
         Optional[str]: The VNC protocol URL for the allocated VNC server, or None if not found
     """
     # Import needed modules
+    import platform
+    import subprocess
+    import time
     from urllib.parse import urlparse
 
     from server.utils.vnc_instance_manager import VNCInstanceManager
@@ -123,8 +126,43 @@ def get_formatted_vnc_url(
         # Get the VNC port using the email
         vnc_port = vnc_manager.get_vnc_port(sindarin_email)
 
-        # If port is found, return formatted URL
+        # If port is found, verify VNC server is running and restart if needed
         if vnc_port:
+            # Skip VNC checks on macOS
+            if platform.system() != "Darwin":
+                # First, get the display number for this profile
+                display_num = None
+                for instance in vnc_manager.instances:
+                    if instance.get("assigned_profile") == sindarin_email:
+                        display_num = instance.get("display")
+                        break
+
+                # If we found a display number, ensure VNC is running
+                if display_num:
+                    logger.info(f"Checking if VNC server is running for display :{display_num}")
+
+                    # Get the emulator launcher to use existing VNC restart functionality
+                    from server.utils.emulator_launcher import EmulatorLauncher
+
+                    try:
+                        # Initialize the emulator launcher
+                        emulator_launcher = EmulatorLauncher(
+                            android_home=android_home, avd_dir=avd_dir, host_arch=platform.processor()
+                        )
+
+                        # Use the existing _ensure_vnc_running method
+                        vnc_running = emulator_launcher._ensure_vnc_running(display_num)
+
+                        if vnc_running:
+                            logger.info(f"VNC server for display :{display_num} is running properly")
+                        else:
+                            logger.error(f"Failed to ensure VNC server is running for display :{display_num}")
+                    except Exception as e:
+                        logger.error(f"Error ensuring VNC server is running: {e}")
+                else:
+                    logger.warning(f"Could not determine display number for email {sindarin_email}")
+
+            # Return the VNC URL
             vnc_url = f"vnc://{hostname}:{vnc_port}"
             logger.info(f"VNC URL for {sindarin_email}: {vnc_url}")
             return vnc_url

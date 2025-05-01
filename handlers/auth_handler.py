@@ -299,8 +299,20 @@ class AuthenticationHandler:
                     if current_profile and "email" in current_profile:
                         email = current_profile["email"]
 
-                # Get the formatted VNC URL with the current email
+                # Get the formatted VNC URL with the current email and ensure VNC is running
                 formatted_vnc_url = get_formatted_vnc_url(email)
+
+                # Explicitly verify the emulator is running before proceeding
+                if hasattr(automator, "emulator_manager") and automator.emulator_manager:
+                    try:
+                        # Check if the emulator is ready
+                        is_ready = automator.emulator_manager.is_emulator_ready(email)
+                        logger.info(f"Emulator ready check for {email}: {is_ready}")
+
+                        if not is_ready:
+                            logger.warning(f"Emulator not ready for {email}, may need to be restarted")
+                    except Exception as e:
+                        logger.error(f"Error checking emulator readiness: {e}")
 
                 return {
                     "state": "SIGN_IN",

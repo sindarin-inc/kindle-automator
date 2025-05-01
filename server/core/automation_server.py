@@ -132,11 +132,13 @@ class AutomationServer:
                         timeout=3,
                     )
                     device_available = result.returncode == 0 and "device" in result.stdout
-                    logger.info(f"Device {device_id} verification: available={device_available}, result={result.stdout.strip()}")
+                    logger.info(
+                        f"Device {device_id} verification: available={device_available}, result={result.stdout.strip()}"
+                    )
                 except Exception as e:
                     logger.warning(f"Error checking device {device_id} availability: {e}")
                     device_available = False
-            
+
             # Handle different scenarios based on emulator state
             if is_running and not force_new_emulator and device_available:
                 logger.info(
@@ -149,7 +151,7 @@ class AutomationServer:
                     logger.info(f"Emulator not running for {email} according to ADB")
                 if not device_available:
                     logger.info(f"Device ID {self.automators[email].device_id} no longer available in ADB")
-                
+
                 if not force_new_emulator:
                     # Get current profile to check if we're actually switching between users
                     current_profile = self.profile_manager.get_current_profile()

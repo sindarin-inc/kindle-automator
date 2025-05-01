@@ -68,7 +68,7 @@ class DeviceDiscovery:
         # Force refresh running emulator data from ADB to ensure accuracy
         # This avoids stale emulator information
         running_emulators = self.map_running_emulators()
-        
+
         # Debug log the running emulators we found
         logger.info(f"Current running emulators: {running_emulators}")
 
@@ -311,15 +311,15 @@ class DeviceDiscovery:
 
             # Parse output to get emulator IDs
             lines = result.stdout.strip().split("\n")
-            
+
             # Log the raw output for debugging
             logger.info(f"Raw adb devices output: {result.stdout}")
-            
+
             # Make sure we get valid output - needs at least the header line
             if len(lines) < 1 or "List of devices attached" not in lines[0]:
                 logger.error(f"Invalid ADB devices output format: {result.stdout}")
                 return running_emulators
-                
+
             # If we only have the header line, there are no devices
             if len(lines) <= 1:
                 logger.info("No devices found in ADB output")
