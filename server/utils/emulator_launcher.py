@@ -231,11 +231,7 @@ class EmulatorLauncher:
         try:
             # Extract AVD name from email to find the correct profile
             normalized_form = "@" not in email and "_" in email and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
-            if normalized_form:
-                logger.info(f"[PROFILE DEBUG] Detected already-normalized email in assign_display_to_profile: {email}")
-            
             avd_name = self._extract_avd_name_from_email(email)
-            logger.info(f"[PROFILE DEBUG] Got AVD name {avd_name} from _extract_avd_name_from_email")
 
             if not avd_name:
                 logger.error(f"Could not extract AVD name for email {email}")
@@ -295,18 +291,14 @@ class EmulatorLauncher:
             if os.path.exists(profiles_index_path):
                 with open(profiles_index_path, "r") as f:
                     profiles_index = json.load(f)
-                    logger.info(f"[PROFILE DEBUG] Loaded profiles_index with keys: {list(profiles_index.keys())}")
 
                 if email in profiles_index:
                     profile_entry = profiles_index.get(email)
-                    logger.info(f"[PROFILE DEBUG] Found entry for {email}: {profile_entry}")
 
                     # Handle different formats (backward compatibility)
                     if isinstance(profile_entry, str):
-                        logger.info(f"[PROFILE DEBUG] Using string format AVD name: {profile_entry}")
                         return profile_entry
                     elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                        logger.info(f"[PROFILE DEBUG] Using dict format AVD name: {profile_entry['avd_name']}")
                         return profile_entry["avd_name"]
 
             # No existing entry, detect email format and create appropriate AVD name
@@ -314,23 +306,15 @@ class EmulatorLauncher:
                 email.endswith("_com") or email.endswith("_org") or email.endswith("_io")
             )
             
-            # Log email format detection for troubleshooting
-            logger.info(f"[PROFILE DEBUG] Email format detection for {email}:")
-            logger.info(f"[PROFILE DEBUG]   - Contains @: {'@' in email}")
-            logger.info(f"[PROFILE DEBUG]   - Contains _: {'_' in email}")
-            logger.info(f"[PROFILE DEBUG]   - Is normalized format: {is_normalized}")
-
             # Handle normalized vs. standard email formats
             if is_normalized:
                 # Already normalized email format - just add prefix if needed
-                logger.info(f"[PROFILE DEBUG] Input appears to be already normalized: {email}")
                 avd_name = f"KindleAVD_{email}" if not email.startswith("KindleAVD_") else email
-                logger.info(f"[PROFILE DEBUG] Using AVD name {avd_name} for already normalized email")
             else:
                 # Standard email format - normalize it
                 email_parts = email.split("@")
                 if len(email_parts) != 2:
-                    logger.error(f"[PROFILE DEBUG] Invalid email format: {email}")
+                    logger.error(f"Invalid email format: {email}")
                     return None
 
                 username, domain = email_parts
@@ -338,9 +322,8 @@ class EmulatorLauncher:
                 username = username.replace(".", "_")
                 domain = domain.replace(".", "_")
                 avd_name = f"KindleAVD_{username}_{domain}"
-                logger.info(f"[PROFILE DEBUG] Normalized {email} to {avd_name}")
 
-            logger.info(f"[PROFILE DEBUG] Using standard AVD name {avd_name} for {email}")
+            logger.info(f"Using standard AVD name {avd_name} for {email}")
 
             # Register this profile in profiles_index
             try:
@@ -353,17 +336,15 @@ class EmulatorLauncher:
                         profiles_index = json.load(f)
                 else:
                     profiles_index = {}
-                    logger.info(f"[PROFILE DEBUG] Created new profiles_index")
                 
                 # Add or update the entry for this email
                 profiles_index[email] = {"avd_name": avd_name}
-                logger.info(f"[PROFILE DEBUG] Added profile entry for {email}")
                 
                 # Save to file
                 with open(profiles_index_path, "w") as f:
                     json.dump(profiles_index, f, indent=2)
             except Exception as e:
-                logger.error(f"[PROFILE DEBUG] Error updating profiles_index: {e}")
+                logger.error(f"Error updating profiles_index: {e}")
                 
             # Return the AVD name
             logger.info(f"Registered profile for {email} with AVD {avd_name} in profiles_index")

@@ -65,53 +65,85 @@ class DeviceDiscovery:
             - emulator_id: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
             - avd_name: The AVD name associated with the email/emulator if found, None otherwise
         """
+        logger.info(f"[DEVICE DEBUG] Finding running emulator for email: {email}")
+        
         # Force refresh running emulator data from ADB to ensure accuracy
         # This avoids stale emulator information
         running_emulators = self.map_running_emulators()
 
         # Debug log the running emulators we found
-        logger.info(f"Current running emulators: {running_emulators}")
+        logger.info(f"[DEVICE DEBUG] Current running emulators: {running_emulators}")
 
         if not running_emulators:
+            logger.info("[DEVICE DEBUG] No running emulators found")
             # Get the AVD name for this email from profiles_index or generate a standard one
             avd_name = None
             if profiles_index and email in profiles_index:
                 profile_entry = profiles_index.get(email)
+                logger.info(f"[DEVICE DEBUG] Found profile entry for {email}: {profile_entry}")
 
                 # Handle different formats (backward compatibility)
                 if isinstance(profile_entry, str):
                     avd_name = profile_entry
+                    logger.info(f"[DEVICE DEBUG] Using string format AVD name: {avd_name}")
                 elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
                     avd_name = profile_entry["avd_name"]
+                    logger.info(f"[DEVICE DEBUG] Using dict format AVD name: {avd_name}")
+                else:
+                    logger.info(f"[DEVICE DEBUG] Cannot determine AVD name from profile entry: {profile_entry}")
+            else:
+                logger.info(f"[DEVICE DEBUG] No profile entry found for email: {email}")
+                
+            logger.info(f"[DEVICE DEBUG] Returning no emulator found with AVD name: {avd_name}")
             return False, None, avd_name
 
         # First try the exact AVD name match based on email
         avd_name = None
         if profiles_index and email in profiles_index:
             profile_entry = profiles_index.get(email)
+            logger.info(f"[DEVICE DEBUG] Found profile entry for {email}: {profile_entry}")
 
             # Handle different formats (backward compatibility)
             if isinstance(profile_entry, str):
                 avd_name = profile_entry
+                logger.info(f"[DEVICE DEBUG] Using string format AVD name: {avd_name}")
             elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
                 avd_name = profile_entry["avd_name"]
+                logger.info(f"[DEVICE DEBUG] Using dict format AVD name: {avd_name}")
+            else:
+                logger.info(f"[DEVICE DEBUG] Cannot determine AVD name from profile entry: {profile_entry}")
 
             if avd_name and avd_name in running_emulators:
                 emulator_id = running_emulators[avd_name]
-                logger.info(f"Found exact AVD match: {avd_name} running on {emulator_id} for email {email}")
+                logger.info(f"[DEVICE DEBUG] Found exact AVD match: {avd_name} running on {emulator_id} for email {email}")
                 return True, emulator_id, avd_name
+            elif avd_name:
+                logger.info(f"[DEVICE DEBUG] AVD name {avd_name} not found in running emulators: {list(running_emulators.keys())}")
+        else:
+            logger.info(f"[DEVICE DEBUG] No profile entry found for email: {email}")
+
+        # If not found, try a different approach: look for a direct match on any running emulator
+        # This is a special case for when the emulator is running but not registered properly
+        if running_emulators and len(running_emulators) == 1:
+            logger.info("[DEVICE DEBUG] Only one emulator is running - will use it regardless of name")
+            running_avd_name = next(iter(running_emulators.keys()))
+            emulator_id = running_emulators[running_avd_name]
+            logger.info(f"[DEVICE DEBUG] Using single running emulator: {running_avd_name} on {emulator_id}")
+            return True, emulator_id, running_avd_name
 
         # If not found, look for any AVD name that might contain the normalized email
         normalized_email = self.normalize_email_for_avd(email)
+        logger.info(f"[DEVICE DEBUG] Looking for partial matches with normalized email: {normalized_email}")
         for running_avd_name, emulator_id in running_emulators.items():
+            logger.info(f"[DEVICE DEBUG] Checking if {normalized_email} is in {running_avd_name}")
             if normalized_email in running_avd_name:
                 logger.info(
-                    f"Found partial AVD match: {running_avd_name} running on {emulator_id} for email {email}"
+                    f"[DEVICE DEBUG] Found partial AVD match: {running_avd_name} running on {emulator_id} for email {email}"
                 )
                 return True, emulator_id, running_avd_name
 
         # No running emulator found for this email
-        logger.debug(f"No running emulator found matching email: {email}")
+        logger.info(f"[DEVICE DEBUG] No running emulator found matching email: {email}, returning: (False, None, {avd_name})")
         return False, None, avd_name
 
     def _get_avd_name_for_emulator(self, emulator_id: str, current_profile=None) -> Optional[str]:
