@@ -269,8 +269,8 @@ class EmulatorLauncher:
 
     def _extract_avd_name_from_email(self, email: str) -> Optional[str]:
         """
-        Extract the AVD name for a given email from the profiles index ONLY.
-        We never generate a fallback name to prevent profile mismatches.
+        Extract the AVD name for a given email from the profiles index.
+        If not found, create it immediately to ensure it exists.
 
         Args:
             email: The email address
@@ -297,10 +297,41 @@ class EmulatorLauncher:
                     elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
                         return profile_entry["avd_name"]
 
-            # IMPORTANT: Never create a fallback AVD name here
-            # Only use the officially registered AVD name from profiles_index
-            logger.warning(f"Could not find AVD name for email {email} in profiles_index")
-            return None
+            # The AVD likely already exists, but we need to register it in profiles_index
+            # Use the standard naming convention directly without creating a new AVD
+
+            # The standard format is "KindleAVD_username_domain"
+            # Convert the email: example@domain.com -> KindleAVD_example_domain_com
+            email_parts = email.split("@")
+            if len(email_parts) != 2:
+                logger.error(f"Invalid email format: {email}")
+                return None
+
+            username, domain = email_parts
+            # Replace dots with underscores in both username and domain
+            username = username.replace(".", "_")
+            domain = domain.replace(".", "_")
+            avd_name = f"KindleAVD_{username}_{domain}"
+
+            logger.info(f"Using standard AVD name {avd_name} for {email}")
+
+            # Register this profile in profiles_index
+            # Ensure profiles directory exists
+            os.makedirs(profiles_dir, exist_ok=True)
+
+            # Create or update profiles_index
+            if not os.path.exists(profiles_index_path):
+                profiles_index = {}
+
+            # Add or update the entry
+            profiles_index[email] = {"avd_name": avd_name}
+
+            # Save the updated profiles_index
+            with open(profiles_index_path, "w") as f:
+                json.dump(profiles_index, f, indent=2)
+
+            logger.info(f"Registered profile for {email} with AVD {avd_name} in profiles_index")
+            return avd_name
 
         except Exception as e:
             logger.error(f"Error extracting AVD name for email '{email}': {e}")

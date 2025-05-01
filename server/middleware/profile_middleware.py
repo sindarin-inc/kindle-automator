@@ -35,9 +35,20 @@ def ensure_user_profile_loaded(f):
 
         server = app.config["server_instance"]
 
-        # Check if this profile exists by looking for an AVD
-        # This doesn't create the AVD - just checks if it's registered or exists
+        # Check if this email exists in profiles_index first
+        # If not, register it immediately to avoid profile creation issues
+        profiles_index = server.profile_manager.profiles_index
+        if sindarin_email not in profiles_index:
+            logger.info(f"Email {sindarin_email} not found in profiles_index, registering it now")
+            # Create standardized AVD name for this email
+            normalized_avd_name = server.profile_manager.get_avd_name_from_email(sindarin_email)
+            logger.info(f"Generated AVD name {normalized_avd_name} for {sindarin_email}")
+            # Register this profile to ensure it's in profiles_index
+            server.profile_manager.register_profile(sindarin_email, normalized_avd_name)
+
+        # Now check if this profile exists by looking for an AVD
         avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
+        logger.info(f"Using AVD name {avd_name} for email {sindarin_email}")
 
         # Check if AVD file path exists
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")

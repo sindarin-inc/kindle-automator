@@ -84,7 +84,6 @@ class AVDProfileManager:
                 self.base_dir = os.path.join(temp_dir, "kindle-automator")
                 self.profiles_dir = os.path.join(self.base_dir, "profiles")
                 self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
-                self.current_profile_file = os.path.join(self.profiles_dir, "current_profile.json")
                 self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
                 os.makedirs(self.profiles_dir, exist_ok=True)
                 logger.info(f"Successfully created fallback directory at {self.profiles_dir}")
@@ -375,10 +374,8 @@ class AVDProfileManager:
 
             self._save_profiles_index()
 
-            # Update current profile if this is the current email
-            if self.current_profile and self.current_profile.get("email") == email:
-                self.current_profile["avd_name"] = avd_name
-                self._save_current_profile(email, avd_name, self.current_profile.get("emulator_id"))
+            # Update profile status (replaces old current_profile concept)
+            self._save_profile_status(email, avd_name)
 
             logger.info(f"Updated AVD name for {email} to {avd_name}")
             return True
@@ -500,27 +497,18 @@ class AVDProfileManager:
 
         return profile
 
-    # Keep this method for backward compatibility, but make it use the new approach
+    # Return None for get_current_profile as we're fully migrated to multi-user
     def get_current_profile(self) -> Optional[Dict]:
         """
-        Get information about the "current" profile (for backward compatibility).
-        This now returns info about the most recently used profile from user_preferences.
+        This method is kept for API compatibility only but always returns None.
+        There is no longer a concept of a "current" profile in the multi-user system.
 
         Returns:
-            Optional[Dict]: Profile information or None if no profiles exist
+            Optional[Dict]: Always returns None
         """
-        # Find the most recently used profile
-        most_recent_email = None
-        most_recent_time = 0
-
-        for email, prefs in self.user_preferences.items():
-            if "last_used" in prefs and prefs["last_used"] > most_recent_time:
-                most_recent_time = prefs["last_used"]
-                most_recent_email = email
-
-        if most_recent_email:
-            return self.get_profile_for_email(most_recent_email)
-
+        logger.warning(
+            "get_current_profile() called but we're now using a multi-user system - always returns None"
+        )
         return None
 
     def register_profile(
@@ -738,16 +726,8 @@ class AVDProfileManager:
             # Save the updated preferences
             self._save_user_preferences()
 
-            # Also update current profile if it's for this email
-            if self.current_profile and self.current_profile.get("email") == email:
-                for setting in settings_to_reset:
-                    if setting in self.current_profile:
-                        self.current_profile[setting] = False
-
-                # Save the updated current profile
-                self._save_current_profile(
-                    email, self.current_profile.get("avd_name", ""), self.current_profile.get("emulator_id")
-                )
+            # No need to update current profile anymore, as we're using the multi-user approach
+            # The user_preferences save above is sufficient
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:
@@ -784,8 +764,8 @@ class AVDProfileManager:
                         self.profiles_index[email] = avd_name
                         self._save_profiles_index()
 
-                    # Update current profile
-                    self._save_current_profile(email, avd_name, emulator_id)
+                    # Update profile status
+                    self._save_profile_status(email, avd_name, emulator_id)
 
                     return True, f"Using existing emulator {emulator_id} for {email}"
                 else:
