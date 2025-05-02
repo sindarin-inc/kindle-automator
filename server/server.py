@@ -163,9 +163,6 @@ class BooksResource(Resource):
                         )
                         logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                # Get the formatted VNC URL with the email and emulator ID
-                formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
-
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
@@ -202,9 +199,6 @@ class BooksResource(Resource):
                         )
                         logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                # Get the formatted VNC URL with the email and emulator ID
-                formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
-
                 logger.info("Authentication required after transition attempt - providing VNC URL")
                 return {
                     "error": "Authentication required",
@@ -238,9 +232,6 @@ class BooksResource(Resource):
                             )
                             logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                    # Get the formatted VNC URL with the email and emulator ID
-                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
-
                     logger.info("Authentication required - providing VNC URL for manual authentication")
                     return {
                         "error": "Authentication required",
@@ -271,9 +262,6 @@ class BooksResource(Resource):
                                 sindarin_email
                             )
                             logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-                    # Get the formatted VNC URL with the email and emulator ID
-                    formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
                     logger.info("Transition failed - authentication required - providing VNC URL")
                     return {
@@ -308,9 +296,6 @@ class BooksResource(Resource):
                 ):
                     emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
                     logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-            # Get the formatted VNC URL with the email and emulator ID
-            formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
 
             logger.info("Authentication required - providing VNC URL for manual authentication")
             return {
