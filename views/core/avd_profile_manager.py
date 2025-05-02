@@ -303,14 +303,6 @@ class AVDProfileManager:
         running_emulators = self.device_discovery.map_running_emulators()
         return running_emulators.get(avd_name)
 
-    def is_emulator_running(self) -> bool:
-        """Check if an emulator is currently running."""
-        return self.emulator_manager.is_emulator_running()
-
-    def is_emulator_ready(self) -> bool:
-        """Check if an emulator is running and fully booted."""
-        return self.emulator_manager.is_emulator_ready()
-
     def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
         """
         Update the AVD name associated with an email address.

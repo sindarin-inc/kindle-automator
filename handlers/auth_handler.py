@@ -306,7 +306,7 @@ class AuthenticationHandler:
                 if hasattr(automator, "emulator_manager") and automator.emulator_manager:
                     try:
                         # Check if the emulator is ready
-                        is_ready = automator.emulator_manager.is_emulator_ready(email)
+                        is_ready = automator.emulator_manager.emulator_launcher.is_emulator_ready(email)
                         logger.info(f"Emulator ready check for {email}: {is_ready}")
 
                         if not is_ready:

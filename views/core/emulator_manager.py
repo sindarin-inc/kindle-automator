@@ -51,46 +51,6 @@ class EmulatorManager:
             logger.error(f"Error checking if emulator is running: {e}")
             return False
 
-    def is_emulator_ready(self) -> bool:
-        """Check if an emulator is running and fully booted."""
-        try:
-            # First check if any device is connected with a short timeout
-            devices_result = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "devices"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            # More precise check for emulator
-            has_emulator = False
-            for line in devices_result.stdout.splitlines():
-                # Looking for "emulator-XXXX device"
-                if line.strip().startswith("emulator-") and "device" in line and not "offline" in line:
-                    has_emulator = True
-                    break
-
-            if not has_emulator:
-                return False
-
-            # Check if boot is completed with a timeout
-            boot_completed = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "shell", "getprop", "sys.boot_completed"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            return boot_completed.stdout.strip() == "1"
-        except subprocess.TimeoutExpired:
-            logger.warning("Timeout expired while checking if emulator is ready, assuming it's not ready")
-            return False
-        except Exception as e:
-            logger.error(f"Error checking if emulator is ready: {e}")
-            return False
-
     def _force_cleanup_emulators(self):
         """Force kill all emulator processes and reset adb."""
         logger.warning("Force cleaning up any running emulators")
@@ -266,11 +226,6 @@ class EmulatorManager:
             return True
 
         try:
-            # First do a quick check if emulator is actually running
-            if not self.is_emulator_running():
-                logger.info("No emulator running, nothing to stop")
-                return True
-
             # Get list of running emulators from adb for validation
             result = subprocess.run(
                 [f"{self.android_home}/platform-tools/adb", "devices"],

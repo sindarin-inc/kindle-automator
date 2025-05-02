@@ -793,35 +793,6 @@ class EmulatorLauncher:
 
         return None, None
 
-    def is_emulator_running(self, email: str) -> bool:
-        """
-        Check if an emulator is running for the specified email.
-
-        Args:
-            email: The user's email address
-
-        Returns:
-            True if an emulator is running, False otherwise
-        """
-        emulator_id, _ = self.get_running_emulator(email)
-        if not emulator_id:
-            return False
-
-        try:
-            # Check if emulator is responding to adb
-            result = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "get-state"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=3,
-            )
-
-            return "device" in result.stdout.strip()
-        except Exception as e:
-            logger.error(f"Error checking if emulator is running for {email}: {e}")
-            return False
-
     def is_emulator_ready(self, email: str) -> bool:
         """
         Check if an emulator is running and fully booted for the specified email.

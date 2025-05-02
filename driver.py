@@ -725,15 +725,10 @@ class Driver:
                                 )
 
                                 if status_response.status_code == 200 and (appium1_format or appium2_format):
-                                    logger.info(
-                                        f"Confirmed Appium server is running properly on port {self.appium_port}"
-                                    )
                                     break
                                 else:
                                     logger.warning(
-                                        f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries}). "
-                                        f"Status code: {status_response.status_code}, "
-                                        f"Response: {status_response.text}"
+                                        f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries})"
                                     )
 
                                     # If this is the last retry, raise an exception
@@ -810,7 +805,6 @@ class Driver:
                         future = executor.submit(check_connection)
                         try:
                             result = future.result(timeout=15)  # 15 second timeout - increased from 5
-                            logger.info("Connection check successful")
                             return True
                         except concurrent.futures.TimeoutError:
                             logger.error("Connection check timed out after 15 seconds")
