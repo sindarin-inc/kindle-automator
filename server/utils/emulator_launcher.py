@@ -461,20 +461,21 @@ class EmulatorLauncher:
             logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
             return False
 
-    def launch_emulator(self, avd_name: str, email: str) -> Tuple[bool, Optional[str], Optional[int]]:
+    def launch_emulator(self, email: str) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
 
         Args:
-            avd_name: The AVD name to launch
-            email: The user's email address (optional, will be extracted from AVD name if not provided)
+            email: The user's email address
 
         Returns:
             Tuple of (success, emulator_id, display_num)
         """
         try:
-            logger.debug(f"Launching emulator {avd_name} for {email}")
+            logger.debug(f"Launching emulator for {email}")
+
             # Check if AVD exists
+            avd_name = self._extract_avd_name_from_email(email)
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
             if not os.path.exists(avd_path):
                 logger.error(f"AVD {avd_name} does not exist at {avd_path}")
