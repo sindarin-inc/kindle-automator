@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 class EmulatorManager:
     """
     Manages the lifecycle of Android emulators.
+
+    Note that this model is shared between all users, so don't set any user-specific preferences here.
+
     Handles starting, stopping, and monitoring emulator instances.
     """
 
@@ -273,7 +276,7 @@ class EmulatorManager:
             logger.error(f"Error stopping emulator: {e}")
             return False
 
-    def start_emulator_with_retries(self) -> bool:
+    def start_emulator_with_retries(self, email: str) -> bool:
         """
         Start the specified AVD in headless mode.
 
@@ -281,8 +284,6 @@ class EmulatorManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            email = get_sindarin_email()
-
             # Use the Python-based launcher
             success, emulator_id, display_num = self.emulator_launcher.launch_emulator(email)
 

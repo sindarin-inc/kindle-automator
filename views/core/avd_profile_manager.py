@@ -19,6 +19,8 @@ class AVDProfileManager:
     """
     Manages Android Virtual Device (AVD) profiles for different Kindle user accounts.
 
+    Note that this model is shared between all users, so don't set any user-specific preferences here.
+
     This class provides functionality to:
     1. Store and track multiple AVDs mapped to email addresses
     2. Switch between AVDs when a new authentication request comes in
@@ -604,14 +606,14 @@ class AVDProfileManager:
         else:
             return self.emulator_manager.stop_emulator()
 
-    def start_emulator(self) -> bool:
+    def start_emulator(self, email: str) -> bool:
         """
         Start the specified AVD.
 
         Returns:
             bool: True if emulator started successfully, False otherwise
         """
-        return self.emulator_manager.start_emulator_with_retries()
+        return self.emulator_manager.start_emulator_with_retries(email)
 
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
         """
@@ -814,11 +816,11 @@ class AVDProfileManager:
             logger.info(f"Created new AVD {avd_name} for {email}")
 
         # Start the emulator
-        if self.start_emulator():
+        if self.start_emulator(email):
             # We need to get the emulator ID for the started emulator
             started_emulator_id = self.get_emulator_id_for_avd(avd_name)
             self._save_profile_status(email, avd_name, started_emulator_id)
-            logger.info(f"Successfully started emulator for profile {email}")
+            logger.info(f"Successfully started emulator {started_emulator_id} for profile {email}")
             return True, f"Switched to profile {email} with new emulator"
         else:
             # Failed to start emulator, but still update the profile status for tracking

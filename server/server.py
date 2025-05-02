@@ -1034,21 +1034,8 @@ class AuthResource(Resource):
                 server.automator.cleanup()
                 server.automator = None
 
-        # Switch to the profile for this email or create a new one
-        # We don't force a new emulator - let the profile manager decide if one is needed
-        # We use sindarin_email here for profile identification
-        success, message = server.switch_profile(sindarin_email, force_new_emulator=False)
-        if not success:
-            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
-            return {"error": f"Failed to switch to profile: {message}"}, 500
-
-        # Now that we've switched profiles, initialize the automator
-        if not server.automators.get(sindarin_email):
-            server.initialize_automator()
-            if not server.automator.initialize_driver():
-                return {"error": "Failed to initialize driver"}, 500
-
         automator = server.automators.get(sindarin_email)
+        logger.info(f"Using automator: {automator} for {sindarin_email} ({server.automators})")
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
