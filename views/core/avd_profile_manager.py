@@ -192,6 +192,7 @@ class AVDProfileManager:
         # Update the user's status
         self.user_preferences[email]["last_used"] = int(time.time())
         self.user_preferences[email]["avd_name"] = avd_name
+        self.user_preferences[email]["email"] = email
 
         # Store the emulator ID in the VNC instance where it belongs
         if emulator_id:

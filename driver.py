@@ -633,62 +633,6 @@ class Driver:
             if not app_activity:
                 return False
 
-            # First, dump the device state to help debug initialization issues
-            try:
-                # Check device status and dump XML
-                logger.info("Checking device state before driver initialization...")
-                import os
-
-                from server.logging_config import store_page_source
-
-                # Dump the current screen content via uiautomator
-                try:
-                    # Create dumps directory if it doesn't exist
-                    os.makedirs("fixtures/dumps", exist_ok=True)
-
-                    # Create a UI dump using uiautomator2
-                    dump_cmd = [
-                        "adb",
-                        "-s",
-                        self.device_id,
-                        "shell",
-                        "uiautomator dump /sdcard/window_dump.xml",
-                    ]
-                    result = subprocess.run(dump_cmd, check=True, capture_output=True, text=True)
-
-                    # Pull the file
-                    pull_cmd = [
-                        "adb",
-                        "-s",
-                        self.device_id,
-                        "pull",
-                        "/sdcard/window_dump.xml",
-                        "fixtures/dumps/pre_driver_init.xml",
-                    ]
-                    result = subprocess.run(pull_cmd, check=True, capture_output=True, text=True)
-                    logger.info("Saved pre-initialization UI dump to fixtures/dumps/pre_driver_init.xml")
-
-                    # Also take a screenshot
-                    screenshot_cmd = ["adb", "-s", self.device_id, "shell", "screencap -p /sdcard/screen.png"]
-                    result = subprocess.run(screenshot_cmd, check=True, capture_output=True, text=True)
-
-                    # Pull the screenshot
-                    os.makedirs("screenshots", exist_ok=True)
-                    pull_screenshot_cmd = [
-                        "adb",
-                        "-s",
-                        self.device_id,
-                        "pull",
-                        "/sdcard/screen.png",
-                        "screenshots/pre_driver_init.png",
-                    ]
-                    result = subprocess.run(pull_screenshot_cmd, check=True, capture_output=True, text=True)
-                    logger.info("Saved pre-initialization screenshot to screenshots/pre_driver_init.png")
-                except Exception as e:
-                    logger.warning(f"Failed to dump device UI state: {e}")
-            except Exception as e:
-                logger.warning(f"Exception getting device state: {e}")
-
             # Initialize driver with retry logic
             for attempt in range(1, 6):  # Increase to 5 attempts
                 try:
