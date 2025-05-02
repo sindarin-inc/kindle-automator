@@ -7,6 +7,8 @@ from typing import Optional
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 
+from server.utils.request_utils import get_sindarin_email
+
 logger = logging.getLogger(__name__)
 
 
@@ -579,9 +581,8 @@ class Driver:
                 profile = self.automator.profile_manager.get_current_profile()
                 if not profile:
                     logger.error("Cannot update profile: get_current_profile returned None")
-
                 else:
-                    email = profile.get("assigned_profile")
+                    email = get_sindarin_email()
                     avd_name = profile.get("avd_name")
 
                     if not email or not avd_name:
