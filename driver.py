@@ -16,14 +16,12 @@ class Driver:
 
     def __new__(cls):
         if cls._instance is None:
-            logger.info("Creating new Driver instance")
             cls._instance = super(Driver, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
         # Only initialize once
         if not Driver._initialized:
-            logger.info("Initializing Driver")
             self.driver = None
             self.device_id = None
             self.automator = None  # Reference to the automator instance
@@ -43,7 +41,6 @@ class Driver:
         try:
             # If we have a specific device ID to use, check if it's available first
             if specific_device_id:
-                logger.info(f"Checking for specific device ID: {specific_device_id}")
                 result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
                 if specific_device_id in result.stdout and "device" in result.stdout:
                     # Verify this is actually a working emulator
@@ -54,9 +51,6 @@ class Driver:
                             text=True,
                             check=True,
                             timeout=5,
-                        )
-                        logger.info(
-                            f"Specific device {specific_device_id} verified, model: {verify_result.stdout.strip()}"
                         )
                         return specific_device_id
                     except Exception as e:
@@ -179,7 +173,7 @@ class Driver:
                     logger.warning("Cannot update profile setting: no current profile")
                     return
 
-                email = profile.get("email")
+                email = profile.get("assigned_profile")
                 avd_name = profile.get("avd_name")
 
                 if email and avd_name:
@@ -577,7 +571,6 @@ class Driver:
                     device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
                     if device_id:
                         target_device_id = device_id
-                        logger.info(f"Using device ID {target_device_id} for AVD {avd_name}")
 
             # Get device ID, preferring the specific one if provided
             self.device_id = self._get_emulator_device_id(target_device_id)
@@ -601,7 +594,7 @@ class Driver:
                     logger.error("Cannot update profile: get_current_profile returned None")
 
                 else:
-                    email = profile.get("email")
+                    email = profile.get("assigned_profile")
                     avd_name = profile.get("avd_name")
 
                     if not email or not avd_name:

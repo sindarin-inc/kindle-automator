@@ -75,45 +75,6 @@ server.appium_processes = {}
 app.config["server_instance"] = server
 
 
-class InitializeResource(Resource):
-    def post(self):
-        """Explicitly initialize the automation driver.
-
-        Note: This endpoint is optional as the system automatically initializes
-        when needed on other endpoints. It can be used for pre-initialization.
-        """
-        try:
-            # Initialize automator
-            server.initialize_automator()
-            success = server.automator.initialize_driver()
-
-            if not success:
-                return {"error": "Failed to initialize driver"}, 500
-
-            # Get the email from the current profile if available
-            email = None
-            if hasattr(server, "profile_manager"):
-                current_profile = server.profile_manager.get_current_profile()
-                if current_profile and "email" in current_profile:
-                    email = current_profile.get("email")
-
-            # Clear the current book since we're reinitializing the app
-            if email:
-                server.clear_current_book(email)
-                logger.info(f"Cleared current book for {email} during initialization")
-            else:
-                logger.warning("Could not get email to clear current book during initialization")
-
-            return {
-                "status": "initialized",
-                "message": "Device initialized. Use /auth endpoint with VNC for manual authentication.",
-            }, 200
-
-        except Exception as e:
-            logger.error(f"Initialization error: {e}")
-            return {"error": str(e)}, 500
-
-
 class StateResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1126,40 +1087,13 @@ class AuthResource(Resource):
             logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
             return {"error": f"Failed to switch to profile: {message}"}, 500
 
-        # For M1/M2/M4 Macs where the emulator might not start,
-        # we'll still continue with the profile tracking
-
         # Now that we've switched profiles, initialize the automator
         if not server.automators.get(sindarin_email):
             server.initialize_automator()
             if not server.automator.initialize_driver():
                 return {"error": "Failed to initialize driver"}, 500
 
-        # Re-check for Python launcher after initialization
         automator = server.automators.get(sindarin_email)
-        if (
-            automator
-            and hasattr(automator, "emulator_manager")
-            and hasattr(automator.emulator_manager, "use_python_launcher")
-        ):
-            using_python_launcher = automator.emulator_manager.use_python_launcher
-
-            # If using Python launcher and no emulator is running yet, launch one
-            if (
-                using_python_launcher
-                and not emulator_id
-                and hasattr(automator.emulator_manager, "emulator_launcher")
-            ):
-                logger.info(f"Launching emulator for {sindarin_email}")
-                (
-                    success,
-                    emulator_id,
-                    display_num,
-                ) = automator.emulator_manager.emulator_launcher.launch_emulator(sindarin_email)
-                if success:
-                    logger.info(f"Successfully launched emulator {emulator_id} on display :{display_num}")
-                else:
-                    logger.error(f"Failed to launch emulator for {sindarin_email}")
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
@@ -1999,7 +1933,6 @@ class TextResource(Resource):
 
 
 # Add resources to API
-api.add_resource(InitializeResource, "/initialize")
 api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")

@@ -63,32 +63,10 @@ class AVDProfileManager:
 
         self.base_dir = base_dir
         self.profiles_dir = os.path.join(base_dir, "profiles")
-        self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
-        # Removing current_profile_file as we're managing multiple users simultaneously
-        self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
+        self.users_file = os.path.join(self.profiles_dir, "users.json")
 
         # Ensure directories exist
-        try:
-            os.makedirs(self.profiles_dir, exist_ok=True)
-        except PermissionError:
-            if not self.use_simplified_mode:
-                # If not in simplified mode, re-raise the exception
-                raise
-            else:
-                # This should rarely happen since we're already trying to use a home directory in simplified mode
-                logger.warning(
-                    f"Permission error creating {self.profiles_dir}, falling back to temporary directory"
-                )
-                import tempfile
-
-                temp_dir = tempfile.gettempdir()
-                self.base_dir = os.path.join(temp_dir, "kindle-automator")
-                self.profiles_dir = os.path.join(self.base_dir, "profiles")
-                self.index_file = os.path.join(self.profiles_dir, "profiles_index.json")
-                self.preferences_file = os.path.join(self.profiles_dir, "user_preferences.json")
-                os.makedirs(self.profiles_dir, exist_ok=True)
-                logger.info(f"Successfully created fallback directory at {self.profiles_dir}")
-
+        os.makedirs(self.profiles_dir, exist_ok=True)
         # Initialize component managers
         self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
         self.emulator_manager = EmulatorManager(
@@ -133,27 +111,27 @@ class AVDProfileManager:
 
     def _load_profiles_index(self) -> Dict[str, str]:
         """Load profiles index from JSON file or create if it doesn't exist."""
-        if os.path.exists(self.index_file):
+        if os.path.exists(self.users_file):
             try:
-                with open(self.index_file, "r") as f:
+                with open(self.users_file, "r") as f:
                     return json.load(f)
             except Exception as e:
                 logger.error(f"Error loading profiles index: {e}")
                 return {}
         else:
-            logger.info(f"Profiles index not found at {self.index_file}, creating empty index")
+            logger.info(f"Profiles index not found at {self.users_file}, creating empty index")
             # Create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
+            os.makedirs(os.path.dirname(self.users_file), exist_ok=True)
             # Save an empty profiles index
             empty_index = {}
-            with open(self.index_file, "w") as f:
+            with open(self.users_file, "w") as f:
                 json.dump(empty_index, f, indent=2)
             return empty_index
 
     def _save_profiles_index(self) -> None:
         """Save profiles index to JSON file."""
         try:
-            with open(self.index_file, "w") as f:
+            with open(self.users_file, "w") as f:
                 json.dump(self.profiles_index, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving profiles index: {e}")
@@ -162,9 +140,9 @@ class AVDProfileManager:
 
     def _load_user_preferences(self) -> Dict[str, Dict]:
         """Load user preferences from JSON file or create if it doesn't exist."""
-        if os.path.exists(self.preferences_file):
+        if os.path.exists(self.users_file):
             try:
-                with open(self.preferences_file, "r") as f:
+                with open(self.users_file, "r") as f:
                     return json.load(f)
             except Exception as e:
                 logger.error(f"Error loading user preferences: {e}")
@@ -175,7 +153,7 @@ class AVDProfileManager:
     def _save_user_preferences(self) -> None:
         """Save user preferences to JSON file."""
         try:
-            with open(self.preferences_file, "w") as f:
+            with open(self.users_file, "w") as f:
                 json.dump(self.user_preferences, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving user preferences: {e}")

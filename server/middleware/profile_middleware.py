@@ -170,14 +170,11 @@ def ensure_user_profile_loaded(f):
                 "message": "There was an error loading this user profile",
             }, 500
 
-        logger.info(f"Successfully switched to profile for {sindarin_email}")
-
         # Get the automator for this email
         automator = server.automators.get(sindarin_email)
 
         # Profile switch was successful, initialize automator if needed
         if not automator:
-            logger.info(f"Initializing automator for {sindarin_email}")
             automator = server.initialize_automator(sindarin_email)
 
             if not automator:

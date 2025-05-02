@@ -64,14 +64,12 @@ class AutomationServer:
             return self.automators[email]
 
         # Initialize a new automator
-        logger.info(f"Initializing new automator for profile {email}")
         automator = KindleAutomator()
         # Connect profile manager to automator for device ID tracking
         automator.profile_manager = self.profile_manager
 
         # Pass emulator_manager to automator for VNC integration
         automator.emulator_manager = self.profile_manager.emulator_manager
-        logger.info(f"Added emulator_manager to automator for profile {email}")
 
         # Store the automator
         self.automators[email] = automator
@@ -170,7 +168,6 @@ class AutomationServer:
         # Clear current book since we're switching profiles
         self.clear_current_book(email)
 
-        logger.info(f"Successfully switched to profile for {email}")
         return True, message
 
     def save_pid(self, name: str, pid: int):

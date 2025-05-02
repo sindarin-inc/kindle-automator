@@ -217,21 +217,16 @@ class EmulatorLauncher:
         """
         try:
             profiles_dir = os.path.join(self.android_home, "profiles")
-            profiles_index_path = os.path.join(profiles_dir, "profiles_index.json")
+            users_file_path = os.path.join(profiles_dir, "users.json")
 
             # First check if this email already has an entry in profiles_index
-            if os.path.exists(profiles_index_path):
-                with open(profiles_index_path, "r") as f:
-                    profiles_index = json.load(f)
+            if os.path.exists(users_file_path):
+                with open(users_file_path, "r") as f:
+                    users = json.load(f)
 
-                if email in profiles_index:
-                    profile_entry = profiles_index.get(email)
-
-                    # Handle different formats (backward compatibility)
-                    if isinstance(profile_entry, str):
-                        return profile_entry
-                    elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                        return profile_entry["avd_name"]
+                if email in users:
+                    user_entry = users.get(email)
+                    return user_entry.get("avd_name")
 
             # No existing entry, detect email format and create appropriate AVD name
             is_normalized = (
@@ -265,23 +260,23 @@ class EmulatorLauncher:
                 os.makedirs(profiles_dir, exist_ok=True)
 
                 # Create or load profiles_index
-                if os.path.exists(profiles_index_path):
-                    with open(profiles_index_path, "r") as f:
-                        profiles_index = json.load(f)
+                if os.path.exists(users_file_path):
+                    with open(users_file_path, "r") as f:
+                        users = json.load(f)
                 else:
-                    profiles_index = {}
+                    users = {}
 
                 # Add or update the entry for this email
-                profiles_index[email] = {"avd_name": avd_name}
+                users[email] = {"avd_name": avd_name}
 
                 # Save to file
-                with open(profiles_index_path, "w") as f:
-                    json.dump(profiles_index, f, indent=2)
+                with open(users_file_path, "w") as f:
+                    json.dump(users, f, indent=2)
             except Exception as e:
-                logger.error(f"Error updating profiles_index: {e}")
+                logger.error(f"Error updating users.json: {e}")
 
             # Return the AVD name
-            logger.info(f"Registered profile for {email} with AVD {avd_name} in profiles_index")
+            logger.info(f"Registered profile for {email} with AVD {avd_name} in users.json")
             return avd_name
 
         except Exception as e:

@@ -40,7 +40,7 @@ class VNCInstanceManager:
         # Path to the profiles index file - same structure as used by AVDProfileManager
         android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         self.profiles_dir = os.path.join(android_home, "profiles")
-        self.profiles_index_path = os.path.join(self.profiles_dir, "profiles_index.json")
+        self.users_file_path = os.path.join(self.profiles_dir, "users.json")
         self.profiles_index = {}  # Email to AVD mapping
 
         # Load the profiles index if it exists
@@ -104,7 +104,6 @@ class VNCInstanceManager:
             data = {"instances": self.instances, "version": 1}
             with open(self.map_path, "w") as f:
                 json.dump(data, f, indent=2)
-            logger.info(f"Saved {len(self.instances)} VNC instances to {self.map_path}")
             return True
         except Exception as e:
             logger.error(f"Error saving VNC instances: {e}")
@@ -118,11 +117,11 @@ class VNCInstanceManager:
             Dict: The profiles index mapping (email -> AVD ID)
         """
         try:
-            if os.path.exists(self.profiles_index_path):
-                with open(self.profiles_index_path, "r") as f:
+            if os.path.exists(self.users_file_path):
+                with open(self.users_file_path, "r") as f:
                     self.profiles_index = json.load(f)
             else:
-                logger.debug(f"No profiles index found at {self.profiles_index_path}")
+                logger.debug(f"No profiles index found at {self.users_file_path}")
                 self.profiles_index = {}
         except Exception as e:
             logger.error(f"Error loading profiles index: {e}")
@@ -193,7 +192,6 @@ class VNCInstanceManager:
         for instance in self.instances:
             assigned_profile = instance.get("assigned_profile")
             if assigned_profile == email:
-                logger.info(f"Found VNC instance {instance.get('id')} for email {email}")
                 return instance
 
         logger.info(f"No VNC instance found for email {email}")
@@ -362,6 +360,5 @@ class VNCInstanceManager:
         if instance:
             instance["emulator_id"] = emulator_id
             self.save_instances()
-            logger.info(f"Set emulator ID {emulator_id} for instance {instance['id']} (email {email})")
             return True
         return False
