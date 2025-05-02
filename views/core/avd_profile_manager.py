@@ -303,7 +303,9 @@ class AVDProfileManager:
         """
         # Look for running emulators with this AVD name
         running_emulators = self.device_discovery.map_running_emulators()
-        return running_emulators.get(avd_name)
+        emulator_id = running_emulators.get(avd_name)
+        logger.info(f"Found emulator ID {emulator_id} for AVD {avd_name}")
+        return emulator_id
 
     def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
         """

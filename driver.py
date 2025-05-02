@@ -540,6 +540,7 @@ class Driver:
                     logger.info("Driver not connected - reinitializing")
                     self.driver = None
                 else:
+                    logger.info("Driver already initialized")
                     return True
 
             # Get device ID first, using specific device ID from profile if available
@@ -563,6 +564,7 @@ class Driver:
             # Get device ID, preferring the specific one if provided
             self.device_id = self._get_emulator_device_id(target_device_id)
             if not self.device_id:
+                logger.error("Failed to get device ID")
                 return False
 
             # Update profile with device ID

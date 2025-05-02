@@ -71,8 +71,11 @@ class AutomationServer:
         # Pass emulator_manager to automator for VNC integration
         automator.emulator_manager = self.profile_manager.emulator_manager
 
+        automator.initialize_driver()
+
         # Store the automator
         self.automators[email] = automator
+        logger.info(f"Initialized automator for {email}: {automator}")
 
         return automator
 
