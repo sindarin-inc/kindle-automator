@@ -115,10 +115,9 @@ class EmulatorLauncher:
             The display number or None if not found
         """
         try:
-            # First check running emulators
-            if email in self.running_emulators:
-                _, display_num = self.running_emulators[email]
-                return display_num
+            for instance in self.vnc_instances["instances"]:
+                if instance["assigned_profile"] == email:
+                    return instance["display"]
 
             # No display found
             logger.warning(f"No display found for {email}")
