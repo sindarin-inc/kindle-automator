@@ -16,27 +16,6 @@ class DeviceDiscovery:
         self.android_home = android_home
         self.avd_dir = avd_dir
 
-    def extract_email_from_avd_name(self, avd_name: str) -> Optional[str]:
-        """
-        Try to extract an email from an AVD name.
-        This is an approximate reverse of get_avd_name_from_email.
-
-        Args:
-            avd_name: The AVD name to parse
-
-        Returns:
-            Optional[str]: Extracted email or None if pattern doesn't match
-        """
-        if not avd_name.startswith("KindleAVD_"):
-            return None
-
-        # Extract the email part
-        email_part = avd_name[len("KindleAVD_") :]
-
-        # This is imperfect since we can't know where . vs _ were originally
-        # But for simple checking it should be sufficient
-        return email_part
-
     def find_running_emulator_for_email(
         self, email: str, profiles_index: Dict = None
     ) -> Tuple[bool, Optional[str], Optional[str]]:

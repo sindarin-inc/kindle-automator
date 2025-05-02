@@ -340,38 +340,6 @@ class EmulatorLauncher:
             logger.error(f"Error extracting AVD name for email '{email}': {e}")
             return None
 
-    @staticmethod
-    def _extract_email_from_avd_name(avd_name: str) -> Optional[str]:
-        """
-        Extract email from AVD name using the format {platform}_{email}_{domain}.
-
-        Args:
-            avd_name: The AVD name to extract email from
-
-        Returns:
-            Extracted email or None if no email found
-        """
-        try:
-            if not avd_name or "_" not in avd_name:
-                return None
-
-            parts = avd_name.split("_")
-            if len(parts) < 3:
-                return None
-
-            # Handle emails with underscores or dots in username
-            email_part = parts[1]
-            domain_part = parts[2]
-
-            # Replace underscores with dots if needed
-            if "_" in email_part:
-                email_part = email_part.replace("_", ".")
-
-            return f"{email_part}@{domain_part}"
-        except Exception as e:
-            logger.error(f"Error extracting email from AVD name '{avd_name}': {e}")
-            return None
-
     def _ensure_vnc_running(self, display_num: int) -> bool:
         """
         Ensure the VNC server is running for the specified display.
@@ -562,13 +530,6 @@ class EmulatorLauncher:
             if not os.path.exists(avd_path):
                 logger.error(f"AVD {avd_name} does not exist at {avd_path}")
                 return False, None, None
-
-            # Get or extract email if needed (for logging and display assignment)
-            if not email:
-                email = self._extract_email_from_avd_name(avd_name)
-                if not email:
-                    logger.warning(f"Could not extract email from AVD name {avd_name}, using 'default'")
-                    email = "default"
 
             # IMPORTANT: Use AVD name as key for running_emulators, not email
             # Check if emulator already running for this AVD

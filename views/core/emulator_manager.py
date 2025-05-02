@@ -5,6 +5,8 @@ import subprocess
 import time
 from typing import Dict, List, Optional, Tuple
 
+from server.utils.request_utils import get_sindarin_email
+
 logger = logging.getLogger(__name__)
 
 
@@ -331,11 +333,7 @@ class EmulatorManager:
                 logger.error(f"Cannot start emulator: AVD {avd_name} does not exist at {avd_path}")
                 return False
 
-            # Get email from AVD name using DeviceDiscovery first
-            from views.core.device_discovery import DeviceDiscovery
-
-            device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
-            email = device_discovery.extract_email_from_avd_name(avd_name)
+            email = get_sindarin_email()
 
             # Use the Python-based launcher
             success, emulator_id, display_num = self.emulator_launcher.launch_emulator(avd_name, email)

@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from server.utils.request_utils import get_sindarin_email
 from views.core.avd_creator import AVDCreator
 from views.core.device_discovery import DeviceDiscovery
 from views.core.emulator_manager import EmulatorManager
@@ -111,19 +112,6 @@ class AVDProfileManager:
             str: Complete AVD name
         """
         return self.avd_creator.get_avd_name_from_email(email)
-
-    def extract_email_from_avd_name(self, avd_name: str) -> Optional[str]:
-        """
-        Try to extract an email from an AVD name.
-        This is an approximate reverse of get_avd_name_from_email.
-
-        Args:
-            avd_name: The AVD name to parse
-
-        Returns:
-            Optional[str]: Extracted email or None if pattern doesn't match
-        """
-        return self.device_discovery.extract_email_from_avd_name(avd_name)
 
     def _detect_host_architecture(self) -> str:
         """
@@ -530,7 +518,6 @@ class AVDProfileManager:
 
     def get_current_profile(self) -> Optional[Dict]:
         """
-        This method provides backward compatibility with the old single-user system.
         In the multi-user system, we'll attempt to find a running emulator and return
         its associated profile information.
 
@@ -540,115 +527,22 @@ class AVDProfileManager:
         try:
             # Check for running emulators
             running_emulators = self.device_discovery.map_running_emulators()
+            sindarin_email = get_sindarin_email()
 
             # If there are running emulators, try to find one in our profiles_index
             if running_emulators:
                 # First, try to find a profile that matches one of the running emulators
-                for email, profile_entry in self.profiles_index.items():
-                    # Extract AVD name from profile
-                    avd_name = None
-                    if isinstance(profile_entry, str):
-                        avd_name = profile_entry
-                    elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                        avd_name = profile_entry["avd_name"]
+                for email, profile in self.profiles_index.items():
+                    if email != sindarin_email:
+                        continue
 
-                    if avd_name and avd_name in running_emulators:
-                        emulator_id = running_emulators[avd_name]
+                    # Add user preferences if available
+                    if email in self.user_preferences:
+                        for key, value in self.user_preferences[email].items():
+                            if key not in profile:  # Don't overwrite profile
+                                profile[key] = value
 
-                        # Build a profile object with the information we have
-                        profile = {"email": email, "avd_name": avd_name, "emulator_id": emulator_id}
-
-                        # Add additional info from profiles_index if available
-                        if isinstance(profile_entry, dict):
-                            for key, value in profile_entry.items():
-                                if key != "avd_name":  # Avoid duplicate
-                                    profile[key] = value
-
-                        # Add user preferences if available
-                        if email in self.user_preferences:
-                            for key, value in self.user_preferences[email].items():
-                                if key not in profile:  # Don't overwrite profile
-                                    profile[key] = value
-
-                        return profile
-
-                # If we didn't find a matching profile, just return info about the first running emulator
-                first_avd = list(running_emulators.keys())[0]
-
-                # Try to extract email from AVD name if possible
-                email = self.extract_email_from_avd_name(first_avd)
-                if not email:
-                    # If extraction fails, use a placeholder
-                    email = f"unknown_user_for_{first_avd}"
-
-                profile = {"email": email, "avd_name": first_avd, "emulator_id": running_emulators[first_avd]}
-                return profile
-
-            # Check ADB directly for any connected emulators as a last resort
-            try:
-                result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-
-                if result.returncode == 0:
-                    lines = result.stdout.strip().split("\n")
-
-                    for line in lines[1:]:  # Skip header
-                        if not line.strip():
-                            continue
-
-                        parts = line.split("\t")
-                        if len(parts) >= 2 and "emulator" in parts[0] and parts[1].strip() == "device":
-                            emulator_id = parts[0].strip()
-
-                            # Use any profile with this emulator ID if available
-                            for email, prefs in self.user_preferences.items():
-                                if prefs.get("emulator_id") == emulator_id:
-                                    avd_name = prefs.get("avd_name")
-                                    if avd_name:
-                                        profile = {
-                                            "email": email,
-                                            "avd_name": avd_name,
-                                            "emulator_id": emulator_id,
-                                        }
-                                        return profile
-
-                            # If no matching profile found but we have a device, create a synthetic profile
-                            if self.profiles_index:
-                                # Use the first profile we have and associate it with this device
-                                first_email = next(iter(self.profiles_index.keys()))
-                                profile_entry = self.profiles_index[first_email]
-
-                                if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                                    avd_name = profile_entry["avd_name"]
-                                elif isinstance(profile_entry, str):
-                                    avd_name = profile_entry
-                                else:
-                                    avd_name = f"DefaultAVD_{first_email}"
-
-                                profile = {
-                                    "email": first_email,
-                                    "avd_name": avd_name,
-                                    "emulator_id": emulator_id,
-                                }
-
-                                # Save this mapping for future use
-                                self._save_profile_status(first_email, avd_name, emulator_id)
-                                return profile
-
-                            # If we have an emulator but no profiles at all, create a generic one
-                            profile = {
-                                "email": "default_user",
-                                "avd_name": "Default_AVD",
-                                "emulator_id": emulator_id,
-                            }
-                            return profile
-            except Exception as e:
-                logger.error(f"Error checking for connected emulators: {e}")
+                    return profile
 
             logger.warning("No running emulators or profiles found")
             return None
@@ -844,86 +738,6 @@ class AVDProfileManager:
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:
-            logger.info("Using simplified mode for Mac development environment")
-
-            # In simplified mode, we don't manage profiles on Mac dev machines
-            # Just use whatever emulator is running and associate it with this email
-
-            # Check if any emulator is running
-            if self.is_emulator_running():
-                # If we have a running emulator, just use it
-                running_emulators = self.device_discovery.map_running_emulators()
-
-                if running_emulators:
-                    # First check if there's an emulator with this email in the AVD name
-                    is_running, emulator_id, found_avd = self.find_running_emulator_for_email(email)
-                    if is_running and emulator_id:
-                        # Find the AVD name for this emulator
-                        avd_name = found_avd
-                        for avd, emu_id in running_emulators.items():
-                            if emu_id == emulator_id:
-                                avd_name = avd
-                                break
-                    else:
-                        # Use first available emulator
-                        avd_name, emulator_id = next(iter(running_emulators.items()))
-
-                    logger.info(
-                        f"Using existing running emulator: {emulator_id} (AVD: {avd_name}) for {email}"
-                    )
-
-                    # Associate this emulator with the profile
-                    if email not in self.profiles_index or self.profiles_index[email] != avd_name:
-                        self.profiles_index[email] = avd_name
-                        self._save_profiles_index()
-
-                    # Update profile status
-                    self._save_profile_status(email, avd_name, emulator_id)
-
-                    return True, f"Using existing emulator {emulator_id} for {email}"
-                else:
-                    logger.warning("Emulator appears to be running but couldn't identify it")
-
-            # If no emulator is running or we couldn't identify it, try to find AVD
-            avd_name = self.get_avd_for_email(email)
-
-            if not avd_name:
-                # Create a standardized AVD name for this email first
-                normalized_avd_name = self.get_avd_name_from_email(email)
-                logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
-
-                # Register this standardized name first to ensure it's in the profiles_index
-                self.register_profile(email, normalized_avd_name)
-
-                # Now look for any available AVD as a fallback
-                try:
-                    # List available AVDs
-                    avd_list_cmd = [f"{self.android_home}/emulator/emulator", "-list-avds"]
-                    result = subprocess.run(
-                        avd_list_cmd, check=False, capture_output=True, text=True, timeout=5
-                    )
-                    available_avds = result.stdout.strip().split("\n")
-                    available_avds = [avd for avd in available_avds if avd.strip()]
-
-                    if available_avds:
-                        # Use the first available AVD
-                        avd_name = available_avds[0]
-                        logger.info(f"Using first available AVD: {avd_name} for {email}")
-
-                        # Update the profile with this AVD
-                        self.register_profile(email, avd_name)
-                    else:
-                        logger.warning(f"No AVDs found. Using standardized AVD name.")
-                        # Use the standardized name we registered
-                        avd_name = normalized_avd_name
-                except Exception as e:
-                    logger.warning(f"Error listing available AVDs: {e}")
-                    # Use the standardized name we registered
-                    avd_name = normalized_avd_name
-
-            # Update profile status without trying to start emulator
-            self._save_profile_status(email, avd_name)
-
             logger.info(f"In simplified mode, tracking profile for {email} without managing emulator")
             return True, f"Tracking profile for {email} in simplified mode"
 
