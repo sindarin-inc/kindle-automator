@@ -11,6 +11,7 @@ import traceback
 from driver import Driver
 from handlers.library_handler import LibraryHandler
 from handlers.reader_handler import ReaderHandler
+from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
 from views.state_machine import KindleStateMachine
 
@@ -55,7 +56,15 @@ class KindleAutomator:
         if self.driver and not hasattr(self.driver, "automator"):
             self.driver.automator = self
 
-        self.device_id = driver.get_device_id()
+        # Get device ID from driver
+        # Check if we should use a specific device ID from the profile manager
+        email = get_sindarin_email()
+        profile = self.profile_manager.get_profile_for_email(email)
+        if profile and "emulator_id" in profile:
+            profile_emulator_id = profile["emulator_id"]
+            if profile_emulator_id:
+                self.device_id = profile_emulator_id
+
         logger.info(f"Initialized driver with device_id: {self.device_id}")
 
         # Initialize state machine without credentials or captcha
