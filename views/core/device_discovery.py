@@ -259,7 +259,6 @@ class DeviceDiscovery:
 
             # If we only have the header line, there are no devices
             if len(lines) <= 1:
-                logger.info("No devices found in ADB output")
                 return running_emulators
 
             # Keep track of all emulators for better debugging

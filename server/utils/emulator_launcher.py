@@ -101,7 +101,6 @@ class EmulatorLauncher:
         try:
             with open(self.vnc_instance_map_path, "w") as f:
                 json.dump(self.vnc_instances, f, indent=2)
-            logger.info(f"Saved VNC instance mapping to {self.vnc_instance_map_path}")
         except Exception as e:
             logger.error(f"Error saving VNC instance mapping: {e}")
 
@@ -122,7 +121,6 @@ class EmulatorLauncher:
                 return display_num
 
             # No display found
-            logger.debug(f"No display found for {email}")
             return None
         except Exception as e:
             logger.error(f"Error getting X display for {email}: {e}")
@@ -139,38 +137,11 @@ class EmulatorLauncher:
             The emulator port or None if not found
         """
         try:
-            # Extract AVD name from email to find the correct profile
-            normalized_form = (
-                "@" not in email
-                and "_" in email
-                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
-            )
-            avd_name = self._extract_avd_name_from_email(email)
-
-            # Look up the port using the AVD name
-            if avd_name:
-                for instance in self.vnc_instances["instances"]:
-                    if instance["assigned_profile"] == avd_name:
-                        logger.info(
-                            f"Found emulator port for {email} with AVD {avd_name}: {instance['emulator_port']}"
-                        )
-                        return instance["emulator_port"]
-
-            # For backward compatibility, also try by email
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
-                    logger.warning(
-                        f"Found emulator port using legacy email match for {email}: {instance['emulator_port']}"
-                    )
-                    # Update to use AVD name for future lookups
-                    if avd_name and not normalized_form:
-                        logger.info(f"Updating legacy email assignment to AVD name {avd_name}")
-                        instance["assigned_profile"] = avd_name
-                        self._save_vnc_instance_map()
                     return instance["emulator_port"]
 
             # No port found
-            logger.debug(f"No emulator port found for {email} with AVD {avd_name}")
             return None
         except Exception as e:
             logger.error(f"Error getting emulator port for {email}: {e}")
@@ -209,33 +180,16 @@ class EmulatorLauncher:
             The assigned display number or None if assignment failed
         """
         try:
-            # Extract AVD name from email to find the correct profile
-            normalized_form = (
-                "@" not in email
-                and "_" in email
-                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
-            )
-            avd_name = self._extract_avd_name_from_email(email)
-
-            if not avd_name:
-                logger.error(f"Could not extract AVD name for email {email}")
-                logger.error("Cannot assign display without a valid AVD name")
-                return None
-
-            logger.info(f"Using AVD name '{avd_name}' as assigned_profile for email {email}")
-
             # First check if the profile already has an assigned display
             for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == avd_name:
-                    logger.info(
-                        f"Profile {email} with AVD {avd_name} already assigned to display :{instance['display']}"
-                    )
+                if instance["assigned_profile"] == email:
+                    logger.info(f"Profile {email} already assigned to display :{instance['display']}")
                     return instance["display"]
                 # Also check for legacy email assignment for backward compatibility
                 elif instance["assigned_profile"] == email:
                     # Update to use AVD name instead
-                    logger.info(f"Found legacy email assignment for {email}, updating to AVD name {avd_name}")
-                    instance["assigned_profile"] = avd_name
+                    logger.info(f"Found legacy email assignment for {email}, updating to profile {email}")
+                    instance["assigned_profile"] = email
                     self._save_vnc_instance_map()
                     return instance["display"]
 
@@ -243,13 +197,13 @@ class EmulatorLauncher:
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] is None:
                     # Assign this instance to the profile using AVD name
-                    instance["assigned_profile"] = avd_name
+                    instance["assigned_profile"] = email
                     self._save_vnc_instance_map()
-                    logger.info(f"Assigned display :{instance['display']} to AVD {avd_name} (email {email})")
+                    logger.info(f"Assigned display :{instance['display']} to profile {email}")
                     return instance["display"]
 
             # No available instances, return None
-            logger.error(f"No available displays for profile {email} with AVD {avd_name}")
+            logger.error(f"No available displays for profile {email}")
             return None
         except Exception as e:
             logger.error(f"Error assigning display to profile {email}: {e}")
@@ -695,26 +649,15 @@ class EmulatorLauncher:
             True if successful, False otherwise
         """
         try:
-            # Extract AVD name from email to find the correct profile
-            avd_name = self._extract_avd_name_from_email(email)
-
-            # First try to find and release by AVD name
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == avd_name:
-                    instance["assigned_profile"] = None
-                    self._save_vnc_instance_map()
-                    logger.info(f"Released AVD {avd_name} (email {email}) from VNC instance map")
-                    return True
-
-            # For backward compatibility, also try by email
+            # First try to find and release by email
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
                     instance["assigned_profile"] = None
                     self._save_vnc_instance_map()
-                    logger.info(f"Released profile by legacy email {email} from VNC instance map")
+                    logger.info(f"Released profile by email {email} from VNC instance map")
                     return True
 
-            logger.warning(f"No VNC instance found for profile {email} with AVD {avd_name}")
+            logger.warning(f"No VNC instance found for profile {email}")
             return False
         except Exception as e:
             logger.error(f"Error releasing profile {email}: {e}")

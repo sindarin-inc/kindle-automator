@@ -1107,9 +1107,10 @@ class AuthResource(Resource):
                     logger.info(f"Using Python launcher for {sindarin_email}")
                     # Check if we have a running emulator for this email
                     if hasattr(automator.emulator_manager, "emulator_launcher"):
-                        emulator_id, display_num = (
-                            automator.emulator_manager.emulator_launcher.get_running_emulator(sindarin_email)
-                        )
+                        (
+                            emulator_id,
+                            display_num,
+                        ) = automator.emulator_manager.emulator_launcher.get_running_emulator(sindarin_email)
                         if emulator_id:
                             logger.info(
                                 f"Found running emulator for {sindarin_email}: {emulator_id} on display :{display_num}"
@@ -1152,9 +1153,11 @@ class AuthResource(Resource):
                 avd_name = automator.avd_name if hasattr(automator, "avd_name") else None
                 if avd_name:
                     logger.info(f"Launching emulator for {sindarin_email} with AVD {avd_name}")
-                    success, emulator_id, display_num = (
-                        automator.emulator_manager.emulator_launcher.launch_emulator(avd_name, sindarin_email)
-                    )
+                    (
+                        success,
+                        emulator_id,
+                        display_num,
+                    ) = automator.emulator_manager.emulator_launcher.launch_emulator(avd_name, sindarin_email)
                     if success:
                         logger.info(f"Successfully launched emulator {emulator_id} on display :{display_num}")
                     else:
@@ -1681,9 +1684,10 @@ class ProfilesResource(Resource):
                     and hasattr(automator, "emulator_manager")
                     and hasattr(automator.emulator_manager, "emulator_launcher")
                 ):
-                    emulator_id, display_num = (
-                        automator.emulator_manager.emulator_launcher.get_running_emulator(email)
-                    )
+                    (
+                        emulator_id,
+                        display_num,
+                    ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                     if display_num:
                         vnc_instances[email] = {
                             "instance_id": display_num,  # Use display number as instance ID
