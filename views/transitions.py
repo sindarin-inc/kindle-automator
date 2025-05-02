@@ -25,7 +25,7 @@ class StateTransitions:
 
     def __init__(self, view_inspector, auth_handler, permissions_handler, library_handler, reader_handler):
         """Initialize with required handlers."""
-        logger.info("Initializing State Transitions...")
+        # logger.info("Initializing State Transitions...")
         self.view_inspector = view_inspector
         self.auth_handler = auth_handler
         self.permissions_handler = permissions_handler

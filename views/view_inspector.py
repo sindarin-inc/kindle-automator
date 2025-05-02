@@ -271,6 +271,8 @@ class ViewInspector:
             # Store the page source
             filepath = store_page_source(source, "unknown_view")
             logger.info(f"Stored unknown view page source at: {filepath}")
+        except NoSuchDriverError:
+            logger.error("No driver found, cannot dump page source")
         except Exception as e:
             logger.error(f"Failed to get page source: {e}")
 

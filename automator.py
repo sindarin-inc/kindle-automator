@@ -45,15 +45,18 @@ class KindleAutomator:
         driver.automator = self
 
         if not driver.initialize():
+            logger.error("Failed to initialize driver")
             return False
 
         self.driver = driver.get_driver()
-        self.device_id = driver.get_device_id()
 
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it
         if self.driver and not hasattr(self.driver, "automator"):
             self.driver.automator = self
+
+        self.device_id = driver.get_device_id()
+        logger.info(f"Initialized driver with device_id: {self.device_id}")
 
         # Initialize state machine without credentials or captcha
         self.state_machine = KindleStateMachine(self.driver)

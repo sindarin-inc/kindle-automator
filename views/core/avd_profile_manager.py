@@ -59,7 +59,6 @@ class AVDProfileManager:
                 self.avd_dir = os.path.join(user_home, ".android", "avd")
                 logger.info(f"ANDROID_HOME not set, using default AVD directory: {self.avd_dir}")
         else:
-            logger.info(f"Using full profile management mode for {platform.system()} {self.host_arch}")
             # For non-Mac or non-dev environments, use standard directory structure
             self.avd_dir = os.path.join(base_dir, "avd")
 
