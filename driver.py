@@ -118,11 +118,9 @@ class Driver:
                     and profile
                     and profile.get("hw_overlays_disabled", False)
                 ):
-                    logger.info(f"HW overlays already disabled for device {self.device_id}, skipping")
                     return True
 
             # Check current state
-            logger.info(f"Checking HW overlays state on device {self.device_id}")
             result = subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "settings", "get", "global", "debug.hw.overlay"],
                 check=True,
@@ -132,7 +130,6 @@ class Driver:
             current_state = result.stdout.strip()
 
             if current_state == "1":
-                logger.info("HW overlays are already disabled")
                 # Record this setting in the profile
                 self._update_profile_setting("hw_overlays_disabled", True)
                 return True
@@ -220,7 +217,6 @@ class Driver:
                     and profile
                     and profile.get("animations_disabled", False)
                 ):
-                    logger.info(f"System animations already disabled for device {self.device_id}, skipping")
                     return True
 
             logger.info(f"Disabling system animations on device {self.device_id}")
@@ -275,8 +271,6 @@ class Driver:
                 text=True,
             )
 
-            logger.info("System animations disabled successfully")
-
             # Record this setting in the profile
             self._update_profile_setting("animations_disabled", True)
             return True
@@ -306,7 +300,6 @@ class Driver:
                     and profile
                     and profile.get("sleep_disabled", False)
                 ):
-                    logger.info(f"Sleep already disabled for device {self.device_id}, skipping")
                     return True
 
             logger.info(f"Disabling sleep and app standby for device {self.device_id}")
@@ -366,8 +359,6 @@ class Driver:
                 text=True,
             )
 
-            logger.info("Sleep and app standby modes disabled successfully")
-
             # Record this setting in the profile
             self._update_profile_setting("sleep_disabled", True)
             return True
@@ -397,7 +388,6 @@ class Driver:
                     and profile
                     and profile.get("status_bar_disabled", False)
                 ):
-                    logger.info(f"Status bar already disabled for device {self.device_id}, skipping")
                     return True
 
             logger.info(f"Hiding status bar for device {self.device_id}")
@@ -420,8 +410,6 @@ class Driver:
                 text=True,
             )
 
-            logger.info("Status bar hidden successfully")
-
             # Record this setting in the profile
             self._update_profile_setting("status_bar_disabled", True)
             return True
@@ -435,7 +423,6 @@ class Driver:
     def _cleanup_old_sessions(self):
         """Clean up any existing UiAutomator2 sessions."""
         try:
-            logger.info("Cleaning up old UiAutomator2 sessions...")
             subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server"],
                 check=True,
@@ -598,7 +585,9 @@ class Driver:
                     avd_name = profile.get("avd_name")
 
                     if not email or not avd_name:
-                        logger.error(f"Missing required profile fields: email={email}, avd_name={avd_name}")
+                        logger.error(
+                            f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}"
+                        )
 
                     else:
                         logger.info(f"Updating profile for {email} with device ID: {self.device_id}")
