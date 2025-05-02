@@ -193,6 +193,16 @@ def ensure_user_profile_loaded(f):
                         "message": "The device could not be connected",
                     }, 500
 
+        # Make sure the Kindle app is running before continuing
+        # This is crucial for all endpoints that interact with the app
+        if automator and hasattr(automator, "state_machine") and hasattr(automator.state_machine, "view_inspector"):
+            try:
+                logger.info("Ensuring Kindle app is in foreground")
+                automator.state_machine.view_inspector.ensure_app_foreground()
+            except Exception as e:
+                logger.warning(f"Error ensuring app is in foreground: {e}")
+                # Continue anyway, the endpoint will handle errors
+        
         # Continue with the original endpoint handler
         result = f(*args, **kwargs)
         # Handle Flask Response objects appropriately

@@ -978,7 +978,7 @@ class TwoFactorResource(Resource):
 class AuthResource(Resource):
     @ensure_user_profile_loaded
     @handle_automator_response(server)
-    def post(self):
+    def _auth(self):
         """Set up a profile for manual authentication via VNC"""
         data = request.get_json() or {}
 
@@ -1211,6 +1211,14 @@ class AuthResource(Resource):
         logger.info(f"Returning auth response: {response_data}")
 
         return response_data, 200
+
+    def get(self):
+        """Get the auth status"""
+        return self._auth()
+
+    def post(self):
+        """Set up a profile for manual authentication via VNC"""
+        return self._auth()
 
 
 class FixturesResource(Resource):
