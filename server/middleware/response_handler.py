@@ -387,9 +387,9 @@ def handle_automator_response(server_instance):
                             }
 
                             if interactive_captcha:
-                                response_data["message"] = (
-                                    "Grid-based image captcha detected - app has been restarted automatically"
-                                )
+                                response_data[
+                                    "message"
+                                ] = "Grid-based image captcha detected - app has been restarted automatically"
                                 response_data["captcha_type"] = "grid"
                                 response_data["requires_restart"] = True
                             else:

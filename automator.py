@@ -53,7 +53,6 @@ class KindleAutomator:
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it
         if self.driver and not hasattr(self.driver, "automator"):
-            logger.info("Setting automator reference directly on driver object")
             self.driver.automator = self
 
         # Initialize state machine without credentials or captcha

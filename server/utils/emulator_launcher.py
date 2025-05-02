@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from server.utils.request_utils import get_sindarin_email
+
 logger = logging.getLogger(__name__)
 
 # Directory for storing VNC instance mapping directly with user profiles
@@ -297,6 +299,9 @@ class EmulatorLauncher:
             # Skip VNC setup on macOS
             return True
 
+        email = get_sindarin_email()
+        avd_name = self._extract_avd_name_from_email(email)
+
         try:
             # Check if Xvfb is running for this display
             xvfb_check = subprocess.run(
@@ -355,56 +360,53 @@ class EmulatorLauncher:
             env = os.environ.copy()
             env["DISPLAY"] = f":{display_num}"
 
-            # First find the Kindle app window ID using xwininfo
+            # First find the Kindle app window ID using xwininfo with retries
             try:
-                # Wait longer for the emulator window to appear
-                # time.sleep(5)
-
-                # Use xwininfo with -tree to find the emulator window
-                list_windows = subprocess.run(
-                    ["xwininfo", "-tree", "-root", "-display", f":{display_num}"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    env=env,
-                    timeout=5,
-                )
-
                 window_id = None
+                start_time = time.time()
+                retry_interval = 0.2  # 200ms between retries
+                max_wait_time = 5.0  # Max 5 seconds total wait time
 
-                if list_windows.returncode == 0:
-                    # Look for the Android Emulator window with the Kindle AVD
-                    window_lines = list_windows.stdout.splitlines()
-                    emulator_window_line = None
+                while time.time() - start_time < max_wait_time:
+                    # Use xwininfo with -tree to find the emulator window
+                    list_windows = subprocess.run(
+                        ["xwininfo", "-tree", "-root", "-display", f":{display_num}"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=env,
+                        timeout=3,
+                    )
 
-                    # First, look for an emulator window with KindleAVD in the name
-                    for line in window_lines:
-                        if "Android Emulator" in line and "KindleAVD" in line:
-                            emulator_window_line = line
-                            break
-                    else:
-                        logger.warning(
-                            f"Could not find any matching window on display :{display_num}, using full display"
-                        )
-                        window_id = None
+                    if list_windows.returncode == 0:
+                        # Look for the Android Emulator window with the Kindle AVD
+                        window_lines = list_windows.stdout.splitlines()
+                        emulator_window_line = None
 
-                    # Extract window ID if we found a matching window
-                    if emulator_window_line:
-                        # The window ID is at the beginning of the line, like "0x400007"
-                        parts = emulator_window_line.split()
-                        if parts and parts[0].startswith("0x"):
-                            window_id = parts[0]
-                            # logger.info(
-                            #     f"Found emulator window ID: {window_id} from line: {emulator_window_line}"
-                            # )
+                        # First, look for an emulator window with KindleAVD in the name
+                        for line in window_lines:
+                            if "Android Emulator" in line and avd_name in line:
+                                emulator_window_line = line
+                                break
 
-                    # Log the full list of windows for debugging
-                    # logger.info(f"Available windows on display :{display_num}:\n{list_windows.stdout}")
+                        # Extract window ID if we found a matching window
+                        if emulator_window_line:
+                            # The window ID is at the beginning of the line, like "0x400007"
+                            parts = emulator_window_line.split()
+                            if parts and parts[0].startswith("0x"):
+                                window_id = parts[0]
+                                logger.info(
+                                    f"Found emulator window ID: {window_id} after {time.time() - start_time:.2f}s"
+                                )
+                                break  # Exit the retry loop
 
-                # Just use the window_id we found
+                    # If we didn't find the window, wait and retry
+                    time.sleep(retry_interval)
+
+                # After all retries, if we still didn't find the window
                 if not window_id:
                     logger.warning(
-                        f"Could not find any matching window on display :{display_num}, using full display"
+                        f"Could not find any matching window on display :{display_num} after {max_wait_time}s, using full display"
                     )
 
             except Exception as e:
