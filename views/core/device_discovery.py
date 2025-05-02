@@ -37,43 +37,6 @@ class DeviceDiscovery:
         # But for simple checking it should be sufficient
         return email_part
 
-    def normalize_email_for_avd(self, email: str) -> str:
-        """
-        Normalize an email address to be used in an AVD name.
-
-        Args:
-            email: Email address to normalize
-
-        Returns:
-            str: Normalized email suitable for AVD name
-        """
-        return email.replace("@", "_").replace(".", "_")
-
-    def convert_normalized_to_email(self, normalized_email: str) -> str:
-        """
-        Attempt to convert a normalized email (with underscores) back to a real email format.
-        This is an approximate reverse of normalize_email_for_avd.
-
-        The basic strategy is to assume the first underscore is an @ symbol and
-        replace other underscores with dots.
-
-        Args:
-            normalized_email: The normalized email with underscores
-
-        Returns:
-            str: Best guess at the original email format
-        """
-        parts = normalized_email.split("_", 1)
-        if len(parts) != 2:
-            # If there's no underscore, just return as is
-            return normalized_email
-
-        username, domain = parts
-        # Replace remaining underscores with dots
-        domain = domain.replace("_", ".")
-
-        return f"{username}@{domain}"
-
     def find_running_emulator_for_email(
         self, email: str, profiles_index: Dict = None
     ) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -112,12 +75,7 @@ class DeviceDiscovery:
         avd_name = None
         if profiles_index and email in profiles_index:
             profile_entry = profiles_index.get(email)
-
-            # Handle different formats (backward compatibility)
-            if isinstance(profile_entry, str):
-                avd_name = profile_entry
-            elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                avd_name = profile_entry["avd_name"]
+            avd_name = profile_entry.get("avd_name")
 
             if avd_name and avd_name in running_emulators:
                 emulator_id = running_emulators[avd_name]
@@ -127,12 +85,8 @@ class DeviceDiscovery:
         # Never use another user's AVD
         # If we have a specific AVD for this user and it's not running, we should fail
         if avd_name and avd_name not in running_emulators:
-            logger.info(f"AVD {avd_name} for {email} is not running")
             # Return failure to find the user's specific AVD
             return False, None, avd_name
-
-        # We will no longer look for partial matches to avoid using another user's AVD
-        # Only exact matches on the user's registered AVD name are allowed
 
         # No running emulator found for this email
         return False, None, avd_name
@@ -221,40 +175,6 @@ class DeviceDiscovery:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
 
         return None
-
-    def scan_for_avds_with_emails(self, profiles_index: Dict = None) -> Dict[str, str]:
-        """
-        Scan all running AVDs to find ones with email patterns in their names.
-        This helps to discover and register email-to-AVD mappings automatically.
-
-        Args:
-            profiles_index: Optional dictionary for updating with discovered mappings
-
-        Returns:
-            Dict[str, str]: Dictionary mapping emails to AVD names
-        """
-        # First get all running emulators
-        running_emulators = self.map_running_emulators()
-
-        discovered_mappings = {}
-
-        # Check each AVD name for email patterns
-        for avd_name in running_emulators.keys():
-            normalized_email = self.extract_email_from_avd_name(avd_name)
-            if normalized_email:
-                logger.info(f"Found email pattern in AVD name: {avd_name} -> {normalized_email}")
-
-                # Convert the normalized email back to a real email format
-                # Only add to discovered_mappings for tracking purposes
-                real_email = self.convert_normalized_to_email(normalized_email)
-                discovered_mappings[real_email] = avd_name
-
-                # Also update profiles index if provided and this real email is not already in profiles_index
-                if profiles_index is not None and real_email not in profiles_index:
-                    # Use the dictionary format consistent with our new structure
-                    profiles_index[real_email] = {"avd_name": avd_name}
-
-        return discovered_mappings
 
     def map_running_emulators(self) -> Dict[str, str]:
         """

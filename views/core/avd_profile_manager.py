@@ -100,24 +100,6 @@ class AVDProfileManager:
         # Removed current_profile loading as we're managing multiple users simultaneously
         self.user_preferences = self._load_user_preferences()
 
-        # Scan for running emulators with email patterns on initialization
-        try:
-            self.scan_for_avds_with_emails()
-        except Exception as e:
-            logger.warning(f"Error scanning for AVDs with emails on init: {e}")
-
-    def normalize_email_for_avd(self, email: str) -> str:
-        """
-        Normalize an email address to be used in an AVD name.
-
-        Args:
-            email: Email address to normalize
-
-        Returns:
-            str: Normalized email suitable for AVD name
-        """
-        return self.avd_creator.normalize_email_for_avd(email)
-
     def get_avd_name_from_email(self, email: str) -> str:
         """
         Generate a standardized AVD name from an email address.
@@ -361,17 +343,6 @@ class AVDProfileManager:
     def is_emulator_ready(self) -> bool:
         """Check if an emulator is running and fully booted."""
         return self.emulator_manager.is_emulator_ready()
-
-    def scan_for_avds_with_emails(self) -> Dict[str, str]:
-        """
-        Scan all running AVDs to find ones with email patterns in their names.
-        This helps to discover and register email-to-AVD mappings automatically.
-
-        Returns:
-            Dict[str, str]: Dictionary mapping emails to AVD names
-        """
-        result = self.device_discovery.scan_for_avds_with_emails(self.profiles_index)
-        return result
 
     def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
         """
@@ -685,9 +656,7 @@ class AVDProfileManager:
             logger.error(f"Error in get_current_profile: {e}")
             return None
 
-    def register_profile(
-        self, email: str, avd_name: str, vnc_instance: int = None, appium_port: int = None
-    ) -> None:
+    def register_profile(self, email: str, avd_name: str, vnc_instance: int = None) -> None:
         """
         Register a profile by associating an email with an AVD name.
 
@@ -695,7 +664,6 @@ class AVDProfileManager:
             email: The email address to register
             avd_name: The AVD name to associate with this email
             vnc_instance: Optional VNC instance number to assign to this profile
-            appium_port: Optional Appium port to assign to this profile (deprecated - use VNC instance instead)
         """
         # Check if the email already exists before we add it
         if email in self.profiles_index:
@@ -713,11 +681,6 @@ class AVDProfileManager:
         if vnc_instance is not None:
             self.profiles_index[email]["vnc_instance"] = vnc_instance
 
-        # Note: appium_port is no longer stored in profiles_index
-        # It should be stored in the VNC instance map instead
-        if appium_port is not None:
-            logger.warning(f"appium_port parameter is deprecated. Use VNC instance instead.")
-
         # Save to file
         try:
             self._save_profiles_index()
@@ -728,8 +691,6 @@ class AVDProfileManager:
         log_message = f"Registered profile for {email} with AVD {avd_name}"
         if vnc_instance is not None:
             log_message += f" on VNC instance {vnc_instance}"
-        if appium_port is not None:
-            log_message += f" with Appium port {appium_port}"
         logger.info(log_message)
 
     def register_email_to_avd(self, email: str, default_avd_name: str = "Pixel_API_30") -> None:
@@ -760,7 +721,6 @@ class AVDProfileManager:
             logger.info(f"Found user's AVD {normalized_avd_name} already running at {emulator_id}")
             self._save_profile_status(email, normalized_avd_name, emulator_id)
         else:
-            logger.info(f"User's AVD {normalized_avd_name} is not running yet")
             self._save_profile_status(email, normalized_avd_name)
 
     def stop_emulator(self, device_id: str = None) -> bool:

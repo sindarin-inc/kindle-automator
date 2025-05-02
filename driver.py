@@ -68,7 +68,9 @@ class Driver:
                     logger.warning(f"Specified device ID {specific_device_id} not found or not ready")
                     # Do not continue to regular device search if a specific device was requested
                     # but is not available. This prevents using the wrong device.
-                    logger.error(f"Requested specific device {specific_device_id} was not found or is not ready")
+                    logger.error(
+                        f"Requested specific device {specific_device_id} was not found or is not ready"
+                    )
                     return None
 
             # Only proceed with regular device search if NO specific device was requested
@@ -843,10 +845,7 @@ class Driver:
                                                 if not started:
                                                     logger.error("Failed to start Appium server from driver")
                                                 else:
-                                                    logger.info(
-                                                        "Successfully started Appium server from driver"
-                                                    )
-                                                    time.sleep(2)  # Give it time to start
+                                                    time.sleep(0.2)  # Give it time to start
                                                     continue  # Retry the check
                                     except Exception as start_error:
                                         logger.error(f"Error starting Appium from driver: {start_error}")

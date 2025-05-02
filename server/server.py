@@ -1069,9 +1069,6 @@ class AuthResource(Resource):
         if restart_vnc:
             logger.info(f"Restart VNC requested for {sindarin_email}")
 
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
-
         # Log authentication attempt details
         logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
 

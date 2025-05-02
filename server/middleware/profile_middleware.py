@@ -50,8 +50,6 @@ def ensure_user_profile_loaded(f):
             # Verify it was added correctly
             if sindarin_email not in server.profile_manager.profiles_index:
                 logger.error(f"Failed to register {sindarin_email} in profiles_index")
-        else:
-            logger.info(f"Email {sindarin_email} already registered")
 
         # Now check if this profile exists by looking for an AVD
         avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
@@ -105,22 +103,6 @@ def ensure_user_profile_loaded(f):
                 email_hash = hash(sindarin_email) % port_range
                 port = base_port + email_hash
 
-                # Store this port in the profile for future use
-                if hasattr(server.profile_manager, "register_profile"):
-                    # Get the AVD name for this email
-                    avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
-                    if avd_name:
-                        # Get existing VNC instance if any
-                        vnc_instance = server.profile_manager.get_vnc_instance_for_email(sindarin_email)
-                        # Register the profile with the new port
-                        server.profile_manager.register_profile(
-                            email=sindarin_email,
-                            avd_name=avd_name,
-                            vnc_instance=vnc_instance,
-                            appium_port=port,
-                        )
-                        logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
-
             # Start the Appium server on this port and check for success
             appium_started = server.start_appium(port=port, email=sindarin_email)
             if not appium_started:
@@ -129,8 +111,6 @@ def ensure_user_profile_loaded(f):
                     "error": f"Failed to start Appium server for {sindarin_email}",
                     "message": "Could not initialize Appium server",
                 }, 500
-
-            logger.info(f"Started Appium server for {sindarin_email} on port {port}")
 
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
@@ -170,33 +150,16 @@ def ensure_user_profile_loaded(f):
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
         avd_exists = os.path.exists(avd_path)
 
-        # Special handling for auth endpoint
-        if request.path.endswith("/auth"):
-            if not is_running:
-                if avd_exists:
-                    # AVD exists but isn't running - we'll start it
-                    logger.info(f"AVD {avd_name} for {sindarin_email} exists but is not running")
-                    logger.info(f"Will start existing AVD for {sindarin_email}")
-                    force_new_emulator = False
-                else:
-                    # AVD doesn't exist - create it
-                    logger.info(f"No AVD exists for {sindarin_email} on auth endpoint")
-                    logger.info(f"Will create a new AVD for {sindarin_email}")
-                    force_new_emulator = True
-        else:
-            # For all other endpoints, if the user's AVD isn't running, we should fail
-            if not is_running and not force_new_emulator:
-                logger.error(f"User {sindarin_email}'s AVD ({avd_name}) is not running")
-                if avd_exists:
-                    message = "Your device exists but is not running. Please authenticate first."
-                else:
-                    message = "You don't have a device set up. Please authenticate first to create one."
-
-                return {
-                    "error": f"AVD for {sindarin_email} not running",
-                    "message": message,
-                    "requires_auth": True,
-                }, 400
+        if not is_running:
+            if avd_exists:
+                # AVD exists but isn't running - we'll start it
+                logger.info(f"AVD {avd_name} for {sindarin_email} exists but is not running")
+                force_new_emulator = False
+            else:
+                # AVD doesn't exist - create it
+                logger.info(f"No AVD exists for {sindarin_email} on auth endpoint")
+                logger.info(f"Will create a new AVD for {sindarin_email}")
+                force_new_emulator = True
 
         success, message = server.switch_profile(sindarin_email, force_new_emulator=force_new_emulator)
 

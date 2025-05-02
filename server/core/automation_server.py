@@ -76,14 +76,6 @@ class AutomationServer:
         # Store the automator
         self.automators[email] = automator
 
-        # current_email field has been removed
-        # Always use explicit email parameters in all operations
-
-        # Scan for any AVDs with email patterns in their names and register them
-        discovered = self.profile_manager.scan_for_avds_with_emails()
-        if discovered:
-            logger.info(f"Auto-discovered {len(discovered)} profile-to-AVD mappings: {discovered}")
-
         return automator
 
     def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
@@ -288,7 +280,6 @@ class AutomationServer:
                     )
                     if version_check.returncode == 0:
                         appium_cmd = path
-                        logger.info(f"Found working Appium at {path}: {version_check.stdout.strip()}")
                         break
                 except (subprocess.SubprocessError, OSError):
                     continue
@@ -308,9 +299,6 @@ class AutomationServer:
 
             # Start Appium with more detailed logs
             with open(log_file, "w") as log:
-                logger.info(
-                    f"Launching Appium with command: {appium_cmd} --port {port} --base-path /wd/hub --log-level debug"
-                )
                 appium_process = subprocess.Popen(
                     [appium_cmd, "--port", str(port), "--base-path", "/wd/hub", "--log-level", "debug"],
                     stdout=log,
@@ -321,9 +309,6 @@ class AutomationServer:
 
             # Save the PID
             self.save_pid(process_name, appium_process.pid)
-            logger.info(
-                f"Started Appium server for {email if email else 'default'} with PID {appium_process.pid} on port {port}"
-            )
 
             # Store the process in either the global appium_process or in the per-email dictionary
             if email:
@@ -377,9 +362,6 @@ class AutomationServer:
                         # Check for Appium 2.x format: {"value": {"ready": true, ...}}
                         if "value" in response_json and isinstance(response_json["value"], dict):
                             if response_json["value"].get("ready") == True:
-                                logger.info(
-                                    f"Appium 2.x server successfully started and responsive on port {port}"
-                                )
                                 return True
 
                         # If we get here, the response is in an unknown format

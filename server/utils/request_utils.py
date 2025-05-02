@@ -22,7 +22,6 @@ def get_sindarin_email() -> Optional[str]:
     # Check in URL parameters
     if "sindarin_email" in request.args:
         sindarin_email = request.args.get("sindarin_email")
-        logger.debug(f"Found sindarin_email in URL parameters: {sindarin_email}")
 
     # Check in JSON body if present
     elif request.is_json:

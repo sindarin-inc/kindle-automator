@@ -121,36 +121,8 @@ class EmulatorLauncher:
                 _, display_num = self.running_emulators[email]
                 return display_num
 
-            # Extract AVD name from email to find the correct profile
-            normalized_form = (
-                "@" not in email
-                and "_" in email
-                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
-            )
-            avd_name = self._extract_avd_name_from_email(email)
-
-            # Check the VNC instance map with AVD name
-            if avd_name:
-                for instance in self.vnc_instances["instances"]:
-                    if instance["assigned_profile"] == avd_name:
-                        logger.info(f"Found display for {email} with AVD {avd_name}: {instance['display']}")
-                        return instance["display"]
-
-            # For backward compatibility, also try by email directly
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == email:
-                    logger.warning(
-                        f"Found display using legacy email match for {email}: {instance['display']}"
-                    )
-                    # Update to use AVD name for future lookups
-                    if avd_name and not normalized_form:
-                        logger.info(f"Updating legacy email assignment to AVD name {avd_name}")
-                        instance["assigned_profile"] = avd_name
-                        self._save_vnc_instance_map()
-                    return instance["display"]
-
             # No display found
-            logger.debug(f"No display found for {email} with AVD {avd_name}")
+            logger.debug(f"No display found for {email}")
             return None
         except Exception as e:
             logger.error(f"Error getting X display for {email}: {e}")
@@ -572,7 +544,7 @@ class EmulatorLauncher:
             logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
             return False
 
-    def launch_emulator(self, avd_name: str, email: str = None) -> Tuple[bool, Optional[str], Optional[int]]:
+    def launch_emulator(self, avd_name: str, email: str) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
 
@@ -584,6 +556,7 @@ class EmulatorLauncher:
             Tuple of (success, emulator_id, display_num)
         """
         try:
+            logger.debug(f"Launching emulator {avd_name} for {email}")
             # Check if AVD exists
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
             if not os.path.exists(avd_path):
@@ -921,16 +894,7 @@ class EmulatorLauncher:
 
         # If we have an AVD name and it's in running_emulators, use that
         if avd_name and avd_name in self.running_emulators:
-            logger.info(f"Found running emulator for AVD {avd_name} (email {email})")
             return self.running_emulators[avd_name]
-
-        # For backward compatibility during transition, also check using email
-        # This branch should be removed after full transition to AVD names
-        if email in self.running_emulators:
-            logger.warning(
-                f"Found running emulator using legacy email key for {email} - should migrate to AVD name"
-            )
-            return self.running_emulators[email]
 
         return None, None
 
