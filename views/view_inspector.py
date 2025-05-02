@@ -9,6 +9,7 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import NoSuchElementException
 
 from server.logging_config import store_page_source
+from server.utils.request_utils import get_sindarin_email
 from views.auth.interaction_strategies import (
     EMAIL_FIELD_STRATEGIES,
     PASSWORD_FIELD_STRATEGIES,
@@ -84,59 +85,10 @@ class ViewInspector:
             # Get device ID through multiple methods to ensure we have one
             device_id = None
 
-            # 1. Try directly from our own class (if manually set)
-            if hasattr(self, "device_id") and self.device_id:
-                device_id = self.device_id
-                logger.info(f"Using device_id {device_id} stored directly on view_inspector")
+            sindarin_email = get_sindarin_email()
 
-            # 2. Get from automator
-            if not device_id and self.automator and hasattr(self.automator, "device_id"):
-                device_id = self.automator.device_id
-                logger.info(f"Retrieved device ID {device_id} from automator")
-
-            # 3. Try via _driver.automator.device_id if available
-            if not device_id and hasattr(self.driver, "_driver"):
-                driver_ref = getattr(self.driver, "_driver")
-                if hasattr(driver_ref, "automator") and hasattr(driver_ref.automator, "device_id"):
-                    device_id = driver_ref.automator.device_id
-                    logger.info(f"Retrieved device ID {device_id} from driver._driver.automator")
-
-            # 4. Get device ID from driver session
-            if not device_id and hasattr(self.driver, "session") and self.driver.session:
-                device_id = self.driver.session.get("deviceId")
-                if device_id:
-                    logger.info(f"Retrieved device ID {device_id} from driver session")
-
-            # 5. Try to get from driver.command_executor if available
-            if not device_id and hasattr(self.driver, "command_executor"):
-                executor_url = getattr(self.driver.command_executor, "_url", "")
-                if "deviceId=" in executor_url:
-                    # Extract deviceId from URL
-                    matches = re.search(r"deviceId=([^&]+)", executor_url)
-                    if matches:
-                        device_id = matches.group(1)
-                        logger.info(f"Extracted device ID {device_id} from command executor URL")
-
-            # 6. Try to get device ID from driver.desired_capabilities
-            if not device_id and hasattr(self.driver, "desired_capabilities"):
-                desired_caps = self.driver.desired_capabilities
-                if isinstance(desired_caps, dict) and "deviceName" in desired_caps:
-                    device_id = desired_caps["deviceName"]
-                    logger.info(f"Retrieved device ID {device_id} from desired_capabilities")
-
-            # 7. Check if we can find device ID from attached automator to drivers
-            if not device_id:
-                try:
-                    from driver import Driver
-
-                    driver_instance = Driver()
-                    if hasattr(driver_instance, "device_id") and driver_instance.device_id:
-                        device_id = driver_instance.device_id
-                        logger.info(f"Retrieved device ID {device_id} from Driver singleton")
-                        # Store for future use
-                        self.device_id = device_id
-                except Exception as e:
-                    logger.warning(f"Error accessing Driver singleton: {e}")
+            # Get the emulator ID for this email if possible
+            device_id = self.automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
 
             logger.info(f"Bringing {self.app_package} to foreground using device_id={device_id}...")
 
