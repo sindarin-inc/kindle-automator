@@ -38,40 +38,23 @@ def ensure_user_profile_loaded(f):
         # Check if this email exists in profiles_index first
         # If not, register it immediately to avoid profile creation issues
         profiles_index = server.profile_manager.profiles_index
-        logger.info(f"[PROFILE DEBUG] Current profiles_index keys: {list(profiles_index.keys())}")
-        logger.info(f"[PROFILE DEBUG] Looking for email: {sindarin_email}")
 
         if sindarin_email not in profiles_index:
-            logger.info(
-                f"[PROFILE DEBUG] Email {sindarin_email} not found in profiles_index, registering it now"
-            )
             # Create standardized AVD name for this email
             normalized_avd_name = server.profile_manager.get_avd_name_from_email(sindarin_email)
-            logger.info(f"[PROFILE DEBUG] Generated AVD name {normalized_avd_name} for {sindarin_email}")
+            logger.info(f"Registering {sindarin_email} with AVD {normalized_avd_name}")
 
             # Register this profile to ensure it's in profiles_index
-            logger.info(
-                f"[PROFILE DEBUG] Calling register_profile for {sindarin_email} with AVD {normalized_avd_name}"
-            )
             server.profile_manager.register_profile(sindarin_email, normalized_avd_name)
 
             # Verify it was added correctly
-            if sindarin_email in server.profile_manager.profiles_index:
-                logger.info(f"[PROFILE DEBUG] Successfully registered {sindarin_email} in profiles_index")
-                logger.info(f"[PROFILE DEBUG] Entry: {server.profile_manager.profiles_index[sindarin_email]}")
-            else:
-                logger.error(f"[PROFILE DEBUG] Failed to register {sindarin_email} in profiles_index!")
-                logger.error(
-                    f"[PROFILE DEBUG] Current profile keys: {list(server.profile_manager.profiles_index.keys())}"
-                )
+            if sindarin_email not in server.profile_manager.profiles_index:
+                logger.error(f"Failed to register {sindarin_email} in profiles_index")
         else:
-            logger.info(
-                f"[PROFILE DEBUG] Email {sindarin_email} already in profiles_index: {profiles_index[sindarin_email]}"
-            )
+            logger.info(f"Email {sindarin_email} already registered")
 
         # Now check if this profile exists by looking for an AVD
         avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
-        logger.info(f"[PROFILE DEBUG] Using AVD name {avd_name} for email {sindarin_email}")
 
         # Check if AVD file path exists
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")

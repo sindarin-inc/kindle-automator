@@ -46,7 +46,7 @@ class VNCInstanceManager:
         # Load the profiles index if it exists
         self._load_profiles_index()
 
-        # Load VNC instances
+        # Load VNC instances or create new ones with email-based assignments
         self.load_instances()
 
     def load_instances(self) -> bool:
@@ -195,31 +195,6 @@ class VNCInstanceManager:
             if assigned_profile == email:
                 logger.info(f"Found VNC instance {instance.get('id')} for email {email}")
                 return instance
-
-        # For backward compatibility, try to find by AVD name
-        avd_name = None
-        if email in self.profiles_index:
-            profile_entry = self.profiles_index.get(email)
-            if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                avd_name = profile_entry["avd_name"]
-            elif isinstance(profile_entry, str):
-                avd_name = profile_entry
-
-        if avd_name:
-            logger.info(
-                f"Looking for VNC instance with assigned_profile={avd_name} for email {email} (backward compatibility)"
-            )
-            for instance in self.instances:
-                assigned_profile = instance.get("assigned_profile")
-                if assigned_profile == avd_name:
-                    logger.warning(
-                        f"Found VNC instance {instance.get('id')} using legacy AVD name match {avd_name}"
-                    )
-                    # Update to new approach by changing assigned_profile to email
-                    instance["assigned_profile"] = email
-                    self.save_instances()
-                    logger.info(f"Updated assigned_profile from AVD name {avd_name} to email {email}")
-                    return instance
 
         logger.info(f"No VNC instance found for email {email}")
         return None

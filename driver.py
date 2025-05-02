@@ -61,12 +61,17 @@ class Driver:
                         return specific_device_id
                     except Exception as e:
                         logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
-                        # Continue to regular device search
+                        # Failed to verify specific device - return None instead of falling back to any device
+                        logger.error(f"Requested specific device {specific_device_id} could not be verified")
+                        return None
                 else:
                     logger.warning(f"Specified device ID {specific_device_id} not found or not ready")
-                    # Continue to regular device search if the specific one isn't available
+                    # Do not continue to regular device search if a specific device was requested
+                    # but is not available. This prevents using the wrong device.
+                    logger.error(f"Requested specific device {specific_device_id} was not found or is not ready")
+                    return None
 
-            # Regular device search logic
+            # Only proceed with regular device search if NO specific device was requested
             result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
             for line in result.stdout.splitlines():
                 if "emulator-" in line and "device" in line:
@@ -577,69 +582,43 @@ class Driver:
             if not self.device_id:
                 return False
 
-            # Add debug logging for device ID handling
-            logger.info(f"[DRIVER DEBUG] Attempting to update profile with device_id: {self.device_id}")
-            if self.automator:
-                logger.info("[DRIVER DEBUG] self.automator exists")
-                if hasattr(self.automator, "profile_manager"):
-                    logger.info("[DRIVER DEBUG] profile_manager exists")
+            # Update profile with device ID
+            logger.info(f"Updating profile with device_id: {self.device_id}")
+            if not self.automator:
+                logger.error("Cannot update profile: automator not initialized")
 
-                    # Log the type and available methods of profile_manager for debugging
-                    logger.info(
-                        f"[DRIVER DEBUG] profile_manager type: {type(self.automator.profile_manager).__name__}"
-                    )
-                    profile_manager_methods = [
-                        method
-                        for method in dir(self.automator.profile_manager)
-                        if callable(getattr(self.automator.profile_manager, method))
-                        and not method.startswith("__")
-                    ]
-                    logger.info(f"[DRIVER DEBUG] profile_manager methods: {profile_manager_methods}")
+            elif not hasattr(self.automator, "profile_manager"):
+                logger.error("Cannot update profile: profile_manager not found")
 
-                    # Check if the profile manager can get a current profile
-                    if hasattr(self.automator.profile_manager, "get_current_profile"):
-                        logger.info("[DRIVER DEBUG] get_current_profile method exists")
-                        profile = self.automator.profile_manager.get_current_profile()
-                        logger.info(f"[DRIVER DEBUG] get_current_profile returned: {profile}")
+            elif not hasattr(self.automator.profile_manager, "get_current_profile"):
+                logger.error("Cannot update profile: get_current_profile method not found")
 
-                        if profile:
-                            # Update the current profile with the actual device ID
-                            email = profile.get("email")
-                            avd_name = profile.get("avd_name")
-                            logger.info(
-                                f"[DRIVER DEBUG] Profile details - email: {email}, avd_name: {avd_name}"
-                            )
-
-                            if email and avd_name:
-                                logger.info(
-                                    f"[DRIVER DEBUG] Updating profile for {email} with device ID: {self.device_id}"
-                                )
-
-                                # Use the appropriate method based on what's available
-                                if hasattr(self.automator.profile_manager, "_save_profile_status"):
-                                    logger.info("[DRIVER DEBUG] Using _save_profile_status method")
-                                    self.automator.profile_manager._save_profile_status(
-                                        email, avd_name, self.device_id
-                                    )
-                                elif hasattr(self.automator.profile_manager, "_save_current_profile"):
-                                    logger.info("[DRIVER DEBUG] Using _save_current_profile method")
-                                    self.automator.profile_manager._save_current_profile(
-                                        email, avd_name, self.device_id
-                                    )
-                                else:
-                                    logger.error("[DRIVER DEBUG] No method found to save profile status")
-                            else:
-                                logger.error(
-                                    f"[DRIVER DEBUG] Missing required profile fields: email={email}, avd_name={avd_name}"
-                                )
-                        else:
-                            logger.error("[DRIVER DEBUG] get_current_profile returned None")
-                    else:
-                        logger.error("[DRIVER DEBUG] get_current_profile method not found")
-                else:
-                    logger.error("[DRIVER DEBUG] profile_manager does not exist")
             else:
-                logger.error("[DRIVER DEBUG] self.automator does not exist")
+                profile = self.automator.profile_manager.get_current_profile()
+                if not profile:
+                    logger.error("Cannot update profile: get_current_profile returned None")
+
+                else:
+                    email = profile.get("email")
+                    avd_name = profile.get("avd_name")
+
+                    if not email or not avd_name:
+                        logger.error(f"Missing required profile fields: email={email}, avd_name={avd_name}")
+
+                    else:
+                        logger.info(f"Updating profile for {email} with device ID: {self.device_id}")
+
+                        # Use the appropriate method based on what's available
+                        if hasattr(self.automator.profile_manager, "_save_profile_status"):
+                            self.automator.profile_manager._save_profile_status(
+                                email, avd_name, self.device_id
+                            )
+                        elif hasattr(self.automator.profile_manager, "_save_current_profile"):
+                            self.automator.profile_manager._save_current_profile(
+                                email, avd_name, self.device_id
+                            )
+                        else:
+                            logger.error("No method found to save profile status")
 
             # Check if app is installed
             if not self._is_kindle_installed():
