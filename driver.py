@@ -540,7 +540,6 @@ class Driver:
                     logger.info("Driver not connected - reinitializing")
                     self.driver = None
                 else:
-                    logger.info("Driver already initialized")
                     return True
 
             # Get device ID first, using specific device ID from profile if available

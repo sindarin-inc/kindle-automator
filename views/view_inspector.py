@@ -61,7 +61,10 @@ class ViewInspector:
         if self.automator and hasattr(self.automator, "device_id"):
             self.device_id = self.automator.device_id
             logger.info(f"Setting device_id {self.device_id} from automator in ViewInspector initialization")
+            import traceback
 
+            stack_trace = traceback.format_stack()
+            logger.info("Call stack leading to this point:\n" + "".join(stack_trace))
         # Try other sources for the device_id during initialization
         if not self.device_id and hasattr(self.driver, "session") and self.driver.session:
             session_device_id = self.driver.session.get("deviceId")

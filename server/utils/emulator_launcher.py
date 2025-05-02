@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from server.utils import ansi_colors as ansi
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -436,7 +437,9 @@ class EmulatorLauncher:
                 logger.error(f"Failed to start VNC server for display :{display_num}")
                 return False
 
-            logger.info(f"Started VNC server for display :{display_num}")
+            logger.info(
+                f"Started VNC server for :{display_num}: {ansi.YELLOW}vnc://kindle.sindarin.com:{vnc_port}{ansi.RESET}"
+            )
 
             return True
 

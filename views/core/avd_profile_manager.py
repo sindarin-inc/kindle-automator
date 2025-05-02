@@ -678,7 +678,9 @@ class AVDProfileManager:
             logger.error(f"Error updating style preference: {e}")
             return False
 
-    def switch_profile(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
+    def switch_profile_and_start_emulator(
+        self, email: str, force_new_emulator: bool = False
+    ) -> Tuple[bool, str]:
         """
         Switch to the profile for the given email. If the profile doesn't exist, create a new one.
         With the multi-emulator approach, this method will:

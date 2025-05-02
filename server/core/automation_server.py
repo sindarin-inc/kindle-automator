@@ -160,7 +160,9 @@ class AutomationServer:
                     self.automators[email] = None
 
         # Switch to the profile for this email - this will not stop other emulators
-        success, message = self.profile_manager.switch_profile(email, force_new_emulator=force_new_emulator)
+        success, message = self.profile_manager.switch_profile_and_start_emulator(
+            email, force_new_emulator=force_new_emulator
+        )
         if not success:
             logger.error(f"Failed to switch profile: {message}")
             return False, message
