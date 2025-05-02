@@ -48,8 +48,6 @@ class KindleAutomator:
             return False
 
         self.driver = driver.get_driver()
-        self.driver.automator = self
-
         self.device_id = driver.get_device_id()
 
         # Make sure the driver instance also has a reference to this automator

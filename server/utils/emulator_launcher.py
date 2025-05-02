@@ -60,22 +60,6 @@ class EmulatorLauncher:
             if os.path.exists(self.vnc_instance_map_path):
                 with open(self.vnc_instance_map_path, "r") as f:
                     self.vnc_instances = json.load(f)
-
-                # Check if the existing instances have emulator_port - migrate if needed
-                need_migration = False
-                for instance in self.vnc_instances["instances"]:
-                    if "emulator_port" not in instance:
-                        need_migration = True
-                        break
-
-                if need_migration:
-                    logger.info("Migrating VNC instance mapping to include emulator ports")
-                    for i, instance in enumerate(self.vnc_instances["instances"]):
-                        # Add emulator port (5554, 5556, 5558, etc.) - each uses 2 consecutive ports
-                        instance["emulator_port"] = 5554 + (i * 2)
-                    self._save_vnc_instance_map()
-
-                logger.info(f"Loaded VNC instance mapping from {self.vnc_instance_map_path}")
             else:
                 # Create default instances with unique emulator ports
                 logger.info(f"Creating default VNC instance mapping at {self.vnc_instance_map_path}")

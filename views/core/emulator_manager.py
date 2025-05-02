@@ -26,7 +26,6 @@ class EmulatorManager:
         from server.utils.emulator_launcher import EmulatorLauncher
 
         self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
-        logger.info("Using Python-based emulator launcher")
 
     def is_emulator_running(self) -> bool:
         """Check if an emulator is currently running."""

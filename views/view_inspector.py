@@ -55,11 +55,7 @@ class ViewInspector:
         self.app_activity = "com.amazon.kindle.UpgradePage"
         # Initialize device_id to None - will be set properly later
         self.device_id = None
-
-        # Get automator reference from driver if available
-        self.automator = getattr(driver, "_driver", None)
-        if self.automator:
-            self.automator = getattr(self.automator, "automator", None)
+        self.automator = self.driver.automator
 
         # Try to get device_id from the driver or automator
         if self.automator and hasattr(self.automator, "device_id"):
@@ -74,10 +70,6 @@ class ViewInspector:
                 logger.info(
                     f"Setting device_id {self.device_id} from driver session in ViewInspector initialization"
                 )
-
-    def set_driver(self, driver):
-        """Sets the Appium driver instance"""
-        self.driver = driver
 
     def ensure_app_foreground(self):
         """Ensures the Kindle app is in the foreground"""
