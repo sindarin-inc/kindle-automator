@@ -87,7 +87,6 @@ class VNCInstanceManager:
                 "vnc_port": 5900 + i,
                 "appium_port": 4723 + i,
                 "emulator_id": None,  # Will be populated when emulator connects
-                "launcher": f"/usr/local/bin/vnc-emulator-launcher-{i}.sh",
                 "assigned_profile": None,
             }
             for i in range(1, 9)  # Create 8 default instances
@@ -298,21 +297,6 @@ class VNCInstanceManager:
         instance = self.get_instance_for_profile(email)
         if instance:
             return instance["display"]
-        return None
-
-    def get_launcher_script(self, email: str) -> Optional[str]:
-        """
-        Get the emulator launcher script for a profile's assigned instance.
-
-        Args:
-            email: Email address of the profile
-
-        Returns:
-            Optional[str]: Path to the launcher script or None if no instance is assigned
-        """
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            return instance["launcher"]
         return None
 
     def get_appium_port(self, email: str) -> Optional[int]:

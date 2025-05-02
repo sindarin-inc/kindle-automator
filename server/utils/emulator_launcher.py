@@ -328,8 +328,6 @@ class EmulatorLauncher:
                 with open(f"/var/log/xvfb-{display_num}.log", "w") as f:
                     xvfb_process = subprocess.Popen(xvfb_cmd, stdout=f, stderr=f)
 
-                time.sleep(2)
-
                 # Verify Xvfb is running
                 xvfb_check = subprocess.run(
                     ["pgrep", "-f", f"Xvfb :{display_num}"], capture_output=True, text=True
@@ -337,117 +335,122 @@ class EmulatorLauncher:
                 if xvfb_check.returncode != 0:
                     logger.error(f"Failed to start Xvfb for display :{display_num}")
                     return False
+                else:
+                    logger.info(f"Started Xvfb for display :{display_num}")
 
             # Check if x11vnc is running for this display
             vnc_check = subprocess.run(
                 ["pgrep", "-f", f"x11vnc.*:{display_num}"], capture_output=True, text=True
             )
 
-            if vnc_check.returncode != 0:
-                # Start VNC directly
-                # Kill any existing VNC process for this display
-                vnc_port = 5900 + display_num
-                subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
+            if vnc_check.returncode == 0:
+                logger.error(f"VNC server already running for display :{display_num}, killing")
 
-                # Set up environment
-                env = os.environ.copy()
-                env["DISPLAY"] = f":{display_num}"
+            # Start VNC directly
+            # Kill any existing VNC process for this display
+            vnc_port = 5900 + display_num
+            subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
 
-                # First find the Kindle app window ID using xwininfo
-                try:
-                    # Wait longer for the emulator window to appear
-                    time.sleep(5)
+            # Set up environment
+            env = os.environ.copy()
+            env["DISPLAY"] = f":{display_num}"
 
-                    # Use xwininfo with -tree to find the emulator window
-                    list_windows = subprocess.run(
-                        ["xwininfo", "-tree", "-root", "-display", f":{display_num}"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        env=env,
-                        timeout=5,
-                    )
+            # First find the Kindle app window ID using xwininfo
+            try:
+                # Wait longer for the emulator window to appear
+                # time.sleep(5)
 
-                    window_id = None
+                # Use xwininfo with -tree to find the emulator window
+                list_windows = subprocess.run(
+                    ["xwininfo", "-tree", "-root", "-display", f":{display_num}"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    env=env,
+                    timeout=5,
+                )
 
-                    if list_windows.returncode == 0:
-                        # Look for the Android Emulator window with the Kindle AVD
-                        window_lines = list_windows.stdout.splitlines()
-                        emulator_window_line = None
+                window_id = None
 
-                        # First, look for an emulator window with KindleAVD in the name
-                        for line in window_lines:
-                            if "Android Emulator" in line and "KindleAVD" in line:
-                                emulator_window_line = line
-                                break
-                        else:
-                            logger.warning(
-                                f"Could not find any matching window on display :{display_num}, using full display"
-                            )
-                            window_id = None
+                if list_windows.returncode == 0:
+                    # Look for the Android Emulator window with the Kindle AVD
+                    window_lines = list_windows.stdout.splitlines()
+                    emulator_window_line = None
 
-                        # Extract window ID if we found a matching window
-                        if emulator_window_line:
-                            # The window ID is at the beginning of the line, like "0x400007"
-                            parts = emulator_window_line.split()
-                            if parts and parts[0].startswith("0x"):
-                                window_id = parts[0]
-                                # logger.info(
-                                #     f"Found emulator window ID: {window_id} from line: {emulator_window_line}"
-                                # )
-
-                        # Log the full list of windows for debugging
-                        # logger.info(f"Available windows on display :{display_num}:\n{list_windows.stdout}")
-
-                    # Just use the window_id we found
-                    if not window_id:
+                    # First, look for an emulator window with KindleAVD in the name
+                    for line in window_lines:
+                        if "Android Emulator" in line and "KindleAVD" in line:
+                            emulator_window_line = line
+                            break
+                    else:
                         logger.warning(
                             f"Could not find any matching window on display :{display_num}, using full display"
                         )
+                        window_id = None
 
-                except Exception as e:
-                    logger.warning(f"Error finding Kindle window ID: {e}, using full display")
-                    window_id = None
+                    # Extract window ID if we found a matching window
+                    if emulator_window_line:
+                        # The window ID is at the beginning of the line, like "0x400007"
+                        parts = emulator_window_line.split()
+                        if parts and parts[0].startswith("0x"):
+                            window_id = parts[0]
+                            # logger.info(
+                            #     f"Found emulator window ID: {window_id} from line: {emulator_window_line}"
+                            # )
 
-                # Start x11vnc
-                vnc_cmd = [
-                    "/usr/bin/x11vnc",
-                    "-display",
-                    f":{display_num}",
-                    "-forever",
-                    "-shared",
-                    "-rfbport",
-                    str(vnc_port),
-                    "-rfbauth",
-                    "/opt/keys/vnc.pass",  # VNC password file created by Ansible
-                    "-cursor",
-                    "arrow",
-                    "-noxdamage",
-                    "-noxfixes",
-                    "-noipv6",
-                    "-scale",
-                    "1:1",
-                    "-desktop",
-                    f"Kindle Emulator (Display {display_num})",
-                    "-o",
-                    f"/var/log/x11vnc-{display_num}.log",
-                    "-bg",
-                ]
+                    # Log the full list of windows for debugging
+                    # logger.info(f"Available windows on display :{display_num}:\n{list_windows.stdout}")
 
-                # Add -id flag if we found a window ID
-                if window_id:
-                    vnc_cmd.extend(["-id", window_id])
+                # Just use the window_id we found
+                if not window_id:
+                    logger.warning(
+                        f"Could not find any matching window on display :{display_num}, using full display"
+                    )
 
-                subprocess.run(vnc_cmd, env=env, check=False, timeout=5)
-                time.sleep(2)
+            except Exception as e:
+                logger.warning(f"Error finding Kindle window ID: {e}, using full display")
+                window_id = None
 
-                # Verify VNC is running
-                vnc_check = subprocess.run(
-                    ["pgrep", "-f", f"x11vnc.*rfbport {vnc_port}"], capture_output=True, text=True
-                )
-                if vnc_check.returncode != 0:
-                    logger.error(f"Failed to start VNC server for display :{display_num}")
-                    return False
+            # Start x11vnc
+            vnc_cmd = [
+                "/usr/bin/x11vnc",
+                "-display",
+                f":{display_num}",
+                "-forever",
+                "-shared",
+                "-rfbport",
+                str(vnc_port),
+                "-rfbauth",
+                "/opt/keys/vnc.pass",  # VNC password file created by Ansible
+                "-cursor",
+                "arrow",
+                "-noxdamage",
+                "-noxfixes",
+                "-noipv6",
+                "-scale",
+                "1:1",
+                "-desktop",
+                f"Kindle Emulator (Display {display_num})",
+                "-o",
+                f"/var/log/x11vnc-{display_num}.log",
+                "-bg",
+            ]
+
+            # Add -id flag if we found a window ID
+            if window_id:
+                vnc_cmd.extend(["-id", window_id])
+
+            subprocess.run(vnc_cmd, env=env, check=False, timeout=5)
+
+            # Verify VNC is running
+            vnc_check = subprocess.run(
+                ["pgrep", "-f", f"x11vnc.*rfbport {vnc_port}"], capture_output=True, text=True
+            )
+            if vnc_check.returncode != 0:
+                logger.error(f"Failed to start VNC server for display :{display_num}")
+                return False
+
+            logger.info(f"Started VNC server for display :{display_num}")
 
             return True
 

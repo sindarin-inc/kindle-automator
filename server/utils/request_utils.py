@@ -41,9 +41,7 @@ def get_sindarin_email() -> Optional[str]:
     return sindarin_email
 
 
-def get_formatted_vnc_url(
-    sindarin_email: Optional[str] = None, view_type: Optional[str] = None, emulator_id: Optional[str] = None
-) -> Optional[str]:
+def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]:
     """
     Format the VNC URL with the given sindarin_email.
     Returns a VNC protocol URL (vnc://hostname:port).
@@ -63,7 +61,6 @@ def get_formatted_vnc_url(
     from urllib.parse import urlparse
 
     from server.utils.vnc_instance_manager import VNCInstanceManager
-    from views.core.device_discovery import DeviceDiscovery
 
     # Extract hostname from the base URL (removing any port number)
     hostname = urlparse(VNC_BASE_URL).netloc.split(":")[0]
@@ -79,99 +76,17 @@ def get_formatted_vnc_url(
         logger.warning("No email provided for VNC URL, cannot determine port")
         return None
 
-    logger.info(f"Looking up VNC URL for sindarin_email={sindarin_email}, emulator_id={emulator_id}")
-
     try:
         # Use the VNCInstanceManager to get the port
         vnc_manager = VNCInstanceManager()
         android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         avd_dir = os.path.join(android_home, "avd")
-        device_discovery = DeviceDiscovery(android_home, avd_dir)
-
-        # If emulator_id is provided, determine the correct AVD from it
-        if emulator_id:
-            # First log the email we're using
-            logger.info(f"Finding AVD name for emulator_id={emulator_id} for email {sindarin_email}")
-
-            # Use device discovery to map running emulators
-            running_emulators = device_discovery.map_running_emulators()
-            # Invert the mapping to get AVD name from emulator ID
-            emulator_to_avd = {emu_id: avd_name for avd_name, emu_id in running_emulators.items()}
-
-            if emulator_id in emulator_to_avd:
-                avd_name = emulator_to_avd[emulator_id]
-                logger.info(f"Found AVD name {avd_name} for emulator_id {emulator_id}")
-
-                # Verify this AVD is associated with the requested email
-                is_running, found_emulator_id, found_avd = device_discovery.find_running_emulator_for_email(
-                    sindarin_email
-                )
-                if is_running and found_avd == avd_name:
-                    logger.info(f"Confirmed AVD {avd_name} belongs to {sindarin_email}")
-                else:
-                    logger.warning(
-                        f"AVD {avd_name} for emulator_id {emulator_id} doesn't match the expected AVD "
-                        f"for {sindarin_email} which is {found_avd}"
-                    )
-                    # Continue anyway - we trust the emulator_id parameter
-            else:
-                logger.warning(f"Emulator ID {emulator_id} not found in running emulators")
-                # Fall back to email-based lookup
-
-        # Check if this email has an AVD mapping
-        avd_id = vnc_manager._get_avd_id_for_email(sindarin_email)
-        logger.info(f"AVD ID for email {sindarin_email}: {avd_id}")
 
         # Get the VNC port using the email
         vnc_port = vnc_manager.get_vnc_port(sindarin_email)
 
         # If port is found, verify VNC server is running and restart if needed
         if vnc_port:
-            # Skip VNC checks on macOS
-            if platform.system() != "Darwin":
-                # Get the display number for this profile
-                display_num = None
-
-                # Find instance using the email, which should be the primary identifier
-                for instance in vnc_manager.instances:
-                    if instance.get("assigned_profile") == sindarin_email:
-                        display_num = instance.get("display")
-                        break
-
-                if not display_num:
-                    # We have an email but can't find a matching instance - this is unexpected
-                    logger.error(f"No VNC instance found with assigned_profile={sindarin_email}")
-                    logger.error(
-                        f"Available profiles: {[i.get('assigned_profile') for i in vnc_manager.instances]}"
-                    )
-
-                # If we found a display number, ensure VNC is running
-                if display_num:
-                    logger.info(f"Checking if VNC server is running for display :{display_num}")
-
-                    # Get the emulator launcher to use existing VNC restart functionality
-                    from server.utils.emulator_launcher import EmulatorLauncher
-
-                    try:
-                        # Initialize the emulator launcher
-                        emulator_launcher = EmulatorLauncher(
-                            android_home=android_home, avd_dir=avd_dir, host_arch=platform.processor()
-                        )
-
-                        # Use the existing _ensure_vnc_running method
-                        vnc_running = emulator_launcher._ensure_vnc_running(display_num)
-
-                        if vnc_running:
-                            logger.info(f"VNC server for display :{display_num} is running properly")
-                        else:
-                            logger.error(f"Failed to ensure VNC server is running for display :{display_num}")
-                    except Exception as e:
-                        logger.error(f"Error ensuring VNC server is running: {e}")
-                else:
-                    logger.warning(
-                        f"Could not determine display number for email {sindarin_email}, vnc_manager.instances: {vnc_manager.instances}"
-                    )
-
             # Return the VNC URL
             vnc_url = f"vnc://{hostname}:{vnc_port}"
             logger.info(f"VNC URL for {sindarin_email}: {vnc_url}")

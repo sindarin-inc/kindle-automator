@@ -1049,36 +1049,6 @@ class AuthResource(Resource):
                 server.automator.cleanup()
                 server.automator = None
 
-        # Initialize variables for Python launcher integration
-        emulator_id = None
-        display_num = None
-        using_python_launcher = False
-
-        # Check if we can use the Python launcher
-        if hasattr(server, "automators") and sindarin_email in server.automators:
-            automator = server.automators.get(sindarin_email)
-            if (
-                automator
-                and hasattr(automator, "emulator_manager")
-                and hasattr(automator.emulator_manager, "use_python_launcher")
-            ):
-                using_python_launcher = automator.emulator_manager.use_python_launcher
-
-                if using_python_launcher:
-                    logger.info(f"Using Python launcher for {sindarin_email}")
-                    # Check if we have a running emulator for this email
-                    if hasattr(automator.emulator_manager, "emulator_launcher"):
-                        (
-                            emulator_id,
-                            display_num,
-                        ) = automator.emulator_manager.emulator_launcher.get_running_emulator(sindarin_email)
-                        if emulator_id:
-                            logger.info(
-                                f"Found running emulator for {sindarin_email}: {emulator_id} on display :{display_num}"
-                            )
-                        else:
-                            logger.info(f"No running emulator found for {sindarin_email}, will launch one")
-
         # Switch to the profile for this email or create a new one
         # We don't force a new emulator - let the profile manager decide if one is needed
         # We use sindarin_email here for profile identification
@@ -1179,17 +1149,6 @@ class AuthResource(Resource):
         # Always use manual login via VNC (no automation of Amazon credentials)
         # Before getting VNC URL, ensure that VNC server is running
 
-        # Ensure VNC is running for this display if using Python launcher
-        if using_python_launcher and display_num is not None:
-            try:
-                logger.info(f"Ensuring VNC server is running for display {display_num}")
-                if hasattr(automator.emulator_manager, "emulator_launcher"):
-                    # Call _ensure_vnc_running to start Xvfb and x11vnc if needed
-                    automator.emulator_manager.emulator_launcher._ensure_vnc_running(display_num)
-                    logger.info(f"VNC server check/start completed for display {display_num}")
-            except Exception as e:
-                logger.error(f"Error starting VNC server: {e}")
-
         # Handle restart_vnc parameter if set - force kill existing VNC process
         if restart_vnc:
             import platform
@@ -1235,7 +1194,7 @@ class AuthResource(Resource):
         # Get the formatted VNC URL with the profile email and emulator ID
         # emulator_id is already available from above code
         # This will also start the VNC server if it's not running
-        formatted_vnc_url = get_formatted_vnc_url(sindarin_email, emulator_id=emulator_id)
+        formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
 
         # Prepare manual auth response with details from auth_status
         current_state = automator.state_machine.current_state
@@ -1262,12 +1221,6 @@ class AuthResource(Resource):
             response_data["message"] = auth_status["message"]
 
         # Add Python launcher information to the response if available
-        if using_python_launcher:
-            response_data["using_python_launcher"] = True
-            if emulator_id:
-                response_data["emulator_id"] = emulator_id
-            if display_num:
-                response_data["display_num"] = display_num
 
         # Log the final response in detail
         logger.info(f"Returning auth response: {response_data}")
