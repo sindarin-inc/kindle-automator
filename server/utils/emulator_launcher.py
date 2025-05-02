@@ -121,6 +121,7 @@ class EmulatorLauncher:
                 return display_num
 
             # No display found
+            logger.warning(f"No display found for {email}")
             return None
         except Exception as e:
             logger.error(f"Error getting X display for {email}: {e}")
@@ -142,6 +143,7 @@ class EmulatorLauncher:
                     return instance["emulator_port"]
 
             # No port found
+            logger.warning(f"No emulator port found for {email}")
             return None
         except Exception as e:
             logger.error(f"Error getting emulator port for {email}: {e}")
@@ -184,13 +186,6 @@ class EmulatorLauncher:
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
                     logger.info(f"Profile {email} already assigned to display :{instance['display']}")
-                    return instance["display"]
-                # Also check for legacy email assignment for backward compatibility
-                elif instance["assigned_profile"] == email:
-                    # Update to use AVD name instead
-                    logger.info(f"Found legacy email assignment for {email}, updating to profile {email}")
-                    instance["assigned_profile"] = email
-                    self._save_vnc_instance_map()
                     return instance["display"]
 
             # Find an available instance
@@ -495,7 +490,6 @@ class EmulatorLauncher:
                 return True, emulator_id, display_num
 
             # Get assigned display and emulator port for this profile
-            # We still need to use email for backward compatibility with VNC instance manager
             display_num = self.get_x_display(email)
             emulator_port = self.get_emulator_port(email)
 
@@ -506,7 +500,9 @@ class EmulatorLauncher:
                     display_num = self.get_x_display(email)
                     emulator_port = self.get_emulator_port(email)
                     if not display_num or not emulator_port:
-                        logger.error(f"Failed to get display or port for {email} after assignment")
+                        logger.error(
+                            f"Failed to get display or port for {email} after assignment: {display_num} {emulator_port}"
+                        )
                         return False, None, None
                 else:
                     logger.error(f"Failed to assign display for {email} - AVD {avd_name}")

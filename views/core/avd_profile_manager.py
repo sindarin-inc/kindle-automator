@@ -633,14 +633,14 @@ class AVDProfileManager:
         else:
             return self.emulator_manager.stop_emulator()
 
-    def start_emulator(self, avd_name: str) -> bool:
+    def start_emulator(self) -> bool:
         """
         Start the specified AVD.
 
         Returns:
             bool: True if emulator started successfully, False otherwise
         """
-        return self.emulator_manager.start_emulator(avd_name)
+        return self.emulator_manager.start_emulator_with_retries()
 
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
         """
@@ -843,7 +843,7 @@ class AVDProfileManager:
             logger.info(f"Created new AVD {avd_name} for {email}")
 
         # Start the emulator
-        if self.start_emulator(avd_name):
+        if self.start_emulator():
             # We need to get the emulator ID for the started emulator
             started_emulator_id = self.get_emulator_id_for_avd(avd_name)
             self._save_profile_status(email, avd_name, started_emulator_id)

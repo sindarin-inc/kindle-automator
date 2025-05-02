@@ -141,6 +141,11 @@ server:
 	@echo "Starting Flask server..."
 	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server
 
+# Start an interactive shell with the environment setup
+shell:
+	@echo "Starting interactive shell..."
+	@PYTHONPATH=$(shell pwd) python shell.py
+
 # Test initialization endpoint
 test-init:
 	@echo "Testing initialization endpoint..."

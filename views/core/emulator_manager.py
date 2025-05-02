@@ -319,7 +319,7 @@ class EmulatorManager:
             logger.error(f"Error stopping emulator: {e}")
             return False
 
-    def start_emulator(self, avd_name: str) -> bool:
+    def start_emulator_with_retries(self) -> bool:
         """
         Start the specified AVD in headless mode.
 
@@ -327,21 +327,13 @@ class EmulatorManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            # First check if the AVD actually exists
-            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-            if not os.path.exists(avd_path):
-                logger.error(f"Cannot start emulator: AVD {avd_name} does not exist at {avd_path}")
-                return False
-
             email = get_sindarin_email()
 
             # Use the Python-based launcher
-            success, emulator_id, display_num = self.emulator_launcher.launch_emulator(avd_name, email)
+            success, emulator_id, display_num = self.emulator_launcher.launch_emulator(email)
 
             if success:
-                logger.info(
-                    f"Emulator {emulator_id} launched successfully for {avd_name} on display :{display_num}"
-                )
+                logger.info(f"Emulator {emulator_id} launched successfully on display :{display_num}")
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
                 logger.info("Waiting for emulator to boot...")
@@ -370,7 +362,7 @@ class EmulatorManager:
                 )
                 return False
             else:
-                logger.error(f"Failed to launch emulator for {avd_name}")
+                logger.error(f"Failed to launch emulator")
                 return False
 
         except Exception as e:

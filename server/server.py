@@ -1150,18 +1150,16 @@ class AuthResource(Resource):
                 and not emulator_id
                 and hasattr(automator.emulator_manager, "emulator_launcher")
             ):
-                avd_name = automator.avd_name if hasattr(automator, "avd_name") else None
-                if avd_name:
-                    logger.info(f"Launching emulator for {sindarin_email} with AVD {avd_name}")
-                    (
-                        success,
-                        emulator_id,
-                        display_num,
-                    ) = automator.emulator_manager.emulator_launcher.launch_emulator(avd_name, sindarin_email)
-                    if success:
-                        logger.info(f"Successfully launched emulator {emulator_id} on display :{display_num}")
-                    else:
-                        logger.error(f"Failed to launch emulator for {sindarin_email}")
+                logger.info(f"Launching emulator for {sindarin_email}")
+                (
+                    success,
+                    emulator_id,
+                    display_num,
+                ) = automator.emulator_manager.emulator_launcher.launch_emulator(sindarin_email)
+                if success:
+                    logger.info(f"Successfully launched emulator {emulator_id} on display :{display_num}")
+                else:
+                    logger.error(f"Failed to launch emulator for {sindarin_email}")
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
