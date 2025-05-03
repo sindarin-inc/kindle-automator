@@ -54,6 +54,7 @@ class Driver:
                             check=True,
                             timeout=5,
                         )
+                        logger.info(f"Verified specific device {specific_device_id}")
                         return specific_device_id
                     except Exception as e:
                         logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
@@ -961,7 +962,7 @@ class Driver:
             logger.error(f"Error initializing driver: {e}")
             return False
 
-    def get_driver(self):
+    def get_appium_driver_instance(self):
         """Get the Appium driver instance"""
         return self.driver
 

@@ -54,25 +54,7 @@ class ViewInspector:
         self.app_package = "com.amazon.kindle"
         self.app_activity = "com.amazon.kindle.UpgradePage"
         # Initialize device_id to None - will be set properly later
-        self.device_id = None
         self.automator = self.driver.automator
-
-        # Try to get device_id from the driver or automator
-        if self.automator and hasattr(self.automator, "device_id"):
-            self.device_id = self.automator.device_id
-            logger.info(f"Setting device_id {self.device_id} from automator in ViewInspector initialization")
-            import traceback
-
-            stack_trace = traceback.format_stack()
-            logger.info("Call stack leading to this point:\n" + "".join(stack_trace))
-        # Try other sources for the device_id during initialization
-        if not self.device_id and hasattr(self.driver, "session") and self.driver.session:
-            session_device_id = self.driver.session.get("deviceId")
-            if session_device_id:
-                self.device_id = session_device_id
-                logger.info(
-                    f"Setting device_id {self.device_id} from driver session in ViewInspector initialization"
-                )
 
     def ensure_app_foreground(self):
         """Ensures the Kindle app is in the foreground"""
@@ -123,8 +105,6 @@ class ViewInspector:
                         # If only one device is available, use it
                         device_id = available_devices[0]
                         logger.info(f"Using the only available device: {device_id}")
-                        # Store for future use
-                        self.device_id = device_id
                 except Exception as e:
                     logger.warning(f"Error checking for devices: {e}")
 
@@ -137,10 +117,8 @@ class ViewInspector:
             cmd = ["adb"]
             if device_id:
                 cmd.extend(["-s", device_id])
-                # Store this device_id for future use
-                self.device_id = device_id
             cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
-
+            logger.info(f"Running command: {cmd}")
             # Run the command but don't check for errors - sometimes the exit code is 1
             # even when the app launches successfully
             result = subprocess.run(

@@ -49,7 +49,7 @@ class KindleAutomator:
             logger.error("Failed to initialize driver")
             return False
 
-        self.driver = driver.get_driver()
+        self.driver = driver.get_appium_driver_instance()
 
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it
@@ -99,14 +99,15 @@ class KindleAutomator:
             ):
                 logger.warning("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
-                    logger.info("Successfully launched Kindle app after initialization")
+                    logger.info(
+                        f"Successfully launched Kindle app after initialization, driver: {self.driver}, device_id: {self.device_id}"
+                    )
 
                     # Verify we're back in the app
                     current_activity = self.driver.current_activity
                     logger.info(f"New current activity after relaunch: {current_activity}")
                     if not (
-                        current_activity.startswith("com.amazon.kindle")
-                        or current_activity.startswith("com.amazon.kcp")
+                        current_activity.startswith("com.amazon")
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
