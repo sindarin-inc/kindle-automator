@@ -93,8 +93,7 @@ class KindleAutomator:
             # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
             # Also accept the Google Play review dialog which can appear over the Kindle app
             if not (
-                current_activity.startswith("com.amazon.kindle")
-                or current_activity.startswith("com.amazon.kcp")
+                current_activity.startswith("com.amazon")
                 or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
             ):
                 logger.warning("App is not in foreground after initialization, trying to launch it")
@@ -240,10 +239,7 @@ class KindleAutomator:
                     current_activity = self.driver.current_activity
                     logger.info(f"Current activity check: {current_activity}")
                     # If we're not in the Kindle app, try to relaunch it
-                    if not (
-                        current_activity.startswith("com.amazon.kindle")
-                        or current_activity.startswith("com.amazon.kcp")
-                    ):
+                    if not current_activity.startswith("com.amazon"):
                         logger.warning("App is not in Kindle foreground, trying to relaunch")
                         if hasattr(self.state_machine, "view_inspector") and hasattr(
                             self.state_machine.view_inspector, "ensure_app_foreground"

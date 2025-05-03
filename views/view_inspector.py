@@ -146,8 +146,7 @@ class ViewInspector:
                 # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                 # Also handle the Google Play review dialog which can appear over the Kindle app
                 if (
-                    current_activity.startswith("com.amazon.kindle")
-                    or current_activity.startswith("com.amazon.kcp")
+                    current_activity.startswith("com.amazon")
                     or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                 ):
                     logger.info(

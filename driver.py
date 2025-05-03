@@ -646,9 +646,7 @@ class Driver:
                     options.device_name = self.device_id
                     options.app_package = "com.amazon.kindle"
                     options.app_activity = app_activity
-                    options.app_wait_activity = (
-                        "com.amazon.kindle.*,com.amazon.kcp.*"  # Add com.amazon.kcp.* activities
-                    )
+                    options.app_wait_activity = "com.amazon.*"
                     options.no_reset = True
                     options.auto_grant_permissions = True
                     options.enable_multi_windows = True
