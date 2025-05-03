@@ -313,24 +313,26 @@ class AuthenticationHandler:
                             logger.warning(f"Emulator not ready for {email}, may need to be restarted")
                     except Exception as e:
                         logger.error(f"Error checking emulator readiness: {e}")
-                
+
                 # Tap the email address input field and then hide the keyboard
                 try:
                     for strategy, locator in EMAIL_FIELD_STRATEGIES:
                         try:
                             email_field = self.driver.find_element(strategy, locator)
                             if email_field and email_field.is_displayed():
-                                logger.info(f"Found email field with strategy: {strategy}={locator}, tapping it")
+                                logger.info(
+                                    f"Found email field with strategy: {strategy}={locator}, tapping it"
+                                )
                                 email_field.click()
                                 logger.info("Successfully tapped the email input field")
-                                
+
                                 # Hide the keyboard after tapping
                                 try:
                                     self.driver.hide_keyboard()
                                     logger.info("Successfully hid the keyboard")
                                 except Exception as hide_err:
                                     logger.warning(f"Could not hide keyboard: {hide_err}")
-                                
+
                                 break
                         except Exception as tap_err:
                             logger.debug(f"Error tapping email field with {strategy}={locator}: {tap_err}")
@@ -413,24 +415,26 @@ class AuthenticationHandler:
                         try:
                             email_field = self.driver.find_element(strategy, locator)
                             if email_field and email_field.is_displayed():
-                                logger.info(f"Found email field with strategy: {strategy}={locator}, tapping it")
+                                logger.info(
+                                    f"Found email field with strategy: {strategy}={locator}, tapping it"
+                                )
                                 email_field.click()
                                 logger.info("Successfully tapped the email input field")
-                                
+
                                 # Hide the keyboard after tapping
                                 try:
                                     self.driver.hide_keyboard()
                                     logger.info("Successfully hid the keyboard")
                                 except Exception as hide_err:
                                     logger.warning(f"Could not hide keyboard: {hide_err}")
-                                
+
                                 break
                         except Exception as tap_err:
                             logger.debug(f"Error tapping email field with {strategy}={locator}: {tap_err}")
                             continue
                 except Exception as e:
                     logger.error(f"Error tapping email field: {e}")
-                
+
                 # Always require manual login
                 return {
                     "state": "SIGN_IN",
@@ -488,27 +492,31 @@ class AuthenticationHandler:
                 # Handle based on the state we're now in
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to SIGN_IN state")
-                    
+
                     # Tap the email address input field and then hide the keyboard
                     try:
                         for strategy, locator in EMAIL_FIELD_STRATEGIES:
                             try:
                                 email_field = self.driver.find_element(strategy, locator)
                                 if email_field and email_field.is_displayed():
-                                    logger.info(f"Found email field with strategy: {strategy}={locator}, tapping it")
+                                    logger.info(
+                                        f"Found email field with strategy: {strategy}={locator}, tapping it"
+                                    )
                                     email_field.click()
                                     logger.info("Successfully tapped the email input field")
-                                    
+
                                     # Hide the keyboard after tapping
                                     try:
                                         self.driver.hide_keyboard()
                                         logger.info("Successfully hid the keyboard")
                                     except Exception as hide_err:
                                         logger.warning(f"Could not hide keyboard: {hide_err}")
-                                    
+
                                     break
                             except Exception as tap_err:
-                                logger.debug(f"Error tapping email field with {strategy}={locator}: {tap_err}")
+                                logger.debug(
+                                    f"Error tapping email field with {strategy}={locator}: {tap_err}"
+                                )
                                 continue
                     except Exception as e:
                         logger.error(f"Error tapping email field: {e}")
@@ -1073,14 +1081,14 @@ class AuthenticationHandler:
             for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
-                    
+
                     # If we're on the password screen, tap the input and hide keyboard
                     try:
                         if element and element.is_displayed():
                             logger.info(f"Found password field, tapping it")
                             element.click()
                             logger.info("Successfully tapped the password input field")
-                            
+
                             # Hide the keyboard after tapping
                             try:
                                 self.driver.hide_keyboard()
@@ -1089,7 +1097,7 @@ class AuthenticationHandler:
                                 logger.warning(f"Could not hide keyboard for password field: {hide_err}")
                     except Exception as tap_err:
                         logger.debug(f"Error interacting with password field: {tap_err}")
-                    
+
                     return True
                 except:
                     continue
@@ -1250,7 +1258,7 @@ class AuthenticationHandler:
                 captcha_input = self.driver.find_element(AppiumBy.CLASS_NAME, "android.widget.EditText")
                 captcha_input.clear()
                 captcha_input.send_keys(self.captcha_solution)
-                
+
                 # Hide the keyboard after entering captcha
                 try:
                     self.driver.hide_keyboard()

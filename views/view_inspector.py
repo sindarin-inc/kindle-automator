@@ -134,16 +134,14 @@ class ViewInspector:
             # Wait for the app to initialize with polling instead of fixed sleep
             logger.info("Waiting for Kindle app to initialize (max 4 seconds)...")
             start_time = time.time()
-            max_wait_time = 4  # 4 seconds max wait time
+            max_wait_time = 10  # 10 seconds max wait time
             poll_interval = 0.2  # 200ms between checks
             app_ready = False
 
             while time.time() - start_time < max_wait_time:
                 try:
                     current_activity = self.driver.current_activity
-                    logger.info(
-                        f"Current activity is: {self.driver} {self.driver.device_id} {current_activity}"
-                    )
+                    logger.info(f"Current activity is: {self.driver} {current_activity}")
 
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                     # Also handle the Google Play review dialog which can appear over the Kindle app
