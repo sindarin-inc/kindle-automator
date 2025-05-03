@@ -60,11 +60,8 @@ class ViewInspector:
         """Ensures the Kindle app is in the foreground"""
         try:
             # Get device ID through multiple methods to ensure we have one
-            device_id = None
-
-            sindarin_email = get_sindarin_email()
-
             # Get the emulator ID for this email if possible
+            sindarin_email = get_sindarin_email()
             device_id = self.automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
 
             logger.info(f"Bringing {self.app_package} to foreground using device_id={device_id}...")
@@ -133,58 +130,75 @@ class ViewInspector:
                 logger.warning(f"App launch command returned non-zero: {result.returncode}")
                 logger.warning(f"Stdout: {result.stdout.strip()}")
                 logger.warning(f"Stderr: {result.stderr.strip()}")
-            else:
-                logger.info(f"App launch command result: {result.stdout.strip()}")
 
-            # Give the app more time to fully initialize
-            time.sleep(4)  # Increased to 4s to ensure app has time to launch
+            # Wait for the app to initialize with polling instead of fixed sleep
+            logger.info("Waiting for Kindle app to initialize (max 4 seconds)...")
+            start_time = time.time()
+            max_wait_time = 4  # 4 seconds max wait time
+            poll_interval = 0.2  # 200ms between checks
+            app_ready = False
 
-            # Verify app is now in foreground by checking current activity
-            try:
-                current_activity = self.driver.current_activity
-                logger.info(f"After launch, current activity is: {current_activity}")
-                # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
-                # Also handle the Google Play review dialog which can appear over the Kindle app
-                if (
-                    current_activity.startswith("com.amazon")
-                    or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
-                ):
+            while time.time() - start_time < max_wait_time:
+                try:
+                    current_activity = self.driver.current_activity
                     logger.info(
-                        f"Successfully verified Kindle app is in foreground or has overlay dialog: {current_activity}"
+                        f"Current activity is: {self.driver} {self.driver.device_id} {current_activity}"
                     )
-                    # Try to dismiss the Google Play review dialog if it's showing
-                    if current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity":
-                        logger.info("Attempting to dismiss Google Play review dialog...")
-                        try:
-                            # Try various methods to dismiss the dialog
-                            # Method 1: Press back button
-                            self.driver.press_keycode(4)  # Android back key
-                            time.sleep(1)
 
-                            # Method 2: Try to find and click close/cancel buttons
-                            for button_text in ["Close", "Cancel", "Not now", "Later", "No thanks"]:
-                                try:
-                                    buttons = self.driver.find_elements(
-                                        AppiumBy.XPATH,
-                                        f"//android.widget.Button[contains(@text, '{button_text}')]",
-                                    )
-                                    if buttons:
-                                        buttons[0].click()
-                                        logger.info(f"Clicked '{button_text}' button to dismiss dialog")
-                                        time.sleep(1)
-                                        break
-                                except Exception as button_e:
-                                    logger.debug(
-                                        f"Could not find button with text '{button_text}': {button_e}"
-                                    )
-                        except Exception as dismiss_e:
-                            logger.warning(f"Failed to dismiss review dialog: {dismiss_e}")
-                else:
-                    logger.warning(
-                        f"App launch verification failed - current activity is: {current_activity}"
-                    )
-            except Exception as e:
-                logger.warning(f"Could not verify app launch via activity check: {e}")
+                    # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
+                    # Also handle the Google Play review dialog which can appear over the Kindle app
+                    if (
+                        current_activity.startswith("com.amazon")
+                        or current_activity
+                        == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                    ):
+                        logger.info(
+                            f"Successfully verified Kindle app is in foreground after {time.time() - start_time:.2f}s: {current_activity}"
+                        )
+                        app_ready = True
+
+                        # Try to dismiss the Google Play review dialog if it's showing
+                        if (
+                            current_activity
+                            == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                        ):
+                            logger.info("Attempting to dismiss Google Play review dialog...")
+                            try:
+                                # Method 1: Press back button
+                                self.driver.press_keycode(4)  # Android back key
+                                time.sleep(1)
+
+                                # Method 2: Try to find and click close/cancel buttons
+                                for button_text in ["Close", "Cancel", "Not now", "Later", "No thanks"]:
+                                    try:
+                                        buttons = self.driver.find_elements(
+                                            AppiumBy.XPATH,
+                                            f"//android.widget.Button[contains(@text, '{button_text}')]",
+                                        )
+                                        if buttons:
+                                            buttons[0].click()
+                                            logger.info(f"Clicked '{button_text}' button to dismiss dialog")
+                                            time.sleep(1)
+                                            break
+                                    except Exception as button_e:
+                                        logger.debug(
+                                            f"Could not find button with text '{button_text}': {button_e}"
+                                        )
+                            except Exception as dismiss_e:
+                                logger.warning(f"Failed to dismiss review dialog: {dismiss_e}")
+                        break
+                    else:
+                        logger.info(
+                            f"App not ready yet - current activity is: {current_activity}, polling again in {poll_interval}s"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error checking current activity: {e}")
+
+                # Sleep for poll_interval before checking again
+                time.sleep(poll_interval)
+
+            if not app_ready:
+                logger.warning(f"Timed out waiting for app to initialize after {max_wait_time}s")
 
             logger.info("App brought to foreground")
             return True
