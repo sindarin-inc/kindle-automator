@@ -73,7 +73,7 @@ class AutomationServer:
 
         # Store the automator
         self.automators[email] = automator
-        logger.info(f"Initialized automator for {email}: {automator}")
+        logger.info(f"Initialized automator for {email}: {automator}/{automator.driver}")
 
         automator.initialize_driver()
 

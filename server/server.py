@@ -1055,7 +1055,9 @@ class AuthResource(Resource):
                 server.automator = None
 
         automator = server.automators.get(sindarin_email)
-        logger.info(f"Using automator: {automator} for {sindarin_email} ({server.automators})")
+        logger.info(
+            f"Using automator: {automator}/{automator.driver} for {sindarin_email} ({server.automators})"
+        )
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions

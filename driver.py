@@ -22,13 +22,10 @@ class Driver:
         return cls._instance
 
     def __init__(self):
-        # Only initialize once
-        if not Driver._initialized:
-            self.driver = None
-            self.device_id = None
-            self.automator = None  # Reference to the automator instance
-            self.appium_port = 4723  # Default port, can be overridden
-            Driver._initialized = True
+        self.driver = None
+        self.device_id = None
+        self.automator = None  # Reference to the automator instance
+        self.appium_port = None  # Default port, can be overridden
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
@@ -542,6 +539,7 @@ class Driver:
                     self.driver = None
                 else:
                     logger.info("Driver already initialized, reinitializing")
+                    self.driver = None
 
             # Get device ID first, using specific device ID from profile if available
             target_device_id = None

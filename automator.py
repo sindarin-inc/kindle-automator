@@ -65,7 +65,7 @@ class KindleAutomator:
             if profile_emulator_id:
                 self.device_id = profile_emulator_id
 
-        logger.info(f"Initialized driver with device_id: {self.device_id}")
+        logger.info(f"Initialized driver {self.driver} with device_id: {self.device_id}")
 
         # Initialize state machine without credentials or captcha
         self.state_machine = KindleStateMachine(self.driver)
