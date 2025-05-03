@@ -642,7 +642,7 @@ class Driver:
                     options = UiAutomator2Options()
                     options.platform_name = "Android"
                     options.automation_name = "UiAutomator2"
-                    options.device_name = self.device_id
+                    options.set_capability("udid", self.device_id)
                     options.app_package = "com.amazon.kindle"
                     options.app_activity = app_activity
                     options.app_wait_activity = "com.amazon.*"
