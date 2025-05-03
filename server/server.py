@@ -980,15 +980,29 @@ class AuthResource(Resource):
     @handle_automator_response(server)
     def _auth(self):
         """Set up a profile for manual authentication via VNC"""
-        data = request.get_json() or {}
+        # Create a unified params dict that combines query params and JSON body
+        params = {}
 
-        # Get sindarin_email from request - this is the profile name we'll use
-        sindarin_email = None
-        if "sindarin_email" in request.args:
-            sindarin_email = request.args.get("sindarin_email")
-        elif request.is_json and "sindarin_email" in data:
-            sindarin_email = data.get("sindarin_email")
-        elif "sindarin_email" in request.form:
+        # First add all query string parameters to the params dict
+        for key, value in request.args.items():
+            params[key] = value
+
+        # Then try to add JSON parameters if available (they override query params)
+        if request.is_json:
+            try:
+                json_data = request.get_json() or {}
+                # Update params with JSON data (overriding any query params with the same name)
+                for key, value in json_data.items():
+                    params[key] = value
+            except:
+                # In case of JSON parsing error, just continue with query params
+                logger.warning("Failed to parse JSON data in request")
+
+        # Get sindarin_email from unified params
+        sindarin_email = params.get("sindarin_email")
+
+        # Fall back to form data if needed
+        if not sindarin_email and "sindarin_email" in request.form:
             sindarin_email = request.form.get("sindarin_email")
 
         # Sindarin email is required for profile identification
@@ -998,19 +1012,25 @@ class AuthResource(Resource):
         else:
             logger.info(f"Using sindarin_email for profile: {sindarin_email}")
 
-        # Check if recreate parameter is provided
-        recreate = False
-        if request.is_json:
-            recreate = data.get("recreate", False)
-        else:
-            recreate = request.args.get("recreate", "0") in ("1", "true")
+        # Process boolean parameters in a unified way
+        # For query params, "1", "true", "yes" (case-insensitive) are considered true
+        # For JSON data, use the boolean or convert string values
+        def get_bool_param(param_name, default=False):
+            if param_name not in params:
+                return default
 
-        # Check if VNC server should be restarted
-        restart_vnc = False
-        if request.is_json:
-            restart_vnc = data.get("restart_vnc", False)
-        else:
-            restart_vnc = request.args.get("restart_vnc", "0") in ("1", "true")
+            value = params[param_name]
+            if isinstance(value, bool):
+                return value
+            elif isinstance(value, str):
+                return value.lower() in ("1", "true", "yes")
+            elif isinstance(value, int):
+                return value == 1
+            return default
+
+        # Get boolean parameters
+        recreate = get_bool_param("recreate", False)
+        restart_vnc = get_bool_param("restart_vnc", False)
 
         if restart_vnc:
             logger.info(f"Restart VNC requested for {sindarin_email}")
