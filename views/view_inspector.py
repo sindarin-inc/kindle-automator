@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 class ViewInspector:
     def __init__(self, driver):
         self.driver = driver
+        logger.info(f"ViewInspector initialized with driver: {self.driver}")
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
