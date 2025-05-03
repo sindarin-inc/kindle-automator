@@ -246,7 +246,7 @@ class AutomationServer:
             os.makedirs(logs_dir, exist_ok=True)
             log_file = os.path.join(logs_dir, f"{process_name}.log")
 
-            # Start Appium with the specific port and base path set to /wd/hub
+            # Start Appium with the specific port
             # Find the appium executable - first check common locations
             appium_paths = [
                 "appium",  # Try PATH first
@@ -302,7 +302,7 @@ class AutomationServer:
             # Start Appium with more detailed logs
             with open(log_file, "w") as log:
                 appium_process = subprocess.Popen(
-                    [appium_cmd, "--port", str(port), "--base-path", "/wd/hub", "--log-level", "debug"],
+                    [appium_cmd, "--port", str(port), "--log-level", "debug"],
                     stdout=log,
                     stderr=log,
                     text=True,
@@ -338,7 +338,7 @@ class AutomationServer:
             for attempt in range(max_retries):
                 try:
                     check_result = subprocess.run(
-                        ["curl", "-s", f"http://localhost:{port}/wd/hub/status"],
+                        ["curl", "-s", f"http://localhost:{port}/status"],
                         capture_output=True,
                         text=True,
                         check=False,

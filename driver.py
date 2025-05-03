@@ -635,7 +635,9 @@ class Driver:
             # Initialize driver with retry logic
             for attempt in range(1, 6):  # Increase to 5 attempts
                 try:
-                    logger.info(f"Attempting to initialize driver (attempt {attempt}/5)...")
+                    logger.info(
+                        f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/5)..."
+                    )
 
                     options = UiAutomator2Options()
                     options.platform_name = "Android"
@@ -706,7 +708,7 @@ class Driver:
                                     f"Checking Appium server status (attempt {attempt+1}/{max_retries})..."
                                 )
                                 status_response = requests.get(
-                                    f"http://127.0.0.1:{self.appium_port}/wd/hub/status", timeout=5
+                                    f"http://127.0.0.1:{self.appium_port}/status", timeout=5
                                 )
                                 # Handle both Appium 1.x and 2.x response formats
                                 response_json = status_response.json()
@@ -780,10 +782,9 @@ class Driver:
                                 retry_delay *= 2
 
                         # Initialize driver with the options using the specific port
-                        # Make sure to use the correct base path /wd/hub
                         logger.info(f"Connecting to Appium on port {self.appium_port}")
                         self.driver = webdriver.Remote(
-                            f"http://127.0.0.1:{self.appium_port}/wd/hub", options=options
+                            f"http://127.0.0.1:{self.appium_port}/", options=options
                         )
                         logger.info(f"Driver initialized successfully on port {self.appium_port}")
                     finally:
