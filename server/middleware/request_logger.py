@@ -67,7 +67,7 @@ class RequestBodyLogger:
         request_email = get_sindarin_email()
 
         if server_instance:
-            email = request_email or server_instance.current_email or "not_authenticated"
+            email = request_email or "not_authenticated"
 
             # Get the AVD name specifically for this email, not just the current profile
             if request_email and hasattr(server_instance, "profile_manager"):
@@ -148,7 +148,7 @@ class RequestBodyLogger:
         request_email = get_sindarin_email()
 
         if server_instance:
-            email = request_email or server_instance.current_email or "not_authenticated"
+            email = request_email or "not_authenticated"
 
             # Get the AVD name specifically for this email, not just the current profile
             if request_email and hasattr(server_instance, "profile_manager"):
