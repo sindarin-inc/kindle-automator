@@ -32,7 +32,7 @@ from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
-from server.utils.request_utils import get_formatted_vnc_url, get_sindarin_email
+from server.utils.request_utils import get_automator_for_request, get_formatted_vnc_url, get_sindarin_email
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -80,9 +80,13 @@ class StateResource(Resource):
     @ensure_automator_healthy
     def get(self):
         try:
-            logger.info(f"Getting state, currently in {server.automator.state_machine.current_state}")
-            server.automator.state_machine.update_current_state()
-            current_state = server.automator.state_machine.current_state
+            automator, _, error_response = get_automator_for_request(server)
+            if error_response:
+                return error_response
+                
+            logger.info(f"Getting state, currently in {automator.state_machine.current_state}")
+            automator.state_machine.update_current_state()
+            current_state = automator.state_machine.current_state
             logger.info(f"Getting state, now in {current_state}")
             return {"state": current_state.name}, 200
         except Exception as e:
@@ -106,6 +110,10 @@ class CaptchaResource(Resource):
     @handle_automator_response(server)
     def post(self):
         """Submit captcha solution"""
+        automator, _, error_response = get_automator_for_request(server)
+        if error_response:
+            return error_response
+            
         data = request.get_json()
         solution = data.get("solution")
 
@@ -113,9 +121,9 @@ class CaptchaResource(Resource):
             return {"error": "Captcha solution required"}, 400
 
         # Update captcha solution using our update method
-        server.automator.update_captcha_solution(solution)
+        automator.update_captcha_solution(solution)
 
-        success = server.automator.transition_to_library()
+        success = automator.transition_to_library()
 
         if success:
             return {"status": "success"}, 200
@@ -898,11 +906,15 @@ class StyleResource(Resource):
 
         logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
 
+        automator, _, error_response = get_automator_for_request(server)
+        if error_response:
+            return error_response
+
         # Update state machine's current state
-        server.automator.state_machine.update_current_state()
+        automator.state_machine.update_current_state()
 
         # Check if we're in reading state
-        current_state = server.automator.state_machine.current_state
+        current_state = automator.state_machine.current_state
         if current_state != AppState.READING:
             return {
                 "error": (
@@ -911,7 +923,7 @@ class StyleResource(Resource):
             }, 400
 
         if dark_mode is not None:
-            success = server.automator.reader_handler.set_dark_mode(dark_mode)
+            success = automator.reader_handler.set_dark_mode(dark_mode)
         else:
             # For now just return success since we haven't implemented other style settings
             success = True
@@ -920,8 +932,8 @@ class StyleResource(Resource):
         if success:
             # Save screenshot with unique ID
             screenshot_id = f"style_update_{int(time.time())}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            server.automator.driver.save_screenshot(screenshot_path)
+            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+            automator.driver.save_screenshot(screenshot_path)
 
             # Get current page number and progress
             # Check if placemark is requested
@@ -939,7 +951,7 @@ class StyleResource(Resource):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for style change")
 
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             response_data = {
                 "success": True,
@@ -961,6 +973,10 @@ class TwoFactorResource(Resource):
     @handle_automator_response(server)
     def post(self):
         """Submit 2FA code"""
+        automator, _, error_response = get_automator_for_request(server)
+        if error_response:
+            return error_response
+            
         data = request.get_json()
         code = data.get("code")
 
@@ -969,7 +985,7 @@ class TwoFactorResource(Resource):
         if not code:
             return {"error": "2FA code required"}, 400
 
-        success = server.automator.auth_handler.handle_2fa(code)
+        success = automator.auth_handler.handle_2fa(code)
         if success:
             return {"success": True}, 200
         return {"error": "Invalid 2FA code"}, 500
@@ -1048,11 +1064,7 @@ class AuthResource(Resource):
                 if automator:
                     automator.cleanup()
                     server.automators[sindarin_email] = None
-            # Also check the legacy automator field
-            elif server.automator:
-                logger.info("Cleaning up existing automator")
-                server.automator.cleanup()
-                server.automator = None
+            # Legacy automator field is no longer used
 
         automator = server.automators.get(sindarin_email)
         logger.info(
@@ -1237,7 +1249,11 @@ class FixturesResource(Resource):
     def post(self):
         """Create fixtures for major views"""
         try:
-            fixtures_handler = TestFixturesHandler(server.automator.driver)
+            automator, _, error_response = get_automator_for_request(server)
+            if error_response:
+                return error_response
+                
+            fixtures_handler = TestFixturesHandler(automator.driver)
             if fixtures_handler.create_fixtures():
                 return {"status": "success", "message": "Created fixtures for all major views"}, 200
             return {"error": "Failed to create fixtures"}, 500
@@ -1725,9 +1741,13 @@ class TextResource(Resource):
     def _extract_text(self):
         """Shared implementation for extracting text from the current reading page."""
         try:
+            automator, _, error_response = get_automator_for_request(server)
+            if error_response:
+                return error_response
+                
             # Make sure we're in the READING state
-            server.automator.state_machine.update_current_state()
-            current_state = server.automator.state_machine.current_state
+            automator.state_machine.update_current_state()
+            current_state = automator.state_machine.current_state
 
             if current_state != AppState.READING:
                 return {
@@ -1746,7 +1766,7 @@ class TextResource(Resource):
                 about_book_visible = False
                 for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
                     try:
-                        slideover = server.automator.driver.find_element(strategy, locator)
+                        slideover = automator.driver.find_element(strategy, locator)
                         if slideover.is_displayed():
                             about_book_visible = True
                             logger.info("Found 'About this book' slideover that must be dismissed before OCR")
@@ -1758,10 +1778,10 @@ class TextResource(Resource):
                     # Try multiple dismissal methods
 
                     # Method 1: Try tapping at the very top of the screen
-                    window_size = server.automator.driver.get_window_size()
+                    window_size = automator.driver.get_window_size()
                     center_x = window_size["width"] // 2
                     top_y = int(window_size["height"] * 0.05)  # 5% from top
-                    server.automator.driver.tap([(center_x, top_y)])
+                    automator.driver.tap([(center_x, top_y)])
                     logger.info("Tapped at the very top of the screen to dismiss 'About this book' slideover")
                     time.sleep(1)
 
@@ -1769,7 +1789,7 @@ class TextResource(Resource):
                     still_visible = False
                     for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
                         try:
-                            slideover = server.automator.driver.find_element(strategy, locator)
+                            slideover = automator.driver.find_element(strategy, locator)
                             if slideover.is_displayed():
                                 still_visible = True
                                 break
@@ -1781,13 +1801,13 @@ class TextResource(Resource):
                         logger.info("First dismissal attempt failed. Trying swipe down method...")
                         start_y = int(window_size["height"] * 0.3)
                         end_y = int(window_size["height"] * 0.7)
-                        server.automator.driver.swipe(center_x, start_y, center_x, end_y, 300)
+                        automator.driver.swipe(center_x, start_y, center_x, end_y, 300)
                         logger.info("Swiped down to dismiss 'About this book' slideover")
                         time.sleep(1)
 
                         # Method 3: Try clicking the pill if it exists
                         try:
-                            pill = server.automator.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
+                            pill = automator.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
                             if pill.is_displayed():
                                 pill.click()
                                 logger.info("Clicked pill to dismiss 'About this book' slideover")
@@ -1799,7 +1819,7 @@ class TextResource(Resource):
                     still_visible = False
                     for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
                         try:
-                            slideover = server.automator.driver.find_element(strategy, locator)
+                            slideover = automator.driver.find_element(strategy, locator)
                             if slideover.is_displayed():
                                 still_visible = True
                                 logger.warning(
@@ -1816,8 +1836,8 @@ class TextResource(Resource):
 
             # Save screenshot with unique ID
             screenshot_id = f"text_extract_{int(time.time())}"
-            screenshot_path = os.path.join(server.automator.screenshots_dir, f"{screenshot_id}.png")
-            server.automator.driver.save_screenshot(screenshot_path)
+            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+            automator.driver.save_screenshot(screenshot_path)
 
             # Get current page number and progress for context
             # Check if placemark is requested
@@ -1835,7 +1855,7 @@ class TextResource(Resource):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for OCR")
 
-            progress = server.automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
 
             # Process the screenshot with OCR
             try:
