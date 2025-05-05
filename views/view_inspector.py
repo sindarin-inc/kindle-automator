@@ -747,6 +747,67 @@ class ViewInspector:
                 logger.error(f"Failed to save error screenshot: {screenshot_error}")
             return AppView.UNKNOWN
 
+    def _focus_input_field_if_needed(self, field_element, field_type="input"):
+        """Helper method to focus an input field only if it doesn't already have focus.
+
+        Args:
+            field_element: The UI element to focus if needed
+            field_type: String description of field type (e.g., "email", "password")
+
+        Returns:
+            Boolean indicating whether the element was successfully focused
+        """
+        try:
+            # Check if the element already has focus
+            has_focus = False
+            try:
+                focused_element = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.EditText[@focused='true']"
+                )
+                if focused_element and focused_element.get_attribute(
+                    "resource-id"
+                ) == field_element.get_attribute("resource-id"):
+                    logger.info(f"   {field_type.capitalize()} field already has focus, no need to tap")
+                    has_focus = True
+
+                    # Hide the keyboard if it's visible
+                    try:
+                        self.driver.hide_keyboard()
+                        logger.info(f"   Successfully hid keyboard for already focused {field_type} field")
+                    except Exception as hide_err:
+                        logger.warning(
+                            f"   Could not hide keyboard for already focused {field_type} field: {hide_err}"
+                        )
+            except NoSuchElementException:
+                # No focused element found, we'll need to tap
+                pass
+            except Exception as focus_err:
+                logger.warning(f"   Error checking if {field_type} field has focus: {focus_err}")
+
+            # Only tap if the field doesn't already have focus
+            if not has_focus:
+                try:
+                    logger.info(f"   Tapping {field_type} field to focus it")
+                    field_element.click()
+
+                    # Hide the keyboard after tapping
+                    try:
+                        self.driver.hide_keyboard()
+                        logger.info(f"   Successfully hid keyboard after focusing {field_type} field")
+                    except Exception as hide_err:
+                        logger.warning(
+                            f"   Could not hide keyboard after focusing {field_type} field: {hide_err}"
+                        )
+                except Exception as tap_err:
+                    logger.warning(f"   Error tapping {field_type} field: {tap_err}")
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"   Error in _focus_input_field_if_needed for {field_type} field: {e}")
+            return False
+
     def _is_auth_view(self):
         """Check if we're on any authentication-related view."""
         try:
@@ -756,23 +817,7 @@ class ViewInspector:
                     element = self.driver.find_element(*strategy)
                     if element:
                         logger.info("   Found email input field - on auth view")
-
-                        # Tap on the email field and hide keyboard
-                        try:
-                            logger.info("   Tapping email field to focus it")
-                            element.click()
-
-                            # Hide the keyboard after tapping
-                            try:
-                                self.driver.hide_keyboard()
-                                logger.info("   Successfully hid keyboard after focusing email field")
-                            except Exception as hide_err:
-                                logger.warning(
-                                    f"   Could not hide keyboard after focusing email field: {hide_err}"
-                                )
-                        except Exception as tap_err:
-                            logger.warning(f"   Error tapping email field: {tap_err}")
-
+                        self._focus_input_field_if_needed(element, "email")
                         return True
                 except NoSuchElementException:
                     continue
@@ -783,23 +828,7 @@ class ViewInspector:
                     element = self.driver.find_element(*strategy)
                     if element:
                         logger.info("   Found password input field - on auth view")
-
-                        # Tap on the password field and hide keyboard
-                        try:
-                            logger.info("   Tapping password field to focus it")
-                            element.click()
-
-                            # Hide the keyboard after tapping
-                            try:
-                                self.driver.hide_keyboard()
-                                logger.info("   Successfully hid keyboard after focusing password field")
-                            except Exception as hide_err:
-                                logger.warning(
-                                    f"   Could not hide keyboard after focusing password field: {hide_err}"
-                                )
-                        except Exception as tap_err:
-                            logger.warning(f"   Error tapping password field: {tap_err}")
-
+                        self._focus_input_field_if_needed(element, "password")
                         return True
                 except NoSuchElementException:
                     continue

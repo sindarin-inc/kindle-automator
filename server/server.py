@@ -32,7 +32,11 @@ from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
-from server.utils.request_utils import get_automator_for_request, get_formatted_vnc_url, get_sindarin_email
+from server.utils.request_utils import (
+    get_automator_for_request,
+    get_formatted_vnc_url,
+    get_sindarin_email,
+)
 from views.core.app_state import AppState
 
 # Load environment variables from .env file
@@ -83,7 +87,7 @@ class StateResource(Resource):
             automator, _, error_response = get_automator_for_request(server)
             if error_response:
                 return error_response
-                
+
             logger.info(f"Getting state, currently in {automator.state_machine.current_state}")
             automator.state_machine.update_current_state()
             current_state = automator.state_machine.current_state
@@ -113,7 +117,7 @@ class CaptchaResource(Resource):
         automator, _, error_response = get_automator_for_request(server)
         if error_response:
             return error_response
-            
+
         data = request.get_json()
         solution = data.get("solution")
 
@@ -976,7 +980,7 @@ class TwoFactorResource(Resource):
         automator, _, error_response = get_automator_for_request(server)
         if error_response:
             return error_response
-            
+
         data = request.get_json()
         code = data.get("code")
 
@@ -1252,7 +1256,7 @@ class FixturesResource(Resource):
             automator, _, error_response = get_automator_for_request(server)
             if error_response:
                 return error_response
-                
+
             fixtures_handler = TestFixturesHandler(automator.driver)
             if fixtures_handler.create_fixtures():
                 return {"status": "success", "message": "Created fixtures for all major views"}, 200
@@ -1744,7 +1748,7 @@ class TextResource(Resource):
             automator, _, error_response = get_automator_for_request(server)
             if error_response:
                 return error_response
-                
+
             # Make sure we're in the READING state
             automator.state_machine.update_current_state()
             current_state = automator.state_machine.current_state

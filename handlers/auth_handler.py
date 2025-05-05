@@ -58,6 +58,79 @@ class AuthenticationHandler:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
+    def _focus_input_field_if_needed(self, field_strategies, field_type="input"):
+        """Helper method to focus an input field only if it doesn't already have focus.
+
+        Args:
+            field_strategies: List of tuples (strategy, locator) to find the field
+            field_type: String description of field type (e.g., "email", "password")
+
+        Returns:
+            The focused field element if successful, None otherwise
+        """
+        try:
+            # First try to find if any edit text already has focus
+            has_focus = False
+            focused_field = None
+
+            try:
+                focused_element = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.EditText[@focused='true']"
+                )
+                if focused_element and focused_element.is_displayed():
+                    logger.info(f"Found a focused edit text field")
+                    # Now check if this is the field we're looking for
+                    for strategy, locator in field_strategies:
+                        try:
+                            field = self.driver.find_element(strategy, locator)
+                            if field.get_attribute("resource-id") == focused_element.get_attribute(
+                                "resource-id"
+                            ):
+                                logger.info(
+                                    f"{field_type.capitalize()} field already has focus, no need to tap"
+                                )
+                                focused_field = field
+                                has_focus = True
+                                break
+                        except Exception:
+                            continue
+            except NoSuchElementException:
+                # No focused element found
+                pass
+            except Exception as focus_err:
+                logger.debug(f"Error checking for focused element: {focus_err}")
+
+            # If no field has focus, find and tap one
+            if not has_focus:
+                for strategy, locator in field_strategies:
+                    try:
+                        field = self.driver.find_element(strategy, locator)
+                        if field and field.is_displayed():
+                            logger.info(
+                                f"Found {field_type} field with strategy: {strategy}={locator}, tapping it"
+                            )
+                            field.click()
+                            logger.info(f"Successfully tapped the {field_type} input field")
+                            focused_field = field
+                            break
+                    except Exception as tap_err:
+                        logger.debug(f"Error tapping {field_type} field with {strategy}={locator}: {tap_err}")
+                        continue
+
+            # If we have a focused field (either already or newly focused), hide the keyboard
+            if focused_field:
+                try:
+                    self.driver.hide_keyboard()
+                    logger.info("Successfully hid the keyboard")
+                except Exception as hide_err:
+                    logger.warning(f"Could not hide keyboard: {hide_err}")
+
+            return focused_field
+
+        except Exception as e:
+            logger.error(f"Error handling {field_type} field focus: {e}")
+            return None
+
     def prepare_for_authentication(self):
         """
         Prepare the app for authentication by navigating to the sign-in screen if needed.
@@ -318,31 +391,8 @@ class AuthenticationHandler:
                     except Exception as e:
                         logger.error(f"Error checking emulator readiness: {e}")
 
-                # Tap the email address input field and then hide the keyboard
-                try:
-                    for strategy, locator in EMAIL_FIELD_STRATEGIES:
-                        try:
-                            email_field = self.driver.find_element(strategy, locator)
-                            if email_field and email_field.is_displayed():
-                                logger.info(
-                                    f"Found email field with strategy: {strategy}={locator}, tapping it"
-                                )
-                                email_field.click()
-                                logger.info("Successfully tapped the email input field")
-
-                                # Hide the keyboard after tapping
-                                try:
-                                    self.driver.hide_keyboard()
-                                    logger.info("Successfully hid the keyboard")
-                                except Exception as hide_err:
-                                    logger.warning(f"Could not hide keyboard: {hide_err}")
-
-                                break
-                        except Exception as tap_err:
-                            logger.debug(f"Error tapping email field with {strategy}={locator}: {tap_err}")
-                            continue
-                except Exception as e:
-                    logger.error(f"Error tapping email field: {e}")
+                # Focus the email field if needed
+                self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
 
                 return {
                     "state": "SIGN_IN",
@@ -500,33 +550,8 @@ class AuthenticationHandler:
                 if state_name == "SIGN_IN":
                     logger.info("Successfully navigated to SIGN_IN state")
 
-                    # Tap the email address input field and then hide the keyboard
-                    try:
-                        for strategy, locator in EMAIL_FIELD_STRATEGIES:
-                            try:
-                                email_field = self.driver.find_element(strategy, locator)
-                                if email_field and email_field.is_displayed():
-                                    logger.info(
-                                        f"Found email field with strategy: {strategy}={locator}, tapping it"
-                                    )
-                                    email_field.click()
-                                    logger.info("Successfully tapped the email input field")
-
-                                    # Hide the keyboard after tapping
-                                    try:
-                                        self.driver.hide_keyboard()
-                                        logger.info("Successfully hid the keyboard")
-                                    except Exception as hide_err:
-                                        logger.warning(f"Could not hide keyboard: {hide_err}")
-
-                                    break
-                            except Exception as tap_err:
-                                logger.debug(
-                                    f"Error tapping email field with {strategy}={locator}: {tap_err}"
-                                )
-                                continue
-                    except Exception as e:
-                        logger.error(f"Error tapping email field: {e}")
+                    # Focus the email field if needed
+                    self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
 
                     return {
                         "state": "SIGN_IN",
@@ -1159,24 +1184,10 @@ class AuthenticationHandler:
             for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
-
-                    # If we're on the email screen, tap the input and hide keyboard
-                    try:
-                        if element and element.is_displayed():
-                            logger.info(f"Found email field, tapping it")
-                            element.click()
-                            logger.info("Successfully tapped the email input field")
-
-                            # Hide the keyboard after tapping
-                            try:
-                                self.driver.hide_keyboard()
-                                logger.info("Successfully hid the keyboard for email input")
-                            except Exception as hide_err:
-                                logger.warning(f"Could not hide keyboard for email field: {hide_err}")
-                    except Exception as tap_err:
-                        logger.debug(f"Error interacting with email field: {tap_err}")
-
-                    return True
+                    if element and element.is_displayed():
+                        # Focus the email field if needed
+                        self._focus_input_field_if_needed([(strategy, locator)], "email")
+                        return True
                 except:
                     continue
             return False
@@ -1189,24 +1200,10 @@ class AuthenticationHandler:
             for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
-
-                    # If we're on the password screen, tap the input and hide keyboard
-                    try:
-                        if element and element.is_displayed():
-                            logger.info(f"Found password field, tapping it")
-                            element.click()
-                            logger.info("Successfully tapped the password input field")
-
-                            # Hide the keyboard after tapping
-                            try:
-                                self.driver.hide_keyboard()
-                                logger.info("Successfully hid the keyboard for password input")
-                            except Exception as hide_err:
-                                logger.warning(f"Could not hide keyboard for password field: {hide_err}")
-                    except Exception as tap_err:
-                        logger.debug(f"Error interacting with password field: {tap_err}")
-
-                    return True
+                    if element and element.is_displayed():
+                        # Focus the password field if needed
+                        self._focus_input_field_if_needed([(strategy, locator)], "password")
+                        return True
                 except:
                     continue
             return False
@@ -1245,24 +1242,17 @@ class AuthenticationHandler:
             # If we're confident it's a captcha screen, tap the input field
             is_captcha = indicators_found >= 3
             if is_captcha:
-                # Try to find and tap the captcha input field
+                # Try to find and focus the captcha input field
                 try:
                     captcha_input = self.driver.find_element(
                         AppiumBy.XPATH, "//android.widget.EditText[not(@password)]"
                     )
                     if captcha_input and captcha_input.is_displayed():
-                        logger.info("Found captcha input field, tapping it")
-                        captcha_input.click()
-                        logger.info("Successfully tapped the captcha input field")
-
-                        # Hide the keyboard after tapping
-                        try:
-                            self.driver.hide_keyboard()
-                            logger.info("Successfully hid the keyboard for captcha input")
-                        except Exception as hide_err:
-                            logger.warning(f"Could not hide keyboard for captcha field: {hide_err}")
-                except Exception as tap_err:
-                    logger.debug(f"Error interacting with captcha field: {tap_err}")
+                        # Use our helper method to focus the captcha field if needed
+                        captcha_strategy = (AppiumBy.XPATH, "//android.widget.EditText[not(@password)]")
+                        self._focus_input_field_if_needed([captcha_strategy], "captcha")
+                except Exception as e:
+                    logger.debug(f"Error focusing captcha field: {e}")
 
             return is_captcha
         except Exception as e:

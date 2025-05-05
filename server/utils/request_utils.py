@@ -43,7 +43,7 @@ def get_sindarin_email() -> Optional[str]:
 
 def get_automator_for_request(server):
     """Get the appropriate automator based on sindarin_email in the request.
-    
+
     Args:
         server: The AutomationServer instance
 
@@ -65,6 +65,7 @@ def get_automator_for_request(server):
         return None, None, (error, 404)
 
     return automator, sindarin_email, None
+
 
 def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]:
     """
