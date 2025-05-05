@@ -88,10 +88,7 @@ class StateResource(Resource):
             if error_response:
                 return error_response
 
-            logger.info(f"Getting state, currently in {automator.state_machine.current_state}")
-            automator.state_machine.update_current_state()
             current_state = automator.state_machine.current_state
-            logger.info(f"Getting state, now in {current_state}")
             return {"state": current_state.name}, 200
         except Exception as e:
             logger.error(f"Error getting state: {e}")
