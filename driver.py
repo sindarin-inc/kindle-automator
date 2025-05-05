@@ -642,6 +642,10 @@ class Driver:
                     options = UiAutomator2Options()
                     options.platform_name = "Android"
                     options.automation_name = "UiAutomator2"
+                    
+                    # Set the device ID as both udid and deviceName for proper device targeting
+                    options.set_capability("deviceName", self.device_id)
+                    options.set_capability("udid", self.device_id)
 
                     # Get Android ID for the device for more reliable identification
                     try:
@@ -808,7 +812,10 @@ class Driver:
                         capabilities = options.to_capabilities()
                         # Ensure the critical capabilities are set correctly before connection
                         logger.info(
-                            f"Final capabilities for device {self.device_id}: udid={capabilities.get('udid')}, deviceName={capabilities.get('deviceName')}"
+                            f"Final capabilities for device {self.device_id}: "
+                            f"udid={capabilities.get('udid')}, "
+                            f"deviceName={capabilities.get('deviceName')}, "
+                            f"androidId={capabilities.get('appium:androidId')}"
                         )
 
                         self.driver = webdriver.Remote(
