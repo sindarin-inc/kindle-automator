@@ -642,7 +642,7 @@ class Driver:
                     options = UiAutomator2Options()
                     options.platform_name = "Android"
                     options.automation_name = "UiAutomator2"
-                    
+
                     # Set the device ID as both udid and deviceName for proper device targeting
                     options.set_capability("deviceName", self.device_id)
                     options.set_capability("udid", self.device_id)
@@ -819,7 +819,7 @@ class Driver:
                         )
 
                         self.driver = webdriver.Remote(
-                            f"http://127.0.0.1:{self.appium_port}/", options=options
+                            f"http://127.0.0.1:{self.appium_port}", options=options
                         )
                         logger.info(
                             f"Driver initialized successfully on port {self.appium_port} for device {self.device_id}"
