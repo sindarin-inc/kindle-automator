@@ -520,6 +520,27 @@ class ViewInspector:
                     continue
             if indicators_found >= 3:
                 logger.info("   Found captcha screen")
+
+                # Try to find and tap the captcha input field
+                try:
+                    captcha_input = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.EditText[not(@password)]"
+                    )
+                    if captcha_input:
+                        logger.info("   Tapping captcha input field to focus it")
+                        captcha_input.click()
+
+                        # Hide the keyboard after tapping
+                        try:
+                            self.driver.hide_keyboard()
+                            logger.info("   Successfully hid keyboard after focusing captcha field")
+                        except Exception as hide_err:
+                            logger.warning(
+                                f"   Could not hide keyboard after focusing captcha field: {hide_err}"
+                            )
+                except Exception as tap_err:
+                    logger.warning(f"   Error tapping captcha input field: {tap_err}")
+
                 return AppView.CAPTCHA
 
             # Check for empty library with sign-in button first
@@ -732,8 +753,26 @@ class ViewInspector:
             # Check for email input field
             for strategy in EMAIL_FIELD_STRATEGIES:
                 try:
-                    if self.driver.find_element(*strategy):
+                    element = self.driver.find_element(*strategy)
+                    if element:
                         logger.info("   Found email input field - on auth view")
+
+                        # Tap on the email field and hide keyboard
+                        try:
+                            logger.info("   Tapping email field to focus it")
+                            element.click()
+
+                            # Hide the keyboard after tapping
+                            try:
+                                self.driver.hide_keyboard()
+                                logger.info("   Successfully hid keyboard after focusing email field")
+                            except Exception as hide_err:
+                                logger.warning(
+                                    f"   Could not hide keyboard after focusing email field: {hide_err}"
+                                )
+                        except Exception as tap_err:
+                            logger.warning(f"   Error tapping email field: {tap_err}")
+
                         return True
                 except NoSuchElementException:
                     continue
@@ -741,8 +780,26 @@ class ViewInspector:
             # Check for password input field
             for strategy in PASSWORD_FIELD_STRATEGIES:
                 try:
-                    if self.driver.find_element(*strategy):
+                    element = self.driver.find_element(*strategy)
+                    if element:
                         logger.info("   Found password input field - on auth view")
+
+                        # Tap on the password field and hide keyboard
+                        try:
+                            logger.info("   Tapping password field to focus it")
+                            element.click()
+
+                            # Hide the keyboard after tapping
+                            try:
+                                self.driver.hide_keyboard()
+                                logger.info("   Successfully hid keyboard after focusing password field")
+                            except Exception as hide_err:
+                                logger.warning(
+                                    f"   Could not hide keyboard after focusing password field: {hide_err}"
+                                )
+                        except Exception as tap_err:
+                            logger.warning(f"   Error tapping password field: {tap_err}")
+
                         return True
                 except NoSuchElementException:
                     continue

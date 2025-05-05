@@ -239,15 +239,8 @@ class KindleStateMachine:
                     hasattr(self.auth_handler, "is_keyboard_check_active")
                     and self.auth_handler.is_keyboard_check_active()
                 ):
-                    # Try to detect current screen and tap on input field
-                    if self.current_state == AppState.SIGN_IN:
-                        self.auth_handler._is_email_screen()
-                    elif self.current_state == AppState.SIGN_IN_PASSWORD:
-                        self.auth_handler._is_password_screen()
-                    elif self.current_state == AppState.CAPTCHA:
-                        self.auth_handler._is_captcha_screen()
-                    
-                    # Always try to hide keyboard as a fallback
+                    # Just hide the keyboard continuously without tapping fields
+                    # (tapping is now handled by view_inspector during view detection)
                     self.auth_handler.hide_keyboard_if_visible()
 
             # Check if we have a current state we already know about

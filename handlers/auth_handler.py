@@ -1247,12 +1247,14 @@ class AuthenticationHandler:
             if is_captcha:
                 # Try to find and tap the captcha input field
                 try:
-                    captcha_input = self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[not(@password)]")
+                    captcha_input = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.EditText[not(@password)]"
+                    )
                     if captcha_input and captcha_input.is_displayed():
                         logger.info("Found captcha input field, tapping it")
                         captcha_input.click()
                         logger.info("Successfully tapped the captcha input field")
-                        
+
                         # Hide the keyboard after tapping
                         try:
                             self.driver.hide_keyboard()
