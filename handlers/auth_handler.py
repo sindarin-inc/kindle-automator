@@ -1153,6 +1153,36 @@ class AuthenticationHandler:
 
         return False
 
+    def _is_email_screen(self):
+        """Check if we're on the email input screen - used for state detection only"""
+        try:
+            for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+
+                    # If we're on the email screen, tap the input and hide keyboard
+                    try:
+                        if element and element.is_displayed():
+                            logger.info(f"Found email field, tapping it")
+                            element.click()
+                            logger.info("Successfully tapped the email input field")
+
+                            # Hide the keyboard after tapping
+                            try:
+                                self.driver.hide_keyboard()
+                                logger.info("Successfully hid the keyboard for email input")
+                            except Exception as hide_err:
+                                logger.warning(f"Could not hide keyboard for email field: {hide_err}")
+                    except Exception as tap_err:
+                        logger.debug(f"Error interacting with email field: {tap_err}")
+
+                    return True
+                except:
+                    continue
+            return False
+        except:
+            return False
+
     def _is_password_screen(self):
         """Check if we're on the password input screen - used for state detection only"""
         try:
@@ -1212,8 +1242,27 @@ class AuthenticationHandler:
                 self.interactive_captcha_detected = True
                 return True
 
-            # Require at least 3 indicators to be confident it's a captcha screen
-            return indicators_found >= 3
+            # If we're confident it's a captcha screen, tap the input field
+            is_captcha = indicators_found >= 3
+            if is_captcha:
+                # Try to find and tap the captcha input field
+                try:
+                    captcha_input = self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[not(@password)]")
+                    if captcha_input and captcha_input.is_displayed():
+                        logger.info("Found captcha input field, tapping it")
+                        captcha_input.click()
+                        logger.info("Successfully tapped the captcha input field")
+                        
+                        # Hide the keyboard after tapping
+                        try:
+                            self.driver.hide_keyboard()
+                            logger.info("Successfully hid the keyboard for captcha input")
+                        except Exception as hide_err:
+                            logger.warning(f"Could not hide keyboard for captcha field: {hide_err}")
+                except Exception as tap_err:
+                    logger.debug(f"Error interacting with captcha field: {tap_err}")
+
+            return is_captcha
         except Exception as e:
             logger.error(f"Error checking for captcha screen: {e}")
             return False
