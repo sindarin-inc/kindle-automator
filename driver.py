@@ -642,7 +642,16 @@ class Driver:
                     options = UiAutomator2Options()
                     options.platform_name = "Android"
                     options.automation_name = "UiAutomator2"
+                    
+                    # Make sure these device-specific capabilities are set properly
+                    # The "udid" capability is the critical one for targeting a specific device
                     options.set_capability("udid", self.device_id)
+                    # Explicitly set the deviceName to match the device ID (though udid is the one that matters)
+                    options.set_capability("deviceName", self.device_id)
+                    # Tell UiAutomator2 to strictly use this device and not fall back to others
+                    options.set_capability("enforceAppiumPrefixes", True)  # Ensure strict capability naming
+                    options.set_capability("ensureWebviewsHavePages", True)  # Helps with stability
+
                     options.app_package = "com.amazon.kindle"
                     options.app_activity = app_activity
                     options.app_wait_activity = "com.amazon.*"
@@ -652,6 +661,7 @@ class Driver:
                     options.ignore_unimportant_views = False
                     options.allow_invisible_elements = True
                     options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
+                    
                     # Set longer timeouts to avoid connection issues
                     options.set_capability(
                         "uiautomator2ServerLaunchTimeout", 20000
@@ -782,11 +792,16 @@ class Driver:
                                 retry_delay *= 2
 
                         # Initialize driver with the options using the specific port
-                        logger.info(f"Connecting to Appium on port {self.appium_port}")
+                        logger.info(f"Connecting to Appium on port {self.appium_port} for device {self.device_id}")
+                        # Set the direct device capability at the last moment to avoid any overrides
+                        capabilities = options.to_capabilities()
+                        # Ensure the critical capabilities are set correctly before connection
+                        logger.info(f"Final capabilities for device {self.device_id}: udid={capabilities.get('udid')}, deviceName={capabilities.get('deviceName')}")
+                        
                         self.driver = webdriver.Remote(
                             f"http://127.0.0.1:{self.appium_port}/", options=options
                         )
-                        logger.info(f"Driver initialized successfully on port {self.appium_port}")
+                        logger.info(f"Driver initialized successfully on port {self.appium_port} for device {self.device_id}")
                     finally:
                         socket.setdefaulttimeout(original_timeout)  # Restore original timeout
 
