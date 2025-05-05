@@ -228,6 +228,19 @@ class KindleStateMachine:
             AppState: The current state of the app
         """
         try:
+            # If we're currently in an AUTH state (SIGN_IN, SIGN_IN_PASSWORD, CAPTCHA),
+            # check if keyboard hiding is active and hide the keyboard if visible
+            if hasattr(self, "current_state") and self.current_state in [
+                AppState.SIGN_IN,
+                AppState.SIGN_IN_PASSWORD,
+                AppState.CAPTCHA,
+            ]:
+                if (
+                    hasattr(self.auth_handler, "is_keyboard_check_active")
+                    and self.auth_handler.is_keyboard_check_active()
+                ):
+                    self.auth_handler.hide_keyboard_if_visible()
+
             # Check if we have a current state we already know about
             # For HOME and LIBRARY states that were recently detected, avoid redundant checks
             # within a short timeframe

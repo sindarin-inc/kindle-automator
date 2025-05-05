@@ -54,6 +54,7 @@ class AuthenticationHandler:
         self.screenshots_dir = "screenshots"
         self.last_captcha_screenshot = None  # Track the last captcha screenshot path
         self.interactive_captcha_detected = False  # Flag for the special interactive captcha case
+        self.keyboard_check_active = False  # Flag to track if keyboard hide check is active
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
@@ -181,6 +182,9 @@ class AuthenticationHandler:
                     current_profile = automator.profile_manager.get_current_profile()
                     if current_profile and "email" in current_profile:
                         email = current_profile["email"]
+
+                # Start the keyboard check to continuously hide the keyboard in AUTH state
+                self.start_keyboard_check()
 
                 return {
                     "state": "LIBRARY_SIGN_IN",
@@ -436,6 +440,9 @@ class AuthenticationHandler:
                     logger.error(f"Error tapping email field: {e}")
 
                 # Always require manual login
+                # Start the keyboard check to continuously hide the keyboard in AUTH state
+                self.start_keyboard_check()
+
                 return {
                     "state": "SIGN_IN",
                     "requires_manual_login": True,
@@ -996,6 +1003,8 @@ class AuthenticationHandler:
                             logger.info(
                                 f"Found library view element '{locator}' after timeout - login successful"
                             )
+                            # Stop the keyboard check as we've completed authentication
+                            self.stop_keyboard_check()
                             return True
                     except:
                         continue
@@ -1029,6 +1038,8 @@ class AuthenticationHandler:
                                     logger.info(
                                         f"Found library view element '{locator}' after extended wait - login successful"
                                     )
+                                    # Stop the keyboard check as we've completed authentication
+                                    self.stop_keyboard_check()
                                     return True
                             except:
                                 continue
@@ -1045,6 +1056,73 @@ class AuthenticationHandler:
         except Exception as e:
             logger.error(f"Error verifying login: {e}")
             return False
+
+    def hide_keyboard_if_visible(self):
+        """Attempt to hide the keyboard if it's visible.
+
+        Used for VNC sessions where we want to hide the Android keyboard
+        since the user is using their native OS keyboard.
+
+        Returns:
+            bool: True if keyboard was detected and hidden, False otherwise
+        """
+        try:
+            # Check if keyboard is visible
+            keyboard_visible = False
+            try:
+                # Try using the is_keyboard_shown method if available
+                if hasattr(self.driver, "is_keyboard_shown") and callable(self.driver.is_keyboard_shown):
+                    keyboard_visible = self.driver.is_keyboard_shown()
+                    if keyboard_visible:
+                        logger.debug("Keyboard detected using is_keyboard_shown()")
+            except Exception as e:
+                logger.debug(f"Error checking keyboard visibility: {e}")
+
+            # If keyboard visibility check failed or returned false, try alternative detection
+            if not keyboard_visible:
+                # Look for EditText elements that are in focus
+                try:
+                    focused_element = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.EditText[@focused='true']"
+                    )
+                    if focused_element and focused_element.is_displayed():
+                        logger.debug("Found focused EditText element, keyboard likely visible")
+                        keyboard_visible = True
+                except Exception:
+                    # No focused input element found
+                    pass
+
+            # If keyboard is visible, try to hide it
+            if keyboard_visible:
+                self.driver.hide_keyboard()
+                logger.debug("Successfully hid keyboard")
+                return True
+            return False
+        except Exception as e:
+            logger.debug(f"Error in hide_keyboard_if_visible: {e}")
+            return False
+
+    def start_keyboard_check(self):
+        """Start the continuous keyboard check.
+
+        This sets a flag that will be detected by the state machine to
+        continuously check for and hide the keyboard while in AUTH state.
+        """
+        logger.info("Starting continuous keyboard check for AUTH state")
+        self.keyboard_check_active = True
+
+    def stop_keyboard_check(self):
+        """Stop the continuous keyboard check."""
+        logger.info("Stopping continuous keyboard check for AUTH state")
+        self.keyboard_check_active = False
+
+    def is_keyboard_check_active(self):
+        """Check if the keyboard check is currently active.
+
+        Returns:
+            bool: True if keyboard check is active, False otherwise
+        """
+        return self.keyboard_check_active
 
     def _check_for_errors(self):
         """Check for error messages after attempting to sign in."""
