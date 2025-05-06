@@ -458,15 +458,17 @@ class StyleHandler:
             try:
                 # Import here to avoid circular imports
                 from server.utils.request_utils import get_sindarin_email
-                
+
                 # Get email from the request using standard utility function
                 email = get_sindarin_email()
-                
+
                 if email:
                     if self.profile_manager and self.profile_manager.update_style_preference(True, email):
                         logger.info(f"Successfully updated style preference in profile for {email}")
                     else:
-                        logger.warning(f"Failed to update style preference in profile for {email}, may need to retry")
+                        logger.warning(
+                            f"Failed to update style preference in profile for {email}, may need to retry"
+                        )
                         # Don't mark as failure, we'll still return success if we've made it this far
                 else:
                     logger.warning("No email available from get_sindarin_email() to update style preference")

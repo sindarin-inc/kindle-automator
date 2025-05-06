@@ -178,7 +178,11 @@ class AVDProfileManager:
 
             # Now save the updated profiles_index
             self._save_profiles_index()
-            logger.debug("Saved user preferences by updating profiles_index")
+
+            # Reload user preferences from profiles_index to ensure our cache is up-to-date
+            self.user_preferences = self._load_user_preferences()
+
+            logger.debug("Saved user preferences by updating profiles_index and refreshed preferences cache")
         except Exception as e:
             logger.error(f"Error saving user preferences: {e}")
 
@@ -246,6 +250,7 @@ class AVDProfileManager:
         self._save_profiles_index()
 
         # Also update our local user_preferences cache for consistency
+        # This ensures we have the latest preferences from users.json
         self.user_preferences = self._load_user_preferences()
 
     def get_avd_for_email(self, email: str) -> Optional[str]:
@@ -675,6 +680,9 @@ class AVDProfileManager:
         """
         if not email:
             return False
+
+        # Always reload user preferences to ensure we have the latest data
+        self.user_preferences = self._load_user_preferences()
 
         # Check in user_preferences cache first
         if email in self.user_preferences:
