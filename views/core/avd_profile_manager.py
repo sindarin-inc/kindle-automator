@@ -77,7 +77,8 @@ class AVDProfileManager:
 
         # Load profile index if it exists, otherwise create empty one
         self.profiles_index = self._load_profiles_index()
-        # Removed current_profile loading as we're managing multiple users simultaneously
+
+        # Load user preferences from the profiles_index
         self.user_preferences = self._load_user_preferences()
 
     def get_avd_name_from_email(self, email: str) -> str:
@@ -140,22 +141,44 @@ class AVDProfileManager:
     # Removed _load_current_profile method as we're managing multiple users simultaneously
 
     def _load_user_preferences(self) -> Dict[str, Dict]:
-        """Load user preferences from JSON file or create if it doesn't exist."""
-        if os.path.exists(self.users_file):
-            try:
-                with open(self.users_file, "r") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading user preferences: {e}")
-                return {}
-        else:
-            return {}
+        """
+        Load user preferences from profiles_index under the 'preferences' key.
+        Returns a separate dictionary for easier access.
+        """
+        preferences = {}
+
+        # Extract preferences from the profiles_index
+        for email, profile_data in self.profiles_index.items():
+            if isinstance(profile_data, dict):
+                if "preferences" in profile_data:
+                    preferences[email] = profile_data["preferences"]
+                else:
+                    # Initialize empty preferences if not yet created
+                    preferences[email] = {}
+
+        return preferences
 
     def _save_user_preferences(self) -> None:
-        """Save user preferences to JSON file."""
+        """
+        Save user preferences to the profiles_index.
+        This merges preferences with existing profile data.
+        """
         try:
-            with open(self.users_file, "w") as f:
-                json.dump(self.user_preferences, f, indent=2)
+            # Update the profiles_index with preferences data
+            for email, prefs in self.user_preferences.items():
+                if email in self.profiles_index:
+                    # Make sure profile entry is a dict
+                    if isinstance(self.profiles_index[email], str):
+                        # Convert string to dict for backward compatibility
+                        avd_name = self.profiles_index[email]
+                        self.profiles_index[email] = {"avd_name": avd_name}
+
+                    # Update preferences in the profile
+                    self.profiles_index[email]["preferences"] = prefs
+
+            # Now save the updated profiles_index
+            self._save_profiles_index()
+            logger.debug("Saved user preferences by updating profiles_index")
         except Exception as e:
             logger.error(f"Error saving user preferences: {e}")
 
@@ -176,7 +199,7 @@ class AVDProfileManager:
 
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
-        Save profile status to the user_preferences file.
+        Save profile status to the profiles_index directly.
         This replaces the previous _save_current_profile that used a separate file.
 
         Also updates the emulator_id in the VNC instance if available.
@@ -186,14 +209,18 @@ class AVDProfileManager:
             avd_name: Name of the AVD
             emulator_id: Optional emulator device ID (e.g., 'emulator-5554')
         """
-        # Make sure the email exists in user_preferences
-        if email not in self.user_preferences:
-            self.user_preferences[email] = {}
+        # Make sure the email exists in profiles_index
+        if email not in self.profiles_index:
+            self.profiles_index[email] = {}
+        # Convert to dict if it's a string (for backward compatibility)
+        elif isinstance(self.profiles_index[email], str):
+            old_avd_name = self.profiles_index[email]
+            self.profiles_index[email] = {"avd_name": old_avd_name}
 
-        # Update the user's status
-        self.user_preferences[email]["last_used"] = int(time.time())
-        self.user_preferences[email]["avd_name"] = avd_name
-        self.user_preferences[email]["email"] = email
+        # Update the profile status fields
+        self.profiles_index[email]["last_used"] = int(time.time())
+        self.profiles_index[email]["avd_name"] = avd_name
+        self.profiles_index[email]["email"] = email
 
         # Store the emulator ID in the VNC instance where it belongs
         if emulator_id:
@@ -204,11 +231,22 @@ class AVDProfileManager:
                 vnc_manager.set_emulator_id(email, emulator_id)
             except Exception as e:
                 logger.warning(f"Error storing emulator ID in VNC instance: {e}")
-                # Fallback to storing in preferences for backward compatibility
-                self.user_preferences[email]["emulator_id"] = emulator_id
+                # Fallback to storing in profile data for backward compatibility
+                self.profiles_index[email]["emulator_id"] = emulator_id
 
-        # Save the updated preferences
-        self._save_user_preferences()
+        # Make sure we maintain any existing preferences
+        if email in self.user_preferences:
+            if "preferences" not in self.profiles_index[email]:
+                self.profiles_index[email]["preferences"] = {}
+
+            # Copy user preferences into the profile structure
+            self.profiles_index[email]["preferences"] = self.user_preferences[email]
+
+        # Save the updated profiles_index
+        self._save_profiles_index()
+
+        # Also update our local user_preferences cache for consistency
+        self.user_preferences = self._load_user_preferences()
 
     def get_avd_for_email(self, email: str) -> Optional[str]:
         """
@@ -638,8 +676,17 @@ class AVDProfileManager:
         if not email:
             return False
 
-        if email in self.user_preferences and "styles_updated" in self.user_preferences[email]:
-            return self.user_preferences[email]["styles_updated"]
+        # Check in user_preferences cache first
+        if email in self.user_preferences:
+            if "styles_updated" in self.user_preferences[email]:
+                return self.user_preferences[email]["styles_updated"]
+
+        # Check in profiles_index as fallback (for backward compatibility)
+        if email in self.profiles_index and isinstance(self.profiles_index[email], dict):
+            if "preferences" in self.profiles_index[email]:
+                prefs = self.profiles_index[email]["preferences"]
+                if "styles_updated" in prefs:
+                    return prefs["styles_updated"]
 
         return False
 
@@ -665,15 +712,34 @@ class AVDProfileManager:
                 logger.warning(f"No AVD name found for email {email}")
                 return False
 
-            # Update user preferences to ensure persistence
+            # Initialize preference structure if needed
             if email not in self.user_preferences:
                 self.user_preferences[email] = {}
+
+            # Update the style preference
             self.user_preferences[email]["styles_updated"] = is_updated
 
-            # Save changes
+            # Also update reading preferences if present
+            if "reading_settings" not in self.user_preferences[email]:
+                self.user_preferences[email]["reading_settings"] = {}
+
+            # Update various reading settings - keep these values synced
+            # with what's saved in the actual reading style sheet
+            reading_settings = self.user_preferences[email]["reading_settings"]
+            if is_updated:
+                # These are the default settings we apply when styles_updated is True
+                reading_settings["theme"] = "dark"
+                reading_settings["font_size"] = "small"
+                reading_settings["real_time_highlighting"] = False
+                reading_settings["about_book"] = False
+                reading_settings["page_turn_animation"] = False
+                reading_settings["popular_highlights"] = False
+                reading_settings["highlight_menu"] = False
+
+            # Save all changes
             self._save_user_preferences()
 
-            logger.info(f"Successfully updated style preference for {email} to {is_updated}")
+            logger.info(f"Successfully updated style preferences for {email} to {is_updated}")
             return True
         except Exception as e:
             logger.error(f"Error updating style preference: {e}")

@@ -892,82 +892,6 @@ class BookOpenResource(Resource):
         return result
 
 
-class StyleResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def post(self):
-        """Update reading style settings"""
-        data = request.get_json()
-        settings = data.get("settings", {})
-        dark_mode = data.get("dark-mode")
-
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
-
-        logger.info(f"Updating style settings: {settings}, dark mode: {dark_mode}")
-
-        automator, _, error_response = get_automator_for_request(server)
-        if error_response:
-            return error_response
-
-        # Update state machine's current state
-        automator.state_machine.update_current_state()
-
-        # Check if we're in reading state
-        current_state = automator.state_machine.current_state
-        if current_state != AppState.READING:
-            return {
-                "error": (
-                    f"Must be reading a book to change style settings, current state: {current_state.name}"
-                ),
-            }, 400
-
-        if dark_mode is not None:
-            success = automator.reader_handler.set_dark_mode(dark_mode)
-        else:
-            # For now just return success since we haven't implemented other style settings
-            success = True
-            logger.warning("Other style settings not yet implemented")
-
-        if success:
-            # Save screenshot with unique ID
-            screenshot_id = f"style_update_{int(time.time())}"
-            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
-            automator.driver.save_screenshot(screenshot_path)
-
-            # Get current page number and progress
-            # Check if placemark is requested
-            show_placemark = False
-            placemark_param = request.args.get("placemark", "0")
-            if placemark_param.lower() in ("1", "true", "yes"):
-                show_placemark = True
-                logger.info("Placemark mode enabled for style change")
-
-            # Also check in POST data
-            if not show_placemark and request.is_json:
-                data = request.get_json(silent=True) or {}
-                placemark_param = data.get("placemark", "0")
-                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-                    show_placemark = True
-                    logger.info("Placemark mode enabled from POST data for style change")
-
-            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
-
-            response_data = {
-                "success": True,
-                "progress": progress,
-            }
-
-            # Process the screenshot (either base64 encode or add URL)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64)
-            response_data.update(screenshot_data)
-
-            return response_data, 200
-
-        return {"error": "Failed to update settings"}, 500
-
-
 class TwoFactorResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1944,7 +1868,6 @@ api.add_resource(
 )
 
 api.add_resource(BookOpenResource, "/open-book")
-api.add_resource(StyleResource, "/style")
 api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
