@@ -161,7 +161,7 @@ class AVDProfileManager:
     def _save_user_preferences(self) -> None:
         """
         Save user preferences to the profiles_index.
-        This merges preferences with existing profile data.
+        This ensures preferences are only stored in the "preferences" key.
         """
         try:
             # Update the profiles_index with preferences data
@@ -173,7 +173,11 @@ class AVDProfileManager:
                         avd_name = self.profiles_index[email]
                         self.profiles_index[email] = {"avd_name": avd_name}
 
-                    # Update preferences in the profile
+                    # Create preferences structure if it doesn't exist
+                    if "preferences" not in self.profiles_index[email]:
+                        self.profiles_index[email]["preferences"] = {}
+
+                    # Update preferences in the profile - ONLY in the preferences key
                     self.profiles_index[email]["preferences"] = prefs
 
             # Now save the updated profiles_index
@@ -238,12 +242,14 @@ class AVDProfileManager:
                 # Fallback to storing in profile data for backward compatibility
                 self.profiles_index[email]["emulator_id"] = emulator_id
 
-        # Make sure we maintain any existing preferences
+        # Only store preferences in the designated "preferences" key
+        # Ensure we don't duplicate preference data at root level
         if email in self.user_preferences:
+            # Create preferences structure if it doesn't exist
             if "preferences" not in self.profiles_index[email]:
                 self.profiles_index[email]["preferences"] = {}
 
-            # Copy user preferences into the profile structure
+            # Copy preferences to the designated location only
             self.profiles_index[email]["preferences"] = self.user_preferences[email]
 
         # Save the updated profiles_index
@@ -668,6 +674,28 @@ class AVDProfileManager:
         """
         return self.avd_creator.create_new_avd(email)
 
+    def _get_preference_value(self, email: str, key: str, default=None):
+        """
+        Get a preference value for a user from the correct location.
+
+        Args:
+            email: Email address of the user
+            key: Preference key to get
+            default: Default value to return if preference not found
+
+        Returns:
+            The preference value or default if not found
+        """
+        # Always reload user preferences to ensure we have the latest data
+        self.user_preferences = self._load_user_preferences()
+
+        # Check user_preferences (which should be in the "preferences" key)
+        if email in self.user_preferences:
+            if key in self.user_preferences[email]:
+                return self.user_preferences[email][key]
+
+        return default
+
     def is_styles_updated(self, email: str = None) -> bool:
         """
         Check if styles have been updated for a profile.
@@ -681,22 +709,35 @@ class AVDProfileManager:
         if not email:
             return False
 
-        # Always reload user preferences to ensure we have the latest data
-        self.user_preferences = self._load_user_preferences()
+        # Get the styles_updated preference from the correct location
+        return self._get_preference_value(email, "styles_updated", False)
 
-        # Check in user_preferences cache first
-        if email in self.user_preferences:
-            if "styles_updated" in self.user_preferences[email]:
-                return self.user_preferences[email]["styles_updated"]
+    def _set_preference_value(self, email: str, key: str, value):
+        """
+        Set a preference value for a user in the correct location.
 
-        # Check in profiles_index as fallback (for backward compatibility)
-        if email in self.profiles_index and isinstance(self.profiles_index[email], dict):
-            if "preferences" in self.profiles_index[email]:
-                prefs = self.profiles_index[email]["preferences"]
-                if "styles_updated" in prefs:
-                    return prefs["styles_updated"]
+        Args:
+            email: Email address of the user
+            key: Preference key to set
+            value: Value to set
 
-        return False
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Initialize preference structure if needed
+            if email not in self.user_preferences:
+                self.user_preferences[email] = {}
+
+            # Set the preference value
+            self.user_preferences[email][key] = value
+
+            # Save all changes
+            self._save_user_preferences()
+            return True
+        except Exception as e:
+            logger.error(f"Error setting preference {key} for {email}: {e}")
+            return False
 
     def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
         """
@@ -720,14 +761,10 @@ class AVDProfileManager:
                 logger.warning(f"No AVD name found for email {email}")
                 return False
 
-            # Initialize preference structure if needed
-            if email not in self.user_preferences:
-                self.user_preferences[email] = {}
+            # Update style preference
+            self._set_preference_value(email, "styles_updated", is_updated)
 
-            # Update the style preference
-            self.user_preferences[email]["styles_updated"] = is_updated
-
-            # Also update reading preferences if present
+            # Initialize reading_settings if needed
             if "reading_settings" not in self.user_preferences[email]:
                 self.user_preferences[email]["reading_settings"] = {}
 
