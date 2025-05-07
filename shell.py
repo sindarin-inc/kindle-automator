@@ -44,15 +44,10 @@ from handlers.auth_handler import LoginVerificationState
 from handlers.library_handler import LibraryHandler
 from handlers.permissions_handler import PermissionsHandler
 from handlers.reader_handler import ReaderHandler
-from handlers.test_fixtures_handler import TestFixturesHandler
 from server.core.automation_server import AutomationServer
-from server.utils.emulator_launcher import EmulatorLauncher
-from server.utils.vnc_instance_manager import VNCInstanceManager
 from views.core.app_state import AppState
 from views.core.avd_creator import AVDCreator
-from views.core.avd_profile_manager import AVDProfileManager
 from views.core.device_discovery import DeviceDiscovery
-from views.core.emulator_manager import EmulatorManager
 from views.state_machine import KindleStateMachine
 from views.view_inspector import ViewInspector
 

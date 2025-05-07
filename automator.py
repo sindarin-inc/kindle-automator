@@ -9,8 +9,6 @@ import time
 import traceback
 
 from driver import Driver
-from handlers.library_handler import LibraryHandler
-from handlers.reader_handler import ReaderHandler
 from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
 from views.state_machine import KindleStateMachine
@@ -24,8 +22,6 @@ class KindleAutomator:
         self.driver = None
         self.state_machine = None
         self.device_id = None  # Will be set during initialization
-        self.library_handler = None
-        self.reader_handler = None
         self.profile_manager = None  # Will be set by server.py
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
@@ -75,14 +71,8 @@ class KindleAutomator:
             logger.info(f"Setting device_id {self.device_id} directly on view_inspector")
             self.state_machine.view_inspector.device_id = self.device_id
 
-        # Initialize handlers
-        self.library_handler = LibraryHandler(self.driver)
-        self.reader_handler = ReaderHandler(self.driver)
-
-        # Set the profile_manager reference in the reader handler
-        # This allows it to access the correct profile manager to save style preferences
-        if hasattr(self, "profile_manager") and self.profile_manager:
-            self.reader_handler.profile_manager = self.profile_manager
+        # The profile_manager reference is set on the automator instance
+        # The reader_handler will access it via driver.automator.profile_manager
 
         # Verify app is in foreground - sometimes it quits after driver connects
         try:

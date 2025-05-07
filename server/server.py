@@ -219,8 +219,8 @@ class BooksResource(Resource):
 
             if transition_success:
                 logger.info("Successfully transitioned to library state")
-                # Get books with metadata from library handler
-                books = automator.library_handler.get_book_titles()
+                # Get books with metadata from state machine's library handler
+                books = automator.state_machine.library_handler.get_book_titles()
 
                 # If books is None, it means authentication is required
                 if books is None:
@@ -286,8 +286,8 @@ class BooksResource(Resource):
                         "current_state": updated_state.name,
                     }, 400
 
-        # Get books with metadata from library handler
-        books = automator.library_handler.get_book_titles()
+        # Get books with metadata from state machine's library handler
+        books = automator.state_machine.library_handler.get_book_titles()
 
         # If books is None, it means authentication is required
         if books is None:
@@ -531,26 +531,26 @@ class NavigationResource(Resource):
             return {"error": "Navigation action is required"}, 400
 
         if action == "next_page":
-            success = automator.reader_handler.turn_page_forward()
+            success = automator.state_machine.reader_handler.turn_page_forward()
         elif action == "previous_page":
-            success = automator.reader_handler.turn_page_backward()
+            success = automator.state_machine.reader_handler.turn_page_backward()
         elif action == "preview_next_page":
-            success, ocr_text = automator.reader_handler.preview_page_forward()
+            success, ocr_text = automator.state_machine.reader_handler.preview_page_forward()
             # Add OCR text to response if available
             if success and ocr_text:
                 response_data = {"success": True, "ocr_text": ocr_text}
                 # Get reading progress but don't show placemark
-                progress = automator.reader_handler.get_reading_progress(show_placemark=False)
+                progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
                 if progress:
                     response_data["progress"] = progress
                 return response_data, 200
         elif action == "preview_previous_page":
-            success, ocr_text = automator.reader_handler.preview_page_backward()
+            success, ocr_text = automator.state_machine.reader_handler.preview_page_backward()
             # Add OCR text to response if available
             if success and ocr_text:
                 response_data = {"success": True, "ocr_text": ocr_text}
                 # Get reading progress but don't show placemark
-                progress = automator.reader_handler.get_reading_progress(show_placemark=False)
+                progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
                 if progress:
                     response_data["progress"] = progress
                 return response_data, 200
@@ -574,7 +574,9 @@ class NavigationResource(Resource):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for navigation")
 
-            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.state_machine.reader_handler.get_reading_progress(
+                show_placemark=show_placemark
+            )
 
             # Save screenshot with unique ID
             screenshot_id = f"page_{int(time.time())}"
@@ -674,7 +676,9 @@ class BookOpenResource(Resource):
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
             # Get reading progress
-            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.state_machine.reader_handler.get_reading_progress(
+                show_placemark=show_placemark
+            )
             logger.info(f"Progress: {progress}")
 
             # Save screenshot with unique ID
@@ -748,7 +752,7 @@ class BookOpenResource(Resource):
                 )
                 try:
                     # Try to get the current book title from the reader UI
-                    current_title_from_ui = automator.reader_handler.get_book_title()
+                    current_title_from_ui = automator.state_machine.reader_handler.get_book_title()
                     if current_title_from_ui:
                         logger.info(f"Got book title from UI: '{current_title_from_ui}'")
 
@@ -792,7 +796,7 @@ class BookOpenResource(Resource):
                 # We're in reading state but don't have current_book set - try to get it from UI
                 try:
                     # Try to get the current book title from the reader UI
-                    current_title_from_ui = automator.reader_handler.get_book_title()
+                    current_title_from_ui = automator.state_machine.reader_handler.get_book_title()
                     if current_title_from_ui:
                         logger.info(
                             f"In reading state with no tracked book. Got book title from UI: '{current_title_from_ui}'"
@@ -848,7 +852,9 @@ class BookOpenResource(Resource):
         )
         # If we're not already reading the requested book, transition to library and open it
         if automator.state_machine.transition_to_library(server=server):
-            success = automator.reader_handler.open_book(book_title, show_placemark=show_placemark)
+            success = automator.state_machine.reader_handler.open_book(
+                book_title, show_placemark=show_placemark
+            )
             logger.info(f"Book opened: {success}")
 
             if success:
@@ -1002,6 +1008,11 @@ class AuthResource(Resource):
         if automator.driver and not hasattr(automator.driver, "automator"):
             logger.info("Setting automator on driver object for state transitions")
             automator.driver.automator = automator
+
+        # Ensure the driver is healthy and all components are initialized
+        if not automator.ensure_driver_running():
+            logger.error("Failed to ensure driver is running, cannot proceed with authentication")
+            return {"error": "Failed to initialize automator driver"}, 500
 
         # This is the critical method that ensures we navigate to AUTH or LIBRARY
         logger.info("Calling prepare_for_authentication to navigate to sign-in screen or library")
@@ -1780,7 +1791,9 @@ class TextResource(Resource):
                     show_placemark = True
                     logger.info("Placemark mode enabled from POST data for OCR")
 
-            progress = automator.reader_handler.get_reading_progress(show_placemark=show_placemark)
+            progress = automator.state_machine.reader_handler.get_reading_progress(
+                show_placemark=show_placemark
+            )
 
             # Process the screenshot with OCR
             try:

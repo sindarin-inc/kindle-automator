@@ -11,10 +11,7 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from handlers.library_handler import LibraryHandler
-from handlers.style_handler import StyleHandler
 from server.logging_config import store_page_source
-from views.core.avd_profile_manager import AVDProfileManager
 from views.reading.interaction_strategies import (
     ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
     BOTTOM_SHEET_IDENTIFIERS,
@@ -54,17 +51,9 @@ logger = logging.getLogger(__name__)
 class ReaderHandler:
     def __init__(self, driver):
         self.driver = driver
-        self.library_handler = LibraryHandler(driver)
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-        # Initialize profile manager
-        self.profile_manager = AVDProfileManager()
-        # Store profile manager in driver for other handlers to access
-        if not hasattr(driver, "profile_manager"):
-            driver.profile_manager = self.profile_manager
-        # Initialize style handler
-        self.style_handler = StyleHandler(driver)
 
     def handle_download_limit_dialog(self) -> bool:
         """Handle the 'Download Limit Reached' dialog by selecting the top device and clicking 'Remove and Download'.
@@ -334,8 +323,19 @@ class ReaderHandler:
         """
         logger.info(f"Starting reading flow for book: {book_title}")
 
-        if not self.library_handler.open_book(book_title):
-            logger.error(f"Failed to open book: {book_title}")
+        if (
+            hasattr(self.driver, "automator")
+            and hasattr(self.driver.automator, "state_machine")
+            and hasattr(self.driver.automator.state_machine, "library_handler")
+        ):
+            library_handler = self.driver.automator.state_machine.library_handler
+            if not library_handler.open_book(book_title):
+                logger.error(f"Failed to open book: {book_title}")
+                return False
+        else:
+            logger.error(
+                f"Cannot open book: {book_title} - library_handler not available through driver.automator.state_machine"
+            )
             return False
 
         logger.info(f"Successfully navigated away from library view")
@@ -496,22 +496,37 @@ class ReaderHandler:
                                     logger.info("Attempting to open the book again...")
 
                                     # Retry opening the book one more time
-                                    if self.library_handler.open_book(book_title):
-                                        logger.info(
-                                            "Successfully reopened book after download limit handling"
-                                        )
-                                        # Now wait for reading view again
-                                        try:
-                                            WebDriverWait(self.driver, 15).until(reading_view_present)
-                                            logger.info("Reading view detected after reopening book")
-                                            return True
-                                        except TimeoutException:
-                                            logger.error("Failed to detect reading view after reopening book")
-                                            store_page_source(
-                                                self.driver.page_source, "failed_reopen_after_download_limit"
+                                    if (
+                                        hasattr(self.driver, "automator")
+                                        and hasattr(self.driver.automator, "state_machine")
+                                        and hasattr(self.driver.automator.state_machine, "library_handler")
+                                    ):
+                                        library_handler = self.driver.automator.state_machine.library_handler
+                                        if library_handler.open_book(book_title):
+                                            logger.info(
+                                                "Successfully reopened book after download limit handling"
                                             )
+                                        else:
+                                            logger.error(
+                                                f"Failed to reopen book: {book_title} after download limit handling"
+                                            )
+                                            return False
                                     else:
-                                        logger.error("Failed to reopen book after handling download limit")
+                                        logger.error(
+                                            f"Cannot reopen book: {book_title} - library_handler not available"
+                                        )
+                                        return False
+
+                                    # Now wait for reading view again
+                                    try:
+                                        WebDriverWait(self.driver, 15).until(reading_view_present)
+                                        logger.info("Reading view detected after reopening book")
+                                        return True
+                                    except TimeoutException:
+                                        logger.error("Failed to detect reading view after reopening book")
+                                        store_page_source(
+                                            self.driver.page_source, "failed_reopen_after_download_limit"
+                                        )
                             except Exception as back_to_lib_e:
                                 logger.error(f"Error checking if back at library: {back_to_lib_e}")
 
@@ -888,14 +903,26 @@ class ReaderHandler:
         logger.info("Successfully opened book and captured first page")
 
         # Check if we need to update reading styles for this profile
-        if not self.profile_manager.is_styles_updated():
-            logger.info("First-time reading with this profile, updating reading styles...")
-            if self.style_handler.update_reading_style(show_placemark=show_placemark):
-                logger.info("Successfully updated reading styles")
+        if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
+            profile_manager = self.driver.automator.profile_manager
+            if hasattr(self.driver.automator, "state_machine") and hasattr(
+                self.driver.automator.state_machine, "style_handler"
+            ):
+                style_handler = self.driver.automator.state_machine.style_handler
+
+                # Update styles if needed
+                if not profile_manager.is_styles_updated():
+                    logger.info("First-time reading with this profile, updating reading styles...")
+                    if style_handler.update_reading_style(show_placemark=show_placemark):
+                        logger.info("Successfully updated reading styles")
+                    else:
+                        logger.warning("Failed to update reading styles")
+                else:
+                    logger.info("Reading styles already updated for this profile, skipping")
             else:
-                logger.warning("Failed to update reading styles")
+                logger.warning("Cannot update reading styles - style_handler not available")
         else:
-            logger.info("Reading styles already updated for this profile, skipping")
+            logger.warning("Cannot update reading styles - profile_manager not available")
 
         # Optionally show placemark by tapping center of page
         if show_placemark:

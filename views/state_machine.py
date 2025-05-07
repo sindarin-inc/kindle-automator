@@ -6,6 +6,7 @@ from handlers.auth_handler import AuthenticationHandler
 from handlers.library_handler import LibraryHandler
 from handlers.permissions_handler import PermissionsHandler
 from handlers.reader_handler import ReaderHandler
+from handlers.style_handler import StyleHandler
 from server.logging_config import store_page_source
 from views.core.app_state import AppState, AppView
 from views.library.view_strategies import LIBRARY_ELEMENT_DETECTION_STRATEGIES
@@ -25,7 +26,10 @@ class KindleStateMachine:
         # Initialize auth handler without captcha solution - it'll be set later if needed
         self.auth_handler = AuthenticationHandler(driver)
         self.library_handler = LibraryHandler(driver)
+        self.style_handler = StyleHandler(driver)
         self.reader_handler = ReaderHandler(driver)
+        # Set library_handler reference in reader_handler
+        self.reader_handler.library_handler = self.library_handler
         self.permissions_handler = PermissionsHandler(driver)
         self.transitions = StateTransitions(
             self.view_inspector,
