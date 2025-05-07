@@ -61,10 +61,20 @@ class VNCInstanceManager:
                 with open(self.map_path, "r") as f:
                     data = json.load(f)
                     self.instances = data.get("instances", [])
+                    # Ensure we have a valid instances list
+                    if not isinstance(self.instances, list):
+                        logger.warning(
+                            f"Invalid instances format in {self.map_path}, resetting to empty list"
+                        )
+                        self.instances = []
+
+                    # Log info about loaded instances
+                    active_instances = [i for i in self.instances if i.get("assigned_profile") is not None]
+                    logger.info(f"Loaded {len(self.instances)} VNC instances, {len(active_instances)} active")
                     return True
             else:
-                # Create a default mapping for development environments
-                logger.warning(f"VNC instance map not found at {self.map_path}, creating default instances")
+                # Create an empty list for development environments
+                logger.info(f"VNC instance map not found at {self.map_path}, creating empty instance list")
                 self.instances = self._create_default_instances()
                 self.save_instances()
                 return True
@@ -75,22 +85,36 @@ class VNCInstanceManager:
 
     def _create_default_instances(self) -> List[Dict]:
         """
-        Create default VNC instances for development environments.
+        Create an empty list for VNC instances that will be populated dynamically.
 
         Returns:
-            List[Dict]: List of default VNC instances
+            List[Dict]: Empty list for VNC instances
         """
-        return [
-            {
-                "id": i,
-                "display": i,
-                "vnc_port": 5900 + i,
-                "appium_port": 4723 + i,
-                "emulator_id": None,  # Will be populated when emulator connects
-                "assigned_profile": None,
-            }
-            for i in range(1, 9)  # Create 8 default instances
-        ]
+        # Return an empty list - instances will be created dynamically as needed
+        return []
+
+    def _create_new_instance(self) -> Dict:
+        """
+        Create a new VNC instance with the next available ID.
+
+        Returns:
+            Dict: Newly created VNC instance
+        """
+        # Determine next available ID from existing instances
+        next_id = 1
+        if self.instances:
+            existing_ids = [instance["id"] for instance in self.instances]
+            next_id = max(existing_ids) + 1
+
+        # Create a new instance with the next available ID
+        return {
+            "id": next_id,
+            "display": next_id,
+            "vnc_port": 5900 + next_id,
+            "appium_port": 4723 + next_id,
+            "emulator_id": None,
+            "assigned_profile": None,
+        }
 
     def save_instances(self) -> bool:
         """
@@ -198,7 +222,7 @@ class VNCInstanceManager:
 
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:
         """
-        Assign a VNC instance to a profile.
+        Assign a VNC instance to a profile. Creates a new instance if needed.
 
         Args:
             email: Email address of the profile
@@ -241,9 +265,13 @@ class VNCInstanceManager:
                 logger.info(f"Assigned VNC instance {instance['id']} to email {email}")
                 return instance
 
-        # No available instances
-        logger.warning(f"No available VNC instances for profile {email}")
-        return None
+        # No available instances, create a new one
+        new_instance = self._create_new_instance()
+        new_instance["assigned_profile"] = email
+        self.instances.append(new_instance)
+        self.save_instances()
+        logger.info(f"Created and assigned new VNC instance {new_instance['id']} to email {email}")
+        return new_instance
 
     def release_instance_from_profile(self, email: str) -> bool:
         """

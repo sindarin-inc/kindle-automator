@@ -61,21 +61,19 @@ class EmulatorLauncher:
             if os.path.exists(self.vnc_instance_map_path):
                 with open(self.vnc_instance_map_path, "r") as f:
                     self.vnc_instances = json.load(f)
+
+                # Ensure instances list is properly initialized
+                if "instances" not in self.vnc_instances or not isinstance(
+                    self.vnc_instances["instances"], list
+                ):
+                    logger.warning(
+                        f"Invalid instances format in {self.vnc_instance_map_path}, resetting to empty list"
+                    )
+                    self.vnc_instances = {"instances": []}
             else:
-                # Create default instances with unique emulator ports
-                logger.info(f"Creating default VNC instance mapping at {self.vnc_instance_map_path}")
-                self.vnc_instances = {
-                    "instances": [
-                        {
-                            "id": i,
-                            "display": i,
-                            "vnc_port": 5900 + i,
-                            "emulator_port": 5554 + ((i - 1) * 2),  # 5554, 5556, 5558, etc.
-                            "assigned_profile": None,
-                        }
-                        for i in range(1, 9)  # Create 8 default instances
-                    ]
-                }
+                # Create an empty instance list - instances will be created dynamically
+                logger.info(f"Creating empty VNC instance mapping at {self.vnc_instance_map_path}")
+                self.vnc_instances = {"instances": []}
                 # Save to file
                 self._save_vnc_instance_map()
         except Exception as e:
@@ -102,6 +100,10 @@ class EmulatorLauncher:
             The display number or None if not found
         """
         try:
+            # Ensure instances is properly initialized
+            if "instances" not in self.vnc_instances or not isinstance(self.vnc_instances["instances"], list):
+                self.vnc_instances = {"instances": []}
+
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
                     return instance["display"]
@@ -124,6 +126,10 @@ class EmulatorLauncher:
             The emulator port or None if not found
         """
         try:
+            # Ensure instances is properly initialized
+            if "instances" not in self.vnc_instances or not isinstance(self.vnc_instances["instances"], list):
+                self.vnc_instances = {"instances": []}
+
             for instance in self.vnc_instances["instances"]:
                 if instance["assigned_profile"] == email:
                     return instance["emulator_port"]
@@ -157,9 +163,35 @@ class EmulatorLauncher:
 
         return None
 
+    def _create_new_instance(self) -> Dict:
+        """
+        Create a new VNC instance with the next available ID and emulator port.
+
+        Returns:
+            Dict: Newly created VNC instance
+        """
+        # Determine next available ID from existing instances
+        next_id = 1
+        if self.vnc_instances["instances"]:
+            existing_ids = [instance["id"] for instance in self.vnc_instances["instances"]]
+            next_id = max(existing_ids) + 1
+
+        # Calculate the emulator port based on instance ID
+        # Emulator ports are typically 5554, 5556, 5558, etc.
+        emulator_port = 5554 + ((next_id - 1) * 2)
+
+        # Create a new instance with the next available ID
+        return {
+            "id": next_id,
+            "display": next_id,
+            "vnc_port": 5900 + next_id,
+            "emulator_port": emulator_port,
+            "assigned_profile": None,
+        }
+
     def assign_display_to_profile(self, email: str) -> Optional[int]:
         """
-        Assign a display number to a profile.
+        Assign a display number to a profile. Creates a new instance if needed.
 
         Args:
             email: The profile email
@@ -183,9 +215,13 @@ class EmulatorLauncher:
                     logger.info(f"Assigned display :{instance['display']} to profile {email}")
                     return instance["display"]
 
-            # No available instances, return None
-            logger.error(f"No available displays for profile {email}")
-            return None
+            # No available instances, create a new one
+            new_instance = self._create_new_instance()
+            new_instance["assigned_profile"] = email
+            self.vnc_instances["instances"].append(new_instance)
+            self._save_vnc_instance_map()
+            logger.info(f"Created and assigned new display :{new_instance['display']} to profile {email}")
+            return new_instance["display"]
         except Exception as e:
             logger.error(f"Error assigning display to profile {email}: {e}")
             return None
