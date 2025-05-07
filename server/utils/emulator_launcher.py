@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 from server.utils import ansi_colors as ansi
 from server.utils.request_utils import get_sindarin_email
+from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,8 @@ class EmulatorLauncher:
         self.avd_dir = avd_dir
         self.host_arch = host_arch
 
-        # Set up profiles directory and VNC instance map path
+        # Set up profiles directory
         self.profiles_dir = os.path.join(android_home, "profiles")
-        self.vnc_instance_map_path = os.path.join(self.profiles_dir, "vnc_instance_map.json")
 
         # Ensure profiles directory exists
         os.makedirs(self.profiles_dir, exist_ok=True)
@@ -52,42 +52,8 @@ class EmulatorLauncher:
         # IMPORTANT: We use AVD names as keys, NOT emails
         self.running_emulators = {}
 
-        # Load existing mapping if available
-        self._load_vnc_instance_map()
-
-    def _load_vnc_instance_map(self):
-        """Load VNC instance mapping from JSON file."""
-        try:
-            if os.path.exists(self.vnc_instance_map_path):
-                with open(self.vnc_instance_map_path, "r") as f:
-                    self.vnc_instances = json.load(f)
-
-                # Ensure instances list is properly initialized
-                if "instances" not in self.vnc_instances or not isinstance(
-                    self.vnc_instances["instances"], list
-                ):
-                    logger.warning(
-                        f"Invalid instances format in {self.vnc_instance_map_path}, resetting to empty list"
-                    )
-                    self.vnc_instances = {"instances": []}
-            else:
-                # Create an empty instance list - instances will be created dynamically
-                logger.info(f"Creating empty VNC instance mapping at {self.vnc_instance_map_path}")
-                self.vnc_instances = {"instances": []}
-                # Save to file
-                self._save_vnc_instance_map()
-        except Exception as e:
-            logger.error(f"Error loading VNC instance mapping: {e}")
-            # Create a default mapping
-            self.vnc_instances = {"instances": []}
-
-    def _save_vnc_instance_map(self):
-        """Save VNC instance mapping to JSON file."""
-        try:
-            with open(self.vnc_instance_map_path, "w") as f:
-                json.dump(self.vnc_instances, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving VNC instance mapping: {e}")
+        # Use the VNCInstanceManager singleton for managing VNC instances
+        self.vnc_manager = VNCInstanceManager.get_instance()
 
     def get_x_display(self, email: str) -> Optional[int]:
         """
@@ -100,17 +66,11 @@ class EmulatorLauncher:
             The display number or None if not found
         """
         try:
-            # Ensure instances is properly initialized
-            if "instances" not in self.vnc_instances or not isinstance(self.vnc_instances["instances"], list):
-                self.vnc_instances = {"instances": []}
-
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == email:
-                    return instance["display"]
-
-            # No display found
-            logger.warning(f"No display found for {email}")
-            return None
+            # Use VNCInstanceManager to get display number
+            display = self.vnc_manager.get_x_display(email)
+            if display is None:
+                logger.warning(f"No display found for {email}")
+            return display
         except Exception as e:
             logger.error(f"Error getting X display for {email}: {e}")
             return None
@@ -126,12 +86,11 @@ class EmulatorLauncher:
             The emulator port or None if not found
         """
         try:
-            # Ensure instances is properly initialized
-            if "instances" not in self.vnc_instances or not isinstance(self.vnc_instances["instances"], list):
-                self.vnc_instances = {"instances": []}
-
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == email:
+            # Get the instance from VNCInstanceManager
+            instance = self.vnc_manager.get_instance_for_profile(email)
+            if instance:
+                # Check if instance already has emulator_port field
+                if "emulator_port" in instance:
                     return instance["emulator_port"]
 
             # No port found
@@ -163,32 +122,6 @@ class EmulatorLauncher:
 
         return None
 
-    def _create_new_instance(self) -> Dict:
-        """
-        Create a new VNC instance with the next available ID and emulator port.
-
-        Returns:
-            Dict: Newly created VNC instance
-        """
-        # Determine next available ID from existing instances
-        next_id = 1
-        if self.vnc_instances["instances"]:
-            existing_ids = [instance["id"] for instance in self.vnc_instances["instances"]]
-            next_id = max(existing_ids) + 1
-
-        # Calculate the emulator port based on instance ID
-        # Emulator ports are typically 5554, 5556, 5558, etc.
-        emulator_port = 5554 + ((next_id - 1) * 2)
-
-        # Create a new instance with the next available ID
-        return {
-            "id": next_id,
-            "display": next_id,
-            "vnc_port": 5900 + next_id,
-            "emulator_port": emulator_port,
-            "assigned_profile": None,
-        }
-
     def assign_display_to_profile(self, email: str) -> Optional[int]:
         """
         Assign a display number to a profile. Creates a new instance if needed.
@@ -200,28 +133,22 @@ class EmulatorLauncher:
             The assigned display number or None if assignment failed
         """
         try:
-            # First check if the profile already has an assigned display
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == email:
-                    logger.info(f"Profile {email} already assigned to display :{instance['display']}")
-                    return instance["display"]
+            # Check if this profile already has a display assigned through VNCInstanceManager
+            display = self.vnc_manager.get_x_display(email)
+            if display:
+                logger.info(f"Profile {email} already assigned to display :{display}")
+                return display
 
-            # Find an available instance
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] is None:
-                    # Assign this instance to the profile using AVD name
-                    instance["assigned_profile"] = email
-                    self._save_vnc_instance_map()
-                    logger.info(f"Assigned display :{instance['display']} to profile {email}")
-                    return instance["display"]
+            # Assign an instance in VNCInstanceManager
+            instance = self.vnc_manager.assign_instance_to_profile(email)
+            if instance:
+                display = instance.get("display")
+                logger.info(f"Assigned display :{display} to profile {email}")
+                return display
 
-            # No available instances, create a new one
-            new_instance = self._create_new_instance()
-            new_instance["assigned_profile"] = email
-            self.vnc_instances["instances"].append(new_instance)
-            self._save_vnc_instance_map()
-            logger.info(f"Created and assigned new display :{new_instance['display']} to profile {email}")
-            return new_instance["display"]
+            # No instance could be assigned
+            logger.error(f"Failed to assign display for {email}")
+            return None
         except Exception as e:
             logger.error(f"Error assigning display to profile {email}: {e}")
             return None
@@ -668,16 +595,13 @@ class EmulatorLauncher:
             True if successful, False otherwise
         """
         try:
-            # First try to find and release by email
-            for instance in self.vnc_instances["instances"]:
-                if instance["assigned_profile"] == email:
-                    instance["assigned_profile"] = None
-                    self._save_vnc_instance_map()
-                    logger.info(f"Released profile by email {email} from VNC instance map")
-                    return True
-
-            logger.warning(f"No VNC instance found for profile {email}")
-            return False
+            # Release the profile through VNCInstanceManager
+            if self.vnc_manager.release_instance_from_profile(email):
+                logger.info(f"Released profile {email} from VNC instance map")
+                return True
+            else:
+                logger.warning(f"No VNC instance found for profile {email}")
+                return False
         except Exception as e:
             logger.error(f"Error releasing profile {email}: {e}")
             return False

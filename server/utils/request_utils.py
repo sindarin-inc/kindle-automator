@@ -103,8 +103,8 @@ def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]
         return None
 
     try:
-        # Use the VNCInstanceManager to get the port
-        vnc_manager = VNCInstanceManager()
+        # Use the VNCInstanceManager singleton to get the port
+        vnc_manager = VNCInstanceManager.get_instance()
         android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         avd_dir = os.path.join(android_home, "avd")
 

@@ -235,7 +235,7 @@ class AVDProfileManager:
             try:
                 from server.utils.vnc_instance_manager import VNCInstanceManager
 
-                vnc_manager = VNCInstanceManager()
+                vnc_manager = VNCInstanceManager.get_instance()
                 vnc_manager.set_emulator_id(email, emulator_id)
             except Exception as e:
                 logger.warning(f"Error storing emulator ID in VNC instance: {e}")
@@ -321,7 +321,7 @@ class AVDProfileManager:
         from server.utils.vnc_instance_manager import VNCInstanceManager
 
         try:
-            vnc_manager = VNCInstanceManager()
+            vnc_manager = VNCInstanceManager.get_instance()
             appium_port = vnc_manager.get_appium_port(email)
             if appium_port:
                 return appium_port
@@ -492,7 +492,7 @@ class AVDProfileManager:
         try:
             from server.utils.vnc_instance_manager import VNCInstanceManager
 
-            vnc_manager = VNCInstanceManager()
+            vnc_manager = VNCInstanceManager.get_instance()
             emulator_id = vnc_manager.get_emulator_id(email)
 
             if emulator_id:

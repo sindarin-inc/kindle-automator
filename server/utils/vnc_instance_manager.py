@@ -18,19 +18,42 @@ else:
 PROFILES_DIR = os.path.join(ANDROID_HOME, "profiles")
 VNC_INSTANCE_MAP_PATH = os.path.join(PROFILES_DIR, "vnc_instance_map.json")
 
+# Singleton instance
+_instance = None
+
 
 class VNCInstanceManager:
     """
     Manages multiple VNC instances and assigns them to user profiles.
+    Implements the singleton pattern to ensure only one instance exists.
     """
+
+    @classmethod
+    def get_instance(cls) -> "VNCInstanceManager":
+        """
+        Get the singleton instance of VNCInstanceManager.
+
+        Returns:
+            VNCInstanceManager: The singleton instance
+        """
+        global _instance
+        if _instance is None:
+            _instance = cls(VNC_INSTANCE_MAP_PATH)
+        return _instance
 
     def __init__(self, map_path: str = VNC_INSTANCE_MAP_PATH):
         """
         Initialize the VNC instance manager.
+        Note: You should use get_instance() instead of creating instances directly.
 
         Args:
             map_path: Path to the VNC instance mapping JSON file
         """
+        # Check if this is being called directly or through get_instance()
+        global _instance
+        if _instance is not None and _instance is not self:
+            logger.warning("VNCInstanceManager initialized directly. Use get_instance() instead.")
+
         self.map_path = map_path
         self.instances = []
 
@@ -93,6 +116,45 @@ class VNCInstanceManager:
         # Return an empty list - instances will be created dynamically as needed
         return []
 
+    def calculate_emulator_port(self, instance_id: int) -> int:
+        """
+        Calculate emulator port based on instance ID.
+
+        Args:
+            instance_id: The instance ID
+
+        Returns:
+            int: The emulator port
+        """
+        # Emulator ports are typically 5554, 5556, 5558, etc. (even numbers)
+        return 5554 + ((instance_id - 1) * 2)
+
+    def calculate_vnc_port(self, instance_id: int) -> int:
+        """
+        Calculate VNC port based on instance ID.
+
+        Args:
+            instance_id: The instance ID
+
+        Returns:
+            int: The VNC port
+        """
+        # VNC ports start at 5900 and increment by 1
+        return 5900 + instance_id
+
+    def calculate_appium_port(self, instance_id: int) -> int:
+        """
+        Calculate Appium port based on instance ID.
+
+        Args:
+            instance_id: The instance ID
+
+        Returns:
+            int: The Appium port
+        """
+        # Appium ports start at 4723 and increment by 1
+        return 4723 + instance_id
+
     def _create_new_instance(self) -> Dict:
         """
         Create a new VNC instance with the next available ID.
@@ -106,12 +168,18 @@ class VNCInstanceManager:
             existing_ids = [instance["id"] for instance in self.instances]
             next_id = max(existing_ids) + 1
 
+        # Calculate ports based on instance ID
+        emulator_port = self.calculate_emulator_port(next_id)
+        vnc_port = self.calculate_vnc_port(next_id)
+        appium_port = self.calculate_appium_port(next_id)
+
         # Create a new instance with the next available ID
         return {
             "id": next_id,
             "display": next_id,
-            "vnc_port": 5900 + next_id,
-            "appium_port": 4723 + next_id,
+            "vnc_port": vnc_port,
+            "appium_port": appium_port,
+            "emulator_port": emulator_port,
             "emulator_id": None,
             "assigned_profile": None,
         }
@@ -246,6 +314,9 @@ class VNCInstanceManager:
                         instance["assigned_profile"] = email
                         self.save_instances()
                         logger.info(f"Assigned VNC instance {instance_id} to email {email}")
+
+                        # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
+
                         return instance
                     else:
                         logger.warning(
@@ -271,6 +342,9 @@ class VNCInstanceManager:
         self.instances.append(new_instance)
         self.save_instances()
         logger.info(f"Created and assigned new VNC instance {new_instance['id']} to email {email}")
+
+        # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
+
         return new_instance
 
     def release_instance_from_profile(self, email: str) -> bool:
@@ -291,6 +365,9 @@ class VNCInstanceManager:
             instance["assigned_profile"] = None
             self.save_instances()
             logger.info(f"Released VNC instance {instance_id} from profile {email}")
+
+            # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
+
             return True
 
         # No instance found
@@ -309,7 +386,15 @@ class VNCInstanceManager:
         """
         instance = self.get_instance_for_profile(email)
         if instance:
-            return instance["vnc_port"]
+            # Return stored vnc_port if available
+            if "vnc_port" in instance:
+                return instance["vnc_port"]
+
+            # Calculate port from ID if vnc_port is not available
+            instance_id = instance.get("id")
+            if instance_id:
+                return self.calculate_vnc_port(instance_id)
+
         return None
 
     def get_x_display(self, email: str) -> Optional[int]:
@@ -324,7 +409,8 @@ class VNCInstanceManager:
         """
         instance = self.get_instance_for_profile(email)
         if instance:
-            return instance["display"]
+            # The display number is typically the same as the instance ID
+            return instance.get("display", instance.get("id"))
         return None
 
     def get_appium_port(self, email: str) -> Optional[int]:
@@ -338,8 +424,16 @@ class VNCInstanceManager:
             Optional[int]: The Appium port or None if no instance is assigned
         """
         instance = self.get_instance_for_profile(email)
-        if instance and "appium_port" in instance:
-            return instance["appium_port"]
+        if instance:
+            # Return stored appium_port if available
+            if "appium_port" in instance:
+                return instance["appium_port"]
+
+            # Calculate port from ID if emulator_port is not available
+            instance_id = instance.get("id")
+            if instance_id:
+                return self.calculate_appium_port(instance_id)
+
         return None
 
     def get_emulator_id(self, email: str) -> Optional[str]:
