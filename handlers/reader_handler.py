@@ -312,7 +312,7 @@ class ReaderHandler:
 
     def open_book(self, book_title: str, show_placemark: bool = False) -> bool:
         """Handle reading view actions after a book has been opened.
-        
+
         This method assumes we're already in the reading view or about to transition to it,
         and handles all reading-view related dialogs (download limit, last read page, etc.).
         It does NOT open the book from the library - that's handled by library_handler.

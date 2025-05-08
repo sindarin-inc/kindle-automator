@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
@@ -31,7 +32,7 @@ class LibraryHandlerScroll:
 
     def _log_page_summary(self, page_number, new_titles, total_found):
         """Log a concise summary of books found on current page.
-        
+
         Args:
             page_number: Current page number
             new_titles: List of new book titles found on this page
@@ -39,11 +40,11 @@ class LibraryHandlerScroll:
         """
         logger.info(f"Page {page_number}: Found {len(new_titles)} new books, total {total_found}")
         if new_titles:
-            titles_str = ', '.join(new_titles[:5])
+            titles_str = ", ".join(new_titles[:5])
             if len(new_titles) > 5:
                 titles_str += f" and {len(new_titles) - 5} more"
             logger.info(f"New titles: {titles_str}")
-            
+
     def _scroll_through_library(self, target_title: str = None, title_match_func=None):
         """Scroll through library collecting book info, optionally looking for a specific title.
 
@@ -66,12 +67,11 @@ class LibraryHandlerScroll:
             seen_titles = set()
             normalized_target = self._normalize_title(target_title) if target_title else None
             page_count = 0
-            
+
             while True:
                 page_count += 1
                 # Log page source for debugging
                 filepath = store_page_source(self.driver.page_source, "library_view")
-                logger.info(f"Stored library view page source at: {filepath}")
 
                 # Find all book containers on current screen
                 # PRIMARY APPROACH: First directly find all title elements
@@ -81,7 +81,6 @@ class LibraryHandlerScroll:
                     title_elements = self.driver.find_elements(
                         AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                     )
-                    logger.info(f"Found {len(title_elements)} title elements directly")
 
                     # Convert these title elements to containers without detailed logging
                     for i, title in enumerate(title_elements):
@@ -100,15 +99,11 @@ class LibraryHandlerScroll:
                                 # If found, use the actual button
                                 containers.append(button)
                                 # Use debug level instead of info for container details
-                                logger.debug(f"Found actual container for '{title.text}'")
                             except Exception:
                                 # If can't find actual container, use our synthetic wrapper
                                 containers.append(book_wrapper)
-                                logger.debug(f"Using synthetic container for '{title.text}'")
                         except Exception as e:
                             logger.error(f"Error processing title '{title.text}': {e}")
-
-                    logger.info(f"Created {len(containers)} containers from title elements")
 
                     # Also log RecyclerView info for debugging
                     try:
@@ -116,7 +111,6 @@ class LibraryHandlerScroll:
                             AppiumBy.ID, "com.amazon.kindle:id/recycler_view"
                         )
                         all_items = recycler_view.find_elements(AppiumBy.XPATH, ".//*")
-                        logger.info(f"RecyclerView contains {len(all_items)} total elements")
                     except Exception as e:
                         logger.error(f"Error getting RecyclerView info: {e}")
 
@@ -172,7 +166,6 @@ class LibraryHandlerScroll:
                                 # This is a synthetic wrapper - we only have the title
                                 # Pre-fill the book title since we already know it
                                 book_info["title"] = container["title_text"]
-                                logger.info(f"Processing synthetic container for: {container['title_text']}")
 
                                 # Add the book directly to books list if not already there
                                 if book_info["title"] not in seen_titles:
@@ -185,12 +178,6 @@ class LibraryHandlerScroll:
                                 skip_rest_of_processing = True
                             else:
                                 # This is a regular container element
-                                container_desc = container.get_attribute("content-desc")
-                                container_class = container.get_attribute("class")
-                                container_id = container.get_attribute("resource-id")
-                                logger.info(
-                                    f"Processing container: class={container_class}, id={container_id}, desc={container_desc}"
-                                )
                                 skip_rest_of_processing = False
                         except Exception as e:
                             logger.error(f"Error getting container attributes: {e}")
@@ -210,11 +197,6 @@ class LibraryHandlerScroll:
                                     )
                                     elements = container.find_elements(strategy, relative_locator)
                                     if elements:
-                                        # For title field, always log at INFO level
-                                        if field == "title":
-                                            logger.info(f"Found {field}: {elements[0].text}")
-                                        else:
-                                            logger.debug(f"Found {field}: {elements[0].text}")
                                         book_info[field] = elements[0].text
                                         break
                                     else:
@@ -394,7 +376,7 @@ class LibraryHandlerScroll:
 
                 # Log a summary of this page's findings
                 self._log_page_summary(page_count, new_titles_on_page, len(books))
-                
+
                 # If we've found no new books on this screen, we need to double-check
                 if not new_books_found:
                     logger.info("No new books found on this screen, doing a double-check")
@@ -404,11 +386,13 @@ class LibraryHandlerScroll:
                             AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                         )
                         current_screen_titles = [el.text for el in title_elements]
-                        
+
                         # If all these titles are already seen, then we can safely stop
                         new_unseen_titles = [t for t in current_screen_titles if t and t not in seen_titles]
                         if new_unseen_titles:
-                            logger.info(f"Double-check found {len(new_unseen_titles)} additional unseen titles")
+                            logger.info(
+                                f"Double-check found {len(new_unseen_titles)} additional unseen titles"
+                            )
 
                             # Add these titles to our seen set and create simple book entries for them
                             for new_title in new_unseen_titles:
@@ -417,7 +401,7 @@ class LibraryHandlerScroll:
                                     {"title": new_title, "progress": None, "size": None, "author": None}
                                 )
                                 new_titles_on_page.append(new_title)
-                            
+
                             # Update the summary with newly found titles
                             self._log_page_summary(page_count, new_titles_on_page, len(books))
 
@@ -444,60 +428,74 @@ class LibraryHandlerScroll:
                     book_containers = self.driver.find_elements(
                         AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                     )
-                    
+
                     if book_containers and len(book_containers) >= 2:
                         logger.info(f"Found {len(book_containers)} book containers for smart scrolling")
-                        
+
                         # Get the bottom-most container (last in the list)
                         bottom_container = book_containers[-1]
-                        
+
                         # Get the second-from-bottom container as a fallback
                         second_bottom_container = book_containers[-2]
-                        
+
                         # Get location and size of the bottom container
                         location = bottom_container.location
                         size = bottom_container.size
-                        
+
                         # Calculate the y-coordinate of the bottom of this container
-                        bottom_y = location['y'] + size['height']
+                        bottom_y = location["y"] + size["height"]
                         logger.info(f"Bottom-most container at y={bottom_y}, title='{bottom_container.text}'")
-                        
+
                         # Check if the bottom container is partially off-screen
                         if bottom_y > screen_size["height"]:
-                            logger.info("Bottom container extends beyond screen, using second-from-bottom instead")
+                            logger.info(
+                                "Bottom container extends beyond screen, using second-from-bottom instead"
+                            )
                             location = second_bottom_container.location
                             size = second_bottom_container.size
-                            bottom_y = location['y'] + size['height']
-                            logger.info(f"Using second-from-bottom container at y={bottom_y}, title='{second_bottom_container.text}'")
-                        
+                            bottom_y = location["y"] + size["height"]
+                            logger.info(
+                                f"Using second-from-bottom container at y={bottom_y}, title='{second_bottom_container.text}'"
+                            )
+
                         # Calculate smart scrolling coordinates with safety bounds
                         # Start from current position of bottom container
-                        smart_start_y = min(bottom_y - 10, screen_size["height"] - 20)  # Ensure within screen bounds
+                        smart_start_y = min(
+                            bottom_y - 10, screen_size["height"] - 20
+                        )  # Ensure within screen bounds
                         # End at top of screen with small margin
                         smart_end_y = screen_size["height"] * 0.1
-                        
+
                         # Verify start point is below end point by a reasonable amount
                         if smart_start_y - smart_end_y < 100:
                             logger.warning("Scroll distance too small, using default scroll")
-                            self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
+                            self.driver.swipe(
+                                screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000
+                            )
                         else:
                             # Perform smart scroll - move bottom container to top
                             self.driver.swipe(
-                                screen_size["width"] // 2, 
-                                smart_start_y, 
-                                screen_size["width"] // 2, 
-                                smart_end_y, 
-                                1000
+                                screen_size["width"] // 2,
+                                smart_start_y,
+                                screen_size["width"] // 2,
+                                smart_end_y,
+                                1000,
                             )
                             logger.info(f"Performed smart scroll from y={smart_start_y} to y={smart_end_y}")
                     else:
-                        logger.warning(f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll")
+                        logger.warning(
+                            f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll"
+                        )
                         # Fallback to default scroll behavior
-                        self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
+                        self.driver.swipe(
+                            screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000
+                        )
                 except Exception as e:
                     logger.error(f"Error during smart scrolling: {e}, falling back to default scroll")
                     # Fallback to default scroll behavior
-                    self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
+                    self.driver.swipe(
+                        screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000
+                    )
 
             logger.info(f"Found total of {len(books)} unique books")
 
@@ -568,7 +566,7 @@ class LibraryHandlerScroll:
         except Exception as e:
             logger.error(f"Error scrolling to top of list: {e}")
             return False
-            
+
     def _normalize_title(self, title: str) -> str:
         """
         Normalize a title for comparison while preserving important characters.
@@ -599,7 +597,7 @@ class LibraryHandlerScroll:
         normalized = " ".join(normalized.split())
 
         return normalized
-        
+
     def _xpath_literal(self, s):
         """
         Create a valid XPath literal for a string that may contain both single and double quotes.
