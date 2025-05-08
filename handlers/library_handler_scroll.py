@@ -540,6 +540,14 @@ class LibraryHandlerScroll:
                     self.driver.swipe(
                         screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
                     )
+                
+                # After each scroll, check if we inadvertently triggered book selection mode
+                if self.is_in_book_selection_mode():
+                    logger.warning("Detected book selection mode during scrolling, likely from long press")
+                    if self.exit_book_selection_mode():
+                        logger.info("Successfully exited book selection mode, continuing scroll")
+                    else:
+                        logger.error("Failed to exit book selection mode, scroll results may be incomplete")
 
             logger.info(f"Found total of {len(books)} unique books")
 
@@ -589,10 +597,73 @@ class LibraryHandlerScroll:
                 return None, None, None
             return []
 
+    def is_in_book_selection_mode(self):
+        """Check if we're in book selection mode (when a book title is long-clicked).
+        
+        In this mode, a "DONE" button appears in the top left corner of the screen.
+        
+        Returns:
+            bool: True if in selection mode, False otherwise
+        """
+        try:
+            # Check for the "DONE" button that appears when a book is selected
+            done_button = self.driver.find_element(
+                AppiumBy.ID, "com.amazon.kindle:id/action_mode_close_button"
+            )
+            if done_button.is_displayed() and done_button.text == "DONE":
+                logger.info("Detected book selection mode with DONE button visible")
+                return True
+            return False
+        except NoSuchElementException:
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking book selection mode: {e}")
+            return False
+    
+    def exit_book_selection_mode(self):
+        """Exit book selection mode by clicking the DONE button.
+        
+        Returns:
+            bool: True if successfully exited selection mode, False otherwise
+        """
+        try:
+            if not self.is_in_book_selection_mode():
+                logger.debug("Not in book selection mode, nothing to exit")
+                return True
+                
+            # Find and click the DONE button
+            done_button = self.driver.find_element(
+                AppiumBy.ID, "com.amazon.kindle:id/action_mode_close_button"
+            )
+            done_button.click()
+            logger.info("Clicked DONE button to exit book selection mode")
+            
+            # Wait a moment for selection mode to exit
+            time.sleep(0.5)
+            
+            # Verify we're no longer in selection mode
+            if not self.is_in_book_selection_mode():
+                logger.info("Successfully exited book selection mode")
+                return True
+            else:
+                logger.warning("Still in book selection mode after clicking DONE")
+                return False
+        except Exception as e:
+            logger.error(f"Error exiting book selection mode: {e}")
+            return False
+            
     def scroll_to_list_top(self):
         """Scroll to the top of the All list by toggling between Downloaded and All."""
         try:
             logger.info("Attempting to scroll to top of list by toggling filters...")
+            
+            # First check if we're in book selection mode and exit if needed
+            if self.is_in_book_selection_mode():
+                logger.info("In book selection mode, exiting before scrolling")
+                if not self.exit_book_selection_mode():
+                    logger.error("Failed to exit book selection mode, cannot scroll properly")
+                    return False
+                logger.info("Successfully exited book selection mode, continuing with scroll")
 
             # First try to find the Downloaded button
             try:
