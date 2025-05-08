@@ -898,6 +898,24 @@ class BookOpenResource(Resource):
         # Call the implementation without the handle_automator_response decorator
         # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
+        
+        # Check if we got a 'title_not_available_error' on the automator
+        sindarin_email = get_sindarin_email()
+        if sindarin_email and sindarin_email in server.automators:
+            automator = server.automators.get(sindarin_email)
+            if automator and hasattr(automator, "title_not_available_error") and automator.title_not_available_error:
+                # Create a response with the error
+                error_info = automator.title_not_available_error
+                response_data = {
+                    "error": error_info.get("error", "Title Not Available"),
+                    "book_title": error_info.get("book_title", book_title), 
+                    "status": "title_not_available"
+                }
+                
+                # Clear the error flag to avoid affecting future requests
+                automator.title_not_available_error = None
+                
+                return response_data, 400
 
         # Directly return the result, as Flask can handle Response objects
         return result
@@ -911,6 +929,24 @@ class BookOpenResource(Resource):
         # Call the implementation without the handle_automator_response decorator
         # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
+        
+        # Check if we got a 'title_not_available_error' on the automator
+        sindarin_email = get_sindarin_email()
+        if sindarin_email and sindarin_email in server.automators:
+            automator = server.automators.get(sindarin_email)
+            if automator and hasattr(automator, "title_not_available_error") and automator.title_not_available_error:
+                # Create a response with the error
+                error_info = automator.title_not_available_error
+                response_data = {
+                    "error": error_info.get("error", "Title Not Available"),
+                    "book_title": error_info.get("book_title", book_title), 
+                    "status": "title_not_available"
+                }
+                
+                # Clear the error flag to avoid affecting future requests
+                automator.title_not_available_error = None
+                
+                return response_data, 400
 
         # Directly return the result, as Flask can handle Response objects
         return result

@@ -1564,17 +1564,57 @@ class LibraryHandler:
                 logger.info(f"Stored unknown library timeout page source at: {filepath}")
                 logger.error(f"Failed to wait for reading view: {e}")
 
-                # After the timeout, let's specifically check for Download Limit dialog
-                # which might have appeared after the initial wait
-                logger.info("Checking specifically for Download Limit dialog after timeout...")
+                # After the timeout, let's check for specific dialogs that might have appeared
+                logger.info("Checking for known dialogs after timeout...")
                 try:
-                    # Import download limit identifiers here to avoid circular imports
+                    # Import dialog identifiers here to avoid circular imports
                     from views.reading.interaction_strategies import (
                         DOWNLOAD_LIMIT_DEVICE_LIST,
                         DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
                         DOWNLOAD_LIMIT_ERROR_TEXT,
                         DOWNLOAD_LIMIT_REMOVE_BUTTON,
+                        TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
+                        TITLE_NOT_AVAILABLE_DIALOG_BUTTONS,
                     )
+
+                    # Check for "Title Not Available" dialog first
+                    for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element and element.is_displayed():
+                                # Store the dialog for debugging
+                                filepath = store_page_source(self.driver.page_source, "title_not_available_dialog")
+                                
+                                error_text = "Title Not Available"
+                                try:
+                                    # Try to get the message text if available
+                                    message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
+                                    if message_element and message_element.is_displayed():
+                                        error_text = f"Title Not Available: {message_element.text}"
+                                except:
+                                    pass
+                                
+                                logger.error(f"Title Not Available dialog found: {error_text}")
+                                
+                                # Try to click the Cancel button to dismiss the dialog
+                                try:
+                                    for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
+                                        try:
+                                            cancel_button = self.driver.find_element(btn_strategy, btn_locator)
+                                            if cancel_button and cancel_button.is_displayed():
+                                                cancel_button.click()
+                                                logger.info("Clicked Cancel button on Title Not Available dialog")
+                                                break
+                                        except:
+                                            pass
+                                except:
+                                    logger.warning("Failed to click Cancel button on Title Not Available dialog")
+                                    
+                                # Return a specific value to indicate this dialog was found
+                                # Using string 'title_not_available' instead of True/False for disambiguation
+                                return 'title_not_available'
+                        except:
+                            pass
 
                     # Check for download limit dialog title
                     for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
@@ -1625,12 +1665,12 @@ class LibraryHandler:
                         logger.info("Found Download Limit dialog (device list + button) after timeout")
                         return True  # ReaderHandler will handle the dialog
 
-                    logger.info("No Download Limit dialog found after explicit check")
+                    logger.info("No known dialogs found after explicit check")
 
-                except Exception as dl_e:
-                    logger.error(f"Error checking for Download Limit dialog: {dl_e}")
+                except Exception as dialog_e:
+                    logger.error(f"Error checking for known dialogs: {dialog_e}")
 
-                # We didn't find the Download Limit dialog, so return failure
+                # We didn't find any expected dialogs, so return failure
                 return False
 
         except Exception as e:

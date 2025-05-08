@@ -150,3 +150,16 @@ WORD_WISE_NO_THANKS_BUTTON = [
     (AppiumBy.ID, "android:id/button2"),  # NO THANKS button by ID
     (AppiumBy.XPATH, "//android.widget.Button[@text='NO THANKS']"),  # Fallback using text
 ]
+
+# Title Not Available dialog identifiers
+TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Title Not Available']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Title Not Available')]"),
+    (AppiumBy.ID, "android:id/alertTitle"),  # Generic alert title
+]
+
+# Title Not Available dialog buttons
+TITLE_NOT_AVAILABLE_DIALOG_BUTTONS = [
+    (AppiumBy.ID, "android:id/button2"),  # Cancel button
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Cancel']"),  # Fallback using text
+]
