@@ -424,7 +424,6 @@ class ReaderHandler:
                     try:
                         element = driver.find_element(strategy[0], strategy[1])
                         if element:
-                            logger.info(f"Reading view detected with identifier #{idx}: {strategy}")
                             return "reading_view"
                     except NoSuchElementException:
                         pass
@@ -461,7 +460,6 @@ class ReaderHandler:
                                 try:
                                     element = driver.find_element(strategy[0], strategy[1])
                                     if element:
-                                        logger.info(f"Reading view detected with identifier: {strategy}")
                                         return True
                                 except NoSuchElementException:
                                     pass
@@ -557,8 +555,6 @@ class ReaderHandler:
                 else:
                     logger.error("Failed to handle Download Limit dialog")
                     return False
-            else:
-                logger.info("Reading view detected successfully")
         except TimeoutException:
             logger.error("Failed to detect reading view or download limit dialog after 10 seconds")
             store_page_source(self.driver.page_source, "failed_to_detect_reading_view_or_download_limit")
@@ -619,8 +615,6 @@ class ReaderHandler:
             page_content = self.driver.find_element(
                 AppiumBy.ID, "com.amazon.kindle:id/reader_content_container"
             )
-            if page_content:
-                logger.info("Page content container is ready")
         except NoSuchElementException:
             logger.warning("Page content container not immediately found - app may still be loading content")
         except Exception as e:
@@ -666,7 +660,7 @@ class ReaderHandler:
                 else:
                     logger.info("Bottom sheet dialog found but not visible")
             except NoSuchElementException:
-                logger.info("No bottom sheet dialog found - continuing")
+                pass
             except Exception as e:
                 logger.error(f"Error checking for bottom sheet dialog: {e}")
 
@@ -913,8 +907,6 @@ class ReaderHandler:
 
         # Get current page
         current_page = self.get_current_page()
-        logger.info(f"Current page: {current_page}")
-        logger.info("Successfully opened book and captured first page")
 
         # Check if we need to update reading styles for this profile
         if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):

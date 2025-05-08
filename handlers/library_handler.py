@@ -1590,20 +1590,28 @@ class LibraryHandler:
             # Scroll to top first
             if not self.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
+                
+            # Try using the search box first
+            search_result = self._search_for_book(book_title)
+            if search_result:
+                parent_container, button, book_info = search_result
+                logger.info(f"Successfully found book '{book_title}' using search function")
+            else:
+                logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
+                
+                # Fallback: Search for the book by scrolling
+                parent_container, button, book_info = self._scroll_through_library(book_title)
 
-            # Search for the book
-            parent_container, button, book_info = self._scroll_through_library(book_title)
-
-            # If standard search failed, try partial matching as fallback
-            if not parent_container:
-                logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
-                parent_container, button, book_info = self._find_book_by_partial_match(book_title)
-
+                # If standard search failed, try partial matching as fallback
                 if not parent_container:
-                    logger.error(f"Failed to find book '{book_title}' using all search methods")
-                    return False
+                    logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
+                    parent_container, button, book_info = self._find_book_by_partial_match(book_title)
 
-                logger.info(f"Found book using partial match fallback: {book_info}")
+                    if not parent_container:
+                        logger.error(f"Failed to find book '{book_title}' using all search methods")
+                        return False
+
+                    logger.info(f"Found book using partial match fallback: {book_info}")
 
             # Check download status and handle download if needed
             content_desc = parent_container.get_attribute("content-desc")
@@ -1726,6 +1734,208 @@ class LibraryHandler:
             logger.error(f"Error finding book: {e}")
             traceback.print_exc()
             return False
+            
+    def _search_for_book(self, book_title: str):
+        """Use the search box to find a book by title.
+        
+        Args:
+            book_title (str): The title of the book to search for
+            
+        Returns:
+            tuple or None: (parent_container, button, book_info) if found, None otherwise
+        """
+        try:
+            logger.info(f"Attempting to find book '{book_title}' using search box")
+            
+            # Find and click the search box
+            try:
+                # Take a screenshot and save page source before search
+                store_page_source(self.driver.page_source, "before_search")
+                self.driver.save_screenshot(os.path.join(self.screenshots_dir, "before_search.png"))
+                
+                search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
+                logger.info("Found search box, clicking it")
+                search_box.click()
+                time.sleep(1)  # Wait for search interface to appear
+                
+                # Take a screenshot after clicking search box
+                store_page_source(self.driver.page_source, "after_search_click")
+                self.driver.save_screenshot(os.path.join(self.screenshots_dir, "after_search_click.png"))
+                
+                # Now the search input field should be visible and active
+                # Let's try to find the search text field - different IDs to try
+                search_field = None
+                search_field_ids = [
+                    "com.amazon.kindle:id/search_src_text",  # Common search text field ID
+                    "com.amazon.kindle:id/search_edit_text",
+                    "android:id/search_src_text",  # Standard Android search field
+                    "com.amazon.kindle:id/search_text_field"
+                ]
+                
+                for field_id in search_field_ids:
+                    try:
+                        search_field = self.driver.find_element(AppiumBy.ID, field_id)
+                        logger.info(f"Found search input field with ID: {field_id}")
+                        break
+                    except NoSuchElementException:
+                        continue
+                        
+                # If we couldn't find the search field by ID, try XPath
+                if not search_field:
+                    try:
+                        # Try to find by class name and content-desc or text containing "search"
+                        search_field = self.driver.find_element(
+                            AppiumBy.XPATH, 
+                            "//android.widget.EditText[contains(@content-desc, 'search') or contains(@text, 'search') or contains(@resource-id, 'search')]"
+                        )
+                        logger.info("Found search input field by XPath")
+                    except NoSuchElementException:
+                        logger.error("Could not find search input field")
+                        return None
+                
+                # Clear any existing text and enter the book title
+                search_field.clear()
+                search_field.send_keys(book_title)
+                logger.info(f"Entered book title in search field: '{book_title}'")
+                
+                # Save screenshot after entering text
+                store_page_source(self.driver.page_source, "after_search_text_entry")
+                self.driver.save_screenshot(os.path.join(self.screenshots_dir, "after_search_text_entry.png"))
+                
+                # Press Enter/Search key on the keyboard
+                self.driver.press_keycode(66)  # Android keycode for Enter/Search
+                logger.info("Pressed Enter to execute search")
+                
+                # Give time for search results to load
+                time.sleep(2)
+                
+                # Save screenshot and page source with search results
+                store_page_source(self.driver.page_source, "search_results")
+                self.driver.save_screenshot(os.path.join(self.screenshots_dir, "search_results.png"))
+                
+                # Check for search results
+                # First, check if we have title elements that match our book
+                title_elements = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                )
+                
+                logger.info(f"Found {len(title_elements)} potential search results")
+                
+                if not title_elements:
+                    # Try to find a "No results" message
+                    try:
+                        no_results = self.driver.find_element(
+                            AppiumBy.XPATH, 
+                            "//*[contains(@text, 'No results') or contains(@content-desc, 'No results')]"
+                        )
+                        if no_results:
+                            logger.info("Search found no results")
+                            
+                            # Exit search mode and return to library
+                            try:
+                                back_button = self.driver.find_element(
+                                    AppiumBy.XPATH, 
+                                    "//*[@content-desc='Navigate up' or @content-desc='Back' or @content-desc='back']"
+                                )
+                                back_button.click()
+                                logger.info("Clicked back button to exit search")
+                                time.sleep(1)
+                            except NoSuchElementException:
+                                logger.warning("Could not find back button, trying hardware back")
+                                self.driver.press_keycode(4)  # Android back button
+                            
+                            return None
+                    except NoSuchElementException:
+                        pass
+                        
+                    # If we can't find a "No results" message but also no titles, try to exit search
+                    logger.info("No title elements found in search results, exiting search mode")
+                    try:
+                        back_button = self.driver.find_element(
+                            AppiumBy.XPATH, 
+                            "//*[@content-desc='Navigate up' or @content-desc='Back' or @content-desc='back']"
+                        )
+                        back_button.click()
+                        logger.info("Clicked back button to exit search")
+                        time.sleep(1)
+                    except NoSuchElementException:
+                        logger.warning("Could not find back button, trying hardware back")
+                        self.driver.press_keycode(4)  # Android back button
+                    
+                    return None
+                
+                # Check each title for a match
+                for title_element in title_elements:
+                    try:
+                        title_text = title_element.text
+                        logger.info(f"Checking search result: '{title_text}'")
+                        
+                        # Does this match our target book?
+                        if self._title_match(title_text, book_title):
+                            logger.info(f"Found matching search result: '{title_text}' for '{book_title}'")
+                            
+                            # Looking at the XML structure, the title is inside a Button -> RelativeLayout -> TextView
+                            # Go up to find the actual button that contains this title
+                            
+                            # First try using XPath query from the document root to find the Button that contains this title
+                            title_text_escaped = title_text.replace("'", "\\'")
+                            parent_container = self.driver.find_element(
+                                AppiumBy.XPATH,
+                                f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text_escaped}']]"
+                            )
+                            
+                            logger.info(f"Found clickable button containing title: '{title_text}'")
+                            
+                            # Create book info dictionary
+                            book_info = {"title": title_text}
+                            
+                            # Try to get author info
+                            try:
+                                author_element = parent_container.find_element(
+                                    AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_author"
+                                )
+                                book_info["author"] = author_element.text
+                                logger.info(f"Author: {author_element.text}")
+                            except NoSuchElementException:
+                                logger.debug("Could not find author element")
+                            
+                            # Return the result
+                            return parent_container, title_element, book_info
+                    except Exception as e:
+                        logger.debug(f"Error processing search result: {e}")
+                        continue
+                
+                # If we get here, we didn't find a match in the search results
+                logger.info(f"Book '{book_title}' not found in search results")
+                
+                # Exit search mode and return to library
+                try:
+                    back_button = self.driver.find_element(
+                        AppiumBy.XPATH, 
+                        "//*[@content-desc='Navigate up' or @content-desc='Back' or @content-desc='back']"
+                    )
+                    back_button.click()
+                    logger.info("Clicked back button to exit search")
+                    time.sleep(1)
+                except NoSuchElementException:
+                    logger.warning("Could not find back button, trying hardware back")
+                    self.driver.press_keycode(4)  # Android back button
+                
+                return None
+                
+            except NoSuchElementException:
+                logger.error("Could not find search box")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error searching for book: {e}")
+            # Try to exit search mode in case we're stuck there
+            try:
+                self.driver.press_keycode(4)  # Android back button
+                time.sleep(1)
+            except:
+                pass
+            return None
 
     def open_book(self, book_title: str) -> bool:
         """Open a book in the library.
@@ -1747,6 +1957,35 @@ class LibraryHandler:
                 logger.info("Successfully handled Grid/List view dialog")
                 time.sleep(1)  # Wait for UI to stabilize
 
+            # Store initial page source for diagnostics
+            store_page_source(self.driver.page_source, "library_before_book_search")
+            
+            # First: Check if the book is already visible on the current screen without scrolling
+            logger.info(f"Checking if book '{book_title}' is already visible on the current screen")
+            visible_book_result = self._check_book_visible_on_screen(book_title)
+            if visible_book_result:
+                parent_container, button, book_info = visible_book_result
+                logger.info(f"Book '{book_title}' is already visible on the current screen, clicking it")
+                
+                # Click the book
+                button.click()
+                logger.info(f"Clicked book button for already visible book: {book_title}")
+                
+                # Wait for reading view to load (this is copied from the bottom of the function)
+                try:
+                    logger.info("Waiting for reading view to load...")
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located(READER_DRAWER_LAYOUT_IDENTIFIERS[0])
+                    )
+                    logger.info("Reading view loaded")
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to wait for reading view: {e}")
+                    return self._handle_loading_timeout(book_title)
+            
+            # If book is not already visible, proceed with search and find methods
+            logger.info(f"Book '{book_title}' not immediately visible, proceeding with search")
+            
             # Find and click the book button
             if not self.find_book(book_title):
                 logger.error(f"Failed to find book: {book_title}")
@@ -1763,133 +2002,227 @@ class LibraryHandler:
                 logger.info("Reading view loaded")
                 return True
             except Exception as e:
-                filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
-                logger.info(f"Stored unknown library timeout page source at: {filepath}")
-                logger.error(f"Failed to wait for reading view: {e}")
-
-                # After the timeout, let's check for specific dialogs that might have appeared
-                logger.info("Checking for known dialogs after timeout...")
-                try:
-                    # Import dialog identifiers here to avoid circular imports
-                    from views.reading.interaction_strategies import (
-                        DOWNLOAD_LIMIT_DEVICE_LIST,
-                        DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
-                        DOWNLOAD_LIMIT_ERROR_TEXT,
-                        DOWNLOAD_LIMIT_REMOVE_BUTTON,
-                        TITLE_NOT_AVAILABLE_DIALOG_BUTTONS,
-                        TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
-                    )
-
-                    # Check for "Title Not Available" dialog first
-                    for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
-                        try:
-                            element = self.driver.find_element(strategy, locator)
-                            if element and element.is_displayed():
-                                # Store the dialog for debugging
-                                filepath = store_page_source(
-                                    self.driver.page_source, "title_not_available_dialog"
-                                )
-
-                                error_text = "Title Not Available"
-                                try:
-                                    # Try to get the message text if available
-                                    message_element = self.driver.find_element(
-                                        AppiumBy.ID, "android:id/message"
-                                    )
-                                    if message_element and message_element.is_displayed():
-                                        error_text = f"Title Not Available: {message_element.text}"
-                                except:
-                                    pass
-
-                                logger.error(f"Title Not Available dialog found: {error_text}")
-
-                                # Try to click the Cancel button to dismiss the dialog
-                                try:
-                                    for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
-                                        try:
-                                            cancel_button = self.driver.find_element(
-                                                btn_strategy, btn_locator
-                                            )
-                                            if cancel_button and cancel_button.is_displayed():
-                                                cancel_button.click()
-                                                logger.info(
-                                                    "Clicked Cancel button on Title Not Available dialog"
-                                                )
-                                                break
-                                        except:
-                                            pass
-                                except:
-                                    logger.warning(
-                                        "Failed to click Cancel button on Title Not Available dialog"
-                                    )
-
-                                # Return a specific value to indicate this dialog was found
-                                # Using string 'title_not_available' instead of True/False for disambiguation
-                                return "title_not_available"
-                        except:
-                            pass
-
-                    # Check for download limit dialog title
-                    for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
-                        try:
-                            element = self.driver.find_element(strategy, locator)
-                            if element and element.is_displayed():
-                                logger.info(
-                                    f"Download Limit dialog found after timeout: {strategy}={locator}"
-                                )
-                                return True  # ReaderHandler will handle the dialog
-                        except:
-                            pass
-
-                    # Check for error text
-                    for strategy, locator in DOWNLOAD_LIMIT_ERROR_TEXT:
-                        try:
-                            element = self.driver.find_element(strategy, locator)
-                            if element and element.is_displayed():
-                                logger.info(
-                                    f"Download Limit error text found after timeout: {strategy}={locator}"
-                                )
-                                return True  # ReaderHandler will handle the dialog
-                        except:
-                            pass
-
-                    # Final check - look for device list + button combination
-                    device_list = None
-                    for dl_strategy, dl_locator in DOWNLOAD_LIMIT_DEVICE_LIST:
-                        try:
-                            el = self.driver.find_element(dl_strategy, dl_locator)
-                            if el.is_displayed():
-                                device_list = True
-                                break
-                        except:
-                            pass
-
-                    button = None
-                    for btn_strategy, btn_locator in DOWNLOAD_LIMIT_REMOVE_BUTTON:
-                        try:
-                            el = self.driver.find_element(btn_strategy, btn_locator)
-                            if el.is_displayed():
-                                button = True
-                                break
-                        except:
-                            pass
-
-                    if device_list and button:
-                        logger.info("Found Download Limit dialog (device list + button) after timeout")
-                        return True  # ReaderHandler will handle the dialog
-
-                    logger.info("No known dialogs found after explicit check")
-
-                except Exception as dialog_e:
-                    logger.error(f"Error checking for known dialogs: {dialog_e}")
-
-                # We didn't find any expected dialogs, so return failure
-                return False
+                return self._handle_loading_timeout(book_title)
 
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error opening book: {e}")
             return False
+            
+    def _check_book_visible_on_screen(self, book_title: str):
+        """Check if a book is already visible on the current screen without scrolling.
+        
+        Args:
+            book_title (str): The title of the book to check for
+            
+        Returns:
+            tuple or None: (parent_container, button, book_info) if found, None otherwise
+        """
+        try:
+            logger.info(f"Checking if '{book_title}' is visible on current screen")
+            store_page_source(self.driver.page_source, "check_book_visible")
+            
+            # Find all title elements currently visible on the screen
+            title_elements = self.driver.find_elements(
+                AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+            )
+            
+            if not title_elements:
+                logger.info("No title elements found on current screen")
+                return None
+                
+            logger.info(f"Found {len(title_elements)} title elements on current screen")
+            
+            # Check each title to see if it matches our target book
+            for title_element in title_elements:
+                try:
+                    title_text = title_element.text
+                    logger.info(f"Checking title element: '{title_text}'")
+                    
+                    # Check if this title matches our target book
+                    if self._title_match(title_text, book_title):
+                        logger.info(f"Found matching title: '{title_text}' for '{book_title}'")
+                        
+                        # Find the parent container for this title element
+                        try:
+                            # Looking at the XML structure, the title is inside a Button -> RelativeLayout -> TextView
+                            # Go up to find the actual button that contains this title
+                            
+                            # First try using XPath query from the document root to find the Button that contains this title
+                            title_text_escaped = title_text.replace("'", "\\'")
+                            button = self.driver.find_element(
+                                AppiumBy.XPATH,
+                                f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text_escaped}']]"
+                            )
+                            
+                            logger.info(f"Found clickable button containing title: '{title_text}'")
+                            return button, button, {"title": title_text}  # Return the button as both parent and clickable element
+                            
+                        except Exception as parent_e:
+                            logger.debug(f"Failed to find button with direct XPath, trying alternative: {parent_e}")
+                            
+                            # Alternative approach: find the closest button ancestor by getting attributes and using content-desc
+                            try:
+                                parent_container = None
+                                
+                                # Look for buttons that contain this title in content-desc
+                                buttons = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
+                                for button in buttons:
+                                    content_desc = button.get_attribute("content-desc") or ""
+                                    if title_text in content_desc:
+                                        logger.info(f"Found button with matching content-desc: {content_desc}")
+                                        parent_container = button
+                                        break
+                                
+                                if parent_container:
+                                    return parent_container, parent_container, {"title": title_text}
+                                else:
+                                    logger.debug(f"Could not find button with matching content-desc")
+                            except Exception as alt_e:
+                                logger.debug(f"Alternative parent lookup failed: {alt_e}")
+                except Exception as e:
+                    logger.debug(f"Error processing title element: {e}")
+                    continue
+            
+            logger.info("Target book not found on current screen")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error checking if book is visible on screen: {e}")
+            return None
+            
+    def _handle_loading_timeout(self, book_title: str):
+        """Handle timeout while waiting for reading view to load after clicking a book.
+        
+        Args:
+            book_title (str): The title of the book that was clicked
+            
+        Returns:
+            bool or str: True if successfully handled, "title_not_available" if that dialog was found,
+                        False otherwise
+        """
+        filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
+        logger.info(f"Stored unknown library timeout page source at: {filepath}")
+        logger.error(f"Failed to wait for reading view after clicking '{book_title}'")
+
+        # After the timeout, let's check for specific dialogs that might have appeared
+        logger.info("Checking for known dialogs after timeout...")
+        try:
+            # Import dialog identifiers here to avoid circular imports
+            from views.reading.interaction_strategies import (
+                DOWNLOAD_LIMIT_DEVICE_LIST,
+                DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
+                DOWNLOAD_LIMIT_ERROR_TEXT,
+                DOWNLOAD_LIMIT_REMOVE_BUTTON,
+                TITLE_NOT_AVAILABLE_DIALOG_BUTTONS,
+                TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
+            )
+
+            # Check for "Title Not Available" dialog first
+            for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        # Store the dialog for debugging
+                        filepath = store_page_source(
+                            self.driver.page_source, "title_not_available_dialog"
+                        )
+
+                        error_text = "Title Not Available"
+                        try:
+                            # Try to get the message text if available
+                            message_element = self.driver.find_element(
+                                AppiumBy.ID, "android:id/message"
+                            )
+                            if message_element and message_element.is_displayed():
+                                error_text = f"Title Not Available: {message_element.text}"
+                        except:
+                            pass
+
+                        logger.error(f"Title Not Available dialog found: {error_text}")
+
+                        # Try to click the Cancel button to dismiss the dialog
+                        try:
+                            for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
+                                try:
+                                    cancel_button = self.driver.find_element(
+                                        btn_strategy, btn_locator
+                                    )
+                                    if cancel_button and cancel_button.is_displayed():
+                                        cancel_button.click()
+                                        logger.info(
+                                            "Clicked Cancel button on Title Not Available dialog"
+                                        )
+                                        break
+                                except:
+                                    pass
+                        except:
+                            logger.warning(
+                                "Failed to click Cancel button on Title Not Available dialog"
+                            )
+
+                        # Return a specific value to indicate this dialog was found
+                        # Using string 'title_not_available' instead of True/False for disambiguation
+                        return "title_not_available"
+                except:
+                    pass
+
+            # Check for download limit dialog title
+            for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        logger.info(
+                            f"Download Limit dialog found after timeout: {strategy}={locator}"
+                        )
+                        return True  # ReaderHandler will handle the dialog
+                except:
+                    pass
+
+            # Check for error text
+            for strategy, locator in DOWNLOAD_LIMIT_ERROR_TEXT:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        logger.info(
+                            f"Download Limit error text found after timeout: {strategy}={locator}"
+                        )
+                        return True  # ReaderHandler will handle the dialog
+                except:
+                    pass
+
+            # Final check - look for device list + button combination
+            device_list = None
+            for dl_strategy, dl_locator in DOWNLOAD_LIMIT_DEVICE_LIST:
+                try:
+                    el = self.driver.find_element(dl_strategy, dl_locator)
+                    if el.is_displayed():
+                        device_list = True
+                        break
+                except:
+                    pass
+
+            button = None
+            for btn_strategy, btn_locator in DOWNLOAD_LIMIT_REMOVE_BUTTON:
+                try:
+                    el = self.driver.find_element(btn_strategy, btn_locator)
+                    if el.is_displayed():
+                        button = True
+                        break
+                except:
+                    pass
+
+            if device_list and button:
+                logger.info("Found Download Limit dialog (device list + button) after timeout")
+                return True  # ReaderHandler will handle the dialog
+
+            logger.info("No known dialogs found after explicit check")
+
+        except Exception as dialog_e:
+            logger.error(f"Error checking for known dialogs: {dialog_e}")
+
+        # We didn't find any expected dialogs, so return failure
+        return False
 
     def handle_library_sign_in(self):
         """Handle the library sign in state by clicking the sign in button."""

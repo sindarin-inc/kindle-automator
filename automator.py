@@ -175,7 +175,6 @@ class KindleAutomator:
                 # Try a simple operation to verify UiAutomator2 is responsive
                 try:
                     self.driver.current_activity
-                    logger.info("Driver activity check passed")
                 except Exception as activity_error:
                     # Check specifically for UiAutomator2 crash indicators
                     error_message = str(activity_error)
@@ -190,7 +189,6 @@ class KindleAutomator:
                 # Additional check - try to get window size
                 try:
                     window_size = self.driver.get_window_size()
-                    logger.info(f"Driver window size check passed: {window_size}")
                 except Exception as window_error:
                     # Check specifically for UiAutomator2 crash indicators
                     error_message = str(window_error)

@@ -65,8 +65,6 @@ class ViewInspector:
             sindarin_email = get_sindarin_email()
             device_id = self.automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
 
-            logger.info(f"Bringing {self.app_package} to foreground using device_id={device_id}...")
-
             # Check if we have a device ID and if multiple devices exist
             if not device_id:
                 logger.warning("No device ID available, checking if we have multiple devices running")
@@ -116,7 +114,6 @@ class ViewInspector:
             if device_id:
                 cmd.extend(["-s", device_id])
             cmd.extend(["shell", f"am start -n {self.app_package}/{self.app_activity}"])
-            logger.info(f"Running command: {cmd}")
             # Run the command but don't check for errors - sometimes the exit code is 1
             # even when the app launches successfully
             result = subprocess.run(
@@ -133,7 +130,6 @@ class ViewInspector:
                 logger.warning(f"Stderr: {result.stderr.strip()}")
 
             # Wait for the app to initialize with polling instead of fixed sleep
-            logger.info("Waiting for Kindle app to initialize (max 4 seconds)...")
             start_time = time.time()
             max_wait_time = 10  # 10 seconds max wait time
             poll_interval = 0.2  # 200ms between checks
@@ -142,7 +138,6 @@ class ViewInspector:
             while time.time() - start_time < max_wait_time:
                 try:
                     current_activity = self.driver.current_activity
-                    logger.info(f"Current activity is: {self.driver} {current_activity}")
 
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                     # Also handle the Google Play review dialog which can appear over the Kindle app
@@ -186,10 +181,6 @@ class ViewInspector:
                             except Exception as dismiss_e:
                                 logger.warning(f"Failed to dismiss review dialog: {dismiss_e}")
                         break
-                    else:
-                        logger.info(
-                            f"App not ready yet - current activity is: {current_activity}, polling again in {poll_interval}s"
-                        )
                 except Exception as e:
                     logger.warning(f"Error checking current activity: {e}")
 
