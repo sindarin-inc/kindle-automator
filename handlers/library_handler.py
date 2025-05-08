@@ -1090,9 +1090,66 @@ class LibraryHandler:
                 except Exception as e:
                     logger.error(f"Error logging pre-scroll titles: {e}")
 
-                # Perform scroll
-                self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
-                time.sleep(1)  # Wait for scroll to complete
+                # Find the bottom-most book container for smart scrolling
+                try:
+                    # Get all book containers currently visible
+                    book_containers = self.driver.find_elements(
+                        AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                    )
+                    
+                    if book_containers and len(book_containers) >= 2:
+                        logger.info(f"Found {len(book_containers)} book containers for smart scrolling")
+                        
+                        # Get the bottom-most container (last in the list)
+                        bottom_container = book_containers[-1]
+                        
+                        # Get the second-from-bottom container as a fallback
+                        second_bottom_container = book_containers[-2]
+                        
+                        # Get location and size of the bottom container
+                        location = bottom_container.location
+                        size = bottom_container.size
+                        
+                        # Calculate the y-coordinate of the bottom of this container
+                        bottom_y = location['y'] + size['height']
+                        logger.info(f"Bottom-most container at y={bottom_y}, title='{bottom_container.text}'")
+                        
+                        # Check if the bottom container is partially off-screen
+                        if bottom_y > screen_size["height"]:
+                            logger.info("Bottom container extends beyond screen, using second-from-bottom instead")
+                            location = second_bottom_container.location
+                            size = second_bottom_container.size
+                            bottom_y = location['y'] + size['height']
+                            logger.info(f"Using second-from-bottom container at y={bottom_y}, title='{second_bottom_container.text}'")
+                        
+                        # Calculate smart scrolling coordinates with safety bounds
+                        # Start from current position of bottom container
+                        smart_start_y = min(bottom_y - 10, screen_size["height"] - 20)  # Ensure within screen bounds
+                        # End at top of screen with small margin
+                        smart_end_y = screen_size["height"] * 0.1
+                        
+                        # Verify start point is below end point by a reasonable amount
+                        if smart_start_y - smart_end_y < 100:
+                            logger.warning("Scroll distance too small, using default scroll")
+                            self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
+                        else:
+                            # Perform smart scroll - move bottom container to top
+                            self.driver.swipe(
+                                screen_size["width"] // 2, 
+                                smart_start_y, 
+                                screen_size["width"] // 2, 
+                                smart_end_y, 
+                                1000
+                            )
+                            logger.info(f"Performed smart scroll from y={smart_start_y} to y={smart_end_y}")
+                    else:
+                        logger.warning(f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll")
+                        # Fallback to default scroll behavior
+                        self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
+                except Exception as e:
+                    logger.error(f"Error during smart scrolling: {e}, falling back to default scroll")
+                    # Fallback to default scroll behavior
+                    self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
 
             logger.info(f"Found total of {len(books)} unique books")
 
