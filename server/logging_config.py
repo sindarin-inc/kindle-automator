@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 # Thread-local storage to track current request email
 _thread_local = threading.local()
 
+
 def set_current_request_email(email: Optional[str]):
     """Set the email for the current thread/request. Pass None to clear."""
     if email:
@@ -17,14 +18,17 @@ def set_current_request_email(email: Optional[str]):
         logger.debug(f"Set current request email to {email} for thread {threading.current_thread().name}")
     else:
         # Clear the current email by setting it to None
-        if hasattr(_thread_local, 'current_email'):
+        if hasattr(_thread_local, "current_email"):
             prev_email = _thread_local.current_email
             _thread_local.current_email = None
-            logger.debug(f"Cleared request email (was: {prev_email}) for thread {threading.current_thread().name}")
+            logger.debug(
+                f"Cleared request email (was: {prev_email}) for thread {threading.current_thread().name}"
+            )
+
 
 def get_current_request_email() -> Optional[str]:
     """Get the email for the current thread/request."""
-    return getattr(_thread_local, 'current_email', None)
+    return getattr(_thread_local, "current_email", None)
 
 
 def store_page_source(source: str, prefix: str = "unknown", directory: str = "fixtures/dumps") -> str:
@@ -132,16 +136,16 @@ class CustomFilter(logging.Filter):
 class DynamicEmailHandler(logging.Handler):
     """
     A handler that routes logs to email-specific log files based on the current request.
-    
+
     This handler checks the thread-local storage for the current request email
     and dynamically routes logs to the appropriate email-specific log file.
     """
-    
+
     def __init__(self, level=logging.NOTSET):
         super().__init__(level)
         self.handler_cache = {}  # Cache of email -> handler
         self.formatter = None
-        
+
     def setFormatter(self, formatter):
         """Set the formatter for this handler and all email-specific handlers."""
         self.formatter = formatter
@@ -149,42 +153,42 @@ class DynamicEmailHandler(logging.Handler):
         for handler in self.handler_cache.values():
             handler.setFormatter(formatter)
         super().setFormatter(formatter)
-        
+
     def get_handler_for_email(self, email):
         """Get or create a file handler for the specified email."""
         if not email:
             return None
-            
+
         # Check if we already have a handler for this email
         if email in self.handler_cache:
             return self.handler_cache[email]
-            
+
         # Create logs directory if it doesn't exist
         os.makedirs("logs", exist_ok=True)
-        
+
         # Create a file handler for this email
         log_file = f"logs/{email}.log"
         handler = logging.FileHandler(log_file)
-        
+
         # Use the same formatter as the main handler
         if self.formatter:
             handler.setFormatter(self.formatter)
-            
+
         # Cache the handler
         self.handler_cache[email] = handler
         logger.debug(f"Created file handler for {email} writing to {log_file}")
-        
+
         return handler
-    
+
     def emit(self, record):
         """Emit the log record to the appropriate log file based on the current request email."""
         # Try to get the current request email
         current_email = get_current_request_email()
-        
+
         if current_email:
             # Get a handler for this email
             handler = self.get_handler_for_email(current_email)
-            
+
             if handler:
                 # Emit the record to the email-specific handler
                 handler.emit(record)
@@ -193,22 +197,23 @@ class DynamicEmailHandler(logging.Handler):
 class RequestEmailContextFilter(logging.Filter):
     """
     A filter that captures the current request email from Flask's request context.
-    
+
     This filter checks if we're in a Flask request context and sets the current
     request email in thread-local storage.
     """
-    
+
     def filter(self, record):
         try:
             # Try to access flask.g to see if we're in a request context
             from flask import g
-            if hasattr(g, 'request_email') and g.request_email and not get_current_request_email():
+
+            if hasattr(g, "request_email") and g.request_email and not get_current_request_email():
                 # We're in a Flask request with an email context, but haven't set the thread-local yet
                 set_current_request_email(g.request_email)
         except (ImportError, RuntimeError):
             # Not in Flask context
             pass
-        
+
         # Always allow the record through
         return True
 
@@ -236,27 +241,27 @@ def setup_logger():
     log_file = "logs/server.log"
     with open(log_file, "w") as f:
         f.truncate(0)
-        
+
     # Create the formatter
     formatter = RelativePathFormatter(
         "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
         datefmt="%H:%M:%S",
     )
-    
+
     # Create the custom filter
     custom_filter = CustomFilter()
-    
+
     # Create the email context filter
     email_context_filter = RequestEmailContextFilter()
-    
+
     # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
-    
+
     # Remove any existing handlers
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-    
+
     # Add console handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG)
@@ -264,7 +269,7 @@ def setup_logger():
     console_handler.addFilter(custom_filter)
     console_handler.addFilter(email_context_filter)
     root_logger.addHandler(console_handler)
-    
+
     # Add file handler for main log
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
@@ -272,18 +277,20 @@ def setup_logger():
     file_handler.addFilter(custom_filter)
     file_handler.addFilter(email_context_filter)
     root_logger.addHandler(file_handler)
-    
+
     # Add dynamic email handler for user-specific logs
     email_handler = DynamicEmailHandler()
     email_handler.setLevel(logging.DEBUG)
     email_handler.setFormatter(formatter)
     email_handler.addFilter(custom_filter)
     root_logger.addHandler(email_handler)
-    
+
     # Configure external libraries to use higher log level
     for lib_name in ["selenium", "urllib3", "PIL", "appium", "werkzeug"]:
         lib_logger = logging.getLogger(lib_name)
         lib_logger.setLevel(logging.INFO)
-    
+
     # Log that we've set up the email-specific logging
-    logger.info("Enhanced email-specific logging configured - all logs during a request will be directed to both global and email-specific log files")
+    logger.info(
+        "Enhanced email-specific logging configured - all logs during a request will be directed to both global and email-specific log files"
+    )

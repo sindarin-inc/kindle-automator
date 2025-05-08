@@ -57,7 +57,7 @@ def require_staff_auth_for_impersonation(f):
     This middleware checks for email impersonation attempts with special cases:
     - The /auth endpoint is completely exempt and allows all email parameters
     - For other endpoints, only check for 'sindarin_email' or 'email' if not on /auth
-    
+
     Staff members can impersonate any user by passing email parameters,
     but only if they have a valid token.
     """
@@ -68,7 +68,7 @@ def require_staff_auth_for_impersonation(f):
         if request.path == "/auth":
             logger.debug("Auth endpoint detected, skipping all staff auth checks")
             return f(*args, **kwargs)
-            
+
         # For all other endpoints, check for sindarin_email or email parameters
         email_in_query = "sindarin_email" in request.args or "email" in request.args
         email_in_body = False

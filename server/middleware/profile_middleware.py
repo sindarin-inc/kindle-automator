@@ -6,8 +6,8 @@ from functools import wraps
 import flask
 from flask import Response, jsonify, request
 
-from server.utils.staff_token_manager import validate_token
 from server.utils.request_utils import get_sindarin_email
+from server.utils.staff_token_manager import validate_token
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,11 @@ def ensure_user_profile_loaded(f):
     def middleware(*args, **kwargs):
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
-        
+
         # Only require staff authentication when user_email is present
-        if "user_email" in request.args or (request.is_json and "user_email" in (request.get_json(silent=True) or {})):
+        if "user_email" in request.args or (
+            request.is_json and "user_email" in (request.get_json(silent=True) or {})
+        ):
             # Check if staff token exists
             token = request.cookies.get("staff_token")
             if not token:
@@ -31,7 +33,7 @@ def ensure_user_profile_loaded(f):
                     "error": "Staff authentication required",
                     "message": "You must authenticate as staff to impersonate users",
                 }, 403
-            
+
             # Validate the token
             if not validate_token(token):
                 logger.warning(f"Invalid staff token: {token}")
@@ -39,7 +41,7 @@ def ensure_user_profile_loaded(f):
                     "error": "Invalid staff token",
                     "message": "Your staff token is invalid or has been revoked",
                 }, 403
-            
+
             logger.info("Staff authentication successful, allowing impersonation")
 
         # If no sindarin_email found, don't attempt to load a profile and continue
@@ -49,7 +51,6 @@ def ensure_user_profile_loaded(f):
 
         # Check if a server instance exists (it should always be available after app startup)
         from flask import current_app as app
-        from flask import request
 
         if not hasattr(app, "config") or "server_instance" not in app.config:
             logger.error("Server instance not available in app.config")

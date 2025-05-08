@@ -109,7 +109,7 @@ def get_request_logger() -> logging.Logger:
 
     This function first tries to get the email-specific logger from the Flask request context.
     If that's not available, it extracts the email from the current request and returns
-    an appropriate logger. If an email is found, it returns a logger that will write to 
+    an appropriate logger. If an email is found, it returns a logger that will write to
     both the main log file and an email-specific log file (logs/<email>.log).
     If no email is found, it falls back to the standard logger.
 
@@ -134,12 +134,13 @@ def get_request_logger() -> logging.Logger:
     try:
         # Try to get the email logger from the flask.g object first (set in before_request)
         from flask import g
-        if hasattr(g, 'email_logger'):
+
+        if hasattr(g, "email_logger"):
             return g.email_logger
     except (ImportError, RuntimeError):
         # Not in Flask context or g not available
         pass
-    
+
     # Fall back to extracting email from request and getting logger
     email = get_sindarin_email()
     if email:

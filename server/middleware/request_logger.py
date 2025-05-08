@@ -6,8 +6,8 @@ from io import BytesIO
 
 from flask import Response, current_app, g, request
 
-from server.utils.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
 from server.logging_config import get_email_logger, set_current_request_email
+from server.utils.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
 from server.utils.request_utils import get_request_logger, get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -227,7 +227,7 @@ class RequestBodyLogger:
 
 def setup_request_logger(app):
     """Set up request/response logging for Flask app.
-    
+
     This also configures a request context for logging that makes all log
     messages during a request go to the email-specific logger for that request.
     """
@@ -236,16 +236,16 @@ def setup_request_logger(app):
     def before_request():
         # Get the email from the request
         email = get_sindarin_email()
-        
+
         # Store the email in flask.g for this request
         g.request_email = email
-        
+
         # Set the email in thread-local storage for the request
         # This will be used by the DynamicEmailHandler to route logs
         if email:
             set_current_request_email(email)
             logger.debug(f"Set up email logging context for {email} in request: {request.path}")
-        
+
         # Log the request details
         RequestBodyLogger.log_request()
 
@@ -253,9 +253,9 @@ def setup_request_logger(app):
     def after_request(response):
         # Log the response details
         response_with_logs = RequestBodyLogger.log_response(response)
-        
+
         # Clear the thread-local storage at the end of the request
         # Set to None instead of deleting to avoid attribute errors
         set_current_request_email(None)
-        
+
         return response_with_logs
