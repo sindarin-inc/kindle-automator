@@ -683,6 +683,21 @@ class LibraryHandler:
             traceback.print_exc()
             return False
 
+    def _log_page_summary(self, page_number, new_titles, total_found):
+        """Log a concise summary of books found on current page.
+        
+        Args:
+            page_number: Current page number
+            new_titles: List of new book titles found on this page
+            total_found: Total number of unique books found so far
+        """
+        logger.info(f"Page {page_number}: Found {len(new_titles)} new books, total {total_found}")
+        if new_titles:
+            titles_str = ', '.join(new_titles[:5])
+            if len(new_titles) > 5:
+                titles_str += f" and {len(new_titles) - 5} more"
+            logger.info(f"New titles: {titles_str}")
+            
     def _scroll_through_library(self, target_title: str = None):
         """Scroll through library collecting book info, optionally looking for a specific title.
 
@@ -703,8 +718,10 @@ class LibraryHandler:
             books = []
             seen_titles = set()
             normalized_target = self._normalize_title(target_title) if target_title else None
-
+            page_count = 0
+            
             while True:
+                page_count += 1
                 # Log page source for debugging
                 filepath = store_page_source(self.driver.page_source, "library_view")
                 logger.info(f"Stored library view page source at: {filepath}")
@@ -719,15 +736,10 @@ class LibraryHandler:
                     )
                     logger.info(f"Found {len(title_elements)} title elements directly")
 
-                    # Convert these title elements to containers
+                    # Convert these title elements to containers without detailed logging
                     for i, title in enumerate(title_elements):
                         try:
-                            logger.info(f"Direct title {i+1}: '{title.text}'")
-                            # For each title, use a different approach to get the book container
-                            # Instead of searching for parents, we'll create synthetic containers
-                            # and use the title element directly for metadata extraction
-
-                            # Create a book "wrapper" for each title element - this is a simple dict, not an object with methods
+                            # Create a book "wrapper" for each title element
                             book_wrapper = {"element": title, "title_text": title.text, "is_synthetic": True}
 
                             # Now try to find the actual container through a direct query
@@ -740,11 +752,12 @@ class LibraryHandler:
                                 )
                                 # If found, use the actual button
                                 containers.append(button)
-                                logger.info(f"Found actual container for '{title.text}'")
+                                # Use debug level instead of info for container details
+                                logger.debug(f"Found actual container for '{title.text}'")
                             except Exception:
                                 # If can't find actual container, use our synthetic wrapper
                                 containers.append(book_wrapper)
-                                logger.info(f"Using synthetic container for '{title.text}'")
+                                logger.debug(f"Using synthetic container for '{title.text}'")
                         except Exception as e:
                             logger.error(f"Error processing title '{title.text}': {e}")
 
@@ -794,6 +807,7 @@ class LibraryHandler:
                 # Store titles from previous scroll position
                 previous_titles = set(seen_titles)
                 new_books_found = False
+                new_titles_on_page = []  # Track titles found on this page
 
                 # Process each container
                 for container in containers:
@@ -818,7 +832,7 @@ class LibraryHandler:
                                     seen_titles.add(book_info["title"])
                                     books.append(book_info)
                                     new_books_found = True
-                                    logger.info(f"Added synthetic book: {book_info}")
+                                    new_titles_on_page.append(book_info["title"])
 
                                 # Set a flag to skip the rest of processing for this container
                                 skip_rest_of_processing = True
@@ -1017,7 +1031,7 @@ class LibraryHandler:
                                 seen_titles.add(book_info["title"])
                                 books.append(book_info)
                                 new_books_found = True
-                                logger.info(f"Found book: {book_info}")
+                                new_titles_on_page.append(book_info["title"])
                             else:
                                 logger.info(
                                     f"Already seen book ({len(seen_titles)} found): {book_info['title']}"
@@ -1031,6 +1045,9 @@ class LibraryHandler:
                         logger.error(f"Error processing container: {e}")
                         continue
 
+                # Log a summary of this page's findings
+                self._log_page_summary(page_count, new_titles_on_page, len(books))
+                
                 # If we've found no new books on this screen, we need to double-check
                 if not new_books_found:
                     logger.info("No new books found on this screen, doing a double-check")
@@ -1040,16 +1057,11 @@ class LibraryHandler:
                             AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                         )
                         current_screen_titles = [el.text for el in title_elements]
-                        logger.info(
-                            f"Double-check found {len(title_elements)} title elements: {current_screen_titles}"
-                        )
-
+                        
                         # If all these titles are already seen, then we can safely stop
                         new_unseen_titles = [t for t in current_screen_titles if t and t not in seen_titles]
                         if new_unseen_titles:
-                            logger.info(
-                                f"Found {len(new_unseen_titles)} unseen titles in direct check: {new_unseen_titles}"
-                            )
+                            logger.info(f"Double-check found {len(new_unseen_titles)} additional unseen titles")
 
                             # Add these titles to our seen set and create simple book entries for them
                             for new_title in new_unseen_titles:
@@ -1057,7 +1069,10 @@ class LibraryHandler:
                                 books.append(
                                     {"title": new_title, "progress": None, "size": None, "author": None}
                                 )
-                                logger.info(f"Added book from direct check: {new_title}")
+                                new_titles_on_page.append(new_title)
+                            
+                            # Update the summary with newly found titles
+                            self._log_page_summary(page_count, new_titles_on_page, len(books))
 
                             # Update our flag since we found new books
                             new_books_found = True
@@ -1067,11 +1082,7 @@ class LibraryHandler:
                     except Exception as e:
                         logger.error(f"Error during double-check for titles: {e}")
                         break
-                else:
-                    # We found new books on this screen - log them
-                    logger.info(
-                        f"Found {len([b for b in books if b.get('title') in (seen_titles - previous_titles)])} new books on this screen"
-                    )
+                # We're already logging the summary via _log_page_summary
 
                 # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
                 if not new_books_found or seen_titles == previous_titles:
@@ -1079,16 +1090,7 @@ class LibraryHandler:
                     break
 
                 # Scroll down to see more books
-                # Log visible elements before scrolling
-                try:
-                    logger.info("About to scroll, current visible titles:")
-                    visible_titles = self.driver.find_elements(
-                        AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
-                    )
-                    for i, title in enumerate(visible_titles):
-                        logger.info(f"Pre-scroll visible title {i+1}: '{title.text}'")
-                except Exception as e:
-                    logger.error(f"Error logging pre-scroll titles: {e}")
+                # Don't log visible elements before scrolling to reduce noise
 
                 # Find the bottom-most book container for smart scrolling
                 try:
