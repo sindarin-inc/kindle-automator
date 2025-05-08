@@ -29,7 +29,16 @@ urllib3.connection.HTTPConnection.default_socket_options = (
 urllib3.connectionpool.HTTPConnectionPool.maxsize = 10
 urllib3.connectionpool.HTTPSConnectionPool.maxsize = 10
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, make_response, redirect, request, send_file, stream_with_context
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    make_response,
+    redirect,
+    request,
+    send_file,
+    stream_with_context,
+)
 from flask_restful import Api, Resource
 from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
@@ -83,10 +92,10 @@ api = Api(app)
 setup_request_logger(app)
 
 # Disable Flask buffering to ensure SSE streaming works properly
-app.config['PROPAGATE_EXCEPTIONS'] = True
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
-app.config['SERVER_SENT_EVENTS_PING_ACTIVE'] = True
-app.config['SERVER_SENT_EVENTS_PING_INTERVAL'] = 15
+app.config["PROPAGATE_EXCEPTIONS"] = True
+app.config["JSONIFY_PRETTYPRINT_REGULAR"] = False
+app.config["SERVER_SENT_EVENTS_PING_ACTIVE"] = True
+app.config["SERVER_SENT_EVENTS_PING_INTERVAL"] = 15
 
 # Configure Flask for SSE streaming
 app.config.update(
@@ -354,16 +363,16 @@ class BooksResource(Resource):
     def post(self):
         """Handle POST request for books list"""
         return self._get_books()
-        
-        
-class BooksSSEResource(Resource):
+
+
+class BooksStreamResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     def get(self):
-        """Stream book results as they're found using SSE"""
+        """Stream book results as they're found using Flask streaming"""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
-        
+
         # Get the appropriate logger for this request
         request_logger = get_request_logger()
 
@@ -391,9 +400,7 @@ class BooksSSEResource(Resource):
                     and hasattr(automator, "emulator_manager")
                     and hasattr(automator.emulator_manager, "emulator_launcher")
                 ):
-                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                        sindarin_email
-                    )
+                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
                     request_logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
                 request_logger.info("Authentication required - providing VNC URL for manual authentication")
@@ -422,9 +429,7 @@ class BooksSSEResource(Resource):
                     and hasattr(automator, "emulator_manager")
                     and hasattr(automator.emulator_manager, "emulator_launcher")
                 ):
-                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                        sindarin_email
-                    )
+                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
                     logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
                 logger.info("Authentication required after transition attempt - providing VNC URL")
@@ -467,137 +472,165 @@ class BooksSSEResource(Resource):
                         "current_state": updated_state.name,
                     }, 400
 
-        # Create a generator function to stream books using the library_handler
-        def generate_sse():
+        def generate_simple_stream():
+            """Simple test generator that doesn't depend on book retrieval"""
+            # Send initial message
+            logger.info("Starting simple test stream")
+            yield (json.dumps({"status": "test_started"}) + "\n").encode("utf-8")
+
+            # Send 10 test messages with forced flush
+            for i in range(10):
+                logger.info(f"Generating test message {i}")
+                message = (
+                    json.dumps({"test_message": f"Message {i}", "timestamp": time.time()}) + "\n"
+                ).encode("utf-8")
+                yield message
+                time.sleep(1)  # Force a delay
+
+            # Send completion message
+            logger.info("Finishing test stream")
+            yield (json.dumps({"test_complete": True}) + "\n").encode("utf-8")
+
+        # If using test mode, just return a simple streaming test
+        if request.args.get("test") == "1":
+            # Return simple test stream
+            logger.info("Using test stream mode")
+            return Response(
+                generate_simple_stream(),
+                mimetype="text/plain",
+                direct_passthrough=True,
+                headers={
+                    "X-Accel-Buffering": "no",
+                    "Cache-Control": "no-cache, no-transform",
+                    "Transfer-Encoding": "chunked",
+                },
+            )
+
+        # Standard implementation with book retrieval
+        def generate_stream():
             import json
+            import sys
             import threading
-            
-            # Create an event to coordinate between the callback and the generator
+
+            # Create events to coordinate between threads
             book_event = threading.Event()
             all_done_event = threading.Event()
-            
+
             # Shared variables to store book batches and status information
             books_to_stream = []
             error_message = None
             all_done = False
             total_books = 0
-            
+
             # Callback function that will receive books from the library handler
             def book_callback(books_batch, **kwargs):
                 nonlocal error_message, all_done, total_books, books_to_stream
-                
+
+                if kwargs.get("error"):
+                    logger.info(f"Callback received error: {kwargs.get('error')}")
+
                 # Check for error condition
-                if kwargs.get('error'):
-                    error_message = kwargs.get('error')
+                if kwargs.get("error"):
+                    error_message = kwargs.get("error")
                     book_event.set()
                     return
-                
+
                 # Check for completion
-                if kwargs.get('done'):
+                if kwargs.get("done"):
                     all_done = True
-                    total_books = kwargs.get('total_books', 0)
+                    total_books = kwargs.get("total_books", 0)
                     all_done_event.set()
                     book_event.set()
                     return
-                
+
                 # Process normal book batch
                 if books_batch:
                     books_to_stream.extend(books_batch)
                     book_event.set()
-            
+
             # Start the book retrieval process with our callback
             def start_book_retrieval():
                 try:
                     # Call the library handler with our callback function
                     logger.info("Starting book retrieval with streaming callback")
                     automator.state_machine.library_handler.get_book_titles(callback=book_callback)
+                    logger.info("Book retrieval process completed")
                 except Exception as e:
                     logger.error(f"Error in book retrieval thread: {e}")
                     error_message = str(e)
                     book_event.set()
-            
+
             # Start the book retrieval in a separate thread
             retrieval_thread = threading.Thread(target=start_book_retrieval, daemon=True)
             retrieval_thread.start()
-            
-            # Function to generate an SSE message with proper format
-            def format_sse(event=None, data=None, id=None, retry=None):
-                message = []
-                if id is not None:
-                    message.append(f"id: {id}")
-                if event is not None:
-                    message.append(f"event: {event}")
-                if retry is not None:
-                    message.append(f"retry: {retry}")
-                if data is not None:
-                    message.append(f"data: {data}")
-                return '\n'.join(message) + '\n\n'
-            
+            logger.info("Book retrieval thread started")
+
+            # Explicitly log each yield to see if the generator is running
             try:
-                # Start immediately with a heartbeat message to establish connection
-                yield format_sse(event="heartbeat", data="connection established")
-                
+                # Function to encode message as bytes
+                def encode_message(msg_dict):
+                    return (json.dumps(msg_dict) + "\n").encode("utf-8")
+
+                # Start immediately with an initial message
+                start_msg = {"status": "started", "message": "Book retrieval started"}
+                yield encode_message(start_msg)
+
+                batch_count = 0
                 # Process books as they become available
                 batch_size = 10  # Send books in batches for efficiency
-                message_id = 1
-                
+
                 while not all_done_event.is_set() or books_to_stream:
                     # Wait for new books or completion (with timeout)
-                    book_event.wait(timeout=1.0)
+                    book_event.wait(timeout=0.1)
                     book_event.clear()
-                    
-                    # Send a comment as heartbeat to keep connection alive
-                    yield ": heartbeat\n\n"
-                    
+
                     # Check for errors
                     if error_message:
-                        yield format_sse(id=str(message_id), data=json.dumps({'error': error_message}))
-                        message_id += 1
+                        error_msg = {"error": error_message}
+                        logger.info(f"Yielding error message: {json.dumps(error_msg)}")
+                        yield encode_message(error_msg)
                         break
-                    
+
                     # Process available books
                     if books_to_stream:
+                        batch_count += 1
                         # Get books up to batch size
                         current_batch = books_to_stream[:batch_size]
                         books_to_stream = books_to_stream[batch_size:]
-                        
+
                         # Send the batch immediately
-                        yield format_sse(id=str(message_id), data=json.dumps({'books': current_batch}))
-                        message_id += 1
-                
+                        books_msg = {"books": current_batch, "batch_num": batch_count}
+                        yield encode_message(books_msg)
+
                 # Send completion message
                 if all_done:
-                    yield format_sse(id=str(message_id), data=json.dumps({'done': True, 'total_books': total_books}))
-                    message_id += 1
-                
-                # Final message to signal completion to client
-                yield format_sse(id=str(message_id), data=json.dumps({'complete': True}))
-                
-            except Exception as e:
-                logger.error(f"Error in SSE generator: {e}")
-                yield format_sse(data=json.dumps({'error': str(e)}))
-                
-        # Create a function to flush after each message is sent
-        def generate_and_flush():
-            for message in generate_sse():
-                yield message
-                # Try different approaches to force flush
-                if hasattr(flask, 'g'):
-                    flask.g.update_interval = 0  # Force immediate update
+                    done_msg = {"done": True, "total_books": total_books}
+                    yield encode_message(done_msg)
 
-        # Return the streaming response with headers to prevent buffering
-        response = Response(
-            stream_with_context(generate_and_flush()), 
-            mimetype='text/event-stream',
+                # Final message to signal completion to client
+                complete_msg = {"complete": True}
+                yield encode_message(complete_msg)
+
+            except Exception as e:
+                error_trace = traceback.format_exc()
+                logger.error(f"Error in stream generator: {e}")
+                logger.error(f"Traceback: {error_trace}")
+                error_msg = {"error": str(e), "trace": error_trace}
+                yield encode_message(error_msg)
+
+        # Return the streaming response with proper configuration
+        logger.info("Setting up streaming response")
+        return Response(
+            generate_stream(),  # Not using stream_with_context since it might be causing issues
+            mimetype="text/plain",  # Use text/plain to avoid any content-type processing
+            direct_passthrough=True,  # Enable direct passthrough to avoid buffering
             headers={
-                'Cache-Control': 'no-cache, no-transform',
-                'X-Accel-Buffering': 'no',  # Disables buffering in Nginx
-                'Connection': 'keep-alive',
-                'Content-Type': 'text/event-stream',
-                'Transfer-Encoding': 'chunked'
-            }
+                "X-Accel-Buffering": "no",  # Disable buffering in Nginx
+                "Cache-Control": "no-cache, no-transform",
+                "Content-Type": "text/plain",  # Force content-type header
+                "Transfer-Encoding": "chunked",  # Use chunked encoding
+            },
         )
-        return response
 
 
 class ScreenshotResource(Resource):
@@ -2169,7 +2202,7 @@ from server.resources.staff_auth_resources import StaffAuthResource, StaffTokens
 api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
-api.add_resource(BooksSSEResource, "/books-sse")  # New streaming endpoint for books
+api.add_resource(BooksStreamResource, "/books-stream")  # New streaming endpoint for books
 api.add_resource(StaffAuthResource, "/staff-auth")
 api.add_resource(StaffTokensResource, "/staff-tokens")
 api.add_resource(ScreenshotResource, "/screenshot")

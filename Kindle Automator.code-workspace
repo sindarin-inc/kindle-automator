@@ -5,6 +5,7 @@
 		}
 	],
 	"settings": {
-		"ansible.python.interpreterPath": "/Users/sclay/projects/sindarin/kindle-automator/venv/bin/python"
+		"ansible.python.interpreterPath": "/Users/sclay/projects/sindarin/kindle-automator/venv/bin/python",
+		"djlint.showInstallError": false
 	}
 }

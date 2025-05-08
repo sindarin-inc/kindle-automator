@@ -72,8 +72,6 @@ class LibraryHandlerScroll:
 
             while True:
                 page_count += 1
-                # Log page source for debugging
-                filepath = store_page_source(self.driver.page_source, "library_view")
 
                 # Find all book containers on current screen
                 # PRIMARY APPROACH: First directly find all title elements
@@ -151,7 +149,7 @@ class LibraryHandlerScroll:
                 previous_titles = set(seen_titles)
                 new_books_found = False
                 new_titles_on_page = []  # Track titles found on this page
-                new_books_batch = []     # Track new books to send via callback
+                new_books_batch = []  # Track new books to send via callback
 
                 # Process each container
                 for container in containers:
@@ -381,15 +379,13 @@ class LibraryHandlerScroll:
 
                 # Log a summary of this page's findings
                 self._log_page_summary(page_count, new_titles_on_page, len(books))
-                
+
                 # Send new books via callback if available
                 if callback and new_books_batch:
-                    logger.info(f"Sending batch of {len(new_books_batch)} books via callback on page {page_count}")
                     callback(new_books_batch)
 
                 # If we've found no new books on this screen, we need to double-check
                 if not new_books_found:
-                    logger.info("No new books found on this screen, doing a double-check")
                     # Double-check by directly looking for titles that might not have been processed
                     try:
                         title_elements = self.driver.find_elements(
@@ -408,17 +404,21 @@ class LibraryHandlerScroll:
                             new_books_batch = []  # Reset batch for callback
                             for new_title in new_unseen_titles:
                                 seen_titles.add(new_title)
-                                book_info = {"title": new_title, "progress": None, "size": None, "author": None}
+                                book_info = {
+                                    "title": new_title,
+                                    "progress": None,
+                                    "size": None,
+                                    "author": None,
+                                }
                                 books.append(book_info)
                                 new_books_batch.append(book_info)  # Add to batch for callback
                                 new_titles_on_page.append(new_title)
 
                             # Update the summary with newly found titles
                             self._log_page_summary(page_count, new_titles_on_page, len(books))
-                            
+
                             # Send additional books via callback if available
                             if callback and new_books_batch:
-                                logger.info(f"Sending batch of {len(new_books_batch)} additional books via callback on page {page_count}")
                                 callback(new_books_batch)
 
                             # Update our flag since we found new books
@@ -427,7 +427,6 @@ class LibraryHandlerScroll:
                             logger.info("Double-check confirms no new books, stopping scroll")
                             # Send completion notification via callback if available
                             if callback:
-                                logger.info(f"Sending completion notification via callback, total books: {len(books)}")
                                 callback(None, done=True, total_books=len(books))
                             break
                     except Exception as e:
@@ -439,7 +438,6 @@ class LibraryHandlerScroll:
                     logger.info("No progress in finding new books, stopping scroll")
                     # Send completion notification via callback if available
                     if callback:
-                        logger.info(f"Sending completion notification via callback, total books: {len(books)}")
                         callback(None, done=True, total_books=len(books))
                     break
 
@@ -454,40 +452,14 @@ class LibraryHandlerScroll:
                     bottom_container = book_containers[-1]
 
                     # Check if the bottom-most container is fully visible
-                    # Simplified approach to prevent NoSuchElementException errors
-                    fully_visible = False
-
                     try:
                         # Just check if the title element itself is fully visible on screen
                         # This is simpler and less error-prone than trying to navigate to parent containers
                         location = bottom_container.location
                         size = bottom_container.size
                         bottom_y = location["y"] + size["height"]
-
-                        # Title is fully visible if its bottom is within screen bounds with margin
-                        title_visible = bottom_y <= (screen_size["height"] - 20)
-
-                        # Check if we can see at least 15% of the screen height below this title
-                        # This gives enough room for author and other metadata - balanced approach
-                        space_for_metadata = (screen_size["height"] - bottom_y) >= (
-                            screen_size["height"] * 0.15
-                        )
-
-                        # Book is considered fully visible if the title is visible and there's space below
-                        fully_visible = title_visible and space_for_metadata
-
-                        if not fully_visible:
-                            if not title_visible:
-                                logger.info(f"Bottom book title not fully visible")
-                            elif not space_for_metadata:
-                                logger.info(f"Not enough space below book title for metadata")
-                        else:
-                            logger.info(f"Bottom book appears to have enough room for metadata")
-
                     except Exception as e:
                         logger.debug(f"Could not check visibility for bottom book: {e}")
-                        # If we encounter errors, assume it's partially visible
-                        fully_visible = False
 
                     # Simpler approach: always use the last fully visible book as reference
                     # This ensures better consistency in scrolling behavior
@@ -507,16 +479,12 @@ class LibraryHandlerScroll:
                             if bottom <= (screen_size["height"] - 20):
                                 reference_container = container
                                 reference_index = i
-                                logger.info(
-                                    f"Using book {i+1} of {len(book_containers)} as scroll reference (fully visible)"
-                                )
                                 break
 
                         # If we didn't find a fully visible book, use second-to-last as fallback
                         if reference_index == len(book_containers) - 1 and len(book_containers) >= 3:
                             reference_container = book_containers[-2]
                             reference_index = len(book_containers) - 2
-                            logger.info(f"No fully visible book found, using second-to-last as fallback")
 
                         bottom_container = reference_container
 
@@ -548,10 +516,6 @@ class LibraryHandlerScroll:
 
                     # Position this book at the top of the screen with a small margin
                     smart_end_y = screen_size["height"] * 0.1  # 10% from top of screen
-
-                    logger.info(
-                        f"Scroll plan: Move y={smart_start_y} to y={smart_end_y} (distance={smart_start_y-smart_end_y}px)"
-                    )
 
                     # Verify start point is below end point by a reasonable amount
                     if smart_start_y - smart_end_y < 100:
@@ -605,22 +569,22 @@ class LibraryHandlerScroll:
                 if not found_matching_title:
                     logger.warning(f"Book not found after searching entire library: {target_title}")
                     logger.info(f"Available titles: {', '.join(seen_titles)}")
-                    
+
                     # Send error via callback if available
                     if callback:
                         callback(None, error=f"Book not found: {target_title}")
-                        
+
                 return None, None, None
 
             return books
 
         except Exception as e:
             logger.error(f"Error scrolling through library: {e}")
-            
+
             # Send error via callback if available
             if callback:
                 callback(None, error=str(e))
-                
+
             if target_title:
                 return None, None, None
             return []
