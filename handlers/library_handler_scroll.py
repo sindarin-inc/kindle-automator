@@ -44,16 +44,19 @@ class LibraryHandlerScroll:
             joined_titles = f"{separator}".join(new_titles)
             logger.info(f"New titles: {separator}{joined_titles}")
 
-    def _scroll_through_library(self, target_title: str = None, title_match_func=None):
+    def _scroll_through_library(self, target_title: str = None, title_match_func=None, callback=None):
         """Scroll through library collecting book info, optionally looking for a specific title.
 
         Args:
             target_title: Optional title to search for. If provided, returns early when found.
             title_match_func: Function to check if titles match
+            callback: Optional callback function to receive books as they're found.
+                     The callback should accept a list of book dictionaries.
 
         Returns:
             If target_title provided: (found_container, found_button, book_info) or (None, None, None)
             If no target_title: List of book info dictionaries
+            If callback provided: List may still be returned, but books are also sent to callback as found
         """
         try:
             # Get screen size for scrolling
@@ -148,6 +151,7 @@ class LibraryHandlerScroll:
                 previous_titles = set(seen_titles)
                 new_books_found = False
                 new_titles_on_page = []  # Track titles found on this page
+                new_books_batch = []     # Track new books to send via callback
 
                 # Process each container
                 for container in containers:
@@ -170,6 +174,7 @@ class LibraryHandlerScroll:
                                 if book_info["title"] not in seen_titles:
                                     seen_titles.add(book_info["title"])
                                     books.append(book_info)
+                                    new_books_batch.append(book_info)  # Add to batch for callback
                                     new_books_found = True
                                     new_titles_on_page.append(book_info["title"])
 
@@ -358,6 +363,7 @@ class LibraryHandlerScroll:
                             if book_info["title"] not in seen_titles:
                                 seen_titles.add(book_info["title"])
                                 books.append(book_info)
+                                new_books_batch.append(book_info)  # Add to batch for callback
                                 new_books_found = True
                                 new_titles_on_page.append(book_info["title"])
                             else:
@@ -375,6 +381,11 @@ class LibraryHandlerScroll:
 
                 # Log a summary of this page's findings
                 self._log_page_summary(page_count, new_titles_on_page, len(books))
+                
+                # Send new books via callback if available
+                if callback and new_books_batch:
+                    logger.info(f"Sending batch of {len(new_books_batch)} books via callback on page {page_count}")
+                    callback(new_books_batch)
 
                 # If we've found no new books on this screen, we need to double-check
                 if not new_books_found:
@@ -394,20 +405,30 @@ class LibraryHandlerScroll:
                             )
 
                             # Add these titles to our seen set and create simple book entries for them
+                            new_books_batch = []  # Reset batch for callback
                             for new_title in new_unseen_titles:
                                 seen_titles.add(new_title)
-                                books.append(
-                                    {"title": new_title, "progress": None, "size": None, "author": None}
-                                )
+                                book_info = {"title": new_title, "progress": None, "size": None, "author": None}
+                                books.append(book_info)
+                                new_books_batch.append(book_info)  # Add to batch for callback
                                 new_titles_on_page.append(new_title)
 
                             # Update the summary with newly found titles
                             self._log_page_summary(page_count, new_titles_on_page, len(books))
+                            
+                            # Send additional books via callback if available
+                            if callback and new_books_batch:
+                                logger.info(f"Sending batch of {len(new_books_batch)} additional books via callback on page {page_count}")
+                                callback(new_books_batch)
 
                             # Update our flag since we found new books
                             new_books_found = True
                         else:
                             logger.info("Double-check confirms no new books, stopping scroll")
+                            # Send completion notification via callback if available
+                            if callback:
+                                logger.info(f"Sending completion notification via callback, total books: {len(books)}")
+                                callback(None, done=True, total_books=len(books))
                             break
                     except Exception as e:
                         logger.error(f"Error during double-check for titles: {e}")
@@ -416,6 +437,10 @@ class LibraryHandlerScroll:
                 # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
                 if not new_books_found or seen_titles == previous_titles:
                     logger.info("No progress in finding new books, stopping scroll")
+                    # Send completion notification via callback if available
+                    if callback:
+                        logger.info(f"Sending completion notification via callback, total books: {len(books)}")
+                        callback(None, done=True, total_books=len(books))
                     break
 
                 # Find the bottom-most book container for smart scrolling
@@ -580,12 +605,22 @@ class LibraryHandlerScroll:
                 if not found_matching_title:
                     logger.warning(f"Book not found after searching entire library: {target_title}")
                     logger.info(f"Available titles: {', '.join(seen_titles)}")
+                    
+                    # Send error via callback if available
+                    if callback:
+                        callback(None, error=f"Book not found: {target_title}")
+                        
                 return None, None, None
 
             return books
 
         except Exception as e:
             logger.error(f"Error scrolling through library: {e}")
+            
+            # Send error via callback if available
+            if callback:
+                callback(None, error=str(e))
+                
             if target_title:
                 return None, None, None
             return []

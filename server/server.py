@@ -29,7 +29,7 @@ urllib3.connection.HTTPConnection.default_socket_options = (
 urllib3.connectionpool.HTTPConnectionPool.maxsize = 10
 urllib3.connectionpool.HTTPSConnectionPool.maxsize = 10
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, make_response, redirect, request, send_file
+from flask import Flask, Response, jsonify, make_response, redirect, request, send_file, stream_with_context
 from flask_restful import Api, Resource
 from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
@@ -81,6 +81,19 @@ api = Api(app)
 
 # Set up request and response logging middleware
 setup_request_logger(app)
+
+# Disable Flask buffering to ensure SSE streaming works properly
+app.config['PROPAGATE_EXCEPTIONS'] = True
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+app.config['SERVER_SENT_EVENTS_PING_ACTIVE'] = True
+app.config['SERVER_SENT_EVENTS_PING_INTERVAL'] = 15
+
+# Configure Flask for SSE streaming
+app.config.update(
+    SEND_FILE_MAX_AGE_DEFAULT=0,
+    SESSION_COOKIE_SECURE=False,
+    SESSION_USE_SIGNER=False,
+)
 
 # Create the server instance
 server = AutomationServer()
@@ -341,6 +354,250 @@ class BooksResource(Resource):
     def post(self):
         """Handle POST request for books list"""
         return self._get_books()
+        
+        
+class BooksSSEResource(Resource):
+    @ensure_user_profile_loaded
+    @ensure_automator_healthy
+    def get(self):
+        """Stream book results as they're found using SSE"""
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email()
+        
+        # Get the appropriate logger for this request
+        request_logger = get_request_logger()
+
+        if not sindarin_email:
+            request_logger.error("No email provided to identify which profile to use")
+            return {"error": "No email provided to identify which profile to use"}, 400
+
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            request_logger.error(f"No automator found for {sindarin_email}")
+            return {"error": f"No automator found for {sindarin_email}"}, 404
+
+        current_state = automator.state_machine.current_state
+        request_logger.info(f"Current state when streaming books: {current_state}")
+
+        # Handle different states - similar to _get_books but with appropriate streaming responses
+        if current_state != AppState.LIBRARY:
+            # Check if we're on the sign-in screen
+            if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
+                # Get current email to include in VNC URL
+                emulator_id = None
+                if (
+                    automator
+                    and hasattr(automator, "emulator_manager")
+                    and hasattr(automator.emulator_manager, "emulator_launcher")
+                ):
+                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                        sindarin_email
+                    )
+                    request_logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                request_logger.info("Authentication required - providing VNC URL for manual authentication")
+                return {
+                    "error": "Authentication required",
+                    "requires_auth": True,
+                    "current_state": current_state.name,
+                    "message": "Authentication is required via VNC",
+                    "emulator_id": emulator_id,
+                }, 401
+
+            # Try to transition to library state
+            request_logger.info("Not in library state, attempting to transition...")
+            transition_success = automator.state_machine.transition_to_library(server=server)
+
+            # Get the updated state after transition attempt
+            new_state = automator.state_machine.current_state
+            request_logger.info(f"State after transition attempt: {new_state}")
+
+            # Check for auth requirement regardless of transition success
+            if new_state == AppState.SIGN_IN:
+                # Get the emulator ID for this email if possible
+                emulator_id = None
+                if (
+                    automator
+                    and hasattr(automator, "emulator_manager")
+                    and hasattr(automator.emulator_manager, "emulator_launcher")
+                ):
+                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                        sindarin_email
+                    )
+                    logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                logger.info("Authentication required after transition attempt - providing VNC URL")
+                return {
+                    "error": "Authentication required",
+                    "requires_auth": True,
+                    "current_state": new_state.name,
+                    "message": "Authentication is required via VNC",
+                    "emulator_id": emulator_id,
+                }, 401
+
+            if not transition_success:
+                # If transition failed, check for auth requirement
+                updated_state = automator.state_machine.current_state
+
+                if updated_state == AppState.SIGN_IN:
+                    # Get the emulator ID for this email if possible
+                    emulator_id = None
+                    if (
+                        automator
+                        and hasattr(automator, "emulator_manager")
+                        and hasattr(automator.emulator_manager, "emulator_launcher")
+                    ):
+                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                            sindarin_email
+                        )
+                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                    logger.info("Transition failed - authentication required - providing VNC URL")
+                    return {
+                        "error": "Authentication required",
+                        "requires_auth": True,
+                        "current_state": updated_state.name,
+                        "message": "Authentication is required via VNC",
+                        "emulator_id": emulator_id,
+                    }, 401
+                else:
+                    return {
+                        "error": f"Cannot stream books in current state: {updated_state.name}",
+                        "current_state": updated_state.name,
+                    }, 400
+
+        # Create a generator function to stream books using the library_handler
+        def generate_sse():
+            import json
+            import threading
+            
+            # Create an event to coordinate between the callback and the generator
+            book_event = threading.Event()
+            all_done_event = threading.Event()
+            
+            # Shared variables to store book batches and status information
+            books_to_stream = []
+            error_message = None
+            all_done = False
+            total_books = 0
+            
+            # Callback function that will receive books from the library handler
+            def book_callback(books_batch, **kwargs):
+                nonlocal error_message, all_done, total_books, books_to_stream
+                
+                # Check for error condition
+                if kwargs.get('error'):
+                    error_message = kwargs.get('error')
+                    book_event.set()
+                    return
+                
+                # Check for completion
+                if kwargs.get('done'):
+                    all_done = True
+                    total_books = kwargs.get('total_books', 0)
+                    all_done_event.set()
+                    book_event.set()
+                    return
+                
+                # Process normal book batch
+                if books_batch:
+                    books_to_stream.extend(books_batch)
+                    book_event.set()
+            
+            # Start the book retrieval process with our callback
+            def start_book_retrieval():
+                try:
+                    # Call the library handler with our callback function
+                    logger.info("Starting book retrieval with streaming callback")
+                    automator.state_machine.library_handler.get_book_titles(callback=book_callback)
+                except Exception as e:
+                    logger.error(f"Error in book retrieval thread: {e}")
+                    error_message = str(e)
+                    book_event.set()
+            
+            # Start the book retrieval in a separate thread
+            retrieval_thread = threading.Thread(target=start_book_retrieval, daemon=True)
+            retrieval_thread.start()
+            
+            # Function to generate an SSE message with proper format
+            def format_sse(event=None, data=None, id=None, retry=None):
+                message = []
+                if id is not None:
+                    message.append(f"id: {id}")
+                if event is not None:
+                    message.append(f"event: {event}")
+                if retry is not None:
+                    message.append(f"retry: {retry}")
+                if data is not None:
+                    message.append(f"data: {data}")
+                return '\n'.join(message) + '\n\n'
+            
+            try:
+                # Start immediately with a heartbeat message to establish connection
+                yield format_sse(event="heartbeat", data="connection established")
+                
+                # Process books as they become available
+                batch_size = 10  # Send books in batches for efficiency
+                message_id = 1
+                
+                while not all_done_event.is_set() or books_to_stream:
+                    # Wait for new books or completion (with timeout)
+                    book_event.wait(timeout=1.0)
+                    book_event.clear()
+                    
+                    # Send a comment as heartbeat to keep connection alive
+                    yield ": heartbeat\n\n"
+                    
+                    # Check for errors
+                    if error_message:
+                        yield format_sse(id=str(message_id), data=json.dumps({'error': error_message}))
+                        message_id += 1
+                        break
+                    
+                    # Process available books
+                    if books_to_stream:
+                        # Get books up to batch size
+                        current_batch = books_to_stream[:batch_size]
+                        books_to_stream = books_to_stream[batch_size:]
+                        
+                        # Send the batch immediately
+                        yield format_sse(id=str(message_id), data=json.dumps({'books': current_batch}))
+                        message_id += 1
+                
+                # Send completion message
+                if all_done:
+                    yield format_sse(id=str(message_id), data=json.dumps({'done': True, 'total_books': total_books}))
+                    message_id += 1
+                
+                # Final message to signal completion to client
+                yield format_sse(id=str(message_id), data=json.dumps({'complete': True}))
+                
+            except Exception as e:
+                logger.error(f"Error in SSE generator: {e}")
+                yield format_sse(data=json.dumps({'error': str(e)}))
+                
+        # Create a function to flush after each message is sent
+        def generate_and_flush():
+            for message in generate_sse():
+                yield message
+                # Try different approaches to force flush
+                if hasattr(flask, 'g'):
+                    flask.g.update_interval = 0  # Force immediate update
+
+        # Return the streaming response with headers to prevent buffering
+        response = Response(
+            stream_with_context(generate_and_flush()), 
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache, no-transform',
+                'X-Accel-Buffering': 'no',  # Disables buffering in Nginx
+                'Connection': 'keep-alive',
+                'Content-Type': 'text/event-stream',
+                'Transfer-Encoding': 'chunked'
+            }
+        )
+        return response
 
 
 class ScreenshotResource(Resource):
@@ -1912,6 +2169,7 @@ from server.resources.staff_auth_resources import StaffAuthResource, StaffTokens
 api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
+api.add_resource(BooksSSEResource, "/books-sse")  # New streaming endpoint for books
 api.add_resource(StaffAuthResource, "/staff-auth")
 api.add_resource(StaffTokensResource, "/staff-tokens")
 api.add_resource(ScreenshotResource, "/screenshot")
@@ -2123,7 +2381,8 @@ def run_server():
     signal.signal(signal.SIGTERM, signal_handler)
     logger.info("Registered signal handlers for graceful shutdown")
 
-    app.run(host="0.0.0.0", port=4098)
+    # Run with threaded=True and explicit buffering settings to ensure streaming works
+    app.run(host="0.0.0.0", port=4098, threaded=True, use_reloader=False)
 
 
 def main():

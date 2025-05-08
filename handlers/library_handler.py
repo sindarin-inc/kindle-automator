@@ -777,8 +777,19 @@ class LibraryHandler:
             logger.error(f"Error handling library sign-in: {e}")
             return False
 
-    def get_book_titles(self):
-        """Get a list of all books in the library with their metadata."""
+    def get_book_titles(self, callback=None):
+        """Get a list of all books in the library with their metadata.
+        
+        Args:
+            callback: Optional callback function that will receive books as they're found.
+                     If provided, books will be streamed to this function in batches.
+                     The callback should accept a list of book dictionaries as its first argument,
+                     and optional kwargs for control messages.
+        
+        Returns:
+            List of book dictionaries, or None if authentication is required.
+            If callback is provided, results are also streamed to the callback as they're found.
+        """
         try:
             # Check if Grid/List view dialog is open and handle it first
             if self._is_grid_list_view_dialog_open():
@@ -790,11 +801,15 @@ class LibraryHandler:
             # Ensure we're in the library view
             if not self.navigate_to_library():
                 logger.error("Failed to navigate to library")
+                if callback:
+                    callback(None, error="Failed to navigate to library")
                 return []
 
             # Check if we need to sign in
             if self.check_for_sign_in_button():
                 logger.warning("Library view shows sign-in button - authentication required")
+                if callback:
+                    callback(None, error="Authentication required")
                 return None  # Return None to indicate authentication needed
 
             # Check if Grid/List view dialog is open after navigating to library
@@ -809,6 +824,8 @@ class LibraryHandler:
                 logger.info("Detected grid view, switching to list view")
                 if not self.switch_to_list_view():
                     logger.error("Failed to switch to list view")
+                    if callback:
+                        callback(None, error="Failed to switch to list view")
                     return []
                 logger.info("Successfully switched to list view")
 
@@ -817,10 +834,13 @@ class LibraryHandler:
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
 
             # Use the scroll handler's method to get all books
-            return self.scroll_handler._scroll_through_library()
+            # If callback is provided, pass it to the scroll handler for streaming
+            return self.scroll_handler._scroll_through_library(callback=callback)
 
         except Exception as e:
             logger.error(f"Error getting book titles: {e}")
+            if callback:
+                callback(None, error=str(e))
             return []
 
     def _handle_book_click_and_transition(self, parent_container, button, book_info, book_title):
