@@ -298,11 +298,43 @@ class EmulatorManager:
                     # Remove stale cache entry before launching
                     del self.emulator_launcher.running_emulators[avd_name]
             
+            # Directly check adb devices before launching to know the initial state
+            try:
+                devices_before = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                logger.info(f"ADB devices before launch: {devices_before.stdout.strip()}")
+            except Exception as e:
+                logger.error(f"Error checking ADB devices before launch: {e}")
+            
             # Now use the Python-based launcher
             success, emulator_id, display_num = self.emulator_launcher.launch_emulator(email)
 
             if success:
                 logger.info(f"Emulator {emulator_id} launched successfully on display :{display_num}")
+                
+                # Check adb devices immediately after launch to see if it's detected
+                try:
+                    devices_after = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    logger.info(f"ADB devices immediately after launch: {devices_after.stdout.strip()}")
+                    
+                    # Check if our emulator ID appears in the output
+                    if emulator_id in devices_after.stdout:
+                        logger.info(f"Emulator {emulator_id} is visible to ADB immediately after launch")
+                    else:
+                        logger.warning(f"Emulator {emulator_id} is NOT visible to ADB immediately after launch")
+                except Exception as e:
+                    logger.error(f"Error checking ADB devices after launch: {e}")
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
                 logger.info("Waiting for emulator to boot...")
