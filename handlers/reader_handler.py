@@ -331,15 +331,15 @@ class ReaderHandler:
             library_handler = self.driver.automator.state_machine.library_handler
             # Call open_book and capture the result
             open_book_result = library_handler.open_book(book_title)
-            
+
             # Check for "Title Not Available" dialog result
-            if open_book_result == 'title_not_available':
+            if open_book_result == "title_not_available":
                 logger.error(f"Title Not Available dialog detected for book: {book_title}")
                 # Set a special error flag on the automator for the response_handler to detect
                 if hasattr(self.driver, "automator"):
                     self.driver.automator.title_not_available_error = {
                         "error": "Title Not Available",
-                        "book_title": book_title
+                        "book_title": book_title,
                     }
                 return False
             # Check for general failure

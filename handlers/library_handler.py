@@ -925,7 +925,7 @@ class LibraryHandler:
                                 logger.info(f"Found book: {book_info}")
                             else:
                                 logger.info(
-                                    f"Already seen book ({len(seen_titles)} found): {book_info["title"]}"
+                                    f"Already seen book ({len(seen_titles)} found): {book_info['title']}"
                                 )
                         else:
                             logger.info(f"Container has no book info, skipping: {book_info}")
@@ -1573,8 +1573,8 @@ class LibraryHandler:
                         DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
                         DOWNLOAD_LIMIT_ERROR_TEXT,
                         DOWNLOAD_LIMIT_REMOVE_BUTTON,
-                        TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
                         TITLE_NOT_AVAILABLE_DIALOG_BUTTONS,
+                        TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
                     )
 
                     # Check for "Title Not Available" dialog first
@@ -1583,36 +1583,46 @@ class LibraryHandler:
                             element = self.driver.find_element(strategy, locator)
                             if element and element.is_displayed():
                                 # Store the dialog for debugging
-                                filepath = store_page_source(self.driver.page_source, "title_not_available_dialog")
-                                
+                                filepath = store_page_source(
+                                    self.driver.page_source, "title_not_available_dialog"
+                                )
+
                                 error_text = "Title Not Available"
                                 try:
                                     # Try to get the message text if available
-                                    message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
+                                    message_element = self.driver.find_element(
+                                        AppiumBy.ID, "android:id/message"
+                                    )
                                     if message_element and message_element.is_displayed():
                                         error_text = f"Title Not Available: {message_element.text}"
                                 except:
                                     pass
-                                
+
                                 logger.error(f"Title Not Available dialog found: {error_text}")
-                                
+
                                 # Try to click the Cancel button to dismiss the dialog
                                 try:
                                     for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
                                         try:
-                                            cancel_button = self.driver.find_element(btn_strategy, btn_locator)
+                                            cancel_button = self.driver.find_element(
+                                                btn_strategy, btn_locator
+                                            )
                                             if cancel_button and cancel_button.is_displayed():
                                                 cancel_button.click()
-                                                logger.info("Clicked Cancel button on Title Not Available dialog")
+                                                logger.info(
+                                                    "Clicked Cancel button on Title Not Available dialog"
+                                                )
                                                 break
                                         except:
                                             pass
                                 except:
-                                    logger.warning("Failed to click Cancel button on Title Not Available dialog")
-                                    
+                                    logger.warning(
+                                        "Failed to click Cancel button on Title Not Available dialog"
+                                    )
+
                                 # Return a specific value to indicate this dialog was found
                                 # Using string 'title_not_available' instead of True/False for disambiguation
-                                return 'title_not_available'
+                                return "title_not_available"
                         except:
                             pass
 

@@ -352,22 +352,24 @@ def handle_automator_response(server_instance):
                     if automator and hasattr(automator, "title_not_available_error"):
                         time_taken = round(time.time() - start_time, 3)
                         error_info = automator.title_not_available_error
-                        
-                        logger.error(f"Title Not Available error detected for book: {error_info.get('book_title', 'Unknown')}")
-                        
+
+                        logger.error(
+                            f"Title Not Available error detected for book: {error_info.get('book_title', 'Unknown')}"
+                        )
+
                         # Create response with error details
                         response_data = {
                             "error": error_info.get("error", "Title Not Available"),
                             "book_title": error_info.get("book_title", "Unknown"),
                             "time_taken": time_taken,
-                            "status": "title_not_available"
+                            "status": "title_not_available",
                         }
-                        
+
                         # Clear the error flag to avoid affecting future requests
                         automator.title_not_available_error = None
-                        
+
                         return response_data, 400
-                    
+
                     # Check for special states that need handling
                     if automator and hasattr(automator, "state_machine") and automator.state_machine:
                         current_state = automator.state_machine.current_state
