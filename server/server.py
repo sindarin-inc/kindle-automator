@@ -44,10 +44,10 @@ from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
-from server.middleware.staff_auth_middleware import require_staff_auth
 from server.utils.request_utils import (
     get_automator_for_request,
     get_formatted_vnc_url,
+    get_request_logger,
     get_sindarin_email,
 )
 from views.core.app_state import AppState
@@ -153,16 +153,21 @@ class BooksResource(Resource):
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
+        # Get the appropriate logger for this request
+        request_logger = get_request_logger()
+
         if not sindarin_email:
+            request_logger.error("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
+            request_logger.error(f"No automator found for {sindarin_email}")
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         current_state = automator.state_machine.current_state
-        logger.info(f"Current state when getting books: {current_state}")
+        request_logger.info(f"Current state when getting books: {current_state}")
 
         # Handle different states
         if current_state != AppState.LIBRARY:
@@ -183,9 +188,9 @@ class BooksResource(Resource):
                         emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
                             sindarin_email
                         )
-                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+                        request_logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                logger.info("Authentication required - providing VNC URL for manual authentication")
+                request_logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
                     "requires_auth": True,
@@ -195,12 +200,12 @@ class BooksResource(Resource):
                 }, 401
 
             # Try to transition to library state
-            logger.info("Not in library state, attempting to transition...")
+            request_logger.info("Not in library state, attempting to transition...")
             transition_success = automator.state_machine.transition_to_library(server=server)
 
             # Get the updated state after transition attempt
             new_state = automator.state_machine.current_state
-            logger.info(f"State after transition attempt: {new_state}")
+            request_logger.info(f"State after transition attempt: {new_state}")
 
             # Check for auth requirement regardless of transition success
             if new_state == AppState.SIGN_IN:
@@ -937,7 +942,6 @@ class TwoFactorResource(Resource):
 
 class AuthResource(Resource):
     @ensure_user_profile_loaded
-    @handle_automator_response(server)
     def _auth(self):
         """Set up a profile for manual authentication via VNC"""
         # Create a unified params dict that combines query params and JSON body
