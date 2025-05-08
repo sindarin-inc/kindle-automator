@@ -40,10 +40,7 @@ class LibraryHandlerScroll:
         """
         logger.info(f"Page {page_number}: Found {len(new_titles)} new books, total {total_found}")
         if new_titles:
-            titles_str = ", ".join(new_titles[:5])
-            if len(new_titles) > 5:
-                titles_str += f" and {len(new_titles) - 5} more"
-            logger.info(f"New titles: {titles_str}")
+            logger.info(f"New titles: {'\n\t\t\t'.join(new_titles)}")
 
     def _scroll_through_library(self, target_title: str = None, title_match_func=None):
         """Scroll through library collecting book info, optionally looking for a specific title.
@@ -430,8 +427,6 @@ class LibraryHandlerScroll:
                     )
 
                     if book_containers and len(book_containers) >= 2:
-                        logger.info(f"Found {len(book_containers)} book containers for smart scrolling")
-
                         # Get the bottom-most container (last in the list)
                         bottom_container = book_containers[-1]
 
@@ -444,7 +439,6 @@ class LibraryHandlerScroll:
 
                         # Calculate the y-coordinate of the bottom of this container
                         bottom_y = location["y"] + size["height"]
-                        logger.info(f"Bottom-most container at y={bottom_y}, title='{bottom_container.text}'")
 
                         # Check if the bottom container is partially off-screen
                         if bottom_y > screen_size["height"]:
@@ -481,7 +475,6 @@ class LibraryHandlerScroll:
                                 smart_end_y,
                                 1000,
                             )
-                            logger.info(f"Performed smart scroll from y={smart_start_y} to y={smart_end_y}")
                     else:
                         logger.warning(
                             f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll"
