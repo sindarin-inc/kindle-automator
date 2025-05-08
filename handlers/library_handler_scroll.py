@@ -40,7 +40,9 @@ class LibraryHandlerScroll:
         """
         logger.info(f"Page {page_number}: Found {len(new_titles)} new books, total {total_found}")
         if new_titles:
-            logger.info(f"New titles: {'\n\t\t\t'.join(new_titles)}")
+            separator = "\n\t\t\t"
+            joined_titles = f"{separator}".join(new_titles)
+            logger.info(f"New titles: {separator}{joined_titles}")
 
     def _scroll_through_library(self, target_title: str = None, title_match_func=None):
         """Scroll through library collecting book info, optionally looking for a specific title.
@@ -416,78 +418,138 @@ class LibraryHandlerScroll:
                     logger.info("No progress in finding new books, stopping scroll")
                     break
 
-                # Scroll down to see more books
-                # Don't log visible elements before scrolling to reduce noise
-
                 # Find the bottom-most book container for smart scrolling
-                try:
-                    # Get all book containers currently visible
-                    book_containers = self.driver.find_elements(
-                        AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
-                    )
+                # Get all book containers currently visible
+                book_containers = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                )
 
-                    if book_containers and len(book_containers) >= 2:
-                        # Get the bottom-most container (last in the list)
-                        bottom_container = book_containers[-1]
+                if book_containers and len(book_containers) >= 2:
+                    # Get the bottom-most container (last in the list)
+                    bottom_container = book_containers[-1]
 
-                        # Get the second-from-bottom container as a fallback
-                        second_bottom_container = book_containers[-2]
+                    # Check if the bottom-most container is fully visible
+                    # Simplified approach to prevent NoSuchElementException errors
+                    fully_visible = False
 
-                        # Get location and size of the bottom container
+                    try:
+                        # Just check if the title element itself is fully visible on screen
+                        # This is simpler and less error-prone than trying to navigate to parent containers
                         location = bottom_container.location
                         size = bottom_container.size
-
-                        # Calculate the y-coordinate of the bottom of this container
                         bottom_y = location["y"] + size["height"]
 
-                        # Check if the bottom container is partially off-screen
-                        if bottom_y > screen_size["height"]:
-                            logger.info(
-                                "Bottom container extends beyond screen, using second-from-bottom instead"
-                            )
-                            location = second_bottom_container.location
-                            size = second_bottom_container.size
-                            bottom_y = location["y"] + size["height"]
-                            logger.info(
-                                f"Using second-from-bottom container at y={bottom_y}, title='{second_bottom_container.text}'"
-                            )
+                        # Title is fully visible if its bottom is within screen bounds with margin
+                        title_visible = bottom_y <= (screen_size["height"] - 20)
 
-                        # Calculate smart scrolling coordinates with safety bounds
-                        # Start from current position of bottom container
-                        smart_start_y = min(
-                            bottom_y - 10, screen_size["height"] - 20
-                        )  # Ensure within screen bounds
-                        # End at top of screen with small margin
-                        smart_end_y = screen_size["height"] * 0.1
+                        # Check if we can see at least 15% of the screen height below this title
+                        # This gives enough room for author and other metadata - balanced approach
+                        space_for_metadata = (screen_size["height"] - bottom_y) >= (
+                            screen_size["height"] * 0.15
+                        )
 
-                        # Verify start point is below end point by a reasonable amount
-                        if smart_start_y - smart_end_y < 100:
-                            logger.warning("Scroll distance too small, using default scroll")
-                            self.driver.swipe(
-                                screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000
-                            )
+                        # Book is considered fully visible if the title is visible and there's space below
+                        fully_visible = title_visible and space_for_metadata
+
+                        if not fully_visible:
+                            if not title_visible:
+                                logger.info(f"Bottom book title not fully visible")
+                            elif not space_for_metadata:
+                                logger.info(f"Not enough space below book title for metadata")
                         else:
-                            # Perform smart scroll - move bottom container to top
-                            self.driver.swipe(
-                                screen_size["width"] // 2,
-                                smart_start_y,
-                                screen_size["width"] // 2,
-                                smart_end_y,
-                                1000,
-                            )
-                    else:
-                        logger.warning(
-                            f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll"
-                        )
-                        # Fallback to default scroll behavior
+                            logger.info(f"Bottom book appears to have enough room for metadata")
+
+                    except Exception as e:
+                        logger.debug(f"Could not check visibility for bottom book: {e}")
+                        # If we encounter errors, assume it's partially visible
+                        fully_visible = False
+
+                    # Simpler approach: always use the last fully visible book as reference
+                    # This ensures better consistency in scrolling behavior
+                    if len(book_containers) >= 2:
+                        # Default to last book
+                        reference_container = book_containers[-1]
+                        reference_index = len(book_containers) - 1
+
+                        # Check from bottom up, find last fully visible book
+                        for i in range(len(book_containers) - 1, 0, -1):
+                            container = book_containers[i]
+                            loc = container.location
+                            s = container.size
+                            bottom = loc["y"] + s["height"]
+
+                            # If this container is fully visible on screen
+                            if bottom <= (screen_size["height"] - 20):
+                                reference_container = container
+                                reference_index = i
+                                logger.info(
+                                    f"Using book {i+1} of {len(book_containers)} as scroll reference (fully visible)"
+                                )
+                                break
+
+                        # If we didn't find a fully visible book, use second-to-last as fallback
+                        if reference_index == len(book_containers) - 1 and len(book_containers) >= 3:
+                            reference_container = book_containers[-2]
+                            reference_index = len(book_containers) - 2
+                            logger.info(f"No fully visible book found, using second-to-last as fallback")
+
+                        bottom_container = reference_container
+
+                    # Get location and size of the selected container
+                    location = bottom_container.location
+                    size = bottom_container.size
+
+                    # Calculate the y-coordinate of the bottom of this container
+                    bottom_y = location["y"] + size["height"]
+
+                    # Check if the container is partially off-screen
+                    if bottom_y > screen_size["height"]:
+                        # Use the container above it
+                        fallback_index = -2 if len(book_containers) >= 3 else -1
+                        fallback_container = book_containers[fallback_index]
+                        location = fallback_container.location
+                        size = fallback_container.size
+                        bottom_y = location["y"] + size["height"]
+
+                    # Calculate scrolling coordinates to position reference book at top of screen
+                    # This provides consistent scrolling with the right amount of overlap
+
+                    # Get the top of the container as well as the bottom
+                    container_top = location["y"]
+
+                    # Start from current position of the container
+                    # Use the container's top coordinate for maximum precision
+                    smart_start_y = location["y"]
+
+                    # Position this book at the top of the screen with a small margin
+                    smart_end_y = screen_size["height"] * 0.1  # 10% from top of screen
+
+                    logger.info(
+                        f"Scroll plan: Move y={smart_start_y} to y={smart_end_y} (distance={smart_start_y-smart_end_y}px)"
+                    )
+
+                    # Verify start point is below end point by a reasonable amount
+                    if smart_start_y - smart_end_y < 100:
+                        logger.warning("Scroll distance too small, using default scroll")
                         self.driver.swipe(
-                            screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000
+                            screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
                         )
-                except Exception as e:
-                    logger.error(f"Error during smart scrolling: {e}, falling back to default scroll")
+                    else:
+                        # Perform smart scroll - move reference container to top
+                        self.driver.swipe(
+                            screen_size["width"] // 2,
+                            smart_start_y,
+                            screen_size["width"] // 2,
+                            smart_end_y,
+                            700,
+                        )
+                else:
+                    logger.warning(
+                        f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll"
+                    )
                     # Fallback to default scroll behavior
                     self.driver.swipe(
-                        screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000
+                        screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
                     )
 
             logger.info(f"Found total of {len(books)} unique books")
