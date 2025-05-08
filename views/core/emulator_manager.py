@@ -284,7 +284,21 @@ class EmulatorManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            # Use the Python-based launcher
+            # First check for stale cache entries and clean them before launching
+            avd_name = self.emulator_launcher._extract_avd_name_from_email(email)
+            if avd_name and avd_name in self.emulator_launcher.running_emulators:
+                emulator_id, display_num = self.emulator_launcher.running_emulators[avd_name]
+                
+                # Verify the emulator is actually running via adb devices
+                if not self.emulator_launcher._verify_emulator_running(emulator_id):
+                    # Emulator not actually running according to adb, remove from cache
+                    logger.info(
+                        f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache before launch"
+                    )
+                    # Remove stale cache entry before launching
+                    del self.emulator_launcher.running_emulators[avd_name]
+            
+            # Now use the Python-based launcher
             success, emulator_id, display_num = self.emulator_launcher.launch_emulator(email)
 
             if success:

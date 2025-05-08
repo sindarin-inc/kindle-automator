@@ -874,6 +874,7 @@ class EmulatorLauncher:
             # First check if device is connected using our helper
             if not self._verify_emulator_running(emulator_id):
                 logger.info(f"Emulator {emulator_id} not found in adb devices")
+                # Cache cleanup is now handled earlier in the process
                 return False
 
             # Check if boot is completed
