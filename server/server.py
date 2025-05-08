@@ -6,6 +6,7 @@ import logging
 import os
 import platform
 import signal
+import socket
 import subprocess
 import time
 import traceback
@@ -16,6 +17,17 @@ import flask
 import requests
 import urllib3
 from appium.webdriver.common.appiumby import AppiumBy
+
+# Configure urllib3 connection pool size
+urllib3.connection.HTTPConnection.default_socket_options = (
+    urllib3.connection.HTTPConnection.default_socket_options
+    + [
+        (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+    ]
+)
+# Increase connection pool size from default (1) to avoid connection pool warnings
+urllib3.connectionpool.HTTPConnectionPool.maxsize = 10
+urllib3.connectionpool.HTTPSConnectionPool.maxsize = 10
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, make_response, redirect, request, send_file
 from flask_restful import Api, Resource
@@ -32,6 +44,7 @@ from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
 from server.middleware.response_handler import handle_automator_response
+from server.middleware.staff_auth_middleware import require_staff_auth
 from server.utils.request_utils import (
     get_automator_for_request,
     get_formatted_vnc_url,
@@ -1845,10 +1858,15 @@ class TextResource(Resource):
         return self._extract_text()
 
 
+# Import staff authentication resources
+from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
+
 # Add resources to API
 api.add_resource(StateResource, "/state")
 api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
+api.add_resource(StaffAuthResource, "/staff-auth")
+api.add_resource(StaffTokensResource, "/staff-tokens")
 api.add_resource(ScreenshotResource, "/screenshot")
 # General navigation endpoint that requires a JSON body with action
 api.add_resource(NavigationResource, "/navigate")

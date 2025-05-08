@@ -803,7 +803,7 @@ class LibraryHandler:
                         # If we still don't have author, try to extract from content-desc
                         if not book_info["author"] and container.get_attribute("content-desc"):
                             content_desc = container.get_attribute("content-desc")
-                            logger.debug(f"Content desc: {content_desc}")
+                            # logger.debug(f"Content desc: {content_desc}")
 
                             # Try each pattern in the content-desc strategies
                             for pattern in CONTENT_DESC_STRATEGIES["patterns"]:

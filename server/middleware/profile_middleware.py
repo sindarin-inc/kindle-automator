@@ -6,6 +6,7 @@ from functools import wraps
 import flask
 from flask import Response, jsonify, request
 
+from server.middleware.staff_auth_middleware import require_staff_auth_for_impersonation
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,8 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
 
 
 def ensure_user_profile_loaded(f):
+    # Apply staff authentication middleware first
+    @require_staff_auth_for_impersonation
     @wraps(f)
     def middleware(*args, **kwargs):
         # Get sindarin_email from request data using our utility function
