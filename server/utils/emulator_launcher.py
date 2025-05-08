@@ -75,7 +75,7 @@ class EmulatorLauncher:
 
             # Always log the full adb devices output for debugging
             logger.info(f"ADB devices output: {devices_result.stdout.strip()}")
-            
+
             if devices_result.returncode == 0:
                 # Parse output to get emulator IDs
                 lines = devices_result.stdout.strip().split("\n")
@@ -105,7 +105,7 @@ class EmulatorLauncher:
     def _verify_emulator_running(self, emulator_id: str) -> bool:
         """
         Verify if a specific emulator is running using adb devices.
-        
+
         This checks if the emulator is in adb devices in any state (device or offline).
 
         Args:
@@ -122,12 +122,11 @@ class EmulatorLauncher:
                 text=True,
                 timeout=3,
             )
-            
+
             # Check if the emulator ID appears in the output at all (includes offline state)
             if emulator_id in devices_result.stdout:
-                logger.debug(f"Emulator {emulator_id} found in adb devices output")
                 return True
-                
+
             logger.debug(f"Emulator {emulator_id} not found in adb devices output")
             return False
         except Exception as e:
@@ -868,10 +867,9 @@ class EmulatorLauncher:
                         text=True,
                         timeout=3,
                     )
-                    
+
                     # Check if our emulator ID is in the ADB output in any state
                     if emulator_id in devices_result.stdout:
-                        logger.info(f"Emulator {emulator_id} found in ADB devices, returning cached display number")
                         return emulator_id, display_num
                     else:
                         # Emulator not found at all, remove from cache
@@ -906,13 +904,12 @@ class EmulatorLauncher:
         expected_emulator_id = None
         if avd_name and avd_name in self.running_emulators:
             expected_emulator_id, _ = self.running_emulators[avd_name]
-            logger.info(f"Expected emulator ID from cache: {expected_emulator_id} for AVD {avd_name}")
-        
+
         # Get the emulator ID using get_running_emulator which handles AVD lookup
         emulator_id, _ = self.get_running_emulator(email)
         if not emulator_id:
             logger.info(f"No running emulator found for {email}")
-            
+
             # Additional debugging: directly check adb devices output
             try:
                 devices_result = subprocess.run(
@@ -923,7 +920,7 @@ class EmulatorLauncher:
                     timeout=3,
                 )
                 logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
-                
+
                 # If expected_emulator_id is in the output but not recognized, log this discrepancy
                 if expected_emulator_id and expected_emulator_id in devices_result.stdout:
                     logger.warning(
@@ -931,7 +928,7 @@ class EmulatorLauncher:
                     )
             except Exception as e:
                 logger.error(f"Error during direct adb devices check: {e}")
-            
+
             return False
 
         try:
@@ -943,8 +940,6 @@ class EmulatorLauncher:
             if ps_check.returncode != 0:
                 logger.info(f"No emulator process found running")
                 return False
-            else:
-                logger.debug(f"Found running emulator processes: {ps_check.stdout.strip()}")
 
             # First check if device is connected using our helper
             if not self._verify_emulator_running(emulator_id):
@@ -961,26 +956,26 @@ class EmulatorLauncher:
                     text=True,
                     timeout=3,
                 )
-                
+
                 if emulator_id in device_result.stdout:
                     # Get the device status
-                    devices_lines = device_result.stdout.strip().split('\n')
+                    devices_lines = device_result.stdout.strip().split("\n")
                     device_status = "unknown"
-                    
+
                     for line in devices_lines:
                         if emulator_id in line:
-                            parts = line.split('\t')
+                            parts = line.split("\t")
                             if len(parts) >= 2:
                                 device_status = parts[1].strip()
                                 break
-                    
+
                     if device_status == "offline":
                         logger.info(f"Emulator {emulator_id} is in offline state, not ready yet")
                         return False
                     elif device_status != "device":
                         logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
                         return False
-                    
+
                     logger.info(f"Emulator {emulator_id} is in 'device' state, checking boot completion")
                 else:
                     logger.info(f"Emulator {emulator_id} not found in adb devices output")
@@ -988,7 +983,7 @@ class EmulatorLauncher:
             except Exception as e:
                 logger.error(f"Error checking device status: {e}")
                 return False
-            
+
             # Now check if the system has fully booted
             logger.info(f"Checking if emulator {emulator_id} is fully booted")
             boot_completed = subprocess.run(
@@ -1006,17 +1001,21 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            logger.info(f"Boot completed check result: '{boot_completed.stdout.strip()}', return code: {boot_completed.returncode}")
-            
+            logger.info(
+                f"Boot completed check result: '{boot_completed.stdout.strip()}', return code: {boot_completed.returncode}"
+            )
+
             if boot_completed.returncode != 0:
                 logger.warning(f"Boot completed check failed with error: {boot_completed.stderr.strip()}")
                 return False
-                
+
             result = boot_completed.stdout.strip() == "1"
             if result:
                 logger.info(f"Emulator {emulator_id} is fully booted (sys.boot_completed=1)")
             else:
-                logger.info(f"Emulator {emulator_id} is still booting (sys.boot_completed={boot_completed.stdout.strip()})")
+                logger.info(
+                    f"Emulator {emulator_id} is still booting (sys.boot_completed={boot_completed.stdout.strip()})"
+                )
 
             return result
 
