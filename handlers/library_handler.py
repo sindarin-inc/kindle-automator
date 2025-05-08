@@ -923,6 +923,10 @@ class LibraryHandler:
                                 books.append(book_info)
                                 new_books_found = True
                                 logger.info(f"Found book: {book_info}")
+                            else:
+                                logger.info(
+                                    f"Already seen book ({len(seen_titles)} found): {book_info["title"]}"
+                                )
                         else:
                             logger.info(f"Container has no book info, skipping: {book_info}")
                     except StaleElementReferenceException:
