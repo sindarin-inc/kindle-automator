@@ -970,7 +970,6 @@ class EmulatorLauncher:
                                 break
 
                     if device_status == "offline":
-                        logger.info(f"Emulator {emulator_id} is in offline state, not ready yet")
                         return False
                     elif device_status != "device":
                         logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")

@@ -723,11 +723,36 @@ class LibraryHandler:
                     for i, title in enumerate(title_elements):
                         try:
                             logger.info(f"Direct title {i+1}: '{title.text}'")
-                            # For each title, find its parent RelativeLayout container
-                            parent = title.find_element(AppiumBy.XPATH, "./../..")
-                            containers.append(parent)
+                            # For each title, use a different approach to get the book container
+                            # Instead of searching for parents, we'll create synthetic containers
+                            # and use the title element directly for metadata extraction
+                            
+                            # Create a book "wrapper" for each title element
+                            book_wrapper = {
+                                "element": title,
+                                "title_text": title.text,
+                                # Add additional methods that the container would have
+                                "find_elements": lambda by, locator: title.find_elements(by, locator) if by == AppiumBy.ID and locator == "com.amazon.kindle:id/lib_book_row_title" else [],
+                                "get_attribute": lambda attr: title.get_attribute(attr) if attr != "content-desc" else f"{title.text}, , Book not downloaded.,"
+                            }
+                            
+                            # Now try to find the actual container through a direct query
+                            try:
+                                # Try to find button containing this title text
+                                escaped_text = title.text.replace("'", "\\'")
+                                button = self.driver.find_element(
+                                    AppiumBy.XPATH, 
+                                    f"//android.widget.Button[contains(@content-desc, '{escaped_text}')]"
+                                )
+                                # If found, use the actual button
+                                containers.append(button)
+                                logger.info(f"Found actual container for '{title.text}'")
+                            except Exception:
+                                # If can't find actual container, use our synthetic wrapper
+                                containers.append(book_wrapper)
+                                logger.info(f"Using synthetic container for '{title.text}'")
                         except Exception as e:
-                            logger.error(f"Error finding parent for title '{title.text}': {e}")
+                            logger.error(f"Error processing title '{title.text}': {e}")
                     
                     logger.info(f"Created {len(containers)} containers from title elements")
                     
@@ -779,10 +804,21 @@ class LibraryHandler:
                         
                         # Log container attributes for debugging
                         try:
-                            container_desc = container.get_attribute("content-desc")
-                            container_class = container.get_attribute("class")
-                            container_id = container.get_attribute("resource-id")
-                            logger.info(f"Processing container: class={container_class}, id={container_id}, desc={container_desc}")
+                            # Handle both regular containers and our synthetic wrappers
+                            if isinstance(container, dict) and "title_text" in container:
+                                # This is a synthetic wrapper
+                                container_desc = container["get_attribute"]("content-desc")
+                                container_class = "synthetic-wrapper"
+                                container_id = "N/A"
+                                # Pre-fill the book title since we already know it
+                                book_info["title"] = container["title_text"]
+                                logger.info(f"Processing synthetic container for: {container['title_text']}")
+                            else:
+                                # This is a regular container element
+                                container_desc = container.get_attribute("content-desc")
+                                container_class = container.get_attribute("class")
+                                container_id = container.get_attribute("resource-id")
+                                logger.info(f"Processing container: class={container_class}, id={container_id}, desc={container_desc}")
                         except Exception as e:
                             logger.error(f"Error getting container attributes: {e}")
 
@@ -791,6 +827,23 @@ class LibraryHandler:
                             # Try to find elements directly in the container first
                             for strategy, locator in BOOK_METADATA_IDENTIFIERS[field]:
                                 try:
+                                    # Check if we're dealing with a synthetic wrapper
+                                    if isinstance(container, dict) and "title_text" in container:
+                                        # For synthetic wrappers, we handle fields specially
+                                        if field == "title" and book_info["title"]:
+                                            # Title is already set, skip this strategy
+                                            break
+                                        elif field == "author" and container_desc:
+                                            # Try to extract author from content-desc
+                                            parts = container_desc.split(',')
+                                            if len(parts) > 1 and parts[1].strip():
+                                                author = parts[1].strip()
+                                                logger.info(f"Extracted author from synthetic wrapper: {author}")
+                                                book_info["author"] = author
+                                                break
+                                        # For other fields or if author extraction failed, continue with next strategy
+                                        continue
+                                    
                                     # For direct elements, use find_element with a relative XPath
                                     relative_locator = (
                                         f".{locator}" if strategy == AppiumBy.XPATH else locator
@@ -979,9 +1032,9 @@ class LibraryHandler:
                         logger.error(f"Error processing container: {e}")
                         continue
 
-                # If we've found no new books on this screen, we're done scrolling
+                # If we've found no new books on this screen, we need to double-check
                 if not new_books_found:
-                    logger.info("No new books found on this screen, stopping scroll")
+                    logger.info("No new books found on this screen, doing a double-check")
                     # Double-check by directly looking for titles that might not have been processed
                     try:
                         title_elements = self.driver.find_elements(
@@ -994,7 +1047,14 @@ class LibraryHandler:
                         new_unseen_titles = [t for t in current_screen_titles if t and t not in seen_titles]
                         if new_unseen_titles:
                             logger.info(f"Found {len(new_unseen_titles)} unseen titles in direct check: {new_unseen_titles}")
-                            # Don't break - we might have missed some books
+                            
+                            # Add these titles to our seen set and create simple book entries for them
+                            for new_title in new_unseen_titles:
+                                seen_titles.add(new_title)
+                                books.append({"title": new_title, "progress": None, "size": None, "author": None})
+                                logger.info(f"Added book from direct check: {new_title}")
+                            
+                            # Update our flag since we found new books
                             new_books_found = True
                         else:
                             logger.info("Double-check confirms no new books, stopping scroll")
@@ -1006,9 +1066,9 @@ class LibraryHandler:
                     # We found new books on this screen - log them
                     logger.info(f"Found {len([b for b in books if b.get('title') in (seen_titles - previous_titles)])} new books on this screen")
 
-                # If we've found the same books as before, we're at the end
-                if seen_titles == previous_titles:
-                    logger.info("Same books as previous scroll, stopping")
+                # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
+                if not new_books_found or seen_titles == previous_titles:
+                    logger.info("No progress in finding new books, stopping scroll")
                     break
 
                 # Scroll down to see more books
