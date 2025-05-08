@@ -21,10 +21,15 @@ def ensure_user_profile_loaded(f):
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
 
+        # Extract user_email from request parameters if present
+        user_email = None
+        if "user_email" in request.args:
+            user_email = request.args.get("user_email")
+        elif request.is_json and "user_email" in (request.get_json(silent=True) or {}):
+            user_email = request.get_json(silent=True).get("user_email")
+
         # Only require staff authentication when user_email is present
-        if "user_email" in request.args or (
-            request.is_json and "user_email" in (request.get_json(silent=True) or {})
-        ):
+        if user_email:
             # Check if staff token exists
             token = request.cookies.get("staff_token")
             if not token:
@@ -42,7 +47,24 @@ def ensure_user_profile_loaded(f):
                     "message": "Your staff token is invalid or has been revoked",
                 }, 403
 
-            logger.info("Staff authentication successful, allowing impersonation")
+            logger.info(f"Staff authentication successful, allowing impersonation of {user_email}")
+
+            # Set sindarin_email to user_email for impersonation by adding it to the request args
+            # The get_sindarin_email function checks request.args for "sindarin_email" or "email"
+            if request.args and hasattr(request.args, "_mutable") and request.args._mutable:
+                # Mutable args - just add directly
+                request.args["sindarin_email"] = user_email
+            else:
+                # Flask's ImmutableMultiDict - need to make a mutable copy and replace
+                from werkzeug.datastructures import ImmutableMultiDict
+                args_copy = request.args.copy() 
+                args_copy["sindarin_email"] = user_email
+                # This is a bit of a hack but necessary for Flask's immutable request objects
+                request.args = ImmutableMultiDict(args_copy)
+            
+            # Now get the updated sindarin_email from the request
+            sindarin_email = user_email
+            logger.info(f"Setting sindarin_email to {user_email} for staff impersonation")
 
         # If no sindarin_email found, don't attempt to load a profile and continue
         if not sindarin_email:
