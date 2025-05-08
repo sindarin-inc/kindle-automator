@@ -6,7 +6,7 @@ from functools import wraps
 import flask
 from flask import Response, jsonify, request
 
-from server.middleware.staff_auth_middleware import require_staff_auth_for_impersonation
+from server.utils.staff_token_manager import validate_token
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -16,12 +16,31 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
 
 
 def ensure_user_profile_loaded(f):
-    # Apply staff authentication middleware first
-    @require_staff_auth_for_impersonation
     @wraps(f)
     def middleware(*args, **kwargs):
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
+        
+        # Only require staff authentication when user_email is present
+        if "user_email" in request.args or (request.is_json and "user_email" in (request.get_json(silent=True) or {})):
+            # Check if staff token exists
+            token = request.cookies.get("staff_token")
+            if not token:
+                logger.warning("Staff token is required but not found in cookies")
+                return {
+                    "error": "Staff authentication required",
+                    "message": "You must authenticate as staff to impersonate users",
+                }, 403
+            
+            # Validate the token
+            if not validate_token(token):
+                logger.warning(f"Invalid staff token: {token}")
+                return {
+                    "error": "Invalid staff token",
+                    "message": "Your staff token is invalid or has been revoked",
+                }, 403
+            
+            logger.info("Staff authentication successful, allowing impersonation")
 
         # If no sindarin_email found, don't attempt to load a profile and continue
         if not sindarin_email:
