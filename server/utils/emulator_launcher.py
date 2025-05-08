@@ -105,6 +105,8 @@ class EmulatorLauncher:
     def _verify_emulator_running(self, emulator_id: str) -> bool:
         """
         Verify if a specific emulator is running using adb devices.
+        
+        This checks if the emulator is in adb devices in any state (device or offline).
 
         Args:
             emulator_id: The emulator ID to check (e.g., 'emulator-5554')
@@ -112,8 +114,25 @@ class EmulatorLauncher:
         Returns:
             True if the emulator is running, False otherwise
         """
-        running_ids = self._get_running_emulator_ids()
-        return emulator_id in running_ids
+        try:
+            devices_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            
+            # Check if the emulator ID appears in the output at all (includes offline state)
+            if emulator_id in devices_result.stdout:
+                logger.debug(f"Emulator {emulator_id} found in adb devices output")
+                return True
+                
+            logger.debug(f"Emulator {emulator_id} not found in adb devices output")
+            return False
+        except Exception as e:
+            logger.error(f"Error running adb devices: {e}")
+            return False
 
     def get_x_display(self, email: str) -> Optional[int]:
         """
@@ -840,15 +859,33 @@ class EmulatorLauncher:
             if avd_name and avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
 
-                # Verify the emulator is actually running via adb devices
-                if self._verify_emulator_running(emulator_id):
-                    return emulator_id, display_num
-                else:
-                    # Emulator not actually running according to adb, remove from cache
-                    logger.debug(
-                        f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
+                # Get the direct ADB output (includes both 'device' and 'offline' status)
+                try:
+                    devices_result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
                     )
-                    del self.running_emulators[avd_name]
+                    
+                    # Check if our emulator ID is in the ADB output in any state
+                    if emulator_id in devices_result.stdout:
+                        logger.info(f"Emulator {emulator_id} found in ADB devices, returning cached display number")
+                        return emulator_id, display_num
+                    else:
+                        # Emulator not found at all, remove from cache
+                        logger.debug(
+                            f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
+                        )
+                        del self.running_emulators[avd_name]
+                except Exception as adb_e:
+                    logger.error(f"Error running adb devices: {adb_e}")
+                    # Fall back to our regular verify method if adb command fails
+                    if self._verify_emulator_running(emulator_id):
+                        return emulator_id, display_num
+                    else:
+                        del self.running_emulators[avd_name]
         except Exception as e:
             logger.error(f"Error checking running emulator via adb: {e}")
 
@@ -915,7 +952,44 @@ class EmulatorLauncher:
                 # Cache cleanup is now handled earlier in the process
                 return False
 
-            # Check if boot is completed
+            # First check the device status - it might be in 'offline' state initially
+            try:
+                device_result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                
+                if emulator_id in device_result.stdout:
+                    # Get the device status
+                    devices_lines = device_result.stdout.strip().split('\n')
+                    device_status = "unknown"
+                    
+                    for line in devices_lines:
+                        if emulator_id in line:
+                            parts = line.split('\t')
+                            if len(parts) >= 2:
+                                device_status = parts[1].strip()
+                                break
+                    
+                    if device_status == "offline":
+                        logger.info(f"Emulator {emulator_id} is in offline state, not ready yet")
+                        return False
+                    elif device_status != "device":
+                        logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
+                        return False
+                    
+                    logger.info(f"Emulator {emulator_id} is in 'device' state, checking boot completion")
+                else:
+                    logger.info(f"Emulator {emulator_id} not found in adb devices output")
+                    return False
+            except Exception as e:
+                logger.error(f"Error checking device status: {e}")
+                return False
+            
+            # Now check if the system has fully booted
             logger.info(f"Checking if emulator {emulator_id} is fully booted")
             boot_completed = subprocess.run(
                 [
