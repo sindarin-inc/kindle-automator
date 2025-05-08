@@ -716,7 +716,23 @@ class LibraryHandler:
                     # Use the container strategy from BOOK_METADATA_IDENTIFIERS
                     container_strategy, container_locator = BOOK_METADATA_IDENTIFIERS["container"][0]
                     book_buttons = self.driver.find_elements(container_strategy, container_locator)
-                    logger.debug(f"Found {len(book_buttons)} book buttons on current screen")
+                    logger.info(f"Found {len(book_buttons)} book buttons on current screen (primary strategy)")
+                    
+                    # Log all visible book titles for debugging
+                    try:
+                        recycler_view = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/recycler_view")
+                        all_items = recycler_view.find_elements(AppiumBy.XPATH, ".//*")
+                        logger.info(f"RecyclerView contains {len(all_items)} total elements")
+                        
+                        # Look specifically for title elements
+                        title_elements = self.driver.find_elements(
+                            AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                        )
+                        logger.info(f"Found {len(title_elements)} title elements directly")
+                        for i, title in enumerate(title_elements):
+                            logger.info(f"Direct title {i+1}: '{title.text}'")
+                    except Exception as e:
+                        logger.error(f"Error when trying to get all visible titles: {e}")
                 except Exception as e:
                     logger.debug(f"Failed to find book buttons: {e}")
 
@@ -746,6 +762,15 @@ class LibraryHandler:
                 for container in containers:
                     try:
                         book_info = {"title": None, "progress": None, "size": None, "author": None}
+                        
+                        # Log container attributes for debugging
+                        try:
+                            container_desc = container.get_attribute("content-desc")
+                            container_class = container.get_attribute("class")
+                            container_id = container.get_attribute("resource-id")
+                            logger.info(f"Processing container: class={container_class}, id={container_id}, desc={container_desc}")
+                        except Exception as e:
+                            logger.error(f"Error getting container attributes: {e}")
 
                         # Extract metadata using strategies
                         for field in ["title", "progress", "size", "author"]:
@@ -758,7 +783,11 @@ class LibraryHandler:
                                     )
                                     elements = container.find_elements(strategy, relative_locator)
                                     if elements:
-                                        # logger.info(f"Found {field}: {elements[0].text}")
+                                        # For title field, always log at INFO level
+                                        if field == "title":
+                                            logger.info(f"Found {field}: {elements[0].text}")
+                                        else:
+                                            logger.debug(f"Found {field}: {elements[0].text}")
                                         book_info[field] = elements[0].text
                                         break
                                     else:
@@ -939,7 +968,29 @@ class LibraryHandler:
                 # If we've found no new books on this screen, we're done scrolling
                 if not new_books_found:
                     logger.info("No new books found on this screen, stopping scroll")
-                    break
+                    # Double-check by directly looking for titles that might not have been processed
+                    try:
+                        title_elements = self.driver.find_elements(
+                            AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                        )
+                        current_screen_titles = [el.text for el in title_elements]
+                        logger.info(f"Double-check found {len(title_elements)} title elements: {current_screen_titles}")
+                        
+                        # If all these titles are already seen, then we can safely stop
+                        new_unseen_titles = [t for t in current_screen_titles if t and t not in seen_titles]
+                        if new_unseen_titles:
+                            logger.info(f"Found {len(new_unseen_titles)} unseen titles in direct check: {new_unseen_titles}")
+                            # Don't break - we might have missed some books
+                            new_books_found = True
+                        else:
+                            logger.info("Double-check confirms no new books, stopping scroll")
+                            break
+                    except Exception as e:
+                        logger.error(f"Error during double-check for titles: {e}")
+                        break
+                else:
+                    # We found new books on this screen - log them
+                    logger.info(f"Found {len([b for b in books if b.get('title') in (seen_titles - previous_titles)])} new books on this screen")
 
                 # If we've found the same books as before, we're at the end
                 if seen_titles == previous_titles:
@@ -947,6 +998,16 @@ class LibraryHandler:
                     break
 
                 # Scroll down to see more books
+                # Log visible elements before scrolling
+                try:
+                    logger.info("About to scroll, current visible titles:")
+                    visible_titles = self.driver.find_elements(AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title")
+                    for i, title in enumerate(visible_titles):
+                        logger.info(f"Pre-scroll visible title {i+1}: '{title.text}'")
+                except Exception as e:
+                    logger.error(f"Error logging pre-scroll titles: {e}")
+                
+                # Perform scroll
                 self.driver.swipe(screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1000)
                 time.sleep(1)  # Wait for scroll to complete
 
