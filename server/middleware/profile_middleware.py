@@ -52,6 +52,8 @@ def ensure_user_profile_loaded(f):
         # Check if a server instance exists (it should always be available after app startup)
         from flask import current_app as app
 
+        # Use the already imported request object from the global scope
+
         if not hasattr(app, "config") or "server_instance" not in app.config:
             logger.error("Server instance not available in app.config")
             return jsonify({"error": "Server configuration error"}), 500

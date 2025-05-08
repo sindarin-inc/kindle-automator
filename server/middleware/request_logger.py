@@ -6,9 +6,9 @@ from io import BytesIO
 
 from flask import Response, current_app, g, request
 
-from server.logging_config import get_email_logger, set_current_request_email
+# Removed set_current_request_email import as it's no longer needed
 from server.utils.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
-from server.utils.request_utils import get_request_logger, get_sindarin_email
+from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,6 @@ class RequestBodyLogger:
         # Get the email from the request
         request_email = get_sindarin_email()
 
-        # Get the appropriate logger - either email-specific or standard
-        request_logger = get_request_logger()
-
         if server_instance:
             email = request_email or "not_authenticated"
 
@@ -95,7 +92,7 @@ class RequestBodyLogger:
                 # Sanitize sensitive data
                 request_data = RequestBodyLogger.sanitize_sensitive_data(request_data)
             except Exception as e:
-                request_logger.error(f"Error parsing JSON request: {e}")
+                logger.error(f"Error parsing JSON request: {e}")
                 request_data = "Invalid JSON"
         elif request.form:
             request_data = RequestBodyLogger.sanitize_sensitive_data(request.form.to_dict())
@@ -118,25 +115,23 @@ class RequestBodyLogger:
             if isinstance(request_data, (dict, list)):
                 json_str = json.dumps(request_data, default=str)
                 if len(json_str) > 500:
-                    request_logger.info(
+                    logger.info(
                         f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                     )
                 else:
-                    request_logger.info(
+                    logger.info(
                         f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                     )
             elif isinstance(request_data, str) and len(request_data) > 500:
-                request_logger.info(
+                logger.info(
                     f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:500]}{RESET}... (truncated, total {len(request_data)} bytes)"
                 )
             else:
-                request_logger.info(
+                logger.info(
                     f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data}{RESET}"
                 )
         else:
-            request_logger.info(
-                f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: No body"
-            )
+            logger.info(f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: No body")
 
     @staticmethod
     def log_response(response):
@@ -149,9 +144,6 @@ class RequestBodyLogger:
 
         # Get the email from the request
         request_email = get_sindarin_email()
-
-        # Get the appropriate logger - either email-specific or standard
-        request_logger = get_request_logger()
 
         if server_instance:
             email = request_email or "not_authenticated"
@@ -171,7 +163,7 @@ class RequestBodyLogger:
             user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
 
         if response.direct_passthrough:
-            request_logger.info(
+            logger.info(
                 f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
             )
             return response
@@ -191,34 +183,34 @@ class RequestBodyLogger:
                     sanitized_data = RequestBodyLogger.sanitize_sensitive_data(response_data)
                     json_str = json.dumps(sanitized_data, default=str)
                     if len(json_str) > 500:
-                        request_logger.info(
+                        logger.info(
                             f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
-                        request_logger.info(
+                        logger.info(
                             f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
                     if len(json_str) > 500:
-                        request_logger.info(
+                        logger.info(
                             f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
-                        request_logger.info(
+                        logger.info(
                             f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
                 if len(response_text) > 500:
-                    request_logger.info(
+                    logger.info(
                         f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
-                    request_logger.info(
+                    logger.info(
                         f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
                     )
         except UnicodeDecodeError:
-            request_logger.info(
+            logger.info(
                 f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
             )
 
@@ -228,8 +220,9 @@ class RequestBodyLogger:
 def setup_request_logger(app):
     """Set up request/response logging for Flask app.
 
-    This also configures a request context for logging that makes all log
-    messages during a request go to the email-specific logger for that request.
+    This sets up middleware for:
+    1. Storing the current request's email in flask.g.request_email
+    2. Logging request and response details
     """
 
     @app.before_request
@@ -240,11 +233,8 @@ def setup_request_logger(app):
         # Store the email in flask.g for this request
         g.request_email = email
 
-        # Set the email in thread-local storage for the request
-        # This will be used by the DynamicEmailHandler to route logs
-        if email:
-            set_current_request_email(email)
-            logger.debug(f"Set up email logging context for {email} in request: {request.path}")
+        # Store the email in g.request_email is enough
+        # DynamicEmailHandler will extract it directly from the request if needed
 
         # Log the request details
         RequestBodyLogger.log_request()
@@ -254,8 +244,7 @@ def setup_request_logger(app):
         # Log the response details
         response_with_logs = RequestBodyLogger.log_response(response)
 
-        # Clear the thread-local storage at the end of the request
-        # Set to None instead of deleting to avoid attribute errors
-        set_current_request_email(None)
+        # No need to clear thread-local storage anymore
+        # DynamicEmailHandler will get email directly from request if needed
 
         return response_with_logs

@@ -141,12 +141,13 @@ def get_request_logger() -> logging.Logger:
         # Not in Flask context or g not available
         pass
 
-    # Fall back to extracting email from request and getting logger
+    # Fall back to extracting email from request
     email = get_sindarin_email()
     if email:
-        email_logger = get_email_logger(email)
-        if email_logger:
-            return email_logger
+        # Instead of creating another logger with get_email_logger (which would create duplicate handlers),
+        # just return a namespaced logger that will use the DynamicEmailHandler already registered
+        email_namespace = f"email.{email}"
+        return logging.getLogger(email_namespace)
 
     # Fall back to the standard logger if no email is found or email logger creation fails
     return logger
