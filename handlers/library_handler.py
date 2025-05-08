@@ -806,8 +806,8 @@ class LibraryHandler:
                         try:
                             # Handle both regular containers and our synthetic wrappers
                             if isinstance(container, dict) and "title_text" in container:
-                                # This is a synthetic wrapper
-                                container_desc = container["get_attribute"]("content-desc")
+                                # This is a synthetic wrapper - create a synthetic content-desc
+                                container_desc = f"{container['title_text']}, , Book not downloaded.,"
                                 container_class = "synthetic-wrapper"
                                 container_id = "N/A"
                                 # Pre-fill the book title since we already know it
