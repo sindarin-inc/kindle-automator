@@ -57,11 +57,12 @@ def ensure_user_profile_loaded(f):
             else:
                 # Flask's ImmutableMultiDict - need to make a mutable copy and replace
                 from werkzeug.datastructures import ImmutableMultiDict
-                args_copy = request.args.copy() 
+
+                args_copy = request.args.copy()
                 args_copy["sindarin_email"] = user_email
                 # This is a bit of a hack but necessary for Flask's immutable request objects
                 request.args = ImmutableMultiDict(args_copy)
-            
+
             # Now get the updated sindarin_email from the request
             sindarin_email = user_email
             logger.info(f"Setting sindarin_email to {user_email} for staff impersonation")
