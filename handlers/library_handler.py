@@ -779,13 +779,13 @@ class LibraryHandler:
 
     def get_book_titles(self, callback=None):
         """Get a list of all books in the library with their metadata.
-        
+
         Args:
             callback: Optional callback function that will receive books as they're found.
                      If provided, books will be streamed to this function in batches.
                      The callback should accept a list of book dictionaries as its first argument,
                      and optional kwargs for control messages.
-        
+
         Returns:
             List of book dictionaries, or None if authentication is required.
             If callback is provided, results are also streamed to the callback as they're found.
