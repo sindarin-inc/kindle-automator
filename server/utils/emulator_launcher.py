@@ -813,16 +813,12 @@ class EmulatorLauncher:
             logger.error(f"Error stopping emulator for {email}: {e}")
             return False
 
-    def get_running_emulator(
-        self, email: str, attempt_relaunch: bool = True
-    ) -> Tuple[Optional[str], Optional[int]]:
+    def get_running_emulator(self, email: str) -> Tuple[Optional[str], Optional[int]]:
         """
         Get the emulator ID and display number for the specified email.
 
         Args:
             email: The user's email address
-            attempt_relaunch: Whether to attempt relaunching if a stale cache entry is found.
-                             Set to False to prevent infinite loops.
 
         Returns:
             Tuple of (emulator_id, display_num) or (None, None) if not found
@@ -844,19 +840,6 @@ class EmulatorLauncher:
                         f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
                     )
                     del self.running_emulators[avd_name]
-
-                    # Try to launch the emulator if requested
-                    if attempt_relaunch:
-                        logger.info(
-                            f"Attempting to relaunch emulator for AVD {avd_name} after stale cache removal"
-                        )
-                        # When we launch, don't allow further relaunches to prevent infinite loops
-                        success, new_emulator_id, new_display_num = self.launch_emulator(email)
-                        if success:
-                            logger.info(
-                                f"Successfully relaunched emulator {new_emulator_id} on display :{new_display_num}"
-                            )
-                            return new_emulator_id, new_display_num
         except Exception as e:
             logger.error(f"Error checking running emulator via adb: {e}")
 
@@ -872,9 +855,8 @@ class EmulatorLauncher:
         Returns:
             True if an emulator is ready, False otherwise
         """
-        # Get the emulator ID using get_running_emulator with attempt_relaunch=True
-        # This will attempt to relaunch if a stale cache entry is found
-        emulator_id, _ = self.get_running_emulator(email, attempt_relaunch=True)
+        # Get the emulator ID using get_running_emulator which handles AVD lookup
+        emulator_id, _ = self.get_running_emulator(email)
         if not emulator_id:
             logger.info(f"No running emulator found for {email}")
             return False
@@ -892,26 +874,6 @@ class EmulatorLauncher:
             # First check if device is connected using our helper
             if not self._verify_emulator_running(emulator_id):
                 logger.info(f"Emulator {emulator_id} not found in adb devices")
-                # Get the AVD name
-                avd_name = self._extract_avd_name_from_email(email)
-                # If this was in our running_emulators cache, remove it and try to relaunch
-                if avd_name and avd_name in self.running_emulators:
-                    cached_emulator_id, display_num = self.running_emulators[avd_name]
-                    if cached_emulator_id == emulator_id:
-                        logger.info(
-                            f"Emulator {emulator_id} for AVD {avd_name} not found in adb devices during ready check, removing from cache"
-                        )
-                        del self.running_emulators[avd_name]
-
-                        # Try to relaunch the emulator, but without allowing further relaunches
-                        logger.info(f"Attempting to relaunch emulator for AVD {avd_name} during ready check")
-                        success, new_emulator_id, new_display_num = self.launch_emulator(email)
-                        if success:
-                            logger.info(
-                                f"Successfully relaunched emulator {new_emulator_id} on display :{new_display_num} during ready check"
-                            )
-                            # The emulator was just launched and needs to boot
-                            return False
                 return False
 
             # Check if boot is completed
