@@ -10,7 +10,7 @@ import platform
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from server.utils import ansi_colors as ansi
 from server.utils.request_utils import get_sindarin_email
@@ -54,6 +54,57 @@ class EmulatorLauncher:
 
         # Use the VNCInstanceManager singleton for managing VNC instances
         self.vnc_manager = VNCInstanceManager.get_instance()
+
+    def _get_running_emulator_ids(self) -> Set[str]:
+        """
+        Get a set of currently running emulator IDs from adb devices.
+
+        Returns:
+            Set of emulator IDs (e.g., 'emulator-5554') that are currently running
+        """
+        running_ids = set()
+        try:
+            # Check if emulator is running via adb devices
+            devices_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            if devices_result.returncode == 0:
+                # Parse output to get emulator IDs
+                lines = devices_result.stdout.strip().split("\n")
+
+                # Skip the header line
+                for line in lines[1:]:
+                    if not line.strip():
+                        continue
+
+                    parts = line.split("\t")
+                    if len(parts) >= 2 and "emulator" in parts[0] and parts[1].strip() != "offline":
+                        running_ids.add(parts[0].strip())
+            else:
+                logger.warning(f"Failed to get adb devices: {devices_result.stderr}")
+
+        except Exception as e:
+            logger.error(f"Error checking running emulators via adb: {e}")
+
+        return running_ids
+
+    def _verify_emulator_running(self, emulator_id: str) -> bool:
+        """
+        Verify if a specific emulator is running using adb devices.
+
+        Args:
+            emulator_id: The emulator ID to check (e.g., 'emulator-5554')
+
+        Returns:
+            True if the emulator is running, False otherwise
+        """
+        running_ids = self._get_running_emulator_ids()
+        return emulator_id in running_ids
 
     def get_x_display(self, email: str) -> Optional[int]:
         """
@@ -110,10 +161,16 @@ class EmulatorLauncher:
         Returns:
             The emulator ID (e.g. emulator-5554) or None if not found
         """
-        # First check running emulators
+        # First check running emulators cache
         if email in self.running_emulators:
             emulator_id, _ = self.running_emulators[email]
-            return emulator_id
+            # Verify the emulator is actually running via adb devices
+            if self._verify_emulator_running(emulator_id):
+                return emulator_id
+            else:
+                # Not found in adb devices, remove from cache
+                logger.debug(f"Cached emulator {emulator_id} for {email} not found in adb devices")
+                del self.running_emulators[email]
 
         # Then try to build from port
         port = self.get_emulator_port(email)
@@ -432,12 +489,22 @@ class EmulatorLauncher:
 
             # IMPORTANT: Use AVD name as key for running_emulators, not email
             # Check if emulator already running for this AVD
+            # If this AVD is in our running_emulators cache
             if avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
-                logger.info(
-                    f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
-                )
-                return True, emulator_id, display_num
+
+                # Verify the emulator is actually running via adb devices
+                if self._verify_emulator_running(emulator_id):
+                    logger.info(
+                        f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
+                    )
+                    return True, emulator_id, display_num
+                else:
+                    # Emulator not actually running according to adb, remove from our cache
+                    logger.info(
+                        f"Emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
+                    )
+                    del self.running_emulators[avd_name]
 
             # Get assigned display and emulator port for this profile
             display_num = self.get_x_display(email)
@@ -623,9 +690,19 @@ class EmulatorLauncher:
             # First try to find emulator by AVD name
             if avd_name and avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
-                logger.info(
-                    f"Stopping emulator {emulator_id} for AVD {avd_name} (email {email}) on display :{display_num}"
-                )
+
+                # Verify the emulator is actually running via adb devices
+                if self._verify_emulator_running(emulator_id):
+                    logger.info(
+                        f"Stopping emulator {emulator_id} for AVD {avd_name} (email {email}) on display :{display_num}"
+                    )
+                else:
+                    # Emulator not actually running according to adb, remove from cache
+                    logger.info(
+                        f"Emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
+                    )
+                    del self.running_emulators[avd_name]
+                    return False
 
                 # Use adb to send kill command to emulator
                 subprocess.run(
@@ -672,9 +749,19 @@ class EmulatorLauncher:
             # For backward compatibility, check using email directly
             elif email in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[email]
-                logger.info(
-                    f"Stopping emulator {emulator_id} for {email} on display :{display_num} (legacy key)"
-                )
+
+                # Verify the emulator is actually running via adb devices
+                if self._verify_emulator_running(emulator_id):
+                    logger.info(
+                        f"Stopping emulator {emulator_id} for {email} on display :{display_num} (legacy key)"
+                    )
+                else:
+                    # Emulator not actually running according to adb, remove from cache
+                    logger.info(
+                        f"Emulator {emulator_id} for {email} not found in adb devices, removing from cache"
+                    )
+                    del self.running_emulators[email]
+                    return False
 
                 # Use adb to send kill command to emulator
                 subprocess.run(
@@ -736,12 +823,25 @@ class EmulatorLauncher:
         Returns:
             Tuple of (emulator_id, display_num) or (None, None) if not found
         """
-        # First try to get the AVD name for this email
-        avd_name = self._extract_avd_name_from_email(email)
+        try:
+            # First try to get the AVD name for this email
+            avd_name = self._extract_avd_name_from_email(email)
 
-        # If we have an AVD name and it's in running_emulators, use that
-        if avd_name and avd_name in self.running_emulators:
-            return self.running_emulators[avd_name]
+            # If we have an AVD name and it's in running_emulators, use that
+            if avd_name and avd_name in self.running_emulators:
+                emulator_id, display_num = self.running_emulators[avd_name]
+
+                # Verify the emulator is actually running via adb devices
+                if self._verify_emulator_running(emulator_id):
+                    return emulator_id, display_num
+                else:
+                    # Emulator not actually running according to adb, remove from cache
+                    logger.debug(
+                        f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
+                    )
+                    del self.running_emulators[avd_name]
+        except Exception as e:
+            logger.error(f"Error checking running emulator via adb: {e}")
 
         return None, None
 
@@ -771,23 +871,9 @@ class EmulatorLauncher:
                 logger.info(f"No emulator process found running")
                 return False
 
-            # First check if device is connected
-            devices_result = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "devices"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=3,
-            )
-
-            if emulator_id not in devices_result.stdout:
-                logger.info(
-                    f"Emulator {emulator_id} not found in adb devices: {devices_result.stdout.strip()}"
-                )
-                return False
-
-            if "device" not in devices_result.stdout:
-                logger.info(f"Emulator {emulator_id} found but not shown as 'device' state")
+            # First check if device is connected using our helper
+            if not self._verify_emulator_running(emulator_id):
+                logger.info(f"Emulator {emulator_id} not found in adb devices")
                 return False
 
             # Check if boot is completed
