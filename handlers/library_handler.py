@@ -14,6 +14,8 @@ from selenium.common.exceptions import (
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from handlers.library_handler_scroll import LibraryHandlerScroll
+from handlers.library_handler_search import LibraryHandlerSearch
 from server.logging_config import store_page_source
 from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
 from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
@@ -45,11 +47,9 @@ from views.library.view_strategies import (
     VIEW_OPTIONS_MENU_STRATEGIES,
     WEBVIEW_IDENTIFIERS,
 )
+from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
 from views.view_options.interaction_strategies import VIEW_OPTIONS_DONE_STRATEGIES
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
-
-from handlers.library_handler_search import LibraryHandlerSearch
-from handlers.library_handler_scroll import LibraryHandlerScroll
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class LibraryHandler:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-        
+
         # Initialize helper classes
         self.search_handler = LibraryHandlerSearch(driver)
         self.scroll_handler = LibraryHandlerScroll(driver)
@@ -823,61 +823,27 @@ class LibraryHandler:
             logger.error(f"Error getting book titles: {e}")
             return []
 
-    def find_book(self, book_title: str) -> bool:
-        """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
+    def _handle_book_click_and_transition(self, parent_container, button, book_info, book_title):
+        """Handle clicking a book, waiting for download if needed, and transitioning to reading view.
+
+        This is a shared method used after finding a book through various methods (visible on screen,
+        search, or scrolling). It handles:
+        1. Checking if the book needs to be downloaded
+        2. Waiting for download to complete if needed
+        3. Clicking the book and verifying transition to reading view
+
+        Args:
+            parent_container: The parent element containing the book
+            button: The clickable element for the book
+            book_info: Dictionary containing book metadata
+            book_title: The title of the book (used for logging and verification)
+
+        Returns:
+            bool: True if book was successfully opened, False otherwise
+        """
         try:
-            # First check if we're in the Grid/List view dialog and handle it
-            if self._is_grid_list_view_dialog_open():
-                logger.info("Detected Grid/List view dialog is open, handling it first")
-                if not self.handle_grid_list_view_dialog():
-                    logger.error("Failed to handle Grid/List view dialog")
-                    return False
-                logger.info("Successfully handled Grid/List view dialog")
-                time.sleep(1)  # Wait for UI to stabilize
-
-            # Check if we're in grid view and switch to list view if needed
-            if self._is_grid_view():
-                logger.info("Detected grid view, switching to list view")
-                if not self.switch_to_list_view():
-                    logger.error("Failed to switch to list view")
-                    return False
-                logger.info("Successfully switched to list view")
-
-            # Scroll to top first
-            if not self.scroll_handler.scroll_to_list_top():
-                logger.warning("Failed to scroll to top of list, continuing anyway...")
-                
-            # Try using the search box first
-            search_result = self.search_handler._search_for_book(book_title)
-            if search_result:
-                parent_container, button, book_info = search_result
-                logger.info(f"Successfully found book '{book_title}' using search function")
-            else:
-                logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
-                
-                # Fallback: Search for the book by scrolling
-                # Provide the title_match_func to scroll_through_library
-                parent_container, button, book_info = self.scroll_handler._scroll_through_library(
-                    book_title, 
-                    title_match_func=self.search_handler._title_match
-                )
-
-                # If standard search failed, try partial matching as fallback
-                if not parent_container:
-                    logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
-                    parent_container, button, book_info = self.search_handler._find_book_by_partial_match(
-                        book_title,
-                        scroll_through_library_func=lambda: self.scroll_handler._scroll_through_library()
-                    )
-
-                    if not parent_container:
-                        logger.error(f"Failed to find book '{book_title}' using all search methods")
-                        return False
-
-                    logger.info(f"Found book using partial match fallback: {book_info}")
-
             # Check download status and handle download if needed
-            content_desc = parent_container.get_attribute("content-desc")
+            content_desc = parent_container.get_attribute("content-desc") or ""
             logger.info(f"Book content description: {content_desc}")
             store_page_source(self.driver.page_source, "library_view_book_info")
 
@@ -892,7 +858,7 @@ class LibraryHandler:
                     try:
                         # Re-find the parent container since the page might have refreshed
                         # Using more reliable XPath that handles apostrophes better
-                        title_text = book_info["title"]
+                        title_text = book_info.get("title", book_title)
 
                         # For titles with apostrophes, use a more reliable approach
                         if "'" in title_text:
@@ -908,7 +874,7 @@ class LibraryHandler:
                             xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text}']]"
 
                         parent_container = self.driver.find_element(AppiumBy.XPATH, xpath)
-                        content_desc = parent_container.get_attribute("content-desc")
+                        content_desc = parent_container.get_attribute("content-desc") or ""
                         logger.info(
                             f"Checking download status (attempt {attempt + 1}/{max_attempts}): {content_desc}"
                         )
@@ -950,7 +916,7 @@ class LibraryHandler:
                 return False
 
             # For already downloaded books, just click and verify
-            logger.info(f"Found downloaded book: {book_info.get('title', 'Unknown title')}")
+            logger.info(f"Found downloaded book: {book_info.get('title', book_title)}")
             button.click()
             logger.info("Clicked book button")
 
@@ -994,6 +960,91 @@ class LibraryHandler:
                         return False
 
         except Exception as e:
+            logger.error(f"Error handling book click and transition: {e}")
+            traceback.print_exc()
+            return False
+
+    def find_book(self, book_title: str) -> bool:
+        """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
+        try:
+            # First check if we're in the Grid/List view dialog and handle it
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Detected Grid/List view dialog is open, handling it first")
+                if not self.handle_grid_list_view_dialog():
+                    logger.error("Failed to handle Grid/List view dialog")
+                    return False
+                logger.info("Successfully handled Grid/List view dialog")
+                time.sleep(1)  # Wait for UI to stabilize
+
+            # Check if we're in grid view and switch to list view if needed
+            if self._is_grid_view():
+                logger.info("Detected grid view, switching to list view")
+                if not self.switch_to_list_view():
+                    logger.error("Failed to switch to list view")
+                    return False
+                logger.info("Successfully switched to list view")
+
+            # Scroll to top first
+            if not self.scroll_handler.scroll_to_list_top():
+                logger.warning("Failed to scroll to top of list, continuing anyway...")
+
+            # Try using the search box first
+            # search_result = self.search_handler._search_for_book(book_title)
+            # if search_result:
+            #     parent_container, button, book_info = search_result
+            #     logger.info(f"Successfully found book '{book_title}' using search function")
+            # else:
+            #     logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
+
+            # Fallback: Search for the book by scrolling
+            # Provide the title_match_func to scroll_through_library
+            parent_container, button, book_info = self.scroll_handler._scroll_through_library(
+                book_title, title_match_func=self.search_handler._title_match
+            )
+
+            # If standard search failed, try partial matching as fallback
+            if not parent_container:
+                logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
+                parent_container, button, book_info = self.search_handler._find_book_by_partial_match(
+                    book_title,
+                    scroll_through_library_func=lambda: self.scroll_handler._scroll_through_library(),
+                )
+
+                if not parent_container:
+                    logger.error(f"Failed to find book '{book_title}' using all search methods")
+                    return False
+
+                logger.info(f"Found book using partial match fallback: {book_info}")
+
+            # Now that we've found the book, click it and check if we've left the library view
+            button.click()
+            logger.info(f"Clicked book button for '{book_title}'")
+
+            # Check if we've left the library view
+            try:
+                WebDriverWait(self.driver, 5).until_not(
+                    EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/library_root_view"))
+                )
+                logger.info("Successfully left library view after clicking book")
+                return True
+            except TimeoutException:
+                logger.warning("Still in library view after clicking book, trying again")
+                button.click()
+                logger.info("Clicked book button again")
+
+                try:
+                    WebDriverWait(self.driver, 5).until_not(
+                        EC.presence_of_element_located(
+                            (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                        )
+                    )
+                    logger.info("Successfully left library view after second click")
+                    return True
+                except TimeoutException:
+                    logger.error("Failed to leave library view after multiple attempts")
+                    return False
+
+        except Exception as e:
             logger.error(f"Error finding book: {e}")
             traceback.print_exc()
             return False
@@ -1020,64 +1071,258 @@ class LibraryHandler:
 
             # Store initial page source for diagnostics
             store_page_source(self.driver.page_source, "library_before_book_search")
-            
+
             # Check if the book is already visible on the current screen before searching
-            if True:  # Previously disabled for testing search functionality
-                # First: Check if the book is already visible on the current screen without scrolling
-                logger.info(f"Checking if book '{book_title}' is already visible on the current screen")
-                visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
-                if visible_book_result:
-                    parent_container, button, book_info = visible_book_result
-                    logger.info(f"Book '{book_title}' is already visible on the current screen, clicking it")
-                    
-                    # Click the book
-                    button.click()
-                    logger.info(f"Clicked book button for already visible book: {book_title}")
-                    
-                    # Wait for reading view to load (this is copied from the bottom of the function)
-                    try:
-                        logger.info("Waiting for reading view to load...")
-                        WebDriverWait(self.driver, 10).until(
-                            EC.presence_of_element_located(READER_DRAWER_LAYOUT_IDENTIFIERS[0])
+            logger.info(f"Checking if book '{book_title}' is already visible on the current screen")
+            visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
+            if visible_book_result:
+                parent_container, button, book_info = visible_book_result
+                logger.info(f"Book '{book_title}' is already visible on the current screen")
+
+                # Handle clicking the book
+                button.click()
+                logger.info(f"Clicked book button for already visible book: {book_title}")
+
+                # Wait for library view to disappear (we've left it)
+                try:
+                    WebDriverWait(self.driver, 5).until_not(
+                        EC.presence_of_element_located(
+                            (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
                         )
-                        logger.info("Reading view loaded")
-                        return True
-                    except Exception as e:
-                        logger.error(f"Failed to wait for reading view: {e}")
-                        return self._handle_loading_timeout(book_title)
-            
-            # If book is not already visible (or check disabled), proceed with search and find methods
+                    )
+                    logger.info("Successfully left library view")
+
+                    # At this point, we've left the library. Let the reader_handler do the rest
+                    return self._delegate_to_reader_handler(book_title)
+                except TimeoutException:
+                    logger.warning("Still in library view after clicking book, trying one more time")
+                    button.click()
+                    logger.info("Clicked book button again")
+
+                    # Wait again for library view to disappear
+                    try:
+                        WebDriverWait(self.driver, 5).until_not(
+                            EC.presence_of_element_located(
+                                (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                            )
+                        )
+                        logger.info("Successfully left library view after second click")
+
+                        # Now delegate to reader_handler
+                        return self._delegate_to_reader_handler(book_title)
+                    except TimeoutException:
+                        logger.error("Failed to leave library view even after second click")
+                        return False
+
+            # If book is not already visible, proceed with search and find methods
             logger.info(f"Proceeding to search for '{book_title}'")
-            
+
             # Find and click the book button
             if not self.find_book(book_title):
                 logger.error(f"Failed to find book: {book_title}")
                 return False
 
-            logger.info(f"Successfully clicked book: {book_title}")
+            logger.info(f"Successfully found and clicked book: {book_title}")
 
-            # Wait for reading view to load
-            try:
-                logger.info("Waiting for reading view to load...")
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located(READER_DRAWER_LAYOUT_IDENTIFIERS[0])
-                )
-                logger.info("Reading view loaded")
-                return True
-            except Exception as e:
-                return self._handle_loading_timeout(book_title)
+            # Now delegate to the reader_handler which will handle all dialogs
+            return self._delegate_to_reader_handler(book_title)
 
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error opening book: {e}")
             return False
 
+    def _delegate_to_reader_handler(self, book_title):
+        """Delegate to the reader_handler to handle the reading view and any dialogs.
+
+        This method is called after we've successfully clicked on a book and left the
+        library view. The reader_handler will take care of dialogs like "Go to that page?",
+        download limits, and other reading-related interactions.
+
+        Args:
+            book_title: The title of the book we're opening
+
+        Returns:
+            bool: True if the book was successfully opened, False otherwise
+        """
+        logger.info(f"Delegating to reader_handler to handle reading view for '{book_title}'")
+
+        # Get access to the reader_handler
+        if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "state_machine"):
+            reader_handler = self.driver.automator.state_machine.reader_handler
+
+            if reader_handler:
+                # Let the reader_handler handle the reading view dialogs
+                # Note that we're NOT calling reader_handler.open_book() which would cause a circular reference
+                # Instead, we're directly handling the dialogs here
+
+                # Wait for the reading view to appear with a longer timeout
+                try:
+                    logger.info("Waiting for reading view to load...")
+                    # Using the imported READING_VIEW_IDENTIFIERS from view_strategies
+
+                    # Wait for any of the reading view identifiers to appear
+                    WebDriverWait(self.driver, 15).until(
+                        lambda x: any(
+                            self._check_element_present(x, strategy, locator)
+                            for strategy, locator in READING_VIEW_IDENTIFIERS
+                        )
+                    )
+                    logger.info("Reading view loaded successfully")
+
+                    # Now that we're in the reading view, let reader_handler handle the dialogs
+                    # We use show_placemark=False to avoid showing the placemark ribbon
+                    dialog_handled = reader_handler.open_book(book_title, show_placemark=False)
+
+                    if dialog_handled:
+                        logger.info(f"Reader handler successfully handled dialogs for book '{book_title}'")
+                        return True
+                    else:
+                        logger.error(f"Reader handler failed to handle dialogs for book '{book_title}'")
+                        return False
+
+                except TimeoutException:
+                    logger.error(f"Timed out waiting for reading view to appear")
+                    # Check for any dialogs or error states
+                    return self._handle_loading_timeout(book_title)
+                except Exception as e:
+                    logger.error(f"Error waiting for reading view: {e}")
+                    return False
+            else:
+                logger.error("No reader_handler available in the state machine")
+                return False
+        else:
+            logger.error("Cannot access automator state machine")
+            return False
+
+    def _handle_page_navigation_dialog(self, source_description="dialog check"):
+        """Handle the 'Go to that page?' or 'You are currently on page' dialog.
+
+        Args:
+            source_description (str): Description of where this is being called from for logging
+
+        Returns:
+            bool: True if dialog was found and handled successfully, False otherwise
+        """
+        try:
+            # Look for message element containing the page navigation text
+            message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
+            if message_element and message_element.is_displayed():
+                message_text = message_element.text
+
+                # Check for both variations of the dialog text
+                if ("Go to that page?" in message_text) or ("You are currently on page" in message_text):
+                    logger.info(f"Found page navigation dialog during {source_description}: {message_text}")
+                    store_page_source(self.driver.page_source, f"page_navigation_dialog_{source_description}")
+
+                    # Try to click the YES button
+                    try:
+                        yes_button = self.driver.find_element(AppiumBy.ID, "android:id/button1")
+                        if yes_button and yes_button.is_displayed() and yes_button.text == "YES":
+                            yes_button.click()
+                            logger.info(
+                                f"Clicked YES button on page navigation dialog ({source_description})"
+                            )
+                            time.sleep(1.5)  # Give time for dialog to dismiss and reading view to load
+
+                            # Now wait for reading view to appear
+                            try:
+                                WebDriverWait(self.driver, 10).until(
+                                    lambda d: any(
+                                        [
+                                            self._check_element_present(
+                                                d, AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"
+                                            ),
+                                            self._check_element_present(
+                                                d,
+                                                AppiumBy.ID,
+                                                "com.amazon.kindle:id/reader_content_container",
+                                            ),
+                                            self._check_element_present(
+                                                d, AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"
+                                            ),
+                                        ]
+                                    )
+                                )
+                                logger.info(
+                                    f"Reading view loaded after handling page navigation dialog ({source_description})"
+                                )
+                                return True
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to detect reading view after handling page navigation dialog: {e}"
+                                )
+                                return False
+                    except NoSuchElementException:
+                        logger.warning("Could not find YES button on page navigation dialog")
+                    except Exception as btn_e:
+                        logger.error(f"Error clicking YES button: {btn_e}")
+            return False
+        except NoSuchElementException:
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking for page navigation dialog: {e}")
+            return False
+
+    def _check_element_present(self, driver, by, value):
+        """Helper method to check if an element is present and displayed.
+
+        Args:
+            driver: The WebDriver instance
+            by: The locator strategy
+            value: The locator value
+
+        Returns:
+            bool: True if element is present and displayed, False otherwise
+        """
+        try:
+            element = driver.find_element(by, value)
+            return element.is_displayed()
+        except:
+            return False
+
+    def _check_reading_view_present(self, driver):
+        """Helper method to check if any reading view element is present.
+
+        Args:
+            driver: The WebDriver instance
+
+        Returns:
+            bool or str: True if reading view elements found, "dialog" if dialog handled, False otherwise
+        """
+        # First check for "Go to that page?" or "You are currently on page" dialog
+        try:
+            message_element = driver.find_element(AppiumBy.ID, "android:id/message")
+            if message_element.is_displayed():
+                message_text = message_element.text
+
+                # Check for dialog patterns
+                if ("Go to that page?" in message_text) or ("You are currently on page" in message_text):
+                    # We found the dialog, but we'll have the caller handle it via _handle_page_navigation_dialog
+                    # This allows us to return a specific value for the caller to take appropriate action
+                    return "dialog"
+        except NoSuchElementException:
+            pass
+        except Exception:
+            pass
+
+        # Check for reading view elements
+        for element_id in [
+            "com.amazon.kindle:id/reader_drawer_layout",
+            "com.amazon.kindle:id/reader_content_container",
+            "com.amazon.kindle:id/reader_root_view",
+        ]:
+            if self._check_element_present(driver, AppiumBy.ID, element_id):
+                return True
+
+        return False
+
     def _handle_loading_timeout(self, book_title: str):
         """Handle timeout while waiting for reading view to load after clicking a book.
-        
+
         Args:
             book_title (str): The title of the book that was clicked
-            
+
         Returns:
             bool or str: True if successfully handled, "title_not_available" if that dialog was found,
                         False otherwise
@@ -1085,6 +1330,11 @@ class LibraryHandler:
         filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
         logger.info(f"Stored unknown library timeout page source at: {filepath}")
         logger.error(f"Failed to wait for reading view after clicking '{book_title}'")
+
+        # Save screenshot for visual debugging
+        screenshot_path = os.path.join(self.screenshots_dir, "library_timeout.png")
+        self.driver.save_screenshot(screenshot_path)
+        logger.info(f"Saved screenshot to {screenshot_path}")
 
         # After the timeout, let's check for specific dialogs that might have appeared
         logger.info("Checking for known dialogs after timeout...")
@@ -1099,22 +1349,22 @@ class LibraryHandler:
                 TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
             )
 
-            # Check for "Title Not Available" dialog first
+            # Check for "Go to that page?" dialog first - this is a common scenario that should be handled
+            if self._handle_page_navigation_dialog("timeout handler"):
+                return True
+
+            # Check for "Title Not Available" dialog
             for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         # Store the dialog for debugging
-                        filepath = store_page_source(
-                            self.driver.page_source, "title_not_available_dialog"
-                        )
+                        filepath = store_page_source(self.driver.page_source, "title_not_available_dialog")
 
                         error_text = "Title Not Available"
                         try:
                             # Try to get the message text if available
-                            message_element = self.driver.find_element(
-                                AppiumBy.ID, "android:id/message"
-                            )
+                            message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
                             if message_element and message_element.is_displayed():
                                 error_text = f"Title Not Available: {message_element.text}"
                         except:
@@ -1126,21 +1376,15 @@ class LibraryHandler:
                         try:
                             for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
                                 try:
-                                    cancel_button = self.driver.find_element(
-                                        btn_strategy, btn_locator
-                                    )
+                                    cancel_button = self.driver.find_element(btn_strategy, btn_locator)
                                     if cancel_button and cancel_button.is_displayed():
                                         cancel_button.click()
-                                        logger.info(
-                                            "Clicked Cancel button on Title Not Available dialog"
-                                        )
+                                        logger.info("Clicked Cancel button on Title Not Available dialog")
                                         break
                                 except:
                                     pass
                         except:
-                            logger.warning(
-                                "Failed to click Cancel button on Title Not Available dialog"
-                            )
+                            logger.warning("Failed to click Cancel button on Title Not Available dialog")
 
                         # Return a specific value to indicate this dialog was found
                         # Using string 'title_not_available' instead of True/False for disambiguation
@@ -1153,9 +1397,7 @@ class LibraryHandler:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
-                        logger.info(
-                            f"Download Limit dialog found after timeout: {strategy}={locator}"
-                        )
+                        logger.info(f"Download Limit dialog found after timeout: {strategy}={locator}")
                         return True  # ReaderHandler will handle the dialog
                 except:
                     pass
@@ -1165,9 +1407,7 @@ class LibraryHandler:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
-                        logger.info(
-                            f"Download Limit error text found after timeout: {strategy}={locator}"
-                        )
+                        logger.info(f"Download Limit error text found after timeout: {strategy}={locator}")
                         return True  # ReaderHandler will handle the dialog
                 except:
                     pass
@@ -1196,6 +1436,67 @@ class LibraryHandler:
             if device_list and button:
                 logger.info("Found Download Limit dialog (device list + button) after timeout")
                 return True  # ReaderHandler will handle the dialog
+
+            # Check if we're still in the library view - we might need to try clicking the book again
+            try:
+                library_view = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                if library_view.is_displayed():
+                    logger.info("Still in library view after timeout - book click may have failed")
+
+                    # Check if the book is still visible on screen
+                    visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
+                    if visible_book_result:
+                        parent_container, button, book_info = visible_book_result
+                        logger.info(f"Book '{book_title}' is still visible - trying to click it again")
+
+                        # Try clicking the book again
+                        button.click()
+                        logger.info("Clicked book button again after timeout")
+
+                        # Wait for reading view with a longer timeout
+                        try:
+                            logger.info("Waiting for reading view to load after second click...")
+
+                            # Define a custom wait condition that reuses our helper methods
+                            def reading_view_present_second_click(driver):
+                                # Use our helper method to check reading view or detect dialog
+                                result = self._check_reading_view_present(driver)
+
+                                # If we found the reading view, return True
+                                if result is True:
+                                    logger.info("Reading view found after second click")
+                                    return True
+
+                                # If we found a dialog, handle it
+                                if result == "dialog":
+                                    # Handle the dialog with our shared method
+                                    # If dialog handling was successful, return True
+                                    if self._handle_page_navigation_dialog("second click wait"):
+                                        logger.info("Successfully handled dialog after second click")
+                                        return True
+
+                                # No reading view or dialog was successfully handled
+                                return False
+
+                            # Wait using the custom condition with longer timeout
+                            WebDriverWait(self.driver, 20).until(reading_view_present_second_click)
+                            logger.info("Reading view loaded after second click")
+                            return True
+                        except Exception as e:
+                            logger.error(f"Failed to wait for reading view after second click: {e}")
+
+                            # Store state after second failure
+                            store_page_source(self.driver.page_source, "after_second_click_failure")
+                            screenshot_path = os.path.join(
+                                self.screenshots_dir, "after_second_click_failure.png"
+                            )
+                            self.driver.save_screenshot(screenshot_path)
+                    else:
+                        logger.warning(f"Book '{book_title}' is no longer visible on screen after timeout")
+            except NoSuchElementException:
+                logger.info("Not in library view after timeout - may be transitioning or in a different view")
+            except Exception as e:
+                logger.error(f"Error checking library view status: {e}")
 
             logger.info("No known dialogs found after explicit check")
 

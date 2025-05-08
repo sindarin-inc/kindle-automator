@@ -311,48 +311,21 @@ class ReaderHandler:
             return False
 
     def open_book(self, book_title: str, show_placemark: bool = False) -> bool:
-        """Open a book in the library and wait for reading view to load.
+        """Handle reading view actions after a book has been opened.
+        
+        This method assumes we're already in the reading view or about to transition to it,
+        and handles all reading-view related dialogs (download limit, last read page, etc.).
+        It does NOT open the book from the library - that's handled by library_handler.
 
         Args:
-            book_title (str): Title of the book to open.
+            book_title (str): Title of the book to handle.
             show_placemark (bool): Whether to tap to display the placemark ribbon.
                                   Default is False (don't show placemark).
 
         Returns:
-            bool: True if book was successfully opened, False otherwise.
+            bool: True if reading view was successfully handled, False otherwise.
         """
         logger.info(f"Starting reading flow for book: {book_title}")
-
-        if (
-            hasattr(self.driver, "automator")
-            and hasattr(self.driver.automator, "state_machine")
-            and hasattr(self.driver.automator.state_machine, "library_handler")
-        ):
-            library_handler = self.driver.automator.state_machine.library_handler
-            # Call open_book and capture the result
-            open_book_result = library_handler.open_book(book_title)
-
-            # Check for "Title Not Available" dialog result
-            if open_book_result == "title_not_available":
-                logger.error(f"Title Not Available dialog detected for book: {book_title}")
-                # Set a special error flag on the automator for the response_handler to detect
-                if hasattr(self.driver, "automator"):
-                    self.driver.automator.title_not_available_error = {
-                        "error": "Title Not Available",
-                        "book_title": book_title,
-                    }
-                return False
-            # Check for general failure
-            elif not open_book_result:
-                logger.error(f"Failed to open book: {book_title}")
-                return False
-        else:
-            logger.error(
-                f"Cannot open book: {book_title} - library_handler not available through driver.automator.state_machine"
-            )
-            return False
-
-        logger.info(f"Successfully navigated away from library view")
 
         # Wait for the reading view to appear
         try:
@@ -507,20 +480,22 @@ class ReaderHandler:
                                     )
                                     logger.info("Attempting to open the book again...")
 
-                                    # Retry opening the book one more time
+                                    # Retry finding and clicking the book one more time
+                                    # Without causing a circular reference, we'll handle this in a special way
                                     if (
                                         hasattr(self.driver, "automator")
                                         and hasattr(self.driver.automator, "state_machine")
                                         and hasattr(self.driver.automator.state_machine, "library_handler")
                                     ):
                                         library_handler = self.driver.automator.state_machine.library_handler
-                                        if library_handler.open_book(book_title):
+                                        # Use find_book instead of open_book to avoid circular reference
+                                        if library_handler.find_book(book_title):
                                             logger.info(
-                                                "Successfully reopened book after download limit handling"
+                                                "Successfully clicked on book again after download limit handling"
                                             )
                                         else:
                                             logger.error(
-                                                f"Failed to reopen book: {book_title} after download limit handling"
+                                                f"Failed to click on book: {book_title} after download limit handling"
                                             )
                                             return False
                                     else:

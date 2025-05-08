@@ -235,6 +235,50 @@ class LibraryHandlerSearch:
             logger.info(f"Checking if '{book_title}' is visible on current screen")
             store_page_source(self.driver.page_source, "check_book_visible")
             
+            # Look directly for buttons in the recycler view - more reliable approach
+            book_buttons = self.driver.find_elements(
+                AppiumBy.XPATH, 
+                "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.Button"
+            )
+            
+            if book_buttons:
+                logger.info(f"Found {len(book_buttons)} book buttons on current screen")
+                
+                # First check buttons directly by content-desc
+                for button in book_buttons:
+                    try:
+                        content_desc = button.get_attribute("content-desc") or ""
+                        logger.info(f"Book button content-desc: {content_desc}")
+                        
+                        # Check if our target book title is in the content-desc
+                        if book_title.lower() in content_desc.lower():
+                            logger.info(f"Found button with matching content-desc: {content_desc}")
+                            
+                            # Extract book info from content-desc
+                            parts = content_desc.split(",")
+                            book_info = {"title": parts[0].strip()}
+                            if len(parts) > 1:
+                                book_info["author"] = parts[1].strip()
+                                
+                            return button, button, book_info
+                            
+                        # Also try child elements if we didn't match content-desc
+                        title_elements = button.find_elements(
+                            AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                        )
+                        
+                        for title_element in title_elements:
+                            title_text = title_element.text
+                            logger.info(f"Found title element in button: {title_text}")
+                            
+                            if self._title_match(title_text, book_title):
+                                logger.info(f"Found matching title: '{title_text}' for '{book_title}'")
+                                return button, button, {"title": title_text}
+                    except Exception as e:
+                        logger.debug(f"Error processing button: {e}")
+                        continue
+                        
+            # If we didn't find any matching buttons, try the original approach
             # Find all title elements currently visible on the screen
             title_elements = self.driver.find_elements(
                 AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
@@ -256,43 +300,40 @@ class LibraryHandlerSearch:
                     if self._title_match(title_text, book_title):
                         logger.info(f"Found matching title: '{title_text}' for '{book_title}'")
                         
-                        # Find the parent container for this title element
+                        # Try to find the parent button in different ways
                         try:
-                            # Looking at the XML structure, the title is inside a Button -> RelativeLayout -> TextView
-                            # Go up to find the actual button that contains this title
+                            # Try direct parent lookup
+                            parent = title_element.find_element(AppiumBy.XPATH, "./../../..")
+                            if parent.get_attribute("class") == "android.widget.Button":
+                                logger.info("Found parent button via direct path")
+                                return parent, parent, {"title": title_text}
+                        except Exception:
+                            pass
                             
-                            # First try using XPath query from the document root to find the Button that contains this title
-                            title_text_escaped = title_text.replace("'", "\\'")
-                            button = self.driver.find_element(
-                                AppiumBy.XPATH,
-                                f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text_escaped}']]"
-                            )
+                        try:
+                            # Try by exact title match
+                            title_escaped = title_text.replace("'", "\\'").replace('"', '\\"')
+                            xpath = f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_escaped}']]"
+                            button = self.driver.find_element(AppiumBy.XPATH, xpath)
+                            logger.info("Found button via exact title match")
+                            return button, button, {"title": title_text}
+                        except Exception:
+                            pass
                             
-                            logger.info(f"Found clickable button containing title: '{title_text}'")
-                            return button, button, {"title": title_text}  # Return the button as both parent and clickable element
+                        try:
+                            # Try a more lenient approach with contains
+                            first_word = title_text.split()[0].replace("'", "\\'").replace('"', '\\"')
+                            if len(first_word) >= 3:  # Only use reasonably distinctive first words
+                                xpath = f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{first_word}')]]"
+                                button = self.driver.find_element(AppiumBy.XPATH, xpath)
+                                logger.info(f"Found button via first word match: {first_word}")
+                                return button, button, {"title": title_text}
+                        except Exception:
+                            pass
                             
-                        except Exception as parent_e:
-                            logger.debug(f"Failed to find button with direct XPath, trying alternative: {parent_e}")
-                            
-                            # Alternative approach: find the closest button ancestor by getting attributes and using content-desc
-                            try:
-                                parent_container = None
-                                
-                                # Look for buttons that contain this title in content-desc
-                                buttons = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
-                                for button in buttons:
-                                    content_desc = button.get_attribute("content-desc") or ""
-                                    if title_text in content_desc:
-                                        logger.info(f"Found button with matching content-desc: {content_desc}")
-                                        parent_container = button
-                                        break
-                                
-                                if parent_container:
-                                    return parent_container, parent_container, {"title": title_text}
-                                else:
-                                    logger.debug(f"Could not find button with matching content-desc")
-                            except Exception as alt_e:
-                                logger.debug(f"Alternative parent lookup failed: {alt_e}")
+                        # If all else fails
+                        logger.warning("Found matching title but could not locate the parent button - try clicking title directly")
+                        return title_element.find_element(AppiumBy.XPATH, "./.."), title_element, {"title": title_text}
                 except Exception as e:
                     logger.debug(f"Error processing title element: {e}")
                     continue
@@ -302,6 +343,7 @@ class LibraryHandlerSearch:
             
         except Exception as e:
             logger.error(f"Error checking if book is visible on screen: {e}")
+            traceback.print_exc()
             return None
 
     def _find_book_by_partial_match(self, book_title: str, scroll_through_library_func=None):

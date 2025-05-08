@@ -870,8 +870,9 @@ class BookOpenResource(Resource):
         )
         # If we're not already reading the requested book, transition to library and open it
         if automator.state_machine.transition_to_library(server=server):
-            success = automator.state_machine.reader_handler.open_book(
-                book_title, show_placemark=show_placemark
+            # Use library_handler to open the book instead of reader_handler
+            success = automator.state_machine.library_handler.open_book(
+                book_title
             )
             logger.info(f"Book opened: {success}")
 

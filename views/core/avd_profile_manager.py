@@ -696,7 +696,7 @@ class AVDProfileManager:
 
         return default
 
-    def is_styles_updated(self, email: str = None) -> bool:
+    def is_styles_updated(self) -> bool:
         """
         Check if styles have been updated for a profile.
 
@@ -706,8 +706,7 @@ class AVDProfileManager:
         Returns:
             bool: True if styles have been updated, False otherwise
         """
-        if not email:
-            return False
+        email = get_sindarin_email()
 
         # Get the styles_updated preference from the correct location
         return self._get_preference_value(email, "styles_updated", False)
