@@ -710,49 +710,63 @@ class LibraryHandler:
                 logger.info(f"Stored library view page source at: {filepath}")
 
                 # Find all book containers on current screen
-                # First find all book buttons in the recycler view
-                book_buttons = []
+                # PRIMARY APPROACH: First directly find all title elements
+                containers = []
                 try:
-                    # Use the container strategy from BOOK_METADATA_IDENTIFIERS
-                    container_strategy, container_locator = BOOK_METADATA_IDENTIFIERS["container"][0]
-                    book_buttons = self.driver.find_elements(container_strategy, container_locator)
-                    logger.info(f"Found {len(book_buttons)} book buttons on current screen (primary strategy)")
+                    # Look specifically for title elements
+                    title_elements = self.driver.find_elements(
+                        AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                    )
+                    logger.info(f"Found {len(title_elements)} title elements directly")
                     
-                    # Log all visible book titles for debugging
+                    # Convert these title elements to containers
+                    for i, title in enumerate(title_elements):
+                        try:
+                            logger.info(f"Direct title {i+1}: '{title.text}'")
+                            # For each title, find its parent RelativeLayout container
+                            parent = title.find_element(AppiumBy.XPATH, "./../..")
+                            containers.append(parent)
+                        except Exception as e:
+                            logger.error(f"Error finding parent for title '{title.text}': {e}")
+                    
+                    logger.info(f"Created {len(containers)} containers from title elements")
+                    
+                    # Also log RecyclerView info for debugging
                     try:
                         recycler_view = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/recycler_view")
                         all_items = recycler_view.find_elements(AppiumBy.XPATH, ".//*")
                         logger.info(f"RecyclerView contains {len(all_items)} total elements")
-                        
-                        # Look specifically for title elements
-                        title_elements = self.driver.find_elements(
-                            AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
-                        )
-                        logger.info(f"Found {len(title_elements)} title elements directly")
-                        for i, title in enumerate(title_elements):
-                            logger.info(f"Direct title {i+1}: '{title.text}'")
                     except Exception as e:
-                        logger.error(f"Error when trying to get all visible titles: {e}")
+                        logger.error(f"Error getting RecyclerView info: {e}")
+                        
                 except Exception as e:
-                    logger.debug(f"Failed to find book buttons: {e}")
-
-                # If no book buttons found, try the old container approach as fallback
-                if not book_buttons:
-                    containers = []
-                    for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"][1:]:
-                        try:
-                            found_containers = self.driver.find_elements(
-                                container_strategy, container_locator
-                            )
-                            if found_containers:
-                                containers = found_containers
-                                logger.debug(f"Found {len(containers)} book containers on current screen")
-                                break
-                        except Exception as e:
-                            logger.debug(f"Failed to find containers with {container_strategy}: {e}")
-                            continue
-                else:
-                    containers = book_buttons
+                    logger.error(f"Error finding direct title elements: {e}")
+                
+                # FALLBACK APPROACH: If we couldn't find titles directly, try the old button approach
+                if not containers:
+                    logger.info("No title elements found directly, falling back to button approach")
+                    try:
+                        # Use the container strategy from BOOK_METADATA_IDENTIFIERS
+                        container_strategy, container_locator = BOOK_METADATA_IDENTIFIERS["container"][0]
+                        book_buttons = self.driver.find_elements(container_strategy, container_locator)
+                        logger.info(f"Fallback found {len(book_buttons)} book buttons")
+                        containers = book_buttons
+                    except Exception as e:
+                        logger.debug(f"Failed to find book buttons: {e}")
+                        
+                        # Last resort: try the old container approach
+                        for container_strategy, container_locator in BOOK_METADATA_IDENTIFIERS["container"][1:]:
+                            try:
+                                found_containers = self.driver.find_elements(
+                                    container_strategy, container_locator
+                                )
+                                if found_containers:
+                                    containers = found_containers
+                                    logger.debug(f"Last resort found {len(containers)} book containers")
+                                    break
+                            except Exception as e:
+                                logger.debug(f"Failed to find containers with {container_strategy}: {e}")
+                                continue
 
                 # Store titles from previous scroll position
                 previous_titles = set(seen_titles)
