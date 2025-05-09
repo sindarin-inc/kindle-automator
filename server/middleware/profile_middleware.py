@@ -138,18 +138,26 @@ def ensure_user_profile_loaded(f):
         if sindarin_email not in server.appium_processes:
             logger.info(f"Starting dedicated Appium server for {sindarin_email}")
 
-            # Check if we have a stored Appium port for this email
-            stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
+            # Check if we're on macOS development environment
+            is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
 
-            if stored_port:
-                port = stored_port
-                logger.info(f"Using stored Appium port {port} for {sindarin_email}")
+            # On macOS dev, always use port 4723 for consistency with driver code
+            if is_mac_dev:
+                port = 4723
+                logger.info(f"Using fixed Appium port {port} for macOS development environment")
             else:
-                # Calculate a unique port based on email hash if not stored
-                base_port = 4723
-                port_range = 276  # 4999 - 4723
-                email_hash = hash(sindarin_email) % port_range
-                port = base_port + email_hash
+                # Check if we have a stored Appium port for this email
+                stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
+
+                if stored_port:
+                    port = stored_port
+                    logger.info(f"Using stored Appium port {port} for {sindarin_email}")
+                else:
+                    # Calculate a unique port based on email hash if not stored
+                    base_port = 4723
+                    port_range = 276  # 4999 - 4723
+                    email_hash = hash(sindarin_email) % port_range
+                    port = base_port + email_hash
 
             # Start the Appium server on this port and check for success
             appium_started = server.start_appium(port=port, email=sindarin_email)

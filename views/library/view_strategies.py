@@ -181,15 +181,19 @@ CONTENT_DESC_STRATEGIES = {
     # Patterns for content-desc formats
     "patterns": [
         # Pattern: "Title, Author, ..."
-        {"split_by": ", ", "author_index": 1},
+        {"split_by": ", ", "author_index": 1, "name": "Simple title-author comma separated"},
         # Pattern: "Title, Author, Book not downloaded., ..."
-        {"split_by": ", ", "author_index": 1, "skip_if_contains": ["Book not downloaded"]},
+        {"split_by": ", ", "author_index": 1, "skip_if_contains": ["Book not downloaded"], "name": "Title-author with not downloaded status"},
         # Pattern: "Series: Title, N volumes, , Author;Author2"
-        {"split_by": ", ", "author_index": -1, "process": lambda s: s.split(";")[0] if ";" in s else s},
+        {"split_by": ", ", "author_index": -1, "process": lambda s: s.split(";")[0] if ";" in s else s, "name": "Series with multiple authors"},
         # Pattern: "Title, with foreword by X, Author, ..."
-        {"split_by": ", ", "author_index": 2},
+        {"split_by": ", ", "author_index": 2, "name": "Title with foreword, then author"},
         # Pattern: "Title, with foreword by X, Author, ..."
-        {"split_by": ", ", "author_index": 3},
+        {"split_by": ", ", "author_index": 3, "name": "Title with longer foreword, then author"},
+        # Additional patterns that might help with the null author issue:
+        {"split_by": " by ", "author_index": 1, "name": "Title by Author format"},
+        {"split_by": "Author: ", "author_index": 1, "name": "Explicit Author: prefix"},
+        {"split_by": ": ", "author_index": 1, "name": "Title: Subtitle or Author format"},
     ],
     # Author name cleanup rules
     "cleanup_rules": [
@@ -200,6 +204,11 @@ CONTENT_DESC_STRATEGIES = {
         # Remove non-author indicators
         {"pattern": r"Book \d+", "replace": ""},
         {"pattern": r"\(.*\)", "replace": ""},
+        # Additional cleanup rules that might help with the null author issue:
+        {"pattern": r"^by\s+", "replace": ""},  # Remove leading "by "
+        {"pattern": r"^Author:\s+", "replace": ""},  # Remove leading "Author: "
+        {"pattern": r"READ$", "replace": ""},  # Remove trailing READ tag
+        {"pattern": r"\s+READ\s+", "replace": " "},  # Remove READ surrounded by spaces
     ],
 }
 

@@ -725,13 +725,16 @@ class Driver:
                         max_retries = 3
                         retry_delay = 1
 
+                        # Ensure we have a valid appium port - use 4723 as fallback
+                        appium_port = self.appium_port if self.appium_port is not None else 4723
+
                         for attempt in range(max_retries):
                             try:
                                 logger.info(
-                                    f"Checking Appium server (127.0.0.1:{self.appium_port}) status (attempt {attempt+1}/{max_retries})..."
+                                    f"Checking Appium server (127.0.0.1:{appium_port}) status (attempt {attempt+1}/{max_retries})..."
                                 )
                                 status_response = requests.get(
-                                    f"http://127.0.0.1:{self.appium_port}/status", timeout=5
+                                    f"http://127.0.0.1:{appium_port}/status", timeout=5
                                 )
                                 # Handle both Appium 1.x and 2.x response formats
                                 response_json = status_response.json()
@@ -765,7 +768,7 @@ class Driver:
                             except requests.RequestException as e:
                                 if attempt == max_retries - 1:
                                     logger.error(
-                                        f"Failed to connect to Appium server on port {self.appium_port} after {max_retries} attempts: {e}"
+                                        f"Failed to connect to Appium server on port {appium_port} after {max_retries} attempts: {e}"
                                     )
 
                                     # Check if we need to start Appium ourselves
@@ -784,7 +787,7 @@ class Driver:
                                             )
                                             if email:
                                                 started = server.start_appium(
-                                                    port=self.appium_port, email=email
+                                                    port=appium_port, email=email
                                                 )
                                                 if not started:
                                                     logger.error("Failed to start Appium server from driver")
@@ -795,7 +798,7 @@ class Driver:
                                         logger.error(f"Error starting Appium from driver: {start_error}")
 
                                     raise Exception(
-                                        f"Cannot connect to Appium server on port {self.appium_port}: {e}"
+                                        f"Cannot connect to Appium server on port {appium_port}: {e}"
                                     )
 
                                 logger.warning(
@@ -805,8 +808,11 @@ class Driver:
                                 retry_delay *= 2
 
                         # Initialize driver with the options using the specific port
+                        # Ensure we have a valid appium port - use 4723 as fallback
+                        appium_port = self.appium_port if self.appium_port is not None else 4723
+
                         logger.info(
-                            f"Connecting to Appium on port {self.appium_port} for device {self.device_id}"
+                            f"Connecting to Appium on port {appium_port} for device {self.device_id}"
                         )
                         # Set the direct device capability at the last moment to avoid any overrides
                         capabilities = options.to_capabilities()
@@ -819,10 +825,10 @@ class Driver:
                         )
 
                         self.driver = webdriver.Remote(
-                            f"http://127.0.0.1:{self.appium_port}", options=options
+                            f"http://127.0.0.1:{appium_port}", options=options
                         )
                         logger.info(
-                            f"Driver initialized successfully on port {self.appium_port} for device {self.device_id}"
+                            f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
                         )
                     finally:
                         socket.setdefaulttimeout(original_timeout)  # Restore original timeout
@@ -906,6 +912,12 @@ class Driver:
                             raise TimeoutError("Connection check timed out")
 
                 except Exception as e:
+                    error_msg = str(e)
+                    # Check if error is related to Appium port
+                    if "Failed to parse" in error_msg and "None/status" in error_msg:
+                        logger.error("Detected None port error - forcing port to 4723")
+                        self.appium_port = 4723
+
                     logger.info(f"Failed to initialize driver (attempt {attempt}/5): {e}")
                     if attempt < 5:
                         # Increase the retry delay progressively to give more time for app initialization

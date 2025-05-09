@@ -984,7 +984,6 @@ class EmulatorLauncher:
                 return False
 
             # Now check if the system has fully booted
-            logger.info(f"Checking if emulator {emulator_id} is fully booted")
             boot_completed = subprocess.run(
                 [
                     f"{self.android_home}/platform-tools/adb",
@@ -1000,9 +999,9 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            logger.info(
-                f"Boot completed check result: '{boot_completed.stdout.strip()}', return code: {boot_completed.returncode}"
-            )
+            # logger.info(
+            #     f"Boot completed check result: '{boot_completed.stdout.strip()}', return code: {boot_completed.returncode}"
+            # )
 
             if boot_completed.returncode != 0:
                 logger.warning(f"Boot completed check failed with error: {boot_completed.stderr.strip()}")

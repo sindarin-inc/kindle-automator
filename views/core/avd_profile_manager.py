@@ -317,6 +317,20 @@ class AVDProfileManager:
         Returns:
             Optional[int]: The Appium port or None if not assigned
         """
+        # Check if we're on macOS development environment
+        try:
+            import platform
+            import os
+            environment = os.environ.get("ENVIRONMENT", "DEV")
+            is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
+            if is_mac_dev:
+                # On macOS, always use port 4723 for Appium
+                logger.info(f"Using default port 4723 for Appium in macOS development environment for {email}")
+                return 4723
+        except Exception as e:
+            logger.warning(f"Error checking platform in get_appium_port_for_email: {e}")
+            # Still proceed to other methods
+
         # First try to get the appium_port from the VNC instance manager
         from server.utils.vnc_instance_manager import VNCInstanceManager
 
@@ -336,6 +350,17 @@ class AVDProfileManager:
             if isinstance(profile_entry, dict) and "appium_port" in profile_entry:
                 logger.warning(f"Using deprecated profiles_index appium_port for {email}")
                 return profile_entry["appium_port"]
+
+        # On macOS return default port even if nothing was found
+        try:
+            import platform
+            import os
+            environment = os.environ.get("ENVIRONMENT", "DEV")
+            is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
+            if is_mac_dev:
+                return 4723
+        except Exception:
+            pass
 
         return None
 

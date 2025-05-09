@@ -183,6 +183,47 @@ class LibraryHandlerScroll:
                                 # Pre-fill the book title since we already know it
                                 book_info["title"] = container["title_text"]
 
+                                # Try to find the actual button for this title to get content-desc
+                                try:
+                                    escaped_text = book_info["title"].replace("'", "\\'")
+                                    buttons = self.driver.find_elements(
+                                        AppiumBy.XPATH,
+                                        f"//android.widget.Button[contains(@content-desc, '{escaped_text}')]",
+                                    )
+                                    if buttons:
+                                        button = buttons[0]
+                                        content_desc = button.get_attribute("content-desc")
+
+                                        # Extract author from content-desc before adding to books list
+                                        # This is specifically to address the null author issue
+                                        if content_desc:
+                                            for pattern in CONTENT_DESC_STRATEGIES["patterns"]:
+                                                try:
+                                                    parts = content_desc.split(pattern["split_by"])
+                                                    if len(parts) > abs(pattern["author_index"]):
+                                                        potential_author = parts[pattern["author_index"]]
+
+                                                        # Apply processing and cleanup
+                                                        if "process" in pattern:
+                                                            potential_author = pattern["process"](potential_author)
+
+                                                        for rule in CONTENT_DESC_STRATEGIES["cleanup_rules"]:
+                                                            potential_author = re.sub(
+                                                                rule["pattern"], rule["replace"], potential_author
+                                                            )
+
+                                                        non_author_terms = CONTENT_DESC_STRATEGIES["non_author_terms"]
+                                                        if not any(non_author in potential_author.lower()
+                                                                  for non_author in non_author_terms):
+                                                            potential_author = potential_author.strip()
+                                                            if potential_author:
+                                                                book_info["author"] = potential_author
+                                                                break
+                                                except Exception:
+                                                    continue
+                                except Exception:
+                                    pass
+
                                 # Add the book directly to books list if not already there
                                 if book_info["title"] not in seen_titles:
                                     seen_titles.add(book_info["title"])
@@ -206,12 +247,13 @@ class LibraryHandlerScroll:
                         # Extract metadata using strategies
                         for field in ["title", "progress", "size", "author"]:
                             # Try to find elements directly in the container first
-                            for strategy, locator in BOOK_METADATA_IDENTIFIERS[field]:
+                            for strategy_index, (strategy, locator) in enumerate(BOOK_METADATA_IDENTIFIERS[field]):
                                 try:
                                     # For direct elements, use find_element with a relative XPath
                                     relative_locator = (
                                         f".{locator}" if strategy == AppiumBy.XPATH else locator
                                     )
+
                                     elements = container.find_elements(strategy, relative_locator)
                                     if elements:
                                         book_info[field] = elements[0].text
@@ -266,34 +308,46 @@ class LibraryHandlerScroll:
                             try:
                                 content_desc = container.get_attribute("content-desc")
                                 if content_desc:
-                                    # logger.debug(f"Content desc: {content_desc}")
+                                    # Try to extract author from content-desc
+
+                                    # Process content-desc with extraction patterns
 
                                     # Try each pattern in the content-desc strategies
-                                    for pattern in CONTENT_DESC_STRATEGIES["patterns"]:
+                                    for pattern_index, pattern in enumerate(CONTENT_DESC_STRATEGIES["patterns"]):
                                         try:
+                                            # Try this pattern
+
                                             # Split the content-desc by the specified delimiter
                                             parts = content_desc.split(pattern["split_by"])
+                                            # Process the parts
 
                                             # Skip this pattern if the content-desc contains any skip terms
                                             if "skip_if_contains" in pattern and any(
                                                 skip_term in content_desc
                                                 for skip_term in pattern["skip_if_contains"]
                                             ):
+                                                # Skip if content contains skip terms
                                                 continue
 
                                             # Get the author part based on the index
                                             if len(parts) > abs(pattern["author_index"]):
                                                 potential_author = parts[pattern["author_index"]]
+                                                # Process the potential author
 
                                                 # Apply any processing function
                                                 if "process" in pattern:
-                                                    potential_author = pattern["process"](potential_author)
+                                                    processed = pattern["process"](potential_author)
+                                                    # Apply the processing function
+                                                    potential_author = processed
 
                                                 # Apply cleanup rules
-                                                for rule in CONTENT_DESC_STRATEGIES["cleanup_rules"]:
+                                                # Apply cleanup rules
+                                                for rule_index, rule in enumerate(CONTENT_DESC_STRATEGIES["cleanup_rules"]):
+                                                    before = potential_author
                                                     potential_author = re.sub(
                                                         rule["pattern"], rule["replace"], potential_author
                                                     )
+                                                    # Track changes for debugging if needed
 
                                                 # Skip if the potential author contains non-author terms
                                                 non_author_terms = CONTENT_DESC_STRATEGIES["non_author_terms"]
@@ -301,14 +355,16 @@ class LibraryHandlerScroll:
                                                     non_author in potential_author.lower()
                                                     for non_author in non_author_terms
                                                 ):
+                                                    # Skip non-author terms
                                                     continue
 
                                                 # Skip if the potential author is empty after cleanup
                                                 potential_author = potential_author.strip()
                                                 if not potential_author:
+                                                    # Skip empty authors
                                                     continue
 
-                                                # logger.info(f"Extracted author from content-desc: {potential_author}")
+                                                # Author found
                                                 book_info["author"] = potential_author
                                                 break
                                         except Exception as e:
@@ -392,6 +448,9 @@ class LibraryHandlerScroll:
                             # Add book to list if not already seen
                             if book_info["title"] not in seen_titles:
                                 seen_titles.add(book_info["title"])
+
+                                # Book is ready to be added
+
                                 books.append(book_info)
                                 new_books_batch.append(book_info)  # Add to batch for callback
                                 new_books_found = True
