@@ -818,7 +818,7 @@ class LibraryHandler:
                 if not self.handle_grid_list_view_dialog():
                     logger.error("Failed to handle Grid/List view dialog")
                     # Try to continue anyway
-                    
+
             # Check if a book has been selected (happens from inadvertent long press)
             if self.scroll_handler.is_in_book_selection_mode():
                 logger.info("Book selection mode detected, exiting selection mode first")

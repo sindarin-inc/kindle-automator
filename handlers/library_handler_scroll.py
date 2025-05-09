@@ -85,8 +85,17 @@ class LibraryHandlerScroll:
                     # Convert these title elements to containers without detailed logging
                     for i, title in enumerate(title_elements):
                         try:
+                            # Safely get the title text to handle potential stale elements
+                            try:
+                                title_text = title.text
+                            except StaleElementReferenceException:
+                                logger.debug(
+                                    f"Stale element reference when getting title text for element {i}, skipping"
+                                )
+                                continue
+
                             # Create a book "wrapper" for each title element
-                            book_wrapper = {"element": title, "title_text": title.text, "is_synthetic": True}
+                            book_wrapper = {"element": title, "title_text": title_text, "is_synthetic": True}
 
                             # Now try to find the actual container through a direct query
                             try:
@@ -99,6 +108,12 @@ class LibraryHandlerScroll:
                                 # If found, use the actual button
                                 containers.append(button)
                                 # Use debug level instead of info for container details
+                            except StaleElementReferenceException:
+                                logger.debug(
+                                    f"Stale element reference when finding button for '{escaped_text}', skipping"
+                                )
+                                # Use our synthetic wrapper as fallback
+                                containers.append(book_wrapper)
                             except Exception:
                                 # If can't find actual container, use our synthetic wrapper
                                 containers.append(book_wrapper)
@@ -235,62 +250,79 @@ class LibraryHandlerScroll:
                                 except NoSuchElementException:
                                     # Expected exception when element not found, don't log
                                     continue
+                                except StaleElementReferenceException:
+                                    # Element is no longer attached to the DOM
+                                    logger.debug(
+                                        f"Stale element reference when finding {field}, will retry on next scroll"
+                                    )
+                                    continue
                                 except Exception as e:
                                     # Only log unexpected exceptions
                                     logger.error(f"Unexpected error finding {field}: {e}")
                                     continue
 
                         # If we still don't have author, try to extract from content-desc
-                        if not book_info["author"] and container.get_attribute("content-desc"):
-                            content_desc = container.get_attribute("content-desc")
-                            # logger.debug(f"Content desc: {content_desc}")
+                        if not book_info["author"]:
+                            try:
+                                content_desc = container.get_attribute("content-desc")
+                                if content_desc:
+                                    # logger.debug(f"Content desc: {content_desc}")
 
-                            # Try each pattern in the content-desc strategies
-                            for pattern in CONTENT_DESC_STRATEGIES["patterns"]:
-                                try:
-                                    # Split the content-desc by the specified delimiter
-                                    parts = content_desc.split(pattern["split_by"])
+                                    # Try each pattern in the content-desc strategies
+                                    for pattern in CONTENT_DESC_STRATEGIES["patterns"]:
+                                        try:
+                                            # Split the content-desc by the specified delimiter
+                                            parts = content_desc.split(pattern["split_by"])
 
-                                    # Skip this pattern if the content-desc contains any skip terms
-                                    if "skip_if_contains" in pattern and any(
-                                        skip_term in content_desc for skip_term in pattern["skip_if_contains"]
-                                    ):
-                                        continue
+                                            # Skip this pattern if the content-desc contains any skip terms
+                                            if "skip_if_contains" in pattern and any(
+                                                skip_term in content_desc
+                                                for skip_term in pattern["skip_if_contains"]
+                                            ):
+                                                continue
 
-                                    # Get the author part based on the index
-                                    if len(parts) > abs(pattern["author_index"]):
-                                        potential_author = parts[pattern["author_index"]]
+                                            # Get the author part based on the index
+                                            if len(parts) > abs(pattern["author_index"]):
+                                                potential_author = parts[pattern["author_index"]]
 
-                                        # Apply any processing function
-                                        if "process" in pattern:
-                                            potential_author = pattern["process"](potential_author)
+                                                # Apply any processing function
+                                                if "process" in pattern:
+                                                    potential_author = pattern["process"](potential_author)
 
-                                        # Apply cleanup rules
-                                        for rule in CONTENT_DESC_STRATEGIES["cleanup_rules"]:
-                                            potential_author = re.sub(
-                                                rule["pattern"], rule["replace"], potential_author
+                                                # Apply cleanup rules
+                                                for rule in CONTENT_DESC_STRATEGIES["cleanup_rules"]:
+                                                    potential_author = re.sub(
+                                                        rule["pattern"], rule["replace"], potential_author
+                                                    )
+
+                                                # Skip if the potential author contains non-author terms
+                                                non_author_terms = CONTENT_DESC_STRATEGIES["non_author_terms"]
+                                                if any(
+                                                    non_author in potential_author.lower()
+                                                    for non_author in non_author_terms
+                                                ):
+                                                    continue
+
+                                                # Skip if the potential author is empty after cleanup
+                                                potential_author = potential_author.strip()
+                                                if not potential_author:
+                                                    continue
+
+                                                # logger.info(f"Extracted author from content-desc: {potential_author}")
+                                                book_info["author"] = potential_author
+                                                break
+                                        except Exception as e:
+                                            # Only log at debug level for content-desc parsing errors
+                                            logger.debug(
+                                                f"Error parsing content-desc with pattern {pattern}: {e}"
                                             )
-
-                                        # Skip if the potential author contains non-author terms
-                                        non_author_terms = CONTENT_DESC_STRATEGIES["non_author_terms"]
-                                        if any(
-                                            non_author in potential_author.lower()
-                                            for non_author in non_author_terms
-                                        ):
                                             continue
-
-                                        # Skip if the potential author is empty after cleanup
-                                        potential_author = potential_author.strip()
-                                        if not potential_author:
-                                            continue
-
-                                        # logger.info(f"Extracted author from content-desc: {potential_author}")
-                                        book_info["author"] = potential_author
-                                        break
-                                except Exception as e:
-                                    # Only log at debug level for content-desc parsing errors
-                                    logger.debug(f"Error parsing content-desc with pattern {pattern}: {e}")
-                                    continue
+                            except StaleElementReferenceException:
+                                logger.debug("Stale element reference when getting content-desc, skipping")
+                                continue
+                            except Exception as e:
+                                logger.debug(f"Error getting content-desc: {e}")
+                                continue
 
                         if book_info["title"]:
                             # If we're looking for a specific book
@@ -458,6 +490,11 @@ class LibraryHandlerScroll:
                         location = bottom_container.location
                         size = bottom_container.size
                         bottom_y = location["y"] + size["height"]
+                    except StaleElementReferenceException:
+                        logger.debug(
+                            "Stale element reference when checking visibility for bottom book, will retry on next scroll"
+                        )
+                        # Continue with fallback scrolling approach
                     except Exception as e:
                         logger.debug(f"Could not check visibility for bottom book: {e}")
 
@@ -470,10 +507,14 @@ class LibraryHandlerScroll:
 
                         # Check from bottom up, find last fully visible book
                         for i in range(len(book_containers) - 1, 0, -1):
-                            container = book_containers[i]
-                            loc = container.location
-                            s = container.size
-                            bottom = loc["y"] + s["height"]
+                            try:
+                                container = book_containers[i]
+                                loc = container.location
+                                s = container.size
+                                bottom = loc["y"] + s["height"]
+                            except StaleElementReferenceException:
+                                logger.debug(f"Stale element reference when checking container {i}, skipping")
+                                continue
 
                             # If this container is fully visible on screen
                             if bottom <= (screen_size["height"] - 20):
@@ -489,20 +530,36 @@ class LibraryHandlerScroll:
                         bottom_container = reference_container
 
                     # Get location and size of the selected container
-                    location = bottom_container.location
-                    size = bottom_container.size
+                    try:
+                        location = bottom_container.location
+                        size = bottom_container.size
 
-                    # Calculate the y-coordinate of the bottom of this container
-                    bottom_y = location["y"] + size["height"]
+                        # Calculate the y-coordinate of the bottom of this container
+                        bottom_y = location["y"] + size["height"]
+                    except StaleElementReferenceException:
+                        logger.debug(
+                            "Stale element reference when getting container dimensions, using default scroll"
+                        )
+                        # Fall through to default scroll behavior below
+                    except Exception as e:
+                        logger.debug(f"Error getting container dimensions: {e}")
 
                     # Check if the container is partially off-screen
                     if bottom_y > screen_size["height"]:
-                        # Use the container above it
-                        fallback_index = -2 if len(book_containers) >= 3 else -1
-                        fallback_container = book_containers[fallback_index]
-                        location = fallback_container.location
-                        size = fallback_container.size
-                        bottom_y = location["y"] + size["height"]
+                        try:
+                            # Use the container above it
+                            fallback_index = -2 if len(book_containers) >= 3 else -1
+                            fallback_container = book_containers[fallback_index]
+                            location = fallback_container.location
+                            size = fallback_container.size
+                            bottom_y = location["y"] + size["height"]
+                        except StaleElementReferenceException:
+                            logger.debug(
+                                "Stale element reference when accessing fallback container, using default scroll"
+                            )
+                            # Fall through to default scroll behavior
+                        except Exception as e:
+                            logger.debug(f"Could not use fallback container: {e}")
 
                     # Calculate scrolling coordinates to position reference book at top of screen
                     # This provides consistent scrolling with the right amount of overlap
@@ -540,7 +597,7 @@ class LibraryHandlerScroll:
                     self.driver.swipe(
                         screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
                     )
-                
+
                 # After each scroll, check if we inadvertently triggered book selection mode
                 if self.is_in_book_selection_mode():
                     logger.warning("Detected book selection mode during scrolling, likely from long press")
@@ -571,6 +628,11 @@ class LibraryHandlerScroll:
                                 logger.info(f"Found {len(buttons)} buttons matching first word of title")
                                 parent_container = buttons[0]
                                 return parent_container, buttons[0], book
+                        except StaleElementReferenceException:
+                            logger.debug(
+                                f"Stale element reference when finding book button for '{book['title']}', skipping"
+                            )
+                            continue
                         except Exception as e:
                             logger.error(f"Error finding book button by content-desc: {e}")
 
@@ -599,9 +661,9 @@ class LibraryHandlerScroll:
 
     def is_in_book_selection_mode(self):
         """Check if we're in book selection mode (when a book title is long-clicked).
-        
+
         In this mode, a "DONE" button appears in the top left corner of the screen.
-        
+
         Returns:
             bool: True if in selection mode, False otherwise
         """
@@ -619,10 +681,10 @@ class LibraryHandlerScroll:
         except Exception as e:
             logger.debug(f"Error checking book selection mode: {e}")
             return False
-    
+
     def exit_book_selection_mode(self):
         """Exit book selection mode by clicking the DONE button.
-        
+
         Returns:
             bool: True if successfully exited selection mode, False otherwise
         """
@@ -630,17 +692,17 @@ class LibraryHandlerScroll:
             if not self.is_in_book_selection_mode():
                 logger.debug("Not in book selection mode, nothing to exit")
                 return True
-                
+
             # Find and click the DONE button
             done_button = self.driver.find_element(
                 AppiumBy.ID, "com.amazon.kindle:id/action_mode_close_button"
             )
             done_button.click()
             logger.info("Clicked DONE button to exit book selection mode")
-            
+
             # Wait a moment for selection mode to exit
             time.sleep(0.5)
-            
+
             # Verify we're no longer in selection mode
             if not self.is_in_book_selection_mode():
                 logger.info("Successfully exited book selection mode")
@@ -651,12 +713,12 @@ class LibraryHandlerScroll:
         except Exception as e:
             logger.error(f"Error exiting book selection mode: {e}")
             return False
-            
+
     def scroll_to_list_top(self):
         """Scroll to the top of the All list by toggling between Downloaded and All."""
         try:
             logger.info("Attempting to scroll to top of list by toggling filters...")
-            
+
             # First check if we're in book selection mode and exit if needed
             if self.is_in_book_selection_mode():
                 logger.info("In book selection mode, exiting before scrolling")
