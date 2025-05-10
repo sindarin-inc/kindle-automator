@@ -1,6 +1,7 @@
 import logging
 import os
 import platform
+import subprocess
 from functools import wraps
 
 import flask
@@ -13,6 +14,26 @@ logger = logging.getLogger(__name__)
 
 # Environment variable access (to match the original server.py behavior)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
+
+
+def find_device_id_by_android_id(email):
+    """Try to find a device ID using Android ID for macOS environments."""
+    try:
+        # Get Android ID from adb devices (simplified approach)
+        devices_output = subprocess.check_output(["adb", "devices"], text=True)
+        emulator_ids = [
+            line.split("\t")[0]
+            for line in devices_output.splitlines()
+            if "\tdevice" in line and line.startswith("emulator")
+        ]
+
+        if emulator_ids:
+            # Just return the first device ID if we find any
+            return emulator_ids[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error finding device by Android ID: {e}")
+        return None
 
 
 def ensure_user_profile_loaded(f):
@@ -116,6 +137,11 @@ def ensure_user_profile_loaded(f):
         # Check if this is the /auth endpoint - we should allow it to proceed even without an AVD
         is_auth_endpoint = request.path.endswith("/auth")
 
+        # For macOS dev, check if any device is available to reuse
+        mac_device_id = None
+        if is_mac_dev:
+            mac_device_id = find_device_id_by_android_id(sindarin_email)
+
         if not avd_exists and not is_mac_dev and not is_auth_endpoint:
             # AVD doesn't exist - require the user to call /auth first to create it
             logger.warning(
@@ -130,7 +156,14 @@ def ensure_user_profile_loaded(f):
             if is_auth_endpoint:
                 logger.info(f"Auth endpoint: bypassing AVD existence check for {sindarin_email}")
             else:
-                logger.info(f"In macOS dev environment: bypassing AVD existence check for {sindarin_email}")
+                if mac_device_id:
+                    logger.info(
+                        f"In macOS dev environment: found device {mac_device_id} to reuse for {sindarin_email}"
+                    )
+                else:
+                    logger.info(
+                        f"In macOS dev environment: bypassing AVD existence check for {sindarin_email}"
+                    )
             # Try to create a mock AVD profile mapping for this email
             server.profile_manager.register_email_to_avd(sindarin_email, "Pixel_API_30")
 
@@ -175,9 +208,15 @@ def ensure_user_profile_loaded(f):
             # No longer setting current_email as it has been removed
             logger.info(f"Already have automator for email: {sindarin_email}")
 
-            # If the emulator is running for this profile, we're good to go
-            if is_running:
-                logger.debug(f"Emulator already running for {sindarin_email}")
+            # Special case for macOS dev environment
+            is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
+
+            # If the emulator is running for this profile or we're in macOS dev, we're good to go
+            if is_running or (is_mac_dev and find_device_id_by_android_id(sindarin_email)):
+                if is_running:
+                    logger.debug(f"Emulator already running for {sindarin_email}")
+                else:
+                    logger.debug(f"In macOS dev mode with available device for {sindarin_email}")
                 result = f(*args, **kwargs)
                 # Handle Flask Response objects appropriately
                 if isinstance(result, (flask.Response, Response)):
@@ -206,10 +245,17 @@ def ensure_user_profile_loaded(f):
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
         avd_exists = os.path.exists(avd_path)
 
+        # Check if we're on macOS dev environment
+        is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
+
         if not is_running:
             if avd_exists:
                 # AVD exists but isn't running - we'll start it
                 logger.info(f"AVD {avd_name} for {sindarin_email} exists but is not running")
+                force_new_emulator = False
+            elif is_mac_dev and find_device_id_by_android_id(sindarin_email):
+                # Special case for macOS: If a device is available by Android ID, use it
+                logger.info(f"In macOS dev environment: Found device for {sindarin_email}, reusing it")
                 force_new_emulator = False
             else:
                 # AVD doesn't exist - create it

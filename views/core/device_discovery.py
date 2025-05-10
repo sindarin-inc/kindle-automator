@@ -140,7 +140,6 @@ class DeviceDiscovery:
             if result.returncode == 0 and result.stdout.strip():
                 # This gives us the device name (e.g., 'pixel'), not the AVD name
                 device_name = result.stdout.strip()
-                logger.info(f"Got device name {device_name} for emulator {emulator_id}")
 
                 # If we have a current profile and there's only one entry, use that
                 if current_profile:
@@ -288,8 +287,6 @@ class DeviceDiscovery:
                             avd_name = self._get_avd_name_for_emulator(emulator_id)
                             if avd_name:
                                 running_emulators[avd_name] = emulator_id
-                            else:
-                                logger.warning(f"Could not determine AVD name for emulator {emulator_id}")
                         else:
                             logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
 

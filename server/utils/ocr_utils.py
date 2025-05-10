@@ -149,11 +149,11 @@ def is_ocr_requested():
     text_param = request.args.get("text", "0")
     preview_param = request.args.get("preview", "0")
 
-    perform_ocr = (ocr_param in ("1", "true") or
-                  text_param in ("1", "true") or
-                  preview_param in ("1", "true"))
+    perform_ocr = ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
 
-    logger.debug(f"is_ocr_requested check - query params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}")
+    logger.debug(
+        f"is_ocr_requested check - query params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}"
+    )
 
     # If not in URL parameters, check JSON body
     if not perform_ocr and request.is_json:
@@ -189,7 +189,9 @@ def is_ocr_requested():
                 elif isinstance(preview_param, int):
                     perform_ocr = preview_param == 1
 
-            logger.debug(f"is_ocr_requested check - JSON params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}")
+            logger.debug(
+                f"is_ocr_requested check - JSON params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}"
+            )
         except Exception as e:
             logger.warning(f"Error parsing JSON for OCR parameters: {e}")
 

@@ -72,7 +72,6 @@ class Driver:
             for line in result.stdout.splitlines():
                 if "emulator-" in line and "device" in line:
                     device_id = line.split()[0]
-                    logger.info(f"Found device ID: {device_id}, attempting to verify...")
                     # Verify this is actually an emulator
                     verify_result = subprocess.run(
                         ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
@@ -84,7 +83,6 @@ class Driver:
                         return device_id
                 elif "127.0.0.1:" in line:
                     device_id = line.split()[0]
-                    logger.info(f"Found device ID: {device_id}, attempting to verify...")
                     verify_result = subprocess.run(
                         ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
                         capture_output=True,

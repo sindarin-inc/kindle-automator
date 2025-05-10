@@ -883,7 +883,9 @@ class NavigationResource(Resource):
                 preview_success, ocr_text = automator.state_machine.reader_handler.preview_page_forward()
                 if preview_success and ocr_text:
                     # Get current page data after navigation
-                    progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
+                    progress = automator.state_machine.reader_handler.get_reading_progress(
+                        show_placemark=False
+                    )
 
                     # Save screenshot with unique ID
                     screenshot_id = f"page_{int(time.time())}"
@@ -892,11 +894,7 @@ class NavigationResource(Resource):
                     automator.driver.save_screenshot(screenshot_path)
 
                     # Prepare response with both the current page and preview data
-                    response_data = {
-                        "success": True,
-                        "progress": progress,
-                        "preview_ocr_text": ocr_text
-                    }
+                    response_data = {"success": True, "progress": progress, "preview_ocr_text": ocr_text}
 
                     # Process the screenshot (base64, URL or OCR)
                     screenshot_path = get_image_path(screenshot_id)
@@ -917,7 +915,9 @@ class NavigationResource(Resource):
                 preview_success, ocr_text = automator.state_machine.reader_handler.preview_page_backward()
                 if preview_success and ocr_text:
                     # Get current page data after navigation
-                    progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
+                    progress = automator.state_machine.reader_handler.get_reading_progress(
+                        show_placemark=False
+                    )
 
                     # Save screenshot with unique ID
                     screenshot_id = f"page_{int(time.time())}"
@@ -926,11 +926,7 @@ class NavigationResource(Resource):
                     automator.driver.save_screenshot(screenshot_path)
 
                     # Prepare response with both the current page and preview data
-                    response_data = {
-                        "success": True,
-                        "progress": progress,
-                        "preview_ocr_text": ocr_text
-                    }
+                    response_data = {"success": True, "progress": progress, "preview_ocr_text": ocr_text}
 
                     # Process the screenshot (base64, URL or OCR)
                     screenshot_path = get_image_path(screenshot_id)
