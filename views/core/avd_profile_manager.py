@@ -319,13 +319,16 @@ class AVDProfileManager:
         """
         # Check if we're on macOS development environment
         try:
-            import platform
             import os
+            import platform
+
             environment = os.environ.get("ENVIRONMENT", "DEV")
             is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
             if is_mac_dev:
                 # On macOS, always use port 4723 for Appium
-                logger.info(f"Using default port 4723 for Appium in macOS development environment for {email}")
+                logger.info(
+                    f"Using default port 4723 for Appium in macOS development environment for {email}"
+                )
                 return 4723
         except Exception as e:
             logger.warning(f"Error checking platform in get_appium_port_for_email: {e}")
@@ -353,8 +356,9 @@ class AVDProfileManager:
 
         # On macOS return default port even if nothing was found
         try:
-            import platform
             import os
+            import platform
+
             environment = os.environ.get("ENVIRONMENT", "DEV")
             is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
             if is_mac_dev:

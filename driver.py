@@ -786,9 +786,7 @@ class Driver:
                                                 else None
                                             )
                                             if email:
-                                                started = server.start_appium(
-                                                    port=appium_port, email=email
-                                                )
+                                                started = server.start_appium(port=appium_port, email=email)
                                                 if not started:
                                                     logger.error("Failed to start Appium server from driver")
                                                 else:
@@ -811,9 +809,7 @@ class Driver:
                         # Ensure we have a valid appium port - use 4723 as fallback
                         appium_port = self.appium_port if self.appium_port is not None else 4723
 
-                        logger.info(
-                            f"Connecting to Appium on port {appium_port} for device {self.device_id}"
-                        )
+                        logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
                         # Set the direct device capability at the last moment to avoid any overrides
                         capabilities = options.to_capabilities()
                         # Ensure the critical capabilities are set correctly before connection
@@ -824,9 +820,7 @@ class Driver:
                             f"androidId={capabilities.get('appium:androidId')}"
                         )
 
-                        self.driver = webdriver.Remote(
-                            f"http://127.0.0.1:{appium_port}", options=options
-                        )
+                        self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
                         logger.info(
                             f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
                         )

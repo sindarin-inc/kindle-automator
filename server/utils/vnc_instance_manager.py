@@ -426,6 +426,7 @@ class VNCInstanceManager:
         try:
             # Check if we're on macOS development environment
             import platform as sys_platform  # Import inside the function to avoid name clash
+
             if sys_platform.system() == "Darwin":
                 # On macOS dev, use a fixed appium port (4723) if no explicit port is assigned
                 # This helps with local debugging/development

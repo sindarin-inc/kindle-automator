@@ -205,16 +205,24 @@ class LibraryHandlerScroll:
 
                                                         # Apply processing and cleanup
                                                         if "process" in pattern:
-                                                            potential_author = pattern["process"](potential_author)
+                                                            potential_author = pattern["process"](
+                                                                potential_author
+                                                            )
 
                                                         for rule in CONTENT_DESC_STRATEGIES["cleanup_rules"]:
                                                             potential_author = re.sub(
-                                                                rule["pattern"], rule["replace"], potential_author
+                                                                rule["pattern"],
+                                                                rule["replace"],
+                                                                potential_author,
                                                             )
 
-                                                        non_author_terms = CONTENT_DESC_STRATEGIES["non_author_terms"]
-                                                        if not any(non_author in potential_author.lower()
-                                                                  for non_author in non_author_terms):
+                                                        non_author_terms = CONTENT_DESC_STRATEGIES[
+                                                            "non_author_terms"
+                                                        ]
+                                                        if not any(
+                                                            non_author in potential_author.lower()
+                                                            for non_author in non_author_terms
+                                                        ):
                                                             potential_author = potential_author.strip()
                                                             if potential_author:
                                                                 book_info["author"] = potential_author
@@ -247,7 +255,9 @@ class LibraryHandlerScroll:
                         # Extract metadata using strategies
                         for field in ["title", "progress", "size", "author"]:
                             # Try to find elements directly in the container first
-                            for strategy_index, (strategy, locator) in enumerate(BOOK_METADATA_IDENTIFIERS[field]):
+                            for strategy_index, (strategy, locator) in enumerate(
+                                BOOK_METADATA_IDENTIFIERS[field]
+                            ):
                                 try:
                                     # For direct elements, use find_element with a relative XPath
                                     relative_locator = (
@@ -313,7 +323,9 @@ class LibraryHandlerScroll:
                                     # Process content-desc with extraction patterns
 
                                     # Try each pattern in the content-desc strategies
-                                    for pattern_index, pattern in enumerate(CONTENT_DESC_STRATEGIES["patterns"]):
+                                    for pattern_index, pattern in enumerate(
+                                        CONTENT_DESC_STRATEGIES["patterns"]
+                                    ):
                                         try:
                                             # Try this pattern
 
@@ -342,7 +354,9 @@ class LibraryHandlerScroll:
 
                                                 # Apply cleanup rules
                                                 # Apply cleanup rules
-                                                for rule_index, rule in enumerate(CONTENT_DESC_STRATEGIES["cleanup_rules"]):
+                                                for rule_index, rule in enumerate(
+                                                    CONTENT_DESC_STRATEGIES["cleanup_rules"]
+                                                ):
                                                     before = potential_author
                                                     potential_author = re.sub(
                                                         rule["pattern"], rule["replace"], potential_author

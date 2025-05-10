@@ -183,9 +183,19 @@ CONTENT_DESC_STRATEGIES = {
         # Pattern: "Title, Author, ..."
         {"split_by": ", ", "author_index": 1, "name": "Simple title-author comma separated"},
         # Pattern: "Title, Author, Book not downloaded., ..."
-        {"split_by": ", ", "author_index": 1, "skip_if_contains": ["Book not downloaded"], "name": "Title-author with not downloaded status"},
+        {
+            "split_by": ", ",
+            "author_index": 1,
+            "skip_if_contains": ["Book not downloaded"],
+            "name": "Title-author with not downloaded status",
+        },
         # Pattern: "Series: Title, N volumes, , Author;Author2"
-        {"split_by": ", ", "author_index": -1, "process": lambda s: s.split(";")[0] if ";" in s else s, "name": "Series with multiple authors"},
+        {
+            "split_by": ", ",
+            "author_index": -1,
+            "process": lambda s: s.split(";")[0] if ";" in s else s,
+            "name": "Series with multiple authors",
+        },
         # Pattern: "Title, with foreword by X, Author, ..."
         {"split_by": ", ", "author_index": 2, "name": "Title with foreword, then author"},
         # Pattern: "Title, with foreword by X, Author, ..."

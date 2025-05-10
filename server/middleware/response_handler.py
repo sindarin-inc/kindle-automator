@@ -1,9 +1,11 @@
 import logging
+import os
 import time
 import traceback
 from functools import wraps
 from typing import Optional
 
+from flask import Response, make_response, send_file
 from selenium.common import exceptions as selenium_exceptions
 
 from server.utils.request_utils import get_sindarin_email
@@ -35,6 +37,57 @@ def get_email_with_fallbacks(server_instance, use_helper=True) -> Optional[str]:
             logger.debug(f"Using email from current profile: {sindarin_email}")
 
     return sindarin_email
+
+
+def get_image_path(image_id):
+    """Get full path for an image file."""
+    # Build path to image using project root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    # Ensure .png extension
+    if not image_id.endswith(".png"):
+        image_id = f"{image_id}.png"
+
+    return os.path.join(project_root, "screenshots", image_id)
+
+
+# Helper function to serve an image with option to delete after serving
+def serve_image(image_id, delete_after=True):
+    """Serve an image by ID with option to delete after serving.
+
+    This function properly handles the Flask response object to work with Flask-RESTful.
+    """
+    try:
+        image_path = get_image_path(image_id)
+        logger.info(f"Attempting to serve image from: {image_path}")
+
+        if not os.path.exists(image_path):
+            logger.error(f"Image not found at path: {image_path}")
+            return {"error": "Image not found"}, 404
+
+        # Create a response that bypasses Flask-RESTful's serialization
+        logger.info(f"Serving image from: {image_path}")
+        response = make_response(send_file(image_path, mimetype="image/png"))
+
+        # Delete the file after sending if requested
+        # We need to set up a callback to delete the file after the response is sent
+        if delete_after:
+
+            @response.call_on_close
+            def on_close():
+                try:
+                    if os.path.exists(image_path):
+                        os.remove(image_path)
+                        logger.info(f"Deleted image: {image_path}")
+                except Exception as e:
+                    logger.error(f"Failed to delete image {image_path}: {e}")
+
+        # Return the response object directly
+        return response
+
+    except Exception as e:
+        logger.error(f"Error serving image: {e}")
+        return {"error": str(e)}, 500
 
 
 def retry_with_app_relaunch(func, server_instance, *args, **kwargs):

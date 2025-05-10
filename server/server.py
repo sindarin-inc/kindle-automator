@@ -53,7 +53,17 @@ from server.logging_config import setup_logger
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
-from server.middleware.response_handler import handle_automator_response
+from server.middleware.response_handler import (
+    get_image_path,
+    handle_automator_response,
+    serve_image,
+)
+from server.utils.ocr_utils import (
+    KindleOCR,
+    is_base64_requested,
+    is_ocr_requested,
+    process_screenshot_response,
+)
 from server.utils.request_utils import (
     get_automator_for_request,
     get_formatted_vnc_url,
@@ -749,7 +759,10 @@ class ScreenshotResource(Resource):
                 response_data["message"] = "Screenshot skipped in LIBRARY state"
             else:
                 # Process the screenshot (either base64 encode, add URL, or perform OCR)
-                screenshot_data = process_screenshot_response(image_id, use_base64, perform_ocr)
+                screenshot_path = get_image_path(image_id)
+                screenshot_data = process_screenshot_response(
+                    image_id, screenshot_path, use_base64, perform_ocr
+                )
                 response_data.update(screenshot_data)
 
             # If xml=1, get and save the page source XML
@@ -839,10 +852,94 @@ class NavigationResource(Resource):
         if not action:
             return {"error": "Navigation action is required"}, 400
 
+        # Check if preview parameter is provided
+        preview_requested = False
+        preview_param = request.args.get("preview", "0")
+        if preview_param in ("1", "true"):
+            preview_requested = True
+            logger.info("Preview parameter provided, will use preview navigation with OCR")
+
+        # Also check in JSON body
+        if not preview_requested and request.is_json:
+            try:
+                json_data = request.get_json(silent=True) or {}
+                preview_param = json_data.get("preview", False)
+                if isinstance(preview_param, bool):
+                    preview_requested = preview_param
+                elif isinstance(preview_param, str):
+                    preview_requested = preview_param == "1" or preview_param.lower() == "true"
+                elif isinstance(preview_param, int):
+                    preview_requested = preview_param == 1
+            except Exception as e:
+                logger.warning(f"Error parsing preview parameter from JSON: {e}")
+
         if action == "next_page":
+            # First perform the actual navigation
             success = automator.state_machine.reader_handler.turn_page_forward()
+
+            # If requested, also preview the next page and get OCR
+            if success and preview_requested:
+                logger.info("Navigated to next page, now previewing the following page")
+                preview_success, ocr_text = automator.state_machine.reader_handler.preview_page_forward()
+                if preview_success and ocr_text:
+                    # Get current page data after navigation
+                    progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
+
+                    # Save screenshot with unique ID
+                    screenshot_id = f"page_{int(time.time())}"
+                    time.sleep(0.5)
+                    screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+                    automator.driver.save_screenshot(screenshot_path)
+
+                    # Prepare response with both the current page and preview data
+                    response_data = {
+                        "success": True,
+                        "progress": progress,
+                        "preview_ocr_text": ocr_text
+                    }
+
+                    # Process the screenshot (base64, URL or OCR)
+                    screenshot_path = get_image_path(screenshot_id)
+                    screenshot_data = process_screenshot_response(
+                        screenshot_id, screenshot_path, use_base64, perform_ocr
+                    )
+                    response_data.update(screenshot_data)
+
+                    return response_data, 200
+
         elif action == "previous_page":
+            # First perform the actual navigation
             success = automator.state_machine.reader_handler.turn_page_backward()
+
+            # If requested, also preview the previous page and get OCR
+            if success and preview_requested:
+                logger.info("Navigated to previous page, now previewing the previous page")
+                preview_success, ocr_text = automator.state_machine.reader_handler.preview_page_backward()
+                if preview_success and ocr_text:
+                    # Get current page data after navigation
+                    progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
+
+                    # Save screenshot with unique ID
+                    screenshot_id = f"page_{int(time.time())}"
+                    time.sleep(0.5)
+                    screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+                    automator.driver.save_screenshot(screenshot_path)
+
+                    # Prepare response with both the current page and preview data
+                    response_data = {
+                        "success": True,
+                        "progress": progress,
+                        "preview_ocr_text": ocr_text
+                    }
+
+                    # Process the screenshot (base64, URL or OCR)
+                    screenshot_path = get_image_path(screenshot_id)
+                    screenshot_data = process_screenshot_response(
+                        screenshot_id, screenshot_path, use_base64, perform_ocr
+                    )
+                    response_data.update(screenshot_data)
+
+                    return response_data, 200
         elif action == "preview_next_page":
             success, ocr_text = automator.state_machine.reader_handler.preview_page_forward()
             # Add OCR text to response if available
@@ -899,7 +996,10 @@ class NavigationResource(Resource):
             }
 
             # Process the screenshot (either base64 encode, add URL, or OCR)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
+            screenshot_path = get_image_path(screenshot_id)
+            screenshot_data = process_screenshot_response(
+                screenshot_id, screenshot_path, use_base64, perform_ocr
+            )
             response_data.update(screenshot_data)
 
             return response_data, 200
@@ -1004,7 +1104,10 @@ class BookOpenResource(Resource):
                 response_data["already_open"] = True
 
             # Process the screenshot (either base64 encode, add URL, or OCR)
-            screenshot_data = process_screenshot_response(screenshot_id, use_base64, perform_ocr)
+            screenshot_path = get_image_path(screenshot_id)
+            screenshot_data = process_screenshot_response(
+                screenshot_id, screenshot_path, use_base64, perform_ocr
+            )
             response_data.update(screenshot_data)
 
             return response_data, 200
@@ -1551,296 +1654,6 @@ class FixturesResource(Resource):
             return {"error": str(e)}, 500
 
 
-# Helper function to get image path
-def get_image_path(image_id):
-    """Get full path for an image file."""
-    # Build path to image using project root
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    # Ensure .png extension
-    if not image_id.endswith(".png"):
-        image_id = f"{image_id}.png"
-
-    return os.path.join(project_root, "screenshots", image_id)
-
-
-# Helper function to serve an image with option to delete after serving
-def serve_image(image_id, delete_after=True):
-    """Serve an image by ID with option to delete after serving.
-
-    This function properly handles the Flask response object to work with Flask-RESTful.
-    """
-    try:
-        image_path = get_image_path(image_id)
-        logger.info(f"Attempting to serve image from: {image_path}")
-
-        if not os.path.exists(image_path):
-            logger.error(f"Image not found at path: {image_path}")
-            return {"error": "Image not found"}, 404
-
-        # Create a response that bypasses Flask-RESTful's serialization
-        logger.info(f"Serving image from: {image_path}")
-        response = make_response(send_file(image_path, mimetype="image/png"))
-
-        # Delete the file after sending if requested
-        # We need to set up a callback to delete the file after the response is sent
-        if delete_after:
-
-            @response.call_on_close
-            def on_close():
-                try:
-                    if os.path.exists(image_path):
-                        os.remove(image_path)
-                        logger.info(f"Deleted image: {image_path}")
-                except Exception as e:
-                    logger.error(f"Failed to delete image {image_path}: {e}")
-
-        # Return the response object directly
-        return response
-
-    except Exception as e:
-        logger.error(f"Error serving image: {e}")
-        return {"error": str(e)}, 500
-
-
-# Helper function to check if base64 is requested
-def is_base64_requested():
-    """Check if base64 format is requested in query parameters or JSON body.
-
-    Returns:
-        Boolean indicating whether base64 was requested
-    """
-    # Check URL query parameters first
-    use_base64 = request.args.get("base64", "0") == "1"
-
-    # If not in URL parameters, check JSON body
-    if not use_base64 and request.is_json:
-        try:
-            json_data = request.get_json(silent=True) or {}
-            base64_param = json_data.get("base64", False)
-            if isinstance(base64_param, bool):
-                use_base64 = base64_param
-            elif isinstance(base64_param, str):
-                use_base64 = base64_param == "1" or base64_param.lower() == "true"
-            elif isinstance(base64_param, int):
-                use_base64 = base64_param == 1
-        except Exception as e:
-            logger.warning(f"Error parsing JSON for base64 parameter: {e}")
-
-    return use_base64
-
-
-# Helper function to check if OCR is requested
-def is_ocr_requested():
-    """Check if OCR is requested in query parameters or JSON body.
-
-    Returns:
-        Boolean indicating whether OCR was requested
-    """
-    # Check URL query parameters first - match exactly how other query params are checked
-    ocr_param = request.args.get("ocr", "0")
-    perform_ocr = ocr_param in ("1", "true")
-
-    logger.debug(f"is_ocr_requested check - query param 'ocr': {ocr_param}, result: {perform_ocr}")
-
-    # If not in URL parameters, check JSON body
-    if not perform_ocr and request.is_json:
-        try:
-            json_data = request.get_json(silent=True) or {}
-            ocr_param = json_data.get("ocr", False)
-            if isinstance(ocr_param, bool):
-                perform_ocr = ocr_param
-            elif isinstance(ocr_param, str):
-                perform_ocr = ocr_param == "1" or ocr_param.lower() == "true"
-            elif isinstance(ocr_param, int):
-                perform_ocr = ocr_param == 1
-            logger.debug(f"is_ocr_requested check - JSON param 'ocr': {ocr_param}, result: {perform_ocr}")
-        except Exception as e:
-            logger.warning(f"Error parsing JSON for OCR parameter: {e}")
-
-    return perform_ocr
-
-
-class KindleOCR:
-    """Utility class for OCR processing of Kindle screenshots."""
-
-    @staticmethod
-    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Process an image with Mistral's OCR API.
-
-        Args:
-            image_content: Either binary content (bytes) or a base64-encoded string
-
-        Returns:
-            A tuple of (OCR text result or None if processing failed, error message if an error occurred)
-        """
-        try:
-            # Determine if the input is already a base64 string or binary data
-            if isinstance(image_content, str):
-                # It's already a base64 string
-                base64_image = image_content
-                # Verify it's valid base64 by attempting to decode a small part
-                try:
-                    base64.b64decode(base64_image[:20])
-                except:
-                    error_msg = "Invalid base64 string provided"
-                    logger.error(error_msg)
-                    return None, error_msg
-            else:
-                # It's binary data, encode it as base64
-                base64_image = base64.b64encode(image_content).decode("utf-8")
-
-            # Get API key from environment variables (loaded from .env)
-            api_key = os.getenv("MISTRAL_API_KEY")
-            if not api_key:
-                error_msg = (
-                    "MISTRAL_API_KEY not found in environment variables. Please add it to your .env file."
-                )
-                logger.error(error_msg)
-                return None, error_msg
-
-            # Initialize Mistral client
-            client = Mistral(api_key=api_key)
-
-            # Implement our own timeout using ThreadPoolExecutor
-            TIMEOUT_SECONDS = 10
-
-            # Define the OCR function that will run in a separate thread
-            def run_ocr():
-                ocr_response = client.ocr.process(
-                    model="mistral-ocr-latest",
-                    document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
-                )
-
-                if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
-                    page = ocr_response.pages[0]
-                    return page.markdown
-                return None
-
-            # Execute with timeout
-            try:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    # Submit the OCR task to the executor
-                    future = executor.submit(run_ocr)
-
-                    try:
-                        # Wait for the result with a timeout
-                        ocr_text = future.result(timeout=TIMEOUT_SECONDS)
-
-                        if ocr_text:
-                            logger.info("OCR processing successful")
-                            return ocr_text, None
-                        else:
-                            error_msg = "No OCR response or no pages found"
-                            logger.error(error_msg)
-                            return None, error_msg
-
-                    except concurrent.futures.TimeoutError:
-                        # Cancel the future if it times out
-                        future.cancel()
-                        error_msg = f"OCR request timed out after {TIMEOUT_SECONDS} seconds"
-                        logger.error(error_msg)
-                        return None, error_msg
-
-            except Exception as e:
-                error_msg = f"Error during OCR processing with timeout: {e}"
-                logger.error(error_msg)
-                return None, error_msg
-
-        except Exception as e:
-            error_msg = f"Error processing OCR: {e}"
-            logger.error(error_msg)
-            return None, error_msg
-
-
-# Helper function to handle image encoding for API responses
-def process_screenshot_response(screenshot_id, use_base64=False, perform_ocr=False):
-    """Process screenshot for API response - either adding URL, base64-encoded image, or OCR text.
-
-    Args:
-        screenshot_id: The ID of the screenshot
-        use_base64: Whether to use base64 encoding
-        perform_ocr: Whether to perform OCR on the image
-
-    Returns:
-        Dictionary with screenshot information (URL, base64, or OCR text)
-    """
-    result = {}
-    screenshot_path = get_image_path(screenshot_id)
-    delete_after = use_base64 or perform_ocr  # Delete the image if we're encoding it or OCR'ing it
-
-    # If OCR is requested, we need to process the image
-    if perform_ocr:
-        try:
-            # Read the image file
-            with open(screenshot_path, "rb") as img_file:
-                image_data = img_file.read()
-
-            # Process the image with OCR
-            ocr_text, error = KindleOCR.process_ocr(image_data)
-
-            if ocr_text:
-                # If OCR successful, just add the text to the result and don't include the image
-                # Don't include base64 or URL to save bandwidth and storage
-                result["ocr_text"] = ocr_text
-                # Always delete the image after successful OCR
-                delete_after = True
-            else:
-                # If OCR failed, add the error and fall back to regular image handling
-                result["ocr_error"] = error or "Unknown OCR error"
-                # Fall back to base64 or URL
-                if use_base64:
-                    encoded_image = base64.b64encode(image_data).decode("utf-8")
-                    result["screenshot_base64"] = encoded_image
-                else:
-                    # Return URL to image and don't delete file
-                    image_url = f"/image/{screenshot_id}"
-                    result["screenshot_url"] = image_url
-                    delete_after = False
-        except Exception as e:
-            logger.error(f"Error processing OCR: {e}")
-            result["ocr_error"] = f"Failed to process image for OCR: {str(e)}"
-            # Fall back to regular image handling
-            if use_base64:
-                try:
-                    with open(screenshot_path, "rb") as img_file:
-                        encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-                        result["screenshot_base64"] = encoded_image
-                except Exception as e2:
-                    logger.error(f"Error encoding image to base64: {e2}")
-                    result["error"] = f"Failed to encode image to base64: {str(e2)}"
-            else:
-                # Return URL to image and don't delete file
-                image_url = f"/image/{screenshot_id}"
-                result["screenshot_url"] = image_url
-                delete_after = False
-    elif use_base64:
-        # Base64 encoding without OCR
-        try:
-            with open(screenshot_path, "rb") as img_file:
-                encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-                result["screenshot_base64"] = encoded_image
-        except Exception as e:
-            logger.error(f"Error encoding image to base64: {e}")
-            result["error"] = f"Failed to encode image to base64: {str(e)}"
-    else:
-        # Regular URL handling
-        image_url = f"/image/{screenshot_id}"
-        result["screenshot_url"] = image_url
-        delete_after = False  # Don't delete file when using URL
-
-    # Delete the image file if needed
-    if delete_after:
-        try:
-            os.remove(screenshot_path)
-            logger.info(f"Deleted image after processing: {screenshot_path}")
-        except Exception as e:
-            logger.error(f"Failed to delete image {screenshot_path}: {e}")
-
-    return result
-
-
 class ImageResource(Resource):
     def get(self, image_id):
         """Get an image by ID and delete it after serving."""
@@ -2244,122 +2057,6 @@ api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
-
-
-# Add new route to handle VNC connections
-@app.route("/vnc")
-def vnc_redirect():
-    """Redirect to VNC connection with appropriate profile parameters.
-    This ensures VNC only accesses the emulator tied to the specified profile email."""
-    sindarin_email = get_sindarin_email()
-
-    # If no email is provided and server doesn't have a current email, return error
-    if not sindarin_email:
-        return {"error": "No sindarin_email provided to identify which profile to access"}, 400
-
-    logger.info(f"VNC redirect requested for email: {sindarin_email}")
-
-    # Find the automator for the specified email
-    automator = None
-    if hasattr(server, "automators") and sindarin_email in server.automators:
-        automator = server.automators.get(sindarin_email)
-    else:
-        logger.error(f"No automator found for profile {sindarin_email}")
-        return {"error": f"No automator found for profile {sindarin_email}"}, 404
-
-    # Check if emulator_manager exists and add it if missing
-    if not hasattr(automator, "emulator_manager"):
-        logger.warning(f"Automator for {sindarin_email} missing emulator_manager, adding it now")
-        try:
-            # Add emulator_manager from profile_manager
-            automator.emulator_manager = server.profile_manager.emulator_manager
-            logger.info(f"Successfully added emulator_manager to automator for {sindarin_email}")
-        except Exception as e:
-            logger.error(f"Failed to add emulator_manager to automator for {sindarin_email}: {e}")
-            return {"error": f"Failed to initialize emulator_launcher capability: {e}"}, 500
-
-    # Check if emulator_launcher exists
-    if not hasattr(automator.emulator_manager, "emulator_launcher"):
-        logger.error(f"Automator for {sindarin_email} does not have emulator_launcher capability")
-        return {"error": f"Automator for {sindarin_email} does not have emulator_launcher capability"}, 500
-
-    # Get the running emulator from the emulator launcher
-    emulator_id, display_num = automator.emulator_manager.emulator_launcher.get_running_emulator(
-        sindarin_email
-    )
-
-    # If no emulator is running, return an error
-    if not emulator_id or not display_num:
-        logger.error(f"No running emulator found for profile {sindarin_email}")
-        return {"error": f"No running emulator found for profile {sindarin_email}"}, 404
-
-    logger.info(f"Found running emulator for {sindarin_email}: {emulator_id} on display :{display_num}")
-
-    # Construct the VNC URL
-    vnc_url = VNC_BASE_URL
-
-    # Construct the query string with sindarin_email and other required params
-    query_params = [
-        f"sindarin_email={sindarin_email}",
-    ]
-
-    # Add any other query parameters from the original request
-    for key, value in request.args.items():
-        if key not in [
-            "sindarin_email",
-            "view",
-            "mobile",
-        ]:  # Skip ones we've already handled
-            query_params.append(f"{key}={value}")
-
-    # Construct the final URL with all parameters
-    if query_params:
-        if "?" in vnc_url:
-            vnc_url = f"{vnc_url}&{'&'.join(query_params)}"
-        else:
-            vnc_url = f"{vnc_url}?{'&'.join(query_params)}"
-
-    logger.info(f"Redirecting {sindarin_email} to VNC instance: {vnc_url}")
-
-    # Restart the VNC server with proper clipping on Linux
-    if platform.system() != "Darwin":
-        try:
-            # Pass the display number to the restart script
-            restart_cmd = ["/usr/local/bin/restart-vnc-for-profile.sh", sindarin_email, str(display_num)]
-
-            logger.info(f"Restarting VNC server for profile {sindarin_email} on display :{display_num}...")
-
-            # Run the command with a short timeout and capture output
-            result = subprocess.run(restart_cmd, timeout=10, check=False, capture_output=True, text=True)
-            logger.info(f"VNC server restart initiated for profile {sindarin_email}")
-
-            # Log the output for debugging
-            if result.stdout:
-                logger.info(f"VNC restart stdout: {result.stdout}")
-            if result.stderr:
-                logger.warning(f"VNC restart stderr: {result.stderr}")
-
-            # If the restart had an error code, log it
-            if result.returncode != 0:
-                logger.warning(f"VNC restart returned non-zero exit code: {result.returncode}")
-        except Exception as e:
-            logger.warning(f"Failed to restart VNC server for profile {sindarin_email}: {e}")
-
-    # Add the emulator ID and port to the URL if available
-    if emulator_id:
-        # Extract the port number from emulator ID (e.g., "emulator-5554" -> 5554)
-        try:
-            emulator_port = int(emulator_id.split("-")[1])
-            if "?" in vnc_url:
-                vnc_url = f"{vnc_url}&emulator_id={emulator_id}&emulator_port={emulator_port}"
-            else:
-                vnc_url = f"{vnc_url}?emulator_id={emulator_id}&emulator_port={emulator_port}"
-            logger.info(f"Added emulator ID '{emulator_id}' and port '{emulator_port}' to VNC URL")
-        except (ValueError, IndexError) as e:
-            logger.warning(f"Could not extract port from emulator ID '{emulator_id}': {e}")
-
-    # Redirect to the VNC URL
-    return redirect(vnc_url)
 
 
 def cleanup_resources():
