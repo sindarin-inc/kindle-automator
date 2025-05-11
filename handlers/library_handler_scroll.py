@@ -685,9 +685,12 @@ class LibraryHandlerScroll:
             if target_title:
                 # Check if this book was found but we couldn't grab the container
                 found_matching_title = False
+                matched_book = None
+
                 for book in books:
                     if book.get("title") and title_match_func(book["title"], target_title):
                         found_matching_title = True
+                        matched_book = book
                         logger.info(
                             f"Book title matched using _title_match: '{book['title']}' -> '{target_title}'"
                         )
@@ -705,9 +708,34 @@ class LibraryHandlerScroll:
                             logger.debug(
                                 f"Stale element reference when finding book button for '{book['title']}', skipping"
                             )
-                            continue
+                            # Don't continue here, we'll try other methods to find this book
                         except Exception as e:
                             logger.error(f"Error finding book button by content-desc: {e}")
+                            # Don't continue here, we'll try other methods to find this book
+
+                # If we found a match but couldn't get the button by content-desc, try alternative approaches
+                if found_matching_title and matched_book:
+                    logger.info(f"Found matching title but couldn't find button by content-desc, trying alternatives")
+                    try:
+                        title_text = matched_book["title"]
+                        # Try by exact title
+                        xpath = f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{title_text}')]]"
+                        buttons = self.driver.find_elements(AppiumBy.XPATH, xpath)
+                        if buttons:
+                            logger.info(f"Found button via title contains match")
+                            return buttons[0], buttons[0], matched_book
+
+                        # If the above didn't work, try with just the first word which is more unique
+                        first_word = title_text.split()[0]
+                        if len(first_word) >= 3:
+                            xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{first_word}')]"
+                            title_elements = self.driver.find_elements(AppiumBy.XPATH, xpath)
+                            if title_elements:
+                                logger.info(f"Found title element with first word '{first_word}'")
+                                parent = title_elements[0].find_element(AppiumBy.XPATH, "./../../..")
+                                return parent, title_elements[0], matched_book
+                    except Exception as e:
+                        logger.error(f"Error trying alternative methods to find button: {e}")
 
                 if not found_matching_title:
                     logger.warning(f"Book not found after searching entire library: {target_title}")

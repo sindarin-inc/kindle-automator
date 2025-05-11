@@ -235,6 +235,10 @@ class LibraryHandlerSearch:
             logger.info(f"Checking if '{book_title}' is visible on current screen")
             store_page_source(self.driver.page_source, "check_book_visible")
 
+            # Store a matched title element and info for fallback if we can't find the button right away
+            matched_title_element = None
+            matched_title_text = None
+
             # Look directly for buttons in the recycler view - more reliable approach
             book_buttons = self.driver.find_elements(
                 AppiumBy.XPATH,
@@ -273,6 +277,9 @@ class LibraryHandlerSearch:
 
                             if self._title_match(title_text, book_title):
                                 logger.info(f"Found matching title: '{title_text}' for '{book_title}'")
+                                # Store this match in case we need to return to it
+                                matched_title_element = title_element
+                                matched_title_text = title_text
                                 return button, button, {"title": title_text}
                     except Exception as e:
                         logger.debug(f"Error processing button: {e}")
@@ -297,6 +304,9 @@ class LibraryHandlerSearch:
                     # Check if this title matches our target book
                     if self._title_match(title_text, book_title):
                         logger.info(f"Found matching title: '{title_text}' for '{book_title}'")
+                        # Store the match for fallback if needed
+                        matched_title_element = title_element
+                        matched_title_text = title_text
 
                         # Try to find the parent button in different ways
                         try:
@@ -329,18 +339,24 @@ class LibraryHandlerSearch:
                         except Exception:
                             pass
 
-                        # If all else fails
-                        logger.warning(
-                            "Found matching title but could not locate the parent button - try clicking title directly"
-                        )
-                        return (
-                            title_element.find_element(AppiumBy.XPATH, "./.."),
-                            title_element,
-                            {"title": title_text},
-                        )
+                        # Don't return yet, keep trying other titles first
                 except Exception as e:
                     logger.debug(f"Error processing title element: {e}")
                     continue
+
+            # If we get here and we have a matched title but couldn't find the button,
+            # use the title element as a fallback
+            if matched_title_element and matched_title_text:
+                logger.warning(
+                    "Found matching title but could not locate the parent button - trying with title's parent"
+                )
+                try:
+                    parent = matched_title_element.find_element(AppiumBy.XPATH, "./..")
+                    return parent, matched_title_element, {"title": matched_title_text}
+                except Exception as e:
+                    logger.error(f"Error finding title's parent: {e}")
+                    # Last resort - return the title element itself
+                    return matched_title_element, matched_title_element, {"title": matched_title_text}
 
             logger.info("Target book not found on current screen")
             return None
