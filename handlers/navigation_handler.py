@@ -390,8 +390,9 @@ class NavigationResourceHandler:
         if preview_param:
             try:
                 params["preview_count"] = int(preview_param)
-                # If preview is provided, we'll want OCR by default
-                params["perform_ocr"] = True
+                # Only set perform_ocr to True if preview is non-zero
+                if params["preview_count"] != 0:
+                    params["perform_ocr"] = True
             except ValueError:
                 # Handle "1" or "true" values
                 if preview_param.lower() in ("1", "true"):
@@ -436,7 +437,9 @@ class NavigationResourceHandler:
                 if "preview" in json_data:
                     try:
                         params["preview_count"] = int(json_data["preview"])
-                        params["perform_ocr"] = True
+                        # Only set perform_ocr to True if preview is non-zero
+                        if params["preview_count"] != 0:
+                            params["perform_ocr"] = True
                     except (ValueError, TypeError):
                         # If it's a boolean true, treat as 1
                         if isinstance(json_data["preview"], bool) and json_data["preview"]:
