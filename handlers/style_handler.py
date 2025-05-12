@@ -28,8 +28,25 @@ class StyleHandler:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
+
         # Get profile manager from the driver's profile_manager attribute
-        self.profile_manager = driver.profile_manager if hasattr(driver, "profile_manager") else None
+        # First check if driver has profile_manager directly
+        if hasattr(driver, "profile_manager") and driver.profile_manager:
+            self.profile_manager = driver.profile_manager
+        # Then check if driver has automator with profile_manager
+        elif hasattr(driver, "automator") and hasattr(driver.automator, "profile_manager"):
+            self.profile_manager = driver.automator.profile_manager
+        # Then check if automator has state_machine with profile_manager
+        elif (hasattr(driver, "automator") and
+              hasattr(driver.automator, "state_machine") and
+              hasattr(driver.automator.state_machine, "profile_manager")):
+            self.profile_manager = driver.automator.state_machine.profile_manager
+        else:
+            self.profile_manager = None
+
+        if not self.profile_manager:
+            # Log the absence of profile manager
+            logger.warning("No profile_manager found on driver or automator. Style preferences won't be saved.")
 
     def update_reading_style(self, show_placemark: bool = False) -> bool:
         """
@@ -463,11 +480,55 @@ class StyleHandler:
                 email = get_sindarin_email()
 
                 if email:
-                    if self.profile_manager and self.profile_manager.update_style_preference(True, email):
-                        logger.info(f"Successfully updated style preference in profile for {email}")
+                    if self.profile_manager:
+                        try:
+                            # Make sure style_updated preference is set properly
+                            if self.profile_manager.update_style_preference(True, email):
+                                logger.info(f"Successfully updated style preference in profile for {email}")
+                            else:
+                                # If the update failed using the normal method, try a direct approach
+                                logger.warning(f"Standard update_style_preference failed for {email}, trying direct approach")
+
+                                # Try direct manipulation of profiles_index if available
+                                if hasattr(self.profile_manager, 'profiles_index'):
+                                    # Make sure user exists in profiles_index
+                                    if email not in self.profile_manager.profiles_index:
+                                        self.profile_manager.profiles_index[email] = {}
+
+                                    # Make sure preferences section exists
+                                    if "preferences" not in self.profile_manager.profiles_index[email]:
+                                        self.profile_manager.profiles_index[email]["preferences"] = {}
+
+                                    # Set style_updated directly in preferences
+                                    self.profile_manager.profiles_index[email]["preferences"]["styles_updated"] = True
+
+                                    # Initialize reading_settings if needed
+                                    if "reading_settings" not in self.profile_manager.profiles_index[email]["preferences"]:
+                                        self.profile_manager.profiles_index[email]["preferences"]["reading_settings"] = {}
+
+                                    # Set reading settings
+                                    reading_settings = self.profile_manager.profiles_index[email]["preferences"]["reading_settings"]
+                                    reading_settings["theme"] = "dark"
+                                    reading_settings["font_size"] = "small"
+                                    reading_settings["real_time_highlighting"] = False
+                                    reading_settings["about_book"] = False
+                                    reading_settings["page_turn_animation"] = False
+                                    reading_settings["popular_highlights"] = False
+                                    reading_settings["highlight_menu"] = False
+
+                                    # Try to save preferences
+                                    if hasattr(self.profile_manager, '_save_profiles_index'):
+                                        self.profile_manager._save_profiles_index()
+                                        logger.info(f"Successfully saved style preferences directly for {email}")
+                                    else:
+                                        logger.warning("Could not find _save_profiles_index method")
+                                else:
+                                    logger.warning("Could not access profiles_index directly")
+                        except Exception as update_e:
+                            logger.error(f"Error during style preference update: {update_e}")
                     else:
                         logger.warning(
-                            f"Failed to update style preference in profile for {email}, may need to retry"
+                            f"No profile_manager available to update style preference for {email}"
                         )
                         # Don't mark as failure, we'll still return success if we've made it this far
                 else:

@@ -13,6 +13,12 @@ READING_VIEW_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),
 ]
 
+# Comic book view identifiers
+COMIC_BOOK_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/brochure_layout"),
+    (AppiumBy.XPATH, "//android.view.ViewGroup[@resource-id='com.amazon.kindle:id/brochure_layout']"),
+]
+
 # Add new identifiers for reading progress and toolbar
 READING_PROGRESS_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),

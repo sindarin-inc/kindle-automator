@@ -174,6 +174,41 @@ BOOK_CONTAINER_RELATIONSHIPS = {
     ),
 }
 
+# Search box and search interface identifiers
+SEARCH_BOX_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/search_box"),
+    (AppiumBy.XPATH, "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/search_box']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/search_box_text_view']"),
+]
+
+SEARCH_INPUT_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/search_query"),
+    (AppiumBy.ID, "com.amazon.kindle:id/search_src_text"),
+    (AppiumBy.ID, "com.amazon.kindle:id/search_edit_text"),
+    (AppiumBy.ID, "android:id/search_src_text"),
+    (AppiumBy.ID, "com.amazon.kindle:id/search_text_field"),
+    (AppiumBy.XPATH, "//android.widget.EditText[contains(@content-desc, 'search') or contains(@text, 'search') or contains(@hint, 'search') or contains(@resource-id, 'search')]"),
+]
+
+SEARCH_BACK_BUTTON_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//*[@content-desc='Navigate up' or @content-desc='Back' or @content-desc='back']"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Back']"),
+]
+
+SEARCH_RESULTS_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/grid_search_result"),
+    (AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view"),
+    (AppiumBy.XPATH, "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/search_recycler_view']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'In your library')]"),
+]
+
+SEARCH_RESULT_ITEM_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/badgeable_cover"),
+    (AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, ', Book')]"),
+    (AppiumBy.XPATH, "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/search_recycler_view']//*[@clickable='true']"),
+]
+
 # Content description parsing strategies
 CONTENT_DESC_STRATEGIES = {
     # Non-author terms to filter out when parsing content-desc

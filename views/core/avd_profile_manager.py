@@ -704,7 +704,6 @@ class AVDProfileManager:
         """
         # First check if we already have a mapping
         if email in self.profiles_index:
-            logger.info(f"Email {email} already registered to AVD {self.profiles_index[email]}")
             return
 
         # Create a standardized AVD name for this email first
@@ -829,11 +828,27 @@ class AVDProfileManager:
                 logger.warning(f"No AVD name found for email {email}")
                 return False
 
+            # Make sure the email exists in profiles_index
+            if email not in self.profiles_index:
+                logger.info(f"Creating new profile entry for {email}")
+                self.profiles_index[email] = {}
+
+            # Make sure the preferences section exists for this email
+            if "preferences" not in self.profiles_index[email]:
+                logger.info(f"Initializing preferences section for {email}")
+                self.profiles_index[email]["preferences"] = {}
+
+            # Make sure the email exists in user_preferences
+            if email not in self.user_preferences:
+                logger.info(f"Initializing user preferences for {email}")
+                self.user_preferences[email] = {}
+
             # Update style preference
             self._set_preference_value(email, "styles_updated", is_updated)
 
             # Initialize reading_settings if needed
             if "reading_settings" not in self.user_preferences[email]:
+                logger.info(f"Initializing reading_settings for {email}")
                 self.user_preferences[email]["reading_settings"] = {}
 
             # Update various reading settings - keep these values synced
@@ -851,6 +866,9 @@ class AVDProfileManager:
 
             # Save all changes
             self._save_user_preferences()
+
+            # Make sure changes are saved to the profiles_index
+            self._save_profiles_index()
 
             logger.info(f"Successfully updated style preferences for {email} to {is_updated}")
             return True

@@ -16,6 +16,8 @@ from views.reading.interaction_strategies import (
     ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
     BOTTOM_SHEET_IDENTIFIERS,
     CLOSE_BOOK_STRATEGIES,
+    COMIC_BOOK_NEXT_BUTTON,
+    COMIC_BOOK_X_BUTTON,
     DOWNLOAD_LIMIT_CHECKEDTEXTVIEW,
     DOWNLOAD_LIMIT_DEVICE_LIST,
     DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
@@ -30,6 +32,7 @@ from views.reading.interaction_strategies import (
 )
 from views.reading.view_strategies import (
     BLACK_BG_IDENTIFIERS,
+    COMIC_BOOK_VIEW_IDENTIFIERS,
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
@@ -797,6 +800,13 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Error handling Word Wise dialog: {e}")
 
+        # Check for and dismiss the comic book view
+        try:
+            # Try to handle the comic book view if present
+            self.handle_comic_book_view()
+        except Exception as e:
+            logger.error(f"Error during comic book view handling: {e}")
+
         # Check for and dismiss "About this book" slideover
         try:
             store_page_source(self.driver.page_source, "about_book_slideover_check")
@@ -1477,6 +1487,13 @@ class ReaderHandler:
         logger.info(f"Stored reading state page source at: {filepath}")
 
         try:
+            # Check for and dismiss the comic book view first
+            if self.handle_comic_book_view():
+                logger.info("Successfully dismissed comic book view during navigation")
+                # Refresh page source for logging
+                filepath = store_page_source(self.driver.page_source, "after_comic_book_dismiss")
+                logger.info(f"Stored page source after comic book dismissal at: {filepath}")
+
             # First check if toolbar is already visible
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
             if toolbar_visible:
@@ -1888,6 +1905,82 @@ class ReaderHandler:
 
         logger.error("Failed to make toolbar visible or exit reading view after all attempts")
         return False
+
+    def handle_comic_book_view(self) -> bool:
+        """Check for and dismiss the comic book view by clicking the X button.
+
+        Returns:
+            bool: True if successfully handled the comic book view, False if not found or error occurred.
+        """
+        try:
+            # Store initial page source for debugging
+            store_page_source(self.driver.page_source, "comic_book_view_check")
+
+            # Check if we're in the comic book view
+            comic_book_view_visible = False
+            for strategy, locator in COMIC_BOOK_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        comic_book_view_visible = True
+                        logger.info(f"Found comic book view with {strategy}: {locator}")
+                        break
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error checking for comic book view: {e}")
+
+            if not comic_book_view_visible:
+                return False
+
+            logger.info("Comic book view detected - looking for X button to dismiss")
+
+            # Find and click the X button
+            x_button_found = False
+            for strategy, locator in COMIC_BOOK_X_BUTTON:
+                try:
+                    x_button = self.driver.find_element(strategy, locator)
+                    if x_button and x_button.is_displayed():
+                        logger.info(f"Found comic book X button with {strategy}: {locator}")
+                        x_button.click()
+                        logger.info("Clicked X button to dismiss comic book view")
+                        x_button_found = True
+                        time.sleep(0.5)  # Wait for view to dismiss
+                        break
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error interacting with comic book X button: {e}")
+
+            if not x_button_found:
+                logger.warning("Could not find X button in comic book view")
+                return False
+
+            # Verify the view was dismissed
+            try:
+                still_visible = False
+                for strategy, locator in COMIC_BOOK_VIEW_IDENTIFIERS:
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        if element and element.is_displayed():
+                            still_visible = True
+                            break
+                    except NoSuchElementException:
+                        continue
+
+                if still_visible:
+                    logger.warning("Comic book view is still visible after clicking X button")
+                    return False
+                else:
+                    logger.info("Successfully dismissed comic book view")
+                    return True
+            except Exception as e:
+                logger.error(f"Error verifying comic book view dismissal: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error handling comic book view: {e}")
+            return False
 
     def _click_close_book_button(self):
         """Find and click the close book button."""

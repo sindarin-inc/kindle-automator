@@ -882,12 +882,38 @@ class LibraryHandler:
                 button.click()
                 logger.info("Clicked book to start download")
 
-                # Wait for download to complete (up to 60 seconds)
-                max_attempts = 60
+                # After clicking the book, first check if we've already left the library view
+                # This happens when the book downloads very quickly or is already downloaded
+                try:
+                    # Use a short timeout (2 seconds) to check if we've already left library view
+                    logger.info("Checking if we've already left the library view...")
+                    WebDriverWait(self.driver, 2).until_not(
+                        EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/library_root_view"))
+                    )
+                    logger.info("Already left library view - book opened immediately")
+
+                    # If we're here, we're already in the reading view
+                    return True
+                except TimeoutException:
+                    # We're still in library view, continue with download monitoring
+                    logger.info("Still in library view, monitoring download status...")
+                    pass
+
+                # Wait for download to complete (max 30 seconds)
+                max_attempts = 30
                 for attempt in range(max_attempts):
                     try:
+                        # First check if we've already left the library view (download finished and opened)
+                        try:
+                            # Check if we're still in library view
+                            self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                            # We're still in library view, continue checking download status
+                        except NoSuchElementException:
+                            # We've left the library view - book has opened automatically
+                            logger.info(f"Left library view automatically after {attempt} checks - book opened")
+                            return True
+
                         # Re-find the parent container since the page might have refreshed
-                        # Using more reliable XPath that handles apostrophes better
                         title_text = book_info.get("title", book_title)
 
                         # For titles with apostrophes, use a more reliable approach
@@ -903,47 +929,75 @@ class LibraryHandler:
                             # Normal case - use exact text matching
                             xpath = f"//android.widget.RelativeLayout[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text}']]"
 
-                        parent_container = self.driver.find_element(AppiumBy.XPATH, xpath)
-                        content_desc = parent_container.get_attribute("content-desc") or ""
-                        logger.info(
-                            f"Checking download status (attempt {attempt + 1}/{max_attempts}): {content_desc}"
-                        )
+                        # Try to find the book element - if this fails, it might mean we've already left the view
+                        try:
+                            parent_container = self.driver.find_element(AppiumBy.XPATH, xpath)
+                            content_desc = parent_container.get_attribute("content-desc") or ""
+                            logger.info(
+                                f"Checking download status (attempt {attempt + 1}/{max_attempts}): {content_desc}"
+                            )
 
-                        if "Book downloaded" in content_desc:
-                            logger.info("Book has finished downloading")
-                            time.sleep(1)  # Short wait for UI to stabilize
-                            parent_container.click()
-                            logger.info("Clicked book button after download")
-
-                            # Check if we successfully left the library view
-                            try:
-                                self.driver.find_element(
-                                    AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
-                                )
-                                logger.warning(
-                                    "Still in library view after clicking downloaded book, trying again..."
-                                )
-                                time.sleep(1)
+                            if "Book downloaded" in content_desc:
+                                logger.info("Book has finished downloading")
+                                time.sleep(1)  # Short wait for UI to stabilize
                                 parent_container.click()
-                                logger.info("Clicked book again")
+                                logger.info("Clicked book button after download")
+
+                                # Check if we successfully left the library view
+                                try:
+                                    self.driver.find_element(
+                                        AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                    )
+                                    logger.warning(
+                                        "Still in library view after clicking downloaded book, trying again..."
+                                    )
+                                    time.sleep(1)
+                                    parent_container.click()
+                                    logger.info("Clicked book again")
+                                except NoSuchElementException:
+                                    logger.info("Successfully left library view")
+
+                                return True
+
+                            # If we see an error in the content description, abort
+                            if any(error in content_desc.lower() for error in ["error", "failed"]):
+                                logger.error(f"Download failed: {content_desc}")
+                                return False
+                        except NoSuchElementException:
+                            # If we can't find the book element, check if we've left the library view
+                            logger.info("Can't find book element - checking if we've left library view")
+                            try:
+                                self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                                logger.warning("Still in library view but can't find book element")
                             except NoSuchElementException:
-                                logger.info("Successfully left library view")
-
-                            return True
-
-                        # If we see an error in the content description, abort
-                        if any(error in content_desc.lower() for error in ["error", "failed"]):
-                            logger.error(f"Download failed: {content_desc}")
-                            return False
+                                logger.info("Left library view - book likely opened automatically")
+                                return True
 
                         time.sleep(1)
                     except Exception as e:
                         logger.error(f"Error checking download status: {e}")
+
+                        # Check if we've already left the library view
+                        try:
+                            self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                            # We're still in library view, continue checking
+                            logger.info("Still in library view despite error, continuing...")
+                        except NoSuchElementException:
+                            # We've left the library view - book has opened automatically
+                            logger.info("Left library view - book opened despite error")
+                            return True
+
                         time.sleep(1)
                         continue
 
-                logger.error("Timed out waiting for book to download")
-                return False
+                # If we've timed out but are no longer in library view, that's still success
+                try:
+                    self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                    logger.error("Timed out waiting for book to download and still in library view")
+                    return False
+                except NoSuchElementException:
+                    logger.info("Left library view after timeout - book likely opened anyway")
+                    return True
 
             # For already downloaded books, just click and verify
             logger.info(f"Found downloaded book: {book_info.get('title', book_title)}")
@@ -1018,13 +1072,18 @@ class LibraryHandler:
             if not self.scroll_handler.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
 
-            # Try using the search box first
-            # search_result = self.search_handler._search_for_book(book_title)
-            # if search_result:
-            #     parent_container, button, book_info = search_result
-            #     logger.info(f"Successfully found book '{book_title}' using search function")
-            # else:
-            #     logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
+            # Try using the search box first to find the book
+            logger.info(f"Trying to find book '{book_title}' using search function")
+            search_result = self.search_handler._search_for_book(book_title)
+
+            if search_result:
+                parent_container, button, book_info = search_result
+                logger.info(f"Successfully found book '{book_title}' using search function: {book_info}")
+
+                # Handle clicking the book and check if we successfully exit library view
+                return self._handle_book_click_and_transition(parent_container, button, book_info, book_title)
+            else:
+                logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
 
             # Fallback: Search for the book by scrolling
             # Provide the title_match_func to scroll_through_library
@@ -1046,33 +1105,8 @@ class LibraryHandler:
 
                 logger.info(f"Found book using partial match fallback: {book_info}")
 
-            # Now that we've found the book, click it and check if we've left the library view
-            button.click()
-            logger.info(f"Clicked book button for '{book_title}'")
-
-            # Check if we've left the library view
-            try:
-                WebDriverWait(self.driver, 5).until_not(
-                    EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/library_root_view"))
-                )
-                logger.info("Successfully left library view after clicking book")
-                return True
-            except TimeoutException:
-                logger.warning("Still in library view after clicking book, trying again")
-                button.click()
-                logger.info("Clicked book button again")
-
-                try:
-                    WebDriverWait(self.driver, 5).until_not(
-                        EC.presence_of_element_located(
-                            (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
-                        )
-                    )
-                    logger.info("Successfully left library view after second click")
-                    return True
-                except TimeoutException:
-                    logger.error("Failed to leave library view after multiple attempts")
-                    return False
+            # Now that we've found the book, handle clicking it and transition
+            return self._handle_book_click_and_transition(parent_container, button, book_info, book_title)
 
         except Exception as e:
             logger.error(f"Error finding book: {e}")

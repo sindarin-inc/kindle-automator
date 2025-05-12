@@ -151,6 +151,19 @@ WORD_WISE_NO_THANKS_BUTTON = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='NO THANKS']"),  # Fallback using text
 ]
 
+# Comic book view elements
+COMIC_BOOK_X_BUTTON = [
+    (AppiumBy.ID, "com.amazon.kindle:id/brochure_x_button"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Close']"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[@resource-id='com.amazon.kindle:id/brochure_x_button']"),
+]
+
+COMIC_BOOK_NEXT_BUTTON = [
+    (AppiumBy.ID, "com.amazon.kindle:id/brochure_button_next"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@content-desc='Show next set of options']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/brochure_button_next']"),
+]
+
 # Title Not Available dialog identifiers
 TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.TextView[@text='Title Not Available']"),
