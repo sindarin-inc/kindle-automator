@@ -195,7 +195,40 @@ class Driver:
         except Exception as e:
             logger.error(f"Error updating profile setting {setting_name}: {e}")
             # Continue execution even if we can't update the profile
-            
+
+    def _clean_old_version_info(self, email: str) -> None:
+        """Remove Kindle version information from preferences if present.
+
+        Args:
+            email: Email address of the profile
+        """
+        try:
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and hasattr(self.automator.profile_manager, "profiles_index")
+            ):
+
+                profile_index = self.automator.profile_manager.profiles_index
+
+                if email in profile_index and "preferences" in profile_index[email]:
+                    preferences = profile_index[email]["preferences"]
+                    cleaned = False
+
+                    # Remove version info from preferences if present
+                    if "kindle_version_name" in preferences:
+                        preferences.pop("kindle_version_name")
+                        cleaned = True
+                    if "kindle_version_code" in preferences:
+                        preferences.pop("kindle_version_code")
+                        cleaned = True
+
+                    # Save changes if we cleaned anything
+                    if cleaned and hasattr(self.automator.profile_manager, "_save_profiles_index"):
+                        self.automator.profile_manager._save_profiles_index()
+        except Exception as e:
+            logger.error(f"Error cleaning old version info for {email}: {e}")
+
     def _update_kindle_version_in_profile(self, version_name: str, version_code: int) -> None:
         """Update Kindle version information in the current profile.
 
@@ -218,11 +251,16 @@ class Driver:
                 avd_name = profile.get("avd_name")
 
                 if email and avd_name:
-                    # Add a custom method to update version info to the profile manager
-                    if hasattr(self.automator.profile_manager, "_update_kindle_version"):
-                        self.automator.profile_manager._update_kindle_version(email, version_name, version_code)
+                    # Update version info at top level using generic field setter if available
+                    if hasattr(self.automator.profile_manager, "set_user_field"):
+                        self.automator.profile_manager.set_user_field(
+                            email, "kindle_version_name", version_name
+                        )
+                        self.automator.profile_manager.set_user_field(
+                            email, "kindle_version_code", str(version_code)
+                        )
                     else:
-                        # Update the version info in the current profile - only at top level
+                        # Fall back to direct profile update
                         profile["kindle_version_name"] = version_name
                         profile["kindle_version_code"] = str(version_code)
 
@@ -235,7 +273,9 @@ class Driver:
                         elif hasattr(self.automator.profile_manager, "_save_current_profile"):
                             self.automator.profile_manager._save_current_profile(email, avd_name, emulator_id)
 
-                    logger.info(f"Updated Kindle version in profile to {version_name} (code: {version_code}) for {email}")
+                    logger.info(
+                        f"Updated Kindle version in profile to {version_name} (code: {version_code}) for {email}"
+                    )
         except Exception as e:
             logger.error(f"Error updating Kindle version in profile: {e}")
             # Continue execution even if we can't update the profile
@@ -496,10 +536,10 @@ class Driver:
         except Exception as e:
             logger.error(f"Error checking Kindle installation: {e}")
             return False
-            
+
     def _get_installed_kindle_version(self) -> tuple:
         """Get the version of the installed Kindle app.
-        
+
         Returns:
             tuple: (version_name, version_code) or (None, None) if failed
         """
@@ -511,10 +551,10 @@ class Driver:
                 text=True,
                 check=True,
             )
-            
+
             version_name = None
             version_code = None
-            
+
             for line in result.stdout.splitlines():
                 if "versionName=" in line:
                     version_name = line.split("versionName=")[1].strip()
@@ -525,7 +565,7 @@ class Driver:
                         version_code = int(version_code_str)
                     except ValueError:
                         logger.error(f"Could not parse version code: {version_code_str}")
-            
+
             return (version_name, version_code)
         except Exception as e:
             logger.error(f"Error getting installed Kindle version: {e}")
@@ -533,10 +573,10 @@ class Driver:
 
     def _get_apk_version(self, apk_path) -> tuple:
         """Extract version information from an APK file.
-        
+
         Args:
             apk_path: Path to the APK file
-            
+
         Returns:
             tuple: (version_name, version_code) or (None, None) if failed
         """
@@ -544,14 +584,14 @@ class Driver:
             # Parse the filename to extract version info
             # Format is usually: com.amazon.kindle_8.121.0.100(2.0.40027.0)-1286055411_minAPI28(arm64-v8a)(nodpi)_apkmirror.com.apk
             filename = os.path.basename(apk_path)
-            
+
             # Extract version name from filename
             version_name_match = None
             if "_" in filename and "(" in filename:
                 version_part = filename.split("_")[1]
                 if "(" in version_part:
                     version_name_match = version_part.split("(")[0]
-                    
+
             # Extract version code from filename (usually after the hyphen)
             version_code = None
             if "-" in filename and "_" in filename:
@@ -560,7 +600,7 @@ class Driver:
                     version_code = int(version_code_part)
                 except (IndexError, ValueError):
                     logger.warning(f"Could not parse version code from filename: {filename}")
-            
+
             # If we couldn't parse from filename, try using ADB
             if not version_name_match or not version_code:
                 logger.info(f"Using ADB to get version info from {apk_path}")
@@ -568,21 +608,27 @@ class Driver:
                 temp_path = "/sdcard/temp_kindle.apk"
                 subprocess.run(
                     ["adb", "-s", self.device_id, "push", apk_path, temp_path],
-                    check=True, capture_output=True, text=True
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
-                
+
                 # Use package manager to get info
                 result = subprocess.run(
                     ["adb", "-s", self.device_id, "shell", "pm", "dump", temp_path],
-                    check=True, capture_output=True, text=True
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
-                
+
                 # Clean up
                 subprocess.run(
                     ["adb", "-s", self.device_id, "shell", "rm", temp_path],
-                    check=True, capture_output=True, text=True
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
-                
+
                 # Parse output
                 for line in result.stdout.splitlines():
                     if "versionName=" in line:
@@ -593,20 +639,20 @@ class Driver:
                             version_code = int(code_str)
                         except ValueError:
                             pass
-            
+
             return (version_name_match, version_code)
         except Exception as e:
             logger.error(f"Error getting APK version: {e}")
             return (None, None)
-    
+
     def _find_newest_kindle_apk(self) -> str:
         """Find the newest Kindle APK among available options.
-        
+
         Returns:
             str: Path to the newest APK
         """
         apk_paths = []
-        
+
         # Check standard installation path - note this likely doesn't exist
         standard_path = os.path.join(
             os.path.dirname(__file__),
@@ -617,7 +663,7 @@ class Driver:
         )
         if os.path.exists(standard_path):
             apk_paths.append(standard_path)
-        
+
         # Check ansible directory for additional APKs (android_arm)
         kindle_apk_dir = os.path.join(
             os.path.dirname(__file__),
@@ -630,7 +676,7 @@ class Driver:
             for file in os.listdir(kindle_apk_dir):
                 if "com.amazon.kindle" in file:
                     apk_paths.append(os.path.join(kindle_apk_dir, file))
-        
+
         # Also check android_x86 directory for APKs
         kindle_x86_dir = os.path.join(
             os.path.dirname(__file__),
@@ -643,49 +689,55 @@ class Driver:
             for file in os.listdir(kindle_x86_dir):
                 if "com.amazon.kindle" in file:
                     apk_paths.append(os.path.join(kindle_x86_dir, file))
-        
+
         if not apk_paths:
             logger.error("No Kindle APK files found")
             return None
-        
+
         # If only one APK is found, return it
         if len(apk_paths) == 1:
             logger.info(f"Only one APK found: {os.path.basename(apk_paths[0])}")
             return apk_paths[0]
-        
+
         # Compare versions to find the newest
         newest_apk = None
         highest_version_code = -1
-        
+
         # First try using version codes for comparison
         for apk_path in apk_paths:
             version_name, version_code = self._get_apk_version(apk_path)
             if version_code and version_code > highest_version_code:
                 highest_version_code = version_code
                 newest_apk = apk_path
-                logger.info(f"Found newer APK version: {version_name} (code: {version_code}) at {os.path.basename(apk_path)}")
-        
+                logger.info(
+                    f"Found newer APK version: {version_name} (code: {version_code}) at {os.path.basename(apk_path)}"
+                )
+
         # If we couldn't determine version codes reliably, use lexicographical sorting of filenames
         if not newest_apk:
-            logger.info("Could not determine newest APK by version code, using lexicographical filename ordering")
+            logger.info(
+                "Could not determine newest APK by version code, using lexicographical filename ordering"
+            )
             # Sort filenames lexicographically (the last one alphabetically is typically newest with version in name)
             apk_paths.sort(key=lambda x: os.path.basename(x))
             newest_apk = apk_paths[-1]  # Get the last one lexicographically
-            logger.info(f"Using {os.path.basename(newest_apk)} as newest APK based on filename lexicographical ordering")
-        
+            logger.info(
+                f"Using {os.path.basename(newest_apk)} as newest APK based on filename lexicographical ordering"
+            )
+
         return newest_apk
-    
+
     def _install_kindle(self) -> bool:
         """Install the Kindle app on the device."""
         try:
             logger.info(f"Installing Kindle on device {self.device_id}")
-            
+
             # Find the newest APK
             apk_path = self._find_newest_kindle_apk()
             if not apk_path:
                 logger.error("No Kindle APK found to install")
                 return False
-                
+
             # Get version info from APK before installing
             apk_version_name, apk_version_code = self._get_apk_version(apk_path)
             if apk_version_name and apk_version_code:
@@ -698,7 +750,7 @@ class Driver:
                 text=True,
             )
             logger.info("Kindle app installed successfully")
-            
+
             # Store version information in profile
             if apk_version_name and apk_version_code:
                 self._update_kindle_version_in_profile(apk_version_name, apk_version_code)
@@ -707,7 +759,7 @@ class Driver:
                 installed_version_name, installed_version_code = self._get_installed_kindle_version()
                 if installed_version_name and installed_version_code:
                     self._update_kindle_version_in_profile(installed_version_name, installed_version_code)
-                    
+
             return True
         except Exception as e:
             logger.error(f"Error installing Kindle: {e}")
@@ -831,66 +883,98 @@ class Driver:
                 profile_version_name = None
                 profile_version_code = None
                 profile = None
-                
+
                 # Try to get version from profile first (faster)
-                if (self.automator and hasattr(self.automator, "profile_manager") and
-                    hasattr(self.automator.profile_manager, "get_current_profile")):
-                    profile = self.automator.profile_manager.get_current_profile()
-                    if profile:
-                        # Check for version info at top level first
-                        profile_version_name = profile.get("kindle_version_name")
-                        profile_version_code_str = profile.get("kindle_version_code")
-                        
-                        # If not found at top level, try preferences (for backward compatibility)
-                        if not profile_version_name and "preferences" in profile:
-                            profile_version_name = profile["preferences"].get("kindle_version_name")
-                            profile_version_code_str = profile["preferences"].get("kindle_version_code")
-                            
+                if self.automator and hasattr(self.automator, "profile_manager"):
+                    profile_manager = self.automator.profile_manager
+
+                    # Get current profile email
+                    email = None
+                    if hasattr(profile_manager, "get_current_profile"):
+                        profile = profile_manager.get_current_profile()
+                        if profile:
+                            email = profile.get("email") or profile.get("assigned_profile")
+
+                    if email and hasattr(profile_manager, "get_user_field"):
+                        # Use the new get_user_field method
+                        profile_version_name = profile_manager.get_user_field(email, "kindle_version_name")
+                        profile_version_code_str = profile_manager.get_user_field(
+                            email, "kindle_version_code"
+                        )
+
                         if profile_version_code_str:
                             try:
                                 profile_version_code = int(profile_version_code_str)
                             except ValueError:
                                 profile_version_code = None
-                
+                    elif hasattr(profile_manager, "get_current_profile"):
+                        # Fall back to direct profile access
+                        profile = profile_manager.get_current_profile()
+                        if profile:
+                            # Check for version info at top level first
+                            profile_version_name = profile.get("kindle_version_name")
+                            profile_version_code_str = profile.get("kindle_version_code")
+
+                            if profile_version_code_str:
+                                try:
+                                    profile_version_code = int(profile_version_code_str)
+                                except ValueError:
+                                    profile_version_code = None
+
                 # If we have profile version info, use it; otherwise query the device
                 if profile_version_name and profile_version_code:
                     installed_version_name = profile_version_name
                     installed_version_code = profile_version_code
-                    logger.info(f"Using Kindle version from profile: {installed_version_name} (code: {installed_version_code})")
+                    logger.info(
+                        f"Using Kindle version from profile: {installed_version_name} (code: {installed_version_code})"
+                    )
                 else:
                     # Get version from device
                     installed_version_name, installed_version_code = self._get_installed_kindle_version()
-                    
+
                     # Store version in profile for future reference if we got valid version info
                     if installed_version_name and installed_version_code and profile:
                         self._update_kindle_version_in_profile(installed_version_name, installed_version_code)
-                
+
                 if installed_version_code:
-                    logger.info(f"Current Kindle version: {installed_version_name} (code: {installed_version_code})")
-                    
+                    logger.info(
+                        f"Current Kindle version: {installed_version_name} (code: {installed_version_code})"
+                    )
+
                     # Find newest available APK
                     newest_apk = self._find_newest_kindle_apk()
                     if newest_apk:
                         apk_version_name, apk_version_code = self._get_apk_version(newest_apk)
-                        
+
                         if apk_version_code and apk_version_code > installed_version_code:
-                            logger.info(f"Found newer Kindle version: {apk_version_name} (code: {apk_version_code})")
-                            logger.info(f"Upgrading Kindle from version {installed_version_name} to {apk_version_name}")
-                            
+                            logger.info(
+                                f"Found newer Kindle version: {apk_version_name} (code: {apk_version_code})"
+                            )
+                            logger.info(
+                                f"Upgrading Kindle from version {installed_version_name} to {apk_version_name}"
+                            )
+
                             subprocess.run(
                                 ["adb", "-s", self.device_id, "install", "-r", newest_apk],
-                                check=True, capture_output=True, text=True,
+                                check=True,
+                                capture_output=True,
+                                text=True,
                             )
                             logger.info("Kindle app upgraded successfully")
-                            
+
                             # Update stored version info after successful upgrade
-                            # Use profile manager's dedicated method if available, which ensures clean storage
-                            if self.automator and hasattr(self.automator.profile_manager, "_update_kindle_version"):
+                            if self.automator and hasattr(self.automator.profile_manager, "set_user_field"):
                                 email = profile.get("email") or profile.get("assigned_profile")
                                 if email:
-                                    self.automator.profile_manager._update_kindle_version(
-                                        email, apk_version_name, apk_version_code
+                                    # Store version info at top level with generic setter
+                                    self.automator.profile_manager.set_user_field(
+                                        email, "kindle_version_name", apk_version_name
                                     )
+                                    self.automator.profile_manager.set_user_field(
+                                        email, "kindle_version_code", str(apk_version_code)
+                                    )
+                                    # Clean up any version info that might be in preferences
+                                    self._clean_old_version_info(email)
                             elif profile:
                                 self._update_kindle_version_in_profile(apk_version_name, apk_version_code)
                         else:

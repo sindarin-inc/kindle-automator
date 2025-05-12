@@ -715,7 +715,9 @@ class LibraryHandlerScroll:
 
                 # If we found a match but couldn't get the button by content-desc, try alternative approaches
                 if found_matching_title and matched_book:
-                    logger.info(f"Found matching title but couldn't find button by content-desc, trying alternatives")
+                    logger.info(
+                        f"Found matching title but couldn't find button by content-desc, trying alternatives"
+                    )
                     try:
                         title_text = matched_book["title"]
                         # Try by exact title

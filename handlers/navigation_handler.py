@@ -15,13 +15,13 @@ from typing import Dict, Optional, Tuple, Union
 
 from flask import request
 
+from server.middleware.response_handler import get_image_path
 from server.utils.ocr_utils import (
     KindleOCR,
     is_base64_requested,
     is_ocr_requested,
     process_screenshot_response,
 )
-from server.middleware.response_handler import get_image_path
 
 logger = logging.getLogger(__name__)
 
@@ -121,20 +121,16 @@ class NavigationResourceHandler:
         preview_ocr_text = None
         if success and preview_count != 0:
             if preview_direction_forward:
-                preview_success, preview_ocr_text = self._preview_multiple_pages_forward(
-                    abs_preview_count
-                )
+                preview_success, preview_ocr_text = self._preview_multiple_pages_forward(abs_preview_count)
             else:
-                preview_success, preview_ocr_text = self._preview_multiple_pages_backward(
-                    abs_preview_count
-                )
+                preview_success, preview_ocr_text = self._preview_multiple_pages_backward(abs_preview_count)
 
             if preview_success and preview_ocr_text:
                 # Get current page data after navigation
                 progress = self.automator.state_machine.reader_handler.get_reading_progress(
                     show_placemark=show_placemark
                 )
-                
+
                 # When preview is requested, we're primarily interested in the OCR text
                 response_data = {"success": True, "progress": progress, "ocr_text": preview_ocr_text}
                 return response_data, 200
@@ -158,9 +154,7 @@ class NavigationResourceHandler:
 
         # Process the screenshot (either base64 encode, add URL, or OCR)
         screenshot_path = get_image_path(screenshot_id)
-        screenshot_data = process_screenshot_response(
-            screenshot_id, screenshot_path, use_base64, perform_ocr
-        )
+        screenshot_data = process_screenshot_response(screenshot_id, screenshot_path, use_base64, perform_ocr)
         response_data.update(screenshot_data)
 
         return response_data, 200
@@ -187,16 +181,16 @@ class NavigationResourceHandler:
                 page_success = self.automator.state_machine.reader_handler.turn_page_forward()
             else:
                 page_success = self.automator.state_machine.reader_handler.turn_page_backward()
-                
+
             if not page_success:
                 logger.error(f"Failed to navigate on page {i+1} of {count}")
                 success = False
                 break
-                
+
             # Add a small delay between page turns
             if i < count - 1:
                 time.sleep(0.5)
-                
+
         return success
 
     def _preview_multiple_pages_forward(self, count: int) -> Tuple[bool, Optional[str]]:
@@ -377,12 +371,12 @@ class NavigationResourceHandler:
         # Initialize with default values
         params = {
             "navigate_count": 1,  # Default to 1 page navigation
-            "preview_count": 0,   # Default to no preview
+            "preview_count": 0,  # Default to no preview
             "show_placemark": False,
             "use_base64": False,
             "perform_ocr": False,
         }
-        
+
         # Check for navigate parameter in query string
         navigate_param = request_obj.args.get("navigate")
         if navigate_param:
@@ -390,7 +384,7 @@ class NavigationResourceHandler:
                 params["navigate_count"] = int(navigate_param)
             except ValueError:
                 logger.warning(f"Invalid navigate value: {navigate_param}, using default")
-        
+
         # Check for preview parameter in query string
         preview_param = request_obj.args.get("preview")
         if preview_param:
@@ -403,32 +397,32 @@ class NavigationResourceHandler:
                 if preview_param.lower() in ("1", "true"):
                     params["preview_count"] = 1
                     params["perform_ocr"] = True
-                    
+
         # Check for placemark parameter
         placemark_param = request_obj.args.get("placemark", "0")
         params["show_placemark"] = placemark_param.lower() in ("1", "true", "yes")
-        
+
         # Check if base64 parameter is provided
         params["use_base64"] = is_base64_requested()
-        
+
         # Check if OCR is requested via query params
         # Note: This will already be True if preview was requested
         if not params["perform_ocr"]:
             params["perform_ocr"] = is_ocr_requested()
-            
+
         # If OCR is requested, force base64 encoding
         if params["perform_ocr"] and not params["use_base64"]:
             params["use_base64"] = True
-            
+
         # If request has JSON body, check for parameters there too
         if request_obj.is_json:
             try:
                 json_data = request_obj.get_json(silent=True) or {}
-                
+
                 # Override action if provided in JSON
                 if "action" in json_data and json_data["action"]:
                     params["action"] = json_data["action"]
-                    
+
                 # Override navigate_count if provided in JSON
                 if "navigate" in json_data:
                     try:
@@ -437,7 +431,7 @@ class NavigationResourceHandler:
                         # If it's a boolean true, treat as 1
                         if isinstance(json_data["navigate"], bool) and json_data["navigate"]:
                             params["navigate_count"] = 1
-                
+
                 # Override preview_count if provided in JSON
                 if "preview" in json_data:
                     try:
@@ -448,7 +442,7 @@ class NavigationResourceHandler:
                         if isinstance(json_data["preview"], bool) and json_data["preview"]:
                             params["preview_count"] = 1
                             params["perform_ocr"] = True
-                            
+
                 # Override placemark if provided in JSON
                 if "placemark" in json_data:
                     placemark_param = json_data["placemark"]
@@ -458,8 +452,8 @@ class NavigationResourceHandler:
                         params["show_placemark"] = placemark_param.lower() in ("1", "true", "yes")
                     elif isinstance(placemark_param, int):
                         params["show_placemark"] = placemark_param == 1
-                
+
             except Exception as e:
                 logger.warning(f"Error parsing JSON request body: {e}")
-                
+
         return params

@@ -66,7 +66,7 @@ class AVDProfileManager:
             self.avd_dir = os.path.join(base_dir, "avd")
 
         self.base_dir = base_dir
-        
+
         # In the new structure, we store everything directly in user_data/
         # No longer need a separate "profiles" subdirectory
         if self.use_simplified_mode:
@@ -172,6 +172,8 @@ class AVDProfileManager:
         """
         Save user preferences to the profiles_index.
         This ensures preferences are only stored in the "preferences" key.
+
+        This is a backward compatibility method - new code should use set_user_field.
         """
         try:
             # Update the profiles_index with preferences data
@@ -182,7 +184,9 @@ class AVDProfileManager:
                         self.profiles_index[email]["preferences"] = {}
 
                     # Update preferences in the profile - ONLY in the preferences key
-                    self.profiles_index[email]["preferences"] = prefs
+                    for key, value in prefs.items():
+                        # Store all preferences in the preferences section
+                        self.profiles_index[email]["preferences"][key] = value
 
             # Now save the updated profiles_index
             self._save_profiles_index()
@@ -209,41 +213,80 @@ class AVDProfileManager:
         """
         return self.device_discovery.find_running_emulator_for_email(email, self.profiles_index)
 
-    def _update_kindle_version(self, email: str, version_name: str, version_code: int) -> None:
+    def set_user_field(self, email: str, field: str, value, section: str = None) -> bool:
         """
-        Update Kindle version information in a user profile.
-        This method ensures version info is stored at the top level only, not in preferences.
-        
+        Set a field for a user profile at the specified section level.
+
         Args:
             email: Email address of the profile
-            version_name: The version name (e.g. "8.121.0.100")
-            version_code: The version code (e.g. 1286055411)
+            field: Field name to set
+            value: Value to set for the field
+            section: Section to set the field in (e.g. "preferences"). If None, sets at top level.
+
+        Returns:
+            bool: True if successful, False otherwise
         """
-        # Make sure the email exists in profiles_index
-        if email not in self.profiles_index:
-            logger.warning(f"Cannot update Kindle version: email {email} not found in profiles_index")
-            return
-            
-        # Update version info at top level only
-        self.profiles_index[email]["kindle_version_name"] = version_name
-        self.profiles_index[email]["kindle_version_code"] = str(version_code)
-        
-        # Remove version info from preferences if it exists there
-        if "preferences" in self.profiles_index[email]:
-            preferences = self.profiles_index[email]["preferences"]
-            if "kindle_version_name" in preferences:
-                preferences.pop("kindle_version_name")
-            if "kindle_version_code" in preferences:
-                preferences.pop("kindle_version_code")
-        
-        # Save the updated profiles_index
-        self._save_profiles_index()
-        logger.info(f"Updated Kindle version to {version_name} (code: {version_code}) for {email}")
-    
+        try:
+            # Make sure the email exists in profiles_index
+            if email not in self.profiles_index:
+                logger.warning(f"Cannot update field {field}: email {email} not found in profiles_index")
+                return False
+
+            # If section is specified, ensure it exists
+            if section:
+                if section not in self.profiles_index[email]:
+                    self.profiles_index[email][section] = {}
+
+                # Set value in the specified section
+                self.profiles_index[email][section][field] = value
+            else:
+                # Set value at top level
+                self.profiles_index[email][field] = value
+
+            # Save the updated profiles_index
+            self._save_profiles_index()
+            logger.info(f"Updated {section + '.' if section else ''}field {field} for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting user field {field} for {email}: {e}")
+            return False
+
+    def get_user_field(self, email: str, field: str, default=None, section: str = None):
+        """
+        Get a field value from a user profile at the specified section level.
+
+        Args:
+            email: Email address of the user
+            field: Field name to get
+            default: Default value to return if field not found
+            section: Section to get the field from (e.g. "preferences"). If None, gets from top level.
+
+        Returns:
+            The field value or default if not found
+        """
+        try:
+            # Make sure the email exists in profiles_index
+            if email not in self.profiles_index:
+                return default
+
+            # If section is specified, check if it exists
+            if section:
+                if section not in self.profiles_index[email]:
+                    return default
+
+                # Get value from the specified section
+                return self.profiles_index[email][section].get(field, default)
+            else:
+                # Get value from top level
+                return self.profiles_index[email].get(field, default)
+        except Exception as e:
+            logger.error(f"Error getting user field {field} for {email}: {e}")
+            return default
+
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
         Save profile status to the profiles_index directly.
-        
+
         Also updates the emulator_id in the VNC instance if available.
 
         Args:
@@ -463,7 +506,7 @@ class AVDProfileManager:
             avd_name = profile_entry.get("avd_name")
             appium_port = profile_entry.get("appium_port")
             vnc_instance = profile_entry.get("vnc_instance")
-            
+
             if not avd_name:
                 logger.warning(f"No AVD name found for profile {email}")
                 continue
@@ -518,7 +561,7 @@ class AVDProfileManager:
 
         # Get the AVD name for this email
         profile_entry = self.profiles_index[email]
-        
+
         if "avd_name" in profile_entry:
             avd_name = profile_entry["avd_name"]
         else:
@@ -717,7 +760,9 @@ class AVDProfileManager:
 
     def _get_preference_value(self, email: str, key: str, default=None):
         """
-        Get a preference value for a user from the correct location.
+        Get a preference value for a user from the preferences section.
+
+        This is a backward compatibility method - new code should use get_user_field.
 
         Args:
             email: Email address of the user
@@ -727,20 +772,8 @@ class AVDProfileManager:
         Returns:
             The preference value or default if not found
         """
-        # Special case for kindle version information - these are stored at top level
-        if key in ("kindle_version_name", "kindle_version_code") and email in self.profiles_index:
-            if key in self.profiles_index[email]:
-                return self.profiles_index[email][key]
-            
-        # Always reload user preferences to ensure we have the latest data
-        self.user_preferences = self._load_user_preferences()
-
-        # Check user_preferences (which should be in the "preferences" key)
-        if email in self.user_preferences:
-            if key in self.user_preferences[email]:
-                return self.user_preferences[email][key]
-
-        return default
+        # Use preferences section for all keys
+        return self.get_user_field(email, key, default, section="preferences")
 
     def is_styles_updated(self) -> bool:
         """
@@ -759,7 +792,9 @@ class AVDProfileManager:
 
     def _set_preference_value(self, email: str, key: str, value):
         """
-        Set a preference value for a user in the correct location.
+        Set a preference value for a user in the preferences section.
+
+        This is a backward compatibility method - new code should use set_user_field.
 
         Args:
             email: Email address of the user
@@ -769,20 +804,8 @@ class AVDProfileManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        try:
-            # Initialize preference structure if needed
-            if email not in self.user_preferences:
-                self.user_preferences[email] = {}
-
-            # Set the preference value
-            self.user_preferences[email][key] = value
-
-            # Save all changes
-            self._save_user_preferences()
-            return True
-        except Exception as e:
-            logger.error(f"Error setting preference {key} for {email}: {e}")
-            return False
+        # Use preferences section for all keys
+        return self.set_user_field(email, key, value, section="preferences")
 
     def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
         """

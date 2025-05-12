@@ -852,7 +852,7 @@ class NavigationResource(Resource):
             preview_count=params["preview_count"],
             show_placemark=params["show_placemark"],
             use_base64=params["use_base64"],
-            perform_ocr=params["perform_ocr"]
+            perform_ocr=params["perform_ocr"],
         )
 
     @ensure_user_profile_loaded
@@ -872,13 +872,13 @@ class NavigationResource(Resource):
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         # For preview endpoints, add preview parameter if not present
-        endpoint = request.endpoint if hasattr(request, 'endpoint') else ''
-        if endpoint in ['preview_next', 'preview_previous'] and 'preview' not in request.args:
+        endpoint = request.endpoint if hasattr(request, "endpoint") else ""
+        if endpoint in ["preview_next", "preview_previous"] and "preview" not in request.args:
             # Set preview=1 for preview_next and preview=-1 for preview_previous
-            preview_value = 1 if endpoint == 'preview_next' else -1
+            preview_value = 1 if endpoint == "preview_next" else -1
             # Clone request.args to a mutable dictionary and add preview parameter
             request.args = dict(request.args)
-            request.args['preview'] = str(preview_value)
+            request.args["preview"] = str(preview_value)
 
         # Process and parse navigation parameters
         params = NavigationResourceHandler.parse_navigation_params(request)
