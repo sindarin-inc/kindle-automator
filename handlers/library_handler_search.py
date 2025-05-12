@@ -967,10 +967,31 @@ class LibraryHandlerSearch:
         try:
             logger.info("Exiting search mode")
 
-            # Try hardware back button as it's the most reliable
-            self.driver.press_keycode(4)  # Android back button
-            time.sleep(1)
-            return True
+            # Try to find and click the back/up button in the search interface
+            for strategy, locator in SEARCH_BACK_BUTTON_IDENTIFIERS:
+                try:
+                    back_button = self.driver.find_element(strategy, locator)
+                    if back_button and back_button.is_displayed():
+                        logger.info(f"Found search back button using {strategy}: {locator}")
+                        back_button.click()
+                        logger.info("Clicked search back button")
+                        time.sleep(1)
+                        return True
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error clicking back button with {strategy}: {e}")
+                    continue
+
+            # If no back button was found or clickable, log the issue
+            logger.warning("No search back button found, cannot exit search mode via UI")
+
+            # Store page source and screenshot for debugging
+            store_page_source(self.driver.page_source, "search_exit_failure")
+            screenshot_path = os.path.join(self.screenshots_dir, "search_exit_failure.png")
+            self.driver.save_screenshot(screenshot_path)
+
+            return False
 
         except Exception as e:
             logger.error(f"Error exiting search mode: {e}")

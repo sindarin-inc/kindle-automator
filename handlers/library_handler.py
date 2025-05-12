@@ -351,10 +351,80 @@ class LibraryHandler:
             logger.error(f"Error checking list view: {e}")
             return False
 
+    def _is_in_search_interface(self):
+        """
+        Check if we're currently in the search results interface.
+        This can be misidentified as the library view because it uses some of the same elements.
+        """
+        try:
+            # Check for search-specific elements
+            search_indicators = 0
+
+            # Check for search query input field
+            try:
+                search_query = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
+                if search_query and search_query.is_displayed():
+                    search_indicators += 1
+                    logger.info("Found search query input field")
+            except NoSuchElementException:
+                pass
+
+            # Check for search recycler view
+            try:
+                search_results = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view")
+                if search_results and search_results.is_displayed():
+                    search_indicators += 1
+                    logger.info("Found search results recycler view")
+            except NoSuchElementException:
+                pass
+
+            # Check for sections like "In your library" and "Results from Kindle"
+            try:
+                sections = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/search_store_progress_bar"
+                )
+                if sections and len(sections) > 0:
+                    search_indicators += 1
+                    logger.info(f"Found {len(sections)} search section headers")
+            except NoSuchElementException:
+                pass
+
+            # Check for "Navigate up" button which is present in search view
+            try:
+                up_button = self.driver.find_element(AppiumBy.XPATH,
+                    "//android.widget.ImageButton[@content-desc='Navigate up']")
+                if up_button and up_button.is_displayed():
+                    search_indicators += 1
+                    logger.info("Found Navigate up button in search view")
+            except NoSuchElementException:
+                pass
+
+            # We need at least 2 indicators to be confident we're in search view
+            is_search = search_indicators >= 2
+            if is_search:
+                logger.info(f"Detected search interface with {search_indicators} indicators")
+                # Save page source for debugging
+                store_page_source(self.driver.page_source, "search_interface_detected")
+            return is_search
+
+        except Exception as e:
+            logger.error(f"Error checking for search interface: {e}")
+            return False
+
     def switch_to_list_view(self):
         """Switch to list view if not already in it"""
         try:
-            # First check if the Grid/List view dialog is already open
+            # First check if we're in search interface
+            if self._is_in_search_interface():
+                logger.info("Detected we're in search interface, exiting search mode first")
+                if not self.search_handler._exit_search_mode():
+                    logger.error("Failed to exit search mode")
+                    return False
+                logger.info("Successfully exited search mode")
+                time.sleep(1)  # Give UI time to settle
+                return True  # Return after exiting search mode to avoid attempting grid/list view toggle
+
+            # Check if the Grid/List view dialog is already open
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is already open, handling it directly")
                 return self.handle_grid_list_view_dialog()
@@ -379,6 +449,16 @@ class LibraryHandler:
                 # Store page source for debugging
                 filepath = store_page_source(self.driver.page_source, "grid_view_detected")
                 logger.info(f"Stored grid view page source at: {filepath}")
+
+                # Check again for search interface (could be misdetected as grid view)
+                if self._is_in_search_interface():
+                    logger.info("Actually in search interface even though grid view was detected, exiting search mode")
+                    if not self.search_handler._exit_search_mode():
+                        logger.error("Failed to exit search mode")
+                        return False
+                    logger.info("Successfully exited search mode")
+                    time.sleep(1)  # Give UI time to settle
+                    return True
 
                 # Click view options button
                 button_clicked = False
@@ -828,6 +908,17 @@ class LibraryHandler:
                         callback(None, error="Failed to exit book selection mode")
                     return []
                 logger.info("Successfully exited book selection mode")
+
+            # Check if we're in search results interface (can be misidentified as library)
+            if self._is_in_search_interface():
+                logger.info("Detected we're in search results interface, exiting search mode first")
+                if not self.search_handler._exit_search_mode():
+                    logger.error("Failed to exit search mode")
+                    if callback:
+                        callback(None, error="Failed to exit search mode")
+                    return []
+                logger.info("Successfully exited search mode")
+                time.sleep(1)  # Give UI time to settle
 
             # Check if we're in grid view and switch to list view if needed
             if self._is_grid_view():
