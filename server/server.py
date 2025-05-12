@@ -46,6 +46,7 @@ from selenium.common import exceptions as selenium_exceptions
 
 from automator import KindleAutomator
 from handlers.auth_handler import LoginVerificationState
+from handlers.navigation_handler import NavigationResourceHandler
 from handlers.test_fixtures_handler import TestFixturesHandler
 from server.config import VNC_BASE_URL
 from server.core.automation_server import AutomationServer
@@ -803,14 +804,19 @@ class ScreenshotResource(Resource):
 
 
 class NavigationResource(Resource):
-    def __init__(self, default_action=None):
-        self.default_action = default_action
+    def __init__(self, default_direction=1):
+        """Initialize the NavigationResource.
+
+        Args:
+            default_direction: Default navigation direction (1 for forward, -1 for backward)
+        """
+        self.default_direction = default_direction
         super().__init__()
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
-    def post(self, action=None):
+    def post(self, direction=None):
         """Handle page navigation"""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
@@ -823,172 +829,37 @@ class NavigationResource(Resource):
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        # Use provided action parameter if available
-        if action is None:
-            # Otherwise check if we have a default action from initialization
-            if self.default_action:
-                action = self.default_action
-            else:
-                # Fall back to action from request JSON
-                data = request.get_json()
-                action = data.get("action")
+        # Create navigation handler
+        nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
 
-        # Check if base64 parameter is provided
-        use_base64 = is_base64_requested()
-        if use_base64:
-            logger.info("Base64 parameter is provided, will return base64 encoded image")
-        else:
-            logger.info("Base64 parameter is not provided, will return URL to image")
+        # Process and parse navigation parameters
+        params = NavigationResourceHandler.parse_navigation_params(request)
 
-        # Check if OCR is requested
-        perform_ocr = is_ocr_requested()
-        if perform_ocr:
-            logger.info("OCR requested, will process image with OCR")
-            if not use_base64:
-                # Force base64 encoding for OCR
-                use_base64 = True
-                logger.info("Forcing base64 encoding for OCR processing")
+        # If a specific direction was provided in the route initialization, override navigate_count
+        if direction is not None:
+            # Set the navigate_count based on the requested direction
+            params["navigate_count"] = direction
+        # If no navigate_count was provided in the request, use the default direction
+        elif "navigate" not in request.args and "navigate" not in request.form:
+            params["navigate_count"] = self.default_direction
 
-        if not action:
-            return {"error": "Navigation action is required"}, 400
+        # Log the navigation parameters
+        logger.info(f"Navigation params: {params}")
 
-        # Check if preview parameter is provided
-        preview_requested = False
-        preview_param = request.args.get("preview", "0")
-        if preview_param in ("1", "true"):
-            preview_requested = True
-            logger.info("Preview parameter provided, will use preview navigation with OCR")
-
-        # Also check in JSON body
-        if not preview_requested and request.is_json:
-            try:
-                json_data = request.get_json(silent=True) or {}
-                preview_param = json_data.get("preview", False)
-                if isinstance(preview_param, bool):
-                    preview_requested = preview_param
-                elif isinstance(preview_param, str):
-                    preview_requested = preview_param == "1" or preview_param.lower() == "true"
-                elif isinstance(preview_param, int):
-                    preview_requested = preview_param == 1
-            except Exception as e:
-                logger.warning(f"Error parsing preview parameter from JSON: {e}")
-
-        if action == "next_page":
-            # First perform the actual navigation
-            success = automator.state_machine.reader_handler.turn_page_forward()
-
-            # If requested, also preview the next page and get OCR
-            if success and preview_requested:
-                logger.info("Navigated to next page, now previewing the following page")
-                preview_success, ocr_text = automator.state_machine.reader_handler.preview_page_forward()
-                if preview_success and ocr_text:
-                    # Get current page data after navigation
-                    progress = automator.state_machine.reader_handler.get_reading_progress(
-                        show_placemark=False
-                    )
-
-                    # When preview=1, we only want the OCR text from the preview page,
-                    # not from the current page's screenshot
-                    response_data = {"success": True, "progress": progress, "ocr_text": ocr_text}
-                    
-                    # We don't need to take and process a screenshot of the current page
-                    # when we're only interested in the preview OCR text
-
-                    return response_data, 200
-
-        elif action == "previous_page":
-            # First perform the actual navigation
-            success = automator.state_machine.reader_handler.turn_page_backward()
-
-            # If requested, also preview the previous page and get OCR
-            if success and preview_requested:
-                logger.info("Navigated to previous page, now previewing the previous page")
-                preview_success, ocr_text = automator.state_machine.reader_handler.preview_page_backward()
-                if preview_success and ocr_text:
-                    # Get current page data after navigation
-                    progress = automator.state_machine.reader_handler.get_reading_progress(
-                        show_placemark=False
-                    )
-
-                    # When preview=1, we only want the OCR text from the preview page,
-                    # not from the current page's screenshot
-                    response_data = {"success": True, "progress": progress, "ocr_text": ocr_text}
-                    
-                    # We don't need to take and process a screenshot of the current page
-                    # when we're only interested in the preview OCR text
-
-                    return response_data, 200
-        elif action == "preview_next_page":
-            success, ocr_text = automator.state_machine.reader_handler.preview_page_forward()
-            # Add OCR text to response if available
-            if success and ocr_text:
-                response_data = {"success": True, "ocr_text": ocr_text}
-                # Get reading progress but don't show placemark
-                progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
-                if progress:
-                    response_data["progress"] = progress
-                return response_data, 200
-        elif action == "preview_previous_page":
-            success, ocr_text = automator.state_machine.reader_handler.preview_page_backward()
-            # Add OCR text to response if available
-            if success and ocr_text:
-                response_data = {"success": True, "ocr_text": ocr_text}
-                # Get reading progress but don't show placemark
-                progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=False)
-                if progress:
-                    response_data["progress"] = progress
-                return response_data, 200
-        else:
-            return {"error": f"Invalid action: {action}"}, 400
-
-        if success:
-            # Get current page number and progress
-            # Check if placemark is requested
-            show_placemark = False
-            placemark_param = request.args.get("placemark", "0")
-            if placemark_param.lower() in ("1", "true", "yes"):
-                show_placemark = True
-                logger.info("Placemark mode enabled for navigation")
-
-            # Also check in POST data
-            if not show_placemark and request.is_json:
-                data = request.get_json(silent=True) or {}
-                placemark_param = data.get("placemark", "0")
-                if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-                    show_placemark = True
-                    logger.info("Placemark mode enabled from POST data for navigation")
-
-            progress = automator.state_machine.reader_handler.get_reading_progress(
-                show_placemark=show_placemark
-            )
-
-            # Save screenshot with unique ID
-            screenshot_id = f"page_{int(time.time())}"
-            time.sleep(0.5)
-            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
-            automator.driver.save_screenshot(screenshot_path)
-
-            response_data = {
-                "success": True,
-                "progress": progress,
-            }
-
-            # Process the screenshot (either base64 encode, add URL, or OCR)
-            screenshot_path = get_image_path(screenshot_id)
-            screenshot_data = process_screenshot_response(
-                screenshot_id, screenshot_path, use_base64, perform_ocr
-            )
-            response_data.update(screenshot_data)
-
-            return response_data, 200
-
-        return {"error": "Navigation failed"}, 500
+        # Delegate to the handler
+        return nav_handler.navigate(
+            navigate_count=params["navigate_count"],
+            preview_count=params["preview_count"],
+            show_placemark=params["show_placemark"],
+            use_base64=params["use_base64"],
+            perform_ocr=params["perform_ocr"]
+        )
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
-        """Handle navigation via GET requests, using query parameters or default_action"""
+        """Handle navigation via GET requests, using query parameters"""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
@@ -1000,22 +871,26 @@ class NavigationResource(Resource):
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        # Check if action is provided in query parameters
-        action = request.args.get("action")
+        # For preview endpoints, add preview parameter if not present
+        endpoint = request.endpoint if hasattr(request, 'endpoint') else ''
+        if endpoint in ['preview_next', 'preview_previous'] and 'preview' not in request.args:
+            # Set preview=1 for preview_next and preview=-1 for preview_previous
+            preview_value = 1 if endpoint == 'preview_next' else -1
+            # Clone request.args to a mutable dictionary and add preview parameter
+            request.args = dict(request.args)
+            request.args['preview'] = str(preview_value)
 
-        # If no action in query params, use the default action configured for this endpoint
-        if not action:
-            if not self.default_action:
-                return {"error": "Navigation action is required"}, 400
-            action = self.default_action
+        # Process and parse navigation parameters
+        params = NavigationResourceHandler.parse_navigation_params(request)
 
-        # Since we're using query params and moving them to POST,
-        # we don't need to do anything special here - the POST method
-        # already checks for the presence of base64 and ocr in both
-        # query params and request body.
+        # If no navigate parameter was provided, use the default direction
+        if "navigate" not in request.args:
+            direction = self.default_direction
+        else:
+            direction = None  # Will use the parsed navigate_count from params
 
-        # Pass the action to the post method to handle navigation
-        return self.post(action)
+        # Call the post method with the appropriate direction
+        return self.post(direction)
 
 
 class BookOpenResource(Resource):
@@ -1998,34 +1873,34 @@ api.add_resource(BooksStreamResource, "/books-stream")  # New streaming endpoint
 api.add_resource(StaffAuthResource, "/staff-auth")
 api.add_resource(StaffTokensResource, "/staff-tokens")
 api.add_resource(ScreenshotResource, "/screenshot")
-# General navigation endpoint that requires a JSON body with action
+# General navigation endpoint with navigate parameter controlling direction
 api.add_resource(NavigationResource, "/navigate")
-# Specialized navigation endpoints for direct GET requests
+# Specialized navigation endpoints as shortcuts
 api.add_resource(
     NavigationResource,
     "/navigate-next",
     endpoint="navigate_next",
-    resource_class_kwargs={"default_action": "next_page"},
+    resource_class_kwargs={"default_direction": 1},
 )
 api.add_resource(
     NavigationResource,
     "/navigate-previous",
     endpoint="navigate_previous",
-    resource_class_kwargs={"default_action": "previous_page"},
+    resource_class_kwargs={"default_direction": -1},
 )
 
-# Preview endpoints for navigation with OCR and return to original page
+# Preview endpoints - redirecting to /navigate with preview parameters
 api.add_resource(
     NavigationResource,
     "/preview-next",
     endpoint="preview_next",
-    resource_class_kwargs={"default_action": "preview_next_page"},
+    resource_class_kwargs={"default_direction": 0},  # navigate=0, preview=1 via query params
 )
 api.add_resource(
     NavigationResource,
     "/preview-previous",
     endpoint="preview_previous",
-    resource_class_kwargs={"default_action": "preview_previous_page"},
+    resource_class_kwargs={"default_direction": 0},  # navigate=0, preview=-1 via query params
 )
 
 api.add_resource(BookOpenResource, "/open-book")
