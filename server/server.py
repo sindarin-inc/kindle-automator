@@ -887,21 +887,12 @@ class NavigationResource(Resource):
                         show_placemark=False
                     )
 
-                    # Save screenshot with unique ID
-                    screenshot_id = f"page_{int(time.time())}"
-                    time.sleep(0.5)
-                    screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
-                    automator.driver.save_screenshot(screenshot_path)
-
-                    # Prepare response with both the current page and preview data
-                    response_data = {"success": True, "progress": progress, "preview_ocr_text": ocr_text}
-
-                    # Process the screenshot (base64, URL or OCR)
-                    screenshot_path = get_image_path(screenshot_id)
-                    screenshot_data = process_screenshot_response(
-                        screenshot_id, screenshot_path, use_base64, perform_ocr
-                    )
-                    response_data.update(screenshot_data)
+                    # When preview=1, we only want the OCR text from the preview page,
+                    # not from the current page's screenshot
+                    response_data = {"success": True, "progress": progress, "ocr_text": ocr_text}
+                    
+                    # We don't need to take and process a screenshot of the current page
+                    # when we're only interested in the preview OCR text
 
                     return response_data, 200
 
@@ -919,21 +910,12 @@ class NavigationResource(Resource):
                         show_placemark=False
                     )
 
-                    # Save screenshot with unique ID
-                    screenshot_id = f"page_{int(time.time())}"
-                    time.sleep(0.5)
-                    screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
-                    automator.driver.save_screenshot(screenshot_path)
-
-                    # Prepare response with both the current page and preview data
-                    response_data = {"success": True, "progress": progress, "preview_ocr_text": ocr_text}
-
-                    # Process the screenshot (base64, URL or OCR)
-                    screenshot_path = get_image_path(screenshot_id)
-                    screenshot_data = process_screenshot_response(
-                        screenshot_id, screenshot_path, use_base64, perform_ocr
-                    )
-                    response_data.update(screenshot_data)
+                    # When preview=1, we only want the OCR text from the preview page,
+                    # not from the current page's screenshot
+                    response_data = {"success": True, "progress": progress, "ocr_text": ocr_text}
+                    
+                    # We don't need to take and process a screenshot of the current page
+                    # when we're only interested in the preview OCR text
 
                     return response_data, 200
         elif action == "preview_next_page":
