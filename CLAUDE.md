@@ -28,7 +28,8 @@
 - **XPATHs**: All XPATHs should be defined in view_strategies.py or interaction_strategies.py files within the corresponding view directory
 - **Diagnostics**: Add page source XML dump and screenshot capture to error paths using `store_page_source()` and `driver.save_screenshot()`
 - **Git commits**: Keep commit messages short and focused on a single change
-- **Backwards compatibility**: This is unreleased software, so don't worry about making changes backwards compatible, just make the change. Don't make migrations for existing data, just make the change.
+- **Backwards compatibility**: Don't ever write logic to handle backwards compatibility unless asked
+- **DRY**: Keep it DRY, so do extra thinking to ensure we don't repeat code
 
 ## Project Structure
 

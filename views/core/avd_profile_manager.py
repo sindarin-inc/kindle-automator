@@ -42,15 +42,18 @@ class AVDProfileManager:
 
         # Use a different base directory for Mac development environments
         if self.use_simplified_mode:
-            # Use a directory under the user's home folder to avoid permission issues
-            user_home = os.path.expanduser("~")
-            base_dir = os.path.join(user_home, ".kindle-automator")
+            # Use project's user_data directory instead of home folder
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            base_dir = os.path.join(project_root, "user_data")
             logger.info("Mac development environment detected - using simplified emulator mode")
             logger.info(f"Using {base_dir} for profile storage instead of /opt/android-sdk")
             logger.info("Will use any available emulator instead of managing profiles")
 
+            # Profiles now stored in project's user_data directory
+
             # In macOS, the AVD directory is typically in the .android folder
             # This ensures we're pointing to the right place for AVDs in Android Studio
+            user_home = os.path.expanduser("~")
             if self.android_home:
                 logger.info(f"Using Android home from environment: {self.android_home}")
                 self.avd_dir = os.path.join(user_home, ".android", "avd")
@@ -63,8 +66,16 @@ class AVDProfileManager:
             self.avd_dir = os.path.join(base_dir, "avd")
 
         self.base_dir = base_dir
-        self.profiles_dir = os.path.join(base_dir, "profiles")
-        self.users_file = os.path.join(self.profiles_dir, "users.json")
+        
+        # In the new structure, we store everything directly in user_data/
+        # No longer need a separate "profiles" subdirectory
+        if self.use_simplified_mode:
+            self.profiles_dir = base_dir
+            self.users_file = os.path.join(self.profiles_dir, "users.json")
+        else:
+            # For non-Mac or non-dev environments, keep the old directory structure
+            self.profiles_dir = os.path.join(base_dir, "profiles")
+            self.users_file = os.path.join(self.profiles_dir, "users.json")
 
         # Ensure directories exist
         os.makedirs(self.profiles_dir, exist_ok=True)
@@ -149,12 +160,11 @@ class AVDProfileManager:
 
         # Extract preferences from the profiles_index
         for email, profile_data in self.profiles_index.items():
-            if isinstance(profile_data, dict):
-                if "preferences" in profile_data:
-                    preferences[email] = profile_data["preferences"]
-                else:
-                    # Initialize empty preferences if not yet created
-                    preferences[email] = {}
+            if "preferences" in profile_data:
+                preferences[email] = profile_data["preferences"]
+            else:
+                # Initialize empty preferences if not yet created
+                preferences[email] = {}
 
         return preferences
 
@@ -167,12 +177,6 @@ class AVDProfileManager:
             # Update the profiles_index with preferences data
             for email, prefs in self.user_preferences.items():
                 if email in self.profiles_index:
-                    # Make sure profile entry is a dict
-                    if isinstance(self.profiles_index[email], str):
-                        # Convert string to dict for backward compatibility
-                        avd_name = self.profiles_index[email]
-                        self.profiles_index[email] = {"avd_name": avd_name}
-
                     # Create preferences structure if it doesn't exist
                     if "preferences" not in self.profiles_index[email]:
                         self.profiles_index[email]["preferences"] = {}
@@ -205,11 +209,41 @@ class AVDProfileManager:
         """
         return self.device_discovery.find_running_emulator_for_email(email, self.profiles_index)
 
+    def _update_kindle_version(self, email: str, version_name: str, version_code: int) -> None:
+        """
+        Update Kindle version information in a user profile.
+        This method ensures version info is stored at the top level only, not in preferences.
+        
+        Args:
+            email: Email address of the profile
+            version_name: The version name (e.g. "8.121.0.100")
+            version_code: The version code (e.g. 1286055411)
+        """
+        # Make sure the email exists in profiles_index
+        if email not in self.profiles_index:
+            logger.warning(f"Cannot update Kindle version: email {email} not found in profiles_index")
+            return
+            
+        # Update version info at top level only
+        self.profiles_index[email]["kindle_version_name"] = version_name
+        self.profiles_index[email]["kindle_version_code"] = str(version_code)
+        
+        # Remove version info from preferences if it exists there
+        if "preferences" in self.profiles_index[email]:
+            preferences = self.profiles_index[email]["preferences"]
+            if "kindle_version_name" in preferences:
+                preferences.pop("kindle_version_name")
+            if "kindle_version_code" in preferences:
+                preferences.pop("kindle_version_code")
+        
+        # Save the updated profiles_index
+        self._save_profiles_index()
+        logger.info(f"Updated Kindle version to {version_name} (code: {version_code}) for {email}")
+    
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
         Save profile status to the profiles_index directly.
-        This replaces the previous _save_current_profile that used a separate file.
-
+        
         Also updates the emulator_id in the VNC instance if available.
 
         Args:
@@ -220,10 +254,6 @@ class AVDProfileManager:
         # Make sure the email exists in profiles_index
         if email not in self.profiles_index:
             self.profiles_index[email] = {}
-        # Convert to dict if it's a string (for backward compatibility)
-        elif isinstance(self.profiles_index[email], str):
-            old_avd_name = self.profiles_index[email]
-            self.profiles_index[email] = {"avd_name": old_avd_name}
 
         # Update the profile status fields
         self.profiles_index[email]["last_used"] = int(time.time())
@@ -269,14 +299,10 @@ class AVDProfileManager:
         Returns:
             Optional[str]: The associated AVD name or None if not found
         """
-        # First check if we have a mapping in the profiles index
+        # Check if we have a mapping in the profiles index
         if email in self.profiles_index:
             profile_entry = self.profiles_index.get(email)
-
-            # Handle different formats (backward compatibility)
-            if isinstance(profile_entry, str):
-                return profile_entry
-            elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+            if "avd_name" in profile_entry:
                 return profile_entry["avd_name"]
 
         # If not found, create a standardized AVD name
@@ -433,19 +459,11 @@ class AVDProfileManager:
 
         result = []
         for email, profile_entry in self.profiles_index.items():
-            # Handle different profile entry formats
-            if isinstance(profile_entry, str):
-                avd_name = profile_entry
-                appium_port = None
-                vnc_instance = None
-            elif isinstance(profile_entry, dict):
-                avd_name = profile_entry.get("avd_name")
-                appium_port = profile_entry.get("appium_port")
-                vnc_instance = profile_entry.get("vnc_instance")
-            else:
-                logger.warning(f"Unknown profile entry format for {email}: {profile_entry}")
-                continue
-
+            # Get profile information
+            avd_name = profile_entry.get("avd_name")
+            appium_port = profile_entry.get("appium_port")
+            vnc_instance = profile_entry.get("vnc_instance")
+            
             if not avd_name:
                 logger.warning(f"No AVD name found for profile {email}")
                 continue
@@ -482,7 +500,6 @@ class AVDProfileManager:
     def get_profile_for_email(self, email: str) -> Optional[Dict]:
         """
         Get information about a specific profile by email.
-        This replaces the previous get_current_profile method that returned a single "current" profile.
 
         Args:
             email: The email address to get profile information for
@@ -501,11 +518,9 @@ class AVDProfileManager:
 
         # Get the AVD name for this email
         profile_entry = self.profiles_index[email]
-
-        if isinstance(profile_entry, dict) and "avd_name" in profile_entry:
+        
+        if "avd_name" in profile_entry:
             avd_name = profile_entry["avd_name"]
-        elif isinstance(profile_entry, str):
-            avd_name = profile_entry
         else:
             logger.error(f"Could not determine AVD name from profile entry for {email}")
             return None
@@ -614,12 +629,7 @@ class AVDProfileManager:
             vnc_instance: Optional VNC instance number to assign to this profile
         """
         # Check if the email already exists before we add it
-        if email in self.profiles_index:
-            if isinstance(self.profiles_index[email], str):
-                # Convert old format to new format
-                old_avd = self.profiles_index[email]
-                self.profiles_index[email] = {"avd_name": old_avd}
-        else:
+        if email not in self.profiles_index:
             self.profiles_index[email] = {}
 
         # Update with new values
@@ -717,6 +727,11 @@ class AVDProfileManager:
         Returns:
             The preference value or default if not found
         """
+        # Special case for kindle version information - these are stored at top level
+        if key in ("kindle_version_name", "kindle_version_code") and email in self.profiles_index:
+            if key in self.profiles_index[email]:
+                return self.profiles_index[email][key]
+            
         # Always reload user preferences to ensure we have the latest data
         self.user_preferences = self._load_user_preferences()
 

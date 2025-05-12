@@ -121,6 +121,16 @@ reset-user-data:
 	@echo "User data reset complete"
 	@echo "Now run 'make server' and login to create fresh account containers"
 	
+# Test the APK version checking functionality
+test-apk-version:
+	@echo "Testing APK version checking functionality..."
+	@PYTHONPATH=$(shell pwd) python -m tests.test_apk_version
+	
+# List the APK files available
+list-apks:
+	@echo "Available Kindle APK files:"
+	@find ansible/roles/android_*/files -name "*.apk" -type f | sed 's/.*\///'
+	
 # Ansible
 
 provision:

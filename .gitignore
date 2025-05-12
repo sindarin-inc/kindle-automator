@@ -157,6 +157,11 @@ __pycache__/
 # Screenshot directory
 screenshots/*.png
 
+# User data and profiles
+user_data/
+user_data/*
+user_data/users_index.json
+
 # Ansible
 .ansible
 ansible/keys/*
