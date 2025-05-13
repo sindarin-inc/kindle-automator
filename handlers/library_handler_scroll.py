@@ -553,27 +553,78 @@ class LibraryHandlerScroll:
                 )
 
                 if book_containers and len(book_containers) >= 2:
-                    # Get the bottom-most container (last in the list)
-                    bottom_container = book_containers[-1]
-
-                    # Check if the bottom-most container is fully visible
-                    try:
-                        # Just check if the title element itself is fully visible on screen
-                        # This is simpler and less error-prone than trying to navigate to parent containers
-                        location = bottom_container.location
-                        size = bottom_container.size
-                        bottom_y = location["y"] + size["height"]
-                    except StaleElementReferenceException:
-                        logger.debug(
-                            "Stale element reference when checking visibility for bottom book, will retry on next scroll"
-                        )
-                        # Continue with fallback scrolling approach
-                    except Exception as e:
-                        logger.debug(f"Could not check visibility for bottom book: {e}")
-
-                    # Simpler approach: always use the last fully visible book as reference
-                    # This ensures better consistency in scrolling behavior
-                    if len(book_containers) >= 2:
+                    # Find books that are partially visible due to the bottom toolbar
+                    fully_visible_books = []
+                    partially_visible_books = []
+                    
+                    # Define the bottom toolbar area - approximately bottom 15% of the screen
+                    toolbar_top = screen_size["height"] * 0.85
+                    
+                    for i, container in enumerate(book_containers):
+                        try:
+                            title_text = container.text
+                            loc = container.location
+                            s = container.size
+                            top = loc["y"]
+                            bottom = top + s["height"]
+                            
+                            # Check if book is partially obscured by the toolbar
+                            if bottom > toolbar_top:
+                                partially_visible_books.append({
+                                    "index": i,
+                                    "element": container,
+                                    "title": title_text,
+                                    "top": top,
+                                    "bottom": bottom
+                                })
+                                logger.info(f"Book partially obscured by toolbar: '{title_text}' at position y={top}-{bottom} (screen height={screen_size['height']}, toolbar_top={toolbar_top})")
+                            else:
+                                fully_visible_books.append({
+                                    "index": i,
+                                    "element": container,
+                                    "title": title_text,
+                                    "top": top,
+                                    "bottom": bottom
+                                })
+                        except StaleElementReferenceException:
+                            logger.debug(f"Stale element reference when checking container {i}, skipping")
+                            continue
+                        except Exception as e:
+                            logger.debug(f"Error processing container {i}: {e}")
+                            continue
+                    
+                    # Log the number of fully and partially visible books
+                    logger.info(f"Found {len(fully_visible_books)} fully visible books and {len(partially_visible_books)} partially visible books")
+                    
+                    # If we found partially visible books, use the first one as reference for scrolling
+                    if partially_visible_books:
+                        first_partial = partially_visible_books[0]
+                        logger.info(f"Using partially visible book as scroll reference: '{first_partial['title']}' at y={first_partial['top']}")
+                        
+                        # Calculate scrolling coordinates to position this book at top of screen
+                        smart_start_y = first_partial["top"]
+                        smart_end_y = screen_size["height"] * 0.1  # 10% from top of screen
+                        
+                        # Verify start point is below end point by a reasonable amount
+                        if smart_start_y - smart_end_y < 100:
+                            logger.warning("Scroll distance too small, using default scroll")
+                            self.driver.swipe(
+                                screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
+                            )
+                        else:
+                            # Perform smart scroll - move reference container to top
+                            logger.info(f"Smart scrolling: moving y={smart_start_y} to y={smart_end_y}")
+                            self.driver.swipe(
+                                screen_size["width"] // 2,
+                                smart_start_y,
+                                screen_size["width"] // 2,
+                                smart_end_y,
+                                700,
+                            )
+                    else:
+                        # Fall back to the current approach if no partially visible books found
+                        logger.info("No partially visible books found, using fallback scrolling method")
+                        
                         # Default to last book
                         reference_container = book_containers[-1]
                         reference_index = len(book_containers) - 1
@@ -590,78 +641,48 @@ class LibraryHandlerScroll:
                                 continue
 
                             # If this container is fully visible on screen
-                            if bottom <= (screen_size["height"] - 20):
+                            if bottom <= toolbar_top:
                                 reference_container = container
                                 reference_index = i
                                 break
 
-                        # If we didn't find a fully visible book, use second-to-last as fallback
-                        if reference_index == len(book_containers) - 1 and len(book_containers) >= 3:
-                            reference_container = book_containers[-2]
-                            reference_index = len(book_containers) - 2
-
-                        bottom_container = reference_container
-
-                    # Get location and size of the selected container
-                    try:
-                        location = bottom_container.location
-                        size = bottom_container.size
-
-                        # Calculate the y-coordinate of the bottom of this container
-                        bottom_y = location["y"] + size["height"]
-                    except StaleElementReferenceException:
-                        logger.debug(
-                            "Stale element reference when getting container dimensions, using default scroll"
-                        )
-                        # Fall through to default scroll behavior below
-                    except Exception as e:
-                        logger.debug(f"Error getting container dimensions: {e}")
-
-                    # Check if the container is partially off-screen
-                    if bottom_y > screen_size["height"]:
+                        # Get location and size of the selected container
                         try:
-                            # Use the container above it
-                            fallback_index = -2 if len(book_containers) >= 3 else -1
-                            fallback_container = book_containers[fallback_index]
-                            location = fallback_container.location
-                            size = fallback_container.size
-                            bottom_y = location["y"] + size["height"]
-                        except StaleElementReferenceException:
-                            logger.debug(
-                                "Stale element reference when accessing fallback container, using default scroll"
-                            )
-                            # Fall through to default scroll behavior
+                            location = reference_container.location
+                            size = reference_container.size
+
+                            # Calculate the y-coordinate of the bottom of this container
+                            container_top = location["y"]
+                            
+                            # Start from current position of the container
+                            smart_start_y = container_top
+                            
+                            # Position this book at the top of the screen with a small margin
+                            smart_end_y = screen_size["height"] * 0.1  # 10% from top of screen
+                            
+                            # Verify start point is below end point by a reasonable amount
+                            if smart_start_y - smart_end_y < 100:
+                                logger.warning("Scroll distance too small, using default scroll")
+                                self.driver.swipe(
+                                    screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
+                                )
+                            else:
+                                # Perform smart scroll - move reference container to top
+                                logger.info(f"Fallback smart scrolling: moving y={smart_start_y} to y={smart_end_y}")
+                                self.driver.swipe(
+                                    screen_size["width"] // 2,
+                                    smart_start_y,
+                                    screen_size["width"] // 2,
+                                    smart_end_y,
+                                    700,
+                                )
                         except Exception as e:
-                            logger.debug(f"Could not use fallback container: {e}")
-
-                    # Calculate scrolling coordinates to position reference book at top of screen
-                    # This provides consistent scrolling with the right amount of overlap
-
-                    # Get the top of the container as well as the bottom
-                    container_top = location["y"]
-
-                    # Start from current position of the container
-                    # Use the container's top coordinate for maximum precision
-                    smart_start_y = location["y"]
-
-                    # Position this book at the top of the screen with a small margin
-                    smart_end_y = screen_size["height"] * 0.1  # 10% from top of screen
-
-                    # Verify start point is below end point by a reasonable amount
-                    if smart_start_y - smart_end_y < 100:
-                        logger.warning("Scroll distance too small, using default scroll")
-                        self.driver.swipe(
-                            screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
-                        )
-                    else:
-                        # Perform smart scroll - move reference container to top
-                        self.driver.swipe(
-                            screen_size["width"] // 2,
-                            smart_start_y,
-                            screen_size["width"] // 2,
-                            smart_end_y,
-                            700,
-                        )
+                            logger.warning(f"Error calculating smart scroll parameters: {e}")
+                            # Fall back to default scroll behavior
+                            logger.warning("Using default scroll behavior")
+                            self.driver.swipe(
+                                screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 700
+                            )
                 else:
                     logger.warning(
                         f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll"
@@ -820,8 +841,6 @@ class LibraryHandlerScroll:
     def scroll_to_list_top(self):
         """Scroll to the top of the All list by toggling between Downloaded and All."""
         try:
-            logger.info("Attempting to scroll to top of list by toggling filters...")
-
             # First check if we're in book selection mode and exit if needed
             if self.is_in_book_selection_mode():
                 logger.info("In book selection mode, exiting before scrolling")

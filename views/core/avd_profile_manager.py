@@ -911,7 +911,6 @@ class AVDProfileManager:
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:
-            logger.info(f"In simplified mode, tracking profile for {email} without managing emulator")
             return True, f"Tracking profile for {email} in simplified mode"
 
         #

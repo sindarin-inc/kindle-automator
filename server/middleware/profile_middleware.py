@@ -169,15 +169,12 @@ def ensure_user_profile_loaded(f):
 
         # First check if we need to start a dedicated Appium server for this email
         if sindarin_email not in server.appium_processes:
-            logger.info(f"Starting dedicated Appium server for {sindarin_email}")
-
             # Check if we're on macOS development environment
             is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
 
             # On macOS dev, always use port 4723 for consistency with driver code
             if is_mac_dev:
                 port = 4723
-                logger.info(f"Using fixed Appium port {port} for macOS development environment")
             else:
                 # Check if we have a stored Appium port for this email
                 stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
@@ -255,11 +252,9 @@ def ensure_user_profile_loaded(f):
                 force_new_emulator = False
             elif is_mac_dev and find_device_id_by_android_id(sindarin_email):
                 # Special case for macOS: If a device is available by Android ID, use it
-                logger.info(f"In macOS dev environment: Found device for {sindarin_email}, reusing it")
                 force_new_emulator = False
             else:
                 # AVD doesn't exist - create it
-                logger.info(f"No AVD exists for {sindarin_email} on auth endpoint")
                 logger.info(f"Will create a new AVD for {sindarin_email}")
                 force_new_emulator = True
 

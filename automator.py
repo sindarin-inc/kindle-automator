@@ -77,7 +77,6 @@ class KindleAutomator:
         # Verify app is in foreground - sometimes it quits after driver connects
         try:
             current_activity = self.driver.current_activity
-            logger.info(f"After driver initialization, current activity: {current_activity}")
 
             # If we're not in the Kindle app, try to relaunch it
             # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
@@ -200,8 +199,6 @@ class KindleAutomator:
                         logger.error(f"UiAutomator2 server crashed during window size check: {error_message}")
                         raise window_error
 
-                logger.info("Driver is healthy")
-
                 # Check if we're in the app not responding state
                 if self.state_machine:
                     # Skip the diagnostic page source dump here since it's redundant
@@ -225,7 +222,6 @@ class KindleAutomator:
                 # Try checking app activity
                 try:
                     current_activity = self.driver.current_activity
-                    logger.info(f"Current activity check: {current_activity}")
                     # If we're not in the Kindle app, try to relaunch it
                     if not current_activity.startswith("com.amazon"):
                         logger.warning("App is not in Kindle foreground, trying to relaunch")

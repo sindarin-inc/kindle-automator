@@ -67,7 +67,6 @@ class LibraryHandler:
 
     def _is_library_tab_selected(self):
         """Check if the library tab is currently selected."""
-        logger.info("Checking if library tab is selected...")
 
         # First try the selection strategies
         for strategy in LIBRARY_TAB_SELECTION_IDENTIFIERS:
@@ -80,13 +79,11 @@ class LibraryHandler:
                     for child_by, child_value, attr, expected in child_checks.values():
                         child = tab.find_element(child_by, child_value)
                         if child.get_attribute(attr) == expected:
-                            logger.info(f"Found library tab with '{attr}' in {child_by}")
                             return True
                 else:  # Simple strategy
                     by, value = strategy
                     element = self.driver.find_element(by, value)
                     if element.is_displayed():
-                        logger.info(f"Found library tab with strategy: {by}")
                         return True
             except NoSuchElementException:
                 continue
@@ -178,9 +175,6 @@ class LibraryHandler:
 
             # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
             is_dialog_open = identifiers_found >= 2
-            logger.info(
-                f"Grid/List view dialog is{''.join(' open' if is_dialog_open else ' not open')} ({identifiers_found} identifiers found)"
-            )
 
             # Capture a screenshot and page source for debugging
             if is_dialog_open:
@@ -213,7 +207,6 @@ class LibraryHandler:
                 if not self.handle_grid_list_view_dialog():
                     logger.error("Failed to handle Grid/List view dialog")
                     return False
-                logger.info("Successfully handled Grid/List view dialog")
                 time.sleep(0.5)  # Wait for dialog to close
 
             # Check if view options menu is open and close it if needed
@@ -226,20 +219,17 @@ class LibraryHandler:
 
             # First check if library tab is already selected
             if self._is_library_tab_selected():
-                logger.info("Already on library tab")
                 return True
 
             # Try to find the library tab directly using identifiers
             for strategy, locator in LIBRARY_TAB_IDENTIFIERS:
                 try:
                     library_tab = self.driver.find_element(strategy, locator)
-                    logger.info(f"Found Library tab using {strategy}")
                     library_tab.click()
                     logger.info("Clicked Library tab")
                     time.sleep(1)  # Wait for tab switch animation
                     # Verify we're in library view
                     if self._is_library_tab_selected():
-                        logger.info("Successfully switched to library tab")
                         return True
                 except Exception as e:
                     continue
@@ -371,7 +361,9 @@ class LibraryHandler:
 
             # Check for search recycler view
             try:
-                search_results = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view")
+                search_results = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view"
+                )
                 if search_results and search_results.is_displayed():
                     search_indicators += 1
                     logger.info("Found search results recycler view")
@@ -391,8 +383,9 @@ class LibraryHandler:
 
             # Check for "Navigate up" button which is present in search view
             try:
-                up_button = self.driver.find_element(AppiumBy.XPATH,
-                    "//android.widget.ImageButton[@content-desc='Navigate up']")
+                up_button = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
+                )
                 if up_button and up_button.is_displayed():
                     search_indicators += 1
                     logger.info("Found Navigate up button in search view")
@@ -452,7 +445,9 @@ class LibraryHandler:
 
                 # Check again for search interface (could be misdetected as grid view)
                 if self._is_in_search_interface():
-                    logger.info("Actually in search interface even though grid view was detected, exiting search mode")
+                    logger.info(
+                        "Actually in search interface even though grid view was detected, exiting search mode"
+                    )
                     if not self.search_handler._exit_search_mode():
                         logger.error("Failed to exit search mode")
                         return False
@@ -658,7 +653,6 @@ class LibraryHandler:
 
             # First check if the dialog is actually open
             if not self._is_grid_list_view_dialog_open():
-                logger.info("Grid/List view dialog is not open, nothing to handle.")
                 return True  # Return True since there's no dialog to handle
 
             # Click the List view option to ensure consistent view
@@ -807,7 +801,6 @@ class LibraryHandler:
             except NoSuchElementException:
                 pass
 
-            logger.info("No sign-in button detected in library view")
             return False
 
         except Exception as e:
@@ -979,7 +972,9 @@ class LibraryHandler:
                     # Use a short timeout (2 seconds) to check if we've already left library view
                     logger.info("Checking if we've already left the library view...")
                     WebDriverWait(self.driver, 2).until_not(
-                        EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/library_root_view"))
+                        EC.presence_of_element_located(
+                            (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                        )
                     )
                     logger.info("Already left library view - book opened immediately")
 
@@ -1001,7 +996,9 @@ class LibraryHandler:
                             # We're still in library view, continue checking download status
                         except NoSuchElementException:
                             # We've left the library view - book has opened automatically
-                            logger.info(f"Left library view automatically after {attempt} checks - book opened")
+                            logger.info(
+                                f"Left library view automatically after {attempt} checks - book opened"
+                            )
                             return True
 
                         # Re-find the parent container since the page might have refreshed
@@ -1058,7 +1055,9 @@ class LibraryHandler:
                             # If we can't find the book element, check if we've left the library view
                             logger.info("Can't find book element - checking if we've left library view")
                             try:
-                                self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                                self.driver.find_element(
+                                    AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                )
                                 logger.warning("Still in library view but can't find book element")
                             except NoSuchElementException:
                                 logger.info("Left library view - book likely opened automatically")

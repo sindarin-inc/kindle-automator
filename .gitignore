@@ -157,6 +157,10 @@ __pycache__/
 # Screenshot directory
 screenshots/*.png
 
+# Book cover images
+covers/
+covers/*
+
 # User data and profiles
 user_data/
 user_data/*

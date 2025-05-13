@@ -192,6 +192,8 @@ class Driver:
                     self.automator.profile_manager._save_user_preferences()
 
                     logger.info(f"Updated profile setting {setting_name}={value} for {email}")
+                else:
+                    logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
         except Exception as e:
             logger.error(f"Error updating profile setting {setting_name}: {e}")
             # Continue execution even if we can't update the profile
@@ -525,7 +527,6 @@ class Driver:
     def _is_kindle_installed(self) -> bool:
         """Check if the Kindle app is installed on the device."""
         try:
-            logger.info(f"Checking Kindle installation on device {self.device_id}")
             result = subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "pm", "list", "packages", "com.amazon.kindle"],
                 capture_output=True,
@@ -709,15 +710,9 @@ class Driver:
             if version_code and version_code > highest_version_code:
                 highest_version_code = version_code
                 newest_apk = apk_path
-                logger.info(
-                    f"Found newer APK version: {version_name} (code: {version_code}) at {os.path.basename(apk_path)}"
-                )
 
         # If we couldn't determine version codes reliably, use lexicographical sorting of filenames
         if not newest_apk:
-            logger.info(
-                "Could not determine newest APK by version code, using lexicographical filename ordering"
-            )
             # Sort filenames lexicographically (the last one alphabetically is typically newest with version in name)
             apk_paths.sort(key=lambda x: os.path.basename(x))
             newest_apk = apk_paths[-1]  # Get the last one lexicographically
@@ -833,7 +828,6 @@ class Driver:
                 return False
 
             # Update profile with device ID
-            logger.info(f"Updating profile with device_id: {self.device_id}")
             if not self.automator:
                 logger.error("Cannot update profile: automator not initialized")
 
@@ -857,8 +851,6 @@ class Driver:
                         )
 
                     else:
-                        logger.info(f"Updating profile for {email} with device ID: {self.device_id}")
-
                         # Use the appropriate method based on what's available
                         if hasattr(self.automator.profile_manager, "_save_profile_status"):
                             self.automator.profile_manager._save_profile_status(
@@ -925,9 +917,6 @@ class Driver:
                 if profile_version_name and profile_version_code:
                     installed_version_name = profile_version_name
                     installed_version_code = profile_version_code
-                    logger.info(
-                        f"Using Kindle version from profile: {installed_version_name} (code: {installed_version_code})"
-                    )
                 else:
                     # Get version from device
                     installed_version_name, installed_version_code = self._get_installed_kindle_version()
@@ -947,9 +936,6 @@ class Driver:
                         apk_version_name, apk_version_code = self._get_apk_version(newest_apk)
 
                         if apk_version_code and apk_version_code > installed_version_code:
-                            logger.info(
-                                f"Found newer Kindle version: {apk_version_name} (code: {apk_version_code})"
-                            )
                             logger.info(
                                 f"Upgrading Kindle from version {installed_version_name} to {apk_version_name}"
                             )
@@ -1078,9 +1064,6 @@ class Driver:
                                         and email in server.appium_processes
                                     ):
                                         self.appium_port = server.appium_processes[email]["port"]
-                                        logger.info(
-                                            f"Using dedicated Appium port {self.appium_port} for email {email}"
-                                        )
                                 except (ImportError, RuntimeError) as e:
                                     logger.debug(f"Could not access server for Appium port: {e}")
 
@@ -1178,16 +1161,7 @@ class Driver:
                         appium_port = self.appium_port if self.appium_port is not None else 4723
 
                         logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
-                        # Set the direct device capability at the last moment to avoid any overrides
-                        capabilities = options.to_capabilities()
                         # Ensure the critical capabilities are set correctly before connection
-                        logger.info(
-                            f"Final capabilities for device {self.device_id}: "
-                            f"udid={capabilities.get('udid')}, "
-                            f"deviceName={capabilities.get('deviceName')}, "
-                            f"androidId={capabilities.get('appium:androidId')}"
-                        )
-
                         self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
                         logger.info(
                             f"Driver initialized successfully on port {appium_port} for device {self.device_id}"

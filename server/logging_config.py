@@ -153,7 +153,6 @@ class DynamicEmailHandler(logging.Handler):
 
         # Cache the handler
         self.handler_cache[email] = handler
-        logger.debug(f"Created file handler for {email} writing to {log_file}")
 
         return handler
 

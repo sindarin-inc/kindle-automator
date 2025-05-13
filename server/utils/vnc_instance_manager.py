@@ -1,8 +1,11 @@
 import json
 import logging
 import os
+import platform
 import random
 from typing import Dict, List, Optional, Tuple
+
+from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +18,16 @@ if os.environ.get("ANDROID_HOME"):
     ANDROID_HOME = os.environ.get("ANDROID_HOME")
 else:
     ANDROID_HOME = DEFAULT_ANDROID_SDK
-PROFILES_DIR = os.path.join(ANDROID_HOME, "profiles")
+
+# Use user_data directory for macOS/Darwin systems
+is_macos = platform.system() == "Darwin"
+if is_macos:
+    # Use project's user_data directory instead of Android SDK profiles
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    PROFILES_DIR = os.path.join(project_root, "user_data")
+else:
+    PROFILES_DIR = os.path.join(ANDROID_HOME, "profiles")
+
 VNC_INSTANCE_MAP_PATH = os.path.join(PROFILES_DIR, "vnc_instance_map.json")
 
 # Singleton instance
@@ -60,9 +72,20 @@ class VNCInstanceManager:
         # Ensure profiles directory exists
         os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
 
-        # Path to the profiles index file - same structure as used by AVDProfileManager
-        android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
-        self.profiles_dir = os.path.join(android_home, "profiles")
+        # Determine if we're on macOS/Darwin
+        self.is_macos = platform.system() == "Darwin"
+
+        # Path to the profiles index file - use user_data on macOS, otherwise use Android SDK profiles
+        if self.is_macos:
+            # Use project's user_data directory for macOS
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.profiles_dir = os.path.join(project_root, "user_data")
+            logger.info(f"Using {self.profiles_dir} for users.json on macOS")
+        else:
+            # For non-Mac environments, use standard directory structure
+            android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
+            self.profiles_dir = os.path.join(android_home, "profiles")
+
         self.users_file_path = os.path.join(self.profiles_dir, "users.json")
         self.profiles_index = {}  # Email to AVD mapping
 

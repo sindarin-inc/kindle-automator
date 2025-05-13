@@ -90,8 +90,6 @@ class ViewInspector:
                                     device_count += 1
                                     available_devices.append(device_id_candidate)
 
-                    logger.info(f"Found {device_count} devices: {available_devices}")
-
                     if device_count > 1:
                         logger.error(
                             f"Multiple devices detected ({device_count}) but no device ID available - cannot proceed with app launch"
@@ -100,7 +98,6 @@ class ViewInspector:
                     elif device_count == 1:
                         # If only one device is available, use it
                         device_id = available_devices[0]
-                        logger.info(f"Using the only available device: {device_id}")
                 except Exception as e:
                     logger.warning(f"Error checking for devices: {e}")
 
@@ -597,7 +594,6 @@ class ViewInspector:
                 # Only store page source in debug mode to reduce I/O
                 if logger.isEnabledFor(logging.DEBUG):
                     filepath = store_page_source(self.driver.page_source, "library_tab_selected")
-                    logger.debug(f"Stored page source with library tab selected at: {filepath}")
                 return AppView.LIBRARY
 
             # If LIBRARY tab is not selected, check if HOME tab is selected
@@ -620,12 +616,7 @@ class ViewInspector:
                             continue
 
                     if element.is_displayed():
-                        logger.info(f"   Found library view element: {strategy}={locator}")
-                        filepath = store_page_source(
-                            self.driver.page_source, "library_direct_element_detected"
-                        )
-                        logger.info(f"Stored page source with library element detected at: {filepath}")
-                        logger.info("Detected LIBRARY view based on direct element detection")
+                        store_page_source(self.driver.page_source, "library_direct_element_detected")
                         return AppView.LIBRARY
                 except NoSuchElementException:
                     pass

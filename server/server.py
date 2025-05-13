@@ -1,54 +1,22 @@
 """Main Kindle Automator server module."""
 
-import base64
-import concurrent.futures
 import json
 import logging
 import os
-import platform
 import signal
-import socket
 import subprocess
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
-import flask
-import requests
-import urllib3
 from appium.webdriver.common.appiumby import AppiumBy
-
-# Configure urllib3 connection pool size
-urllib3.connection.HTTPConnection.default_socket_options = (
-    urllib3.connection.HTTPConnection.default_socket_options
-    + [
-        (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
-    ]
-)
-# Increase connection pool size from default (1) to avoid connection pool warnings
-urllib3.connectionpool.HTTPConnectionPool.maxsize = 10
-urllib3.connectionpool.HTTPSConnectionPool.maxsize = 10
 from dotenv import load_dotenv
-from flask import (
-    Flask,
-    Response,
-    jsonify,
-    make_response,
-    redirect,
-    request,
-    send_file,
-    stream_with_context,
-)
+from flask import Flask, Response, make_response, request, send_file
 from flask_restful import Api, Resource
-from mistralai import Mistral
 from selenium.common import exceptions as selenium_exceptions
 
-from automator import KindleAutomator
-from handlers.auth_handler import LoginVerificationState
 from handlers.navigation_handler import NavigationResourceHandler
 from handlers.test_fixtures_handler import TestFixturesHandler
-from server.config import VNC_BASE_URL
 from server.core.automation_server import AutomationServer
 from server.logging_config import setup_logger
 from server.middleware.automator_middleware import ensure_automator_healthy
@@ -58,6 +26,10 @@ from server.middleware.response_handler import (
     get_image_path,
     handle_automator_response,
     serve_image,
+)
+from server.utils.cover_utils import (
+    add_cover_urls_to_books,
+    extract_book_covers_from_screen,
 )
 from server.utils.ocr_utils import (
     KindleOCR,
@@ -366,6 +338,27 @@ class BooksResource(Resource):
                 "emulator_id": emulator_id,
             }, 401
 
+        # Take a screenshot to use for extracting book covers
+        timestamp = int(time.time())
+        screenshot_filename = f"library_view_{timestamp}.png"
+        screenshot_path = os.path.join(automator.screenshots_dir, screenshot_filename)
+        automator.driver.save_screenshot(screenshot_path)
+
+        # Extract book covers using the simplified utility function
+        try:
+            # Extract covers from the current screen and get list of successful extractions
+            successful_covers = extract_book_covers_from_screen(
+                automator.driver, books, sindarin_email, screenshot_path
+            )
+
+            logger.info(f"Successfully extracted {len(successful_covers)} book covers")
+
+            # Add cover URLs only for books with successfully extracted covers
+            books = add_cover_urls_to_books(books, successful_covers, sindarin_email)
+        except Exception as e:
+            logger.error(f"Error extracting book covers: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
         return {"books": books}, 200
 
     def get(self):
@@ -399,7 +392,6 @@ class BooksStreamResource(Resource):
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         current_state = automator.state_machine.current_state
-        request_logger.info(f"Current state when streaming books: {current_state}")
 
         # Handle different states - similar to _get_books but with appropriate streaming responses
         if current_state != AppState.LIBRARY:
@@ -609,6 +601,31 @@ class BooksStreamResource(Resource):
                         # Get books up to batch size
                         current_batch = books_to_stream[:batch_size]
                         books_to_stream = books_to_stream[batch_size:]
+
+                        # Take screenshot to extract book covers
+                        try:
+                            # Take a screenshot of the current library view
+                            timestamp = int(time.time())
+                            screenshot_filename = f"library_view_{timestamp}.png"
+                            screenshot_path = os.path.join(automator.screenshots_dir, screenshot_filename)
+                            automator.driver.save_screenshot(screenshot_path)
+
+                            # Extract covers from the current screen
+                            successful_covers = extract_book_covers_from_screen(
+                                automator.driver, current_batch, sindarin_email, screenshot_path
+                            )
+
+                            # Store successful covers in our ongoing list
+                            if not hasattr(generate_stream, "all_successful_covers"):
+                                generate_stream.all_successful_covers = []
+                            generate_stream.all_successful_covers.extend(successful_covers)
+
+                            # Add cover URLs for all books with extracted covers (not just this batch)
+                            current_batch = add_cover_urls_to_books(
+                                current_batch, generate_stream.all_successful_covers, sindarin_email
+                            )
+                        except Exception as cover_err:
+                            logger.error(f"Error processing covers for book batch: {cover_err}")
 
                         # Send the batch immediately
                         books_msg = {"books": current_batch, "batch_num": batch_count}
@@ -1519,6 +1536,37 @@ class ImageResource(Resource):
         return serve_image(image_id, delete_after=False)
 
 
+class CoverImageResource(Resource):
+    def get(self, email_slug, filename):
+        """Get a book cover image by email slug and filename."""
+        try:
+            # Construct the absolute path to the cover image
+            project_root = Path(__file__).resolve().parent.parent.absolute()
+            covers_dir = project_root / "covers"
+            user_covers_dir = covers_dir / email_slug
+            cover_path = user_covers_dir / filename
+
+            # Log detailed path information for debugging
+            logger.info(f"Looking for cover image at: {cover_path}")
+
+            # Check if cover file exists
+            if not cover_path.exists():
+                logger.error(f"Cover image not found: {cover_path}")
+                return {"error": "Cover image not found"}, 404
+
+            # Create response with proper mime type
+            logger.info(f"Serving cover image from: {cover_path}")
+            response = make_response(send_file(str(cover_path), mimetype="image/png"))
+
+            # No need to delete cover images - they're persisted for future use
+            return response
+
+        except Exception as e:
+            logger.error(f"Error serving cover image: {e}")
+            traceback.print_exc()
+            return {"error": str(e)}, 500
+
+
 class ProfilesResource(Resource):
     def get(self):
         """List all available profiles"""
@@ -1908,6 +1956,7 @@ api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
+api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
 api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
 

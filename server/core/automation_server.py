@@ -73,7 +73,6 @@ class AutomationServer:
 
         # Store the automator
         self.automators[email] = automator
-        logger.info(f"Initialized automator for {email}: {automator}/{automator.driver}")
 
         automator.initialize_driver()
 
@@ -93,8 +92,6 @@ class AutomationServer:
         if not email:
             logger.error("Email parameter is required for switch_profile")
             return False, "Email parameter is required"
-
-        logger.info(f"Switching to profile for email: {email}, force_new_emulator={force_new_emulator}")
 
         # current_email field has been removed
         # Always use explicit email parameters in all operations

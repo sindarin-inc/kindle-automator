@@ -158,7 +158,6 @@ def ensure_automator_healthy(f):
                                     logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
 
                         # Start a dedicated Appium server for this email
-                        logger.info(f"Starting dedicated Appium server for {sindarin_email} on port {port}")
                         if not server.start_appium(port=port, email=sindarin_email):
                             logger.error(f"Failed to restart Appium server for {sindarin_email}")
                             return {"error": f"Failed to start Appium server for {sindarin_email}"}, 500
@@ -168,13 +167,11 @@ def ensure_automator_healthy(f):
                         logger.warning(f"Error while resetting Appium for {sindarin_email}: {appium_e}")
 
                     # Try to switch back to the profile
-                    logger.info(f"Attempting to switch back to profile for email: {sindarin_email}")
                     success, message = server.switch_profile(sindarin_email)
                     if not success:
                         logger.error(f"Failed to switch back to profile: {message}")
                         return {"error": f"Failed to switch back to profile: {message}"}, 500
 
-                    logger.info(f"Initializing automator after crash recovery for {sindarin_email}")
                     automator = server.initialize_automator(sindarin_email)
                     # Clear current book since we're restarting the driver
                     server.clear_current_book(sindarin_email)
