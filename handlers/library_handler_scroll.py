@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import re
 import time
@@ -10,6 +11,9 @@ from selenium.common.exceptions import (
     StaleElementReferenceException,
     TimeoutException,
 )
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.actions.interaction import POINTER_TOUCH
+from selenium.webdriver.common.actions.pointer_input import PointerInput
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -29,6 +33,80 @@ class LibraryHandlerScroll:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
+
+    def _perform_hook_scroll(
+        self, center_x: int, scroll_start_y: int, scroll_end_y: int, total_duration_ms: int
+    ):
+        """
+        Performs a scroll gesture with a 'hook' at the end to prevent inertia.
+        The main scroll is vertical, followed by a short diagonal movement (hook).
+        Uses W3C Actions with ActionBuilder.
+        """
+        screen_size = self.driver.get_window_size()
+        hook_dx_offset = int(screen_size["width"] * 0.25)  # Horizontal offset for the hook
+        hook_target_x = center_x + hook_dx_offset
+        hook_target_x = min(max(0, hook_target_x), screen_size["width"] - 1)
+
+        # Define vertical offset for the hook (e.g., 5% of screen height)
+        hook_dy_offset_percentage = 0.05
+        hook_dy_pixels = int(screen_size["height"] * hook_dy_offset_percentage)
+
+        # Calculate the final Y for the hook part
+        # This makes the hook move slightly "back" vertically relative to the main scroll direction
+        if scroll_start_y == scroll_end_y:
+            # If there's no vertical scroll, hook remains at the same y-level
+            hook_final_y = scroll_end_y
+        else:
+            # Moves slightly back: if scrolling up (end_y < start_y), hook_final_y = end_y + dy
+            # if scrolling down (end_y > start_y), hook_final_y = end_y - dy
+            hook_final_y = scroll_end_y - math.copysign(hook_dy_pixels, scroll_end_y - scroll_start_y)
+
+        # Clamp hook_final_y to screen bounds
+        hook_final_y = int(min(max(0, hook_final_y), screen_size["height"] - 1))
+
+        main_scroll_duration_ratio = 0.8
+        main_scroll_duration_ms = int(total_duration_ms * main_scroll_duration_ratio)
+        hook_duration_ms = total_duration_ms - main_scroll_duration_ms
+
+        if hook_duration_ms < 50:
+            hook_duration_ms = 50
+            main_scroll_duration_ms = total_duration_ms - hook_duration_ms
+        if main_scroll_duration_ms < 0:  # Should be non-negative
+            main_scroll_duration_ms = max(0, main_scroll_duration_ms)
+
+        # Get ActionBuilder from ActionChains
+        action_builder = ActionChains(self.driver).w3c_actions
+
+        # Add a new pointer input source of type touch and get the PointerInput object
+        # POINTER_TOUCH is 'touch'
+        finger = action_builder.add_pointer_input(POINTER_TOUCH, "finger")
+
+        # Sequence of actions for the 'finger'
+        # These methods on 'finger' (PointerInput) will add actions to the 'action_builder'
+
+        # 1. Move pointer to start position (instantaneous)
+        finger.create_pointer_move(duration=0, x=center_x, y=scroll_start_y)
+        # 2. Press down (button=0 is typically the main touch/mouse button)
+        finger.create_pointer_down(button=0)
+        # 3. Small pause (duration is in seconds for create_pause)
+        finger.create_pause(0.01)  # 10ms
+        # 4. Main scroll movement (vertical) - duration in milliseconds
+        finger.create_pointer_move(duration=main_scroll_duration_ms, x=center_x, y=scroll_end_y)
+        # 5. Small pause
+        finger.create_pause(0.01)
+        # 6. Hook movement (diagonal) - duration in milliseconds
+        finger.create_pointer_move(duration=hook_duration_ms, x=hook_target_x, y=hook_final_y)
+        # 7. Small pause
+        finger.create_pause(0.01)
+        # 8. Release
+        finger.create_pointer_up(button=0)
+
+        try:
+            # Perform all actions defined in the ActionBuilder
+            action_builder.perform()
+        except Exception as e:
+            logger.error(f"Error performing hook scroll: {e}")
+            store_page_source(self.driver, "hook_scroll_error")
 
     def _log_page_summary(self, page_number, new_titles, total_found):
         """Log a concise summary of books found on current page.
@@ -617,23 +695,21 @@ class LibraryHandlerScroll:
 
                         # Verify start point is below end point by a reasonable amount
                         if smart_start_y - smart_end_y < 100:
-                            logger.warning("Scroll distance too small, using default scroll")
-                            self.driver.swipe(
-                                screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1001
-                            )
+                            logger.warning("Scroll distance too small, using default scroll (hook)")
+                            self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
                         else:
                             # Perform smart scroll - move reference container to top
-                            logger.info(f"Smart scrolling: moving y={smart_start_y} to y={smart_end_y}")
-                            self.driver.swipe(
+                            logger.info(
+                                f"Smart scrolling (hook): moving y={smart_start_y} to y={smart_end_y}"
+                            )
+                            self._perform_hook_scroll(
                                 screen_size["width"] // 2,
                                 smart_start_y,
-                                screen_size["width"] // 2,
                                 smart_end_y,
-                                1001,
+                                500,
                             )
                     else:
                         # Fall back to the current approach if no partially visible books found
-                        logger.info("No partially visible books found, using fallback scrolling method")
 
                         # Default to last book
                         reference_container = book_containers[-1]
@@ -672,37 +748,27 @@ class LibraryHandlerScroll:
 
                             # Verify start point is below end point by a reasonable amount
                             if smart_start_y - smart_end_y < 100:
-                                logger.warning("Scroll distance too small, using default scroll")
-                                self.driver.swipe(
-                                    screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1001
-                                )
+                                logger.warning("Scroll distance too small, using default scroll (hook)")
+                                self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
                             else:
                                 # Perform smart scroll - move reference container to top
-                                logger.info(
-                                    f"Fallback smart scrolling: moving y={smart_start_y} to y={smart_end_y}"
-                                )
-                                self.driver.swipe(
+                                self._perform_hook_scroll(
                                     screen_size["width"] // 2,
                                     smart_start_y,
-                                    screen_size["width"] // 2,
                                     smart_end_y,
-                                    1001,
+                                    500,
                                 )
                         except Exception as e:
                             logger.warning(f"Error calculating smart scroll parameters: {e}")
                             # Fall back to default scroll behavior
-                            logger.warning("Using default scroll behavior")
-                            self.driver.swipe(
-                                screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1001
-                            )
+                            logger.warning("Using default scroll behavior (hook)")
+                            self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
                 else:
                     logger.warning(
-                        f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll"
+                        f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll (hook)"
                     )
                     # Fallback to default scroll behavior
-                    self.driver.swipe(
-                        screen_size["width"] // 2, start_y, screen_size["width"] // 2, end_y, 1001
-                    )
+                    self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
 
                 # After each scroll, check if we inadvertently triggered book selection mode
                 if self.is_in_book_selection_mode():

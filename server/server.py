@@ -540,13 +540,11 @@ class BooksStreamResource(Resource):
                     return
 
                 if kwargs.get("done"):
-                    logger.info("Callback received done signal from library_handler.")
                     total_books_from_handler = kwargs.get("total_books", 0)
                     all_books_retrieved_event.set()  # Signal completion of book retrieval
                     return
 
                 if raw_books_batch:
-                    logger.info(f"Callback received batch of {len(raw_books_batch)} books for processing.")
                     try:
                         # At this point, the UI should be stable for raw_books_batch
                         timestamp = int(time.time())
@@ -561,15 +559,11 @@ class BooksStreamResource(Resource):
                             automator.driver, raw_books_batch, sindarin_email, screenshot_path
                         )
                         successful_covers_accumulator.extend(current_batch_covers)
-                        logger.info(
-                            f"Extracted {len(current_batch_covers)} covers for this batch. Total successful covers so far: {len(successful_covers_accumulator)}"
-                        )
 
                         # Add cover URLs using all accumulated successful covers
                         processed_batch_with_covers = add_cover_urls_to_books(
                             raw_books_batch, successful_covers_accumulator, sindarin_email
                         )
-                        logger.info("Processed batch with covers. Adding to queue.")
                         processed_books_queue.put(processed_batch_with_covers)
 
                     except Exception as e:
@@ -622,13 +616,11 @@ class BooksStreamResource(Resource):
                         )  # Small timeout to remain responsive
                         if processed_batch:
                             batch_num_sent += 1
-                            logger.info(f"Yielding processed book batch number {batch_num_sent}.")
                             yield encode_message({"books": processed_batch, "batch_num": batch_num_sent})
                         # No task_done needed for queue.Queue if not using join()
                     except queue.Empty:
                         # Queue is empty, check if book retrieval is done
                         if all_books_retrieved_event.is_set():
-                            logger.info("Book retrieval is done and queue is empty. Breaking stream loop.")
                             break
                         # else: continue polling, the event wasn't set yet.
                     except Exception as e:

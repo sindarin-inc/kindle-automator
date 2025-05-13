@@ -242,9 +242,6 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
             height = rect["height"]
             right = left + width
             bottom = top + height
-            
-            # Log the coordinates for debugging
-            logger.info(f"Cover coordinates: x={left}, y={top}, width={width}, height={height}, right={right}, bottom={bottom}")
 
             # Minimum dimensions for a valid cover - reduce minimum size to capture more covers
             min_width, min_height = 60, 80  # Smaller minimum dimensions to catch more potential covers
@@ -259,9 +256,7 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
             # Most Kindle covers have a ratio of about 1:1.5 or 2:3, but we'll accept more variations
             aspect_ratio = height / width
             if aspect_ratio < 0.9:  # If definitely horizontal, log warning but still accept
-                logger.warning(
-                    f"Unusual aspect ratio: {aspect_ratio:0.2f} - width={width}, height={height}"
-                )
+                logger.warning(f"Unusual aspect ratio: {aspect_ratio:0.2f} - width={width}, height={height}")
                 # Don't outright reject, but log the warning
 
             # Verify the screenshot exists
@@ -292,13 +287,12 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                 try:
                     cover_img = img.crop((left, top, right, bottom))
                     timestamp = int(time.time())
-                    
+
                     # Always save a debugging copy of the cropped image first
                     try:
                         debug_crop_path = f"screenshots/cover_attempt_{timestamp}.png"
                         cover_img.save(debug_crop_path)
-                        logger.info(f"Saved cover attempt to {debug_crop_path}")
-                        
+
                         # Also save a version with the dimensions in the filename
                         detail_path = f"screenshots/cover_attempt_{width}x{height}_{timestamp}.png"
                         cover_img.save(detail_path)
@@ -307,15 +301,19 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
 
                     # Verify cropped image has reasonable dimensions
                     if cover_img.width < min_width or cover_img.height < min_height:
-                        logger.warning(f"Cropped cover image small: {cover_img.width}x{cover_img.height} - continuing anyway")
+                        logger.warning(
+                            f"Cropped cover image small: {cover_img.width}x{cover_img.height} - continuing anyway"
+                        )
                         # Continue processing despite small size
-                    
+
                     # Check for reasonable aspect ratio
                     aspect_ratio = cover_img.height / cover_img.width
                     if aspect_ratio < 1.0:
-                        logger.warning(f"Suspicious aspect ratio: {aspect_ratio:0.2f} - width={cover_img.width}, height={cover_img.height}")
+                        logger.warning(
+                            f"Suspicious aspect ratio: {aspect_ratio:0.2f} - width={cover_img.width}, height={cover_img.height}"
+                        )
                         # Continue processing despite unusual aspect ratio
-                    
+
                     return {
                         "image": cover_img,
                         "width": cover_img.width,
@@ -477,20 +475,11 @@ def extract_book_covers_from_screen(
     """
     # Ensure the screenshots directory exists
     os.makedirs("screenshots", exist_ok=True)
-    
+
     # Find book elements
     title_element_map = {}
 
     try:
-        # Store page source for debugging purposes
-        timestamp = int(time.time())
-        store_page_source(driver.page_source, f"library_covers_{timestamp}")
-        
-        # Save screenshot for debugging purposes
-        debug_screenshot_path = f"screenshots/library_covers_debug_{timestamp}.png"
-        driver.save_screenshot(debug_screenshot_path)
-        logger.info(f"Saved debug screenshot to {debug_screenshot_path}")
-
         # First, get all title elements and texts
         book_titles_list = driver.find_elements(AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title")
         title_texts = []
@@ -512,9 +501,7 @@ def extract_book_covers_from_screen(
             try:
                 # Check if the container is fully visible
                 rect = container.rect
-                # Log container coordinates for debugging
-                logger.info(f"Container {i}: x={rect['x']}, y={rect['y']}, width={rect['width']}, height={rect['height']}")
-                
+
                 # Skip if container height is too small (partial visibility at screen edge)
                 if rect["height"] < 100:  # Skip tiny containers (partially visible)
                     logger.debug(f"Skipping container {i} due to small height: {rect['height']}")
@@ -591,35 +578,32 @@ def extract_book_covers_from_screen(
         # Extract covers for visible books and return successful extractions
         successful_covers = []
         cover_results = {}  # Store detailed results for debugging
-        
+
         # Save one more full screenshot right before extraction
         pre_extract_screenshot = f"screenshots/pre_extract_covers_{int(time.time())}.png"
         driver.save_screenshot(pre_extract_screenshot)
         logger.info(f"Saved pre-extraction screenshot to {pre_extract_screenshot}")
-        
+
         for title, element in title_element_map.items():
             try:
-                logger.info(f"Attempting to extract cover for '{title}'")
-                
                 # Extract cover image with retry capability
                 cover_data = extract_book_cover(driver, element, screenshot_path, max_retries)
 
                 if cover_data and "image" in cover_data:
                     # Save the cover image
                     success, filename = save_book_cover(cover_data["image"], title, sindarin_email)
-                    
+
                     # Store detailed result
                     cover_results[title] = {
                         "success": success,
                         "filename": filename if success else None,
                         "coordinates": cover_data.get("coordinates"),
                         "width": cover_data.get("width"),
-                        "height": cover_data.get("height")
+                        "height": cover_data.get("height"),
                     }
-                    
+
                     if success:
                         successful_covers.append(title)
-                        logger.info(f"Successfully saved cover for '{title}': {filename}")
                     else:
                         logger.warning(f"Failed to save cover for '{title}' despite having image data")
                 else:
@@ -628,7 +612,7 @@ def extract_book_covers_from_screen(
             except Exception as e:
                 cover_results[title] = {"success": False, "reason": str(e)}
                 logger.error(f"Error extracting cover for book '{title}': {e}")
-        
+
         # Log summary of cover extraction results
         logger.info(f"Cover extraction summary: {len(successful_covers)}/{len(title_element_map)} successful")
         for title, result in cover_results.items():
@@ -636,7 +620,7 @@ def extract_book_covers_from_screen(
                 logger.info(f"  ✓ '{title}': {result.get('width')}x{result.get('height')}")
             else:
                 logger.warning(f"  ✗ '{title}': {result.get('reason')}")
-                
+
         return successful_covers
 
     except Exception as e:
