@@ -286,18 +286,6 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                 # Crop the image to the cover coordinates
                 try:
                     cover_img = img.crop((left, top, right, bottom))
-                    timestamp = int(time.time())
-
-                    # Always save a debugging copy of the cropped image first
-                    try:
-                        debug_crop_path = f"screenshots/cover_attempt_{timestamp}.png"
-                        cover_img.save(debug_crop_path)
-
-                        # Also save a version with the dimensions in the filename
-                        detail_path = f"screenshots/cover_attempt_{width}x{height}_{timestamp}.png"
-                        cover_img.save(detail_path)
-                    except Exception as save_err:
-                        logger.error(f"Error saving debug image: {save_err}")
 
                     # Verify cropped image has reasonable dimensions
                     if cover_img.width < min_width or cover_img.height < min_height:

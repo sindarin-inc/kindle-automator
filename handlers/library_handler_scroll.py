@@ -35,11 +35,16 @@ class LibraryHandlerScroll:
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
     def _perform_hook_scroll(
-        self, center_x: int, scroll_start_y: int, scroll_end_y: int, total_duration_ms: int
+        self,
+        center_x: int,
+        scroll_start_y: int,
+        scroll_end_y: int,
+        total_duration_ms: int,
+        perform_hook: bool = True,
     ):
         """
         Performs a scroll gesture with a 'hook' at the end to prevent inertia.
-        The main scroll is vertical, followed by a short diagonal movement (hook).
+        The main scroll is vertical, followed by a short diagonal movement (hook) if perform_hook is True.
         Uses W3C Actions with ActionBuilder.
         """
         screen_size = self.driver.get_window_size()
@@ -64,15 +69,19 @@ class LibraryHandlerScroll:
         # Clamp hook_final_y to screen bounds
         hook_final_y = int(min(max(0, hook_final_y), screen_size["height"] - 1))
 
-        main_scroll_duration_ratio = 0.8
-        main_scroll_duration_ms = int(total_duration_ms * main_scroll_duration_ratio)
-        hook_duration_ms = total_duration_ms - main_scroll_duration_ms
+        main_scroll_duration_ms = total_duration_ms
+        hook_duration_ms = 0
 
-        if hook_duration_ms < 50:
-            hook_duration_ms = 50
-            main_scroll_duration_ms = total_duration_ms - hook_duration_ms
-        if main_scroll_duration_ms < 0:  # Should be non-negative
-            main_scroll_duration_ms = max(0, main_scroll_duration_ms)
+        if perform_hook:
+            main_scroll_duration_ratio = 0.8
+            main_scroll_duration_ms = int(total_duration_ms * main_scroll_duration_ratio)
+            hook_duration_ms = total_duration_ms - main_scroll_duration_ms
+
+            if hook_duration_ms < 50:
+                hook_duration_ms = 50
+                main_scroll_duration_ms = total_duration_ms - hook_duration_ms
+            if main_scroll_duration_ms < 0:  # Should be non-negative
+                main_scroll_duration_ms = max(0, main_scroll_duration_ms)
 
         # Get ActionBuilder from ActionChains
         action_builder = ActionChains(self.driver).w3c_actions
@@ -92,12 +101,15 @@ class LibraryHandlerScroll:
         finger.create_pause(0.01)  # 10ms
         # 4. Main scroll movement (vertical) - duration in milliseconds
         finger.create_pointer_move(duration=main_scroll_duration_ms, x=center_x, y=scroll_end_y)
-        # 5. Small pause
-        finger.create_pause(0.01)
-        # 6. Hook movement (diagonal) - duration in milliseconds
-        finger.create_pointer_move(duration=hook_duration_ms, x=hook_target_x, y=hook_final_y)
-        # 7. Small pause
-        finger.create_pause(0.01)
+
+        if perform_hook:
+            # 5. Small pause
+            finger.create_pause(0.01)
+            # 6. Hook movement (diagonal) - duration in milliseconds
+            finger.create_pointer_move(duration=hook_duration_ms, x=hook_target_x, y=hook_final_y)
+            # 7. Small pause
+            finger.create_pause(0.01)
+
         # 8. Release
         finger.create_pointer_up(button=0)
 
@@ -141,12 +153,16 @@ class LibraryHandlerScroll:
             screen_size = self.driver.get_window_size()
             start_y = screen_size["height"] * 0.8
             end_y = screen_size["height"] * 0.2
+            toolbar_top = (
+                screen_size["height"] * 0.85
+            )  # Books whose bottom is below this are considered obscured
 
             # Initialize tracking variables
             books = []
             seen_titles = set()
             normalized_target = self._normalize_title(target_title) if target_title else None
             page_count = 0
+            use_hook_for_current_scroll = True  # Initialize hook usage for the first scroll
 
             while True:
                 page_count += 1
@@ -240,7 +256,7 @@ class LibraryHandlerScroll:
 
                 # Store titles from previous scroll position
                 previous_titles = set(seen_titles)
-                new_books_found = False
+                books_added_in_current_page_processing = False  # Renamed from new_books_found
                 new_titles_on_page = []  # Track titles found on this page
                 new_books_batch = []  # Track new books to send via callback
 
@@ -248,6 +264,55 @@ class LibraryHandlerScroll:
                 for container in containers:
                     try:
                         book_info = {"title": None, "progress": None, "size": None, "author": None}
+
+                        # Determine the actual element for geometry checks and its potential title for logging
+                        element_for_geometry = None
+                        potential_title_for_log = "Unknown Element (pre-obscured-check)"
+
+                        if isinstance(container, dict) and container.get("is_synthetic"):
+                            element_for_geometry = container.get("element")
+                            potential_title_for_log = container.get("title_text", potential_title_for_log)
+                        elif hasattr(container, "location") and hasattr(
+                            container, "size"
+                        ):  # It's a WebElement
+                            element_for_geometry = container
+                            try:
+                                # Attempt to get a descriptive name for logging
+                                if element_for_geometry.get_attribute("content-desc"):
+                                    potential_title_for_log = element_for_geometry.get_attribute(
+                                        "content-desc"
+                                    )
+                                elif hasattr(element_for_geometry, "text") and element_for_geometry.text:
+                                    potential_title_for_log = element_for_geometry.text
+                            except Exception:
+                                # Ignore errors in getting a descriptive name for logging, not critical
+                                pass
+
+                        # CHECK IF PARTIALLY OBSCURED (NEW LOGIC)
+                        if element_for_geometry:
+                            try:
+                                loc = element_for_geometry.location
+                                s = element_for_geometry.size
+                                container_bottom = loc["y"] + s["height"]
+
+                                if container_bottom > toolbar_top:
+                                    logger.info(
+                                        f"Skipping partially obscured book/element: '{potential_title_for_log}' (bottom: {container_bottom:.0f} > toolbar_top: {toolbar_top:.0f}). Will be captured in next scroll."
+                                    )
+                                    continue  # Skip to the next container
+                            except (NoSuchElementException, StaleElementReferenceException):
+                                logger.debug(
+                                    f"Could not get geometry for '{potential_title_for_log}' to check if obscured, processing."
+                                )
+                            except AttributeError:
+                                logger.debug(
+                                    f"Element '{potential_title_for_log}' missing geometry attributes (location/size), processing."
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"Error checking if '{potential_title_for_log}' is obscured: {e}, processing."
+                                )
+                        # END OF NEW LOGIC
 
                         # Log container attributes for debugging
                         try:
@@ -315,7 +380,7 @@ class LibraryHandlerScroll:
                                     seen_titles.add(book_info["title"])
                                     books.append(book_info)
                                     new_books_batch.append(book_info)  # Add to batch for callback
-                                    new_books_found = True
+                                    books_added_in_current_page_processing = True  # Correctly set here
                                     new_titles_on_page.append(book_info["title"])
 
                                 # Set a flag to skip the rest of processing for this container
@@ -545,7 +610,7 @@ class LibraryHandlerScroll:
 
                                 books.append(book_info)
                                 new_books_batch.append(book_info)  # Add to batch for callback
-                                new_books_found = True
+                                books_added_in_current_page_processing = True  # Correctly set here
                                 new_titles_on_page.append(book_info["title"])
                             else:
                                 logger.info(
@@ -567,8 +632,14 @@ class LibraryHandlerScroll:
                 if callback and new_books_batch:
                     callback(new_books_batch)
 
-                # If we've found no new books on this screen, we need to double-check
-                if not new_books_found:
+                # Decision for the UPCOMING scroll's hook is based on whether THIS page's MAIN pass found anything.
+                use_hook_for_current_scroll = books_added_in_current_page_processing
+
+                # If we've found no new books on this screen (via main processing), we need to double-check
+                # Also, determine if any new books overall were found in this iteration (main pass + double_check)
+                any_new_books_this_iteration = books_added_in_current_page_processing
+
+                if not books_added_in_current_page_processing:  # If main pass found nothing new
                     # Double-check by directly looking for titles that might not have been processed
                     try:
                         title_elements = self.driver.find_elements(
@@ -582,9 +653,10 @@ class LibraryHandlerScroll:
                             logger.info(
                                 f"Double-check found {len(new_unseen_titles)} additional unseen titles"
                             )
+                            any_new_books_this_iteration = True  # Update overall flag
 
                             # Add these titles to our seen set and create simple book entries for them
-                            new_books_batch = []  # Reset batch for callback
+                            current_double_check_batch = []  # Batch for this specific double-check callback
                             for new_title in new_unseen_titles:
                                 seen_titles.add(new_title)
                                 book_info = {
@@ -594,18 +666,22 @@ class LibraryHandlerScroll:
                                     "author": None,
                                 }
                                 books.append(book_info)
-                                new_books_batch.append(book_info)  # Add to batch for callback
+                                # new_books_batch.append(book_info) # Let's send double-check items in their own batch
+                                current_double_check_batch.append(book_info)
                                 new_titles_on_page.append(new_title)
 
-                            # Update the summary with newly found titles
-                            self._log_page_summary(page_count, new_titles_on_page, len(books))
+                                # Update the summary with newly found titles from double-check
+                                # Ensure _log_page_summary is not called redundantly if main pass also found books
+                                # This call is specifically for titles found ONLY in double-check
+                                self._log_page_summary(
+                                    page_count, [b["title"] for b in current_double_check_batch], len(books)
+                                )
 
-                            # Send additional books via callback if available
-                            if callback and new_books_batch:
-                                callback(new_books_batch)
+                                # Send additional books via callback if available
+                                if callback and current_double_check_batch:
+                                    callback(current_double_check_batch)
 
-                            # Update our flag since we found new books
-                            new_books_found = True
+                            # new_books_found = True # This variable is now books_added_in_current_page_processing or any_new_books_this_iteration
                         else:
                             logger.info("Double-check confirms no new books, stopping scroll")
                             # Send completion notification via callback if available
@@ -617,7 +693,7 @@ class LibraryHandlerScroll:
                         break
 
                 # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
-                if not new_books_found or seen_titles == previous_titles:
+                if not any_new_books_this_iteration or seen_titles == previous_titles:
                     logger.info("No progress in finding new books, stopping scroll")
                     # Send completion notification via callback if available
                     if callback:
@@ -695,18 +771,27 @@ class LibraryHandlerScroll:
 
                         # Verify start point is below end point by a reasonable amount
                         if smart_start_y - smart_end_y < 100:
-                            logger.warning("Scroll distance too small, using default scroll (hook)")
-                            self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
+                            logger.warning(
+                                f"Scroll distance too small, using default scroll (hook={use_hook_for_current_scroll})"
+                            )
+                            self._perform_hook_scroll(
+                                screen_size["width"] // 2,
+                                start_y,
+                                end_y,
+                                1001,
+                                perform_hook=use_hook_for_current_scroll,
+                            )
                         else:
                             # Perform smart scroll - move reference container to top
                             logger.info(
-                                f"Smart scrolling (hook): moving y={smart_start_y} to y={smart_end_y}"
+                                f"Smart scrolling (hook={use_hook_for_current_scroll}): moving y={smart_start_y} to y={smart_end_y}"
                             )
                             self._perform_hook_scroll(
                                 screen_size["width"] // 2,
                                 smart_start_y,
                                 smart_end_y,
-                                500,
+                                1001,
+                                perform_hook=use_hook_for_current_scroll,
                             )
                     else:
                         # Fall back to the current approach if no partially visible books found
@@ -748,27 +833,50 @@ class LibraryHandlerScroll:
 
                             # Verify start point is below end point by a reasonable amount
                             if smart_start_y - smart_end_y < 100:
-                                logger.warning("Scroll distance too small, using default scroll (hook)")
-                                self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
+                                logger.warning(
+                                    f"Scroll distance too small, using default scroll (hook={use_hook_for_current_scroll})"
+                                )
+                                self._perform_hook_scroll(
+                                    screen_size["width"] // 2,
+                                    start_y,
+                                    end_y,
+                                    1001,
+                                    perform_hook=use_hook_for_current_scroll,
+                                )
                             else:
                                 # Perform smart scroll - move reference container to top
                                 self._perform_hook_scroll(
                                     screen_size["width"] // 2,
                                     smart_start_y,
                                     smart_end_y,
-                                    500,
+                                    1001,
+                                    perform_hook=use_hook_for_current_scroll,
                                 )
                         except Exception as e:
                             logger.warning(f"Error calculating smart scroll parameters: {e}")
                             # Fall back to default scroll behavior
-                            logger.warning("Using default scroll behavior (hook)")
-                            self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
+                            logger.warning(
+                                f"Using default scroll behavior (hook={use_hook_for_current_scroll})"
+                            )
+                            self._perform_hook_scroll(
+                                screen_size["width"] // 2,
+                                start_y,
+                                end_y,
+                                1001,
+                                perform_hook=use_hook_for_current_scroll,
+                            )
                 else:
                     logger.warning(
-                        f"Not enough book containers found for smart scrolling ({len(book_containers) if book_containers else 0}), using default scroll (hook)"
+                        f"Not enough book containers for smart scroll ({len(book_containers) if book_containers else 0}), using default (hook={use_hook_for_current_scroll})"
                     )
                     # Fallback to default scroll behavior
-                    self._perform_hook_scroll(screen_size["width"] // 2, start_y, end_y, 500)
+                    self._perform_hook_scroll(
+                        screen_size["width"] // 2,
+                        start_y,
+                        end_y,
+                        1001,
+                        perform_hook=use_hook_for_current_scroll,
+                    )
 
                 # After each scroll, check if we inadvertently triggered book selection mode
                 if self.is_in_book_selection_mode():

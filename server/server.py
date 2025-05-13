@@ -1544,16 +1544,12 @@ class CoverImageResource(Resource):
             user_covers_dir = covers_dir / email_slug
             cover_path = user_covers_dir / filename
 
-            # Log detailed path information for debugging
-            logger.info(f"Looking for cover image at: {cover_path}")
-
             # Check if cover file exists
             if not cover_path.exists():
                 logger.error(f"Cover image not found: {cover_path}")
                 return {"error": "Cover image not found"}, 404
 
             # Create response with proper mime type
-            logger.info(f"Serving cover image from: {cover_path}")
             response = make_response(send_file(str(cover_path), mimetype="image/png"))
 
             # No need to delete cover images - they're persisted for future use

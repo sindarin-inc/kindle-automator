@@ -10,10 +10,10 @@ This module provides functions to:
 Usage:
     # Get the email from the current request
     email = get_sindarin_email()
-    
+
     # Get a logger specific to the current request's email (or fall back to standard logger)
     request_logger = get_request_logger()
-    
+
     # Get the automator for the current request
     automator, email, error = get_automator_for_request(server)
 """
@@ -64,9 +64,6 @@ def get_sindarin_email() -> Optional[str]:
     elif "email" in request.form:
         email = request.form.get("email")
         logger.debug(f"Found email in form data: {email}")
-
-    if not email:
-        logger.debug("No email found in request")
 
     return email
 
