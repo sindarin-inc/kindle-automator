@@ -670,6 +670,20 @@ class EmulatorLauncher:
                 exit_code = process.returncode
                 logger.error(f"Emulator process exited immediately with code {exit_code}")
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}")
+                # Read and log stdout
+                try:
+                    with open(stdout_log, "r") as f:
+                        stdout_content = f.read()
+                    logger.error(f"Emulator stdout ({stdout_log}):\n{stdout_content}")
+                except Exception as e:
+                    logger.error(f"Failed to read emulator stdout log {stdout_log}: {e}")
+                # Read and log stderr
+                try:
+                    with open(stderr_log, "r") as f:
+                        stderr_content = f.read()
+                    logger.error(f"Emulator stderr ({stderr_log}):\n{stderr_content}")
+                except Exception as e:
+                    logger.error(f"Failed to read emulator stderr log {stderr_log}: {e}")
                 return False, None, None
 
             return True, emulator_id, display_num
