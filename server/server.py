@@ -513,151 +513,157 @@ class BooksStreamResource(Resource):
         # Standard implementation with book retrieval
         def generate_stream():
             import json
+            import queue  # For thread-safe communication
             import sys
             import threading
 
-            # Create events to coordinate between threads
-            book_event = threading.Event()
-            all_done_event = threading.Event()
+            # Event for signaling all books are retrieved by the library_handler
+            all_books_retrieved_event = threading.Event()
 
-            # Shared variables to store book batches and status information
-            books_to_stream = []
+            # Thread-safe queue for processed book batches
+            processed_books_queue = queue.Queue()
+
+            # Shared variables for status
             error_message = None
-            all_done = False
-            total_books = 0
+            total_books_from_handler = 0  # To store the total count from library_handler
+            successful_covers_accumulator = []  # Accumulate all successful covers
 
-            # Callback function that will receive books from the library handler
-            def book_callback(books_batch, **kwargs):
-                nonlocal error_message, all_done, total_books, books_to_stream
+            # Callback function that will receive raw books_batch from the library handler
+            # This callback will process books synchronously (screenshot, covers) for the current stable view
+            def book_processing_callback(raw_books_batch, **kwargs):
+                nonlocal error_message, total_books_from_handler, successful_covers_accumulator
 
                 if kwargs.get("error"):
                     logger.info(f"Callback received error: {kwargs.get('error')}")
-
-                # Check for error condition
-                if kwargs.get("error"):
                     error_message = kwargs.get("error")
-                    book_event.set()
+                    all_books_retrieved_event.set()  # Signal to stop generate_stream loop
                     return
 
-                # Check for completion
                 if kwargs.get("done"):
-                    all_done = True
-                    total_books = kwargs.get("total_books", 0)
-                    all_done_event.set()
-                    book_event.set()
+                    logger.info("Callback received done signal from library_handler.")
+                    total_books_from_handler = kwargs.get("total_books", 0)
+                    all_books_retrieved_event.set()  # Signal completion of book retrieval
                     return
 
-                # Process normal book batch
-                if books_batch:
-                    books_to_stream.extend(books_batch)
-                    book_event.set()
+                if raw_books_batch:
+                    logger.info(f"Callback received batch of {len(raw_books_batch)} books for processing.")
+                    try:
+                        # At this point, the UI should be stable for raw_books_batch
+                        timestamp = int(time.time())
+                        screenshot_filename = f"library_view_stream_{timestamp}.png"
+                        screenshot_path = os.path.join(automator.screenshots_dir, screenshot_filename)
+                        logger.info(f"Taking screenshot for batch: {screenshot_path}")
+                        automator.driver.save_screenshot(screenshot_path)
 
-            # Start the book retrieval process with our callback
-            def start_book_retrieval():
+                        # Extract covers from the current screen for this batch
+                        logger.info("Extracting covers for the current batch.")
+                        current_batch_covers = extract_book_covers_from_screen(
+                            automator.driver, raw_books_batch, sindarin_email, screenshot_path
+                        )
+                        successful_covers_accumulator.extend(current_batch_covers)
+                        logger.info(
+                            f"Extracted {len(current_batch_covers)} covers for this batch. Total successful covers so far: {len(successful_covers_accumulator)}"
+                        )
+
+                        # Add cover URLs using all accumulated successful covers
+                        processed_batch_with_covers = add_cover_urls_to_books(
+                            raw_books_batch, successful_covers_accumulator, sindarin_email
+                        )
+                        logger.info("Processed batch with covers. Adding to queue.")
+                        processed_books_queue.put(processed_batch_with_covers)
+
+                    except Exception as e:
+                        logger.error(f"Error processing book batch in callback: {e}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        # This error is for a single batch; retrieval might continue for others.
+                        # The main error_message is for fatal errors in the retrieval thread itself.
+                else:
+                    logger.info("Callback received an empty books_batch or no batch.")
+
+            # Thread to run the library_handler's book retrieval
+            def start_book_retrieval_thread_fn():
                 try:
-                    # Call the library handler with our callback function
-                    logger.info("Starting book retrieval with streaming callback")
-                    automator.state_machine.library_handler.get_book_titles(callback=book_callback)
-                    logger.info("Book retrieval process completed")
+                    logger.info("Starting book retrieval with processing callback in a new thread.")
+                    automator.state_machine.library_handler.get_book_titles(callback=book_processing_callback)
+                    logger.info("Book retrieval process (get_book_titles) completed in its thread.")
                 except Exception as e:
-                    logger.error(f"Error in book retrieval thread: {e}")
+                    logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
+                    nonlocal error_message  # To set the shared error_message
                     error_message = str(e)
-                    book_event.set()
+                    # Ensure the main loop knows about this fatal error and can terminate
+                    if not all_books_retrieved_event.is_set():
+                        all_books_retrieved_event.set()
 
-            # Start the book retrieval in a separate thread
-            retrieval_thread = threading.Thread(target=start_book_retrieval, daemon=True)
+            retrieval_thread = threading.Thread(target=start_book_retrieval_thread_fn, daemon=True)
             retrieval_thread.start()
-            logger.info("Book retrieval thread started")
+            logger.info("Book retrieval and processing thread started.")
 
-            # Explicitly log each yield to see if the generator is running
+            # Generator part for SSE (runs in Flask worker thread)
             try:
-                # Function to encode message as bytes
+
                 def encode_message(msg_dict):
                     return (json.dumps(msg_dict) + "\n").encode("utf-8")
 
-                # Start immediately with an initial message
-                start_msg = {"status": "started", "message": "Book retrieval started"}
-                yield encode_message(start_msg)
+                yield encode_message(
+                    {"status": "started", "message": "Book retrieval and processing initiated"}
+                )
 
-                batch_count = 0
-                # Process books as they become available
-                batch_size = 10  # Send books in batches for efficiency
-
-                while not all_done_event.is_set() or books_to_stream:
-                    # Wait for new books or completion (with timeout)
-                    book_event.wait(timeout=0.1)
-                    book_event.clear()
-
-                    # Check for errors
+                batch_num_sent = 0
+                while True:
                     if error_message:
-                        error_msg = {"error": error_message}
-                        logger.info(f"Yielding error message: {json.dumps(error_msg)}")
-                        yield encode_message(error_msg)
+                        logger.info(f"Error signaled: {error_message}. Yielding error.")
+                        yield encode_message({"error": error_message})
                         break
 
-                    # Process available books
-                    if books_to_stream:
-                        batch_count += 1
-                        # Get books up to batch size
-                        current_batch = books_to_stream[:batch_size]
-                        books_to_stream = books_to_stream[batch_size:]
+                    try:
+                        # Get processed batch from queue with a timeout
+                        processed_batch = processed_books_queue.get(
+                            timeout=0.2
+                        )  # Small timeout to remain responsive
+                        if processed_batch:
+                            batch_num_sent += 1
+                            logger.info(f"Yielding processed book batch number {batch_num_sent}.")
+                            yield encode_message({"books": processed_batch, "batch_num": batch_num_sent})
+                        # No task_done needed for queue.Queue if not using join()
+                    except queue.Empty:
+                        # Queue is empty, check if book retrieval is done
+                        if all_books_retrieved_event.is_set():
+                            logger.info("Book retrieval is done and queue is empty. Breaking stream loop.")
+                            break
+                        # else: continue polling, the event wasn't set yet.
+                    except Exception as e:
+                        logger.error(f"Unexpected error in generate_stream while getting from queue: {e}")
+                        yield encode_message({"error": f"Streaming error: {str(e)}"})  # Send error to client
+                        break  # Terminate stream on unexpected errors
 
-                        # Take screenshot to extract book covers
-                        try:
-                            # Take a screenshot of the current library view
-                            timestamp = int(time.time())
-                            screenshot_filename = f"library_view_{timestamp}.png"
-                            screenshot_path = os.path.join(automator.screenshots_dir, screenshot_filename)
-                            automator.driver.save_screenshot(screenshot_path)
+                # After the loop, if no error was yielded from inside the loop
+                if not error_message:
+                    logger.info(
+                        f"Stream finished. Total books expected from handler: {total_books_from_handler}."
+                    )
+                    yield encode_message({"done": True, "total_books": total_books_from_handler})
 
-                            # Extract covers from the current screen
-                            successful_covers = extract_book_covers_from_screen(
-                                automator.driver, current_batch, sindarin_email, screenshot_path
-                            )
-
-                            # Store successful covers in our ongoing list
-                            if not hasattr(generate_stream, "all_successful_covers"):
-                                generate_stream.all_successful_covers = []
-                            generate_stream.all_successful_covers.extend(successful_covers)
-
-                            # Add cover URLs for all books with extracted covers (not just this batch)
-                            current_batch = add_cover_urls_to_books(
-                                current_batch, generate_stream.all_successful_covers, sindarin_email
-                            )
-                        except Exception as cover_err:
-                            logger.error(f"Error processing covers for book batch: {cover_err}")
-
-                        # Send the batch immediately
-                        books_msg = {"books": current_batch, "batch_num": batch_count}
-                        yield encode_message(books_msg)
-
-                # Send completion message
-                if all_done:
-                    done_msg = {"done": True, "total_books": total_books}
-                    yield encode_message(done_msg)
-
-                # Final message to signal completion to client
-                complete_msg = {"complete": True}
-                yield encode_message(complete_msg)
+                yield encode_message({"complete": True})
+                logger.info("SSE stream complete message sent.")
 
             except Exception as e:
                 error_trace = traceback.format_exc()
-                logger.error(f"Error in stream generator: {e}")
+                logger.error(f"Error in generate_stream generator: {e}")
                 logger.error(f"Traceback: {error_trace}")
-                error_msg = {"error": str(e), "trace": error_trace}
-                yield encode_message(error_msg)
+                # Ensure this also yields an error if the generator itself has an issue
+                yield encode_message({"error": str(e), "trace": error_trace})
 
         # Return the streaming response with proper configuration
         logger.info("Setting up streaming response")
         return Response(
-            generate_stream(),  # Not using stream_with_context since it might be causing issues
-            mimetype="text/plain",  # Use text/plain to avoid any content-type processing
-            direct_passthrough=True,  # Enable direct passthrough to avoid buffering
+            generate_stream(),
+            mimetype="text/plain",
+            direct_passthrough=True,
             headers={
-                "X-Accel-Buffering": "no",  # Disable buffering in Nginx
+                "X-Accel-Buffering": "no",
                 "Cache-Control": "no-cache, no-transform",
-                "Content-Type": "text/plain",  # Force content-type header
-                "Transfer-Encoding": "chunked",  # Use chunked encoding
+                "Content-Type": "text/plain",
+                "Transfer-Encoding": "chunked",
             },
         )
 
