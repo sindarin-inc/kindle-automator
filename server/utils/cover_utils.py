@@ -447,7 +447,7 @@ def get_cover_url(filename: str, sindarin_email: str) -> str:
 
 def extract_book_covers_from_screen(
     driver, books, sindarin_email: str, screenshot_path: str, max_retries: int = 3
-) -> list:
+) -> dict:
     """
     Extract book covers from the current screen and save them to disk.
 
@@ -459,7 +459,7 @@ def extract_book_covers_from_screen(
         max_retries: Maximum number of retries for stale element references
 
     Returns:
-        List of book titles for which cover extraction was successful
+        Dictionary of cover extraction results
     """
     # Ensure the screenshots directory exists
     os.makedirs("screenshots", exist_ok=True)
@@ -564,7 +564,6 @@ def extract_book_covers_from_screen(
         logger.info(f"Found {len(title_element_map)} visible books with titles and cover elements")
 
         # Extract covers for visible books and return successful extractions
-        successful_covers = []
         cover_results = {}  # Store detailed results for debugging
 
         # Save one more full screenshot right before extraction
@@ -591,9 +590,9 @@ def extract_book_covers_from_screen(
                     }
 
                     if success:
-                        successful_covers.append(title)
+                        logger.info(f"  ✓ '{title}': {cover_data['width']}x{cover_data['height']}")
                     else:
-                        logger.warning(f"Failed to save cover for '{title}' despite having image data")
+                        logger.warning(f"  ✗ '{title}': No valid cover data")
                 else:
                     cover_results[title] = {"success": False, "reason": "No valid cover data"}
                     logger.error(f"Failed to extract cover for '{title}': no valid cover data returned")
@@ -602,49 +601,53 @@ def extract_book_covers_from_screen(
                 logger.error(f"Error extracting cover for book '{title}': {e}")
 
         # Log summary of cover extraction results
-        logger.info(f"Cover extraction summary: {len(successful_covers)}/{len(title_element_map)} successful")
+        logger.info(
+            f"Cover extraction summary: {len(cover_results) - sum(1 for result in cover_results.values() if not result['success'])}/{len(cover_results)} successful"
+        )
         for title, result in cover_results.items():
             if result.get("success"):
                 logger.info(f"  ✓ '{title}': {result.get('width')}x{result.get('height')}")
             else:
                 logger.warning(f"  ✗ '{title}': {result.get('reason')}")
 
-        return successful_covers
+        return cover_results
 
     except Exception as e:
         logger.error(f"Error finding book elements for cover extraction: {e}")
-        return []
+        return {}
 
 
-def add_cover_urls_to_books(books, successful_covers, sindarin_email: str):
+def add_cover_urls_to_books(books, cover_info: dict, sindarin_email: str):
     """
-    Add cover_url to books that had successful cover extraction.
+    Add cover_url, cover_width, and cover_height to books that had successful cover extraction.
 
     Args:
         books: List of book dictionaries to update
-        successful_covers: List of book titles with successful cover extraction
+        cover_info: Dictionary of cover extraction results (keyed by title)
         sindarin_email: The email of the user
 
     Returns:
-        Updated books list with cover_url added
+        Updated books list with cover_url, cover_width, and cover_height added
     """
-    # Make verification of covers more robust by checking if they actually exist
     covers_dir = Path(__file__).resolve().parent.parent.parent / "covers" / slugify(sindarin_email)
 
-    # Only add cover_url for books with successfully saved covers - and only if they exist
     for book in books:
-        if book.get("title") and book.get("title") in successful_covers:
-            filename = f"{slugify(book['title'])}.png"
-            cover_path = covers_dir / filename
+        book_title = book.get("title")
+        if book_title and book_title in cover_info:
+            info = cover_info[book_title]
+            if info.get("success") and info.get("filename"):
+                filename = info["filename"]  # Use the filename from cover_info
+                cover_path = covers_dir / filename
 
-            # Verify the cover file actually exists before adding the URL
-            if cover_path.exists():
-                book["cover_url"] = get_cover_url(filename, sindarin_email)
-            else:
-                logger.warning(
-                    f"Cover file for '{book['title']}' doesn't exist at {cover_path} - not adding URL"
-                )
-        else:
-            logger.debug(f"Book '{book.get('title')}' not in successful_covers list - no cover_url added")
+                if cover_path.exists():
+                    book["cover_url"] = get_cover_url(filename, sindarin_email)
+                    book["w"] = info.get("width")
+                    book["h"] = info.get("height")
+                else:
+                    logger.warning(
+                        f"Cover file for '{book_title}' ('{filename}') doesn't exist at {cover_path} - not adding URL"
+                    )
+            # No explicit else here, extract_book_covers_from_screen handles logging failures
+        # No explicit else here, if book_title not in cover_info, it means no successful cover was processed
 
     return books

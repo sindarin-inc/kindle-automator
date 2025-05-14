@@ -347,14 +347,15 @@ class BooksResource(Resource):
         # Extract book covers using the simplified utility function
         try:
             # Extract covers from the current screen and get list of successful extractions
-            successful_covers = extract_book_covers_from_screen(
+            cover_info_dict = extract_book_covers_from_screen(
                 automator.driver, books, sindarin_email, screenshot_path
             )
 
-            logger.info(f"Successfully extracted {len(successful_covers)} book covers")
+            num_successful_covers = sum(1 for info in cover_info_dict.values() if info.get("success"))
+            logger.info(f"Successfully processed {num_successful_covers} book covers")
 
             # Add cover URLs only for books with successfully extracted covers
-            books = add_cover_urls_to_books(books, successful_covers, sindarin_email)
+            books = add_cover_urls_to_books(books, cover_info_dict, sindarin_email)
         except Exception as e:
             logger.error(f"Error extracting book covers: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
@@ -526,7 +527,7 @@ class BooksStreamResource(Resource):
             # Shared variables for status
             error_message = None
             total_books_from_handler = 0  # To store the total count from library_handler
-            successful_covers_accumulator = []  # Accumulate all successful covers
+            successful_covers_accumulator = {}  # Accumulate all successful covers (now a dict)
 
             # Callback function that will receive raw books_batch from the library handler
             # This callback will process books synchronously (screenshot, covers) for the current stable view
@@ -555,10 +556,10 @@ class BooksStreamResource(Resource):
 
                         # Extract covers from the current screen for this batch
                         logger.info("Extracting covers for the current batch.")
-                        current_batch_covers = extract_book_covers_from_screen(
+                        cover_info_for_batch = extract_book_covers_from_screen(
                             automator.driver, raw_books_batch, sindarin_email, screenshot_path
                         )
-                        successful_covers_accumulator.extend(current_batch_covers)
+                        successful_covers_accumulator.update(cover_info_for_batch)  # Merge dicts
 
                         # Add cover URLs using all accumulated successful covers
                         processed_batch_with_covers = add_cover_urls_to_books(
