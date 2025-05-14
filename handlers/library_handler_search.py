@@ -83,7 +83,6 @@ class LibraryHandlerSearch:
 
         # For books with apostrophes or other special characters, try more lenient matching strategies
         if "'" in title1 or "'" in title2 or ":" in title1 or ":" in title2:
-            logger.info("Title contains special characters, using more lenient matching")
 
             # Strategy 1: Check if one contains the other (common when titles are truncated)
             if norm1 in norm2 or norm2 in norm1:
@@ -237,7 +236,6 @@ class LibraryHandlerSearch:
         """
         try:
             logger.info(f"Checking if '{book_title}' is visible on current screen")
-            store_page_source(self.driver.page_source, "check_book_visible")
 
             # Store a matched title element and info for fallback if we can't find the button right away
             matched_title_element = None
@@ -249,8 +247,6 @@ class LibraryHandlerSearch:
             if not title_elements:
                 logger.info("No text elements found on current screen")
                 return None
-
-            logger.info(f"Found {len(title_elements)} text elements on current screen")
 
             # Check each title to see if it matches our target book
             for title_element in title_elements:
@@ -473,17 +469,10 @@ class LibraryHandlerSearch:
             tuple or None: (parent_container, button, book_info) if found, None otherwise
         """
         try:
-            logger.info(f"Searching for book '{book_title}' using simplified implementation")
-
-            # Save screenshots for debugging
-            store_page_source(self.driver.page_source, "before_search")
-            self.driver.save_screenshot(os.path.join(self.screenshots_dir, "before_search.png"))
-
             # Find search box
             search_box = None
             try:
                 search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
-                logger.info("Found search box by ID")
             except:
                 # Try finding by class name and content-desc
                 linear_layouts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.LinearLayout")
@@ -502,18 +491,12 @@ class LibraryHandlerSearch:
 
             # Click search box
             search_box.click()
-            logger.info("Clicked search box")
             time.sleep(1)
-
-            # Save screenshot after clicking search box
-            store_page_source(self.driver.page_source, "after_search_click")
-            self.driver.save_screenshot(os.path.join(self.screenshots_dir, "after_search_click.png"))
 
             # Find search input field
             search_field = None
             try:
                 search_field = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
-                logger.info("Found search input field by ID")
             except:
                 # Try finding by class name
                 edit_texts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
@@ -531,20 +514,11 @@ class LibraryHandlerSearch:
             search_field.send_keys(book_title)
             logger.info(f"Entered book title in search field: '{book_title}'")
 
-            # Save screenshot after entering text
-            store_page_source(self.driver.page_source, "after_search_text_entry")
-            self.driver.save_screenshot(os.path.join(self.screenshots_dir, "after_search_text_entry.png"))
-
             # Press Enter key
             self.driver.press_keycode(66)  # Android keycode for Enter/Search
-            logger.info("Pressed Enter to execute search")
 
             # Wait for search results
             time.sleep(1)
-
-            # Save search results
-            store_page_source(self.driver.page_source, "search_results")
-            self.driver.save_screenshot(os.path.join(self.screenshots_dir, "search_results.png"))
 
             # Find "In your library" section and "Results from" section to establish boundaries
             in_library_section = None
@@ -554,7 +528,6 @@ class LibraryHandlerSearch:
 
             # Get all text elements
             text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-            logger.info(f"Found {len(text_elements)} text elements")
 
             # First pass: look for both section headers
             for element in text_elements:

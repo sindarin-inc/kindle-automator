@@ -71,7 +71,6 @@ class KindleStateMachine:
     def _get_current_state(self):
         """Get the current app state using the view inspector."""
         view = self.view_inspector.get_current_view()
-        logger.info(f"View {view} maps to state {AppState[view.name]}")
         return AppState[view.name]
 
     def transition_to_library(self, max_transitions=5, server=None):
@@ -102,7 +101,6 @@ class KindleStateMachine:
                     server.clear_current_book(email)
 
             if self.current_state == AppState.LIBRARY:
-                logger.info("Successfully reached library state")
                 # Switch to list view if needed
                 if not self.library_handler.switch_to_list_view():
                     logger.warning("Failed to switch to list view, but we're still in library")

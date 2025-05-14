@@ -424,7 +424,6 @@ class LibraryHandler:
 
             # Check if we're already in list view
             if self._is_list_view():
-                logger.info("Already in list view")
                 return True
 
             # Force update state machine to ensure we're recognized as being in LIBRARY state
@@ -1141,6 +1140,20 @@ class LibraryHandler:
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
+            # Try using the search box first to find the book
+            search_result = self.search_handler._search_for_book(book_title)
+
+            if search_result:
+                parent_container, button, book_info = search_result
+                logger.info(f"Successfully found book '{book_title}' using search function: {book_info}")
+
+                # Handle clicking the book and check if we successfully exit library view
+                return self._handle_book_click_and_transition(parent_container, button, book_info, book_title)
+            else:
+                logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
+
+            # Fallback: Search for the book by scrolling
+
             # First check if we're in the Grid/List view dialog and handle it
             if self._is_grid_list_view_dialog_open():
                 logger.info("Detected Grid/List view dialog is open, handling it first")
@@ -1162,20 +1175,6 @@ class LibraryHandler:
             if not self.scroll_handler.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
 
-            # Try using the search box first to find the book
-            logger.info(f"Trying to find book '{book_title}' using search function")
-            search_result = self.search_handler._search_for_book(book_title)
-
-            if search_result:
-                parent_container, button, book_info = search_result
-                logger.info(f"Successfully found book '{book_title}' using search function: {book_info}")
-
-                # Handle clicking the book and check if we successfully exit library view
-                return self._handle_book_click_and_transition(parent_container, button, book_info, book_title)
-            else:
-                logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
-
-            # Fallback: Search for the book by scrolling
             # Provide the title_match_func to scroll_through_library
             parent_container, button, book_info = self.scroll_handler._scroll_through_library(
                 book_title, title_match_func=self.search_handler._title_match
@@ -1227,7 +1226,6 @@ class LibraryHandler:
             store_page_source(self.driver.page_source, "library_before_book_search")
 
             # Check if the book is already visible on the current screen before searching
-            logger.info(f"Checking if book '{book_title}' is already visible on the current screen")
             visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
             if visible_book_result:
                 parent_container, button, book_info = visible_book_result

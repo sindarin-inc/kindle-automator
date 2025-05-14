@@ -195,8 +195,6 @@ class ViewInspector:
 
     def _is_tab_selected(self, tab_name):
         """Check if a specific tab is currently selected."""
-        logger.info(f"   Checking if {tab_name} tab is selected...")
-
         # Check for cached tab selection to avoid redundant checks
         cache_key = f"{tab_name}_tab_selected"
         if hasattr(self, "_tab_check_time") and hasattr(self, cache_key):
@@ -218,7 +216,6 @@ class ViewInspector:
             )
             element = self.driver.find_element(by, value)
             if element.is_displayed():
-                logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
                 result = True
         except NoSuchElementException:
             # Only try additional strategies if the primary one fails
@@ -227,7 +224,6 @@ class ViewInspector:
                     by, value = strategy
                     element = self.driver.find_element(by, value)
                     if element.is_displayed():
-                        logger.info(f"   Found {tab_name} tab with strategy: {by}, value: {value}")
                         result = True
                         break
                 except NoSuchElementException:
@@ -532,7 +528,6 @@ class ViewInspector:
                 return AppView.CAPTCHA
 
             # Check for empty library with sign-in button first
-            logger.info("   Checking for empty library with sign-in button...")
             # Try the predefined identifiers
             if self._try_find_element(
                 EMPTY_LIBRARY_IDENTIFIERS, "   Found empty library with sign-in button"
@@ -575,15 +570,6 @@ class ViewInspector:
             except NoSuchElementException:
                 pass
 
-            # Check for library view indicators
-            logger.info("   Checking for library view indicators...")
-            has_library_root = False
-            has_library_tab = False
-
-            # Directly check for specific library elements
-            logger.info("   Directly checking for library view elements...")
-            found_library_element = False
-
             # First check the more accurate tab selection because library_root_view exists for both tabs
             if self._is_tab_selected("LIBRARY"):
                 logger.info("   LIBRARY tab is selected, confirming we are in library view")
@@ -591,9 +577,6 @@ class ViewInspector:
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.LIBRARY
 
-                # Only store page source in debug mode to reduce I/O
-                if logger.isEnabledFor(logging.DEBUG):
-                    filepath = store_page_source(self.driver.page_source, "library_tab_selected")
                 return AppView.LIBRARY
 
             # If LIBRARY tab is not selected, check if HOME tab is selected
