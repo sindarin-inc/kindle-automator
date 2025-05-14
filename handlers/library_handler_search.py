@@ -520,6 +520,41 @@ class LibraryHandlerSearch:
             # Wait for search results
             time.sleep(1)
 
+            # Check for "Search instead for" button and click it if present
+            try:
+                logger.info("Checking for 'Search instead for' suggestion")
+                text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+
+                for element in text_elements:
+                    try:
+                        text = element.text
+                        if text and "Search instead for" in text:
+                            logger.info(f"Found 'Search instead for' suggestion: '{text}'")
+
+                            # Click the element
+                            if element.get_attribute("clickable") == "true":
+                                element.click()
+                                logger.info("Clicked 'Search instead for' button")
+                                time.sleep(1)
+                                break
+                            else:
+                                # If the text element itself isn't clickable, check for its parent
+                                try:
+                                    parent = element.find_element(AppiumBy.XPATH, "./..")
+                                    if parent.get_attribute("clickable") == "true":
+                                        parent.click()
+                                        logger.info("Clicked parent of 'Search instead for' text")
+                                        time.sleep(1)
+                                        break
+                                except:
+                                    logger.debug(
+                                        "Could not find clickable parent for 'Search instead for' text"
+                                    )
+                    except:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error checking for 'Search instead for' button: {e}")
+
             # Find "In your library" section and "Results from" section to establish boundaries
             in_library_section = None
             in_library_y = 0

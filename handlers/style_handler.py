@@ -37,16 +37,20 @@ class StyleHandler:
         elif hasattr(driver, "automator") and hasattr(driver.automator, "profile_manager"):
             self.profile_manager = driver.automator.profile_manager
         # Then check if automator has state_machine with profile_manager
-        elif (hasattr(driver, "automator") and
-              hasattr(driver.automator, "state_machine") and
-              hasattr(driver.automator.state_machine, "profile_manager")):
+        elif (
+            hasattr(driver, "automator")
+            and hasattr(driver.automator, "state_machine")
+            and hasattr(driver.automator.state_machine, "profile_manager")
+        ):
             self.profile_manager = driver.automator.state_machine.profile_manager
         else:
             self.profile_manager = None
 
         if not self.profile_manager:
             # Log the absence of profile manager
-            logger.warning("No profile_manager found on driver or automator. Style preferences won't be saved.")
+            logger.warning(
+                "No profile_manager found on driver or automator. Style preferences won't be saved."
+            )
 
     def update_reading_style(self, show_placemark: bool = False) -> bool:
         """
@@ -487,10 +491,12 @@ class StyleHandler:
                                 logger.info(f"Successfully updated style preference in profile for {email}")
                             else:
                                 # If the update failed using the normal method, try a direct approach
-                                logger.warning(f"Standard update_style_preference failed for {email}, trying direct approach")
+                                logger.warning(
+                                    f"Standard update_style_preference failed for {email}, trying direct approach"
+                                )
 
                                 # Try direct manipulation of profiles_index if available
-                                if hasattr(self.profile_manager, 'profiles_index'):
+                                if hasattr(self.profile_manager, "profiles_index"):
                                     # Make sure user exists in profiles_index
                                     if email not in self.profile_manager.profiles_index:
                                         self.profile_manager.profiles_index[email] = {}
@@ -500,14 +506,23 @@ class StyleHandler:
                                         self.profile_manager.profiles_index[email]["preferences"] = {}
 
                                     # Set style_updated directly in preferences
-                                    self.profile_manager.profiles_index[email]["preferences"]["styles_updated"] = True
+                                    self.profile_manager.profiles_index[email]["preferences"][
+                                        "styles_updated"
+                                    ] = True
 
                                     # Initialize reading_settings if needed
-                                    if "reading_settings" not in self.profile_manager.profiles_index[email]["preferences"]:
-                                        self.profile_manager.profiles_index[email]["preferences"]["reading_settings"] = {}
+                                    if (
+                                        "reading_settings"
+                                        not in self.profile_manager.profiles_index[email]["preferences"]
+                                    ):
+                                        self.profile_manager.profiles_index[email]["preferences"][
+                                            "reading_settings"
+                                        ] = {}
 
                                     # Set reading settings
-                                    reading_settings = self.profile_manager.profiles_index[email]["preferences"]["reading_settings"]
+                                    reading_settings = self.profile_manager.profiles_index[email][
+                                        "preferences"
+                                    ]["reading_settings"]
                                     reading_settings["theme"] = "dark"
                                     reading_settings["font_size"] = "small"
                                     reading_settings["real_time_highlighting"] = False
@@ -517,9 +532,11 @@ class StyleHandler:
                                     reading_settings["highlight_menu"] = False
 
                                     # Try to save preferences
-                                    if hasattr(self.profile_manager, '_save_profiles_index'):
+                                    if hasattr(self.profile_manager, "_save_profiles_index"):
                                         self.profile_manager._save_profiles_index()
-                                        logger.info(f"Successfully saved style preferences directly for {email}")
+                                        logger.info(
+                                            f"Successfully saved style preferences directly for {email}"
+                                        )
                                     else:
                                         logger.warning("Could not find _save_profiles_index method")
                                 else:
@@ -527,9 +544,7 @@ class StyleHandler:
                         except Exception as update_e:
                             logger.error(f"Error during style preference update: {update_e}")
                     else:
-                        logger.warning(
-                            f"No profile_manager available to update style preference for {email}"
-                        )
+                        logger.warning(f"No profile_manager available to update style preference for {email}")
                         # Don't mark as failure, we'll still return success if we've made it this far
                 else:
                     logger.warning("No email available from get_sindarin_email() to update style preference")

@@ -187,7 +187,10 @@ SEARCH_INPUT_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/search_edit_text"),
     (AppiumBy.ID, "android:id/search_src_text"),
     (AppiumBy.ID, "com.amazon.kindle:id/search_text_field"),
-    (AppiumBy.XPATH, "//android.widget.EditText[contains(@content-desc, 'search') or contains(@text, 'search') or contains(@hint, 'search') or contains(@resource-id, 'search')]"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.EditText[contains(@content-desc, 'search') or contains(@text, 'search') or contains(@hint, 'search') or contains(@resource-id, 'search')]",
+    ),
 ]
 
 SEARCH_BACK_BUTTON_IDENTIFIERS = [
@@ -199,14 +202,20 @@ SEARCH_BACK_BUTTON_IDENTIFIERS = [
 SEARCH_RESULTS_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/grid_search_result"),
     (AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view"),
-    (AppiumBy.XPATH, "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/search_recycler_view']"),
+    (
+        AppiumBy.XPATH,
+        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/search_recycler_view']",
+    ),
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'In your library')]"),
 ]
 
 SEARCH_RESULT_ITEM_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/badgeable_cover"),
     (AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, ', Book')]"),
-    (AppiumBy.XPATH, "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/search_recycler_view']//*[@clickable='true']"),
+    (
+        AppiumBy.XPATH,
+        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/search_recycler_view']//*[@clickable='true']",
+    ),
 ]
 
 # Content description parsing strategies
