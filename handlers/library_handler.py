@@ -128,6 +128,69 @@ class LibraryHandler:
         except:
             return False
 
+    def _open_grid_list_view_dialog_internal(self):
+        """Internal method to open the Grid/List view dialog by clicking the view options button.
+        
+        This is a shared method used by both open_grid_list_view_dialog and switch_to_list_view.
+        
+        Returns:
+            bool: True if dialog was opened successfully, False otherwise
+        """
+        try:
+            # Check if dialog is already open
+            if self._is_grid_list_view_dialog_open():
+                logger.info("Grid/List view dialog is already open")
+                return True
+            
+            # Click view options button to open the dialog
+            for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
+                try:
+                    button = self.driver.find_element(strategy, locator)
+                    button.click()
+                    logger.info(f"Clicked view options button using {strategy}: {locator}")
+                    time.sleep(1)  # Wait for dialog animation
+                    
+                    # Verify dialog opened
+                    if self._is_grid_list_view_dialog_open():
+                        logger.info("Successfully opened Grid/List view dialog")
+                        return True
+                    
+                except Exception as e:
+                    logger.debug(f"Failed to click view options button with strategy {strategy}: {e}")
+                    continue
+            
+            logger.error("Failed to open Grid/List view dialog with any strategy")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error opening Grid/List view dialog: {e}")
+            return False
+    
+    def open_grid_list_view_dialog(self):
+        """Open the Grid/List view dialog to access settings like 'Group by Series'.
+        
+        Returns:
+            bool: True if dialog was opened successfully, False otherwise
+        """
+        try:
+            # Check cached setting - if group_by_series isn't False, we need to open the dialog
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
+                "group_by_series", default=None
+            )
+            
+            if cached_group_by_series is False:
+                logger.info("Group by series is already set to False, dialog not needed")
+                return True
+            
+            logger.info("Group by series is not False, opening Grid/List view dialog")
+            
+            # Use the internal method to open the dialog
+            return self._open_grid_list_view_dialog_internal()
+            
+        except Exception as e:
+            logger.error(f"Error in open_grid_list_view_dialog: {e}")
+            return False
+            
     def _is_grid_list_view_dialog_open(self):
         """Check if the Grid/List view selection dialog is open.
 
@@ -461,22 +524,9 @@ class LibraryHandler:
                     time.sleep(1)  # Give UI time to settle
                     return True
 
-                # Click view options button
-                button_clicked = False
-                for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
-                    try:
-                        button = self.driver.find_element(strategy, locator)
-                        button.click()
-                        logger.info(f"Clicked view options button using {strategy}: {locator}")
-                        time.sleep(1)  # Increased wait for menu animation
-                        button_clicked = True
-                        break
-                    except Exception as e:
-                        logger.debug(f"Failed to click view options button with strategy {strategy}: {e}")
-                        continue
-
-                if not button_clicked:
-                    logger.error("Failed to click any view options button")
+                # Use the shared internal method to open the dialog
+                if not self._open_grid_list_view_dialog_internal():
+                    logger.error("Failed to open Grid/List view dialog")
                     return False
 
                 # After clicking the view options button, check if Grid/List dialog is open
@@ -1185,8 +1235,8 @@ class LibraryHandler:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
             # Try using the search box first to find the book
-            # search_result = self.search_handler._search_for_book(book_title)
-            search_result = False  # TODO: Remove this once done testing scrolling method
+            search_result = self.search_handler._search_for_book(book_title)
+            # search_result = False  # TODO: Remove this once done testing scrolling method
 
             if search_result:
                 parent_container, button, book_info = search_result
