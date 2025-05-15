@@ -159,7 +159,7 @@ class LibraryHandlerScroll:
                 escaped_text = book_info["title"].replace("'", "\\'")
                 buttons = self.driver.find_elements(
                     AppiumBy.XPATH,
-                    f"//android.widget.Button[contains(@content-desc, '{escaped_text}')]",
+                    f"//android.widget.Button[@content-desc='{escaped_text}']",
                 )
                 if buttons:
                     button = buttons[0]
@@ -350,9 +350,10 @@ class LibraryHandlerScroll:
 
                 try:
                     # Try to find the book button directly by content-desc
+                    escaped_title = book["title"].replace("'", "\\'")
                     buttons = self.driver.find_elements(
                         AppiumBy.XPATH,
-                        f"//android.widget.Button[contains(@content-desc, '{book['title'].split()[0]}')]",
+                        f"//android.widget.Button[@content-desc='{escaped_title}']",
                     )
                     if buttons:
                         logger.info(f"Found {len(buttons)} buttons matching first word of title")
@@ -369,7 +370,8 @@ class LibraryHandlerScroll:
             try:
                 title_text = matched_book["title"]
                 # Try by exact title
-                xpath = f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{title_text}')]]"
+                escaped_title = title_text.replace("'", "\\'")
+                xpath = f"//android.widget.Button[.//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{escaped_title}']]"
                 buttons = self.driver.find_elements(AppiumBy.XPATH, xpath)
                 if buttons:
                     logger.info("Found button via title contains match")
@@ -378,7 +380,7 @@ class LibraryHandlerScroll:
                 # Try with just the first word
                 first_word = title_text.split()[0]
                 if len(first_word) >= 3:
-                    xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and contains(@text, '{first_word}')]"
+                    xpath = f"//android.widget.TextView[@resource-id='com.amazon.kindle:id/lib_book_row_title' and @text='{title_text}']"
                     title_elements = self.driver.find_elements(AppiumBy.XPATH, xpath)
                     if title_elements:
                         logger.info(f"Found title element with first word '{first_word}'")
@@ -474,7 +476,7 @@ class LibraryHandlerScroll:
 
         Args:
             book_info: Book info dict
-            container: Book container element
+            container: Book container element or synthetic wrapper dict
             target_title: Target title to match
             title_match_func: Function to check if titles match
 
@@ -484,7 +486,29 @@ class LibraryHandlerScroll:
         if not book_info["title"] or not title_match_func(book_info["title"], target_title):
             return False, None, None
 
-        # Find the button and parent container
+        # Handle synthetic wrappers
+        if isinstance(container, dict) and container.get("is_synthetic"):
+            # For synthetic wrappers, we already know there's a match
+            # Try to find the actual button element
+            try:
+                escaped_title = book_info["title"].replace("'", "\\'")  
+                buttons = self.driver.find_elements(
+                    AppiumBy.XPATH,
+                    f"//android.widget.Button[@content-desc='{escaped_title}']",
+                )
+                if buttons:
+                    button = buttons[0]
+                    return True, button, button
+                else:
+                    # Use the element from the wrapper as fallback
+                    element = container.get("element")
+                    if element:
+                        return True, element, element
+            except Exception as e:
+                logger.debug(f"Error finding button for synthetic wrapper: {e}")
+                return False, None, None
+
+        # Find the button and parent container for regular containers
         for strategy, locator in BOOK_METADATA_IDENTIFIERS["title"]:
             try:
                 button = container.find_element(strategy, locator)
@@ -495,9 +519,8 @@ class LibraryHandlerScroll:
                 # Try to find the parent RelativeLayout using XPath
                 try:
                     parent_strategy, parent_locator_template = BOOK_CONTAINER_RELATIONSHIPS["parent_by_title"]
-                    parent_locator = parent_locator_template.format(
-                        title=self._xpath_literal(book_info["title"])
-                    )
+                    escaped_title = book_info["title"].replace("'", "\\'")
+                    parent_locator = parent_locator_template.format(title=escaped_title)
                     parent_container = container.find_element(parent_strategy, parent_locator)
                 except NoSuchElementException:
                     # If that fails, try finding any ancestor RelativeLayout
@@ -505,9 +528,8 @@ class LibraryHandlerScroll:
                         ancestor_strategy, ancestor_locator_template = BOOK_CONTAINER_RELATIONSHIPS[
                             "ancestor_by_title"
                         ]
-                        ancestor_locator = ancestor_locator_template.format(
-                            title=self._xpath_literal(book_info["title"])
-                        )
+                        escaped_title = book_info["title"].replace("'", "\\'")
+                        ancestor_locator = ancestor_locator_template.format(title=escaped_title)
                         parent_container = container.find_element(ancestor_strategy, ancestor_locator)
                     except NoSuchElementException:
                         logger.debug(f"Could not find parent container for {book_info['title']}")
@@ -725,7 +747,7 @@ class LibraryHandlerScroll:
                     escaped_text = title.text.replace("'", "\\'")
                     button = self.driver.find_element(
                         AppiumBy.XPATH,
-                        f"//android.widget.Button[contains(@content-desc, '{escaped_text}')]",
+                        f"//android.widget.Button[@content-desc='{escaped_text}']",
                     )
                     # If found, use the actual button
                     containers.append(button)
@@ -784,7 +806,7 @@ class LibraryHandlerScroll:
             # Initialize tracking variables
             books = []
             seen_titles = set()
-            normalized_target = self._normalize_title(target_title) if target_title else None
+            # No normalization needed for exact matching
             page_count = 0
             use_hook_for_current_scroll = True
 
@@ -821,7 +843,7 @@ class LibraryHandlerScroll:
 
                         if book_info["title"]:
                             # Check for target title match if searching
-                            if normalized_target:
+                            if target_title:
                                 matched, parent_container, button = self._try_match_target(
                                     book_info, container, target_title, title_match_func
                                 )
@@ -1002,109 +1024,3 @@ class LibraryHandlerScroll:
         except Exception as e:
             logger.error(f"Error scrolling to top of list: {e}")
             return False
-
-    def _normalize_title(self, title: str) -> str:
-        """
-        Normalize a title for comparison while preserving important characters.
-        This version is more selective about which characters to replace with spaces,
-        keeping some punctuation that might be important for matching.
-        """
-        if not title:
-            return ""
-
-        # First convert to lowercase
-        normalized = title.lower()
-
-        # Replace less essential characters with spaces
-        # Note: we're keeping apostrophes and colons intact for special handling
-        for char in ',;"!@#$%^&*()[]{}_+=<>?/\\|~`':
-            normalized = normalized.replace(char, " ")
-
-        # Handle apostrophes specially - keep them but add spaces around them
-        # This helps with matching parts before/after apostrophes
-        if "'" in normalized:
-            normalized = normalized.replace("'", " ' ")
-
-        # Handle colons specially - keep them but add spaces around them
-        if ":" in normalized:
-            normalized = normalized.replace(":", " : ")
-
-        # Replace multiple spaces with single space and strip
-        normalized = " ".join(normalized.split())
-
-        return normalized
-
-    def _xpath_literal(self, s):
-        """
-        Create a valid XPath literal for a string that may contain both single and double quotes.
-        Using a more robust implementation that handles special characters better.
-        """
-        if not s:
-            return "''"
-
-        # For titles with apostrophes, use a more reliable approach
-        if "'" in s:
-            # Log that we're handling a title with an apostrophe
-            logger.info(f"Creating XPath for title with apostrophe: '{s}'")
-
-            # Strategy 1: Use a combination of contains() for parts before and after apostrophe
-            parts = s.split("'")
-            conditions = []
-
-            # Create conditions for non-empty parts, focusing on distinctive words
-            for part in parts:
-                if part:
-                    # For each part, clean it up and use meaningful words for matching
-                    clean_part = part.strip()
-                    words = clean_part.split()
-
-                    if words:
-                        # Take the longest words (likely most distinctive) up to 3 words
-                        sorted_words = sorted(words, key=len, reverse=True)
-                        distinctive_words = sorted_words[: min(3, len(sorted_words))]
-
-                        for word in distinctive_words:
-                            if len(word) >= 3:  # Only use words of reasonable length for matching
-                                safe_word = word.replace("'", "").replace('"', "")
-                                conditions.append(f"contains(., '{safe_word}')")
-
-            # Strategy 2: Also try matching with the text before the apostrophe
-            if parts and parts[0]:
-                first_part = parts[0].strip()
-                if first_part and len(first_part) >= 3:
-                    conditions.append(f"starts-with(normalize-space(.), '{first_part}')")
-
-            # Strategy 3: Alternative for titles that have format "X : Y's Z"
-            # Extract the parts around the colon if present
-            if ":" in s:
-                colon_parts = s.split(":")
-                for colon_part in colon_parts:
-                    clean_part = colon_part.strip()
-                    if clean_part and len(clean_part) >= 5:  # Only use substantial parts
-                        # Remove apostrophes for safer matching
-                        safe_part = clean_part.replace("'", "").replace('"', "")
-                        first_words = " ".join(safe_part.split()[:2])  # First two words
-                        if first_words and len(first_words) >= 5:
-                            conditions.append(f"contains(., '{first_words}')")
-
-            # Join conditions with 'or' to be more lenient
-            if conditions:
-                xpath_expr = " or ".join(conditions)
-                logger.info(f"Generated XPath expression: {xpath_expr}")
-                return xpath_expr
-            else:
-                # Last resort: try to match any substantial part of the title
-                words = s.replace("'", " ").split()
-                substantial_words = [w for w in words if len(w) >= 5]
-
-                if substantial_words:
-                    word_conditions = [f"contains(., '{word}')" for word in substantial_words[:3]]
-                    xpath_expr = " or ".join(word_conditions)
-                    logger.info(f"Using substantial word fallback: {xpath_expr}")
-                    return xpath_expr
-
-                logger.warning(f"Failed to create reliable XPath for '{s}', using default")
-                return "true()"  # Last resort fallback
-        else:
-            # For strings without apostrophes, use the simple approach
-            return f"'{s}'"
