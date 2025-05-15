@@ -864,6 +864,7 @@ class ViewInspector:
                 logger.info(f"Detected search interface with {search_indicators} indicators")
                 # Save page source for debugging
                 from server.logging_config import store_page_source
+
                 store_page_source(self.driver.page_source, "search_interface_detected")
             return is_search
 

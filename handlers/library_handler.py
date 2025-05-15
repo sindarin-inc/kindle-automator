@@ -99,7 +99,10 @@ class LibraryHandler:
                         try:
                             # Check both child elements are selected
                             all_selected = True
-                            for child_strategy, child_locator in LIBRARY_TAB_CHILD_SELECTION_STRATEGIES:
+                            for (
+                                child_strategy,
+                                child_locator,
+                            ) in LIBRARY_TAB_CHILD_SELECTION_STRATEGIES:
                                 child = self.driver.find_element(child_strategy, child_locator)
                                 if not child.is_displayed():
                                     all_selected = False
@@ -384,7 +387,8 @@ class LibraryHandler:
             # Check for "Navigate up" button which is present in search view
             try:
                 up_button = self.driver.find_element(
-                    AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
+                    AppiumBy.XPATH,
+                    "//android.widget.ImageButton[@content-desc='Navigate up']",
                 )
                 if up_button and up_button.is_displayed():
                     search_indicators += 1
@@ -1033,7 +1037,8 @@ class LibraryHandler:
                                 # Check if we successfully left the library view
                                 try:
                                     self.driver.find_element(
-                                        AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                        AppiumBy.ID,
+                                        "com.amazon.kindle:id/library_root_view",
                                     )
                                     logger.warning(
                                         "Still in library view after clicking downloaded book, trying again..."
@@ -1055,7 +1060,8 @@ class LibraryHandler:
                             logger.info("Can't find book element - checking if we've left library view")
                             try:
                                 self.driver.find_element(
-                                    AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                    AppiumBy.ID,
+                                    "com.amazon.kindle:id/library_root_view",
                                 )
                                 logger.warning("Still in library view but can't find book element")
                             except NoSuchElementException:
@@ -1141,7 +1147,8 @@ class LibraryHandler:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
             # Try using the search box first to find the book
-            search_result = self.search_handler._search_for_book(book_title)
+            # search_result = self.search_handler._search_for_book(book_title)
+            search_result = False  # TODO: Remove this once done testing scrolling method
 
             if search_result:
                 parent_container, button, book_info = search_result
@@ -1365,7 +1372,10 @@ class LibraryHandler:
                 # Check for both variations of the dialog text
                 if ("Go to that page?" in message_text) or ("You are currently on page" in message_text):
                     logger.info(f"Found page navigation dialog during {source_description}: {message_text}")
-                    store_page_source(self.driver.page_source, f"page_navigation_dialog_{source_description}")
+                    store_page_source(
+                        self.driver.page_source,
+                        f"page_navigation_dialog_{source_description}",
+                    )
 
                     # Try to click the YES button
                     try:
@@ -1383,7 +1393,9 @@ class LibraryHandler:
                                     lambda d: any(
                                         [
                                             self._check_element_present(
-                                                d, AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"
+                                                d,
+                                                AppiumBy.ID,
+                                                "com.amazon.kindle:id/reader_drawer_layout",
                                             ),
                                             self._check_element_present(
                                                 d,
@@ -1391,7 +1403,9 @@ class LibraryHandler:
                                                 "com.amazon.kindle:id/reader_content_container",
                                             ),
                                             self._check_element_present(
-                                                d, AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"
+                                                d,
+                                                AppiumBy.ID,
+                                                "com.amazon.kindle:id/reader_root_view",
                                             ),
                                         ]
                                     )
@@ -1526,7 +1540,10 @@ class LibraryHandler:
 
                         # Try to click the Cancel button to dismiss the dialog
                         try:
-                            for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
+                            for (
+                                btn_strategy,
+                                btn_locator,
+                            ) in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
                                 try:
                                     cancel_button = self.driver.find_element(btn_strategy, btn_locator)
                                     if cancel_button and cancel_button.is_displayed():
