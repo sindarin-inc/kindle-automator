@@ -77,7 +77,7 @@ class KindleStateMachine:
         """Attempt to transition to the library state."""
         transitions = 0
         unknown_retries = 0
-        MAX_UNKNOWN_RETRIES = 3  # Maximum times to try recovering from UNKNOWN state
+        MAX_UNKNOWN_RETRIES = 2  # Maximum times to try recovering from UNKNOWN state
 
         while transitions < max_transitions:
             self.current_state = self._get_current_state()
@@ -139,6 +139,16 @@ class KindleStateMachine:
                     if self.library_handler._is_library_tab_selected():
                         logger.info("Library handler detected library view")
                         return True
+                    # Check if we're in search interface (which is part of library)
+                    if self.library_handler._is_in_search_interface():
+                        logger.info("Library handler detected search interface - treating as library view")
+                        self.current_state = AppState.LIBRARY  # Update the state
+                        # Exit search mode to get to main library view
+                        if self.library_handler.search_handler._exit_search_mode():
+                            logger.info("Exited search mode, now in library view")
+                            return True
+                        else:
+                            logger.warning("Failed to exit search mode")
 
                 continue
 

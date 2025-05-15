@@ -25,7 +25,7 @@ def ensure_automator_healthy(f):
 
         server = app.config["server_instance"]
 
-        max_retries = 3  # Allow more retries for UiAutomator2 crashes
+        max_retries = 2  # Allow retries for UiAutomator2 crashes
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()

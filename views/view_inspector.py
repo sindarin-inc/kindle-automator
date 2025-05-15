@@ -570,6 +570,11 @@ class ViewInspector:
             except NoSuchElementException:
                 pass
 
+            # First check if we're in search interface (which is part of library)
+            if self._is_in_search_interface():
+                logger.info("   Detected search interface, treating as LIBRARY view")
+                return AppView.LIBRARY
+
             # First check the more accurate tab selection because library_root_view exists for both tabs
             if self._is_tab_selected("LIBRARY"):
                 logger.info("   LIBRARY tab is selected, confirming we are in library view")
@@ -811,4 +816,57 @@ class ViewInspector:
 
         except Exception as e:
             logger.error(f"Error checking for auth view: {e}")
+            return False
+
+    def _is_in_search_interface(self):
+        """
+        Check if we're currently in the search results interface.
+        This can be misidentified as the library view because it uses some of the same elements.
+        """
+        try:
+            # Check for search-specific elements
+            search_indicators = 0
+
+            # Check for search query input field
+            try:
+                search_query = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
+                if search_query and search_query.is_displayed():
+                    search_indicators += 1
+                    logger.info("Found search query input field")
+            except NoSuchElementException:
+                pass
+
+            # Check for search recycler view
+            try:
+                search_results = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view"
+                )
+                if search_results and search_results.is_displayed():
+                    search_indicators += 1
+                    logger.info("Found search results recycler view")
+            except NoSuchElementException:
+                pass
+
+            # Check for "Navigate up" button which is present in search view
+            try:
+                up_button = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
+                )
+                if up_button and up_button.is_displayed():
+                    search_indicators += 1
+                    logger.info("Found Navigate up button in search view")
+            except NoSuchElementException:
+                pass
+
+            # We need at least 2 indicators to be confident we're in search view
+            is_search = search_indicators >= 2
+            if is_search:
+                logger.info(f"Detected search interface with {search_indicators} indicators")
+                # Save page source for debugging
+                from server.logging_config import store_page_source
+                store_page_source(self.driver.page_source, "search_interface_detected")
+            return is_search
+
+        except Exception as e:
+            logger.error(f"Error checking for search interface: {e}")
             return False
