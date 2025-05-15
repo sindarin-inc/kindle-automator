@@ -491,7 +491,7 @@ class LibraryHandlerScroll:
             # For synthetic wrappers, we already know there's a match
             # Try to find the actual button element
             try:
-                escaped_title = book_info["title"].replace("'", "\\'")  
+                escaped_title = book_info["title"].replace("'", "\\'")
                 buttons = self.driver.find_elements(
                     AppiumBy.XPATH,
                     f"//android.widget.Button[@content-desc='{escaped_title}']",

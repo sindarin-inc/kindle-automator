@@ -806,6 +806,48 @@ class AVDProfileManager:
         # Use preferences section for all keys
         return self.set_user_field(email, key, value, section="preferences")
 
+    def save_style_setting(self, setting_name: str, setting_value, email: str = None) -> bool:
+        """
+        Save a style setting in a single line. Handles all the complexity of preference management.
+
+        Args:
+            setting_name: Name of the setting (e.g., 'group_by_series', 'view_type')
+            setting_value: Value to set (can be any type)
+            email: Email of the user. If None, uses get_sindarin_email()
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Get email if not provided
+            if not email:
+                email = get_sindarin_email()
+                if not email:
+                    logger.warning("No email available to save style setting")
+                    return False
+
+            # Ensure profile structure exists
+            if email not in self.profiles_index:
+                self.profiles_index[email] = {}
+
+            if "preferences" not in self.profiles_index[email]:
+                self.profiles_index[email]["preferences"] = {}
+
+            if "library_settings" not in self.profiles_index[email]["preferences"]:
+                self.profiles_index[email]["preferences"]["library_settings"] = {}
+
+            # Save the setting
+            self.profiles_index[email]["preferences"]["library_settings"][setting_name] = setting_value
+
+            # Persist to disk
+            self._save_profiles_index()
+
+            logger.info(f"Saved library style setting {setting_name}={setting_value} for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Error saving style setting {setting_name}: {e}")
+            return False
+
     def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
         """
         Update the styles_updated preference for a profile.

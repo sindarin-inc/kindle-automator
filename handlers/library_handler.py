@@ -643,7 +643,7 @@ class LibraryHandler:
             return False
 
     def handle_grid_list_view_dialog(self):
-        """Handle the Grid/List view selection dialog by selecting List view and clicking DONE.
+        """Handle the Grid/List view selection dialog by selecting List view and turning off Group by Series.
 
         This method is called when we detect that the Grid/List view selection dialog is open,
         which can happen when trying to open a book or navigate in the library view.
@@ -657,6 +657,37 @@ class LibraryHandler:
             # First check if the dialog is actually open
             if not self._is_grid_list_view_dialog_open():
                 return True  # Return True since there's no dialog to handle
+
+            # Turn off Group by Series switch first
+            group_by_series_handled = False
+            try:
+                # Find the Group by Series switch
+                group_by_series_switch = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/lib_menu_switch"
+                )
+                if group_by_series_switch.is_displayed():
+                    # Check if it's currently enabled (checked=true)
+                    is_checked = group_by_series_switch.get_attribute("checked") == "true"
+                    logger.info(f"Group by Series switch found, currently checked: {is_checked}")
+
+                    if is_checked:
+                        # Click to turn it off
+                        group_by_series_switch.click()
+                        logger.info("Turned off Group by Series switch")
+                        time.sleep(0.5)  # Wait for the change to register
+                        group_by_series_handled = True
+                    else:
+                        logger.info("Group by Series switch is already off")
+                        group_by_series_handled = True
+
+                    # Record the state in profile manager
+                    self.driver.profile_manager.save_style_setting("group_by_series", False)
+                else:
+                    logger.warning("Group by Series switch not displayed")
+            except NoSuchElementException:
+                logger.debug("Group by Series switch not found")
+            except Exception as e:
+                logger.error(f"Error handling Group by Series switch: {e}")
 
             # Click the List view option to ensure consistent view
             list_option_clicked = False
@@ -681,6 +712,10 @@ class LibraryHandler:
                 logger.warning(
                     "Could not click List view option, it might already be selected or not available"
                 )
+
+            # Update the view_type in profile preferences if list was clicked
+            if list_option_clicked:
+                self.driver.profile_manager.save_style_setting("view_type", "list")
 
             # Now click the DONE button to close the dialog
             done_clicked = False

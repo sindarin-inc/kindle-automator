@@ -37,3 +37,7 @@
 - **views/**: App state management, UI interactions, state transitions
 - **handlers/**: Implements actions for different app states
 - **fixtures/**: XML dumps and views for testing
+
+## Development Guidelines
+
+- Don't make test files unless directed to
