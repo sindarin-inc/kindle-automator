@@ -481,7 +481,14 @@ class EmulatorLauncher:
                 ["pgrep", "-f", f"x11vnc.*rfbport {vnc_port}"], capture_output=True, text=True
             )
             if vnc_check.returncode != 0:
-                logger.error(f"Failed to start VNC server for display :{display_num}")
+                logger.error(f"x11vnc process not found for display :{display_num} after launch attempt.")
+                logger.info(
+                    f"For x11vnc startup issues, check its dedicated log: /var/log/x11vnc-{display_num}.log"
+                )
+                if vnc_check.stderr.strip():  # If pgrep itself had an error
+                    logger.warning(
+                        f"The pgrep command to check x11vnc status produced an error: {vnc_check.stderr.strip()}"
+                    )
                 return False
 
             logger.info(
