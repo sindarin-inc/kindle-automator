@@ -65,9 +65,6 @@ class ReaderHandler:
             bool: True if successfully handled the dialog, False otherwise.
         """
         try:
-            # Store initial page source for debugging
-            store_page_source(self.driver.page_source, "download_limit_initial")
-
             # Check all possible places the dialog could be found
             dialog_found = False
 
@@ -133,9 +130,6 @@ class ReaderHandler:
             if not dialog_found:
                 logger.info("Download Limit Reached dialog not found after trying all approaches")
                 return False
-
-            # Store the page source for debugging
-            store_page_source(self.driver.page_source, "download_limit_dialog_found")
 
             # Find and tap the first device in the list - try multiple methods with longer wait times
             first_device_tapped = False
@@ -220,9 +214,6 @@ class ReaderHandler:
             if not first_device_tapped:
                 logger.warning("Could not tap any device after multiple methods. Will try button anyway")
 
-            # Store state after device selection
-            store_page_source(self.driver.page_source, "download_limit_after_device_tap")
-
             # Find and tap the "Remove and Download" button with retry logic
             remove_button_tapped = False
 
@@ -293,9 +284,6 @@ class ReaderHandler:
                                 break
                     except:
                         continue
-
-            # Final state capture
-            store_page_source(self.driver.page_source, "download_limit_after_button_tap")
 
             if not remove_button_tapped:
                 logger.error("Could not tap the Remove and Download button after all attempts")
@@ -599,10 +587,6 @@ class ReaderHandler:
             logger.error(f"Error checking for page content: {e}")
             # Continue anyway as we already confirmed we're in reading view
 
-        # Log the page source
-        filepath = store_page_source(self.driver.page_source, "reading_view")
-        logger.info(f"Stored reading view page source at: {filepath}")
-
         # Check for and dismiss bottom sheet dialog
         try:
             # Try to find the bottom sheet dialog
@@ -647,7 +631,6 @@ class ReaderHandler:
 
         # Check for and handle "last read page" dialog
         try:
-            store_page_source(self.driver.page_source, "last_read_page_dialog")
             for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
                 try:
                     message = self.driver.find_element(strategy, locator)
@@ -673,7 +656,6 @@ class ReaderHandler:
 
         # Check for and handle "Go to that location?" dialog
         try:
-            store_page_source(self.driver.page_source, "go_to_location_dialog")
             for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
                 try:
                     message = self.driver.find_element(strategy, locator)
@@ -701,9 +683,6 @@ class ReaderHandler:
 
         # Check for and dismiss Goodreads auto-update dialog
         try:
-            # Store the page source before checking for the Goodreads dialog
-            store_page_source(self.driver.page_source, "goodreads_autoupdate_dialog")
-
             # Check if the Goodreads dialog is present
             dialog_present = False
             for strategy, locator in GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS:
@@ -743,9 +722,6 @@ class ReaderHandler:
 
         # Check for and dismiss Word Wise dialog
         try:
-            # Store the page source before checking for the Word Wise dialog
-            store_page_source(self.driver.page_source, "word_wise_dialog")
-
             # Check if the Word Wise dialog is present
             dialog_present = False
             for strategy, locator in WORD_WISE_DIALOG_IDENTIFIERS:
@@ -809,7 +785,6 @@ class ReaderHandler:
 
         # Check for and dismiss "About this book" slideover
         try:
-            store_page_source(self.driver.page_source, "about_book_slideover_check")
             about_book_visible = False
 
             for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
@@ -1482,10 +1457,6 @@ class ReaderHandler:
         """Handle the reading state by navigating back to the library."""
         logger.info("Handling reading state - navigating back to library...")
 
-        # Log the initial page source for debugging
-        filepath = store_page_source(self.driver.page_source, "reading_state")
-        logger.info(f"Stored reading state page source at: {filepath}")
-
         try:
             # Check for and dismiss the comic book view first
             if self.handle_comic_book_view():
@@ -1627,10 +1598,6 @@ class ReaderHandler:
                         except NoSuchElementException:
                             logger.info("Successfully dismissed Goodreads dialog")
 
-                        filepath = store_page_source(
-                            self.driver.page_source, "goodreads_dialog_dismissed_navigation"
-                        )
-                        logger.info(f"Stored Goodreads dialog dismissed page source at: {filepath}")
                 except NoSuchElementException:
                     logger.error("NOT NOW button not found for Goodreads dialog")
                 except Exception as e:
@@ -1660,10 +1627,6 @@ class ReaderHandler:
                     else:
                         logger.info("Successfully dismissed Word Wise dialog")
 
-                    filepath = store_page_source(
-                        self.driver.page_source, "word_wise_dialog_dismissed_navigation"
-                    )
-                    logger.info(f"Stored Word Wise dialog dismissed page source at: {filepath}")
                 else:
                     logger.error("NO THANKS button not found for Word Wise dialog")
 
@@ -1913,9 +1876,6 @@ class ReaderHandler:
             bool: True if successfully handled the comic book view, False if not found or error occurred.
         """
         try:
-            # Store initial page source for debugging
-            store_page_source(self.driver.page_source, "comic_book_view_check")
-
             # Check if we're in the comic book view
             comic_book_view_visible = False
             for strategy, locator in COMIC_BOOK_VIEW_IDENTIFIERS:

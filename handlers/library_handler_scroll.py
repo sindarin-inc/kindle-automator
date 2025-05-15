@@ -670,13 +670,6 @@ class LibraryHandlerScroll:
             # Convert these title elements to containers
             containers = self._convert_title_elements(title_elements)
 
-            # Also log RecyclerView info for debugging
-            try:
-                recycler_view = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/recycler_view")
-                all_items = recycler_view.find_elements(AppiumBy.XPATH, ".//*")
-            except Exception as e:
-                logger.error(f"Error getting RecyclerView info: {e}")
-
         except Exception as e:
             logger.error(f"Error finding direct title elements: {e}")
 
@@ -777,8 +770,9 @@ class LibraryHandlerScroll:
             "screen_size": screen_size,
             "start_y": screen_size["height"] * 0.8,
             "end_y": screen_size["height"] * 0.2,
-            "toolbar_top": screen_size["height"]
-            * 0.85,  # Books whose bottom is below this are considered obscured
+            "toolbar_top": (
+                screen_size["height"] * 0.85
+            ),  # Books whose bottom is below this are considered obscured
         }
 
     def _scroll_through_library(self, target_title: str = None, title_match_func=None, callback=None):

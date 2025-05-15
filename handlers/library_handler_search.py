@@ -157,7 +157,7 @@ class LibraryHandlerSearch:
             # Try to find books with similar titles first
             all_books = scroll_through_library_func()
 
-            # Save list of available titles for debugging
+            # Save list of available titles
             book_titles = [book.get("title", "") for book in all_books if book.get("title")]
             logger.info(f"Found {len(book_titles)} books in library: {book_titles}")
 
@@ -816,7 +816,7 @@ class LibraryHandlerSearch:
             # If no back button was found or clickable, log the issue
             logger.warning("No search back button found, cannot exit search mode via UI")
 
-            # Store page source and screenshot for debugging
+            # Store page source and screenshot
             store_page_source(self.driver.page_source, "search_exit_failure")
             screenshot_path = os.path.join(self.screenshots_dir, "search_exit_failure.png")
             self.driver.save_screenshot(screenshot_path)

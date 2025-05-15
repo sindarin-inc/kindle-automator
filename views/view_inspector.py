@@ -415,8 +415,6 @@ class ViewInspector:
                 logger.info(
                     f"   Found {reading_view_elements_found} reading view elements - confidently in reading view"
                 )
-                # Save page source for debugging
-                store_page_source(self.driver.page_source, "reading_view_detected")
                 return AppView.READING
 
             # Also check for full screen dialog which indicates reading view
@@ -611,8 +609,6 @@ class ViewInspector:
 
             if self._is_tab_selected("LIBRARY"):
                 logger.info("Detected LIBRARY view")
-                # Save page source for debugging
-                store_page_source(self.driver.page_source, "library_view_detected")
                 return AppView.LIBRARY
 
             # Check for view options menu (part of library view)
@@ -623,8 +619,6 @@ class ViewInspector:
             # Check for Grid/List view dialog (part of library view)
             if self._is_grid_list_view_dialog_open():
                 logger.info("   Found Grid/List view dialog - this is part of library view")
-                # Store page source for debugging
-                store_page_source(self.driver.page_source, "grid_list_dialog_detected")
                 return AppView.LIBRARY
 
             # Check tab selection for HOME view
@@ -863,7 +857,6 @@ class ViewInspector:
             if is_search:
                 logger.info(f"Detected search interface with {search_indicators} indicators")
                 # Save page source for debugging
-                from server.logging_config import store_page_source
 
                 store_page_source(self.driver.page_source, "search_interface_detected")
             return is_search

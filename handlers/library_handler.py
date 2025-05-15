@@ -179,12 +179,6 @@ class LibraryHandler:
             # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
             is_dialog_open = identifiers_found >= 2
 
-            # Capture a screenshot and page source for debugging
-            if is_dialog_open:
-                store_page_source(self.driver.page_source, "grid_list_dialog_open")
-                screenshot_path = os.path.join(self.screenshots_dir, "grid_list_dialog.png")
-                self.driver.save_screenshot(screenshot_path)
-
             return is_dialog_open
         except Exception as e:
             logger.error(f"Error checking for Grid/List view dialog: {e}")
@@ -398,10 +392,6 @@ class LibraryHandler:
 
             # We need at least 2 indicators to be confident we're in search view
             is_search = search_indicators >= 2
-            if is_search:
-                logger.info(f"Detected search interface with {search_indicators} indicators")
-                # Save page source for debugging
-                store_page_source(self.driver.page_source, "search_interface_detected")
             return is_search
 
         except Exception as e:
@@ -411,6 +401,23 @@ class LibraryHandler:
     def switch_to_list_view(self):
         """Switch to list view if not already in it"""
         try:
+            # First check cached preferences to see if we should already be in list view
+            # The profile_manager is on the automator, not directly on the driver
+            cached_view_type = self.driver.automator.profile_manager.get_style_setting(
+                "view_type", default=None
+            )
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
+                "group_by_series", default=None
+            )
+
+            if cached_view_type == "list" and cached_group_by_series is False:
+                logger.info(
+                    "Library settings already set to list view with group_by_series=false in cache, "
+                    "assuming we're already in list view and skipping all checks"
+                )
+                return True
+
+            # If cache doesn't indicate list view, proceed with normal checks
             # First check if we're in search interface
             if self._is_in_search_interface():
                 logger.info("Detected we're in search interface, exiting search mode first")
@@ -441,10 +448,6 @@ class LibraryHandler:
             # If we're in grid view, we need to open the view options menu
             if self._is_grid_view():
                 logger.info("Currently in grid view, switching to list view")
-
-                # Store page source for debugging
-                filepath = store_page_source(self.driver.page_source, "grid_view_detected")
-                logger.info(f"Stored grid view page source at: {filepath}")
 
                 # Check again for search interface (could be misdetected as grid view)
                 if self._is_in_search_interface():
@@ -681,7 +684,7 @@ class LibraryHandler:
                         group_by_series_handled = True
 
                     # Record the state in profile manager
-                    self.driver.profile_manager.save_style_setting("group_by_series", False)
+                    self.driver.automator.profile_manager.save_style_setting("group_by_series", False)
                 else:
                     logger.warning("Group by Series switch not displayed")
             except NoSuchElementException:
@@ -715,7 +718,7 @@ class LibraryHandler:
 
             # Update the view_type in profile preferences if list was clicked
             if list_option_clicked:
-                self.driver.profile_manager.save_style_setting("view_type", "list")
+                self.driver.automator.profile_manager.save_style_setting("view_type", "list")
 
             # Now click the DONE button to close the dialog
             done_clicked = False
@@ -1339,54 +1342,41 @@ class LibraryHandler:
         Returns:
             bool: True if the book was successfully opened, False otherwise
         """
-        logger.info(f"Delegating to reader_handler to handle reading view for '{book_title}'")
-
         # Get access to the reader_handler
-        if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "state_machine"):
-            reader_handler = self.driver.automator.state_machine.reader_handler
+        reader_handler = self.driver.automator.state_machine.reader_handler
 
-            if reader_handler:
-                # Let the reader_handler handle the reading view dialogs
-                # Note that we're NOT calling reader_handler.open_book() which would cause a circular reference
-                # Instead, we're directly handling the dialogs here
+        # Let the reader_handler handle the reading view dialogs
+        # Note that we're NOT calling reader_handler.open_book() which would cause a circular reference
+        # Instead, we're directly handling the dialogs here
 
-                # Wait for the reading view to appear with a longer timeout
-                try:
-                    logger.info("Waiting for reading view to load...")
-                    # Using the imported READING_VIEW_IDENTIFIERS from view_strategies
+        # Wait for the reading view to appear with a longer timeout
+        try:
+            # Wait for any of the reading view identifiers to appear
+            WebDriverWait(self.driver, 15).until(
+                lambda x: any(
+                    self._check_element_present(x, strategy, locator)
+                    for strategy, locator in READING_VIEW_IDENTIFIERS
+                )
+            )
+            logger.info("Reading view loaded successfully")
 
-                    # Wait for any of the reading view identifiers to appear
-                    WebDriverWait(self.driver, 15).until(
-                        lambda x: any(
-                            self._check_element_present(x, strategy, locator)
-                            for strategy, locator in READING_VIEW_IDENTIFIERS
-                        )
-                    )
-                    logger.info("Reading view loaded successfully")
+            # Now that we're in the reading view, let reader_handler handle the dialogs
+            # We use show_placemark=False to avoid showing the placemark ribbon
+            dialog_handled = reader_handler.open_book(book_title, show_placemark=False)
 
-                    # Now that we're in the reading view, let reader_handler handle the dialogs
-                    # We use show_placemark=False to avoid showing the placemark ribbon
-                    dialog_handled = reader_handler.open_book(book_title, show_placemark=False)
-
-                    if dialog_handled:
-                        logger.info(f"Reader handler successfully handled dialogs for book '{book_title}'")
-                        return True
-                    else:
-                        logger.error(f"Reader handler failed to handle dialogs for book '{book_title}'")
-                        return False
-
-                except TimeoutException:
-                    logger.error(f"Timed out waiting for reading view to appear")
-                    # Check for any dialogs or error states
-                    return self._handle_loading_timeout(book_title)
-                except Exception as e:
-                    logger.error(f"Error waiting for reading view: {e}")
-                    return False
+            if dialog_handled:
+                logger.info(f"Reader handler successfully handled dialogs for book '{book_title}'")
+                return True
             else:
-                logger.error("No reader_handler available in the state machine")
+                logger.error(f"Reader handler failed to handle dialogs for book '{book_title}'")
                 return False
-        else:
-            logger.error("Cannot access automator state machine")
+
+        except TimeoutException:
+            logger.error(f"Timed out waiting for reading view to appear")
+            # Check for any dialogs or error states
+            return self._handle_loading_timeout(book_title)
+        except Exception as e:
+            logger.error(f"Error waiting for reading view: {e}")
             return False
 
     def _handle_page_navigation_dialog(self, source_description="dialog check"):
@@ -1559,9 +1549,6 @@ class LibraryHandler:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
-                        # Store the dialog for debugging
-                        filepath = store_page_source(self.driver.page_source, "title_not_available_dialog")
-
                         error_text = "Title Not Available"
                         try:
                             # Try to get the message text if available
@@ -1709,12 +1696,3 @@ class LibraryHandler:
 
         # We didn't find any expected dialogs, so return failure
         return False
-
-    def _dump_library_view(self):
-        """Dump the library view for debugging"""
-        try:
-            screenshot_path = os.path.join(self.screenshots_dir, "library_view.png")
-            self.driver.save_screenshot(screenshot_path)
-            logger.info(f"Saved library view screenshot to {screenshot_path}")
-        except Exception as e:
-            logger.error(f"Failed to save library view screenshot: {e}")

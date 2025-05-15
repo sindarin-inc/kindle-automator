@@ -571,25 +571,6 @@ class AuthenticationHandler:
                     # We're in some other state - give detailed information
                     logger.warning(f"After transition_to_library, in unexpected state: {state_name}")
 
-                    # Take a screenshot for debugging
-                    timestamp = int(time.time())
-                    screenshot_path = os.path.join(self.screenshots_dir, f"auth_state_{timestamp}.png")
-
-                    try:
-                        self.driver.save_screenshot(screenshot_path)
-                        logger.info(f"Saved screenshot of current state: {screenshot_path}")
-                    except Exception as ss_err:
-                        logger.error(f"Error saving screenshot: {ss_err}")
-
-                    # Try to save page source for debugging
-                    try:
-                        from server.logging_config import store_page_source
-
-                        source_path = store_page_source(self.driver.page_source, f"auth_state_{timestamp}")
-                        logger.info(f"Saved page source for debugging: {source_path}")
-                    except Exception as ps_err:
-                        logger.error(f"Error saving page source: {ps_err}")
-
                     # Return with the unexpected state
                     return {
                         "state": state_name,
@@ -625,15 +606,6 @@ class AuthenticationHandler:
 
             # Get the formatted VNC URL with the current email
             formatted_vnc_url = get_formatted_vnc_url(email)
-
-            # Take one final screenshot for debugging
-            try:
-                timestamp = int(time.time())
-                screenshot_path = os.path.join(self.screenshots_dir, f"auth_final_{timestamp}.png")
-                self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Saved final screenshot: {screenshot_path}")
-            except Exception as ss_err:
-                logger.error(f"Error saving final screenshot: {ss_err}")
 
             # Last attempt - if we're in SIGN_IN, HOME, or LIBRARY, we can still give a focused response
             if state_name == "SIGN_IN":
@@ -868,12 +840,6 @@ class AuthenticationHandler:
                         # If no error text was found, this could be an in-progress authentication
                         # Return None to continue waiting rather than immediately failing
                         if not error_found:
-                            # Store page source for debugging but continue waiting
-                            filepath = store_page_source(driver.page_source, "auth_button_disabled_waiting")
-                            logger.info(
-                                f"Stored authentication state page source with disabled button at: {filepath}"
-                            )
-
                             # Check for library view indicators first - maybe we're actually logged in
                             # despite the sign-in button still being visible in the DOM
                             for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:

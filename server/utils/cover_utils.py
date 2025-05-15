@@ -416,12 +416,6 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
         else:
             logger.error(f"Failed to save cover, file doesn't exist: {image_path}")
 
-            # Log current directory contents for debugging
-            try:
-                directory_contents = os.listdir(covers_dir)
-            except Exception as ls_err:
-                logger.error(f"Could not list directory contents: {ls_err}")
-
             return False, ""
 
     except Exception as e:

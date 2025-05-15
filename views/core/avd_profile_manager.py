@@ -806,6 +806,41 @@ class AVDProfileManager:
         # Use preferences section for all keys
         return self.set_user_field(email, key, value, section="preferences")
 
+    def get_style_setting(self, setting_name: str, email: str = None, default=None):
+        """
+        Get a style setting value from the profile.
+
+        Args:
+            setting_name: The name of the setting to retrieve
+            email: Optional email. If not provided, uses the current sindarin email.
+            default: Default value to return if setting doesn't exist
+
+        Returns:
+            The setting value if found, otherwise the default value
+        """
+        try:
+            # Get email if not provided
+            if not email:
+                email = get_sindarin_email()
+                if not email:
+                    logger.warning("No email available to get style setting")
+                    return default
+
+            # Navigate through the profile structure
+            if email in self.profiles_index:
+                profile = self.profiles_index[email]
+                if "preferences" in profile:
+                    preferences = profile["preferences"]
+                    if "library_settings" in preferences:
+                        library_settings = preferences["library_settings"]
+                        if setting_name in library_settings:
+                            return library_settings[setting_name]
+
+            return default
+        except Exception as e:
+            logger.error(f"Error getting style setting {setting_name}: {e}")
+            return default
+
     def save_style_setting(self, setting_name: str, setting_value, email: str = None) -> bool:
         """
         Save a style setting in a single line. Handles all the complexity of preference management.
