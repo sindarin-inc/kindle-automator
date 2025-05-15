@@ -501,28 +501,22 @@ class StyleHandler:
                                     if email not in self.profile_manager.profiles_index:
                                         self.profile_manager.profiles_index[email] = {}
 
-                                    # Make sure preferences section exists
-                                    if "preferences" not in self.profile_manager.profiles_index[email]:
-                                        self.profile_manager.profiles_index[email]["preferences"] = {}
+                                    # Set style_updated directly at top level
+                                    self.profile_manager.profiles_index[email]["styles_updated"] = True
 
-                                    # Set style_updated directly in preferences
-                                    self.profile_manager.profiles_index[email]["preferences"][
-                                        "styles_updated"
-                                    ] = True
-
-                                    # Initialize reading_settings if needed
+                                    # Initialize reading_settings at top level if needed
                                     if (
                                         "reading_settings"
-                                        not in self.profile_manager.profiles_index[email]["preferences"]
+                                        not in self.profile_manager.profiles_index[email]
                                     ):
-                                        self.profile_manager.profiles_index[email]["preferences"][
+                                        self.profile_manager.profiles_index[email][
                                             "reading_settings"
                                         ] = {}
 
-                                    # Set reading settings
+                                    # Set reading settings at top level
                                     reading_settings = self.profile_manager.profiles_index[email][
-                                        "preferences"
-                                    ]["reading_settings"]
+                                        "reading_settings"
+                                    ]
                                     reading_settings["theme"] = "dark"
                                     reading_settings["font_size"] = "small"
                                     reading_settings["real_time_highlighting"] = False

@@ -64,6 +64,59 @@ class LibraryHandler:
         # Initialize helper classes
         self.search_handler = LibraryHandlerSearch(driver)
         self.scroll_handler = LibraryHandlerScroll(driver)
+    
+    def _discover_and_save_library_preferences(self):
+        """Discover the current library view state and save it to preferences.
+        
+        This is called when we detect the library is already in a certain state
+        but we haven't saved those preferences yet.
+        
+        Note: We can only discover view_type without opening the dialog.
+        group_by_series requires opening the Grid/List view dialog to check.
+        """
+        try:
+            # Check if we're in list view
+            if self._is_list_view():
+                logger.info("Discovered library is in list view, saving preference")
+                self.driver.automator.profile_manager.save_style_setting("view_type", "list")
+            elif self._is_grid_view():
+                logger.info("Discovered library is in grid view, saving preference")
+                self.driver.automator.profile_manager.save_style_setting("view_type", "grid")
+            
+            # We cannot determine group_by_series without opening the dialog
+            # Don't assume anything about it
+            logger.info("Cannot determine group_by_series without opening dialog - not setting this preference")
+                
+        except Exception as e:
+            logger.error(f"Error discovering and saving library preferences: {e}")
+    
+    def _is_library_view_preferences_correctly_set(self):
+        """Check if library view preferences are correctly set to list view with group_by_series=false.
+        
+        If preferences haven't been set yet (return None), we need to discover and save them.
+        
+        Returns:
+            bool: True if preferences are correctly set, False otherwise
+        """
+        try:
+            cached_view_type = self.driver.automator.profile_manager.get_style_setting(
+                "view_type", default=None
+            )
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
+                "group_by_series", default=None
+            )
+            
+            logger.info(f"Cached preferences check: view_type={cached_view_type}, group_by_series={cached_group_by_series}")
+            
+            # If we have no cached preferences, we need to discover the current state
+            if cached_view_type is None or cached_group_by_series is None:
+                logger.info("No cached preferences found, will need to discover current state")
+                return False
+            
+            return cached_view_type == "list" and cached_group_by_series is False
+        except Exception as e:
+            logger.error(f"Error checking library view preferences: {e}")
+            return False
 
     def _is_library_tab_selected(self):
         """Check if the library tab is currently selected."""
@@ -130,9 +183,9 @@ class LibraryHandler:
 
     def _open_grid_list_view_dialog_internal(self):
         """Internal method to open the Grid/List view dialog by clicking the view options button.
-        
+
         This is a shared method used by both open_grid_list_view_dialog and switch_to_list_view.
-        
+
         Returns:
             bool: True if dialog was opened successfully, False otherwise
         """
@@ -141,7 +194,14 @@ class LibraryHandler:
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is already open")
                 return True
-            
+
+            # Before trying to open dialog, make sure we're in library view
+            if not self._is_library_tab_selected():
+                logger.info("Not in library view, navigating to library first")
+                if not self.navigate_to_library():
+                    logger.error("Failed to navigate to library")
+                    return False
+                    
             # Click view options button to open the dialog
             for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
                 try:
@@ -149,48 +209,53 @@ class LibraryHandler:
                     button.click()
                     logger.info(f"Clicked view options button using {strategy}: {locator}")
                     time.sleep(1)  # Wait for dialog animation
-                    
+
                     # Verify dialog opened
                     if self._is_grid_list_view_dialog_open():
                         logger.info("Successfully opened Grid/List view dialog")
                         return True
-                    
+
                 except Exception as e:
                     logger.debug(f"Failed to click view options button with strategy {strategy}: {e}")
                     continue
-            
+
             logger.error("Failed to open Grid/List view dialog with any strategy")
             return False
-            
+
         except Exception as e:
             logger.error(f"Error opening Grid/List view dialog: {e}")
             return False
-    
-    def open_grid_list_view_dialog(self):
+
+    def open_grid_list_view_dialog(self, force_open=False):
         """Open the Grid/List view dialog to access settings like 'Group by Series'.
-        
+
+        Args:
+            force_open: If True, open the dialog even if preferences appear to be set
+                       This is useful when we need to verify/set group_by_series
+
         Returns:
             bool: True if dialog was opened successfully, False otherwise
         """
         try:
-            # Check cached setting - if group_by_series isn't False, we need to open the dialog
-            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
-                "group_by_series", default=None
-            )
-            
-            if cached_group_by_series is False:
-                logger.info("Group by series is already set to False, dialog not needed")
+            # Check if both preferences are already correctly set (unless force_open is True)
+            if not force_open and self._is_library_view_preferences_correctly_set():
+                logger.info("Library preferences already correctly set, dialog not needed")
                 return True
-            
-            logger.info("Group by series is not False, opening Grid/List view dialog")
-            
+
+            # Check specifically if we need to open dialog for group_by_series
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting("group_by_series")
+            if cached_group_by_series is None:
+                logger.info("group_by_series is not set, need to open dialog to check/set it")
+            else:
+                logger.info("Opening Grid/List view dialog")
+
             # Use the internal method to open the dialog
             return self._open_grid_list_view_dialog_internal()
-            
+
         except Exception as e:
             logger.error(f"Error in open_grid_list_view_dialog: {e}")
             return False
-            
+
     def _is_grid_list_view_dialog_open(self):
         """Check if the Grid/List view selection dialog is open.
 
@@ -465,15 +530,7 @@ class LibraryHandler:
         """Switch to list view if not already in it"""
         try:
             # First check cached preferences to see if we should already be in list view
-            # The profile_manager is on the automator, not directly on the driver
-            cached_view_type = self.driver.automator.profile_manager.get_style_setting(
-                "view_type", default=None
-            )
-            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
-                "group_by_series", default=None
-            )
-
-            if cached_view_type == "list" and cached_group_by_series is False:
+            if self._is_library_view_preferences_correctly_set():
                 logger.info(
                     "Library settings already set to list view with group_by_series=false in cache, "
                     "assuming we're already in list view and skipping all checks"
@@ -498,15 +555,17 @@ class LibraryHandler:
 
             # Check if we're already in list view
             if self._is_list_view():
+                # Check if we need to discover and save preferences
+                cached_view_type = self.driver.automator.profile_manager.get_style_setting("view_type")
+                if cached_view_type is None:
+                    logger.info("Already in list view but no cached preferences, discovering and saving")
+                    self._discover_and_save_library_preferences()
                 return True
 
             # Force update state machine to ensure we're recognized as being in LIBRARY state
             # This is crucial to prevent auth_handler from trying to enter email after view changes
-            if hasattr(self.driver, "automator") and self.driver.automator:
-                automator = self.driver.automator
-                if hasattr(automator, "state_machine") and automator.state_machine:
-                    logger.info("Ensuring state machine recognizes LIBRARY state before view change")
-                    automator.state_machine.update_current_state()
+            logger.info("Ensuring state machine recognizes LIBRARY state before view change")
+            self.driver.automator.state_machine.update_current_state()
 
             # If we're in grid view, we need to open the view options menu
             if self._is_grid_view():
@@ -1249,22 +1308,28 @@ class LibraryHandler:
 
             # Fallback: Search for the book by scrolling
 
-            # First check if we're in the Grid/List view dialog and handle it
-            if self._is_grid_list_view_dialog_open():
-                logger.info("Detected Grid/List view dialog is open, handling it first")
-                if not self.handle_grid_list_view_dialog():
-                    logger.error("Failed to handle Grid/List view dialog")
-                    return False
-                logger.info("Successfully handled Grid/List view dialog")
-                time.sleep(1)  # Wait for UI to stabilize
+            # Only handle Grid/List view if cached preferences indicate we need to
+            if not self._is_library_view_preferences_correctly_set():
+                # First check if we're in the Grid/List view dialog and handle it
+                if self._is_grid_list_view_dialog_open():
+                    logger.info("Detected Grid/List view dialog is open, handling it first")
+                    if not self.handle_grid_list_view_dialog():
+                        logger.error("Failed to handle Grid/List view dialog")
+                        return False
+                    logger.info("Successfully handled Grid/List view dialog")
+                    time.sleep(1)  # Wait for UI to stabilize
 
-            # Check if we're in grid view and switch to list view if needed
-            if self._is_grid_view():
-                logger.info("Detected grid view, switching to list view")
-                if not self.switch_to_list_view():
-                    logger.error("Failed to switch to list view")
-                    return False
-                logger.info("Successfully switched to list view")
+                # Check if we're in grid view and switch to list view if needed
+                if self._is_grid_view():
+                    logger.info("Detected grid view, switching to list view")
+                    if not self.switch_to_list_view():
+                        logger.error("Failed to switch to list view")
+                        return False
+                    logger.info("Successfully switched to list view")
+            else:
+                logger.info(
+                    "Skipping grid/list view checks in find_book - cached preferences already set correctly"
+                )
 
             # Scroll to top first
             if not self.scroll_handler.scroll_to_list_top():
@@ -1307,15 +1372,43 @@ class LibraryHandler:
             bool: True if the book was found and opened, False otherwise
         """
         try:
-            # First check if we're in the Grid/List view dialog and handle it before trying to open a book
-            if self._is_grid_list_view_dialog_open():
-                logger.info("Detected Grid/List view dialog is open before opening book, handling it first")
-                if not self.handle_grid_list_view_dialog():
-                    logger.error("Failed to handle Grid/List view dialog")
-                    store_page_source(self.driver.page_source, "failed_to_handle_grid_list_dialog")
-                    return False
-                logger.info("Successfully handled Grid/List view dialog")
-                time.sleep(1)  # Wait for UI to stabilize
+            # Check if we have any cached preferences at all
+            cached_view_type = self.driver.automator.profile_manager.get_style_setting("view_type")
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting("group_by_series")
+            
+            # If we have no preferences cached, try to discover the current state
+            if cached_view_type is None or cached_group_by_series is None:
+                logger.info("No cached library preferences found in open_book, attempting to discover current state")
+                self._discover_and_save_library_preferences()
+            
+            # Only handle the Grid/List view dialog if cached preferences indicate we need to
+            if not self._is_library_view_preferences_correctly_set():
+                # Check if we're in the Grid/List view dialog and handle it before trying to open a book
+                if self._is_grid_list_view_dialog_open():
+                    logger.info("Detected Grid/List view dialog is open before opening book, handling it first")
+                    if not self.handle_grid_list_view_dialog():
+                        logger.error("Failed to handle Grid/List view dialog")
+                        store_page_source(self.driver.page_source, "failed_to_handle_grid_list_dialog")
+                        return False
+                    logger.info("Successfully handled Grid/List view dialog")
+                    time.sleep(1)  # Wait for UI to stabilize
+                else:
+                    # Dialog is not open but preferences aren't correctly set
+                    # We need to open the dialog to check/set group_by_series
+                    if cached_group_by_series is None:
+                        logger.info("group_by_series is not set, opening Grid/List dialog to check/set it")
+                        # Use force_open=True to ensure dialog opens even if view_type is already set
+                        if self.open_grid_list_view_dialog(force_open=True):
+                            logger.info("Opened Grid/List dialog, now handling it")
+                            if not self.handle_grid_list_view_dialog():
+                                logger.error("Failed to handle Grid/List view dialog after opening")
+                                return False
+                        else:
+                            logger.warning("Failed to open Grid/List dialog to check group_by_series")
+            else:
+                logger.info(
+                    "Skipping Grid/List view dialog check - cached preferences already set correctly"
+                )
 
             # Store initial page source for diagnostics
             store_page_source(self.driver.page_source, "library_before_book_search")

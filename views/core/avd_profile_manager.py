@@ -785,9 +785,13 @@ class AVDProfileManager:
             bool: True if styles have been updated, False otherwise
         """
         email = get_sindarin_email()
+        if not email:
+            return False
 
-        # Get the styles_updated preference from the correct location
-        return self._get_preference_value(email, "styles_updated", False)
+        # Get the styles_updated from the top level
+        if email in self.profiles_index:
+            return self.profiles_index[email].get("styles_updated", False)
+        return False
 
     def _set_preference_value(self, email: str, key: str, value):
         """
@@ -826,15 +830,13 @@ class AVDProfileManager:
                     logger.warning("No email available to get style setting")
                     return default
 
-            # Navigate through the profile structure
+            # Look for library_settings at the top level
             if email in self.profiles_index:
                 profile = self.profiles_index[email]
-                if "preferences" in profile:
-                    preferences = profile["preferences"]
-                    if "library_settings" in preferences:
-                        library_settings = preferences["library_settings"]
-                        if setting_name in library_settings:
-                            return library_settings[setting_name]
+                if "library_settings" in profile:
+                    library_settings = profile["library_settings"]
+                    if setting_name in library_settings:
+                        return library_settings[setting_name]
 
             return default
         except Exception as e:
@@ -865,14 +867,12 @@ class AVDProfileManager:
             if email not in self.profiles_index:
                 self.profiles_index[email] = {}
 
-            if "preferences" not in self.profiles_index[email]:
-                self.profiles_index[email]["preferences"] = {}
-
-            if "library_settings" not in self.profiles_index[email]["preferences"]:
-                self.profiles_index[email]["preferences"]["library_settings"] = {}
+            # Save library_settings at the top level
+            if "library_settings" not in self.profiles_index[email]:
+                self.profiles_index[email]["library_settings"] = {}
 
             # Save the setting
-            self.profiles_index[email]["preferences"]["library_settings"][setting_name] = setting_value
+            self.profiles_index[email]["library_settings"][setting_name] = setting_value
 
             # Persist to disk
             self._save_profiles_index()
@@ -920,17 +920,17 @@ class AVDProfileManager:
                 logger.info(f"Initializing user preferences for {email}")
                 self.user_preferences[email] = {}
 
-            # Update style preference
-            self._set_preference_value(email, "styles_updated", is_updated)
+            # Update style preference at the top level
+            self.profiles_index[email]["styles_updated"] = is_updated
 
-            # Initialize reading_settings if needed
-            if "reading_settings" not in self.user_preferences[email]:
+            # Initialize reading_settings at top level if needed
+            if "reading_settings" not in self.profiles_index[email]:
                 logger.info(f"Initializing reading_settings for {email}")
-                self.user_preferences[email]["reading_settings"] = {}
+                self.profiles_index[email]["reading_settings"] = {}
 
             # Update various reading settings - keep these values synced
             # with what's saved in the actual reading style sheet
-            reading_settings = self.user_preferences[email]["reading_settings"]
+            reading_settings = self.profiles_index[email]["reading_settings"]
             if is_updated:
                 # These are the default settings we apply when styles_updated is True
                 reading_settings["theme"] = "dark"
@@ -942,9 +942,6 @@ class AVDProfileManager:
                 reading_settings["highlight_menu"] = False
 
             # Save all changes
-            self._save_user_preferences()
-
-            # Make sure changes are saved to the profiles_index
             self._save_profiles_index()
 
             logger.info(f"Successfully updated style preferences for {email} to {is_updated}")

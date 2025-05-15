@@ -1029,6 +1029,9 @@ class Driver:
                     options.allow_invisible_elements = True
                     options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
 
+                    # Set shorter waitForIdleTimeout to make Appium faster
+                    options.set_capability("waitForIdleTimeout", 1000)  # 1 second wait for idle state
+                    
                     # Set longer timeouts to avoid connection issues
                     options.set_capability(
                         "uiautomator2ServerLaunchTimeout", 20000
