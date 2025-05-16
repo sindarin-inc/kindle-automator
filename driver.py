@@ -226,7 +226,6 @@ class Driver:
                 and hasattr(self.automator, "profile_manager")
                 and hasattr(self.automator.profile_manager, "profiles_index")
             ):
-
                 profile_index = self.automator.profile_manager.profiles_index
 
                 if email in profile_index and "preferences" in profile_index[email]:

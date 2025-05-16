@@ -65,7 +65,7 @@ class AutomationServer:
 
         # Set email context for this thread so logs go to the right file
         from server.logging_config import EmailContext
-        
+
         with EmailContext(email):
             # Initialize a new automator
             automator = KindleAutomator()
@@ -96,13 +96,13 @@ class AutomationServer:
         if not email:
             logger.error("Email parameter is required for switch_profile")
             return False, "Email parameter is required"
-        
+
         # Set email context for this thread so logs go to the right file
         from server.logging_config import EmailContext
-        
+
         with EmailContext(email):
             return self._switch_profile_impl(email, force_new_emulator)
-    
+
     def _switch_profile_impl(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """Internal implementation of switch_profile with email context already set."""
 
@@ -213,6 +213,69 @@ class AutomationServer:
         except Exception as e:
             logger.error(f"Error killing {name} process: {e}")
 
+    def _check_appium_health(self, port):
+        """Check if Appium server is healthy on the specified port.
+
+        Args:
+            port: The port to check
+
+        Returns:
+            bool: True if Appium is running and healthy, False otherwise
+        """
+        try:
+            # Check if anything is listening on the port
+            port_check = subprocess.run(
+                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+            )
+            if not port_check.stdout.strip():
+                logger.debug(f"No process found listening on port {port}")
+                return False
+
+            # Check Appium server status endpoint
+            check_result = subprocess.run(
+                ["curl", "-s", f"http://localhost:{port}/status"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+
+            if check_result.returncode != 0:
+                logger.debug(f"Appium health check failed with return code {check_result.returncode}")
+                return False
+
+            # Parse the response
+            import json
+
+            try:
+                response_json = json.loads(check_result.stdout)
+
+                # Check for Appium 1.x format: {"status": 0, ...}
+                if "status" in response_json and response_json["status"] == 0:
+                    logger.debug(f"Healthy Appium 1.x server found on port {port}")
+                    return True
+
+                # Check for Appium 2.x format: {"value": {"ready": true, ...}}
+                if "value" in response_json and isinstance(response_json["value"], dict):
+                    if response_json["value"].get("ready") == True:
+                        logger.debug(f"Healthy Appium 2.x server found on port {port}")
+                        return True
+
+                logger.debug(f"Appium server on port {port} returned unknown format: {response_json}")
+
+            except json.JSONDecodeError:
+                # Not valid JSON, fallback to string check
+                if '"status":0' in check_result.stdout or '"ready":true' in check_result.stdout:
+                    logger.debug(f"Healthy Appium server found on port {port} (string check)")
+                    return True
+                else:
+                    logger.debug(f"Invalid JSON response from Appium on port {port}: {check_result.stdout}")
+
+        except Exception as e:
+            logger.debug(f"Error checking Appium health on port {port}: {e}")
+
+        return False
+
     def start_appium(self, port=4723, email=None):
         """Start Appium server for a specific profile on a specific port.
 
@@ -227,7 +290,37 @@ class AutomationServer:
         # Generate a unique name for the Appium process - either based on email or port
         process_name = f"appium_{email}" if email else f"appium_{port}"
 
-        # Kill any existing Appium process with this name or on this port
+        # First, check if Appium is already running on this port and is healthy
+        if self._check_appium_health(port):
+            logger.info(f"Healthy Appium server already running on port {port}, reusing it")
+
+            # Get the PID of the existing process
+            existing_pid = None
+            try:
+                pid_check = subprocess.run(
+                    ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+                )
+                if pid_check.stdout.strip():
+                    existing_pid = int(pid_check.stdout.strip())
+                    logger.debug(f"Found existing Appium process with PID {existing_pid}")
+            except Exception as e:
+                logger.warning(f"Could not get PID of existing Appium process: {e}")
+
+            # Store the process reference if we have an email
+            if email:
+                if not hasattr(self, "appium_processes"):
+                    self.appium_processes = {}
+
+                # Update our tracking with the existing process
+                self.appium_processes[email] = {
+                    "process": None,  # We don't have the process object, but it's running
+                    "port": port,
+                    "pid": existing_pid,
+                }
+
+            return True
+
+        # If Appium isn't healthy or not running, then kill any existing process on this port
         try:
             # Try to find and kill any process using this port
             port_check = subprocess.run(
@@ -235,7 +328,7 @@ class AutomationServer:
             )
             if port_check.stdout.strip():
                 pid = port_check.stdout.strip()
-                logger.info(f"Killing existing process with PID {pid} on port {port}")
+                logger.info(f"Killing unhealthy/stale process with PID {pid} on port {port}")
                 try:
                     os.kill(int(pid), signal.SIGTERM)
                     time.sleep(1)  # Give it time to terminate
@@ -346,89 +439,30 @@ class AutomationServer:
             retry_delay = 1  # Start with 1 second, will increase
 
             for attempt in range(max_retries):
-                try:
-                    check_result = subprocess.run(
-                        ["curl", "-s", f"http://localhost:{port}/status"],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        timeout=5,
-                    )
+                if self._check_appium_health(port):
+                    logger.info(f"Appium server successfully started and responsive on port {port}")
+                    return True
 
-                    # Appium 2.x returns a different format than Appium 1.x
-                    # Check for both response formats
+                # If this is the last attempt, don't continue
+                if attempt == max_retries - 1:
+                    logger.error(f"Appium server failed to respond correctly after {max_retries} attempts")
 
-                    # Try to parse the response as JSON
-                    import json
+                    # Kill the process since it's not working properly
+                    if email and email in self.appium_processes:
+                        try:
+                            process = self.appium_processes[email].get("process")
+                            if process:
+                                process.terminate()
+                                logger.info(f"Terminated non-responsive Appium process for {email}")
+                        except Exception as term_e:
+                            logger.warning(f"Error terminating non-responsive Appium process: {term_e}")
 
-                    try:
-                        response_json = json.loads(check_result.stdout)
+                    return False
 
-                        # Check for Appium 1.x format: {"status": 0, ...}
-                        if "status" in response_json and response_json["status"] == 0:
-                            logger.info(
-                                f"Appium 1.x server successfully started and responsive on port {port}"
-                            )
-                            return True
-
-                        # Check for Appium 2.x format: {"value": {"ready": true, ...}}
-                        if "value" in response_json and isinstance(response_json["value"], dict):
-                            if response_json["value"].get("ready") == True:
-                                return True
-
-                        # If we get here, the response is in an unknown format
-                        logger.warning(
-                            f"Appium server started but returned unknown format on port {port} (attempt {attempt+1}/{max_retries}): {check_result.stdout}"
-                        )
-                    except json.JSONDecodeError:
-                        # Not valid JSON, fallback to string check
-                        if '"status":0' in check_result.stdout or '"ready":true' in check_result.stdout:
-                            logger.info(
-                                f"Appium server successfully started and responsive on port {port} (string check)"
-                            )
-                            return True
-                        else:
-                            logger.warning(
-                                f"Appium server started but returned invalid JSON on port {port} (attempt {attempt+1}/{max_retries}): {check_result.stdout}"
-                            )
-
-                    # If this is the last attempt, don't continue
-                    if attempt == max_retries - 1:
-                        logger.error(
-                            f"Appium server failed to respond correctly after {max_retries} attempts"
-                        )
-
-                        # Kill the process since it's not working properly
-                        if email and email in self.appium_processes:
-                            try:
-                                process = self.appium_processes[email].get("process")
-                                if process:
-                                    process.terminate()
-                                    logger.info(f"Terminated non-responsive Appium process for {email}")
-                            except Exception as term_e:
-                                logger.warning(f"Error terminating non-responsive Appium process: {term_e}")
-
-                        return False
-
-                        # Wait with increasing delay before trying again
-                        logger.info(f"Waiting {retry_delay}s before checking Appium server again...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-
-                except Exception as check_e:
-                    logger.warning(
-                        f"Error checking Appium server status (attempt {attempt+1}/{max_retries}): {check_e}"
-                    )
-
-                    # If this is the last attempt, don't continue
-                    if attempt == max_retries - 1:
-                        logger.error(f"Failed to verify Appium server status after {max_retries} attempts")
-                        return False
-
-                    # Wait before trying again
-                    logger.info(f"Waiting {retry_delay}s before checking Appium server again...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                # Wait before trying again
+                logger.info(f"Waiting {retry_delay}s before checking Appium server again...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
 
             # Should never reach here due to returns in the loop
             return False

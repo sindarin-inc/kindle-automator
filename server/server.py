@@ -571,7 +571,8 @@ class BooksStreamResource(Resource):
             # Thread to run the library_handler's book retrieval
             def start_book_retrieval_thread_fn():
                 # Set email context for this background thread
-                from server.logging_config import set_email_context, clear_email_context
+                from server.logging_config import clear_email_context, set_email_context
+
                 set_email_context(sindarin_email)
                 try:
                     logger.info("Starting book retrieval with processing callback in a new thread.")

@@ -32,33 +32,33 @@ logger = logging.getLogger(__name__)
 def get_sindarin_email() -> Optional[str]:
     """
     Extract email from request (query params, JSON body, or form data).
-    Handles staff impersonation by returning user_email when both sindarin_email 
+    Handles staff impersonation by returning user_email when both sindarin_email
     and user_email are present in the request.
-    
+
     Returns:
         The extracted email (impersonated user email or regular email) or None if not found
     """
     # First check for impersonation scenario
     # Check query parameters
-    if request.args.get('sindarin_email') and request.args.get('user_email'):
-        staff_email = request.args.get('sindarin_email')
-        user_email = request.args.get('user_email')
+    if request.args.get("sindarin_email") and request.args.get("user_email"):
+        staff_email = request.args.get("sindarin_email")
+        user_email = request.args.get("user_email")
         logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
         return user_email
-    
+
     # Check JSON body for impersonation
     if request.is_json:
         data = request.get_json(silent=True) or {}
-        if data.get('sindarin_email') and data.get('user_email'):
-            staff_email = data.get('sindarin_email')
-            user_email = data.get('user_email')
+        if data.get("sindarin_email") and data.get("user_email"):
+            staff_email = data.get("sindarin_email")
+            user_email = data.get("user_email")
             logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
             return user_email
-    
+
     # Check form data for impersonation
-    if request.form.get('sindarin_email') and request.form.get('user_email'):
-        staff_email = request.form.get('sindarin_email')
-        user_email = request.form.get('user_email')
+    if request.form.get("sindarin_email") and request.form.get("user_email"):
+        staff_email = request.form.get("sindarin_email")
+        user_email = request.form.get("user_email")
         logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
         return user_email
 
@@ -119,7 +119,6 @@ def get_automator_for_request(server):
 
     logger.debug(f"Found automator for {sindarin_email}")
     return automator, sindarin_email, None
-
 
 
 def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]:

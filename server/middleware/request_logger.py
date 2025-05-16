@@ -242,7 +242,7 @@ def setup_request_logger(app):
         response_with_logs = RequestBodyLogger.log_response(response)
 
         # Clear from g for safety (Flask automatically clears g after request)
-        if hasattr(g, 'request_email'):
+        if hasattr(g, "request_email"):
             g.request_email = None
 
         return response_with_logs

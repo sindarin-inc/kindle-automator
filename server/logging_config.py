@@ -162,28 +162,29 @@ class DynamicEmailHandler(logging.Handler):
 
     def set_email(self, email):
         """Set the email for the current thread (useful for non-request contexts)."""
-        if hasattr(self._local, 'email'):
+        if hasattr(self._local, "email"):
             self._local.email = email
         else:
             self._local.email = email
 
     def clear_email(self):
         """Clear the email for the current thread."""
-        if hasattr(self._local, 'email'):
-            delattr(self._local, 'email')
+        if hasattr(self._local, "email"):
+            delattr(self._local, "email")
 
     def emit(self, record):
         """Emit the log record to the appropriate log file based on the current request email."""
         email = None
-        
+
         # Only try Flask g.request_email (set in before_request)
         try:
             from flask import g
+
             if hasattr(g, "request_email"):
                 email = g.request_email
         except (ImportError, RuntimeError):
             # Not in Flask context - check thread-local only for background threads
-            if hasattr(self._local, 'email'):
+            if hasattr(self._local, "email"):
                 email = self._local.email
 
         if email:
@@ -215,39 +216,44 @@ class RelativePathFormatter(logging.Formatter):
 # Global reference to the dynamic email handler
 _email_handler = None
 
+
 def get_email_handler():
     """Get the global email handler instance."""
     return _email_handler
+
 
 def set_email_context(email):
     """Set the email context for the current thread (useful for background tasks)."""
     if _email_handler:
         _email_handler.set_email(email)
 
+
 def clear_email_context():
     """Clear the email context for the current thread."""
     if _email_handler:
         _email_handler.clear_email()
 
+
 class EmailContext:
     """Context manager for setting email context for logging."""
-    
+
     def __init__(self, email):
         self.email = email
-    
+
     def __enter__(self):
         if self.email:
             set_email_context(self.email)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         clear_email_context()
         return False
 
+
 def setup_logger():
     """Configure logging with timestamps including minutes, seconds, and milliseconds"""
     global _email_handler
-    
+
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
