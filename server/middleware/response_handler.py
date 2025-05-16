@@ -180,11 +180,16 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         return success
 
     def is_uiautomator_crash(error):
-        """Check if the error is a UiAutomator2 server crash"""
-        return isinstance(
-            error, selenium_exceptions.WebDriverException
-        ) and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running" in str(
-            error
+        """Check if the error is a UiAutomator2 server crash or lost session"""
+        error_str = str(error)
+        return (
+            (
+                isinstance(error, selenium_exceptions.WebDriverException)
+                and "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
+                in error_str
+            )
+            or ("The session identified by" in error_str and "is not known" in error_str)
+            or "NoSuchDriverException" in error_str
         )
 
     def is_emulator_missing(error):

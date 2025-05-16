@@ -82,20 +82,35 @@ def ensure_automator_healthy(f):
             except Exception as e:
                 # Check if it's the UiAutomator2 server crash error or other common crash patterns
                 error_message = str(e)
-                # Check the specific exception type as well as the message
-                is_driver_error = isinstance(e, selenium_exceptions.NoSuchDriverException)
-                is_uiautomator_crash = is_driver_error or any(
+                # Check for lost driver session errors (Appium specific)
+                is_lost_session = any(
                     [
-                        "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
-                        in error_message,
-                        "instrumentation process is not running" in error_message,
-                        "Failed to establish a new connection" in error_message,
-                        "Connection refused" in error_message,
-                        "Connection reset by peer" in error_message,
-                        "A session is either terminated or not started" in error_message,
-                        "NoSuchDriverError" in error_message,
-                        "InvalidSessionIdException" in error_message,
+                        "The session identified by" in error_message and "is not known" in error_message,
+                        "NoSuchDriverException" in error_message,
                     ]
+                )
+                # Check the specific exception type as well as the message
+                is_driver_error = (
+                    isinstance(e, selenium_exceptions.NoSuchDriverException)
+                    if hasattr(selenium_exceptions, "NoSuchDriverException")
+                    else False
+                )
+                is_uiautomator_crash = (
+                    is_driver_error
+                    or is_lost_session
+                    or any(
+                        [
+                            "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
+                            in error_message,
+                            "instrumentation process is not running" in error_message,
+                            "Failed to establish a new connection" in error_message,
+                            "Connection refused" in error_message,
+                            "Connection reset by peer" in error_message,
+                            "A session is either terminated or not started" in error_message,
+                            "NoSuchDriverError" in error_message,
+                            "InvalidSessionIdException" in error_message,
+                        ]
+                    )
                 )
 
                 if is_uiautomator_crash and attempt < max_retries - 1:
