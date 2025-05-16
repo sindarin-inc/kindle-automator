@@ -1076,7 +1076,7 @@ class Driver:
                             if server and hasattr(server, "get_unique_ports_for_email"):
                                 # First update the profile with the device ID we're using
                                 if hasattr(server, "profile_manager") and self.device_id:
-                                    profile = server.profile_manager.get_profile_by_email(email)
+                                    profile = server.profile_manager.get_profile_for_email(email)
                                     if profile and profile.get("emulator_id") != self.device_id:
                                         logger.info(
                                             f"Updating profile device ID to {self.device_id} before port allocation"

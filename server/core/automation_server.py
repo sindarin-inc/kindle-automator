@@ -605,7 +605,7 @@ class AutomationServer:
         # Try to release with device ID first
         device_id = None
         if hasattr(self, "profile_manager"):
-            profile = self.profile_manager.get_profile_by_email(email)
+            profile = self.profile_manager.get_profile_for_email(email)
             if profile:
                 device_id = profile.get("emulator_id")
 
