@@ -3,7 +3,9 @@
 import logging
 import platform
 import subprocess
+import time
 import traceback
+from datetime import datetime
 
 from flask import request
 from flask_restful import Resource
@@ -11,6 +13,7 @@ from flask_restful import Resource
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.utils.request_utils import get_sindarin_email
 from server.utils.vnc_instance_manager import VNCInstanceManager
+from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,76 @@ class ShutdownResource(Resource):
         if not automator:
             logger.info(f"No automator found for {sindarin_email}, nothing to shut down")
             return {"success": True, "message": f"No running instances found for {sindarin_email}"}, 200
+
+        # Before shutting down, park the emulator in the Library view and take a snapshot
+        try:
+            if hasattr(automator, "driver") and automator.driver:
+                logger.info(f"Parking emulator in Library view before shutdown for {sindarin_email}")
+                # Initialize state machine to handle transitions
+                from views.state_machine import KindleStateMachine
+
+                state_machine = KindleStateMachine(automator.driver)
+
+                # Transition to library (this handles navigation from any state)
+                try:
+                    result = state_machine.transition_to_library(max_transitions=10, server=self.server)
+                    if result and result == AppState.LIBRARY:
+                        logger.info("Successfully parked emulator in Library view")
+                        # Wait 5 seconds as requested
+                        time.sleep(5)
+                        # Take snapshot
+                        if hasattr(automator.emulator_manager, "emulator_launcher"):
+                            (
+                                emulator_id,
+                                _,
+                            ) = automator.emulator_manager.emulator_launcher.get_running_emulator(
+                                sindarin_email
+                            )
+                            if emulator_id:
+                                logger.info(f"Taking ADB snapshot of emulator {emulator_id}")
+                                # Get AVD name for cleaner snapshot naming
+                                avd_name = (
+                                    automator.emulator_manager.emulator_launcher._extract_avd_name_from_email(
+                                        sindarin_email
+                                    )
+                                )
+                                if avd_name and avd_name.startswith("KindleAVD_"):
+                                    # Extract just the email part from the AVD name
+                                    avd_identifier = avd_name.replace("KindleAVD_", "")
+                                else:
+                                    avd_identifier = sindarin_email.replace("@", "_").replace(".", "_")
+
+                                # Include date for snapshot version management
+                                date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                snapshot_name = f"library_park_{avd_identifier}_{date_str}"
+
+                                if automator.emulator_manager.emulator_launcher.save_snapshot(
+                                    sindarin_email, snapshot_name
+                                ):
+                                    logger.info(f"Saved snapshot '{snapshot_name}' for {sindarin_email}")
+                                    # Clean up old snapshots to save disk space
+                                    try:
+                                        deleted_count = automator.emulator_manager.emulator_launcher.cleanup_old_snapshots(
+                                            sindarin_email, keep_count=3
+                                        )
+                                        if deleted_count > 0:
+                                            logger.info(
+                                                f"Cleaned up {deleted_count} old library park snapshots for {sindarin_email}"
+                                            )
+                                    except Exception as cleanup_error:
+                                        logger.warning(f"Failed to clean up old snapshots: {cleanup_error}")
+                                else:
+                                    logger.error(
+                                        f"Failed to save snapshot '{snapshot_name}' for {sindarin_email}"
+                                    )
+                    else:
+                        logger.warning("Failed to transition to Library view before shutdown")
+                except Exception as e:
+                    logger.warning(f"Error transitioning to Library before shutdown: {e}")
+                    # Continue with shutdown even if parking fails
+        except Exception as e:
+            logger.warning(f"Error preparing for shutdown parking: {e}")
+            # Continue with shutdown even if parking fails
 
         # Track what was shut down
         shutdown_summary = {

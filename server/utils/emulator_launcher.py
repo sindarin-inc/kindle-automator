@@ -575,15 +575,38 @@ class EmulatorLauncher:
             if platform.system() != "Darwin":
                 env["DISPLAY"] = f":{display_num}"
 
+            # Check if there's a library snapshot for this AVD
+            # Look for the most recent snapshot starting with library_park_ for this AVD
+            snapshot_name = None
+
+            # Get the AVD identifier for snapshot naming
+            if avd_name and avd_name.startswith("KindleAVD_"):
+                avd_identifier = avd_name.replace("KindleAVD_", "")
+            else:
+                avd_identifier = email.replace("@", "_").replace(".", "_")
+
+            # List all snapshots and find the most recent library park snapshot
+            available_snapshots = self.list_snapshots(email)
+            library_snapshots = [
+                s for s in available_snapshots if s.startswith(f"library_park_{avd_identifier}_")
+            ]
+
+            if library_snapshots:
+                # Sort by timestamp embedded in the filename (newest first)
+                library_snapshots.sort(reverse=True)
+                snapshot_name = library_snapshots[0]
+                logger.info(
+                    f"Found {len(library_snapshots)} library park snapshots, using most recent: {snapshot_name}"
+                )
+            else:
+                logger.info(f"No library park snapshots found for {avd_identifier}")
+
             # Common emulator arguments for all platforms
             common_args = [
                 "-avd",
                 avd_name,
                 "-no-audio",
                 "-no-boot-anim",
-                "-no-snapshot",
-                "-no-snapshot-load",
-                "-no-snapshot-save",
                 "-writable-system",
                 "-port",
                 str(emulator_port),
@@ -603,6 +626,13 @@ class EmulatorLauncher:
                 "-prop",
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
+
+            # Check if we found a snapshot and add it to arguments if we did
+            if snapshot_name:
+                logger.info(f"Using snapshot '{snapshot_name}' for {email} for faster startup")
+                common_args.extend(["-snapshot", snapshot_name])
+            else:
+                logger.info(f"No library park snapshot found for {email}, starting emulator normally")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":
@@ -1041,3 +1071,203 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error checking if emulator is ready for {email}: {e}")
             return False
+
+    def save_snapshot(self, email: str, snapshot_name: str) -> bool:
+        """
+        Save a snapshot of the current emulator state.
+
+        Args:
+            email: The user's email address
+            snapshot_name: Name of the snapshot to save
+
+        Returns:
+            True if snapshot was saved successfully, False otherwise
+        """
+        try:
+            # Get the running emulator ID for this email
+            emulator_id, _ = self.get_running_emulator(email)
+            if not emulator_id:
+                logger.error(f"No running emulator found for {email}")
+                return False
+
+            # Use avdmanager to save the snapshot
+            # First, get the AVD name for this email
+            avd_name = self._extract_avd_name_from_email(email)
+            if not avd_name:
+                logger.error(f"Could not determine AVD name for {email}")
+                return False
+
+            # Save the snapshot using telnet to the emulator console
+            # The emulator port is the last part of the emulator-xxxx ID
+            emulator_port = int(emulator_id.split("-")[1])
+            console_port = emulator_port - 1  # Console port is usually emulator_port - 1
+
+            # Create the telnet command to save the snapshot
+            telnet_commands = f"avd snapshot save {snapshot_name}\nquit\n"
+
+            # Execute the command
+            result = subprocess.run(
+                ["telnet", "localhost", str(console_port)],
+                input=telnet_commands,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0 and "OK" in result.stdout:
+                logger.info(
+                    f"Successfully saved snapshot '{snapshot_name}' for {email} on emulator {emulator_id}"
+                )
+                return True
+            else:
+                logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}: {result.stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error saving snapshot '{snapshot_name}' for {email}: {e}")
+            return False
+
+    def has_snapshot(self, email: str, snapshot_name: str) -> bool:
+        """
+        Check if a snapshot exists for the given AVD.
+
+        Args:
+            email: The user's email address
+            snapshot_name: Name of the snapshot to check
+
+        Returns:
+            True if snapshot exists, False otherwise
+        """
+        try:
+            # Get the AVD name for this email
+            avd_name = self._extract_avd_name_from_email(email)
+            if not avd_name:
+                logger.error(f"Could not determine AVD name for {email}")
+                return False
+
+            # Check if the snapshot exists in the AVD directory
+            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+            snapshots_dir = os.path.join(avd_path, "snapshots")
+            snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+
+            exists = os.path.exists(snapshot_path)
+            logger.info(
+                f"Snapshot '{snapshot_name}' for {email} {'exists' if exists else 'does not exist'} at {snapshot_path}"
+            )
+            return exists
+
+        except Exception as e:
+            logger.error(f"Error checking if snapshot '{snapshot_name}' exists for {email}: {e}")
+            return False
+
+    def list_snapshots(self, email: str) -> List[str]:
+        """
+        List all available snapshots for the given AVD.
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            List of snapshot names
+        """
+        try:
+            # Get the AVD name for this email
+            avd_name = self._extract_avd_name_from_email(email)
+            if not avd_name:
+                logger.error(f"Could not determine AVD name for {email}")
+                return []
+
+            # List snapshots in the AVD directory
+            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+            snapshots_dir = os.path.join(avd_path, "snapshots")
+
+            if not os.path.exists(snapshots_dir):
+                logger.info(f"No snapshots directory found for {email} at {snapshots_dir}")
+                return []
+
+            # List all subdirectories in the snapshots directory
+            snapshots = []
+            for entry in os.listdir(snapshots_dir):
+                snapshot_path = os.path.join(snapshots_dir, entry)
+                if os.path.isdir(snapshot_path):
+                    snapshots.append(entry)
+
+            logger.info(f"Found {len(snapshots)} snapshots for {email}: {snapshots}")
+            return snapshots
+
+        except Exception as e:
+            logger.error(f"Error listing snapshots for {email}: {e}")
+            return []
+
+    def cleanup_old_snapshots(self, email: str, keep_count: int = 3) -> int:
+        """
+        Clean up old library park snapshots for the given email.
+
+        Args:
+            email: The user's email address
+            keep_count: Number of recent snapshots to keep (default: 3)
+
+        Returns:
+            Number of snapshots deleted
+        """
+        try:
+            # Get the AVD name for this email
+            avd_name = self._extract_avd_name_from_email(email)
+            if not avd_name:
+                logger.error(f"Could not determine AVD name for {email}")
+                return 0
+
+            # Get the AVD identifier for snapshot naming
+            if avd_name and avd_name.startswith("KindleAVD_"):
+                avd_identifier = avd_name.replace("KindleAVD_", "")
+            else:
+                avd_identifier = email.replace("@", "_").replace(".", "_")
+
+            # List all snapshots
+            all_snapshots = self.list_snapshots(email)
+
+            # Filter for library park snapshots
+            library_snapshots = [s for s in all_snapshots if s.startswith(f"library_park_{avd_identifier}_")]
+
+            if len(library_snapshots) <= keep_count:
+                logger.info(
+                    f"Found {len(library_snapshots)} library park snapshots for {email}, no cleanup needed (keep_count={keep_count})"
+                )
+                return 0
+
+            # Sort by timestamp (newest first)
+            library_snapshots.sort(reverse=True)
+
+            # Determine which snapshots to delete
+            snapshots_to_delete = library_snapshots[keep_count:]
+
+            logger.info(f"Cleaning up {len(snapshots_to_delete)} old library park snapshots for {email}")
+            logger.info(f"Keeping the {keep_count} most recent: {library_snapshots[:keep_count]}")
+            logger.info(f"Deleting: {snapshots_to_delete}")
+
+            # Delete the old snapshots
+            deleted_count = 0
+            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+            snapshots_dir = os.path.join(avd_path, "snapshots")
+
+            for snapshot_name in snapshots_to_delete:
+                snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+                try:
+                    if os.path.exists(snapshot_path):
+                        # Use shutil.rmtree to remove the entire snapshot directory
+                        import shutil
+
+                        shutil.rmtree(snapshot_path)
+                        logger.info(f"Deleted snapshot: {snapshot_name}")
+                        deleted_count += 1
+                    else:
+                        logger.warning(f"Snapshot not found at expected path: {snapshot_path}")
+                except Exception as del_error:
+                    logger.error(f"Error deleting snapshot {snapshot_name}: {del_error}")
+
+            logger.info(f"Successfully deleted {deleted_count} old library park snapshots for {email}")
+            return deleted_count
+
+        except Exception as e:
+            logger.error(f"Error cleaning up old snapshots for {email}: {e}")
+            return 0
