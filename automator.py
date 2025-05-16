@@ -381,7 +381,7 @@ class KindleAutomator:
                     AppState.SIGN_IN,
                     AppState.CAPTCHA,
                     AppState.SIGN_IN_PASSWORD,
-                    AppState.UNKNOWN,
+                    # Removed AppState.UNKNOWN - it should use fast ADB method
                 ]
                 needs_secure = current_state in auth_states
 

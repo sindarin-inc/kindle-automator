@@ -82,7 +82,9 @@ def ensure_automator_healthy(f):
             except Exception as e:
                 # Check if it's the UiAutomator2 server crash error or other common crash patterns
                 error_message = str(e)
-                is_uiautomator_crash = any(
+                # Check the specific exception type as well as the message
+                is_driver_error = isinstance(e, selenium_exceptions.NoSuchDriverException)
+                is_uiautomator_crash = is_driver_error or any(
                     [
                         "cannot be proxied to UiAutomator2 server because the instrumentation process is not running"
                         in error_message,
@@ -90,6 +92,9 @@ def ensure_automator_healthy(f):
                         "Failed to establish a new connection" in error_message,
                         "Connection refused" in error_message,
                         "Connection reset by peer" in error_message,
+                        "A session is either terminated or not started" in error_message,
+                        "NoSuchDriverError" in error_message,
+                        "InvalidSessionIdException" in error_message,
                     ]
                 )
 

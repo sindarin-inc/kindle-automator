@@ -505,13 +505,8 @@ class StyleHandler:
                                     self.profile_manager.profiles_index[email]["styles_updated"] = True
 
                                     # Initialize reading_settings at top level if needed
-                                    if (
-                                        "reading_settings"
-                                        not in self.profile_manager.profiles_index[email]
-                                    ):
-                                        self.profile_manager.profiles_index[email][
-                                            "reading_settings"
-                                        ] = {}
+                                    if "reading_settings" not in self.profile_manager.profiles_index[email]:
+                                        self.profile_manager.profiles_index[email]["reading_settings"] = {}
 
                                     # Set reading settings at top level
                                     reading_settings = self.profile_manager.profiles_index[email][

@@ -64,13 +64,13 @@ class LibraryHandler:
         # Initialize helper classes
         self.search_handler = LibraryHandlerSearch(driver)
         self.scroll_handler = LibraryHandlerScroll(driver)
-    
+
     def _discover_and_save_library_preferences(self):
         """Discover the current library view state and save it to preferences.
-        
+
         This is called when we detect the library is already in a certain state
         but we haven't saved those preferences yet.
-        
+
         Note: We can only discover view_type without opening the dialog.
         group_by_series requires opening the Grid/List view dialog to check.
         """
@@ -82,19 +82,21 @@ class LibraryHandler:
             elif self._is_grid_view():
                 logger.info("Discovered library is in grid view, saving preference")
                 self.driver.automator.profile_manager.save_style_setting("view_type", "grid")
-            
+
             # We cannot determine group_by_series without opening the dialog
             # Don't assume anything about it
-            logger.info("Cannot determine group_by_series without opening dialog - not setting this preference")
-                
+            logger.info(
+                "Cannot determine group_by_series without opening dialog - not setting this preference"
+            )
+
         except Exception as e:
             logger.error(f"Error discovering and saving library preferences: {e}")
-    
+
     def _is_library_view_preferences_correctly_set(self):
         """Check if library view preferences are correctly set to list view with group_by_series=false.
-        
+
         If preferences haven't been set yet (return None), we need to discover and save them.
-        
+
         Returns:
             bool: True if preferences are correctly set, False otherwise
         """
@@ -105,14 +107,16 @@ class LibraryHandler:
             cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
                 "group_by_series", default=None
             )
-            
-            logger.info(f"Cached preferences check: view_type={cached_view_type}, group_by_series={cached_group_by_series}")
-            
+
+            logger.info(
+                f"Cached preferences check: view_type={cached_view_type}, group_by_series={cached_group_by_series}"
+            )
+
             # If we have no cached preferences, we need to discover the current state
             if cached_view_type is None or cached_group_by_series is None:
                 logger.info("No cached preferences found, will need to discover current state")
                 return False
-            
+
             return cached_view_type == "list" and cached_group_by_series is False
         except Exception as e:
             logger.error(f"Error checking library view preferences: {e}")
@@ -201,7 +205,7 @@ class LibraryHandler:
                 if not self.navigate_to_library():
                     logger.error("Failed to navigate to library")
                     return False
-                    
+
             # Click view options button to open the dialog
             for strategy, locator in VIEW_OPTIONS_BUTTON_STRATEGIES:
                 try:
@@ -243,7 +247,9 @@ class LibraryHandler:
                 return True
 
             # Check specifically if we need to open dialog for group_by_series
-            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting("group_by_series")
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
+                "group_by_series"
+            )
             if cached_group_by_series is None:
                 logger.info("group_by_series is not set, need to open dialog to check/set it")
             else:
@@ -1374,18 +1380,24 @@ class LibraryHandler:
         try:
             # Check if we have any cached preferences at all
             cached_view_type = self.driver.automator.profile_manager.get_style_setting("view_type")
-            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting("group_by_series")
-            
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
+                "group_by_series"
+            )
+
             # If we have no preferences cached, try to discover the current state
             if cached_view_type is None or cached_group_by_series is None:
-                logger.info("No cached library preferences found in open_book, attempting to discover current state")
+                logger.info(
+                    "No cached library preferences found in open_book, attempting to discover current state"
+                )
                 self._discover_and_save_library_preferences()
-            
+
             # Only handle the Grid/List view dialog if cached preferences indicate we need to
             if not self._is_library_view_preferences_correctly_set():
                 # Check if we're in the Grid/List view dialog and handle it before trying to open a book
                 if self._is_grid_list_view_dialog_open():
-                    logger.info("Detected Grid/List view dialog is open before opening book, handling it first")
+                    logger.info(
+                        "Detected Grid/List view dialog is open before opening book, handling it first"
+                    )
                     if not self.handle_grid_list_view_dialog():
                         logger.error("Failed to handle Grid/List view dialog")
                         store_page_source(self.driver.page_source, "failed_to_handle_grid_list_dialog")
@@ -1406,9 +1418,7 @@ class LibraryHandler:
                         else:
                             logger.warning("Failed to open Grid/List dialog to check group_by_series")
             else:
-                logger.info(
-                    "Skipping Grid/List view dialog check - cached preferences already set correctly"
-                )
+                logger.info("Skipping Grid/List view dialog check - cached preferences already set correctly")
 
             # Store initial page source for diagnostics
             store_page_source(self.driver.page_source, "library_before_book_search")

@@ -1031,7 +1031,7 @@ class Driver:
 
                     # Set shorter waitForIdleTimeout to make Appium faster
                     options.set_capability("waitForIdleTimeout", 1000)  # 1 second wait for idle state
-                    
+
                     # Set longer timeouts to avoid connection issues
                     options.set_capability(
                         "uiautomator2ServerLaunchTimeout", 20000
