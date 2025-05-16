@@ -1050,11 +1050,40 @@ class Driver:
 
                     # Set longer timeouts to avoid connection issues
                     options.set_capability(
-                        "uiautomator2ServerLaunchTimeout", 20000
-                    )  # 20 seconds timeout for UiAutomator2 server launch
+                        "uiautomator2ServerLaunchTimeout", 60000
+                    )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
                     # Leave this higher since we need time for ADB commands during actual operations
-                    options.set_capability("adbExecTimeout", 120000)  # 120 seconds timeout for ADB commands
+                    options.set_capability("adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
                     options.set_capability("connectionTimeout", 10000)  # 10 seconds for connection timeout
+
+                    # Add parallel execution capabilities
+                    instance_id = None
+                    profile = self.automator.profile_manager.get_current_profile()
+                    if profile:
+                        email = profile.get("email") or profile.get("assigned_profile")
+                        if email:
+                            # Create instance-specific ID
+                            instance_id = email.split("@")[0].replace(".", "_")
+
+                    # If we have instance_id, add unique ports for parallel execution
+                    if instance_id:
+                        # Calculate unique ports based on instance ID hash
+                        instance_num = hash(instance_id) % 50  # Limit to 50 instances
+                        options.set_capability("systemPort", 8200 + instance_num)
+                        options.set_capability("bootstrapPort", 5000 + instance_num)
+                        options.set_capability("chromedriverPort", 9515 + instance_num)
+                        options.set_capability("mjpegServerPort", 7810 + instance_num)
+
+                        # Temporary directory for this instance
+                        import tempfile
+
+                        temp_dir = os.path.join(tempfile.gettempdir(), f"appium_{instance_id}")
+                        os.makedirs(temp_dir, exist_ok=True)
+                        options.set_capability("tmpDir", temp_dir)
+
+                    # Clean up system files to avoid conflicts
+                    options.set_capability("clearSystemFiles", True)
+                    options.set_capability("skipServerInstallation", False)
 
                     # Use longer timeout on webdriver initialization
                     import socket
@@ -1180,11 +1209,33 @@ class Driver:
                         appium_port = self.appium_port if self.appium_port is not None else 4723
 
                         logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
-                        # Ensure the critical capabilities are set correctly before connection
-                        self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
-                        logger.info(
-                            f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
-                        )
+
+                        # Add retry logic for driver creation to handle socket hang-ups
+                        driver_creation_retries = 3
+                        driver_retry_delay = 5
+
+                        for driver_attempt in range(driver_creation_retries):
+                            try:
+                                self.driver = webdriver.Remote(
+                                    f"http://127.0.0.1:{appium_port}", options=options
+                                )
+                                logger.info(
+                                    f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
+                                )
+                                break
+                            except Exception as e:
+                                error_msg = str(e).lower()
+                                if (
+                                    "socket hang up" in error_msg or "econnreset" in error_msg
+                                ) and driver_attempt < driver_creation_retries - 1:
+                                    wait_time = driver_retry_delay * (driver_attempt + 1)
+                                    logger.warning(
+                                        f"Socket hang up during driver creation, retrying in {wait_time}s..."
+                                    )
+                                    time.sleep(wait_time)
+                                    continue
+                                # If it's not a socket hang up error or it's the last attempt, re-raise
+                                raise
                     finally:
                         socket.setdefaulttimeout(original_timeout)  # Restore original timeout
 
