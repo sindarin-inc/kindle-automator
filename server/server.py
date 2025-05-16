@@ -40,7 +40,6 @@ from server.utils.ocr_utils import (
 from server.utils.request_utils import (
     get_automator_for_request,
     get_formatted_vnc_url,
-    get_request_logger,
     get_sindarin_email,
 )
 from views.core.app_state import AppState
@@ -159,21 +158,18 @@ class BooksResource(Resource):
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
-        # Get the appropriate logger for this request
-        request_logger = get_request_logger()
-
         if not sindarin_email:
-            request_logger.error("No email provided to identify which profile to use")
+            logger.error("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
-            request_logger.error(f"No automator found for {sindarin_email}")
+            logger.error(f"No automator found for {sindarin_email}")
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         current_state = automator.state_machine.current_state
-        request_logger.info(f"Current state when getting books: {current_state}")
+        logger.info(f"Current state when getting books: {current_state}")
 
         # Handle different states
         if current_state != AppState.LIBRARY:
@@ -194,9 +190,9 @@ class BooksResource(Resource):
                         emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
                             sindarin_email
                         )
-                        request_logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                request_logger.info("Authentication required - providing VNC URL for manual authentication")
+                logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
                     "requires_auth": True,
@@ -206,12 +202,12 @@ class BooksResource(Resource):
                 }, 401
 
             # Try to transition to library state
-            request_logger.info("Not in library state, attempting to transition...")
+            logger.info("Not in library state, attempting to transition...")
             transition_success = automator.state_machine.transition_to_library(server=server)
 
             # Get the updated state after transition attempt
             new_state = automator.state_machine.current_state
-            request_logger.info(f"State after transition attempt: {new_state}")
+            logger.info(f"State after transition attempt: {new_state}")
 
             # Check for auth requirement regardless of transition success
             if new_state == AppState.SIGN_IN:
@@ -379,17 +375,14 @@ class BooksStreamResource(Resource):
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
-        # Get the appropriate logger for this request
-        request_logger = get_request_logger()
-
         if not sindarin_email:
-            request_logger.error("No email provided to identify which profile to use")
+            logger.error("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
-            request_logger.error(f"No automator found for {sindarin_email}")
+            logger.error(f"No automator found for {sindarin_email}")
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         current_state = automator.state_machine.current_state
@@ -406,9 +399,9 @@ class BooksStreamResource(Resource):
                     and hasattr(automator.emulator_manager, "emulator_launcher")
                 ):
                     emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
-                    request_logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+                    logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                request_logger.info("Authentication required - providing VNC URL for manual authentication")
+                logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
                     "requires_auth": True,
@@ -418,12 +411,12 @@ class BooksStreamResource(Resource):
                 }, 401
 
             # Try to transition to library state
-            request_logger.info("Not in library state, attempting to transition...")
+            logger.info("Not in library state, attempting to transition...")
             transition_success = automator.state_machine.transition_to_library(server=server)
 
             # Get the updated state after transition attempt
             new_state = automator.state_machine.current_state
-            request_logger.info(f"State after transition attempt: {new_state}")
+            logger.info(f"State after transition attempt: {new_state}")
 
             # Check for auth requirement regardless of transition success
             if new_state == AppState.SIGN_IN:
@@ -577,6 +570,9 @@ class BooksStreamResource(Resource):
 
             # Thread to run the library_handler's book retrieval
             def start_book_retrieval_thread_fn():
+                # Set email context for this background thread
+                from server.logging_config import set_email_context, clear_email_context
+                set_email_context(sindarin_email)
                 try:
                     logger.info("Starting book retrieval with processing callback in a new thread.")
                     automator.state_machine.library_handler.get_book_titles(callback=book_processing_callback)
@@ -588,6 +584,9 @@ class BooksStreamResource(Resource):
                     # Ensure the main loop knows about this fatal error and can terminate
                     if not all_books_retrieved_event.is_set():
                         all_books_retrieved_event.set()
+                finally:
+                    # Clear email context when thread completes
+                    clear_email_context()
 
             retrieval_thread = threading.Thread(target=start_book_retrieval_thread_fn, daemon=True)
             retrieval_thread.start()

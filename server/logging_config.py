@@ -5,6 +5,8 @@ import sys
 import threading
 from typing import Dict, Optional
 
+# Remove circular import - DynamicEmailHandler will get email from flask.g only
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,14 +116,16 @@ class DynamicEmailHandler(logging.Handler):
     """
     A handler that routes logs to email-specific log files based on the current request.
 
-    This handler first tries to get the email from thread-local storage.
-    If that fails and we're in a Flask request context, it will try to get it directly from the request.
+    This handler tries to get the email from:
+    1. Flask g.request_email (set in before_request)
+    2. Thread-local storage (for non-request contexts)
     """
 
     def __init__(self, level=logging.NOTSET):
         super().__init__(level)
         self.handler_cache = {}  # Cache of email -> handler
         self.formatter = None
+        self._local = threading.local()  # Thread-local storage for email
 
     def setFormatter(self, formatter):
         """Set the formatter for this handler and all email-specific handlers."""
@@ -156,63 +160,31 @@ class DynamicEmailHandler(logging.Handler):
 
         return handler
 
-    def get_email_from_request(self):
-        """Try to get email from the current request context."""
-        try:
-            from flask import request
+    def set_email(self, email):
+        """Set the email for the current thread (useful for non-request contexts)."""
+        if hasattr(self._local, 'email'):
+            self._local.email = email
+        else:
+            self._local.email = email
 
-            # Check if we have a request context
-            if hasattr(request, "args"):
-                # Try to extract email from request directly
-                email = None
-
-                # Check URL parameters
-                if "sindarin_email" in request.args:
-                    email = request.args.get("sindarin_email")
-                elif "email" in request.args:
-                    email = request.args.get("email")
-
-                # Check JSON body if no email in URL
-                elif request.is_json:
-                    try:
-                        data = request.get_json(silent=True) or {}
-                        if "sindarin_email" in data:
-                            email = data.get("sindarin_email")
-                        elif "email" in data:
-                            email = data.get("email")
-                    except:
-                        pass
-
-                # Check form data if no email found yet
-                elif not email and request.form:
-                    if "sindarin_email" in request.form:
-                        email = request.form.get("sindarin_email")
-                    elif "email" in request.form:
-                        email = request.form.get("email")
-
-                return email
-
-        except (ImportError, RuntimeError):
-            # Not in Flask context
-            pass
-
-        return None
+    def clear_email(self):
+        """Clear the email for the current thread."""
+        if hasattr(self._local, 'email'):
+            delattr(self._local, 'email')
 
     def emit(self, record):
         """Emit the log record to the appropriate log file based on the current request email."""
-        # First check if email is stored in Flask g
         email = None
+        
+        # Only try Flask g.request_email (set in before_request)
         try:
             from flask import g
-
             if hasattr(g, "request_email"):
                 email = g.request_email
         except (ImportError, RuntimeError):
-            pass
-
-        # If not found in g, try to get from request directly
-        if not email:
-            email = self.get_email_from_request()
+            # Not in Flask context - check thread-local only for background threads
+            if hasattr(self._local, 'email'):
+                email = self._local.email
 
         if email:
             # Get a handler for this email
@@ -240,8 +212,42 @@ class RelativePathFormatter(logging.Formatter):
         return super().format(record)
 
 
+# Global reference to the dynamic email handler
+_email_handler = None
+
+def get_email_handler():
+    """Get the global email handler instance."""
+    return _email_handler
+
+def set_email_context(email):
+    """Set the email context for the current thread (useful for background tasks)."""
+    if _email_handler:
+        _email_handler.set_email(email)
+
+def clear_email_context():
+    """Clear the email context for the current thread."""
+    if _email_handler:
+        _email_handler.clear_email()
+
+class EmailContext:
+    """Context manager for setting email context for logging."""
+    
+    def __init__(self, email):
+        self.email = email
+    
+    def __enter__(self):
+        if self.email:
+            set_email_context(self.email)
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        clear_email_context()
+        return False
+
 def setup_logger():
     """Configure logging with timestamps including minutes, seconds, and milliseconds"""
+    global _email_handler
+    
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
@@ -282,11 +288,11 @@ def setup_logger():
     root_logger.addHandler(file_handler)
 
     # Add dynamic email handler for user-specific logs
-    email_handler = DynamicEmailHandler()
-    email_handler.setLevel(logging.DEBUG)
-    email_handler.setFormatter(formatter)
-    email_handler.addFilter(custom_filter)
-    root_logger.addHandler(email_handler)
+    _email_handler = DynamicEmailHandler()
+    _email_handler.setLevel(logging.DEBUG)
+    _email_handler.setFormatter(formatter)
+    _email_handler.addFilter(custom_filter)
+    root_logger.addHandler(_email_handler)
 
     # Configure external libraries to use higher log level
     for lib_name in ["selenium", "urllib3", "PIL", "appium", "werkzeug"]:

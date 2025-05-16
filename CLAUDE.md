@@ -9,6 +9,10 @@
 - `make reinstall`: Reinstall the application
 - `make kill-server`: Kill server and appium processes
 
+## Virtualenv Management
+
+- `workon kindle-automator`: Source the virtualenv for the Kindle Automator project, activating the virtual environment located at ~/.virtualenvs/kindle-automator/bin/activate
+
 ## Ansible Commands
 
 - `ansible-playbook ansible/provision.yml -t vnc`: Setup VNC server role

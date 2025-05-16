@@ -63,18 +63,22 @@ class AutomationServer:
             logger.info(f"Using existing automator for profile {email}")
             return self.automators[email]
 
-        # Initialize a new automator
-        automator = KindleAutomator()
-        # Connect profile manager to automator for device ID tracking
-        automator.profile_manager = self.profile_manager
+        # Set email context for this thread so logs go to the right file
+        from server.logging_config import EmailContext
+        
+        with EmailContext(email):
+            # Initialize a new automator
+            automator = KindleAutomator()
+            # Connect profile manager to automator for device ID tracking
+            automator.profile_manager = self.profile_manager
 
-        # Pass emulator_manager to automator for VNC integration
-        automator.emulator_manager = self.profile_manager.emulator_manager
+            # Pass emulator_manager to automator for VNC integration
+            automator.emulator_manager = self.profile_manager.emulator_manager
 
-        # Store the automator
-        self.automators[email] = automator
+            # Store the automator
+            self.automators[email] = automator
 
-        automator.initialize_driver()
+            automator.initialize_driver()
 
         return automator
 
@@ -92,6 +96,15 @@ class AutomationServer:
         if not email:
             logger.error("Email parameter is required for switch_profile")
             return False, "Email parameter is required"
+        
+        # Set email context for this thread so logs go to the right file
+        from server.logging_config import EmailContext
+        
+        with EmailContext(email):
+            return self._switch_profile_impl(email, force_new_emulator)
+    
+    def _switch_profile_impl(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
+        """Internal implementation of switch_profile with email context already set."""
 
         # current_email field has been removed
         # Always use explicit email parameters in all operations

@@ -233,9 +233,6 @@ def setup_request_logger(app):
         # Store the email in flask.g for this request
         g.request_email = email
 
-        # Store the email in g.request_email is enough
-        # DynamicEmailHandler will extract it directly from the request if needed
-
         # Log the request details
         RequestBodyLogger.log_request()
 
@@ -244,7 +241,8 @@ def setup_request_logger(app):
         # Log the response details
         response_with_logs = RequestBodyLogger.log_response(response)
 
-        # No need to clear thread-local storage anymore
-        # DynamicEmailHandler will get email directly from request if needed
+        # Clear from g for safety (Flask automatically clears g after request)
+        if hasattr(g, 'request_email'):
+            g.request_email = None
 
         return response_with_logs

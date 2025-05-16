@@ -25,7 +25,6 @@ from typing import Optional
 from flask import request
 
 from server.config import VNC_BASE_URL
-from server.logging_config import get_email_logger
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +32,37 @@ logger = logging.getLogger(__name__)
 def get_sindarin_email() -> Optional[str]:
     """
     Extract email from request (query params, JSON body, or form data).
-    Supports both 'sindarin_email' and 'email' parameters for convenience.
-    No fallback to default_email - either the email exists in the request or not.
-
+    Handles staff impersonation by returning user_email when both sindarin_email 
+    and user_email are present in the request.
+    
     Returns:
-        The extracted email or None if not found
+        The extracted email (impersonated user email or regular email) or None if not found
     """
+    # First check for impersonation scenario
+    # Check query parameters
+    if request.args.get('sindarin_email') and request.args.get('user_email'):
+        staff_email = request.args.get('sindarin_email')
+        user_email = request.args.get('user_email')
+        logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
+        return user_email
+    
+    # Check JSON body for impersonation
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        if data.get('sindarin_email') and data.get('user_email'):
+            staff_email = data.get('sindarin_email')
+            user_email = data.get('user_email')
+            logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
+            return user_email
+    
+    # Check form data for impersonation
+    if request.form.get('sindarin_email') and request.form.get('user_email'):
+        staff_email = request.form.get('sindarin_email')
+        user_email = request.form.get('user_email')
+        logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
+        return user_email
+
+    # Standard email extraction if not impersonating
     email = None
 
     # Check in URL parameters - try both parameter names
@@ -81,73 +105,21 @@ def get_automator_for_request(server):
     # Get sindarin_email from request to determine which automator to use
     sindarin_email = get_sindarin_email()
 
-    # Use the appropriate logger - either email-specific or standard
-    request_logger = get_request_logger()
-
     if not sindarin_email:
         error = {"error": "No email provided to identify which profile to use"}
-        request_logger.error("No email provided in request to identify profile")
+        logger.error("No email provided in request to identify profile")
         return None, None, (error, 400)
 
     # Get the appropriate automator
     automator = server.automators.get(sindarin_email)
     if not automator:
         error = {"error": f"No automator found for {sindarin_email}"}
-        request_logger.error(f"No automator found for {sindarin_email}")
+        logger.error(f"No automator found for {sindarin_email}")
         return None, None, (error, 404)
 
-    request_logger.debug(f"Found automator for {sindarin_email}")
+    logger.debug(f"Found automator for {sindarin_email}")
     return automator, sindarin_email, None
 
-
-def get_request_logger() -> logging.Logger:
-    """
-    Get a logger for the current request based on the sindarin_email in the request.
-
-    This function first tries to get the email-specific logger from the Flask request context.
-    If that's not available, it extracts the email from the current request and returns
-    an appropriate logger. If an email is found, it returns a logger that will write to
-    both the main log file and an email-specific log file (logs/<email>.log).
-    If no email is found, it falls back to the standard logger.
-
-    This is the preferred way to get a logger in request handlers, as it automatically
-    handles the logic of determining the appropriate logger based on the current context.
-
-    Example usage in a Flask route or resource:
-
-        @app.route('/api/books')
-        def get_books():
-            # Get a logger for the current request
-            request_logger = get_request_logger()
-
-            # Use the logger - logs will go to both the main log and email-specific log if applicable
-            request_logger.info("Processing books request")
-
-            # Rest of the function...
-
-    Returns:
-        logging.Logger: A logger appropriate for the current request context
-    """
-    try:
-        # Try to get the email logger from the flask.g object first (set in before_request)
-        from flask import g
-
-        if hasattr(g, "email_logger"):
-            return g.email_logger
-    except (ImportError, RuntimeError):
-        # Not in Flask context or g not available
-        pass
-
-    # Fall back to extracting email from request
-    email = get_sindarin_email()
-    if email:
-        # Instead of creating another logger with get_email_logger (which would create duplicate handlers),
-        # just return a namespaced logger that will use the DynamicEmailHandler already registered
-        email_namespace = f"email.{email}"
-        return logging.getLogger(email_namespace)
-
-    # Fall back to the standard logger if no email is found or email logger creation fails
-    return logger
 
 
 def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]:
