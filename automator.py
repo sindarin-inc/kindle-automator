@@ -53,13 +53,18 @@ class KindleAutomator:
             self.driver.automator = self
 
         # Get device ID from driver
-        # Check if we should use a specific device ID from the profile manager
+        self.device_id = driver.get_device_id()
+
+        # Verify the device ID matches what's in the profile
         email = get_sindarin_email()
         profile = self.profile_manager.get_profile_for_email(email)
         if profile and "emulator_id" in profile:
             profile_emulator_id = profile["emulator_id"]
-            if profile_emulator_id:
-                self.device_id = profile_emulator_id
+            if profile_emulator_id and profile_emulator_id != self.device_id:
+                logger.warning(
+                    f"Device ID mismatch: driver has {self.device_id}, profile has {profile_emulator_id}"
+                )
+                # Trust the driver's device ID as it's what we're actually connected to
 
         logger.info(f"Initialized driver {self.driver} with device_id: {self.device_id}")
 

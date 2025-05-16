@@ -288,14 +288,28 @@ class AutomationServer:
     def get_unique_ports_for_email(self, email):
         """Get unique port numbers for an email, ensuring no conflicts.
 
+        This method now includes device ID to ensure different devices get different ports.
+
         Args:
             email: The email to get ports for
 
         Returns:
             dict: A dictionary of port assignments
         """
-        if email in self.allocated_ports:
-            return self.allocated_ports[email]
+        # Get the current device ID for this email from the profile
+        device_id = None
+        if hasattr(self, "profile_manager"):
+            profile = self.profile_manager.get_profile_for_email(email)
+            if profile:
+                device_id = profile.get("emulator_id")
+
+        # Create a unique key combining email and device
+        allocation_key = f"{email}:{device_id}" if device_id else email
+
+        # Check if we already have ports allocated for this email+device combination
+        if allocation_key in self.allocated_ports:
+            logger.info(f"Reusing existing ports for {allocation_key}")
+            return self.allocated_ports[allocation_key]
 
         # Find the next available slot
         base_system_port = 8200
@@ -325,8 +339,8 @@ class AutomationServer:
             "appiumPort": base_appium_port + slot,
         }
 
-        self.allocated_ports[email] = ports
-        logger.info(f"Allocated ports for {email}: {ports}")
+        self.allocated_ports[allocation_key] = ports
+        logger.info(f"Allocated ports for {allocation_key}: {ports}")
         return ports
 
     def start_appium(self, port=4723, email=None):
@@ -360,8 +374,12 @@ class AutomationServer:
                     ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
                 )
                 if pid_check.stdout.strip():
-                    existing_pid = int(pid_check.stdout.strip())
-                    logger.debug(f"Found existing Appium process with PID {existing_pid}")
+                    # lsof might return multiple PIDs; take the first one
+                    pids = pid_check.stdout.strip().split("\n")
+                    existing_pid = int(pids[0])
+                    logger.debug(
+                        f"Found existing Appium process with PID {existing_pid} (total PIDs: {len(pids)})"
+                    )
             except Exception as e:
                 logger.warning(f"Could not get PID of existing Appium process: {e}")
 
@@ -584,7 +602,23 @@ class AutomationServer:
         Args:
             email: The email to release ports for
         """
-        if email in self.allocated_ports:
+        # Try to release with device ID first
+        device_id = None
+        if hasattr(self, "profile_manager"):
+            profile = self.profile_manager.get_profile_by_email(email)
+            if profile:
+                device_id = profile.get("emulator_id")
+
+        allocation_key = f"{email}:{device_id}" if device_id else email
+
+        # Try to release with the key that includes device ID
+        if allocation_key in self.allocated_ports:
+            logger.info(
+                f"Releasing allocated ports for {allocation_key}: {self.allocated_ports[allocation_key]}"
+            )
+            del self.allocated_ports[allocation_key]
+        # Also try with just email for backward compatibility
+        elif email in self.allocated_ports:
             logger.info(f"Releasing allocated ports for {email}: {self.allocated_ports[email]}")
             del self.allocated_ports[email]
 

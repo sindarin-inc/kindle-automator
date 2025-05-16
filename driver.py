@@ -1067,13 +1067,25 @@ class Driver:
 
                     # If we have instance_id, add unique ports for parallel execution
                     if instance_id and email:
-                        # Get allocated ports from server
+                        # Get allocated ports from server - pass device ID for proper allocation
                         allocated_ports = None
                         try:
                             from flask import current_app
 
                             server = current_app.config.get("server_instance")
                             if server and hasattr(server, "get_unique_ports_for_email"):
+                                # First update the profile with the device ID we're using
+                                if hasattr(server, "profile_manager") and self.device_id:
+                                    profile = server.profile_manager.get_profile_by_email(email)
+                                    if profile and profile.get("emulator_id") != self.device_id:
+                                        logger.info(
+                                            f"Updating profile device ID to {self.device_id} before port allocation"
+                                        )
+                                        if hasattr(server.profile_manager, "_save_profile_status"):
+                                            server.profile_manager._save_profile_status(
+                                                email, profile.get("avd_name"), self.device_id
+                                            )
+
                                 allocated_ports = server.get_unique_ports_for_email(email)
                         except Exception as e:
                             logger.warning(f"Could not get allocated ports from server: {e}")
