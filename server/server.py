@@ -1905,7 +1905,8 @@ class TextResource(Resource):
         return self._extract_text()
 
 
-# Import staff authentication resources
+# Import resource modules
+from server.resources.shutdown_resources import ShutdownResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 
 # Add resources to API
@@ -1954,6 +1955,11 @@ api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
 api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
+api.add_resource(
+    ShutdownResource,
+    "/shutdown",
+    resource_class_kwargs={"server_instance": server},
+)
 
 
 def cleanup_resources():
