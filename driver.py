@@ -1066,13 +1066,33 @@ class Driver:
                             instance_id = email.split("@")[0].replace(".", "_")
 
                     # If we have instance_id, add unique ports for parallel execution
-                    if instance_id:
-                        # Calculate unique ports based on instance ID hash
-                        instance_num = hash(instance_id) % 50  # Limit to 50 instances
-                        options.set_capability("systemPort", 8200 + instance_num)
-                        options.set_capability("bootstrapPort", 5000 + instance_num)
-                        options.set_capability("chromedriverPort", 9515 + instance_num)
-                        options.set_capability("mjpegServerPort", 7810 + instance_num)
+                    if instance_id and email:
+                        # Get allocated ports from server
+                        allocated_ports = None
+                        try:
+                            from flask import current_app
+
+                            server = current_app.config.get("server_instance")
+                            if server and hasattr(server, "get_unique_ports_for_email"):
+                                allocated_ports = server.get_unique_ports_for_email(email)
+                        except Exception as e:
+                            logger.warning(f"Could not get allocated ports from server: {e}")
+
+                        if allocated_ports:
+                            # Use the allocated ports
+                            options.set_capability("systemPort", allocated_ports["systemPort"])
+                            options.set_capability("bootstrapPort", allocated_ports["bootstrapPort"])
+                            options.set_capability("chromedriverPort", allocated_ports["chromedriverPort"])
+                            options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
+                            logger.info(f"Using allocated ports for {email}: {allocated_ports}")
+                        else:
+                            # Fallback to hash-based (but still problematic) approach
+                            instance_num = hash(instance_id) % 50  # Limit to 50 instances
+                            options.set_capability("systemPort", 8200 + instance_num)
+                            options.set_capability("bootstrapPort", 5000 + instance_num)
+                            options.set_capability("chromedriverPort", 9515 + instance_num)
+                            options.set_capability("mjpegServerPort", 7810 + instance_num)
+                            logger.warning(f"Using hash-based ports for {email} (fallback)")
 
                         # Temporary directory for this instance
                         import tempfile
@@ -1101,17 +1121,26 @@ class Driver:
                             current_profile = self.automator.profile_manager.get_current_profile()
                             if current_profile and "email" in current_profile:
                                 email = current_profile["email"]
-                                # Try to get appium_port from server's appium_processes dictionary
+                                # Try to get appium_port from server's allocated ports or appium_processes
                                 try:
                                     from flask import current_app
 
                                     server = current_app.config.get("server_instance")
-                                    if (
-                                        server
-                                        and hasattr(server, "appium_processes")
-                                        and email in server.appium_processes
-                                    ):
-                                        self.appium_port = server.appium_processes[email]["port"]
+                                    if server:
+                                        # First try to get from allocated ports
+                                        if hasattr(server, "get_unique_ports_for_email"):
+                                            allocated_ports = server.get_unique_ports_for_email(email)
+                                            if allocated_ports and "appiumPort" in allocated_ports:
+                                                self.appium_port = allocated_ports["appiumPort"]
+                                                logger.info(
+                                                    f"Using allocated appium port {self.appium_port} for {email}"
+                                                )
+                                        # Fall back to appium_processes if available
+                                        elif (
+                                            hasattr(server, "appium_processes")
+                                            and email in server.appium_processes
+                                        ):
+                                            self.appium_port = server.appium_processes[email]["port"]
                                 except (ImportError, RuntimeError) as e:
                                     logger.debug(f"Could not access server for Appium port: {e}")
 

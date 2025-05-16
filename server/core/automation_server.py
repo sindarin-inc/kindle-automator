@@ -20,6 +20,8 @@ class AutomationServer:
     def __init__(self):
         self.automators = {}  # Dictionary to track multiple automators by email
         self.appium_process = None
+        self.appium_processes = {}  # Dictionary to track appium instances by email
+        self.allocated_ports = {}  # Track allocated ports to prevent conflicts
         self.pid_dir = "logs"
         self.current_books = {}  # Track the currently open book title for each email
         os.makedirs(self.pid_dir, exist_ok=True)
@@ -193,7 +195,7 @@ class AutomationServer:
             os.makedirs(pid_dir, exist_ok=True)
         else:
             pid_dir = self.pid_dir
-        
+
         pid_file = os.path.join(pid_dir, f"{name}.pid")
         try:
             with open(pid_file, "w") as f:
@@ -283,6 +285,50 @@ class AutomationServer:
 
         return False
 
+    def get_unique_ports_for_email(self, email):
+        """Get unique port numbers for an email, ensuring no conflicts.
+
+        Args:
+            email: The email to get ports for
+
+        Returns:
+            dict: A dictionary of port assignments
+        """
+        if email in self.allocated_ports:
+            return self.allocated_ports[email]
+
+        # Find the next available slot
+        base_system_port = 8200
+        base_bootstrap_port = 5000
+        base_chromedriver_port = 9515
+        base_mjpeg_port = 7810
+        base_appium_port = 4723
+
+        # Check existing allocations and find a free slot
+        used_slots = set()
+        for allocated in self.allocated_ports.values():
+            slot = allocated.get("slot", 0)
+            used_slots.add(slot)
+
+        # Find the first available slot
+        slot = 0
+        while slot in used_slots:
+            slot += 1
+
+        # Allocate ports
+        ports = {
+            "slot": slot,
+            "systemPort": base_system_port + slot,
+            "bootstrapPort": base_bootstrap_port + slot,
+            "chromedriverPort": base_chromedriver_port + slot,
+            "mjpegServerPort": base_mjpeg_port + slot,
+            "appiumPort": base_appium_port + slot,
+        }
+
+        self.allocated_ports[email] = ports
+        logger.info(f"Allocated ports for {email}: {ports}")
+        return ports
+
     def start_appium(self, port=4723, email=None):
         """Start Appium server for a specific profile on a specific port.
 
@@ -294,6 +340,12 @@ class AutomationServer:
         Returns:
             bool: True if Appium server started successfully, False otherwise
         """
+        # If email is provided, get the allocated port for this email
+        if email:
+            ports = self.get_unique_ports_for_email(email)
+            port = ports["appiumPort"]
+            logger.info(f"Using allocated port {port} for {email}")
+
         # Generate a unique name for the Appium process - either based on email or port
         process_name = f"appium_{email}" if email else f"appium_{port}"
 
@@ -315,9 +367,6 @@ class AutomationServer:
 
             # Store the process reference if we have an email
             if email:
-                if not hasattr(self, "appium_processes"):
-                    self.appium_processes = {}
-
                 # Update our tracking with the existing process
                 self.appium_processes[email] = {
                     "process": None,  # We don't have the process object, but it's running
@@ -528,3 +577,23 @@ class AutomationServer:
         return self.current_books.get(email)
 
     # current_book property has been removed - use get_current_book(email) instead
+
+    def release_allocated_ports(self, email):
+        """Release allocated ports for an email when they're no longer needed.
+
+        Args:
+            email: The email to release ports for
+        """
+        if email in self.allocated_ports:
+            logger.info(f"Releasing allocated ports for {email}: {self.allocated_ports[email]}")
+            del self.allocated_ports[email]
+
+        # Also clean up appium_processes if the instance is no longer running
+        if email in self.appium_processes:
+            appium_info = self.appium_processes[email]
+            port = appium_info.get("port")
+
+            # Check if the process is still running
+            if port and not self._check_appium_health(port):
+                logger.info(f"Removing dead appium process info for {email}")
+                del self.appium_processes[email]
