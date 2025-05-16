@@ -1025,8 +1025,9 @@ class Driver:
                             check=True,
                         ).stdout.strip()
                         if android_id:
-                            logger.info(f"Using Android ID {android_id} for enhanced device identification")
                             options.set_capability("appium:androidId", android_id)
+                        else:
+                            logger.warning("Could not retrieve Android ID")
                     except Exception as e:
                         logger.warning(f"Could not retrieve Android ID: {e}")
 

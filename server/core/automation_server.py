@@ -405,7 +405,13 @@ class AutomationServer:
             # Start Appium with more detailed logs
             with open(log_file, "w") as log:
                 appium_process = subprocess.Popen(
-                    [appium_cmd, "--port", str(port), "--log-level", "debug"],
+                    [
+                        appium_cmd,
+                        "--port",
+                        str(port),
+                        "--log-level",
+                        "info",
+                    ],
                     stdout=log,
                     stderr=log,
                     text=True,
