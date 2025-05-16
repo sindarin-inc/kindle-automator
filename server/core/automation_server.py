@@ -187,7 +187,14 @@ class AutomationServer:
 
     def save_pid(self, name: str, pid: int):
         """Save process ID to file"""
-        pid_file = os.path.join(self.pid_dir, f"{name}.pid")
+        # For appium processes, save in the appium_logs directory
+        if name.startswith("appium"):
+            pid_dir = os.path.join(self.pid_dir, "appium_logs")
+            os.makedirs(pid_dir, exist_ok=True)
+        else:
+            pid_dir = self.pid_dir
+        
+        pid_file = os.path.join(pid_dir, f"{name}.pid")
         try:
             with open(pid_file, "w") as f:
                 f.write(str(pid))

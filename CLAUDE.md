@@ -12,6 +12,7 @@
 ## Virtualenv Management
 
 - `workon kindle-automator`: Source the virtualenv for the Kindle Automator project, activating the virtual environment located at ~/.virtualenvs/kindle-automator/bin/activate
+- You need to have already setup the kindle-automator virutalenv when running `make server`
 
 ## Ansible Commands
 
