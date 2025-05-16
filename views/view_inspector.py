@@ -180,6 +180,10 @@ class ViewInspector:
                         break
                 except Exception as e:
                     logger.warning(f"Error checking current activity: {e}")
+                    # If session is terminated, stop the loop early
+                    if "A session is either terminated or not started" in str(e):
+                        logger.error("Session terminated, stopping app status check")
+                        break
 
                 # Sleep for poll_interval before checking again
                 time.sleep(poll_interval)

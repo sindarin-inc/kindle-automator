@@ -7,9 +7,11 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import (
+    InvalidSessionIdException,
     NoSuchElementException,
     StaleElementReferenceException,
     TimeoutException,
+    WebDriverException,
 )
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -280,6 +282,11 @@ class LibraryHandler:
                         identifiers_found += 1
                 except NoSuchElementException:
                     continue
+                except (InvalidSessionIdException, WebDriverException) as e:
+                    if "A session is either terminated or not started" in str(e):
+                        logger.error("Session terminated, stopping dialog check")
+                        return False
+                    raise
 
             # Check for LIST_VIEW_OPTION_STRATEGIES
             for strategy, locator in LIST_VIEW_OPTION_STRATEGIES:
@@ -290,6 +297,11 @@ class LibraryHandler:
                         identifiers_found += 1
                 except NoSuchElementException:
                     continue
+                except (InvalidSessionIdException, WebDriverException) as e:
+                    if "A session is either terminated or not started" in str(e):
+                        logger.error("Session terminated, stopping dialog check")
+                        return False
+                    raise
 
             # Check for GRID_VIEW_OPTION_STRATEGIES
             for strategy, locator in GRID_VIEW_OPTION_STRATEGIES:
@@ -300,6 +312,11 @@ class LibraryHandler:
                         identifiers_found += 1
                 except NoSuchElementException:
                     continue
+                except (InvalidSessionIdException, WebDriverException) as e:
+                    if "A session is either terminated or not started" in str(e):
+                        logger.error("Session terminated, stopping dialog check")
+                        return False
+                    raise
 
             # Also check for specific view type header text
             try:
@@ -309,6 +326,11 @@ class LibraryHandler:
                     identifiers_found += 1
             except NoSuchElementException:
                 pass
+            except (InvalidSessionIdException, WebDriverException) as e:
+                if "A session is either terminated or not started" in str(e):
+                    logger.error("Session terminated, stopping dialog check")
+                    return False
+                raise
 
             # If we found at least 2 of the identifying elements, we're confident it's the Grid/List dialog
             is_dialog_open = identifiers_found >= 2
@@ -804,6 +826,11 @@ class LibraryHandler:
                     logger.warning("Group by Series switch not displayed")
             except NoSuchElementException:
                 logger.debug("Group by Series switch not found")
+            except (InvalidSessionIdException, WebDriverException) as e:
+                if "A session is either terminated or not started" in str(e):
+                    logger.error("Session terminated while handling Group by Series switch")
+                    return False
+                logger.error(f"Error handling Group by Series switch: {e}")
             except Exception as e:
                 logger.error(f"Error handling Group by Series switch: {e}")
 

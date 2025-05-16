@@ -185,19 +185,9 @@ class KindleAutomator:
                         logger.error(f"UiAutomator2 server crashed: {error_message}")
                         raise activity_error
 
-                # Additional check - try to get window size
-                try:
-                    window_size = self.driver.get_window_size()
-                except Exception as window_error:
-                    # Check specifically for UiAutomator2 crash indicators
-                    error_message = str(window_error)
-                    if (
-                        "instrumentation process is not running" in error_message
-                        or "UiAutomator2 server" in error_message
-                        or "An unknown server-side error occurred" in error_message
-                    ):
-                        logger.error(f"UiAutomator2 server crashed during window size check: {error_message}")
-                        raise window_error
+                # Skip window size check - it seems to trigger crashes
+                # The activity check above is sufficient for health monitoring
+                logger.debug("Skipping window size check to avoid potential crashes")
 
                 # Check if we're in the app not responding state
                 if self.state_machine:

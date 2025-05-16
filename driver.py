@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 import time
+from functools import wraps
 from typing import Optional
 
 from appium import webdriver
@@ -10,6 +11,19 @@ from appium.options.android import UiAutomator2Options
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_session_active(func):
+    """Decorator to ensure driver session is active before executing a method."""
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Only apply to instance methods of Driver class
+        if hasattr(self, "_ensure_session_active"):
+            self._ensure_session_active()
+        return func(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Driver:
@@ -26,6 +40,8 @@ class Driver:
         self.device_id = None
         self.automator = None  # Reference to the automator instance
         self.appium_port = None  # Default port, can be overridden
+        self._session_retries = 0
+        self._max_session_retries = 2
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
@@ -1346,8 +1362,75 @@ class Driver:
             logger.error(f"Error initializing driver: {e}")
             return False
 
+    def _is_session_active(self) -> bool:
+        """Check if the current driver session is active and healthy."""
+        if not self.driver:
+            return False
+
+        try:
+            # Use window_handles as the lightest check that doesn't interact with UI
+            _ = self.driver.window_handles
+            return True
+        except Exception as e:
+            error_message = str(e)
+            # Check for specific session termination indicators
+            if any(
+                indicator in error_message
+                for indicator in [
+                    "session is either terminated",
+                    "no active session",
+                    "invalid session id",
+                    "session not started",
+                    "NoSuchDriverError",
+                ]
+            ):
+                logger.warning(f"Session no longer active: {error_message}")
+                return False
+            # For other errors, assume session might still be valid
+            return True
+
+    def _ensure_session_active(self):
+        """Ensure the driver session is active, reconnecting if necessary."""
+        if self._is_session_active():
+            return True
+
+        logger.warning("Driver session is no longer active, attempting to reconnect...")
+
+        # Try to reconnect up to max retries
+        for attempt in range(self._max_session_retries):
+            try:
+                logger.info(f"Reconnection attempt {attempt + 1}/{self._max_session_retries}")
+
+                # Clean up old session
+                try:
+                    if self.driver:
+                        self.driver.quit()
+                except Exception:
+                    pass
+
+                self.driver = None
+                Driver._initialized = False
+
+                # Reinitialize through automator if available
+                if self.automator:
+                    if self.automator.initialize_driver():
+                        logger.info("Successfully reconnected driver session")
+                        self._session_retries = 0
+                        return True
+                    else:
+                        logger.error("Failed to reinitialize driver through automator")
+                else:
+                    logger.error("No automator reference available for reconnection")
+
+            except Exception as e:
+                logger.error(f"Error during reconnection attempt {attempt + 1}: {e}")
+
+        logger.error("Failed to reconnect driver session after all attempts")
+        return False
+
     def get_appium_driver_instance(self):
-        """Get the Appium driver instance"""
+        """Get the Appium driver instance, ensuring session is active"""
+        self._ensure_session_active()
         return self.driver
 
     def get_device_id(self):
