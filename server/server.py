@@ -2132,8 +2132,10 @@ def cleanup_resources():
     # Perform graceful shutdowns with preserved state
     for email in running_emails:
         try:
-            logger.info(f"Gracefully shutting down {email} with preserve_reading_state=True")
-            shutdown_manager.shutdown_emulator(email, preserve_reading_state=True)
+            logger.info(
+                f"Gracefully shutting down {email} with preserve_reading_state=True, mark_for_restart=True"
+            )
+            shutdown_manager.shutdown_emulator(email, preserve_reading_state=True, mark_for_restart=True)
         except Exception as e:
             logger.error(f"✗ Error shutting down {email}: {e}")
 

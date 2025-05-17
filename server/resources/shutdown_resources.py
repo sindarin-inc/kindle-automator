@@ -36,11 +36,18 @@ class ShutdownResource(Resource):
         from flask import request
 
         preserve_reading_state = request.args.get("preserve_reading_state", "true").lower() == "true"
+        mark_for_restart = request.args.get("mark_for_restart")
+
+        # Convert mark_for_restart to boolean or None
+        if mark_for_restart is not None:
+            mark_for_restart = mark_for_restart.lower() == "true"
 
         try:
             # Use the shutdown manager to handle the shutdown
             shutdown_summary = self.shutdown_manager.shutdown_emulator(
-                sindarin_email, preserve_reading_state=preserve_reading_state
+                sindarin_email,
+                preserve_reading_state=preserve_reading_state,
+                mark_for_restart=mark_for_restart,
             )
 
             # Prepare response

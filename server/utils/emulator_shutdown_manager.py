@@ -25,7 +25,7 @@ class EmulatorShutdownManager:
         """
         self.server = server_instance
 
-    def shutdown_emulator(self, email, preserve_reading_state=False):
+    def shutdown_emulator(self, email, preserve_reading_state=False, mark_for_restart=None):
         """Gracefully shutdown an emulator for a specific email.
 
         This parks the emulator in the Library view, takes a snapshot,
@@ -33,15 +33,30 @@ class EmulatorShutdownManager:
 
         Args:
             email: The email address associated with the emulator
-            preserve_reading_state: If True, keep current state (for deployments).
-                                    If False, navigate to library first (default)
+            preserve_reading_state: If True, keep current state instead of navigating to library
+            mark_for_restart: If True, mark emulator to auto-start after server restart.
+                             If None (default), uses the same value as preserve_reading_state
+                             for backward compatibility.
 
         Returns:
             dict: Shutdown summary with status information
         """
+        # Default mark_for_restart to preserve_reading_state for backward compatibility
+        if mark_for_restart is None:
+            mark_for_restart = preserve_reading_state
+
         logger.info(
-            f"Processing shutdown request for {email} (preserve_reading_state={preserve_reading_state})"
+            f"Processing shutdown request for {email} (preserve_reading_state={preserve_reading_state}, mark_for_restart={mark_for_restart})"
         )
+
+        # Mark for restart if requested (for deployment restarts)
+        if mark_for_restart:
+            try:
+                vnc_manager = VNCInstanceManager.get_instance()
+                logger.info(f"Marking {email} as running at restart for deployment recovery")
+                vnc_manager.mark_running_for_deployment(email)
+            except Exception as e:
+                logger.error(f"Failed to mark {email} for restart: {e}")
 
         # Track what was shut down
         shutdown_summary = {
