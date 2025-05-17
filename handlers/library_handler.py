@@ -1447,6 +1447,11 @@ class LibraryHandler:
             else:
                 logger.info("Skipping Grid/List view dialog check - cached preferences already set correctly")
 
+            # Import dialog identifiers here to avoid circular imports
+            from views.reading.interaction_strategies import (
+                TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
+            )
+            
             # Store initial page source for diagnostics
             store_page_source(self.driver.page_source, "library_before_book_search")
 
@@ -1460,25 +1465,50 @@ class LibraryHandler:
                 button.click()
                 logger.info(f"Clicked book button for already visible book: {book_title}")
 
-                # Check if we entered the reading view
+                # Check if we entered the reading view or hit a dialog
                 try:
-                    # First check if we're in the reading view
-                    reading_view_found = False
-                    for identifier_type, identifier_value in [
-                        (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
-                        (AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"),
-                        (AppiumBy.ID, "com.amazon.kindle:id/reader_view"),
-                    ]:
-                        try:
-                            element = self.driver.find_element(identifier_type, identifier_value)
-                            if element:
-                                reading_view_found = True
-                                logger.info(f"Found reading view element: {identifier_value}")
-                                break
-                        except NoSuchElementException:
-                            continue
+                    # Use WebDriverWait to check for either reading view or dialog
+                    wait = WebDriverWait(self.driver, 5)
                     
-                    if reading_view_found:
+                    def check_for_elements(driver):
+                        # Check for Title Not Available dialog
+                        for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
+                            try:
+                                element = driver.find_element(strategy, locator)
+                                if element and element.is_displayed():
+                                    return "title_not_available"
+                            except NoSuchElementException:
+                                continue
+                        
+                        # Check if we're in the reading view
+                        for identifier_type, identifier_value in [
+                            (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
+                            (AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"),
+                            (AppiumBy.ID, "com.amazon.kindle:id/reader_view"),
+                        ]:
+                            try:
+                                element = driver.find_element(identifier_type, identifier_value)
+                                if element:
+                                    return "reading_view"
+                            except NoSuchElementException:
+                                continue
+                        
+                        # Check if we're still in library view
+                        try:
+                            element = driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                            if element:
+                                return "library_view"
+                        except NoSuchElementException:
+                            pass
+                        
+                        return False
+                    
+                    result = wait.until(check_for_elements)
+                    
+                    if result == "title_not_available":
+                        logger.info("Title Not Available dialog detected after clicking book")
+                        return self._handle_loading_timeout(book_title)
+                    elif result == "reading_view":
                         logger.info("Successfully entered reading view")
                         return self._delegate_to_reader_handler(book_title)
                     
@@ -1493,9 +1523,12 @@ class LibraryHandler:
                             _, button, _ = visible_book_result
                             button.click()
                             logger.info("Clicked book button again")
+                            
+                            # Use delegate method which will handle any dialogs
+                            return self._delegate_to_reader_handler(book_title)
                         else:
                             logger.error("Could not re-find book button for second click")
-                            return False
+                            return {"success": False, "error": "Could not re-find book button for second click"}
                     except NoSuchElementException:
                         # Neither library nor reading view found
                         logger.warning("Neither library nor reading view found, assuming transition state")
