@@ -44,7 +44,7 @@ def make_request(url, method="GET", data=None, headers=None):
 
 def get_active_emulators():
     """Get list of active emulators from the server."""
-    url = f"{BASE_URL}/api/v1/emulators/active"
+    url = f"{BASE_URL}/emulators/active"
     logger.info("Fetching list of active emulators...")
     
     response = make_request(url)
@@ -58,7 +58,7 @@ def get_active_emulators():
 
 def shutdown_emulator(email):
     """Shutdown an emulator for a specific email."""
-    url = f"{BASE_URL}/api/v1/shutdown"
+    url = f"{BASE_URL}/shutdown"
     headers = {"X-Sindarin-Email": email}
     
     logger.info(f"Shutting down emulator for {email}...")
@@ -91,13 +91,13 @@ def main():
         if shutdown_emulator(email):
             success_count += 1
         
-        # Small delay between shutdowns
-        time.sleep(1)
+        # Small delay between shutdowns to avoid resource contention
+        time.sleep(2)
     
     logger.info(f"Shutdown complete. Successfully shut down {success_count}/{len(active_emulators)} emulators")
     
     # Give some time for all processes to clean up
-    time.sleep(3)
+    time.sleep(10)
     
     return 0 if success_count == len(active_emulators) else 1
 

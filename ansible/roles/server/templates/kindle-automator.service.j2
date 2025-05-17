@@ -16,7 +16,8 @@ ExecStart=/opt/kindle-automator/venv/bin/python -m server.server
 ExecStop=/opt/kindle-automator/venv/bin/python /opt/kindle-automator/scripts/graceful_shutdown.py
 # Add timeout settings for proper service termination
 TimeoutStartSec=60s
-TimeoutStopSec=30s
+# Allow up to 3 minutes for graceful shutdown
+TimeoutStopSec=180s
 # Use SIGINT for graceful shutdown, then SIGTERM after timeout
 KillMode=mixed
 KillSignal=SIGINT
