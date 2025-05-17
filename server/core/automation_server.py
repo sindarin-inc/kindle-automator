@@ -7,17 +7,21 @@ from typing import Dict, Optional, Tuple
 
 import requests
 
-from automator import Automator
+from automator import KindleAutomator as Automator
 from views.core.avd_profile_manager import AVDProfileManager
 
 logger = logging.getLogger(__name__)
 
 
 class AutomationServer:
-    def __init__(self, android_home: str, avd_dir: str):
-        self.android_home = android_home
-        self.avd_dir = avd_dir
-        self.profile_manager = AVDProfileManager(android_home, avd_dir)
+    def __init__(self, android_home: str = None, avd_dir: str = None):
+        # Use environment variables or defaults if not provided
+        self.android_home = android_home or os.environ.get("ANDROID_HOME", "/opt/android-sdk")
+        self.avd_dir = avd_dir or os.environ.get(
+            "ANDROID_AVD_HOME", os.path.join(self.android_home, ".android/avd")
+        )
+        # AVDProfileManager only takes a base_dir parameter, which is the android_home
+        self.profile_manager = AVDProfileManager(self.android_home)
         self.automators: Dict[str, Automator] = {}  # Per-email automators
 
         # Multiple Appium instances tracked by email/port
@@ -723,3 +727,12 @@ class AutomationServer:
         if email in self.last_activity:
             del self.last_activity[email]
             logger.debug(f"Cleared activity tracking for {email}")
+
+    def set_current_book(self, book_title: str, email: str):
+        """Set the current book for a given email."""
+        self.current_books[email] = book_title
+        logger.info(f"Set current book for {email}: {book_title}")
+
+    def get_current_book(self, email: str) -> Optional[str]:
+        """Get the current book for a given email."""
+        return self.current_books.get(email)

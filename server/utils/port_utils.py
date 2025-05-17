@@ -209,3 +209,18 @@ def parse_emulator_id(emulator_id: str) -> int:
         int: The emulator port number
     """
     return int(emulator_id.split("-")[1])
+
+
+def calculate_appium_bootstrap_port(appium_port: int) -> int:
+    """
+    Calculate Appium bootstrap port based on the main Appium port.
+
+    Args:
+        appium_port: The main Appium port
+
+    Returns:
+        int: The bootstrap port
+    """
+    # Bootstrap port is typically 5000 + offset where offset = appium_port - APPIUM_BASE_PORT
+    offset = appium_port - PortConfig.APPIUM_BASE_PORT
+    return PortConfig.BOOTSTRAP_BASE_PORT + offset
