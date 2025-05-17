@@ -2135,13 +2135,13 @@ def signal_handler(sig, frame):
         "SIGINT" if sig == signal.SIGINT else "SIGTERM" if sig == signal.SIGTERM else f"Signal {sig}"
     )
     logger.info(f"Received {signal_name}, initiating graceful shutdown...")
-
+    
     # Always perform cleanup and exit immediately
     try:
         cleanup_resources()
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
-
+    
     # Force immediate exit - Flask development server doesn't always shutdown cleanly
     logger.info("Forcing immediate exit")
     os._exit(0)
@@ -2170,18 +2170,18 @@ def run_server():
 
 
 def main():
+    # Kill any Flask processes on the same port (but leave Appium servers alone)
+    server.kill_existing_process("flask")
+
     # Check ADB connectivity
     check_and_restart_adb_server()
 
-    # Save Flask server PID for tracking
-    pid_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
-    os.makedirs(pid_dir, exist_ok=True)
-    with open(os.path.join(pid_dir, "flask.pid"), "w") as f:
-        f.write(str(os.getpid()))
+    # Save Flask server PID
+    server.save_pid("flask", os.getpid())
 
     # Handle SIGTERM as well as SIGINT
     signal.signal(signal.SIGTERM, signal_handler)
-
+    
     # Run the server directly, regardless of development mode
     run_server()
 
