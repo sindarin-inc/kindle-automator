@@ -58,12 +58,13 @@ def get_active_emulators():
 
 def shutdown_emulator(email):
     """Shutdown an emulator for a specific email."""
-    url = f"{BASE_URL}/shutdown"
-    headers = {"X-Sindarin-Email": email}
+    # The endpoint accepts email as either query param or JSON body
+    # Using query param for simpler implementation
+    url = f"{BASE_URL}/shutdown?sindarin_email={email}"
     
     logger.info(f"Shutting down emulator for {email}...")
     
-    response = make_request(url, method="POST", headers=headers)
+    response = make_request(url, method="POST")
     if response and response.get("success"):
         logger.info(f"Successfully shut down emulator for {email}")
         return True
