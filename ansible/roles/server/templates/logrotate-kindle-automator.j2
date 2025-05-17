@@ -1,0 +1,39 @@
+/opt/kindle-automator/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    maxsize 100M
+    sharedscripts
+    postrotate
+        # Send HUP signal to kindle-automator service to reopen log files if needed
+        /bin/systemctl reload kindle-automator >/dev/null 2>&1 || true
+    endscript
+}
+
+# Specific configuration for appium logs which can grow larger
+/opt/kindle-automator/logs/appium_logs/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    maxsize 50M
+}
+
+# Email-specific logs with more retention
+/opt/kindle-automator/logs/email_logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    maxsize 50M
+}

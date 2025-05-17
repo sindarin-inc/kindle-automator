@@ -1906,6 +1906,7 @@ class TextResource(Resource):
 
 
 # Import resource modules
+from server.resources.idle_check_resources import IdleCheckResource
 from server.resources.shutdown_resources import ShutdownResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 
@@ -1958,6 +1959,11 @@ api.add_resource(TextResource, "/text")
 api.add_resource(
     ShutdownResource,
     "/shutdown",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(
+    IdleCheckResource,
+    "/idle-check",
     resource_class_kwargs={"server_instance": server},
 )
 

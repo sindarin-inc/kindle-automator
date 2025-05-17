@@ -44,6 +44,9 @@ def ensure_automator_healthy(f):
 
         # No longer setting current_email as it has been removed
 
+        # Update activity timestamp for this email
+        server.update_activity(sindarin_email)
+
         for attempt in range(max_retries):
             try:
                 # Get the automator for this email

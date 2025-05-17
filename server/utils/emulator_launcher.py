@@ -576,30 +576,44 @@ class EmulatorLauncher:
                 env["DISPLAY"] = f":{display_num}"
 
             # Check if there's a library snapshot for this AVD
-            # Look for the most recent snapshot starting with library_park_ for this AVD
             snapshot_name = None
 
-            # Get the AVD identifier for snapshot naming
-            if avd_name and avd_name.startswith("KindleAVD_"):
-                avd_identifier = avd_name.replace("KindleAVD_", "")
-            else:
-                avd_identifier = email.replace("@", "_").replace(".", "_")
+            # First check if the user profile has a saved snapshot name
+            try:
+                from views.core.avd_profile_manager import AVDProfileManager
 
-            # List all snapshots and find the most recent library park snapshot
-            available_snapshots = self.list_snapshots(email)
-            library_snapshots = [
-                s for s in available_snapshots if s.startswith(f"library_park_{avd_identifier}_")
-            ]
+                avd_manager = AVDProfileManager()
+                saved_snapshot = avd_manager.get_user_field(email, "last_snapshot")
 
-            if library_snapshots:
-                # Sort by timestamp embedded in the filename (newest first)
-                library_snapshots.sort(reverse=True)
-                snapshot_name = library_snapshots[0]
-                logger.info(
-                    f"Found {len(library_snapshots)} library park snapshots, using most recent: {snapshot_name}"
-                )
-            else:
-                logger.info(f"No library park snapshots found for {avd_identifier}")
+                if saved_snapshot and self.has_snapshot(email, saved_snapshot):
+                    snapshot_name = saved_snapshot
+                    logger.info(f"Using saved snapshot '{snapshot_name}' from user profile for {email}")
+                else:
+                    # Fall back to looking for the most recent library park snapshot
+                    # Get the AVD identifier for snapshot naming
+                    if avd_name and avd_name.startswith("KindleAVD_"):
+                        avd_identifier = avd_name.replace("KindleAVD_", "")
+                    else:
+                        avd_identifier = email.replace("@", "_").replace(".", "_")
+
+                    # List all snapshots and find the most recent library park snapshot
+                    available_snapshots = self.list_snapshots(email)
+                    library_snapshots = [
+                        s for s in available_snapshots if s.startswith(f"library_park_{avd_identifier}_")
+                    ]
+
+                    if library_snapshots:
+                        # Sort by timestamp embedded in the filename (newest first)
+                        library_snapshots.sort(reverse=True)
+                        snapshot_name = library_snapshots[0]
+                        logger.info(
+                            f"Found {len(library_snapshots)} library park snapshots, using most recent: {snapshot_name}"
+                        )
+                    else:
+                        logger.info(f"No library park snapshots found for {avd_identifier}")
+            except Exception as e:
+                logger.warning(f"Error accessing user profile for snapshot lookup: {e}")
+                # Proceed without the saved snapshot
 
             # Common emulator arguments for all platforms
             common_args = [

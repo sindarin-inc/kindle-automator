@@ -24,6 +24,7 @@ class AutomationServer:
         self.allocated_ports = {}  # Track allocated ports to prevent conflicts
         self.pid_dir = "logs"
         self.current_books = {}  # Track the currently open book title for each email
+        self.last_activity = {}  # Track last activity time for each email
         os.makedirs(self.pid_dir, exist_ok=True)
 
         # Initialize the AVD profile manager
@@ -79,6 +80,8 @@ class AutomationServer:
 
             # Store the automator
             self.automators[email] = automator
+            # Set initial activity time
+            self.update_activity(email)
 
             automator.initialize_driver()
 
@@ -184,6 +187,9 @@ class AutomationServer:
 
         # Clear current book since we're switching profiles
         self.clear_current_book(email)
+
+        # Update activity timestamp
+        self.update_activity(email)
 
         return True, message
 
@@ -631,3 +637,34 @@ class AutomationServer:
             if port and not self._check_appium_health(port):
                 logger.info(f"Removing dead appium process info for {email}")
                 del self.appium_processes[email]
+
+    def update_activity(self, email):
+        """Update the last activity timestamp for an email.
+
+        Args:
+            email: The email address to update activity for
+        """
+        if email:
+            self.last_activity[email] = time.time()
+            logger.debug(f"Updated activity timestamp for {email}")
+
+    def get_last_activity_time(self, email):
+        """Get the last activity timestamp for an email.
+
+        Args:
+            email: The email address to get activity time for
+
+        Returns:
+            The last activity timestamp or None if not found
+        """
+        return self.last_activity.get(email)
+
+    def clear_activity(self, email):
+        """Clear the activity tracking for an email.
+
+        Args:
+            email: The email address to clear activity for
+        """
+        if email in self.last_activity:
+            del self.last_activity[email]
+            logger.debug(f"Cleared activity tracking for {email}")

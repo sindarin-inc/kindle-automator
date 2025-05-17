@@ -1,2 +1,5 @@
 kindle_repo_url: "git@github.com:sindarin-inc/kindle-automator.git"
 kindle_repo_branch: "main"
+# Idle check configuration
+kindle_automator_url: "http://localhost:4098"
+idle_timeout_minutes: 30

@@ -92,6 +92,23 @@ class ShutdownResource(Resource):
                                     sindarin_email, snapshot_name
                                 ):
                                     logger.info(f"Saved snapshot '{snapshot_name}' for {sindarin_email}")
+                                    # Save the snapshot name to the user profile
+                                    try:
+                                        from views.core.avd_profile_manager import (
+                                            AVDProfileManager,
+                                        )
+
+                                        avd_manager = AVDProfileManager()
+                                        avd_manager.set_user_field(
+                                            sindarin_email, "last_snapshot", snapshot_name
+                                        )
+                                        logger.info(
+                                            f"Saved snapshot name '{snapshot_name}' to user profile for {sindarin_email}"
+                                        )
+                                    except Exception as profile_error:
+                                        logger.warning(
+                                            f"Failed to save snapshot name to profile: {profile_error}"
+                                        )
                                     # Clean up old snapshots to save disk space
                                     try:
                                         deleted_count = automator.emulator_manager.emulator_launcher.cleanup_old_snapshots(

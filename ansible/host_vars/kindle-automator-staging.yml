@@ -1,0 +1,4 @@
+---
+# Staging configuration for kindle-automator-staging
+kindle_automator_url: "http://localhost:4098"
+idle_timeout_minutes: 15  # Shorter timeout for staging

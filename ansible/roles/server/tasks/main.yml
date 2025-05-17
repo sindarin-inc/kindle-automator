@@ -118,12 +118,16 @@
   args:
     executable: /bin/bash
 
-# Create logs directory
-- name: Create logs directory
+# Create logs directories
+- name: Create logs directories
   file:
-    path: /opt/kindle-automator/logs
+    path: "{{ item }}"
     state: directory
     mode: "0755"
+  with_items:
+    - /opt/kindle-automator/logs
+    - /opt/kindle-automator/logs/appium_logs
+    - /opt/kindle-automator/logs/email_logs
 
 # Create screenshots directory
 - name: Create screenshots directory
@@ -164,3 +168,33 @@
     enabled: yes
     state: started
     daemon_reload: yes
+
+# Create scripts directory
+- name: Create scripts directory
+  file:
+    path: /opt/kindle-automator/scripts
+    state: directory
+    mode: "0755"
+
+# Set up idle check cronjob
+- name: Create idle check script
+  template:
+    src: idle_check_cron.sh.j2
+    dest: /opt/kindle-automator/scripts/idle_check_cron.sh
+    mode: "0755"
+
+# Add idle check cron job
+- name: Add idle check cron job
+  cron:
+    name: "Kindle Automator idle check"
+    user: root
+    minute: "*/15"
+    job: "/opt/kindle-automator/scripts/idle_check_cron.sh"
+    state: present
+
+# Configure logrotate for all Kindle Automator logs
+- name: Configure logrotate for Kindle Automator logs
+  template:
+    src: logrotate-kindle-automator.j2
+    dest: /etc/logrotate.d/kindle-automator
+    mode: "0644"
