@@ -78,7 +78,9 @@ class IdleCheckResource(Resource):
                 # Use the shutdown manager directly instead of going through HTTP
                 try:
                     # Import and use shutdown manager directly
-                    from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
+                    from server.utils.emulator_shutdown_manager import (
+                        EmulatorShutdownManager,
+                    )
 
                     shutdown_manager = EmulatorShutdownManager(self.server)
                     shutdown_summary = shutdown_manager.shutdown_emulator(email)

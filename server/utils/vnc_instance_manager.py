@@ -505,3 +505,44 @@ class VNCInstanceManager:
             self.save_instances()
             return True
         return False
+
+    def mark_running_for_deployment(self, email: str) -> bool:
+        """
+        Mark an emulator as running at deployment time.
+
+        Args:
+            email: Email address of the profile
+
+        Returns:
+            bool: True if marked successfully
+        """
+        instance = self.get_instance_for_profile(email)
+        if instance:
+            instance["was_running_at_restart"] = True
+            self.save_instances()
+            logger.info(f"Marked {email} as running at deployment")
+            return True
+        return False
+
+    def get_running_at_restart(self) -> List[str]:
+        """
+        Get list of emails that were running at last restart.
+
+        Returns:
+            List[str]: Email addresses that were running at restart
+        """
+        running_emails = []
+        for instance in self.instances:
+            if instance.get("was_running_at_restart", False) and instance.get("assigned_profile"):
+                running_emails.append(instance["assigned_profile"])
+        return running_emails
+
+    def clear_running_at_restart_flags(self) -> None:
+        """
+        Clear all was_running_at_restart flags after server startup.
+        """
+        for instance in self.instances:
+            if "was_running_at_restart" in instance:
+                del instance["was_running_at_restart"]
+        self.save_instances()
+        logger.info("Cleared all was_running_at_restart flags")

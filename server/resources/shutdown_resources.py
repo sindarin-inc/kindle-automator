@@ -30,9 +30,16 @@ class ShutdownResource(Resource):
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to shut down"}, 400
 
+        # Check if we should preserve reading state (default: False)
+        from flask import request
+
+        preserve_reading_state = request.args.get("preserve_reading_state", "false").lower() == "true"
+
         try:
             # Use the shutdown manager to handle the shutdown
-            shutdown_summary = self.shutdown_manager.shutdown_emulator(sindarin_email)
+            shutdown_summary = self.shutdown_manager.shutdown_emulator(
+                sindarin_email, preserve_reading_state=preserve_reading_state
+            )
 
             # Prepare response
             message_parts = []

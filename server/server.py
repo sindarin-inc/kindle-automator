@@ -1980,29 +1980,106 @@ api.add_resource(
 )
 
 
+def auto_restart_emulators_from_previous_session():
+    """
+    Restart emulators that were running during the last shutdown.
+    This helps maintain user sessions across server restarts/deployments.
+    """
+    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+    vnc_manager = VNCInstanceManager.get_instance()
+
+    emulators_to_restart = vnc_manager.get_running_at_restart()
+    if emulators_to_restart:
+        logger.info(f"Found {len(emulators_to_restart)} emulators to restart from previous session")
+
+        # Clear the flags first to avoid infinite restart loops
+        vnc_manager.clear_running_at_restart_flags()
+
+        # Restart each emulator one at a time to avoid resource contention
+        for email in emulators_to_restart:
+            try:
+                logger.info(f"Auto-restarting emulator for {email}")
+                # Initialize automator which will start the emulator
+                automator = server.initialize_automator(email)
+
+                if automator:
+                    # Start the emulator and driver
+                    success = automator.initialize_driver()
+                    if success:
+                        logger.info(f"Successfully restarted emulator for {email}")
+                    else:
+                        logger.error(f"Failed to initialize driver for {email}")
+                else:
+                    logger.error(f"Failed to initialize automator for {email}")
+
+            except Exception as e:
+                logger.error(f"Error restarting emulator for {email}: {e}")
+
+        logger.info(f"Completed auto-restart of {len(emulators_to_restart)} emulators")
+    else:
+        logger.info("No emulators marked for restart from previous session")
+
+
+def check_and_restart_adb_server():
+    """
+    Check ADB connectivity and restart the server if it's not responsive.
+    This preserves existing emulators while ensuring ADB is functional.
+    """
+    try:
+        # Just check device status to make sure ADB is responsive
+        subprocess.run(
+            [f"{server.android_home}/platform-tools/adb", "devices"],
+            check=False,
+            timeout=5,
+            capture_output=True,
+        )
+        logger.info("ADB server is active, emulators preserved")
+    except Exception as e:
+        logger.warning(f"ADB check failed, will restart ADB server: {e}")
+        try:
+            # Only if ADB check fails, restart the ADB server
+            subprocess.run(
+                [f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5
+            )
+            time.sleep(1)
+            subprocess.run(
+                [f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5
+            )
+            logger.info("ADB server restarted")
+        except Exception as adb_e:
+            logger.error(f"Error restarting ADB server: {adb_e}")
+
+
 def cleanup_resources():
     """Clean up resources before exiting"""
     logger.info("Cleaning up resources before shutdown...")
 
-    # We intentionally keep all emulators running during server shutdown
-    # This allows for faster reconnection when the server is restarted,
-    # and supports the multi-emulator approach
-    logger.info("Preserving all emulators during shutdown for faster reconnection")
+    # Mark all running emulators for restart and shutdown gracefully with preserved state
+    from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
+    from server.utils.vnc_instance_manager import VNCInstanceManager
 
-    # Cleanup automator instances but don't stop emulators
+    vnc_manager = VNCInstanceManager.get_instance()
+    shutdown_manager = EmulatorShutdownManager(server)
+
+    # Track which emulators are running and mark them for restart
+    running_emails = []
     for email, automator in server.automators.items():
-        if automator:
+        if automator and hasattr(automator, "driver") and automator.driver:
             try:
-                # Just clean up the automator, not the emulator
-                logger.info(f"Cleaning up automator for {email} (preserving emulator)")
-                # Don't call automator.cleanup() as it would stop the emulator
-                # Instead, just set it to None to release resources
-                automator.driver = None
+                logger.info(f"Marking {email} as running at restart")
+                vnc_manager.mark_running_for_deployment(email)
+                running_emails.append(email)
             except Exception as e:
-                logger.error(f"Error cleaning up automator for {email}: {e}")
+                logger.error(f"Error marking {email} for restart: {e}")
 
-    # Clear all automators
-    server.automators.clear()
+    # Perform graceful shutdowns with preserved state
+    for email in running_emails:
+        try:
+            logger.info(f"Gracefully shutting down {email} with preserved state")
+            shutdown_manager.shutdown_emulator(email, preserve_reading_state=True)
+        except Exception as e:
+            logger.error(f"Error shutting down {email}: {e}")
 
     # Kill Appium server only
     try:
@@ -2011,8 +2088,7 @@ def cleanup_resources():
     except Exception as e:
         logger.error(f"Error stopping Appium during shutdown: {e}")
 
-    # We don't kill the ADB server either, to maintain connection with emulators
-    logger.info("Cleanup complete, server shutting down (all emulators preserved)")
+    logger.info(f"Cleanup complete, marked {len(running_emails)} emulators for restart on next boot")
 
 
 def signal_handler(sig, frame):
@@ -2041,55 +2117,17 @@ def main():
     # Kill any Flask processes on the same port (but leave Appium servers alone)
     server.kill_existing_process("flask")
 
-    # We no longer kill all Appium servers at startup since we want
-    # one Appium server per email profile
-
-    # Preserve emulators when restarting the server
-    # This allows for faster reconnection and avoids unnecessary restarts
-    logger.info("Preserving emulators during server startup for faster connection")
-
-    # Ensure all existing automator instances have emulator_manager attached
-    logger.info("Ensuring all automators have emulator_manager capability")
-    for email, automator in server.automators.items():
-        if automator and not hasattr(automator, "emulator_manager"):
-            logger.info(f"Adding missing emulator_manager to automator for {email}")
-            automator.emulator_manager = server.profile_manager.emulator_manager
-
-    # Check ADB connectivity without killing the server or emulators
-    try:
-        # Just check device status to make sure ADB is responsive
-        subprocess.run(
-            [f"{server.android_home}/platform-tools/adb", "devices"],
-            check=False,
-            timeout=5,
-            capture_output=True,
-        )
-        logger.info("ADB server is active, emulators preserved")
-    except Exception as e:
-        logger.warning(f"ADB check failed, will restart ADB server: {e}")
-        try:
-            # Only if ADB check fails, restart the ADB server
-            subprocess.run(
-                [f"{server.android_home}/platform-tools/adb", "kill-server"], check=False, timeout=5
-            )
-            time.sleep(1)
-            subprocess.run(
-                [f"{server.android_home}/platform-tools/adb", "start-server"], check=False, timeout=5
-            )
-            logger.info("ADB server restarted")
-        except Exception as adb_e:
-            logger.error(f"Error restarting ADB server: {adb_e}")
-
-    # We don't start a global Appium server here anymore
-    # Instead, each user profile gets its own dedicated Appium server
-    # that will be started when that profile is loaded
-    logger.info("Skipping global Appium server startup - using per-profile Appium servers instead")
+    # Check ADB connectivity
+    check_and_restart_adb_server()
 
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
 
     # Run the server directly, regardless of development mode
     run_server()
+
+    # Auto-restart emulators that were running before the last shutdown
+    auto_restart_emulators_from_previous_session()
 
 
 if __name__ == "__main__":

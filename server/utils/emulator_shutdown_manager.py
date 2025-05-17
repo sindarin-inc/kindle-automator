@@ -25,7 +25,7 @@ class EmulatorShutdownManager:
         """
         self.server = server_instance
 
-    def shutdown_emulator(self, email):
+    def shutdown_emulator(self, email, preserve_reading_state=False):
         """Gracefully shutdown an emulator for a specific email.
 
         This parks the emulator in the Library view, takes a snapshot,
@@ -33,11 +33,15 @@ class EmulatorShutdownManager:
 
         Args:
             email: The email address associated with the emulator
+            preserve_reading_state: If True, keep current state (for deployments).
+                                    If False, navigate to library first (default)
 
         Returns:
             dict: Shutdown summary with status information
         """
-        logger.info(f"Processing shutdown request for {email}")
+        logger.info(
+            f"Processing shutdown request for {email} (preserve_reading_state={preserve_reading_state})"
+        )
 
         # Track what was shut down
         shutdown_summary = {
@@ -55,82 +59,91 @@ class EmulatorShutdownManager:
             logger.info(f"No automator found for {email}, nothing to shut down")
             return shutdown_summary
 
-        # Before shutting down, park the emulator in the Library view and take a snapshot
+        # Before shutting down, conditionally park the emulator in the Library view and take a snapshot
         try:
             if hasattr(automator, "driver") and automator.driver:
-                logger.info(f"Parking emulator in Library view before shutdown for {email}")
                 # Initialize state machine to handle transitions
                 state_machine = KindleStateMachine(automator.driver)
 
-                # Transition to library (this handles navigation from any state)
-                try:
-                    result = state_machine.transition_to_library(max_transitions=10, server=self.server)
-                    if result and result == AppState.LIBRARY:
-                        logger.info("Successfully parked emulator in Library view")
-                        # Wait 5 seconds as requested
-                        time.sleep(5)
-                        # Take snapshot
-                        if hasattr(automator.emulator_manager, "emulator_launcher"):
-                            (
-                                emulator_id,
-                                _,
-                            ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
-                            if emulator_id:
-                                logger.info(f"Taking ADB snapshot of emulator {emulator_id}")
-                                # Get AVD name for cleaner snapshot naming
-                                avd_name = (
-                                    automator.emulator_manager.emulator_launcher._extract_avd_name_from_email(
-                                        email
+                if not preserve_reading_state:
+                    logger.info(f"Parking emulator in Library view before shutdown for {email}")
+                    # Transition to library (this handles navigation from any state)
+                    try:
+                        result = state_machine.transition_to_library(max_transitions=10, server=self.server)
+                        if result and result == AppState.LIBRARY:
+                            logger.info("Successfully parked emulator in Library view")
+                            # Wait 5 seconds as requested
+                            time.sleep(5)
+                        else:
+                            logger.warning("Failed to transition to Library view before shutdown")
+                    except Exception as e:
+                        logger.warning(f"Error transitioning to Library before shutdown: {e}")
+                        # Continue with shutdown even if parking fails
+                else:
+                    logger.info(f"Preserving reading state - staying in current view for {email}")
+                    current_state = state_machine.identify_current_state()
+                    if current_state == AppState.READING:
+                        logger.info(f"Emulator is in reading view - taking snapshot in current state")
+                    else:
+                        logger.info(f"Emulator is in {current_state} view - taking snapshot in current state")
+
+                # Take snapshot regardless of whether we navigated to library
+                if hasattr(automator.emulator_manager, "emulator_launcher"):
+                    (
+                        emulator_id,
+                        _,
+                    ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
+                    if emulator_id:
+                        logger.info(f"Taking ADB snapshot of emulator {emulator_id}")
+                        # Get AVD name for cleaner snapshot naming
+                        avd_name = automator.emulator_manager.emulator_launcher._extract_avd_name_from_email(
+                            email
+                        )
+                        if avd_name and avd_name.startswith("KindleAVD_"):
+                            # Extract just the email part from the AVD name
+                            avd_identifier = avd_name.replace("KindleAVD_", "")
+                        else:
+                            avd_identifier = email.replace("@", "_").replace(".", "_")
+
+                        # Include date for snapshot version management
+                        date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # Adjust snapshot name based on whether we preserved reading state
+                        if preserve_reading_state:
+                            snapshot_name = f"deploy_snapshot_{avd_identifier}_{date_str}"
+                        else:
+                            snapshot_name = f"library_park_{avd_identifier}_{date_str}"
+
+                        if automator.emulator_manager.emulator_launcher.save_snapshot(email, snapshot_name):
+                            logger.info(f"Saved snapshot '{snapshot_name}' for {email}")
+                            shutdown_summary["snapshot_taken"] = True
+                            # Save the snapshot name to the user profile
+                            try:
+                                from views.core.avd_profile_manager import (
+                                    AVDProfileManager,
+                                )
+
+                                avd_manager = AVDProfileManager()
+                                avd_manager.set_user_field(email, "last_snapshot", snapshot_name)
+                                logger.info(
+                                    f"Saved snapshot name '{snapshot_name}' to user profile for {email}"
+                                )
+                            except Exception as profile_error:
+                                logger.warning(f"Failed to save snapshot name to profile: {profile_error}")
+                            # Clean up old snapshots to save disk space
+                            try:
+                                deleted_count = (
+                                    automator.emulator_manager.emulator_launcher.cleanup_old_snapshots(
+                                        email, keep_count=3
                                     )
                                 )
-                                if avd_name and avd_name.startswith("KindleAVD_"):
-                                    # Extract just the email part from the AVD name
-                                    avd_identifier = avd_name.replace("KindleAVD_", "")
-                                else:
-                                    avd_identifier = email.replace("@", "_").replace(".", "_")
-
-                                # Include date for snapshot version management
-                                date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                snapshot_name = f"library_park_{avd_identifier}_{date_str}"
-
-                                if automator.emulator_manager.emulator_launcher.save_snapshot(
-                                    email, snapshot_name
-                                ):
-                                    logger.info(f"Saved snapshot '{snapshot_name}' for {email}")
-                                    shutdown_summary["snapshot_taken"] = True
-                                    # Save the snapshot name to the user profile
-                                    try:
-                                        from views.core.avd_profile_manager import (
-                                            AVDProfileManager,
-                                        )
-
-                                        avd_manager = AVDProfileManager()
-                                        avd_manager.set_user_field(email, "last_snapshot", snapshot_name)
-                                        logger.info(
-                                            f"Saved snapshot name '{snapshot_name}' to user profile for {email}"
-                                        )
-                                    except Exception as profile_error:
-                                        logger.warning(
-                                            f"Failed to save snapshot name to profile: {profile_error}"
-                                        )
-                                    # Clean up old snapshots to save disk space
-                                    try:
-                                        deleted_count = automator.emulator_manager.emulator_launcher.cleanup_old_snapshots(
-                                            email, keep_count=3
-                                        )
-                                        if deleted_count > 0:
-                                            logger.info(
-                                                f"Cleaned up {deleted_count} old library park snapshots for {email}"
-                                            )
-                                    except Exception as cleanup_error:
-                                        logger.warning(f"Failed to clean up old snapshots: {cleanup_error}")
-                                else:
-                                    logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}")
-                    else:
-                        logger.warning("Failed to transition to Library view before shutdown")
-                except Exception as e:
-                    logger.warning(f"Error transitioning to Library before shutdown: {e}")
-                    # Continue with shutdown even if parking fails
+                                if deleted_count > 0:
+                                    logger.info(
+                                        f"Cleaned up {deleted_count} old library park snapshots for {email}"
+                                    )
+                            except Exception as cleanup_error:
+                                logger.warning(f"Failed to clean up old snapshots: {cleanup_error}")
+                        else:
+                            logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}")
         except Exception as e:
             logger.warning(f"Error preparing for shutdown parking: {e}")
             # Continue with shutdown even if parking fails
@@ -212,16 +225,21 @@ class EmulatorShutdownManager:
             logger.error(f"Traceback: {traceback.format_exc()}")
             return shutdown_summary
 
-    def shutdown_all_emulators(self):
+    def shutdown_all_emulators(self, preserve_reading_state=False):
         """Shutdown all running emulators gracefully.
 
         This method will iterate through all active automators and
         shut them down one by one.
 
+        Args:
+            preserve_reading_state: If True, keep current state during shutdown
+
         Returns:
             list: List of shutdown summaries for each emulator
         """
-        logger.info("Starting graceful shutdown of all running emulators")
+        logger.info(
+            f"Starting graceful shutdown of all running emulators (preserve_reading_state={preserve_reading_state})"
+        )
         summaries = []
 
         # Get a list of all emails with active automators
@@ -236,7 +254,7 @@ class EmulatorShutdownManager:
         # Shut down each emulator
         for email in active_emails:
             logger.info(f"Shutting down emulator for {email}")
-            summary = self.shutdown_emulator(email)
+            summary = self.shutdown_emulator(email, preserve_reading_state=preserve_reading_state)
             summaries.append(summary)
 
             # Brief pause between shutdowns to avoid resource contention
