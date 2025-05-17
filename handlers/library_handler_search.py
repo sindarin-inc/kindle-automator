@@ -881,7 +881,7 @@ class LibraryHandlerSearch:
                     search_query_element.clear()
                     search_query_element.send_keys(book_title)
                     # Press Enter key
-                    self.driver.execute_script("mobile: performEditorAction", {"action": "done"})
+                    self.driver.press_keycode(66)  # Android keycode for Enter/Search
 
                     # Wait for search to complete - specifically for "In your library"
                     wait = WebDriverWait(self.driver, 10)
