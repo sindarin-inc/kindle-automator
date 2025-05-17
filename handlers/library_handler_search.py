@@ -293,18 +293,18 @@ class LibraryHandlerSearch:
             logger.info("Waiting for search results to load...")
             wait = WebDriverWait(self.driver, 10)
 
-            # Wait for either "In your library" or "Results from" text to appear
+            # Wait specifically for "In your library" text to appear
+            # Since we're opening a book that we know is in the library
             try:
                 wait.until(
-                    lambda driver: (
-                        driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]")
-                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Results from')]")
-                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'No results')]")
+                    lambda driver: driver.find_elements(
+                        AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
                     )
                 )
-                logger.info("Search results loaded")
+                logger.info("'In your library' section loaded")
             except TimeoutException:
-                logger.warning("Timeout waiting for search results to load")
+                logger.warning("Timeout waiting for 'In your library' section to load")
+                # Still continue in case it appears later
 
             # Check for "Search instead for" button and click it if present
             try:
@@ -427,31 +427,23 @@ class LibraryHandlerSearch:
                     continue
 
             if not in_library_section:
-                logger.info("Could not find 'In your library' section")
+                logger.info("Could not find 'In your library' section on first attempt")
 
-                # Check if we're on a search results page with no library matches
-                # Sometimes the "In your library" section doesn't appear if there are no matches
+                # Since the book is from the library, the section might appear after a delay
+                # Let's wait specifically for it rather than giving up
                 if results_from_section:
-                    logger.info("Found 'Results from' but no 'In your library' - assuming no library matches")
-                    store_page_source(self.driver.page_source, "no_library_matches")
-                    self._exit_search_mode()
-                    return None
+                    logger.info("Found 'Results from' section - waiting for 'In your library' to appear")
 
-                # If we can't find either section, the search might still be loading
-                logger.info("Neither section found - search may still be loading")
+                # Wait specifically for "In your library" section to appear
+                logger.info("Waiting for 'In your library' section to appear...")
 
-                # Wait for section headers to appear and try again
+                # Extended wait for library section
+                extended_wait = WebDriverWait(self.driver, 15)  # Give it more time
                 try:
-                    wait.until(
-                        lambda driver: (
-                            driver.find_elements(
-                                AppiumBy.XPATH,
-                                "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'in your library')]",
-                            )
-                            or driver.find_elements(
-                                AppiumBy.XPATH,
-                                "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'results from')]",
-                            )
+                    extended_wait.until(
+                        lambda driver: driver.find_elements(
+                            AppiumBy.XPATH,
+                            "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'in your library')]",
                         )
                     )
 
@@ -891,21 +883,17 @@ class LibraryHandlerSearch:
                     # Press Enter key
                     self.driver.execute_script("mobile: performEditorAction", {"action": "done"})
 
-                    # Wait for search to complete
+                    # Wait for search to complete - specifically for "In your library"
                     wait = WebDriverWait(self.driver, 10)
                     try:
                         wait.until(
-                            lambda driver: (
-                                driver.find_elements(
-                                    AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
-                                )
-                                or driver.find_elements(
-                                    AppiumBy.XPATH, "//*[contains(@text, 'Results from')]"
-                                )
+                            lambda driver: driver.find_elements(
+                                AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
                             )
                         )
+                        logger.info("Found 'In your library' section after search")
                     except TimeoutException:
-                        logger.warning("Timeout waiting for search to complete")
+                        logger.warning("Timeout waiting for 'In your library' section after search")
 
                     return self._process_search_results(book_title)
             except NoSuchElementException:
@@ -966,19 +954,17 @@ class LibraryHandlerSearch:
             # Press Enter key
             self.driver.press_keycode(66)  # Android keycode for Enter/Search
 
-            # Wait for search results using WebDriverWait
+            # Wait for "In your library" section after entering search
             wait = WebDriverWait(self.driver, 10)
             try:
                 wait.until(
-                    lambda driver: (
-                        driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]")
-                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Results from')]")
-                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'No results')]")
+                    lambda driver: driver.find_elements(
+                        AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
                     )
                 )
-                logger.info("Search results loaded after entering search")
+                logger.info("'In your library' section loaded after entering search")
             except TimeoutException:
-                logger.warning("Timeout waiting for search results after entering search")
+                logger.warning("Timeout waiting for 'In your library' section after entering search")
 
             # Process search results
             return self._process_search_results(book_title)
@@ -1036,4 +1022,40 @@ class LibraryHandlerSearch:
 
         except Exception as e:
             logger.error(f"Error exiting search mode: {e}")
+            return False
+
+    def _check_store_results_for_book(self, book_title: str):
+        """Check if the book appears in the Kindle store results section.
+
+        Args:
+            book_title (str): The title of the book to check for
+
+        Returns:
+            bool: True if book found in store results, False otherwise
+        """
+        try:
+            # Look for book title in store results section
+            buttons = self.driver.find_elements(AppiumBy.XPATH, "//android.widget.Button[@content-desc]")
+
+            for button in buttons:
+                try:
+                    content_desc = button.get_attribute("content-desc")
+                    if content_desc and book_title.lower() in content_desc.lower():
+                        logger.info(f"Found book in store results: {content_desc}")
+                        return True
+                except:
+                    continue
+
+            # Also check TextView elements for the title
+            text_elements = self.driver.find_elements(
+                AppiumBy.XPATH, f"//android.widget.TextView[@text='{book_title}']"
+            )
+            if text_elements:
+                logger.info(f"Found book title in TextView elements")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking store results: {e}")
             return False
