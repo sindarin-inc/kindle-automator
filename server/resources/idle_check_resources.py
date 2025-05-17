@@ -82,19 +82,13 @@ class IdleCheckResource(Resource):
 
                     shutdown_resource = ShutdownResource(self.server)
 
-                    # Set up a mock request context with the email
-                    class MockRequest:
-                        def __init__(self, email):
-                            self.headers = {"X-Sindarin-Email": email}
-
-                    # Temporarily replace the request
-                    original_request = request
                     try:
                         # Create a new request context for this email
                         from flask import Flask
 
                         app = Flask(__name__)
-                        with app.test_request_context(headers={"X-Sindarin-Email": email}):
+                        # Pass the email in query parameters since get_sindarin_email() doesn't check headers
+                        with app.test_request_context(query_string=f"sindarin_email={email}"):
                             result, status_code = shutdown_resource.post()
 
                             if status_code == 200:
@@ -115,8 +109,6 @@ class IdleCheckResource(Resource):
                                         "error": result.get("error", "Unknown error"),
                                     }
                                 )
-                    finally:
-                        pass
 
                 except Exception as e:
                     logger.error(f"Error shutting down idle emulator for {email}: {e}")
