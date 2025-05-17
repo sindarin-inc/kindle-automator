@@ -4,7 +4,6 @@ import logging
 
 from flask_restful import Resource
 
-from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
 from server.utils.request_utils import get_sindarin_email
 
@@ -24,7 +23,6 @@ class ShutdownResource(Resource):
         self.shutdown_manager = EmulatorShutdownManager(server_instance)
         super().__init__()
 
-    @ensure_user_profile_loaded
     def post(self):
         """Shutdown emulator and VNC/xvfb display for the email"""
         sindarin_email = get_sindarin_email()
