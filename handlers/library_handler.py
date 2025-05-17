@@ -1460,21 +1460,52 @@ class LibraryHandler:
                 button.click()
                 logger.info(f"Clicked book button for already visible book: {book_title}")
 
-                # Wait for library view to disappear (we've left it)
+                # Check if we entered the reading view
                 try:
-                    WebDriverWait(self.driver, 5).until_not(
-                        EC.presence_of_element_located(
-                            (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
-                        )
-                    )
-                    logger.info("Successfully left library view")
-
-                    # At this point, we've left the library. Let the reader_handler do the rest
-                    return self._delegate_to_reader_handler(book_title)
+                    # First check if we're in the reading view
+                    reading_view_found = False
+                    for identifier_type, identifier_value in [
+                        (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
+                        (AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"),
+                        (AppiumBy.ID, "com.amazon.kindle:id/reader_view"),
+                    ]:
+                        try:
+                            element = self.driver.find_element(identifier_type, identifier_value)
+                            if element:
+                                reading_view_found = True
+                                logger.info(f"Found reading view element: {identifier_value}")
+                                break
+                        except NoSuchElementException:
+                            continue
+                    
+                    if reading_view_found:
+                        logger.info("Successfully entered reading view")
+                        return self._delegate_to_reader_handler(book_title)
+                    
+                    # If not in reading view, check if we're still in library view
+                    try:
+                        self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                        logger.warning("Still in library view after clicking book, trying one more time")
+                        
+                        # Re-find the button element to avoid stale element reference
+                        visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
+                        if visible_book_result:
+                            _, button, _ = visible_book_result
+                            button.click()
+                            logger.info("Clicked book button again")
+                        else:
+                            logger.error("Could not re-find book button for second click")
+                            return False
+                    except NoSuchElementException:
+                        # Neither library nor reading view found
+                        logger.warning("Neither library nor reading view found, assuming transition state")
+                        # Give it a moment and check again
+                        time.sleep(1)
+                        return self._delegate_to_reader_handler(book_title)
+                        
                 except TimeoutException:
-                    logger.warning("Still in library view after clicking book, trying one more time")
-                    button.click()
-                    logger.info("Clicked book button again")
+                    logger.error("Timeout while checking view state")
+                    return False
 
                     # Wait again for library view to disappear
                     try:

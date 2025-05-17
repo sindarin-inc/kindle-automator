@@ -27,6 +27,7 @@ from server.middleware.response_handler import (
     handle_automator_response,
     serve_image,
 )
+from server.resources.active_emulators_resource import ActiveEmulatorsResource
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
     extract_book_covers_from_screen,
@@ -1964,6 +1965,11 @@ api.add_resource(
 api.add_resource(
     IdleCheckResource,
     "/idle-check",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(
+    ActiveEmulatorsResource,
+    "/emulators/active",
     resource_class_kwargs={"server_instance": server},
 )
 

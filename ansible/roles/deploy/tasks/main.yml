@@ -17,7 +17,9 @@
     key_file: /opt/keys/deploy_key
     accept_hostkey: yes
   register: git_pull
-  notify: restart kindle-automator
+  notify:
+    - graceful shutdown
+    - restart kindle-automator
 
 # Update Python dependencies if requirements.txt changed
 - name: Update Python dependencies if requirements.txt changed

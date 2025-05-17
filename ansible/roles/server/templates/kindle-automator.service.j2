@@ -12,9 +12,11 @@ Environment="FLASK_ENV=production"
 Environment="ENVIRONMENT=prod"
 Environment="PYTHONPATH=/opt/kindle-automator"
 ExecStart=/opt/kindle-automator/venv/bin/python -m server.server
+# Run graceful shutdown before stopping the service
+ExecStop=/opt/kindle-automator/venv/bin/python /opt/kindle-automator/scripts/graceful_shutdown.py
 # Add timeout settings for proper service termination
 TimeoutStartSec=60s
-TimeoutStopSec=15s
+TimeoutStopSec=30s
 # Use SIGINT for graceful shutdown, then SIGTERM after timeout
 KillMode=mixed
 KillSignal=SIGINT
