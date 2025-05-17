@@ -124,6 +124,125 @@ class LibraryHandler:
             logger.error(f"Error checking library view preferences: {e}")
             return False
 
+    def apply_library_settings(self, view_type="list", group_by_series=False):
+        """Apply library view settings (view type and group by series).
+
+        This is a reusable method that ensures the library is configured with the specified settings.
+
+        Args:
+            view_type: Either "list" or "grid" view
+            group_by_series: Whether to group books by series
+
+        Returns:
+            bool: True if settings were applied successfully, False otherwise
+        """
+        try:
+            # Check current preferences
+            cached_view_type = self.driver.automator.profile_manager.get_style_setting(
+                "view_type", default=None
+            )
+            cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
+                "group_by_series", default=None
+            )
+
+            # If preferences are already correct, no need to open dialog
+            if cached_view_type == view_type and cached_group_by_series == group_by_series:
+                logger.info(
+                    f"Library settings already correct: view_type={view_type}, group_by_series={group_by_series}"
+                )
+                return True
+
+            # Open the grid/list dialog
+            if not self.open_grid_list_view_dialog(force_open=True):
+                logger.error("Failed to open grid/list view dialog")
+                return False
+
+            # Now apply the settings in the dialog
+            dialog_open = self._is_grid_list_view_dialog_open()
+            if not dialog_open:
+                logger.error("Dialog not open after attempting to open it")
+                return False
+
+            # Set group by series switch
+            try:
+                group_by_series_switch = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/lib_menu_switch"
+                )
+                if group_by_series_switch.is_displayed():
+                    is_checked = group_by_series_switch.get_attribute("checked") == "true"
+                    logger.info(f"Group by Series switch currently checked: {is_checked}")
+
+                    if is_checked != group_by_series:
+                        # Toggle the switch
+                        group_by_series_switch.click()
+                        logger.info(f"Toggled Group by Series to: {group_by_series}")
+                        time.sleep(0.5)
+
+                    # Record the setting
+                    self.driver.automator.profile_manager.save_style_setting(
+                        "group_by_series", group_by_series
+                    )
+            except NoSuchElementException:
+                logger.warning("Group by Series switch not found")
+
+            # Click the appropriate view option
+            if view_type == "list":
+                strategies = LIST_VIEW_OPTION_STRATEGIES
+            else:
+                strategies = GRID_VIEW_OPTION_STRATEGIES
+
+            view_clicked = False
+            for strategy, locator in strategies:
+                try:
+                    option = self.driver.find_element(strategy, locator)
+                    if option.is_displayed():
+                        option.click()
+                        logger.info(f"Clicked {view_type} view option")
+                        view_clicked = True
+                        time.sleep(0.5)
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not view_clicked:
+                logger.error(f"Failed to click {view_type} view option")
+                return False
+
+            # Record the view type setting
+            self.driver.automator.profile_manager.save_style_setting("view_type", view_type)
+
+            # Click DONE to close the dialog
+            done_clicked = False
+            for strategy, locator in VIEW_OPTIONS_DONE_BUTTON_STRATEGIES:
+                try:
+                    done_button = self.driver.find_element(strategy, locator)
+                    if done_button.is_displayed():
+                        done_button.click()
+                        logger.info("Clicked DONE button")
+                        done_clicked = True
+                        time.sleep(1)
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not done_clicked:
+                logger.error("Failed to click DONE button")
+                return False
+
+            # Verify dialog is closed
+            if self._is_grid_list_view_dialog_open():
+                logger.error("Dialog still open after clicking DONE")
+                return False
+
+            logger.info(
+                f"Successfully applied library settings: view_type={view_type}, group_by_series={group_by_series}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Error applying library settings: {e}")
+            return False
+
     def _is_library_tab_selected(self):
         """Check if the library tab is currently selected."""
 

@@ -516,13 +516,19 @@ class VNCInstanceManager:
         Returns:
             bool: True if marked successfully
         """
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            instance["was_running_at_restart"] = True
-            self.save_instances()
-            logger.info(f"Marked {email} as running at deployment")
-            return True
-        return False
+        try:
+            from views.core.avd_profile_manager import AVDProfileManager
+            
+            avd_manager = AVDProfileManager()
+            success = avd_manager.set_user_field(email, "was_running_at_restart", True)
+            
+            if success:
+                logger.info(f"Marked {email} as running at deployment in AVDProfileManager")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error marking {email} as running at deployment: {e}")
+            return False
 
     def get_running_at_restart(self) -> List[str]:
         """
@@ -531,18 +537,37 @@ class VNCInstanceManager:
         Returns:
             List[str]: Email addresses that were running at restart
         """
-        running_emails = []
-        for instance in self.instances:
-            if instance.get("was_running_at_restart", False) and instance.get("assigned_profile"):
-                running_emails.append(instance["assigned_profile"])
-        return running_emails
+        try:
+            from views.core.avd_profile_manager import AVDProfileManager
+            
+            avd_manager = AVDProfileManager()
+            running_emails = []
+            
+            # Check each profile for the was_running_at_restart flag
+            for email in avd_manager.profiles_index.keys():
+                was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
+                if was_running:
+                    running_emails.append(email)
+            
+            return running_emails
+        except Exception as e:
+            logger.error(f"Error getting running at restart emails: {e}")
+            return []
 
     def clear_running_at_restart_flags(self) -> None:
         """
         Clear all was_running_at_restart flags after server startup.
         """
-        for instance in self.instances:
-            if "was_running_at_restart" in instance:
-                del instance["was_running_at_restart"]
-        self.save_instances()
-        logger.info("Cleared all was_running_at_restart flags")
+        try:
+            from views.core.avd_profile_manager import AVDProfileManager
+            
+            avd_manager = AVDProfileManager()
+            
+            # Clear flags for all profiles
+            for email in avd_manager.profiles_index.keys():
+                if avd_manager.get_user_field(email, "was_running_at_restart", False):
+                    avd_manager.set_user_field(email, "was_running_at_restart", None)
+            
+            logger.info("Cleared all was_running_at_restart flags")
+        except Exception as e:
+            logger.error(f"Error clearing was_running_at_restart flags: {e}")

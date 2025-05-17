@@ -52,25 +52,37 @@ class StyleHandler:
                 "No profile_manager found on driver or automator. Style preferences won't be saved."
             )
 
-    def update_reading_style(self, show_placemark: bool = False) -> bool:
+    def apply_reading_settings(
+        self,
+        font_size="smallest",
+        real_time_highlighting=False,
+        about_book=False,
+        page_turn_animation=False,
+        popular_highlights=False,
+        highlight_menu=False,
+        show_placemark=False,
+    ) -> bool:
         """
-        Update reading styles for the current profile. Should be called after a book is opened.
-        This will only update styles if they have not already been updated for this profile.
+        Apply reading style settings to the current book.
+        This is a more flexible method that can be called with specific settings.
 
         Args:
-            show_placemark (bool): Whether to tap to display the placemark ribbon.
-                                  Default is False (don't show placemark).
+            font_size: "smallest", "small", "medium", "large", "largest"
+            real_time_highlighting: Whether to enable real-time text highlighting
+            about_book: Whether to show "About this book" on open
+            page_turn_animation: Whether to enable page turn animations
+            popular_highlights: Whether to show popular highlights
+            highlight_menu: Whether to enable the highlight menu
+            show_placemark: Whether to tap to display the placemark ribbon
 
         Returns:
-            bool: True if the styles were updated successfully or were already updated, False otherwise
+            bool: True if the styles were applied successfully, False otherwise
         """
-        # First check if styles have already been updated for this profile
-        if self.profile_manager and self.profile_manager.is_styles_updated():
-            logger.info("Reading styles already updated for this profile, skipping")
-            return True
+        logger.info(
+            f"Applying reading settings: font_size={font_size}, highlighting={real_time_highlighting}, etc."
+        )
 
-        logger.info("Updating reading styles for the current profile")
-
+        # Backup the original update_reading_style code but make it reusable
         try:
             # Store page source before starting
             store_page_source(self.driver.page_source, "style_update_before")
@@ -121,19 +133,147 @@ class StyleHandler:
             # Store page source after tapping style button
             store_page_source(self.driver.page_source, "style_update_after_style_button")
 
-            # 3. Slide the font size slider all the way to the left
+            # 3. Handle font size
+            if font_size != "default":
+                self._adjust_font_size(font_size)
+
+            # Store page source after adjusting font size
+            store_page_source(self.driver.page_source, "style_update_after_font_size")
+
+            # 4. Tap the More tab
+            more_tab_found = False
+            for strategy, locator in MORE_TAB_IDENTIFIERS:
+                try:
+                    more_tab = self.driver.find_element(strategy, locator)
+                    if more_tab.is_displayed():
+                        more_tab.click()
+                        logger.info("Clicked More tab")
+                        more_tab_found = True
+                        time.sleep(1)
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not more_tab_found:
+                # Try by text content as a fallback
+                try:
+                    more_tab = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.TextView[@text='More']"
+                    )
+                    if more_tab.is_displayed():
+                        more_tab.click()
+                        logger.info("Clicked More tab by text")
+                        more_tab_found = True
+                        time.sleep(1)
+                    else:
+                        logger.warning("Found More tab by text but it's not displayed")
+                except NoSuchElementException:
+                    logger.error("Could not find More tab by any strategy")
+                    # We'll continue even without the More tab, try to function with what we have
+
+            # Store page source after tapping More tab
+            store_page_source(self.driver.page_source, "style_update_after_more_tab")
+
+            # Expand the slideover
+            self._expand_style_slideover()
+
+            # 5. Apply reading settings
+            self._toggle_checkbox(
+                REALTIME_HIGHLIGHTING_CHECKBOX, real_time_highlighting, "Real-time Text Highlighting"
+            )
+
+            # Store page source after toggling highlighting
+            store_page_source(self.driver.page_source, "style_update_after_highlight_toggle")
+
+            # 6. Scroll down to see more options
+            self._scroll_for_more_options()
+
+            # Store page source after scrolling
+            store_page_source(self.driver.page_source, "style_update_after_scrolling")
+
+            # 7. Apply other settings
+            self._toggle_checkbox(ABOUT_BOOK_CHECKBOX, about_book, "About this Book")
+            self._toggle_checkbox(PAGE_TURN_ANIMATION_CHECKBOX, page_turn_animation, "Page Turn Animation")
+            self._toggle_checkbox(POPULAR_HIGHLIGHTS_CHECKBOX, popular_highlights, "Popular Highlights")
+            self._toggle_checkbox(HIGHLIGHT_MENU_CHECKBOX, highlight_menu, "Highlight Menu")
+
+            # Store page source after all toggles
+            store_page_source(self.driver.page_source, "style_update_after_all_toggles")
+
+            # 11. Close the style slideover
+            self._close_style_slideover()
+
+            # Store final page source
+            store_page_source(self.driver.page_source, "style_update_complete")
+
+            # Update profile preferences
+            self._save_reading_preferences(
+                font_size,
+                real_time_highlighting,
+                about_book,
+                page_turn_animation,
+                popular_highlights,
+                highlight_menu,
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error updating reading styles: {e}")
+            try:
+                store_page_source(self.driver.page_source, "style_update_exception")
+            except:
+                pass
+            return False
+
+    def update_reading_style(self, show_placemark: bool = False) -> bool:
+        """
+        Update reading styles for the current profile. Should be called after a book is opened.
+        This will only update styles if they have not already been updated for this profile.
+
+        This delegates to the new apply_reading_settings with default values.
+
+        Args:
+            show_placemark (bool): Whether to tap to display the placemark ribbon.
+                                  Default is False (don't show placemark).
+
+        Returns:
+            bool: True if the styles were updated successfully or were already updated, False otherwise
+        """
+        # First check if styles have already been updated for this profile
+        if self.profile_manager and self.profile_manager.is_styles_updated():
+            logger.info("Reading styles already updated for this profile, skipping")
+            return True
+
+        logger.info("Updating reading styles for the current profile")
+
+        # Call the refactored method with default settings
+        return self.apply_reading_settings(
+            font_size="smallest",
+            real_time_highlighting=False,
+            about_book=False,
+            page_turn_animation=False,
+            popular_highlights=False,
+            highlight_menu=False,
+            show_placemark=show_placemark,
+        )
+
+    def _adjust_font_size(self, size):
+        """Adjust the font size to the specified setting."""
+        if size == "smallest":
+            # Slide all the way to the left
             slider_found = False
             for strategy, locator in FONT_SIZE_SLIDER_IDENTIFIERS:
                 try:
                     slider = self.driver.find_element(strategy, locator)
                     if slider.is_displayed():
                         # Get slider dimensions
-                        size = slider.size
+                        size_obj = slider.size
                         location = slider.location
 
                         # Calculate slider endpoints for drag action
-                        slider_width = size["width"]
-                        slider_height = size["height"]
+                        slider_width = size_obj["width"]
+                        slider_height = size_obj["height"]
                         start_x = location["x"] + slider_width - 10  # Near the far right
                         end_x = location["x"] + 10  # Near the far left
                         slider_y = location["y"] + slider_height // 2
@@ -171,387 +311,310 @@ class StyleHandler:
 
             if not slider_found:
                 logger.warning("Could not find font size slider or decrease button, continuing anyway")
-                # We'll continue even if we can't find the slider, as other settings are still important
 
-            # Store page source after adjusting font size
-            store_page_source(self.driver.page_source, "style_update_after_font_size")
+    def _expand_style_slideover(self):
+        """Expand the style slideover to full height."""
+        handle_found = False
+        try:
+            # Look for handle by ID
+            handle = self.driver.find_element(
+                AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bottom_sheet_handle"
+            )
+            if handle.is_displayed():
+                # Get position information
+                location = handle.location
+                size = handle.size
+                handle_x = location["x"] + (size["width"] // 2)
+                handle_y = location["y"] + (size["height"] // 2)
 
-            # 4. Tap the More tab
-            more_tab_found = False
-            for strategy, locator in MORE_TAB_IDENTIFIERS:
-                try:
-                    more_tab = self.driver.find_element(strategy, locator)
-                    if more_tab.is_displayed():
-                        more_tab.click()
-                        logger.info("Clicked More tab")
-                        more_tab_found = True
-                        time.sleep(1)
-                        break
-                except NoSuchElementException:
-                    continue
+                # Tap the handle
+                self.driver.tap([(handle_x, handle_y)])
+                logger.info(f"Tapped slideover handle at ({handle_x}, {handle_y}) to expand fully")
+                handle_found = True
+                time.sleep(1)  # Wait for expansion animation
+            else:
+                logger.warning("Found handle by ID but it's not displayed")
+        except NoSuchElementException:
+            logger.warning("Could not find handle by direct ID")
 
-            if not more_tab_found:
-                # Try by text content as a fallback
-                try:
-                    more_tab = self.driver.find_element(
-                        AppiumBy.XPATH, "//android.widget.TextView[@text='More']"
-                    )
-                    if more_tab.is_displayed():
-                        more_tab.click()
-                        logger.info("Clicked More tab by text")
-                        more_tab_found = True
-                        time.sleep(1)
-                    else:
-                        logger.warning("Found More tab by text but it's not displayed")
-                except NoSuchElementException:
-                    logger.error("Could not find More tab by any strategy")
-                    # We'll continue even without the More tab, try to function with what we have
-
-            # Store page source regardless of whether tab was found
-            store_page_source(self.driver.page_source, "style_update_after_more_tab_attempt")
-
-            # Store page source after tapping More tab
-            store_page_source(self.driver.page_source, "style_update_after_more_tab")
-
-            # First, expand the slideover to full height by tapping on the handle
-            handle_found = False
+        # If we couldn't find the handle by ID, try other strategies
+        if not handle_found:
             try:
-                # Look for handle by ID
-                handle = self.driver.find_element(
-                    AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_bottom_sheet_handle"
-                )
-                if handle.is_displayed():
-                    # Get position information
-                    location = handle.location
-                    size = handle.size
-                    handle_x = location["x"] + (size["width"] // 2)
-                    handle_y = location["y"] + (size["height"] // 2)
-
-                    # Tap the handle
-                    self.driver.tap([(handle_x, handle_y)])
-                    logger.info(f"Tapped slideover handle at ({handle_x}, {handle_y}) to expand fully")
-                    handle_found = True
-                    time.sleep(1)  # Wait for expansion animation
-                else:
-                    logger.warning("Found handle by ID but it's not displayed")
-            except NoSuchElementException:
-                logger.warning("Could not find handle by direct ID")
-
-            # If we couldn't find the handle by ID, try other strategies
-            if not handle_found:
-                try:
-                    for strategy, locator in STYLE_SHEET_PILL_IDENTIFIERS:
-                        try:
-                            pill = self.driver.find_element(strategy, locator)
-                            if pill.is_displayed():
-                                pill.click()
-                                logger.info(f"Clicked slideover pill {strategy}:{locator} to expand")
-                                handle_found = True
-                                time.sleep(1)
-                                break
-                        except NoSuchElementException:
-                            continue
-                except Exception as e:
-                    logger.warning(f"Error trying to find and click slideover pill: {e}")
-
-            # If we still couldn't find the handle, try a generic tap where we know it should be
-            if not handle_found:
-                # From the XML we know the handle is at y position around 1251-1364
-                window_size = self.driver.get_window_size()
-                center_x = window_size["width"] // 2
-                handle_y = 1300  # Approximate position based on the XML
-                self.driver.tap([(center_x, handle_y)])
-                logger.info(f"Performed blind tap at ({center_x}, {handle_y}) where handle should be")
-                time.sleep(1)
-
-            # Store page source after expansion attempt
-            store_page_source(self.driver.page_source, "style_update_after_expand_attempt")
-
-            # 5. Disable "Real-time Text Highlighting"
-            self._toggle_checkbox(REALTIME_HIGHLIGHTING_CHECKBOX, False, "Real-time Text Highlighting")
-
-            # Store page source after toggling highlighting
-            store_page_source(self.driver.page_source, "style_update_after_highlight_toggle")
-
-            # 6. Scroll down to see more options
-            try:
-                # Look for the ScrollView directly - best strategy
-                try:
-                    scroll_view = self.driver.find_element(
-                        AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_scrollview_more"
-                    )
-                    if scroll_view.is_displayed():
-                        logger.info(
-                            "Found the More tab ScrollView, will perform a scroll to see additional settings"
-                        )
-
-                        # Get the ScrollView dimensions
-                        location = scroll_view.location
-                        size = scroll_view.size
-
-                        # Calculate scroll coordinates - scroll up to reveal more options
-                        start_y = location["y"] + (
-                            size["height"] * 0.8
-                        )  # Start near bottom of visible scrollview
-                        end_y = location["y"] + (size["height"] * 0.2)  # End near top of visible scrollview
-                        scroll_x = location["x"] + (size["width"] // 2)  # Middle of the scrollview width
-
-                        # Perform the scroll - scroll up to show elements below
-                        self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
-                        logger.info(
-                            f"Scrolled ScrollView from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
-                        )
-                        time.sleep(1)
-                except NoSuchElementException:
-                    logger.warning("Could not find the ScrollView by ID, trying alternate approach")
-
-                    # Try to find any more tab content
+                for strategy, locator in STYLE_SHEET_PILL_IDENTIFIERS:
                     try:
-                        more_tab_content = self.driver.find_element(
-                            AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_content"
-                        )
-                        if more_tab_content.is_displayed():
-                            logger.info(
-                                "Found the More tab content, will perform a scroll to see additional settings"
-                            )
-                            location = more_tab_content.location
-                            size = more_tab_content.size
-
-                            # Calculate scroll coordinates
-                            start_y = location["y"] + (size["height"] * 0.8)
-                            end_y = location["y"] + (size["height"] * 0.2)
-                            scroll_x = location["x"] + (size["width"] // 2)
-
-                            # Perform the scroll
-                            self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
-                            logger.info(
-                                f"Scrolled content from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
-                            )
+                        pill = self.driver.find_element(strategy, locator)
+                        if pill.is_displayed():
+                            pill.click()
+                            logger.info(f"Clicked slideover pill {strategy}:{locator} to expand")
+                            handle_found = True
                             time.sleep(1)
+                            break
                     except NoSuchElementException:
-                        logger.warning(
-                            "Could not find the More tab content, trying fallback to Real-time highlight element"
-                        )
-
-                        # Fallback: Use the Real-time Text Highlighting switch as reference point
-                        highlight_switch = None
-                        for strategy, locator in REALTIME_HIGHLIGHTING_CHECKBOX:
-                            try:
-                                element = self.driver.find_element(strategy, locator)
-                                if element.is_displayed():
-                                    highlight_switch = element
-                                    break
-                            except NoSuchElementException:
-                                continue
-
-                        if highlight_switch:
-                            # Get the element location
-                            location = highlight_switch.location
-
-                            # Calculate scroll coordinates - scroll from this element up
-                            start_y = location["y"] + 200  # Well below the element
-                            end_y = location["y"] - 400  # Well above the element
-                            scroll_x = window_size["width"] // 2
-
-                            # Perform the scroll
-                            self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
-                            logger.info(
-                                f"Scrolled from highlight element ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
-                            )
-                            time.sleep(1)
-                        else:
-                            # Generic scroll if we can't find any reference points
-                            logger.warning("No reference points found for scrolling, using generic scroll")
-                            screen_height = window_size["height"]
-                            start_y = int(screen_height * 0.8)  # Start at 80% down the screen
-                            end_y = int(screen_height * 0.2)  # End at 20% down the screen
-                            scroll_x = window_size["width"] // 2
-
-                            # Do a longer, slower scroll to ensure we see more options
-                            self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 1000)
-                            logger.info(
-                                f"Performed generic scroll from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
-                            )
-                            time.sleep(1)
-
-                # Do a second scroll to ensure we get to the bottom of the options
-                # This helps with different screen sizes and UI layouts
-                time.sleep(0.5)
-                window_size = self.driver.get_window_size()
-                start_y2 = int(window_size["height"] * 0.7)
-                end_y2 = int(window_size["height"] * 0.3)
-                scroll_x2 = window_size["width"] // 2
-                self.driver.swipe(scroll_x2, start_y2, scroll_x2, end_y2, 800)
-                logger.info(
-                    f"Performed second scroll from ({scroll_x2}, {start_y2}) to ({scroll_x2}, {end_y2})"
-                )
-                time.sleep(1)
-
+                        continue
             except Exception as e:
-                logger.error(f"Error during scrolling: {e}")
-                # Continue anyway since some devices might show all options without scrolling
+                logger.warning(f"Error trying to find and click slideover pill: {e}")
 
-            # Store page source after scrolling
-            store_page_source(self.driver.page_source, "style_update_after_scrolling")
-
-            # 7. Disable "About this Book"
-            self._toggle_checkbox(ABOUT_BOOK_CHECKBOX, False, "About this Book")
-
-            # 8. Disable "Page Turn Animation"
-            self._toggle_checkbox(PAGE_TURN_ANIMATION_CHECKBOX, False, "Page Turn Animation")
-
-            # 9. Disable "Popular Highlights"
-            self._toggle_checkbox(POPULAR_HIGHLIGHTS_CHECKBOX, False, "Popular Highlights")
-
-            # 10. Disable "Highlight Menu"
-            self._toggle_checkbox(HIGHLIGHT_MENU_CHECKBOX, False, "Highlight Menu")
-
-            # Store page source after all toggles
-            store_page_source(self.driver.page_source, "style_update_after_all_toggles")
-
-            # 11. Tap the slideover tab at the top of the style slideover to set it to half-height
-            sheet_pill_found = False
-            for strategy, locator in STYLE_SHEET_PILL_IDENTIFIERS:
-                try:
-                    pill = self.driver.find_element(strategy, locator)
-                    if pill.is_displayed():
-                        pill.click()
-                        logger.info("Clicked style sheet pill to set to half-height")
-                        sheet_pill_found = True
-                        time.sleep(1)
-                        break
-                except NoSuchElementException:
-                    continue
-
-            if not sheet_pill_found:
-                logger.warning(
-                    "Could not find style sheet pill, will try tapping directly where it should be"
-                )
-                # Try tapping where the pill would typically be (top center of the slideover)
-                try:
-                    # Look for the slideover first to get its position
-                    slideover_found = False
-                    for strategy, locator in STYLE_SLIDEOVER_IDENTIFIERS:
-                        try:
-                            slideover = self.driver.find_element(strategy, locator)
-                            if slideover.is_displayed():
-                                # Get the top center of the slideover
-                                location = slideover.location
-                                size = slideover.size
-                                pill_x = location["x"] + size["width"] // 2
-                                pill_y = location["y"] + 20  # Near the top
-
-                                self.driver.tap([(pill_x, pill_y)])
-                                logger.info(f"Tapped estimated pill location at ({pill_x}, {pill_y})")
-                                slideover_found = True
-                                time.sleep(1)
-                                break
-                        except NoSuchElementException:
-                            continue
-
-                    if not slideover_found:
-                        logger.warning("Could not find style slideover, will try generic tap")
-                        # Generic tap near the top of the screen
-                        tap_x = window_size["width"] // 2
-                        tap_y = window_size["height"] // 4
-                        self.driver.tap([(tap_x, tap_y)])
-                        logger.info(f"Performed generic tap at ({tap_x}, {tap_y})")
-                        time.sleep(1)
-                except Exception as e:
-                    logger.error(f"Error tapping pill location: {e}")
-
-            # Store page source after pill tap
-            store_page_source(self.driver.page_source, "style_update_after_pill_tap")
-
-            # 12. Tap near the top of the screen to hide the style slideover
-            top_tap_x = window_size["width"] // 2
-            top_tap_y = int(window_size["height"] * 0.1)  # 10% from the top
-            self.driver.tap([(top_tap_x, top_tap_y)])
-            logger.info(f"Tapped near top of screen at ({top_tap_x}, {top_tap_y}) to hide style slideover")
+        # If we still couldn't find the handle, try a generic tap where we know it should be
+        if not handle_found:
+            # From the XML we know the handle is at y position around 1251-1364
+            window_size = self.driver.get_window_size()
+            center_x = window_size["width"] // 2
+            handle_y = 1300  # Approximate position based on the XML
+            self.driver.tap([(center_x, handle_y)])
+            logger.info(f"Performed blind tap at ({center_x}, {handle_y}) where handle should be")
             time.sleep(1)
 
-            # Store final page source
-            store_page_source(self.driver.page_source, "style_update_complete")
+        # Store page source after expansion attempt
+        store_page_source(self.driver.page_source, "style_update_after_expand_attempt")
 
-            # Even if some steps failed, we've still likely made some improvements
-            # Update the profile to indicate styles have been updated
-            success = True
+    def _scroll_for_more_options(self):
+        """Scroll to reveal more reading options."""
+        try:
+            # Look for the ScrollView directly - best strategy
             try:
-                # Import here to avoid circular imports
-                from server.utils.request_utils import get_sindarin_email
+                scroll_view = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_scrollview_more"
+                )
+                if scroll_view.is_displayed():
+                    logger.info(
+                        "Found the More tab ScrollView, will perform a scroll to see additional settings"
+                    )
 
-                # Get email from the request using standard utility function
-                email = get_sindarin_email()
+                    # Get the ScrollView dimensions
+                    location = scroll_view.location
+                    size = scroll_view.size
 
-                if email:
-                    if self.profile_manager:
+                    # Calculate scroll coordinates - scroll up to reveal more options
+                    start_y = location["y"] + (
+                        size["height"] * 0.8
+                    )  # Start near bottom of visible scrollview
+                    end_y = location["y"] + (size["height"] * 0.2)  # End near top of visible scrollview
+                    scroll_x = location["x"] + (size["width"] // 2)  # Middle of the scrollview width
+
+                    # Perform the scroll - scroll up to show elements below
+                    self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
+                    logger.info(f"Scrolled ScrollView from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                    time.sleep(1)
+            except NoSuchElementException:
+                logger.warning("Could not find the ScrollView by ID, trying alternate approach")
+
+                # Try to find any more tab content
+                try:
+                    more_tab_content = self.driver.find_element(
+                        AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_content"
+                    )
+                    if more_tab_content.is_displayed():
+                        logger.info(
+                            "Found the More tab content, will perform a scroll to see additional settings"
+                        )
+                        location = more_tab_content.location
+                        size = more_tab_content.size
+
+                        # Calculate scroll coordinates
+                        start_y = location["y"] + (size["height"] * 0.8)
+                        end_y = location["y"] + (size["height"] * 0.2)
+                        scroll_x = location["x"] + (size["width"] // 2)
+
+                        # Perform the scroll
+                        self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
+                        logger.info(f"Scrolled content from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                        time.sleep(1)
+                except NoSuchElementException:
+                    logger.warning(
+                        "Could not find the More tab content, trying fallback to Real-time highlight element"
+                    )
+
+                    # Fallback: Use the Real-time Text Highlighting switch as reference point
+                    highlight_switch = None
+                    for strategy, locator in REALTIME_HIGHLIGHTING_CHECKBOX:
                         try:
-                            # Make sure style_updated preference is set properly
-                            if self.profile_manager.update_style_preference(True, email):
-                                logger.info(f"Successfully updated style preference in profile for {email}")
-                            else:
-                                # If the update failed using the normal method, try a direct approach
-                                logger.warning(
-                                    f"Standard update_style_preference failed for {email}, trying direct approach"
-                                )
+                            element = self.driver.find_element(strategy, locator)
+                            if element.is_displayed():
+                                highlight_switch = element
+                                break
+                        except NoSuchElementException:
+                            continue
 
-                                # Try direct manipulation of profiles_index if available
-                                if hasattr(self.profile_manager, "profiles_index"):
-                                    # Make sure user exists in profiles_index
-                                    if email not in self.profile_manager.profiles_index:
-                                        self.profile_manager.profiles_index[email] = {}
+                    if highlight_switch:
+                        # Get the element location
+                        location = highlight_switch.location
 
-                                    # Set style_updated directly at top level
-                                    self.profile_manager.profiles_index[email]["styles_updated"] = True
+                        # Calculate scroll coordinates - scroll from this element up
+                        window_size = self.driver.get_window_size()
+                        start_y = location["y"] + 200  # Well below the element
+                        end_y = location["y"] - 400  # Well above the element
+                        scroll_x = window_size["width"] // 2
 
-                                    # Initialize reading_settings at top level if needed
-                                    if "reading_settings" not in self.profile_manager.profiles_index[email]:
-                                        self.profile_manager.profiles_index[email]["reading_settings"] = {}
-
-                                    # Set reading settings at top level
-                                    reading_settings = self.profile_manager.profiles_index[email][
-                                        "reading_settings"
-                                    ]
-                                    reading_settings["theme"] = "dark"
-                                    reading_settings["font_size"] = "small"
-                                    reading_settings["real_time_highlighting"] = False
-                                    reading_settings["about_book"] = False
-                                    reading_settings["page_turn_animation"] = False
-                                    reading_settings["popular_highlights"] = False
-                                    reading_settings["highlight_menu"] = False
-
-                                    # Try to save preferences
-                                    if hasattr(self.profile_manager, "_save_profiles_index"):
-                                        self.profile_manager._save_profiles_index()
-                                        logger.info(
-                                            f"Successfully saved style preferences directly for {email}"
-                                        )
-                                    else:
-                                        logger.warning("Could not find _save_profiles_index method")
-                                else:
-                                    logger.warning("Could not access profiles_index directly")
-                        except Exception as update_e:
-                            logger.error(f"Error during style preference update: {update_e}")
+                        # Perform the scroll
+                        self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
+                        logger.info(
+                            f"Scrolled from highlight element ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
+                        )
+                        time.sleep(1)
                     else:
-                        logger.warning(f"No profile_manager available to update style preference for {email}")
-                        # Don't mark as failure, we'll still return success if we've made it this far
-                else:
-                    logger.warning("No email available from get_sindarin_email() to update style preference")
-                    # Don't mark as failure, we'll still return success if we've made it this far
-            except Exception as e:
-                logger.error(f"Error updating style preference in profile: {e}")
-                # Again, don't mark as failure, we'll still return success if we've made it this far
+                        # Generic scroll if we can't find any reference points
+                        logger.warning("No reference points found for scrolling, using generic scroll")
+                        window_size = self.driver.get_window_size()
+                        screen_height = window_size["height"]
+                        start_y = int(screen_height * 0.8)  # Start at 80% down the screen
+                        end_y = int(screen_height * 0.2)  # End at 20% down the screen
+                        scroll_x = window_size["width"] // 2
 
-            return success
+                        # Do a longer, slower scroll to ensure we see more options
+                        self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 1000)
+                        logger.info(
+                            f"Performed generic scroll from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
+                        )
+                        time.sleep(1)
+
+            # Do a second scroll to ensure we get to the bottom of the options
+            # This helps with different screen sizes and UI layouts
+            time.sleep(0.5)
+            window_size = self.driver.get_window_size()
+            start_y2 = int(window_size["height"] * 0.7)
+            end_y2 = int(window_size["height"] * 0.3)
+            scroll_x2 = window_size["width"] // 2
+            self.driver.swipe(scroll_x2, start_y2, scroll_x2, end_y2, 800)
+            logger.info(f"Performed second scroll from ({scroll_x2}, {start_y2}) to ({scroll_x2}, {end_y2})")
+            time.sleep(1)
 
         except Exception as e:
-            logger.error(f"Error updating reading styles: {e}")
-            # Store exception page source
+            logger.error(f"Error during scrolling: {e}")
+            # Continue anyway since some devices might show all options without scrolling
+
+    def _close_style_slideover(self):
+        """Close the style slideover and return to reading view."""
+        # Tap the slideover tab at the top of the style slideover to set it to half-height
+        sheet_pill_found = False
+        for strategy, locator in STYLE_SHEET_PILL_IDENTIFIERS:
             try:
-                store_page_source(self.driver.page_source, "style_update_exception")
-            except:
-                pass
-            return False
+                pill = self.driver.find_element(strategy, locator)
+                if pill.is_displayed():
+                    pill.click()
+                    logger.info("Clicked style sheet pill to set to half-height")
+                    sheet_pill_found = True
+                    time.sleep(1)
+                    break
+            except NoSuchElementException:
+                continue
+
+        if not sheet_pill_found:
+            logger.warning("Could not find style sheet pill, will try tapping directly where it should be")
+            # Try tapping where the pill would typically be (top center of the slideover)
+            try:
+                # Look for the slideover first to get its position
+                slideover_found = False
+                for strategy, locator in STYLE_SLIDEOVER_IDENTIFIERS:
+                    try:
+                        slideover = self.driver.find_element(strategy, locator)
+                        if slideover.is_displayed():
+                            # Get the top center of the slideover
+                            location = slideover.location
+                            size = slideover.size
+                            pill_x = location["x"] + size["width"] // 2
+                            pill_y = location["y"] + 20  # Near the top
+
+                            self.driver.tap([(pill_x, pill_y)])
+                            logger.info(f"Tapped estimated pill location at ({pill_x}, {pill_y})")
+                            slideover_found = True
+                            time.sleep(1)
+                            break
+                    except NoSuchElementException:
+                        continue
+
+                if not slideover_found:
+                    logger.warning("Could not find style slideover, will try generic tap")
+                    # Generic tap near the top of the screen
+                    window_size = self.driver.get_window_size()
+                    tap_x = window_size["width"] // 2
+                    tap_y = window_size["height"] // 4
+                    self.driver.tap([(tap_x, tap_y)])
+                    logger.info(f"Performed generic tap at ({tap_x}, {tap_y})")
+                    time.sleep(1)
+            except Exception as e:
+                logger.error(f"Error tapping pill location: {e}")
+
+        # Store page source after pill tap
+        store_page_source(self.driver.page_source, "style_update_after_pill_tap")
+
+        # Tap near the top of the screen to hide the style slideover
+        window_size = self.driver.get_window_size()
+        top_tap_x = window_size["width"] // 2
+        top_tap_y = int(window_size["height"] * 0.1)  # 10% from the top
+        self.driver.tap([(top_tap_x, top_tap_y)])
+        logger.info(f"Tapped near top of screen at ({top_tap_x}, {top_tap_y}) to hide style slideover")
+        time.sleep(1)
+
+    def _save_reading_preferences(
+        self,
+        font_size,
+        real_time_highlighting,
+        about_book,
+        page_turn_animation,
+        popular_highlights,
+        highlight_menu,
+    ):
+        """Save the reading style preferences to the profile."""
+        try:
+            # Import here to avoid circular imports
+            from server.utils.request_utils import get_sindarin_email
+
+            # Get email from the request using standard utility function
+            email = get_sindarin_email()
+
+            if email:
+                if self.profile_manager:
+                    try:
+                        # Make sure style_updated preference is set properly
+                        if self.profile_manager.update_style_preference(True, email):
+                            logger.info(f"Successfully updated style preference in profile for {email}")
+                        else:
+                            # If the update failed using the normal method, try a direct approach
+                            logger.warning(
+                                f"Standard update_style_preference failed for {email}, trying direct approach"
+                            )
+
+                            # Try direct manipulation of profiles_index if available
+                            if hasattr(self.profile_manager, "profiles_index"):
+                                # Make sure user exists in profiles_index
+                                if email not in self.profile_manager.profiles_index:
+                                    self.profile_manager.profiles_index[email] = {}
+
+                                # Set style_updated directly at top level
+                                self.profile_manager.profiles_index[email]["styles_updated"] = True
+
+                                # Initialize reading_settings at top level if needed
+                                if "reading_settings" not in self.profile_manager.profiles_index[email]:
+                                    self.profile_manager.profiles_index[email]["reading_settings"] = {}
+
+                                # Set reading settings at top level
+                                reading_settings = self.profile_manager.profiles_index[email][
+                                    "reading_settings"
+                                ]
+                                reading_settings["theme"] = "dark"
+                                reading_settings["font_size"] = font_size
+                                reading_settings["real_time_highlighting"] = real_time_highlighting
+                                reading_settings["about_book"] = about_book
+                                reading_settings["page_turn_animation"] = page_turn_animation
+                                reading_settings["popular_highlights"] = popular_highlights
+                                reading_settings["highlight_menu"] = highlight_menu
+
+                                # Try to save preferences
+                                if hasattr(self.profile_manager, "_save_profiles_index"):
+                                    self.profile_manager._save_profiles_index()
+                                    logger.info(f"Successfully saved style preferences directly for {email}")
+                                else:
+                                    logger.warning("Could not find _save_profiles_index method")
+                            else:
+                                logger.warning("Could not access profiles_index directly")
+                    except Exception as update_e:
+                        logger.error(f"Error during style preference update: {update_e}")
+                else:
+                    logger.warning(f"No profile_manager available to update style preference for {email}")
+            else:
+                logger.warning("No email available from get_sindarin_email() to update style preference")
+        except Exception as e:
+            logger.error(f"Error updating style preference in profile: {e}")
 
     def _toggle_checkbox(self, checkbox_strategies, desired_state, description):
         """

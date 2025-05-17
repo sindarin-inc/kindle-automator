@@ -28,6 +28,7 @@ from server.middleware.response_handler import (
     serve_image,
 )
 from server.resources.active_emulators_resource import ActiveEmulatorsResource
+from server.resources.emulator_batch_config_resource import EmulatorBatchConfigResource
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
     extract_book_covers_from_screen,
@@ -1978,6 +1979,11 @@ api.add_resource(
     "/emulators/active",
     resource_class_kwargs={"server_instance": server},
 )
+api.add_resource(
+    EmulatorBatchConfigResource,
+    "/batch-configure-emulators",
+    resource_class_kwargs={"server_instance": server},
+)
 
 
 def auto_restart_emulators_from_previous_session():
@@ -1987,19 +1993,27 @@ def auto_restart_emulators_from_previous_session():
     """
     from server.utils.vnc_instance_manager import VNCInstanceManager
 
+    logger.info("=== Beginning session restoration check ===")
     vnc_manager = VNCInstanceManager.get_instance()
 
     emulators_to_restart = vnc_manager.get_running_at_restart()
+    
     if emulators_to_restart:
-        logger.info(f"Found {len(emulators_to_restart)} emulators to restart from previous session")
+        logger.info(f"Found {len(emulators_to_restart)} emulators marked for restart from previous session:")
+        for email in emulators_to_restart:
+            logger.info(f"  - {email}")
 
         # Clear the flags first to avoid infinite restart loops
         vnc_manager.clear_running_at_restart_flags()
+        logger.info("Cleared restart flags to prevent infinite loops")
 
         # Restart each emulator one at a time to avoid resource contention
+        successfully_restarted = []
+        failed_restarts = []
+        
         for email in emulators_to_restart:
             try:
-                logger.info(f"Auto-restarting emulator for {email}")
+                logger.info(f"Auto-restarting emulator for {email}...")
                 # Initialize automator which will start the emulator
                 automator = server.initialize_automator(email)
 
@@ -2007,18 +2021,34 @@ def auto_restart_emulators_from_previous_session():
                     # Start the emulator and driver
                     success = automator.initialize_driver()
                     if success:
-                        logger.info(f"Successfully restarted emulator for {email}")
+                        logger.info(f"✓ Successfully restarted emulator for {email}")
+                        successfully_restarted.append(email)
+                        # Add a delay between restarts to avoid overwhelming the system
+                        time.sleep(5)
                     else:
-                        logger.error(f"Failed to initialize driver for {email}")
+                        logger.error(f"✗ Failed to initialize driver for {email}")
+                        failed_restarts.append(email)
                 else:
-                    logger.error(f"Failed to initialize automator for {email}")
+                    logger.error(f"✗ Failed to initialize automator for {email}")
+                    failed_restarts.append(email)
 
             except Exception as e:
-                logger.error(f"Error restarting emulator for {email}: {e}")
+                logger.error(f"✗ Error restarting emulator for {email}: {e}")
+                failed_restarts.append(email)
 
-        logger.info(f"Completed auto-restart of {len(emulators_to_restart)} emulators")
+        # Summary report
+        logger.info("=== Session restoration complete ===")
+        logger.info(f"Successfully restarted: {len(successfully_restarted)} emulators")
+        if successfully_restarted:
+            for email in successfully_restarted:
+                logger.info(f"  ✓ {email}")
+        
+        if failed_restarts:
+            logger.info(f"Failed to restart: {len(failed_restarts)} emulators")
+            for email in failed_restarts:
+                logger.info(f"  ✗ {email}")
     else:
-        logger.info("No emulators marked for restart from previous session")
+        logger.info("=== No emulators marked for restart from previous session ===")
 
 
 def check_and_restart_adb_server():
@@ -2053,6 +2083,7 @@ def check_and_restart_adb_server():
 
 def cleanup_resources():
     """Clean up resources before exiting"""
+    logger.info("=== Beginning graceful shutdown sequence ===")
     logger.info("Cleaning up resources before shutdown...")
 
     # Mark all running emulators for restart and shutdown gracefully with preserved state
@@ -2064,22 +2095,26 @@ def cleanup_resources():
 
     # Track which emulators are running and mark them for restart
     running_emails = []
+    logger.info(f"Checking {len(server.automators)} automators for running emulators...")
+    
     for email, automator in server.automators.items():
         if automator and hasattr(automator, "driver") and automator.driver:
             try:
-                logger.info(f"Marking {email} as running at restart")
+                logger.info(f"✓ Marking {email} as running at restart for deployment recovery")
                 vnc_manager.mark_running_for_deployment(email)
                 running_emails.append(email)
             except Exception as e:
-                logger.error(f"Error marking {email} for restart: {e}")
+                logger.error(f"✗ Error marking {email} for restart: {e}")
+    
+    logger.info(f"Found {len(running_emails)} running emulators to preserve across restart")
 
     # Perform graceful shutdowns with preserved state
     for email in running_emails:
         try:
-            logger.info(f"Gracefully shutting down {email} with preserved state")
+            logger.info(f"Gracefully shutting down {email} with preserve_reading_state=True")
             shutdown_manager.shutdown_emulator(email, preserve_reading_state=True)
         except Exception as e:
-            logger.error(f"Error shutting down {email}: {e}")
+            logger.error(f"✗ Error shutting down {email}: {e}")
 
     # Kill Appium server only
     try:
@@ -2088,7 +2123,8 @@ def cleanup_resources():
     except Exception as e:
         logger.error(f"Error stopping Appium during shutdown: {e}")
 
-    logger.info(f"Cleanup complete, marked {len(running_emails)} emulators for restart on next boot")
+    logger.info(f"=== Graceful shutdown complete ===")
+    logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")
 
 
 def signal_handler(sig, frame):
