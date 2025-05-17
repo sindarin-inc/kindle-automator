@@ -75,40 +75,34 @@ class IdleCheckResource(Resource):
                     f"Emulator for {email} has been idle for {idle_duration:.1f} minutes - shutting down"
                 )
 
-                # Trigger shutdown through the existing shutdown endpoint
+                # Use the shutdown manager directly instead of going through HTTP
                 try:
-                    # Import and use shutdown resource directly
-                    from server.resources.shutdown_resources import ShutdownResource
+                    # Import and use shutdown manager directly
+                    from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
 
-                    shutdown_resource = ShutdownResource(self.server)
+                    shutdown_manager = EmulatorShutdownManager(self.server)
+                    shutdown_summary = shutdown_manager.shutdown_emulator(email)
 
-                    try:
-                        # Create a new request context for this email
-                        from flask import Flask
-
-                        app = Flask(__name__)
-                        # Pass the email in query parameters since get_sindarin_email() doesn't check headers
-                        with app.test_request_context(query_string=f"sindarin_email={email}"):
-                            result, status_code = shutdown_resource.post()
-
-                            if status_code == 200:
-                                shutdown_emails.append(
-                                    {
-                                        "email": email,
-                                        "idle_minutes": round(idle_duration, 1),
-                                        "status": "shutdown",
-                                    }
-                                )
-                            else:
-                                logger.error(f"Failed to shutdown {email}: {result}")
-                                shutdown_emails.append(
-                                    {
-                                        "email": email,
-                                        "idle_minutes": round(idle_duration, 1),
-                                        "status": "failed",
-                                        "error": result.get("error", "Unknown error"),
-                                    }
-                                )
+                    # Check if shutdown was successful
+                    if any(shutdown_summary.values()):
+                        shutdown_emails.append(
+                            {
+                                "email": email,
+                                "idle_minutes": round(idle_duration, 1),
+                                "status": "shutdown",
+                                "details": shutdown_summary,
+                            }
+                        )
+                    else:
+                        logger.warning(f"No active resources found to shut down for {email}")
+                        shutdown_emails.append(
+                            {
+                                "email": email,
+                                "idle_minutes": round(idle_duration, 1),
+                                "status": "failed",
+                                "error": "No active resources found",
+                            }
+                        )
 
                 except Exception as e:
                     logger.error(f"Error shutting down idle emulator for {email}: {e}")
