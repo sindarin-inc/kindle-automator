@@ -317,13 +317,12 @@ class EmulatorLauncher:
             logger.error(f"Error extracting AVD name for email '{email}': {e}")
             return None
 
-    def _ensure_vnc_running(self, display_num: int, email: Optional[str] = None) -> bool:
+    def _ensure_vnc_running(self, display_num: int) -> bool:
         """
         Ensure the VNC server is running for the specified display.
 
         Args:
             display_num: The X display number
-            email: Optional email to use for AVD name extraction
 
         Returns:
             True if VNC is running, False otherwise
@@ -332,27 +331,8 @@ class EmulatorLauncher:
             # Skip VNC setup on macOS
             return True
 
-        if not email:
-            email = get_sindarin_email()
-
-        if not email:
-            logger.warning("No email provided for VNC setup, window cropping may not work")
-            avd_name = None
-        else:
-            avd_name = self._extract_avd_name_from_email(email)
-
-        if not avd_name and email:
-            # Try to get AVD name from profile if _extract_avd_name_from_email failed
-            try:
-                from views.core.avd_profile_manager import AVDProfileManager
-
-                profile_manager = AVDProfileManager()
-                profile = profile_manager.get_profile_for_email(email)
-                if profile and profile.get("avd_name"):
-                    avd_name = profile.get("avd_name")
-                    logger.info(f"Got AVD name {avd_name} from profile for {email}")
-            except Exception as e:
-                logger.warning(f"Failed to get AVD name from profile: {e}")
+        email = get_sindarin_email()
+        avd_name = self._extract_avd_name_from_email(email)
 
         try:
             # Check if Xvfb is running for this display
@@ -735,7 +715,7 @@ class EmulatorLauncher:
 
             # Now ensure VNC is running for this display after emulator is launched
             if platform.system() != "Darwin":
-                self._ensure_vnc_running(display_num, email)
+                self._ensure_vnc_running(display_num)
 
             # Check if emulator process is actually running
             if process.poll() is not None:

@@ -5,7 +5,6 @@ import logging
 import os
 import signal
 import subprocess
-import threading
 import time
 import traceback
 from pathlib import Path
@@ -2018,16 +2017,38 @@ def auto_restart_emulators_from_previous_session():
             try:
                 logger.info(f"Auto-restarting emulator for {email}...")
 
-                # Use the unified startup method for consistent behavior
-                success, message = server.unified_emulator_startup(
-                    email, force_new_emulator=False, is_auto_restart=True
-                )
+                # First start Appium for this email if not already running
+                if email not in server.appium_processes:
+                    from server.utils.port_utils import get_appium_port_for_email
+                    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                    vnc_manager = VNCInstanceManager.get_instance()
+                    port = get_appium_port_for_email(
+                        email, vnc_manager=vnc_manager, profiles_index=server.profile_manager.profiles_index
+                    )
+                    appium_started = server.start_appium(port=port, email=email)
+                    if not appium_started:
+                        logger.error(f"Failed to start Appium server for {email}")
+                        failed_restarts.append(email)
+                        continue
+
+                # Use switch_profile instead of start_emulator to ensure proper initialization
+                # This handles the full profile setup and emulator initialization, including VNC display assignment.
+                # start_emulator() is just a thin wrapper that doesn't do the complete setup needed
+                # for a working automator with VNC integration.
+                success, message = server.switch_profile(email, force_new_emulator=False)
 
                 if success:
-                    logger.info(f"✓ Successfully restarted emulator for {email}")
-                    successfully_restarted.append(email)
-                    # Add a delay between restarts to avoid overwhelming the system
-                    time.sleep(5)
+                    # Initialize the automator to ensure the driver is ready
+                    automator = server.initialize_automator(email)
+                    if automator and automator.initialize_driver():
+                        logger.info(f"✓ Successfully restarted emulator for {email}")
+                        successfully_restarted.append(email)
+                        # Add a delay between restarts to avoid overwhelming the system
+                        time.sleep(5)
+                    else:
+                        logger.error(f"✗ Failed to initialize driver for {email}")
+                        failed_restarts.append(email)
                 else:
                     logger.error(f"✗ Failed to start emulator for {email}: {message}")
                     failed_restarts.append(email)
@@ -2147,17 +2168,6 @@ def run_server():
     signal.signal(signal.SIGTERM, signal_handler)
     logger.info("Registered signal handlers for graceful shutdown")
 
-    # Schedule the emulator restart after server startup
-    def delayed_restart():
-        """Run emulator restart in background after a small delay to ensure server is ready"""
-        time.sleep(5)  # Give server time to fully start
-        logger.info("Server started, now checking for emulators to restart")
-        auto_restart_emulators_from_previous_session()
-
-    restart_thread = threading.Thread(target=delayed_restart, daemon=True)
-    restart_thread.start()
-    logger.info("Scheduled emulator restart in background thread")
-
     # Run with threaded=True and explicit buffering settings to ensure streaming works
     app.run(host="0.0.0.0", port=4098, threaded=True, use_reloader=False)
 
@@ -2168,6 +2178,9 @@ def main():
 
     # Check ADB connectivity
     check_and_restart_adb_server()
+
+    # Auto-restart emulators that were running before the last shutdown
+    auto_restart_emulators_from_previous_session()
 
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
