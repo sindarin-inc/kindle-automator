@@ -1997,7 +1997,7 @@ def auto_restart_emulators_from_previous_session():
     vnc_manager = VNCInstanceManager.get_instance()
 
     emulators_to_restart = vnc_manager.get_running_at_restart()
-    
+
     if emulators_to_restart:
         logger.info(f"Found {len(emulators_to_restart)} emulators marked for restart from previous session:")
         for email in emulators_to_restart:
@@ -2010,27 +2010,31 @@ def auto_restart_emulators_from_previous_session():
         # Restart each emulator one at a time to avoid resource contention
         successfully_restarted = []
         failed_restarts = []
-        
+
         for email in emulators_to_restart:
             try:
-                logger.info(f"Auto-restarting emulator for {email}...")
-                # Initialize automator which will start the emulator
-                automator = server.initialize_automator(email)
+                from server.utils.request_utils import email_override
 
-                if automator:
-                    # Start the emulator and driver
-                    success = automator.initialize_driver()
-                    if success:
-                        logger.info(f"✓ Successfully restarted emulator for {email}")
-                        successfully_restarted.append(email)
-                        # Add a delay between restarts to avoid overwhelming the system
-                        time.sleep(5)
+                # Use email override context to ensure get_sindarin_email() returns the correct email
+                with email_override(email):
+                    logger.info(f"Auto-restarting emulator for {email}...")
+                    # Initialize automator which will start the emulator
+                    automator = server.initialize_automator(email)
+
+                    if automator:
+                        # Start the emulator and driver - the email will be available via get_sindarin_email()
+                        success = automator.initialize_driver()
+                        if success:
+                            logger.info(f"✓ Successfully restarted emulator for {email}")
+                            successfully_restarted.append(email)
+                            # Add a delay between restarts to avoid overwhelming the system
+                            time.sleep(5)
+                        else:
+                            logger.error(f"✗ Failed to initialize driver for {email}")
+                            failed_restarts.append(email)
                     else:
-                        logger.error(f"✗ Failed to initialize driver for {email}")
+                        logger.error(f"✗ Failed to initialize automator for {email}")
                         failed_restarts.append(email)
-                else:
-                    logger.error(f"✗ Failed to initialize automator for {email}")
-                    failed_restarts.append(email)
 
             except Exception as e:
                 logger.error(f"✗ Error restarting emulator for {email}: {e}")
@@ -2042,7 +2046,7 @@ def auto_restart_emulators_from_previous_session():
         if successfully_restarted:
             for email in successfully_restarted:
                 logger.info(f"  ✓ {email}")
-        
+
         if failed_restarts:
             logger.info(f"Failed to restart: {len(failed_restarts)} emulators")
             for email in failed_restarts:
@@ -2096,7 +2100,7 @@ def cleanup_resources():
     # Track which emulators are running and mark them for restart
     running_emails = []
     logger.info(f"Checking {len(server.automators)} automators for running emulators...")
-    
+
     for email, automator in server.automators.items():
         if automator and hasattr(automator, "driver") and automator.driver:
             try:
@@ -2105,7 +2109,7 @@ def cleanup_resources():
                 running_emails.append(email)
             except Exception as e:
                 logger.error(f"✗ Error marking {email} for restart: {e}")
-    
+
     logger.info(f"Found {len(running_emails)} running emulators to preserve across restart")
 
     # Perform graceful shutdowns with preserved state

@@ -16,10 +16,16 @@ Usage:
 
     # Get the automator for the current request
     automator, email, error = get_automator_for_request(server)
+    
+    # Set email override for operations outside request context
+    with email_override("user@example.com"):
+        email = get_sindarin_email()  # Returns "user@example.com"
 """
 
 import logging
 import os
+import threading
+from contextlib import contextmanager
 from typing import Optional
 
 from flask import request
@@ -27,6 +33,31 @@ from flask import request
 from server.config import VNC_BASE_URL
 
 logger = logging.getLogger(__name__)
+
+# Thread-local storage for email override
+_email_override = threading.local()
+
+
+@contextmanager
+def email_override(email: str):
+    """
+    Context manager to override the email returned by get_sindarin_email().
+    Useful for operations outside of Flask request context.
+
+    Usage:
+        with email_override("user@example.com"):
+            # get_sindarin_email() will return "user@example.com" here
+            do_something()
+    """
+    old_email = getattr(_email_override, "email", None)
+    _email_override.email = email
+    try:
+        yield
+    finally:
+        if old_email is None:
+            delattr(_email_override, "email")
+        else:
+            _email_override.email = old_email
 
 
 def get_sindarin_email() -> Optional[str]:
@@ -38,6 +69,19 @@ def get_sindarin_email() -> Optional[str]:
     Returns:
         The extracted email (impersonated user email or regular email) or None if not found
     """
+    # First check for thread-local override (for operations outside request context)
+    override_email = getattr(_email_override, "email", None)
+    if override_email:
+        return override_email
+
+    # Check if we're in a request context
+    from flask import has_request_context
+
+    if not has_request_context():
+        # Outside request context - return None
+        # The calling code should use email_override() context manager
+        return None
+
     # First check for impersonation scenario
     # Check query parameters
     if request.args.get("sindarin_email") and request.args.get("user_email"):

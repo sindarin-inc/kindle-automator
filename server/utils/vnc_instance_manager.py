@@ -518,10 +518,10 @@ class VNCInstanceManager:
         """
         try:
             from views.core.avd_profile_manager import AVDProfileManager
-            
+
             avd_manager = AVDProfileManager()
             success = avd_manager.set_user_field(email, "was_running_at_restart", True)
-            
+
             if success:
                 logger.info(f"✓ Successfully marked {email} as running at deployment")
                 # Verify it was saved
@@ -544,10 +544,10 @@ class VNCInstanceManager:
         """
         try:
             from views.core.avd_profile_manager import AVDProfileManager
-            
+
             avd_manager = AVDProfileManager()
             running_emails = []
-            
+
             # Check each profile for the was_running_at_restart flag
             logger.info(f"Checking {len(avd_manager.profiles_index)} profiles for restart flags")
             for email in avd_manager.profiles_index.keys():
@@ -556,7 +556,7 @@ class VNCInstanceManager:
                 if was_running:
                     running_emails.append(email)
                     logger.info(f"✓ Found {email} marked for restart")
-            
+
             logger.info(f"Total emulators marked for restart: {len(running_emails)}")
             return running_emails
         except Exception as e:
@@ -569,9 +569,9 @@ class VNCInstanceManager:
         """
         try:
             from views.core.avd_profile_manager import AVDProfileManager
-            
+
             avd_manager = AVDProfileManager()
-            
+
             # Clear flags for all profiles
             cleared_count = 0
             for email in avd_manager.profiles_index.keys():
@@ -579,7 +579,7 @@ class VNCInstanceManager:
                     avd_manager.set_user_field(email, "was_running_at_restart", None)
                     cleared_count += 1
                     logger.debug(f"Cleared was_running_at_restart flag for {email}")
-            
+
             logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}")
