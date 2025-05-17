@@ -317,12 +317,13 @@ class EmulatorLauncher:
             logger.error(f"Error extracting AVD name for email '{email}': {e}")
             return None
 
-    def _ensure_vnc_running(self, display_num: int) -> bool:
+    def _ensure_vnc_running(self, display_num: int, email: str = None) -> bool:
         """
         Ensure the VNC server is running for the specified display.
 
         Args:
             display_num: The X display number
+            email: The email to use for AVD lookup. If not provided, attempts to get from context.
 
         Returns:
             True if VNC is running, False otherwise
@@ -331,7 +332,15 @@ class EmulatorLauncher:
             # Skip VNC setup on macOS
             return True
 
-        email = get_sindarin_email()
+        # Allow email to be passed in, otherwise try to get from context
+        if not email:
+            email = get_sindarin_email()
+
+        # If still no email, we can't determine the AVD name
+        if not email:
+            logger.error("No email available for VNC setup - cannot determine AVD name")
+            return False
+
         avd_name = self._extract_avd_name_from_email(email)
 
         try:
@@ -715,7 +724,7 @@ class EmulatorLauncher:
 
             # Now ensure VNC is running for this display after emulator is launched
             if platform.system() != "Darwin":
-                self._ensure_vnc_running(display_num)
+                self._ensure_vnc_running(display_num, email=email)
 
             # Check if emulator process is actually running
             if process.poll() is not None:

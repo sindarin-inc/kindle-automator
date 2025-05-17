@@ -1988,90 +1988,6 @@ api.add_resource(
 )
 
 
-def auto_restart_emulators_from_previous_session():
-    """
-    Restart emulators that were running during the last shutdown.
-    This helps maintain user sessions across server restarts/deployments.
-    """
-    from server.utils.vnc_instance_manager import VNCInstanceManager
-
-    logger.info("=== Beginning session restoration check ===")
-    vnc_manager = VNCInstanceManager.get_instance()
-
-    emulators_to_restart = vnc_manager.get_running_at_restart()
-
-    if emulators_to_restart:
-        logger.info(f"Found {len(emulators_to_restart)} emulators marked for restart from previous session:")
-        for email in emulators_to_restart:
-            logger.info(f"  - {email}")
-
-        # Clear the flags first to avoid infinite restart loops
-        vnc_manager.clear_running_at_restart_flags()
-        logger.info("Cleared restart flags to prevent infinite loops")
-
-        # Restart each emulator one at a time to avoid resource contention
-        successfully_restarted = []
-        failed_restarts = []
-
-        for email in emulators_to_restart:
-            try:
-                logger.info(f"Auto-restarting emulator for {email}...")
-
-                # First start Appium for this email if not already running
-                if email not in server.appium_processes:
-                    from server.utils.port_utils import get_appium_port_for_email
-                    from server.utils.vnc_instance_manager import VNCInstanceManager
-
-                    vnc_manager = VNCInstanceManager.get_instance()
-                    port = get_appium_port_for_email(
-                        email, vnc_manager=vnc_manager, profiles_index=server.profile_manager.profiles_index
-                    )
-                    appium_started = server.start_appium(port=port, email=email)
-                    if not appium_started:
-                        logger.error(f"Failed to start Appium server for {email}")
-                        failed_restarts.append(email)
-                        continue
-
-                # Use switch_profile instead of start_emulator to ensure proper initialization
-                # This handles the full profile setup and emulator initialization, including VNC display assignment.
-                # start_emulator() is just a thin wrapper that doesn't do the complete setup needed
-                # for a working automator with VNC integration.
-                success, message = server.switch_profile(email, force_new_emulator=False)
-
-                if success:
-                    # Initialize the automator to ensure the driver is ready
-                    automator = server.initialize_automator(email)
-                    if automator and automator.initialize_driver():
-                        logger.info(f"✓ Successfully restarted emulator for {email}")
-                        successfully_restarted.append(email)
-                        # Add a delay between restarts to avoid overwhelming the system
-                        time.sleep(5)
-                    else:
-                        logger.error(f"✗ Failed to initialize driver for {email}")
-                        failed_restarts.append(email)
-                else:
-                    logger.error(f"✗ Failed to start emulator for {email}: {message}")
-                    failed_restarts.append(email)
-
-            except Exception as e:
-                logger.error(f"✗ Error restarting emulator for {email}: {e}")
-                failed_restarts.append(email)
-
-        # Summary report
-        logger.info("=== Session restoration complete ===")
-        logger.info(f"Successfully restarted: {len(successfully_restarted)} emulators")
-        if successfully_restarted:
-            for email in successfully_restarted:
-                logger.info(f"  ✓ {email}")
-
-        if failed_restarts:
-            logger.info(f"Failed to restart: {len(failed_restarts)} emulators")
-            for email in failed_restarts:
-                logger.info(f"  ✗ {email}")
-    else:
-        logger.info("=== No emulators marked for restart from previous session ===")
-
-
 def check_and_restart_adb_server():
     """
     Check ADB connectivity and restart the server if it's not responsive.
@@ -2179,11 +2095,13 @@ def main():
     # Check ADB connectivity
     check_and_restart_adb_server()
 
-    # Auto-restart emulators that were running before the last shutdown
-    auto_restart_emulators_from_previous_session()
-
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
+
+    # Schedule emulator restart after server is ready using background thread
+    from server.utils.server_startup_utils import auto_restart_emulators_after_startup
+
+    auto_restart_emulators_after_startup(server, delay=3.0)
 
     # Run the server directly, regardless of development mode
     run_server()

@@ -87,15 +87,20 @@ class AutomationServer:
         try:
             # Use email override context to ensure proper email routing
             with email_override(email):
-                # Initialize automator which will start the emulator
-                automator = self.initialize_automator(email)
+                # Use switch_profile to share the same emulator launching logic
+                success, message = self.switch_profile(email, force_new_emulator=False)
 
-                if automator:
-                    # The emulator should already be started by initialize_automator
-                    # but we can verify it's running
-                    return True
+                if success:
+                    # Initialize the automator to ensure the driver is ready
+                    automator = self.initialize_automator(email)
+                    if automator and automator.initialize_driver():
+                        logger.info(f"Successfully started emulator for {email}")
+                        return True
+                    else:
+                        logger.error(f"Failed to initialize driver for {email}")
+                        return False
                 else:
-                    logger.error(f"Failed to initialize automator for {email}")
+                    logger.error(f"Failed to start emulator for {email}: {message}")
                     return False
 
         except Exception as e:
@@ -158,8 +163,9 @@ class AutomationServer:
 
         # Set email context for this thread so logs go to the right file
         from server.logging_config import EmailContext
+        from server.utils.request_utils import email_override
 
-        with EmailContext(email):
+        with EmailContext(email), email_override(email):
             return self._switch_profile_impl(email, force_new_emulator)
 
     def _switch_profile_impl(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
