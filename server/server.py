@@ -2135,15 +2135,8 @@ def signal_handler(sig, frame):
         "SIGINT" if sig == signal.SIGINT else "SIGTERM" if sig == signal.SIGTERM else f"Signal {sig}"
     )
     logger.info(f"Received {signal_name}, initiating graceful shutdown...")
-    
-    # Always perform cleanup and exit immediately
-    try:
-        cleanup_resources()
-    except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
-    
-    # Force immediate exit - Flask development server doesn't always shutdown cleanly
-    logger.info("Forcing immediate exit")
+    cleanup_resources()
+    # Exit with success code
     os._exit(0)
 
 
@@ -2179,9 +2172,6 @@ def main():
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
 
-    # Handle SIGTERM as well as SIGINT
-    signal.signal(signal.SIGTERM, signal_handler)
-    
     # Run the server directly, regardless of development mode
     run_server()
 
