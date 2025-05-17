@@ -1178,15 +1178,20 @@ class BookOpenResource(Resource):
         # If we're not already reading the requested book, transition to library and open it
         if automator.state_machine.transition_to_library(server=server):
             # Use library_handler to open the book instead of reader_handler
-            success = automator.state_machine.library_handler.open_book(book_title)
-            logger.info(f"Book opened: {success}")
+            result = automator.state_machine.library_handler.open_book(book_title)
+            logger.info(f"Book open result: {result}")
 
-            if success:
+            # Handle dictionary response from library handler
+            if result.get("status") == "title_not_available":
+                # Return the error response directly
+                return result, 400
+            elif result.get("success"):
                 # Set the current book in the server state
                 server.set_current_book(book_title, sindarin_email)
                 return capture_book_state()
-
-        return {"error": "Failed to open book"}, 500
+            else:
+                # Return the error from the result
+                return result, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1205,28 +1210,6 @@ class BookOpenResource(Resource):
         # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
 
-        # Check if we got a 'title_not_available_error' on the automator
-        sindarin_email = get_sindarin_email()
-        if sindarin_email and sindarin_email in server.automators:
-            automator = server.automators.get(sindarin_email)
-            if (
-                automator
-                and hasattr(automator, "title_not_available_error")
-                and automator.title_not_available_error
-            ):
-                # Create a response with the error
-                error_info = automator.title_not_available_error
-                response_data = {
-                    "error": error_info.get("error", "Title Not Available"),
-                    "book_title": error_info.get("book_title", book_title),
-                    "status": "title_not_available",
-                }
-
-                # Clear the error flag to avoid affecting future requests
-                automator.title_not_available_error = None
-
-                return response_data, 400
-
         # Directly return the result, as Flask can handle Response objects
         return result
 
@@ -1239,28 +1222,6 @@ class BookOpenResource(Resource):
         # Call the implementation without the handle_automator_response decorator
         # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
-
-        # Check if we got a 'title_not_available_error' on the automator
-        sindarin_email = get_sindarin_email()
-        if sindarin_email and sindarin_email in server.automators:
-            automator = server.automators.get(sindarin_email)
-            if (
-                automator
-                and hasattr(automator, "title_not_available_error")
-                and automator.title_not_available_error
-            ):
-                # Create a response with the error
-                error_info = automator.title_not_available_error
-                response_data = {
-                    "error": error_info.get("error", "Title Not Available"),
-                    "book_title": error_info.get("book_title", book_title),
-                    "status": "title_not_available",
-                }
-
-                # Clear the error flag to avoid affecting future requests
-                automator.title_not_available_error = None
-
-                return response_data, 400
 
         # Directly return the result, as Flask can handle Response objects
         return result

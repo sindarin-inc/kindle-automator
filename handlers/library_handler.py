@@ -1395,14 +1395,14 @@ class LibraryHandler:
             traceback.print_exc()
             return False
 
-    def open_book(self, book_title: str) -> bool:
+    def open_book(self, book_title: str) -> dict:
         """Open a book in the library.
 
         Args:
             book_title (str): The title of the book to open
 
         Returns:
-            bool: True if the book was found and opened, False otherwise
+            dict: A result dictionary with 'success' boolean and optional error details
         """
         try:
             # Check if we have any cached preferences at all
@@ -1428,7 +1428,7 @@ class LibraryHandler:
                     if not self.handle_grid_list_view_dialog():
                         logger.error("Failed to handle Grid/List view dialog")
                         store_page_source(self.driver.page_source, "failed_to_handle_grid_list_dialog")
-                        return False
+                        return {"success": False, "error": "Failed to handle Grid/List view dialog"}
                     logger.info("Successfully handled Grid/List view dialog")
                     time.sleep(1)  # Wait for UI to stabilize
                 else:
@@ -1441,7 +1441,7 @@ class LibraryHandler:
                             logger.info("Opened Grid/List dialog, now handling it")
                             if not self.handle_grid_list_view_dialog():
                                 logger.error("Failed to handle Grid/List view dialog after opening")
-                                return False
+                                return {"success": False, "error": "Failed to handle Grid/List view dialog after opening"}
                         else:
                             logger.warning("Failed to open Grid/List dialog to check group_by_series")
             else:
@@ -1505,7 +1505,7 @@ class LibraryHandler:
                         
                 except TimeoutException:
                     logger.error("Timeout while checking view state")
-                    return False
+                    return {"success": False, "error": "Timeout while checking view state"}
 
                     # Wait again for library view to disappear
                     try:
@@ -1520,7 +1520,7 @@ class LibraryHandler:
                         return self._delegate_to_reader_handler(book_title)
                     except TimeoutException:
                         logger.error("Failed to leave library view even after second click")
-                        return False
+                        return {"success": False, "error": "Failed to leave library view even after second click"}
 
             # If book is not already visible, proceed with search and find methods
             logger.info(f"Proceeding to search for '{book_title}'")
@@ -1528,7 +1528,7 @@ class LibraryHandler:
             # Find and click the book button
             if not self.find_book(book_title):
                 logger.error(f"Failed to find book: {book_title}")
-                return False
+                return {"success": False, "error": f"Failed to find book: {book_title}"}
 
             logger.info(f"Successfully found and clicked book: {book_title}")
 
@@ -1538,7 +1538,7 @@ class LibraryHandler:
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error opening book: {e}")
-            return False
+            return {"success": False, "error": f"Error opening book: {e}"}
 
     def _delegate_to_reader_handler(self, book_title):
         """Delegate to the reader_handler to handle the reading view and any dialogs.
@@ -1551,7 +1551,7 @@ class LibraryHandler:
             book_title: The title of the book we're opening
 
         Returns:
-            bool: True if the book was successfully opened, False otherwise
+            dict: A result dictionary with 'success' boolean and optional error details
         """
         # Get access to the reader_handler
         reader_handler = self.driver.automator.state_machine.reader_handler
@@ -1577,10 +1577,10 @@ class LibraryHandler:
 
             if dialog_handled:
                 logger.info(f"Reader handler successfully handled dialogs for book '{book_title}'")
-                return True
+                return {"success": True}
             else:
                 logger.error(f"Reader handler failed to handle dialogs for book '{book_title}'")
-                return False
+                return {"success": False, "error": "Reader handler failed to handle dialogs"}
 
         except TimeoutException:
             logger.error(f"Timed out waiting for reading view to appear")
@@ -1588,7 +1588,7 @@ class LibraryHandler:
             return self._handle_loading_timeout(book_title)
         except Exception as e:
             logger.error(f"Error waiting for reading view: {e}")
-            return False
+            return {"success": False, "error": f"Error waiting for reading view: {e}"}
 
     def _handle_page_navigation_dialog(self, source_description="dialog check"):
         """Handle the 'Go to that page?' or 'You are currently on page' dialog.
@@ -1726,8 +1726,7 @@ class LibraryHandler:
             book_title (str): The title of the book that was clicked
 
         Returns:
-            bool or str: True if successfully handled, "title_not_available" if that dialog was found,
-                        False otherwise
+            dict: A result dictionary with 'success' boolean and optional error details or status
         """
         filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
         logger.info(f"Stored unknown library timeout page source at: {filepath}")
@@ -1753,7 +1752,7 @@ class LibraryHandler:
 
             # Check for "Go to that page?" dialog first - this is a common scenario that should be handled
             if self._handle_page_navigation_dialog("timeout handler"):
-                return True
+                return {"success": True}
 
             # Check for "Title Not Available" dialog
             for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
@@ -1788,9 +1787,13 @@ class LibraryHandler:
                         except:
                             logger.warning("Failed to click Cancel button on Title Not Available dialog")
 
-                        # Return a specific value to indicate this dialog was found
-                        # Using string 'title_not_available' instead of True/False for disambiguation
-                        return "title_not_available"
+                        # Return a dictionary with error details instead of setting it on the automator
+                        return {
+                            "success": False,
+                            "error": error_text,
+                            "book_title": book_title,
+                            "status": "title_not_available"
+                        }
                 except:
                     pass
 
@@ -1800,7 +1803,7 @@ class LibraryHandler:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         logger.info(f"Download Limit dialog found after timeout: {strategy}={locator}")
-                        return True  # ReaderHandler will handle the dialog
+                        return {"success": True}  # ReaderHandler will handle the dialog
                 except:
                     pass
 
@@ -1810,7 +1813,7 @@ class LibraryHandler:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         logger.info(f"Download Limit error text found after timeout: {strategy}={locator}")
-                        return True  # ReaderHandler will handle the dialog
+                        return {"success": True}  # ReaderHandler will handle the dialog
                 except:
                     pass
 
@@ -1837,7 +1840,7 @@ class LibraryHandler:
 
             if device_list and button:
                 logger.info("Found Download Limit dialog (device list + button) after timeout")
-                return True  # ReaderHandler will handle the dialog
+                return {"success": True}  # ReaderHandler will handle the dialog
 
             # Check if we're still in the library view - we might need to try clicking the book again
             try:
@@ -1906,4 +1909,4 @@ class LibraryHandler:
             logger.error(f"Error checking for known dialogs: {dialog_e}")
 
         # We didn't find any expected dialogs, so return failure
-        return False
+        return {"success": False, "error": "Timeout waiting for reading view or expected dialogs"}
