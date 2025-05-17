@@ -627,6 +627,22 @@ class LibraryHandlerSearch:
         search_element.send_keys(book_title)
         self.driver.press_keycode(66)  # Android keycode for Enter
         logger.info("Pressed Enter key to submit search")
+        
+        # Check for search results within 1 second
+        search_results_found = self._wait_until(
+            lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
+            timeout=1,
+        )
+        
+        if not search_results_found:
+            logger.info("No search results found within 1 second, refocusing search box and pressing Enter again")
+            # Refocus on the search field
+            search_element = self._get_search_field()
+            if search_element:
+                search_element.click()
+                self.driver.press_keycode(66)  # Android keycode for Enter
+                logger.info("Pressed Enter key again to submit search")
+        
         return True
 
     def _open_search_box(self):
@@ -691,6 +707,21 @@ class LibraryHandlerSearch:
         # Press Enter
         self.driver.press_keycode(66)
         logger.info("Pressed Enter key to submit search")
+        
+        # Check for search results within 1 second
+        search_results_found = self._wait_until(
+            lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
+            timeout=1,
+        )
+        
+        if not search_results_found:
+            logger.info("No search results found within 1 second, refocusing search box and pressing Enter again")
+            # Refocus on the search field
+            if search_field:
+                search_field.click()
+                self.driver.press_keycode(66)  # Android keycode for Enter
+                logger.info("Pressed Enter key again to submit search")
+        
         return True
 
     # === _process_search_results Decomposition ===
