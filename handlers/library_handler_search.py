@@ -289,77 +289,20 @@ class LibraryHandlerSearch:
             tuple or None: (parent_container, button, book_info) if found, None otherwise
         """
         try:
-            # Wait for search results to load using WebDriverWait
+            # Wait for search results to load
             logger.info("Waiting for search results to load...")
-            wait = WebDriverWait(self.driver, 10)
 
             # Wait specifically for "In your library" text to appear
-            # Since we're opening a book that we know is in the library
-            try:
-                wait.until(
-                    lambda driver: driver.find_elements(
-                        AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
-                    )
-                )
-                logger.info("'In your library' section loaded")
-            except TimeoutException:
+            if not self._wait_for_in_library_section():
                 logger.warning("Timeout waiting for 'In your library' section to load")
                 # Still continue in case it appears later
 
             # Check for "Search instead for" button and click it if present
-            try:
-                logger.info("Checking for 'Search instead for' suggestion")
-                text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+            self._click_search_instead_for_if_present()
 
-                for element in text_elements:
-                    try:
-                        text = element.text
-                        if text and "Search instead for" in text:
-                            logger.info(f"Found 'Search instead for' suggestion: '{text}'")
-
-                            # Click the element
-                            if element.get_attribute("clickable") == "true":
-                                element.click()
-                                logger.info("Clicked 'Search instead for' button")
-                                # Wait for page to update after click
-                                wait.until(
-                                    lambda driver: len(
-                                        driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-                                    )
-                                    > 0
-                                )
-                                break
-                            else:
-                                # If the text element itself isn't clickable, check for its parent
-                                try:
-                                    parent = element.find_element(AppiumBy.XPATH, "./..")
-                                    if parent.get_attribute("clickable") == "true":
-                                        parent.click()
-                                        logger.info("Clicked parent of 'Search instead for' text")
-                                        # Wait for page to update after click
-                                        wait.until(
-                                            lambda driver: len(
-                                                driver.find_elements(
-                                                    AppiumBy.CLASS_NAME, "android.widget.TextView"
-                                                )
-                                            )
-                                            > 0
-                                        )
-                                        break
-                                except:
-                                    logger.debug(
-                                        "Could not find clickable parent for 'Search instead for' text"
-                                    )
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"Error checking for 'Search instead for' button: {e}")
-
-            # Find "In your library" section and "Results from" section to establish boundaries
-            in_library_section = None
-            in_library_y = 0
-            results_from_section = None
-            results_from_y = float("inf")  # Default to bottom of screen if not found
+            # Find section headers and determine boundaries
+            in_library_info, results_from_info = self._locate_section_headers()
+            in_library_y, results_from_y = self._determine_library_bounds(in_library_info, results_from_info)
 
             # Do a quick initial scan for the book before waiting for more elements
             # This helps avoid unnecessary delays when the book is immediately visible
@@ -374,495 +317,87 @@ class LibraryHandlerSearch:
                             AppiumBy.CLASS_NAME, "android.widget.TextView"
                         )
                         for text_elem in text_elements:
-                            if "In your library" in (text_elem.text or ""):
+                            if "In your library" in self._element_text(text_elem):
                                 logger.info(
                                     "Confirmed 'In your library' section is present - proceeding with quick match"
                                 )
-                                # Create book info
-                                book_info = {"title": book_title}
-                                parts = content_desc.split(",")
-                                if len(parts) > 0:
-                                    book_info["title"] = parts[0].strip()
-                                if len(parts) > 1:
-                                    book_info["author"] = parts[1].strip()
+                                book_info = self._parse_book_info_from_content_desc(content_desc, book_title)
                                 return button, button, book_info
                 except:
                     continue
 
-            # Get all text elements - wait a bit more for them to appear
-            text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-
-            # If we don't find enough text elements, wait and try again
-            if len(text_elements) < 3:
-                logger.info(
-                    f"Only found {len(text_elements)} text elements, waiting for more content to load..."
-                )
-                # Wait for more text elements to appear
-                try:
-                    wait.until(
-                        lambda driver: len(
-                            driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-                        )
-                        > 3
-                    )
-                    text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-                except TimeoutException:
-                    logger.warning("Timeout waiting for text elements to appear")
-
-            # First pass: look for both section headers
-            logger.info(f"Looking for section headers in {len(text_elements)} text elements")
-
-            # Log all text found on the page for debugging
-            all_texts = []
-            for idx, element in enumerate(text_elements):
-                try:
-                    text = element.text
-                    if text:
-                        all_texts.append(text)
-                        logger.debug(f"Text element {idx}: '{text}'")
-                except:
-                    pass
-
-            logger.info(f"All text on page: {all_texts}")
-
-            for element in text_elements:
-                try:
-                    text = element.text
-                    if not text:
-                        continue
-
-                    # Look for "In your library" text (case insensitive)
-                    if "in your library" in text.lower():
-                        in_library_section = element
-                        in_library_y = element.location["y"]
-                        logger.info(f"Found 'In your library' section at y={in_library_y}")
-
-                    # Look for "Results from" text
-                    elif "results from" in text.lower():
-                        results_from_section = element
-                        results_from_y = element.location["y"]
-                        logger.info(f"Found 'Results from' section at y={results_from_y}")
-
-                    # Also check for alternative text that might indicate library section
-                    elif "your books" in text.lower() or "library books" in text.lower():
-                        logger.info(f"Found alternative library section text: '{text}'")
-                        if not in_library_section:  # Use as fallback
-                            in_library_section = element
-                            in_library_y = element.location["y"]
-                            logger.info(f"Using '{text}' as library section at y={in_library_y}")
-                except Exception as e:
-                    logger.debug(f"Error checking section headers: {e}")
-                    continue
-
+            # Check if 'In your library' section is missing
+            in_library_section, in_library_y = in_library_info
             if not in_library_section:
                 logger.info("Could not find 'In your library' section on first attempt")
 
-                # Since the book is from the library, the section might appear after a delay
-                # Let's wait specifically for it rather than giving up
-                if results_from_section:
-                    logger.info("Found 'Results from' section - waiting for 'In your library' to appear")
-
-                # Wait specifically for "In your library" section to appear
-                logger.info("Waiting for 'In your library' section to appear...")
-
-                # Extended wait for library section
-                extended_wait = WebDriverWait(self.driver, 15)  # Give it more time
-                try:
-                    extended_wait.until(
-                        lambda driver: driver.find_elements(
-                            AppiumBy.XPATH,
-                            "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'in your library')]",
-                        )
+                # Extended wait and retry
+                if self._wait_until(
+                    lambda driver: driver.find_elements(
+                        AppiumBy.XPATH,
+                        "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'in your library')]",
+                    ),
+                    timeout=15,
+                ):
+                    # Try to find headers again
+                    in_library_info, results_from_info = self._locate_section_headers()
+                    in_library_y, results_from_y = self._determine_library_bounds(
+                        in_library_info, results_from_info
                     )
 
-                    # Try one more time
-                    text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-                    for element in text_elements:
-                        try:
-                            text = element.text
-                            if text and "in your library" in text.lower():
-                                in_library_section = element
-                                in_library_y = element.location["y"]
-                                logger.info(f"Found 'In your library' section on retry at y={in_library_y}")
-                                break
-                        except:
-                            continue
-                except TimeoutException:
-                    logger.info("Timeout waiting for section headers to appear")
-
-                if not in_library_section:
-                    logger.info("Still could not find 'In your library' section after retry")
+                    in_library_section, in_library_y = in_library_info
+                    if not in_library_section:
+                        logger.info("Still could not find 'In your library' section after retry")
+                        store_page_source(self.driver.page_source, "in_your_library_not_found")
+                        self._exit_search_mode()
+                        return None
+                else:
+                    logger.info("Timeout waiting for 'In your library' section")
                     store_page_source(self.driver.page_source, "in_your_library_not_found")
                     self._exit_search_mode()
                     return None
 
-            # If we didn't find the "Results from" section, use screen height as fallback
-            if not results_from_section:
-                logger.info("Could not find 'Results from' section, using screen height as boundary")
-                # Set a default boundary using screen height
-                screen_size = self.driver.get_window_size()
-                results_from_y = screen_size["height"] - 100  # Use near bottom of screen
+            # Log all text elements for debugging
+            self._log_all_text_elements()
 
-            # Look for "No results" message or any other text elements in the library section
-            in_library_text_elements = []
-            for element in text_elements:
-                try:
-                    text = element.text
-                    if not text:
-                        continue
+            # Check for no results in library section
+            if self._check_no_results_in_library(in_library_y, results_from_y):
+                logger.info("No results found in library section")
+                self._exit_search_mode()
+                return None
 
-                    y = element.location["y"]
-                    # Make sure in_library_y has a valid value (greater than zero)
-                    if in_library_y < 1:
-                        logger.warning("Invalid in_library_y position, using default values")
-                        continue
-
-                    # Only check elements in the library section (between "In your library" and "Results from")
-                    if in_library_y < y < results_from_y:
-                        logger.info(f"Text element in library section at y={y}: '{text}'")
-                        in_library_text_elements.append((element, text))
-
-                        # Check for "No results" type messages
-                        if any(
-                            phrase in text.lower()
-                            for phrase in [
-                                "no results",
-                                "not found",
-                                "empty",
-                                "no books",
-                                "no matching",
-                                "couldn't find",
-                            ]
-                        ):
-                            logger.info(f"Found 'No results' message in library section: {text}")
-                            self._exit_search_mode()
-                            return None
-                except Exception as e:
-                    logger.debug(f"Error processing text element: {e}")
-                    continue
-
-            # If we don't find any text elements in the library section, that likely means
-            # there are no books matching the search query in the library
-            if not in_library_text_elements:
-                logger.info(
-                    "No text elements found in library section - likely means no matching books in library"
-                )
-
-                # Check for empty library section by looking at pixels between sections
-                library_section_height = results_from_y - in_library_y
-                logger.info(f"Library section height: {library_section_height}px")
-
-                if library_section_height < 150:  # If section is less than 150px tall
-                    logger.info("Library section appears to be empty (small height)")
-                    self._exit_search_mode()
-                    return None
-
-                # Try to find "No results" text or similar messages anywhere in the view
-                no_results_found = False
-                for element in text_elements:
-                    try:
-                        text = element.text.lower() if element.text else ""
-                        if any(
-                            phrase in text
-                            for phrase in [
-                                "no results",
-                                "no matches",
-                                "not found",
-                                "could not find",
-                                "empty",
-                                "no books",
-                            ]
-                        ):
-                            y_pos = element.location["y"]
-                            logger.info(f"Found potential 'No results' message: '{text}' at y={y_pos}")
-                            # If this text is located near the library section, it's likely a no results message
-                            if in_library_y - 50 <= y_pos <= results_from_y + 50:
-                                logger.info(f"Confirmed 'No results' message in library section: '{text}'")
-                                no_results_found = True
-                                break
-                    except Exception as e:
-                        logger.debug(f"Error checking text element for no results message: {e}")
-                        continue
-
-                if no_results_found:
-                    logger.info("No results message found in library section, exiting search mode")
-                    self._exit_search_mode()
-                    return None
-
-                # If we still can't determine if there are no results, check for visual cues
-                # Such as: lack of any clickable elements in the library section
-                clickable_elements_in_library = 0
-                try:
-                    all_elements = self.driver.find_elements(AppiumBy.XPATH, "//*[@clickable='true']")
-                    for element in all_elements:
-                        try:
-                            y = element.location["y"]
-                            if in_library_y < y < results_from_y:
-                                clickable_elements_in_library += 1
-                                logger.info(f"Found clickable element in library section at y={y}")
-                        except Exception as e:
-                            logger.debug(f"Error checking clickable element position: {e}")
-                            continue
-
-                    logger.info(
-                        f"Found {clickable_elements_in_library} clickable elements in library section"
-                    )
-                    if clickable_elements_in_library == 0:
-                        logger.info("No clickable elements in library section, likely empty results")
-                        self._exit_search_mode()
-                        return None
-                except Exception as e:
-                    logger.debug(f"Error counting clickable elements: {e}")
-                    # Continue anyway since this is just a supplementary check
-
-            # We've already found the "Results from" section in the first pass,
-            # so no need to search for it again.
-
-            # First, try to find all elements in the library section specifically
-            # This is critical to avoid matching books in the "Results from Kindle" section
-
+            # Find buttons in the library section
             logger.info("Searching specifically for elements in the 'In your library' section")
+            buttons, buttons_with_content = self._find_buttons_in_library(in_library_y, results_from_y)
 
-            # Start by looking for elements directly in the library section
-            library_section_elements = []
+            # First, try exact match in content-desc
+            result = self._match_book_by_exact_content_desc(buttons_with_content, book_title)
+            if result[0]:
+                return result
 
-            # Approach 1: Find all elements between "In your library" and "Results from" sections
-            # Get all elements (we'll filter by position later)
-            all_elements = self.driver.find_elements(AppiumBy.XPATH, "//*")
-            logger.info(f"Found {len(all_elements)} total elements, filtering by position")
+            # Try relaxed matching on buttons with content-desc
+            if buttons_with_content:
+                result = self._match_book_by_relaxed_content_desc(buttons_with_content, book_title)
+                if result[0]:
+                    return result
 
-            # Set search margin - start 50px below "In your library" header
-            start_y = in_library_y + 50
+            # Try matching in generic buttons
+            if buttons:
+                result = self._match_book_in_generic_buttons(buttons, book_title)
+                if result[0]:
+                    return result
 
-            # Find buttons, especially those with content-desc that might have our book
-            library_buttons = []
-            library_buttons_with_content = []
-
-            # Log the search boundaries
-            logger.info(f"Library section boundary: y > {start_y} and y < {results_from_y}")
-
-            # First look specifically for buttons with content-desc attributes in the library section
-            for element in all_elements:
-                try:
-                    # Check element type - we're especially interested in buttons
-                    class_name = element.get_attribute("class") or ""
-
-                    # Skip text elements, etc. - focus on containers and buttons
-                    if "TextView" in class_name:
-                        continue
-
-                    # Get position to check if in library section
-                    y = element.location["y"]
-
-                    # Check if this element is in the library section
-                    if start_y <= y < results_from_y:
-                        # Check if it has content-desc (especially important for buttons)
-                        content_desc = element.get_attribute("content-desc") or ""
-
-                        # If it's a button, add it to our library buttons list
-                        if "Button" in class_name:
-                            library_buttons.append(element)
-
-                            # If it also has content-desc, it's even more interesting
-                            if content_desc:
-                                library_buttons_with_content.append((element, content_desc))
-                                logger.info(
-                                    f"Found button with content-desc in library section at y={y}: '{content_desc}'"
-                                )
-
-                                # Check for book title substring in content-desc (key part!)
-                                if book_title.lower() in content_desc.lower():
-                                    logger.info(
-                                        f"FOUND DIRECT MATCH! Button with content-desc contains book title: '{content_desc}'"
-                                    )
-                                    # Create book info
-                                    book_info = {"title": book_title}
-
-                                    # Extract more info from content-desc if available
-                                    parts = content_desc.split(",")
-                                    if len(parts) > 0:
-                                        book_info["title"] = parts[0].strip()
-                                    if len(parts) > 1:
-                                        book_info["author"] = parts[1].strip()
-
-                                    # This is a direct match for what we're looking for
-                                    logger.info(f"Found book by content-desc substring match: {book_info}")
-                                    return element, element, book_info
-
-                        # Add element to general list of elements in the library section
-                        library_section_elements.append(element)
-                except Exception as e:
-                    logger.debug(f"Error checking element position: {e}")
-                    continue
-
-            logger.info(f"Found {len(library_section_elements)} elements in the library section")
-            logger.info(f"Found {len(library_buttons)} buttons in the library section")
-            logger.info(
-                f"Found {len(library_buttons_with_content)} buttons with content-desc in the library section"
-            )
-
-            # If we found buttons with content-desc but no direct title match yet,
-            # try more relaxed matching on those first (they're likely our best candidates)
-            if library_buttons_with_content:
-                logger.info("Trying relaxed matching on buttons with content-desc in library section")
-
-                for element, content_desc in library_buttons_with_content:
-                    try:
-                        # Log what we're checking
-                        logger.info(f"Checking button content-desc for relaxed match: '{content_desc}'")
-
-                        # Check for partial or case-insensitive match
-                        book_parts = book_title.lower().split()
-                        content_parts = content_desc.lower().split()
-
-                        # Look for significant word matches
-                        matches = set(book_parts) & set(content_parts)
-
-                        if len(matches) >= max(1, len(book_parts) // 2):
-                            logger.info(f"Found word-level match: {matches}")
-
-                            # Create book info
-                            book_info = {"title": book_title}
-
-                            # Extract info from content-desc
-                            parts = content_desc.split(",")
-                            if len(parts) > 0:
-                                book_info["title"] = parts[0].strip()
-                            if len(parts) > 1:
-                                book_info["author"] = parts[1].strip()
-
-                            logger.info(f"Found matching book with relaxed matching: {book_info}")
-                            return element, element, book_info
-
-                        # Check if the first few letters of each word match
-                        # This catches small variations like "The world without us" vs "The World Without Us"
-                        strong_match = True
-                        for book_word in book_parts:
-                            if len(book_word) < 3:  # Skip short words like "the", "and", etc.
-                                continue
-
-                            prefix_matched = False
-                            for content_word in content_parts:
-                                # Check if first 3 letters match
-                                if (
-                                    len(book_word) >= 3
-                                    and len(content_word) >= 3
-                                    and book_word[:3] == content_word[:3]
-                                ):
-                                    prefix_matched = True
-                                    break
-
-                            if not prefix_matched and len(book_word) >= 3:
-                                strong_match = False
-                                break
-
-                        if strong_match:
-                            logger.info(f"Found prefix match for words in: '{content_desc}'")
-
-                            # Create book info
-                            book_info = {"title": book_title}
-
-                            # Extract info from content-desc
-                            parts = content_desc.split(",")
-                            if len(parts) > 0:
-                                book_info["title"] = parts[0].strip()
-                            if len(parts) > 1:
-                                book_info["author"] = parts[1].strip()
-
-                            logger.info(f"Found matching book with prefix matching: {book_info}")
-                            return element, element, book_info
-                    except Exception as e:
-                        logger.debug(f"Error during relaxed content-desc matching: {e}")
-                        continue
-
-            # Fallback to general elements in the library section if we haven't found a match yet
-            if library_buttons:
-                logger.info("Falling back to checking all buttons in library section")
-
-                for element in library_buttons:
-                    try:
-                        # Get text and content-desc
-                        content_desc = element.get_attribute("content-desc") or ""
-                        element_text = element.text or ""
-
-                        # If no direct text, look at child text elements
-                        if not element_text:
-                            try:
-                                child_texts = element.find_elements(
-                                    AppiumBy.CLASS_NAME, "android.widget.TextView"
-                                )
-                                for child in child_texts:
-                                    try:
-                                        if child.text:
-                                            element_text += " " + child.text
-                                    except:
-                                        continue
-                                element_text = element_text.strip()
-                            except:
-                                pass
-
-                        # Log what we're checking
-                        logger.info(f"Checking button: content-desc='{content_desc}', text='{element_text}'")
-
-                        # Check for any kind of match
-                        matched = False
-                        match_reason = ""
-
-                        # Try with _title_match function which has advanced matching logic
-                        if content_desc and self._title_match(content_desc, book_title):
-                            matched = True
-                            match_reason = "title_match on content_desc"
-                        elif element_text and self._title_match(element_text, book_title):
-                            matched = True
-                            match_reason = "title_match on text"
-
-                        # If we found a match, return it
-                        if matched:
-                            logger.info(f"Found book match: {match_reason}")
-
-                            # Create book info
-                            book_info = {"title": book_title}
-
-                            # Extract info from content-desc if available
-                            if content_desc:
-                                parts = content_desc.split(",")
-                                if len(parts) > 0:
-                                    book_info["title"] = parts[0].strip()
-                                if len(parts) > 1:
-                                    book_info["author"] = parts[1].strip()
-
-                            logger.info(f"Found matching book: {book_info}")
-                            return element, element, book_info
-                    except Exception as e:
-                        logger.debug(f"Error checking button in library section: {e}")
-                        continue
-
-            # We've tried specific ways to find the book in the library section
-            # If nothing has worked, try a final sweeping check of all library elements
+            # Final sweep of all elements in library section
             logger.info("Trying one final pass through all library section elements")
+            all_elements = self.driver.find_elements(AppiumBy.XPATH, "//*")
+            library_elements = []
+            for el in all_elements:
+                if self._within_vertical_bounds(el, in_library_y + 50, results_from_y):
+                    library_elements.append(el)
 
-            for element in library_section_elements:
-                try:
-                    # Get text and content-desc
-                    content_desc = element.get_attribute("content-desc") or ""
-                    element_text = element.text or ""
-
-                    # Skip elements with no text or content-desc
-                    if not content_desc and not element_text:
-                        continue
-
-                    # Check for simple substring match first
-                    if content_desc and book_title.lower() in content_desc.lower():
-                        logger.info(f"Found substring match in content-desc: '{content_desc}'")
-                        book_info = {"title": book_title}
-                        return element, element, book_info
-                    elif element_text and book_title.lower() in element_text.lower():
-                        logger.info(f"Found substring match in text: '{element_text}'")
-                        book_info = {"title": book_title}
-                        return element, element, book_info
-                except Exception as e:
-                    logger.debug(f"Error in final element check: {e}")
-                    continue
+            result = self._final_sweep_over_elements(library_elements, book_title)
+            if result[0]:
+                return result
 
             # No match found in library section
             logger.info("No matching book found in 'In your library' section")
@@ -875,7 +410,7 @@ class LibraryHandlerSearch:
             self._exit_search_mode()
             return None
 
-    def _search_for_book(self, book_title: str):
+    def search_for_book(self, book_title: str):
         """Use the search box to find a book by title.
 
         This implementation avoids complex XPath expressions.
@@ -887,127 +422,29 @@ class LibraryHandlerSearch:
             tuple or None: (parent_container, button, book_info) if found, None otherwise
         """
         try:
-            # First check if we're already in search results mode with the desired search query
-            search_query_element = None
-            try:
-                search_query_element = self.driver.find_element(
-                    AppiumBy.ID, "com.amazon.kindle:id/search_query"
-                )
-                current_query = search_query_element.text or search_query_element.get_attribute("text") or ""
-                logger.info(f"Found existing search query: '{current_query}'")
-
-                # If we're already searching for the book we want, just process the results
+            # Check if already in search mode
+            search_element, current_query = self._is_already_in_search_mode()
+            if search_element:
+                # We're already in search mode
                 if current_query.strip().lower() == book_title.strip().lower():
                     logger.info(f"Already in search results for '{book_title}', processing existing results")
-                    # Jump directly to processing search results
                     return self._process_search_results(book_title)
                 else:
-                    # Clear and enter new search
-                    logger.info(
-                        f"Clearing existing search '{current_query}' and searching for '{book_title}'"
-                    )
-                    search_query_element.clear()
-                    search_query_element.send_keys(book_title)
+                    # Update search query
+                    if self._update_search_query(book_title):
+                        # Wait for search results
+                        self._wait_for_in_library_section()
+                        return self._process_search_results(book_title)
 
-                    # Try multiple methods to submit the search
-                    # 1. Press search key
-                    self.driver.press_keycode(84)  # Android keycode for Search
-                    logger.info("Pressed Search key")
-
-                    # 2. Also try the editor action
-                    try:
-                        self.driver.execute_script("mobile: performEditorAction", {"action": "search"})
-                        logger.info("Executed search editor action")
-                    except:
-                        # Fallback to enter key
-                        self.driver.press_keycode(66)  # Android keycode for Enter
-                        logger.info("Pressed Enter key as fallback")
-
-                    # Wait for search to complete - specifically for "In your library"
-                    wait = WebDriverWait(self.driver, 10)
-                    try:
-                        wait.until(
-                            lambda driver: driver.find_elements(
-                                AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
-                            )
-                        )
-                        logger.info("Found 'In your library' section after search")
-                    except TimeoutException:
-                        logger.warning("Timeout waiting for 'In your library' section after search")
-
-                    return self._process_search_results(book_title)
-            except NoSuchElementException:
-                # Not already in search mode, continue with normal search flow
-                pass
-
-            # Find search box
-            search_box = None
-            try:
-                search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
-            except:
-                # Try finding by class name and content-desc
-                linear_layouts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.LinearLayout")
-                for layout in linear_layouts:
-                    try:
-                        if layout.get_attribute("resource-id") == "com.amazon.kindle:id/search_box":
-                            search_box = layout
-                            logger.info("Found search box by class name and resource-id")
-                            break
-                    except:
-                        continue
-
-            if not search_box:
-                logger.error("Could not find search box and not already in search mode")
-                return None
-
-            # Click search box
-            search_box.click()
-
-            # Wait for search input field to become visible
-            wait = WebDriverWait(self.driver, 3)
-            try:
-                wait.until(EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/search_query")))
-            except TimeoutException:
-                logger.warning("Timeout waiting for search input field to appear")
-
-            # Find search input field
-            search_field = None
-            try:
-                search_field = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
-            except:
-                # Try finding by class name
-                edit_texts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
-                if edit_texts:
-                    search_field = edit_texts[0]
-                    logger.info("Found search input field by class name")
-
-            if not search_field:
-                logger.error("Could not find search input field")
+            # Not in search mode - submit new search
+            if self._submit_search(book_title):
+                # Wait for search results
+                self._wait_for_in_library_section()
+                return self._process_search_results(book_title)
+            else:
+                logger.error("Failed to submit search")
                 self._exit_search_mode()
                 return None
-
-            # Clear and enter book title
-            search_field.clear()
-            search_field.send_keys(book_title)
-            logger.info(f"Entered book title in search field: '{book_title}'")
-
-            # Press Enter key
-            self.driver.press_keycode(66)  # Android keycode for Enter/Search
-
-            # Wait for "In your library" section after entering search
-            wait = WebDriverWait(self.driver, 10)
-            try:
-                wait.until(
-                    lambda driver: driver.find_elements(
-                        AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
-                    )
-                )
-                logger.info("'In your library' section loaded after entering search")
-            except TimeoutException:
-                logger.warning("Timeout waiting for 'In your library' section after entering search")
-
-            # Process search results
-            return self._process_search_results(book_title)
 
         except Exception as e:
             logger.error(f"Error searching for book: {e}")
@@ -1099,3 +536,382 @@ class LibraryHandlerSearch:
         except Exception as e:
             logger.error(f"Error checking store results: {e}")
             return False
+
+    # === Helper Methods Shared by Both Flows ===
+
+    def _wait_until(self, predicate, timeout=10, poll=0.3):
+        """Generic WebDriverWait wrapper that centralizes polling/timeout logic."""
+        try:
+            wait = WebDriverWait(self.driver, timeout, poll_frequency=poll)
+            return wait.until(predicate)
+        except TimeoutException:
+            return None
+
+    def _element_text(self, el):
+        """Safe .text/get_attribute('text') getter with fallback ''."""
+        try:
+            return el.text or el.get_attribute("text") or ""
+        except:
+            return ""
+
+    def _find_clickable_parent(self, el, max_levels=3):
+        """Walks up the DOM and returns first element with clickable='true'."""
+        current = el
+        for _ in range(max_levels):
+            try:
+                parent = current.find_element(AppiumBy.XPATH, "./..")
+                if parent.get_attribute("clickable") == "true":
+                    return parent
+                current = parent
+            except:
+                break
+        return None
+
+    def _within_vertical_bounds(self, el, top, bottom):
+        """True if an element's y is between two pixel bounds."""
+        try:
+            y = el.location["y"]
+            return top <= y < bottom
+        except:
+            return False
+
+    def _parse_book_info_from_content_desc(self, content_desc, requested_title):
+        """Splits 'Title, Author' strings and returns a dict {title, author} (falls back to requested_title)."""
+        book_info = {"title": requested_title}
+        if not content_desc:
+            return book_info
+
+        parts = content_desc.split(",")
+        if len(parts) > 0:
+            book_info["title"] = parts[0].strip()
+        if len(parts) > 1:
+            book_info["author"] = parts[1].strip()
+        return book_info
+
+    def _log_all_text_elements(self):
+        """Debug helper that dumps every TextView string once per search."""
+        try:
+            text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+            texts = []
+            for el in text_elements:
+                text = self._element_text(el)
+                if text:
+                    texts.append(text)
+            logger.info(f"All text on page: {texts}")
+        except Exception as e:
+            logger.debug(f"Error logging text elements: {e}")
+
+    # === search_for_book Decomposition ===
+
+    def _is_already_in_search_mode(self):
+        """Detect existing search payload via id=search_query."""
+        try:
+            search_query_element = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
+            current_query = self._element_text(search_query_element)
+            return search_query_element, current_query
+        except NoSuchElementException:
+            return None, None
+
+    def _update_search_query(self, book_title):
+        """Clear + type new query + press Enter."""
+        search_element, current_query = self._is_already_in_search_mode()
+        if not search_element:
+            return False
+
+        if current_query.strip().lower() == book_title.strip().lower():
+            logger.info(f"Already searching for '{book_title}'")
+            return True
+
+        logger.info(f"Clearing existing search '{current_query}' and searching for '{book_title}'")
+        search_element.clear()
+        search_element.send_keys(book_title)
+        self.driver.press_keycode(66)  # Android keycode for Enter
+        logger.info("Pressed Enter key to submit search")
+        return True
+
+    def _open_search_box(self):
+        """Locate and click the search box (multiple locator strategies)."""
+        try:
+            search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
+            search_box.click()
+            return True
+        except:
+            pass
+
+        # Try finding by class name and content-desc
+        linear_layouts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.LinearLayout")
+        for layout in linear_layouts:
+            try:
+                if layout.get_attribute("resource-id") == "com.amazon.kindle:id/search_box":
+                    logger.info("Found search box by class name and resource-id")
+                    layout.click()
+                    return True
+            except:
+                continue
+
+        logger.error("Could not find search box")
+        return False
+
+    def _get_search_field(self):
+        """Return the EditText used for typing."""
+        try:
+            return self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
+        except:
+            # Try finding by class name
+            edit_texts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
+            if edit_texts:
+                logger.info("Found search input field by class name")
+                return edit_texts[0]
+        return None
+
+    def _submit_search(self, book_title):
+        """Delegates to _update_search_query (or initial typing) then waits for 'In your library'."""
+        # First check if already in search mode
+        if self._update_search_query(book_title):
+            return True
+
+        # Otherwise, open search box and type
+        if not self._open_search_box():
+            return False
+
+        # Wait for search field to appear
+        self._wait_until(
+            EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/search_query")), timeout=3
+        )
+
+        search_field = self._get_search_field()
+        if not search_field:
+            logger.error("Could not find search input field")
+            return False
+
+        search_field.clear()
+        search_field.send_keys(book_title)
+        logger.info(f"Entered book title in search field: '{book_title}'")
+
+        # Press Enter
+        self.driver.press_keycode(66)
+        logger.info("Pressed Enter key to submit search")
+        return True
+
+    # === _process_search_results Decomposition ===
+
+    def _wait_for_in_library_section(self):
+        """Wait up to n seconds for any text containing 'In your library'."""
+        return self._wait_until(
+            lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
+            timeout=10,
+        )
+
+    def _click_search_instead_for_if_present(self):
+        """Detect & click that suggestion and re-wait for results."""
+        try:
+            text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+            for element in text_elements:
+                text = self._element_text(element)
+                if "Search instead for" in text:
+                    logger.info(f"Found 'Search instead for' suggestion: '{text}'")
+                    if element.get_attribute("clickable") == "true":
+                        element.click()
+                        logger.info("Clicked 'Search instead for' button")
+                        return True
+                    else:
+                        parent = self._find_clickable_parent(element, max_levels=1)
+                        if parent:
+                            parent.click()
+                            logger.info("Clicked parent of 'Search instead for' text")
+                            return True
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking for 'Search instead for' button: {e}")
+            return False
+
+    def _locate_section_headers(self):
+        """Returns (in_library_el, results_from_el) and their y coords."""
+        in_library_section = None
+        in_library_y = 0
+        results_from_section = None
+        results_from_y = float("inf")
+
+        text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+        for element in text_elements:
+            try:
+                text = self._element_text(element)
+                if not text:
+                    continue
+
+                if "in your library" in text.lower():
+                    in_library_section = element
+                    in_library_y = element.location["y"]
+                    logger.info(f"Found 'In your library' section at y={in_library_y}")
+                elif "results from" in text.lower():
+                    results_from_section = element
+                    results_from_y = element.location["y"]
+                    logger.info(f"Found 'Results from' section at y={results_from_y}")
+            except Exception as e:
+                logger.debug(f"Error checking section headers: {e}")
+                continue
+
+        return (in_library_section, in_library_y), (results_from_section, results_from_y)
+
+    def _determine_library_bounds(self, in_el_info, results_el_info):
+        """Fallback to screen height when results_el absent."""
+        _, in_library_y = in_el_info
+        _, results_from_y = results_el_info
+
+        if results_from_y == float("inf"):
+            screen_size = self.driver.get_window_size()
+            results_from_y = screen_size["height"] - 100
+            logger.info("Using screen height as boundary for library section")
+
+        return in_library_y, results_from_y
+
+    def _check_no_results_in_library(self, in_y, results_y):
+        """Consolidates all heuristics that decide 'no results'."""
+        # Similar logic to original, but extracted
+        text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+        in_library_texts = []
+
+        for element in text_elements:
+            if self._within_vertical_bounds(element, in_y + 50, results_y):
+                text = self._element_text(element)
+                if text:
+                    in_library_texts.append(text)
+
+                    # Check for no results messages
+                    if any(
+                        phrase in text.lower() for phrase in ["no results", "not found", "empty", "no books"]
+                    ):
+                        logger.info(f"Found 'No results' message: {text}")
+                        return True
+
+        # Check if library section is empty
+        if not in_library_texts:
+            library_height = results_y - in_y
+            if library_height < 150:
+                logger.info("Library section appears to be empty (small height)")
+                return True
+
+        # Check for clickable elements in library section
+        clickable_count = 0
+        all_elements = self.driver.find_elements(AppiumBy.XPATH, "//*[@clickable='true']")
+        for el in all_elements:
+            if self._within_vertical_bounds(el, in_y, results_y):
+                clickable_count += 1
+
+        if clickable_count == 0:
+            logger.info("No clickable elements in library section")
+            return True
+
+        return False
+
+    def _find_buttons_in_library(self, in_y, results_y):
+        """Collects buttons & elements within library bounds."""
+        buttons = []
+        buttons_with_content = []
+
+        all_elements = self.driver.find_elements(AppiumBy.XPATH, "//*")
+        for element in all_elements:
+            try:
+                if self._within_vertical_bounds(element, in_y + 50, results_y):
+                    class_name = element.get_attribute("class") or ""
+                    if "Button" in class_name:
+                        buttons.append(element)
+                        content_desc = element.get_attribute("content-desc") or ""
+                        if content_desc:
+                            buttons_with_content.append((element, content_desc))
+                            logger.info(
+                                f"Found button with content-desc at y={element.location['y']}: '{content_desc}'"
+                            )
+            except Exception as e:
+                logger.debug(f"Error collecting buttons: {e}")
+
+        return buttons, buttons_with_content
+
+    def _match_book_by_exact_content_desc(self, buttons_with_content, book_title):
+        """Direct substring / _title_match on content-desc."""
+        for element, content_desc in buttons_with_content:
+            if book_title.lower() in content_desc.lower():
+                logger.info(f"Found exact match in content-desc: '{content_desc}'")
+                book_info = self._parse_book_info_from_content_desc(content_desc, book_title)
+                return element, element, book_info
+        return None, None, None
+
+    def _match_book_by_relaxed_content_desc(self, buttons_with_content, book_title):
+        """Word-set & prefix matching."""
+        for element, content_desc in buttons_with_content:
+            # Word-level matching
+            book_parts = book_title.lower().split()
+            content_parts = content_desc.lower().split()
+            matches = set(book_parts) & set(content_parts)
+
+            if len(matches) >= max(1, len(book_parts) // 2):
+                logger.info(f"Found word-level match: {matches}")
+                book_info = self._parse_book_info_from_content_desc(content_desc, book_title)
+                return element, element, book_info
+
+            # Prefix matching
+            strong_match = True
+            for book_word in book_parts:
+                if len(book_word) < 3:
+                    continue
+
+                found = any(book_word[:3] == cw[:3] for cw in content_parts if len(cw) >= 3)
+                if not found:
+                    strong_match = False
+                    break
+
+            if strong_match:
+                logger.info(f"Found prefix match: '{content_desc}'")
+                book_info = self._parse_book_info_from_content_desc(content_desc, book_title)
+                return element, element, book_info
+
+        return None, None, None
+
+    def _match_book_in_generic_buttons(self, buttons, book_title):
+        """Checks any button even w/o content-desc."""
+        for button in buttons:
+            try:
+                content_desc = button.get_attribute("content-desc") or ""
+                button_text = self._element_text(button)
+
+                # Check child text elements
+                if not button_text:
+                    child_texts = button.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+                    for child in child_texts:
+                        text = self._element_text(child)
+                        if text:
+                            button_text += " " + text
+                    button_text = button_text.strip()
+
+                # Try title match
+                if (content_desc and self._title_match(content_desc, book_title)) or (
+                    button_text and self._title_match(button_text, book_title)
+                ):
+                    logger.info("Found match in generic button")
+                    book_info = self._parse_book_info_from_content_desc(content_desc, book_title)
+                    return button, button, book_info
+            except Exception as e:
+                logger.debug(f"Error checking button: {e}")
+
+        return None, None, None
+
+    def _final_sweep_over_elements(self, elements, book_title):
+        """Catch-all scan over every element in bounds."""
+        for element in elements:
+            try:
+                content_desc = element.get_attribute("content-desc") or ""
+                element_text = self._element_text(element)
+
+                if not content_desc and not element_text:
+                    continue
+
+                if (content_desc and book_title.lower() in content_desc.lower()) or (
+                    element_text and book_title.lower() in element_text.lower()
+                ):
+                    logger.info("Found match in final sweep")
+                    book_info = {"title": book_title}
+                    return element, element, book_info
+            except Exception as e:
+                logger.debug(f"Error in final sweep: {e}")
+
+        return None, None, None

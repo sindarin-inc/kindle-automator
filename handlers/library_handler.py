@@ -1327,7 +1327,7 @@ class LibraryHandler:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
             # Try using the search box first to find the book
-            search_result = self.search_handler._search_for_book(book_title)
+            search_result = self.search_handler.search_for_book(book_title)
             # search_result = False  # TODO: Remove this once done testing scrolling method
 
             if search_result:
