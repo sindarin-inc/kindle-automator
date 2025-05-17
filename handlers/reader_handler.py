@@ -928,7 +928,7 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Error saving actively reading title: {e}")
             # Don't fail the whole operation just because we couldn't save the title
-        
+
         return True
 
     def get_current_page(self):
@@ -1969,7 +1969,7 @@ class ReaderHandler:
             # Add debug page source dump after clicking close button
             filepath = store_page_source(self.driver.page_source, "failed_transition")
             logger.info(f"Stored page source after closing book at: {filepath}")
-            
+
             # Clear the actively reading title when closing the book
             try:
                 sindarin_email = get_sindarin_email()

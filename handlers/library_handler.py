@@ -1441,7 +1441,10 @@ class LibraryHandler:
                             logger.info("Opened Grid/List dialog, now handling it")
                             if not self.handle_grid_list_view_dialog():
                                 logger.error("Failed to handle Grid/List view dialog after opening")
-                                return {"success": False, "error": "Failed to handle Grid/List view dialog after opening"}
+                                return {
+                                    "success": False,
+                                    "error": "Failed to handle Grid/List view dialog after opening",
+                                }
                         else:
                             logger.warning("Failed to open Grid/List dialog to check group_by_series")
             else:
@@ -1451,7 +1454,7 @@ class LibraryHandler:
             from views.reading.interaction_strategies import (
                 TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
             )
-            
+
             # Store initial page source for diagnostics
             store_page_source(self.driver.page_source, "library_before_book_search")
 
@@ -1469,7 +1472,7 @@ class LibraryHandler:
                 try:
                     # Use WebDriverWait to check for either reading view or dialog
                     wait = WebDriverWait(self.driver, 5)
-                    
+
                     def check_for_elements(driver):
                         # Check for Title Not Available dialog
                         for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
@@ -1479,7 +1482,7 @@ class LibraryHandler:
                                     return "title_not_available"
                             except NoSuchElementException:
                                 continue
-                        
+
                         # Check if we're in the reading view
                         for identifier_type, identifier_value in [
                             (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
@@ -1492,50 +1495,55 @@ class LibraryHandler:
                                     return "reading_view"
                             except NoSuchElementException:
                                 continue
-                        
+
                         # Check if we're still in library view
                         try:
-                            element = driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                            element = driver.find_element(
+                                AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                            )
                             if element:
                                 return "library_view"
                         except NoSuchElementException:
                             pass
-                        
+
                         return False
-                    
+
                     result = wait.until(check_for_elements)
-                    
+
                     if result == "title_not_available":
                         logger.info("Title Not Available dialog detected after clicking book")
                         return self._handle_loading_timeout(book_title)
                     elif result == "reading_view":
                         logger.info("Successfully entered reading view")
                         return self._delegate_to_reader_handler(book_title)
-                    
+
                     # If not in reading view, check if we're still in library view
                     try:
                         self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
                         logger.warning("Still in library view after clicking book, trying one more time")
-                        
+
                         # Re-find the button element to avoid stale element reference
                         visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
                         if visible_book_result:
                             _, button, _ = visible_book_result
                             button.click()
                             logger.info("Clicked book button again")
-                            
+
                             # Use delegate method which will handle any dialogs
                             return self._delegate_to_reader_handler(book_title)
                         else:
                             logger.error("Could not re-find book button for second click")
-                            return {"success": False, "error": "Could not re-find book button for second click"}
+                            return {
+                                "success": False,
+                                "error": "Could not re-find book button for second click",
+                            }
                     except NoSuchElementException:
                         # Neither library nor reading view found
                         logger.warning("Neither library nor reading view found, assuming transition state")
                         # Give it a moment and check again
                         time.sleep(1)
                         return self._delegate_to_reader_handler(book_title)
-                        
+
                 except TimeoutException:
                     logger.error("Timeout while checking view state")
                     return {"success": False, "error": "Timeout while checking view state"}
@@ -1553,7 +1561,10 @@ class LibraryHandler:
                         return self._delegate_to_reader_handler(book_title)
                     except TimeoutException:
                         logger.error("Failed to leave library view even after second click")
-                        return {"success": False, "error": "Failed to leave library view even after second click"}
+                        return {
+                            "success": False,
+                            "error": "Failed to leave library view even after second click",
+                        }
 
             # If book is not already visible, proceed with search and find methods
             logger.info(f"Proceeding to search for '{book_title}'")
@@ -1825,7 +1836,7 @@ class LibraryHandler:
                             "success": False,
                             "error": error_text,
                             "book_title": book_title,
-                            "status": "title_not_available"
+                            "status": "title_not_available",
                         }
                 except:
                     pass

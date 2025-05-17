@@ -74,9 +74,7 @@ class EmulatorShutdownManager:
                             (
                                 emulator_id,
                                 _,
-                            ) = automator.emulator_manager.emulator_launcher.get_running_emulator(
-                                email
-                            )
+                            ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                             if emulator_id:
                                 logger.info(f"Taking ADB snapshot of emulator {emulator_id}")
                                 # Get AVD name for cleaner snapshot naming
@@ -107,9 +105,7 @@ class EmulatorShutdownManager:
                                         )
 
                                         avd_manager = AVDProfileManager()
-                                        avd_manager.set_user_field(
-                                            email, "last_snapshot", snapshot_name
-                                        )
+                                        avd_manager.set_user_field(email, "last_snapshot", snapshot_name)
                                         logger.info(
                                             f"Saved snapshot name '{snapshot_name}' to user profile for {email}"
                                         )
@@ -129,9 +125,7 @@ class EmulatorShutdownManager:
                                     except Exception as cleanup_error:
                                         logger.warning(f"Failed to clean up old snapshots: {cleanup_error}")
                                 else:
-                                    logger.error(
-                                        f"Failed to save snapshot '{snapshot_name}' for {email}"
-                                    )
+                                    logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}")
                     else:
                         logger.warning("Failed to transition to Library view before shutdown")
                 except Exception as e:

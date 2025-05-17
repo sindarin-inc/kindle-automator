@@ -1080,7 +1080,7 @@ class BookOpenResource(Resource):
                 actively_reading_title = automator.profile_manager.get_style_setting(
                     "actively_reading_title", email=sindarin_email
                 )
-                
+
                 if actively_reading_title:
                     # Compare with the requested book
                     normalized_request_title = "".join(
@@ -1096,7 +1096,9 @@ class BookOpenResource(Resource):
 
                     # Try exact match first
                     if normalized_request_title == normalized_active_title:
-                        logger.info(f"Already reading book (stored active title exact match): {book_title}, returning current state")
+                        logger.info(
+                            f"Already reading book (stored active title exact match): {book_title}, returning current state"
+                        )
                         # Update server's current book tracking
                         server.set_current_book(actively_reading_title, sindarin_email)
                         return capture_book_state(already_open=True)
@@ -1117,7 +1119,7 @@ class BookOpenResource(Resource):
                         # Update server's current book tracking
                         server.set_current_book(actively_reading_title, sindarin_email)
                         return capture_book_state(already_open=True)
-                        
+
                 # If no match with stored title, try to get it from UI
                 try:
                     # Try to get the current book title from the reader UI

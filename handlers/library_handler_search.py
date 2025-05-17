@@ -279,10 +279,8 @@ class LibraryHandlerSearch:
             traceback.print_exc()
             return None, None, None
 
-    def _search_for_book(self, book_title: str):
-        """Use the search box to find a book by title.
-
-        This implementation avoids complex XPath expressions.
+    def _process_search_results(self, book_title: str):
+        """Process search results and find the book in the 'In your library' section.
 
         Args:
             book_title (str): The title of the book to search for
@@ -291,57 +289,6 @@ class LibraryHandlerSearch:
             tuple or None: (parent_container, button, book_info) if found, None otherwise
         """
         try:
-            # Find search box
-            search_box = None
-            try:
-                search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
-            except:
-                # Try finding by class name and content-desc
-                linear_layouts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.LinearLayout")
-                for layout in linear_layouts:
-                    try:
-                        if layout.get_attribute("resource-id") == "com.amazon.kindle:id/search_box":
-                            search_box = layout
-                            logger.info("Found search box by class name and resource-id")
-                            break
-                    except:
-                        continue
-
-            if not search_box:
-                logger.error("Could not find search box")
-                return None
-
-            # Click search box
-            search_box.click()
-            time.sleep(1)
-
-            # Find search input field
-            search_field = None
-            try:
-                search_field = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
-            except:
-                # Try finding by class name
-                edit_texts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
-                if edit_texts:
-                    search_field = edit_texts[0]
-                    logger.info("Found search input field by class name")
-
-            if not search_field:
-                logger.error("Could not find search input field")
-                self._exit_search_mode()
-                return None
-
-            # Clear and enter book title
-            search_field.clear()
-            search_field.send_keys(book_title)
-            logger.info(f"Entered book title in search field: '{book_title}'")
-
-            # Press Enter key
-            self.driver.press_keycode(66)  # Android keycode for Enter/Search
-
-            # Wait for search results
-            time.sleep(1)
-
             # Check for "Search instead for" button and click it if present
             try:
                 logger.info("Checking for 'Search instead for' suggestion")
@@ -785,6 +732,107 @@ class LibraryHandlerSearch:
             logger.info("No matching book found in 'In your library' section")
             self._exit_search_mode()
             return None
+
+        except Exception as e:
+            logger.error(f"Error processing search results: {e}")
+            traceback.print_exc()
+            self._exit_search_mode()
+            return None
+
+    def _search_for_book(self, book_title: str):
+        """Use the search box to find a book by title.
+
+        This implementation avoids complex XPath expressions.
+
+        Args:
+            book_title (str): The title of the book to search for
+
+        Returns:
+            tuple or None: (parent_container, button, book_info) if found, None otherwise
+        """
+        try:
+            # First check if we're already in search results mode with the desired search query
+            search_query_element = None
+            try:
+                search_query_element = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/search_query"
+                )
+                current_query = search_query_element.text or search_query_element.get_attribute("text") or ""
+                logger.info(f"Found existing search query: '{current_query}'")
+
+                # If we're already searching for the book we want, just process the results
+                if current_query.strip().lower() == book_title.strip().lower():
+                    logger.info(f"Already in search results for '{book_title}', processing existing results")
+                    # Jump directly to processing search results
+                    return self._process_search_results(book_title)
+                else:
+                    # Clear and enter new search
+                    logger.info(
+                        f"Clearing existing search '{current_query}' and searching for '{book_title}'"
+                    )
+                    search_query_element.clear()
+                    search_query_element.send_keys(book_title)
+                    # Press Enter key
+                    self.driver.execute_script("mobile: performEditorAction", {"action": "done"})
+                    time.sleep(2)
+                    return self._process_search_results(book_title)
+            except NoSuchElementException:
+                # Not already in search mode, continue with normal search flow
+                pass
+
+            # Find search box
+            search_box = None
+            try:
+                search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
+            except:
+                # Try finding by class name and content-desc
+                linear_layouts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.LinearLayout")
+                for layout in linear_layouts:
+                    try:
+                        if layout.get_attribute("resource-id") == "com.amazon.kindle:id/search_box":
+                            search_box = layout
+                            logger.info("Found search box by class name and resource-id")
+                            break
+                    except:
+                        continue
+
+            if not search_box:
+                logger.error("Could not find search box and not already in search mode")
+                return None
+
+            # Click search box
+            search_box.click()
+            time.sleep(1)
+
+            # Find search input field
+            search_field = None
+            try:
+                search_field = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
+            except:
+                # Try finding by class name
+                edit_texts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
+                if edit_texts:
+                    search_field = edit_texts[0]
+                    logger.info("Found search input field by class name")
+
+            if not search_field:
+                logger.error("Could not find search input field")
+                self._exit_search_mode()
+                return None
+
+            # Clear and enter book title
+            search_field.clear()
+            search_field.send_keys(book_title)
+            logger.info(f"Entered book title in search field: '{book_title}'")
+
+            # Press Enter key
+            self.driver.press_keycode(66)  # Android keycode for Enter/Search
+
+            # Wait for search results
+            time.sleep(1)
+
+            # Process search results
+            return self._process_search_results(book_title)
 
         except Exception as e:
             logger.error(f"Error searching for book: {e}")
