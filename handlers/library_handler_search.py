@@ -289,6 +289,23 @@ class LibraryHandlerSearch:
             tuple or None: (parent_container, button, book_info) if found, None otherwise
         """
         try:
+            # Wait for search results to load using WebDriverWait
+            logger.info("Waiting for search results to load...")
+            wait = WebDriverWait(self.driver, 10)
+
+            # Wait for either "In your library" or "Results from" text to appear
+            try:
+                wait.until(
+                    lambda driver: (
+                        driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]")
+                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Results from')]")
+                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'No results')]")
+                    )
+                )
+                logger.info("Search results loaded")
+            except TimeoutException:
+                logger.warning("Timeout waiting for search results to load")
+
             # Check for "Search instead for" button and click it if present
             try:
                 logger.info("Checking for 'Search instead for' suggestion")
@@ -304,7 +321,13 @@ class LibraryHandlerSearch:
                             if element.get_attribute("clickable") == "true":
                                 element.click()
                                 logger.info("Clicked 'Search instead for' button")
-                                time.sleep(1)
+                                # Wait for page to update after click
+                                wait.until(
+                                    lambda driver: len(
+                                        driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+                                    )
+                                    > 0
+                                )
                                 break
                             else:
                                 # If the text element itself isn't clickable, check for its parent
@@ -313,7 +336,15 @@ class LibraryHandlerSearch:
                                     if parent.get_attribute("clickable") == "true":
                                         parent.click()
                                         logger.info("Clicked parent of 'Search instead for' text")
-                                        time.sleep(1)
+                                        # Wait for page to update after click
+                                        wait.until(
+                                            lambda driver: len(
+                                                driver.find_elements(
+                                                    AppiumBy.CLASS_NAME, "android.widget.TextView"
+                                                )
+                                            )
+                                            > 0
+                                        )
                                         break
                                 except:
                                     logger.debug(
@@ -330,36 +361,120 @@ class LibraryHandlerSearch:
             results_from_section = None
             results_from_y = float("inf")  # Default to bottom of screen if not found
 
-            # Get all text elements
+            # Get all text elements - wait a bit more for them to appear
             text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
 
+            # If we don't find enough text elements, wait and try again
+            if len(text_elements) < 3:
+                logger.info(
+                    f"Only found {len(text_elements)} text elements, waiting for more content to load..."
+                )
+                # Wait for more text elements to appear
+                try:
+                    wait.until(
+                        lambda driver: len(
+                            driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+                        )
+                        > 3
+                    )
+                    text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+                except TimeoutException:
+                    logger.warning("Timeout waiting for text elements to appear")
+
             # First pass: look for both section headers
+            logger.info(f"Looking for section headers in {len(text_elements)} text elements")
+
+            # Log all text found on the page for debugging
+            all_texts = []
+            for idx, element in enumerate(text_elements):
+                try:
+                    text = element.text
+                    if text:
+                        all_texts.append(text)
+                        logger.debug(f"Text element {idx}: '{text}'")
+                except:
+                    pass
+
+            logger.info(f"All text on page: {all_texts}")
+
             for element in text_elements:
                 try:
                     text = element.text
                     if not text:
                         continue
 
-                    # Look for "In your library" text
-                    if "In your library" in text:
+                    # Look for "In your library" text (case insensitive)
+                    if "in your library" in text.lower():
                         in_library_section = element
                         in_library_y = element.location["y"]
                         logger.info(f"Found 'In your library' section at y={in_library_y}")
 
                     # Look for "Results from" text
-                    elif "Results from" in text:
+                    elif "results from" in text.lower():
                         results_from_section = element
                         results_from_y = element.location["y"]
                         logger.info(f"Found 'Results from' section at y={results_from_y}")
+
+                    # Also check for alternative text that might indicate library section
+                    elif "your books" in text.lower() or "library books" in text.lower():
+                        logger.info(f"Found alternative library section text: '{text}'")
+                        if not in_library_section:  # Use as fallback
+                            in_library_section = element
+                            in_library_y = element.location["y"]
+                            logger.info(f"Using '{text}' as library section at y={in_library_y}")
                 except Exception as e:
                     logger.debug(f"Error checking section headers: {e}")
                     continue
 
             if not in_library_section:
                 logger.info("Could not find 'In your library' section")
-                store_page_source(self.driver.page_source, "in_your_library_not_found")
-                self._exit_search_mode()
-                return None
+
+                # Check if we're on a search results page with no library matches
+                # Sometimes the "In your library" section doesn't appear if there are no matches
+                if results_from_section:
+                    logger.info("Found 'Results from' but no 'In your library' - assuming no library matches")
+                    store_page_source(self.driver.page_source, "no_library_matches")
+                    self._exit_search_mode()
+                    return None
+
+                # If we can't find either section, the search might still be loading
+                logger.info("Neither section found - search may still be loading")
+
+                # Wait for section headers to appear and try again
+                try:
+                    wait.until(
+                        lambda driver: (
+                            driver.find_elements(
+                                AppiumBy.XPATH,
+                                "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'in your library')]",
+                            )
+                            or driver.find_elements(
+                                AppiumBy.XPATH,
+                                "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'results from')]",
+                            )
+                        )
+                    )
+
+                    # Try one more time
+                    text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+                    for element in text_elements:
+                        try:
+                            text = element.text
+                            if text and "in your library" in text.lower():
+                                in_library_section = element
+                                in_library_y = element.location["y"]
+                                logger.info(f"Found 'In your library' section on retry at y={in_library_y}")
+                                break
+                        except:
+                            continue
+                except TimeoutException:
+                    logger.info("Timeout waiting for section headers to appear")
+
+                if not in_library_section:
+                    logger.info("Still could not find 'In your library' section after retry")
+                    store_page_source(self.driver.page_source, "in_your_library_not_found")
+                    self._exit_search_mode()
+                    return None
 
             # If we didn't find the "Results from" section, use screen height as fallback
             if not results_from_section:
@@ -775,7 +890,23 @@ class LibraryHandlerSearch:
                     search_query_element.send_keys(book_title)
                     # Press Enter key
                     self.driver.execute_script("mobile: performEditorAction", {"action": "done"})
-                    time.sleep(2)
+
+                    # Wait for search to complete
+                    wait = WebDriverWait(self.driver, 10)
+                    try:
+                        wait.until(
+                            lambda driver: (
+                                driver.find_elements(
+                                    AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"
+                                )
+                                or driver.find_elements(
+                                    AppiumBy.XPATH, "//*[contains(@text, 'Results from')]"
+                                )
+                            )
+                        )
+                    except TimeoutException:
+                        logger.warning("Timeout waiting for search to complete")
+
                     return self._process_search_results(book_title)
             except NoSuchElementException:
                 # Not already in search mode, continue with normal search flow
@@ -803,7 +934,13 @@ class LibraryHandlerSearch:
 
             # Click search box
             search_box.click()
-            time.sleep(1)
+
+            # Wait for search input field to become visible
+            wait = WebDriverWait(self.driver, 10)
+            try:
+                wait.until(EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/search_query")))
+            except TimeoutException:
+                logger.warning("Timeout waiting for search input field to appear")
 
             # Find search input field
             search_field = None
@@ -829,8 +966,19 @@ class LibraryHandlerSearch:
             # Press Enter key
             self.driver.press_keycode(66)  # Android keycode for Enter/Search
 
-            # Wait for search results
-            time.sleep(1)
+            # Wait for search results using WebDriverWait
+            wait = WebDriverWait(self.driver, 10)
+            try:
+                wait.until(
+                    lambda driver: (
+                        driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]")
+                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Results from')]")
+                        or driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'No results')]")
+                    )
+                )
+                logger.info("Search results loaded after entering search")
+            except TimeoutException:
+                logger.warning("Timeout waiting for search results after entering search")
 
             # Process search results
             return self._process_search_results(book_title)
@@ -854,7 +1002,21 @@ class LibraryHandlerSearch:
                         logger.info(f"Found search back button using {strategy}: {locator}")
                         back_button.click()
                         logger.info("Clicked search back button")
-                        time.sleep(1)
+                        # Wait for library view to appear
+                        wait = WebDriverWait(self.driver, 5)
+                        try:
+                            wait.until(
+                                lambda driver: (
+                                    driver.find_elements(
+                                        AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                    )
+                                    or driver.find_elements(
+                                        AppiumBy.ID, "com.amazon.kindle:id/library_list_view"
+                                    )
+                                )
+                            )
+                        except TimeoutException:
+                            logger.warning("Timeout waiting for library view after clicking back")
                         return True
                 except NoSuchElementException:
                     continue
