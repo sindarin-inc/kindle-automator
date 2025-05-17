@@ -1596,10 +1596,12 @@ class ProfilesResource(Resource):
                         display_num,
                     ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                     if display_num:
+                        from server.utils.port_utils import calculate_vnc_port
+
                         vnc_instances[email] = {
                             "instance_id": display_num,  # Use display number as instance ID
                             "display": display_num,
-                            "vnc_port": 5900 + display_num,
+                            "vnc_port": calculate_vnc_port(display_num),
                             "emulator_id": emulator_id,
                         }
 
@@ -2014,17 +2016,41 @@ def auto_restart_emulators_from_previous_session():
         for email in emulators_to_restart:
             try:
                 logger.info(f"Auto-restarting emulator for {email}...")
-                
-                # Use the server's start_emulator method which properly handles startup
-                success = server.start_emulator(email)
-                
+
+                # First start Appium for this email if not already running
+                if email not in server.appium_processes:
+                    from server.utils.port_utils import get_appium_port_for_email
+                    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                    vnc_manager = VNCInstanceManager.get_instance()
+                    port = get_appium_port_for_email(
+                        email, vnc_manager=vnc_manager, profiles_index=server.profile_manager.profiles_index
+                    )
+                    appium_started = server.start_appium(port=port, email=email)
+                    if not appium_started:
+                        logger.error(f"Failed to start Appium server for {email}")
+                        failed_restarts.append(email)
+                        continue
+
+                # Use switch_profile instead of start_emulator to ensure proper initialization
+                # This handles the full profile setup and emulator initialization, including VNC display assignment.
+                # start_emulator() is just a thin wrapper that doesn't do the complete setup needed
+                # for a working automator with VNC integration.
+                success, message = server.switch_profile(email, force_new_emulator=False)
+
                 if success:
-                    logger.info(f"✓ Successfully restarted emulator for {email}")
-                    successfully_restarted.append(email)
-                    # Add a delay between restarts to avoid overwhelming the system
-                    time.sleep(5)
+                    # Initialize the automator to ensure the driver is ready
+                    automator = server.initialize_automator(email)
+                    if automator and automator.initialize_driver():
+                        logger.info(f"✓ Successfully restarted emulator for {email}")
+                        successfully_restarted.append(email)
+                        # Add a delay between restarts to avoid overwhelming the system
+                        time.sleep(5)
+                    else:
+                        logger.error(f"✗ Failed to initialize driver for {email}")
+                        failed_restarts.append(email)
                 else:
-                    logger.error(f"✗ Failed to start emulator for {email}")
+                    logger.error(f"✗ Failed to start emulator for {email}: {message}")
                     failed_restarts.append(email)
 
             except Exception as e:

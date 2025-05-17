@@ -139,45 +139,6 @@ class VNCInstanceManager:
         # Return an empty list - instances will be created dynamically as needed
         return []
 
-    def calculate_emulator_port(self, instance_id: int) -> int:
-        """
-        Calculate emulator port based on instance ID.
-
-        Args:
-            instance_id: The instance ID
-
-        Returns:
-            int: The emulator port
-        """
-        # Emulator ports are typically 5554, 5556, 5558, etc. (even numbers)
-        return 5554 + ((instance_id - 1) * 2)
-
-    def calculate_vnc_port(self, instance_id: int) -> int:
-        """
-        Calculate VNC port based on instance ID.
-
-        Args:
-            instance_id: The instance ID
-
-        Returns:
-            int: The VNC port
-        """
-        # VNC ports start at 5900 and increment by 1
-        return 5900 + instance_id
-
-    def calculate_appium_port(self, instance_id: int) -> int:
-        """
-        Calculate Appium port based on instance ID.
-
-        Args:
-            instance_id: The instance ID
-
-        Returns:
-            int: The Appium port
-        """
-        # Appium ports start at 4723 and increment by 1
-        return 4723 + instance_id
-
     def _create_new_instance(self) -> Dict:
         """
         Create a new VNC instance with the next available ID.
@@ -192,9 +153,12 @@ class VNCInstanceManager:
             next_id = max(existing_ids) + 1
 
         # Calculate ports based on instance ID
-        emulator_port = self.calculate_emulator_port(next_id)
-        vnc_port = self.calculate_vnc_port(next_id)
-        appium_port = self.calculate_appium_port(next_id)
+        from server.utils.port_utils import calculate_emulator_ports
+
+        ports = calculate_emulator_ports(next_id)
+        emulator_port = ports["emulator_port"]
+        vnc_port = ports["vnc_port"]
+        appium_port = ports["appium_port"]
 
         # Create a new instance with the next available ID
         return {

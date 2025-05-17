@@ -89,7 +89,7 @@ class AutomationServer:
             with email_override(email):
                 # Initialize automator which will start the emulator
                 automator = self.initialize_automator(email)
-                
+
                 if automator:
                     # The emulator should already be started by initialize_automator
                     # but we can verify it's running
@@ -97,7 +97,7 @@ class AutomationServer:
                 else:
                     logger.error(f"Failed to initialize automator for {email}")
                     return False
-                    
+
         except Exception as e:
             logger.error(f"Error starting emulator for {email}: {e}")
             return False
@@ -371,13 +371,10 @@ class AutomationServer:
             logger.info(f"Reusing existing ports for {allocation_key}")
             return self.allocated_ports[allocation_key]
 
-        # Find the next available slot
-        base_system_port = 8200
-        base_bootstrap_port = 5000
-        base_chromedriver_port = 9515
-        base_mjpeg_port = 7810
-        base_appium_port = 4723
+        # Import centralized port utilities
+        from server.utils.port_utils import PortConfig, calculate_appium_port
 
+        # Find the next available slot
         # Check existing allocations and find a free slot
         used_slots = set()
         for allocated in self.allocated_ports.values():
@@ -389,14 +386,14 @@ class AutomationServer:
         while slot in used_slots:
             slot += 1
 
-        # Allocate ports
+        # Allocate ports using centralized configuration
         ports = {
             "slot": slot,
-            "systemPort": base_system_port + slot,
-            "bootstrapPort": base_bootstrap_port + slot,
-            "chromedriverPort": base_chromedriver_port + slot,
-            "mjpegServerPort": base_mjpeg_port + slot,
-            "appiumPort": base_appium_port + slot,
+            "systemPort": PortConfig.SYSTEM_BASE_PORT + slot,
+            "bootstrapPort": PortConfig.BOOTSTRAP_BASE_PORT + slot,
+            "chromedriverPort": PortConfig.CHROMEDRIVER_BASE_PORT + slot,
+            "mjpegServerPort": PortConfig.MJPEG_BASE_PORT + slot,
+            "appiumPort": calculate_appium_port(instance_id=slot),
         }
 
         self.allocated_ports[allocation_key] = ports

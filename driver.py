@@ -1098,12 +1098,20 @@ class Driver:
                             options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
                             logger.info(f"Using allocated ports for {email}: {allocated_ports}")
                         else:
-                            # Fallback to hash-based (but still problematic) approach
+                            # Fallback to hash-based approach using centralized port utilities
+                            from server.utils.port_utils import PortConfig
+
                             instance_num = hash(instance_id) % 50  # Limit to 50 instances
-                            options.set_capability("systemPort", 8200 + instance_num)
-                            options.set_capability("bootstrapPort", 5000 + instance_num)
-                            options.set_capability("chromedriverPort", 9515 + instance_num)
-                            options.set_capability("mjpegServerPort", 7810 + instance_num)
+                            options.set_capability("systemPort", PortConfig.SYSTEM_BASE_PORT + instance_num)
+                            options.set_capability(
+                                "bootstrapPort", PortConfig.BOOTSTRAP_BASE_PORT + instance_num
+                            )
+                            options.set_capability(
+                                "chromedriverPort", PortConfig.CHROMEDRIVER_BASE_PORT + instance_num
+                            )
+                            options.set_capability(
+                                "mjpegServerPort", PortConfig.MJPEG_BASE_PORT + instance_num
+                            )
                             logger.warning(f"Using hash-based ports for {email} (fallback)")
 
                         # Temporary directory for this instance
@@ -1165,8 +1173,12 @@ class Driver:
                         max_retries = 3
                         retry_delay = 1
 
-                        # Ensure we have a valid appium port - use 4723 as fallback
-                        appium_port = self.appium_port if self.appium_port is not None else 4723
+                        # Ensure we have a valid appium port - use centralized default as fallback
+                        from server.utils.port_utils import PortConfig
+
+                        appium_port = (
+                            self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
+                        )
 
                         for attempt in range(max_retries):
                             try:
@@ -1246,8 +1258,12 @@ class Driver:
                                 retry_delay *= 2
 
                         # Initialize driver with the options using the specific port
-                        # Ensure we have a valid appium port - use 4723 as fallback
-                        appium_port = self.appium_port if self.appium_port is not None else 4723
+                        # Ensure we have a valid appium port - use centralized default as fallback
+                        from server.utils.port_utils import PortConfig
+
+                        appium_port = (
+                            self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
+                        )
 
                         logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
 
@@ -1362,8 +1378,12 @@ class Driver:
                     error_msg = str(e)
                     # Check if error is related to Appium port
                     if "Failed to parse" in error_msg and "None/status" in error_msg:
-                        logger.error("Detected None port error - forcing port to 4723")
-                        self.appium_port = 4723
+                        from server.utils.port_utils import PortConfig
+
+                        logger.error(
+                            f"Detected None port error - forcing port to {PortConfig.APPIUM_BASE_PORT}"
+                        )
+                        self.appium_port = PortConfig.APPIUM_BASE_PORT
 
                     logger.info(f"Failed to initialize driver (attempt {attempt}/5): {e}")
                     if attempt < 5:

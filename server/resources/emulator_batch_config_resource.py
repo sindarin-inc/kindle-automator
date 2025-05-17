@@ -84,12 +84,13 @@ class EmulatorBatchConfigResource(Resource):
 
                     # Boot the emulator
                     logger.info(f"{GREEN}Starting emulator for {email}{RESET}")
-                    success = self.server.start_emulator(email)
+                    # Use switch_profile to start emulator, same as the successful flow
+                    success, message = self.server.switch_profile(email, force_new_emulator=False)
 
                     if not success:
-                        logger.error(f"{RED}Failed to start emulator for {email}{RESET}")
+                        logger.error(f"{RED}Failed to start emulator for {email}: {message}{RESET}")
                         result["status"] = "failed"
-                        result["error"] = "Failed to start emulator"
+                        result["error"] = f"Failed to start emulator: {message}"
                         failed_count += 1
                         results.append(result)
                         continue
@@ -111,10 +112,10 @@ class EmulatorBatchConfigResource(Resource):
                         continue
 
                     # Ensure state machine is initialized
-                    if not hasattr(automator, 'state_machine') or not automator.state_machine:
+                    if not hasattr(automator, "state_machine") or not automator.state_machine:
                         state_machine = KindleStateMachine(automator.driver, automator)
                         automator.state_machine = state_machine
-                    
+
                     # Get reference to state machine
                     state_machine = automator.state_machine
 
@@ -281,20 +282,21 @@ class EmulatorBatchConfigResource(Resource):
                 if profile.get("emulator_id") == emulator_id:
                     email = profile.get("email")
                     break
-            
+
             if email and email in self.server.automators:
                 automator = self.server.automators[email]
                 if automator and hasattr(automator, "driver") and automator.driver:
                     # There's an active automator, emulator is likely running
                     return True
-            
+
             # Fallback to basic ADB check
             import subprocess
+
             result = subprocess.run(
                 [f"{self.server.android_home}/platform-tools/adb", "devices"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
             return emulator_id in result.stdout
         except Exception as e:

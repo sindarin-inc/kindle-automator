@@ -385,7 +385,9 @@ class EmulatorLauncher:
 
             # Start VNC directly
             # Kill any existing VNC process for this display
-            vnc_port = 5900 + display_num
+            from server.utils.port_utils import calculate_vnc_port
+
+            vnc_port = calculate_vnc_port(display_num)
             subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
 
             # Set up environment

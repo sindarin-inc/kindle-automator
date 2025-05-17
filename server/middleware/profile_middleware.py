@@ -169,25 +169,14 @@ def ensure_user_profile_loaded(f):
 
         # First check if we need to start a dedicated Appium server for this email
         if sindarin_email not in server.appium_processes:
-            # Check if we're on macOS development environment
-            is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
+            from server.utils.port_utils import get_appium_port_for_email
+            from server.utils.vnc_instance_manager import VNCInstanceManager
 
-            # On macOS dev, always use port 4723 for consistency with driver code
-            if is_mac_dev:
-                port = 4723
-            else:
-                # Check if we have a stored Appium port for this email
-                stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
-
-                if stored_port:
-                    port = stored_port
-                    logger.info(f"Using stored Appium port {port} for {sindarin_email}")
-                else:
-                    # Calculate a unique port based on email hash if not stored
-                    base_port = 4723
-                    port_range = 276  # 4999 - 4723
-                    email_hash = hash(sindarin_email) % port_range
-                    port = base_port + email_hash
+            vnc_manager = VNCInstanceManager.get_instance()
+            port = get_appium_port_for_email(
+                sindarin_email, vnc_manager=vnc_manager, profiles_index=server.profile_manager.profiles_index
+            )
+            logger.info(f"Using Appium port {port} for {sindarin_email}")
 
             # Start the Appium server on this port and check for success
             appium_started = server.start_appium(port=port, email=sindarin_email)

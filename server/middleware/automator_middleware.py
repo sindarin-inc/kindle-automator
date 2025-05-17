@@ -149,19 +149,19 @@ def ensure_automator_healthy(f):
                     try:
                         logger.info(f"Resetting Appium server state for email {sindarin_email}")
 
-                        # Check if we have a stored Appium port for this email
-                        stored_port = server.profile_manager.get_appium_port_for_email(sindarin_email)
+                        from server.utils.port_utils import get_appium_port_for_email
+                        from server.utils.vnc_instance_manager import VNCInstanceManager
 
-                        if stored_port:
-                            port = stored_port
-                            logger.info(f"Using stored Appium port {port} for {sindarin_email}")
-                        else:
-                            # Calculate a unique port based on email hash if not stored
-                            base_port = 4723
-                            port_range = 276  # 4999 - 4723
-                            email_hash = hash(sindarin_email) % port_range
-                            port = base_port + email_hash
+                        vnc_manager = VNCInstanceManager.get_instance()
+                        port = get_appium_port_for_email(
+                            sindarin_email,
+                            vnc_manager=vnc_manager,
+                            profiles_index=server.profile_manager.profiles_index,
+                        )
+                        logger.info(f"Using Appium port {port} for {sindarin_email}")
 
+                        # If port wasn't already stored, store it for future use
+                        if not server.profile_manager.get_appium_port_for_email(sindarin_email):
                             # Store this port in the profile for future use
                             if hasattr(server.profile_manager, "register_profile"):
                                 # Get the AVD name for this email

@@ -386,27 +386,15 @@ class AVDProfileManager:
         Returns:
             Optional[int]: The Appium port or None if not assigned
         """
-        # Check if we're on macOS development environment
+        # Use centralized port utilities for all port calculations
+        from server.utils.port_utils import calculate_appium_port
+
+        # Check if we're on macOS development environment - use centralized check
+        # Port utils will handle the macOS special case internally
         try:
-            import os
-            import platform
+            # First try to get the appium_port from the VNC instance manager
+            from server.utils.vnc_instance_manager import VNCInstanceManager
 
-            environment = os.environ.get("ENVIRONMENT", "DEV")
-            is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
-            if is_mac_dev:
-                # On macOS, always use port 4723 for Appium
-                logger.info(
-                    f"Using default port 4723 for Appium in macOS development environment for {email}"
-                )
-                return 4723
-        except Exception as e:
-            logger.warning(f"Error checking platform in get_appium_port_for_email: {e}")
-            # Still proceed to other methods
-
-        # First try to get the appium_port from the VNC instance manager
-        from server.utils.vnc_instance_manager import VNCInstanceManager
-
-        try:
             vnc_manager = VNCInstanceManager.get_instance()
             appium_port = vnc_manager.get_appium_port(email)
             if appium_port:
@@ -423,19 +411,9 @@ class AVDProfileManager:
                 logger.warning(f"Using deprecated profiles_index appium_port for {email}")
                 return profile_entry["appium_port"]
 
-        # On macOS return default port even if nothing was found
-        try:
-            import os
-            import platform
-
-            environment = os.environ.get("ENVIRONMENT", "DEV")
-            is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
-            if is_mac_dev:
-                return 4723
-        except Exception:
-            pass
-
-        return None
+        # Use centralized port calculation as final fallback
+        # This handles macOS special case automatically
+        return calculate_appium_port(email=email)
 
     def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
         """

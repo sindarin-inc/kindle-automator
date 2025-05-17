@@ -169,7 +169,9 @@ class EmulatorShutdownManager:
 
                 # Stop VNC and Xvfb (Linux only)
                 if platform.system() != "Darwin" and display_num:
-                    vnc_port = 5900 + display_num
+                    from server.utils.port_utils import calculate_vnc_port
+
+                    vnc_port = calculate_vnc_port(display_num)
 
                     # Stop x11vnc
                     try:
