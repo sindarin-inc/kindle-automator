@@ -179,3 +179,4 @@ fixtures/dumps/*_[0-9]*\.xml
 fixtures/dumps/*.xml
 
 **/.claude/settings.local.json
+scripts/*.sh
