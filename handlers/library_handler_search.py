@@ -361,6 +361,34 @@ class LibraryHandlerSearch:
             results_from_section = None
             results_from_y = float("inf")  # Default to bottom of screen if not found
 
+            # Do a quick initial scan for the book before waiting for more elements
+            # This helps avoid unnecessary delays when the book is immediately visible
+            button_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.Button")
+            for button in button_elements:
+                try:
+                    content_desc = button.get_attribute("content-desc") or ""
+                    if content_desc and book_title.lower() in content_desc.lower():
+                        logger.info(f"Found book immediately via content-desc: '{content_desc}'")
+                        # Verify it's in the library section by checking for "In your library" text
+                        text_elements = self.driver.find_elements(
+                            AppiumBy.CLASS_NAME, "android.widget.TextView"
+                        )
+                        for text_elem in text_elements:
+                            if "In your library" in (text_elem.text or ""):
+                                logger.info(
+                                    "Confirmed 'In your library' section is present - proceeding with quick match"
+                                )
+                                # Create book info
+                                book_info = {"title": book_title}
+                                parts = content_desc.split(",")
+                                if len(parts) > 0:
+                                    book_info["title"] = parts[0].strip()
+                                if len(parts) > 1:
+                                    book_info["author"] = parts[1].strip()
+                                return button, button, book_info
+                except:
+                    continue
+
             # Get all text elements - wait a bit more for them to appear
             text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
 
@@ -880,8 +908,20 @@ class LibraryHandlerSearch:
                     )
                     search_query_element.clear()
                     search_query_element.send_keys(book_title)
-                    # Press Enter key
-                    self.driver.press_keycode(66)  # Android keycode for Enter/Search
+
+                    # Try multiple methods to submit the search
+                    # 1. Press search key
+                    self.driver.press_keycode(84)  # Android keycode for Search
+                    logger.info("Pressed Search key")
+
+                    # 2. Also try the editor action
+                    try:
+                        self.driver.execute_script("mobile: performEditorAction", {"action": "search"})
+                        logger.info("Executed search editor action")
+                    except:
+                        # Fallback to enter key
+                        self.driver.press_keycode(66)  # Android keycode for Enter
+                        logger.info("Pressed Enter key as fallback")
 
                     # Wait for search to complete - specifically for "In your library"
                     wait = WebDriverWait(self.driver, 10)
@@ -924,7 +964,7 @@ class LibraryHandlerSearch:
             search_box.click()
 
             # Wait for search input field to become visible
-            wait = WebDriverWait(self.driver, 10)
+            wait = WebDriverWait(self.driver, 3)
             try:
                 wait.until(EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/search_query")))
             except TimeoutException:
