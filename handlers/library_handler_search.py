@@ -357,6 +357,7 @@ class LibraryHandlerSearch:
 
             if not in_library_section:
                 logger.info("Could not find 'In your library' section")
+                store_page_source(self.driver.page_source, "in_your_library_not_found")
                 self._exit_search_mode()
                 return None
 
