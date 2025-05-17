@@ -1075,7 +1075,50 @@ class BookOpenResource(Resource):
                     f"No match found for book: {book_title} ({normalized_request_title}) != {current_book}, transitioning to library"
                 )
             else:
-                # We're in reading state but don't have current_book set - try to get it from UI
+                # We're in reading state but don't have current_book set
+                # First check if we have an actively reading title stored in profile settings
+                actively_reading_title = automator.profile_manager.get_style_setting(
+                    "actively_reading_title", email=sindarin_email
+                )
+                
+                if actively_reading_title:
+                    # Compare with the requested book
+                    normalized_request_title = "".join(
+                        c for c in book_title if c.isalnum() or c.isspace()
+                    ).lower()
+                    normalized_active_title = "".join(
+                        c for c in actively_reading_title if c.isalnum() or c.isspace()
+                    ).lower()
+
+                    logger.info(
+                        f"Title comparison with stored active title: requested='{normalized_request_title}', active='{normalized_active_title}'"
+                    )
+
+                    # Try exact match first
+                    if normalized_request_title == normalized_active_title:
+                        logger.info(f"Already reading book (stored active title exact match): {book_title}, returning current state")
+                        # Update server's current book tracking
+                        server.set_current_book(actively_reading_title, sindarin_email)
+                        return capture_book_state(already_open=True)
+
+                    # For longer titles, try to match the first 30+ characters or check if one title contains the other
+                    if (
+                        len(normalized_request_title) > 30
+                        and len(normalized_active_title) > 30
+                        and (
+                            normalized_request_title[:30] == normalized_active_title[:30]
+                            or normalized_request_title in normalized_active_title
+                            or normalized_active_title in normalized_request_title
+                        )
+                    ):
+                        logger.info(
+                            f"Already reading book (stored active title partial match): {book_title}, returning current state"
+                        )
+                        # Update server's current book tracking
+                        server.set_current_book(actively_reading_title, sindarin_email)
+                        return capture_book_state(already_open=True)
+                        
+                # If no match with stored title, try to get it from UI
                 try:
                     # Try to get the current book title from the reader UI
                     current_title_from_ui = automator.state_machine.reader_handler.get_book_title()

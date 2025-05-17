@@ -12,6 +12,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
+from server.utils.request_utils import get_sindarin_email
 from views.reading.interaction_strategies import (
     ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
     BOTTOM_SHEET_IDENTIFIERS,
@@ -914,6 +915,20 @@ class ReaderHandler:
         else:
             logger.info("Placemark mode disabled - skipping center tap")
 
+        # Save the actively reading title to profile settings
+        try:
+            sindarin_email = get_sindarin_email()
+            if sindarin_email:
+                self.driver.automator.profile_manager.save_style_setting(
+                    "actively_reading_title", book_title, email=sindarin_email
+                )
+                logger.info(f"Saved actively reading title: {book_title}")
+            else:
+                logger.warning("No sindarin_email available to save actively reading title")
+        except Exception as e:
+            logger.error(f"Error saving actively reading title: {e}")
+            # Don't fail the whole operation just because we couldn't save the title
+        
         return True
 
     def get_current_page(self):
@@ -1954,6 +1969,17 @@ class ReaderHandler:
             # Add debug page source dump after clicking close button
             filepath = store_page_source(self.driver.page_source, "failed_transition")
             logger.info(f"Stored page source after closing book at: {filepath}")
+            
+            # Clear the actively reading title when closing the book
+            try:
+                sindarin_email = get_sindarin_email()
+                if sindarin_email:
+                    self.driver.automator.profile_manager.save_style_setting(
+                        "actively_reading_title", None, email=sindarin_email
+                    )
+                    logger.info("Cleared actively reading title")
+            except Exception as e:
+                logger.error(f"Error clearing actively reading title: {e}")
 
             return True
 
