@@ -43,7 +43,6 @@ def get_sindarin_email() -> Optional[str]:
     if request.args.get("sindarin_email") and request.args.get("user_email"):
         staff_email = request.args.get("sindarin_email")
         user_email = request.args.get("user_email")
-        logger.info(f"Staff impersonation: {staff_email} impersonating {user_email}")
         return user_email
 
     # Check JSON body for impersonation
