@@ -110,9 +110,13 @@ class EmulatorBatchConfigResource(Resource):
                         results.append(result)
                         continue
 
-                    # Initialize state machine
-                    state_machine = KindleStateMachine(automator.driver)
-                    automator.state_machine = state_machine
+                    # Ensure state machine is initialized
+                    if not hasattr(automator, 'state_machine') or not automator.state_machine:
+                        state_machine = KindleStateMachine(automator.driver, automator)
+                        automator.state_machine = state_machine
+                    
+                    # Get reference to state machine
+                    state_machine = automator.state_machine
 
                     # Navigate to library
                     logger.info(f"Navigating to library for {email}")
@@ -270,14 +274,28 @@ class EmulatorBatchConfigResource(Resource):
     def _is_emulator_running(self, emulator_id):
         """Check if a specific emulator is running."""
         try:
-            # Use the emulator launcher to check
-            if hasattr(self.server, "emulator_launcher"):
-                return self.server.emulator_launcher._verify_emulator_running(emulator_id)
-
-            # Fallback to basic check
+            # Check if there's an existing automator for this profile
+            # First, find the email for this emulator_id
+            email = None
+            for profile in self.server.profile_manager.list_profiles():
+                if profile.get("emulator_id") == emulator_id:
+                    email = profile.get("email")
+                    break
+            
+            if email and email in self.server.automators:
+                automator = self.server.automators[email]
+                if automator and hasattr(automator, "driver") and automator.driver:
+                    # There's an active automator, emulator is likely running
+                    return True
+            
+            # Fallback to basic ADB check
             import subprocess
-
-            result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=False)
+            result = subprocess.run(
+                [f"{self.server.android_home}/platform-tools/adb", "devices"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
             return emulator_id in result.stdout
         except Exception as e:
             logger.error(f"Error checking if emulator is running: {e}")

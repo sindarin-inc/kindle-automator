@@ -48,6 +48,60 @@ class AutomationServer:
 
         return self.automators.get(email)
 
+    def get_or_create_automator(self, email):
+        """Get existing automator or create a new one for the given email.
+
+        Args:
+            email: The email address to get or create automator for
+
+        Returns:
+            The automator instance or None if creation failed
+        """
+        if not email:
+            logger.error("Email parameter is required for get_or_create_automator")
+            return None
+
+        # Check if we already have an automator
+        existing = self.get_automator(email)
+        if existing:
+            return existing
+
+        # Create a new one
+        return self.initialize_automator(email)
+
+    def start_emulator(self, email):
+        """Start an emulator for the given email address.
+
+        Args:
+            email: The email address to start emulator for
+
+        Returns:
+            bool: True if emulator started successfully, False otherwise
+        """
+        if not email:
+            logger.error("Email parameter is required for start_emulator")
+            return False
+
+        from server.utils.request_utils import email_override
+
+        try:
+            # Use email override context to ensure proper email routing
+            with email_override(email):
+                # Initialize automator which will start the emulator
+                automator = self.initialize_automator(email)
+                
+                if automator:
+                    # The emulator should already be started by initialize_automator
+                    # but we can verify it's running
+                    return True
+                else:
+                    logger.error(f"Failed to initialize automator for {email}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Error starting emulator for {email}: {e}")
+            return False
+
     def initialize_automator(self, email):
         """Initialize automator for VNC-based manual authentication.
 
