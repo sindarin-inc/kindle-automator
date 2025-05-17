@@ -83,7 +83,8 @@ class IdleCheckResource(Resource):
                     )
 
                     shutdown_manager = EmulatorShutdownManager(self.server)
-                    shutdown_summary = shutdown_manager.shutdown_emulator(email)
+                    # Idle shutdowns should navigate to library (preserve_reading_state=False)
+                    shutdown_summary = shutdown_manager.shutdown_emulator(email, preserve_reading_state=False)
 
                     # Check if shutdown was successful
                     if any(shutdown_summary.values()):

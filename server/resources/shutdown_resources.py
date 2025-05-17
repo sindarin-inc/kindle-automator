@@ -30,10 +30,12 @@ class ShutdownResource(Resource):
         if not sindarin_email:
             return {"error": "No email provided to identify which profile to shut down"}, 400
 
-        # Check if we should preserve reading state (default: False)
+        # Check if we should preserve reading state (default: True)
+        # Note: UI clients should pass preserve_reading_state=false for user-initiated shutdowns
+        # to ensure the Kindle app navigates to library and syncs reading position
         from flask import request
 
-        preserve_reading_state = request.args.get("preserve_reading_state", "false").lower() == "true"
+        preserve_reading_state = request.args.get("preserve_reading_state", "true").lower() == "true"
 
         try:
             # Use the shutdown manager to handle the shutdown
