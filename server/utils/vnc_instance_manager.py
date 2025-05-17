@@ -523,9 +523,14 @@ class VNCInstanceManager:
             success = avd_manager.set_user_field(email, "was_running_at_restart", True)
             
             if success:
-                logger.info(f"Marked {email} as running at deployment in AVDProfileManager")
+                logger.info(f"✓ Successfully marked {email} as running at deployment")
+                # Verify it was saved
+                verify = avd_manager.get_user_field(email, "was_running_at_restart", False)
+                logger.info(f"Verification: {email} was_running_at_restart = {verify}")
                 return True
-            return False
+            else:
+                logger.warning(f"Failed to mark {email} as running at deployment")
+                return False
         except Exception as e:
             logger.error(f"Error marking {email} as running at deployment: {e}")
             return False
@@ -544,11 +549,15 @@ class VNCInstanceManager:
             running_emails = []
             
             # Check each profile for the was_running_at_restart flag
+            logger.info(f"Checking {len(avd_manager.profiles_index)} profiles for restart flags")
             for email in avd_manager.profiles_index.keys():
                 was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
+                logger.debug(f"Profile {email}: was_running_at_restart = {was_running}")
                 if was_running:
                     running_emails.append(email)
+                    logger.info(f"✓ Found {email} marked for restart")
             
+            logger.info(f"Total emulators marked for restart: {len(running_emails)}")
             return running_emails
         except Exception as e:
             logger.error(f"Error getting running at restart emails: {e}")
@@ -564,10 +573,13 @@ class VNCInstanceManager:
             avd_manager = AVDProfileManager()
             
             # Clear flags for all profiles
+            cleared_count = 0
             for email in avd_manager.profiles_index.keys():
                 if avd_manager.get_user_field(email, "was_running_at_restart", False):
                     avd_manager.set_user_field(email, "was_running_at_restart", None)
+                    cleared_count += 1
+                    logger.debug(f"Cleared was_running_at_restart flag for {email}")
             
-            logger.info("Cleared all was_running_at_restart flags")
+            logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}")

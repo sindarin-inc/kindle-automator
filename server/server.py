@@ -2156,14 +2156,14 @@ def main():
     # Check ADB connectivity
     check_and_restart_adb_server()
 
+    # Auto-restart emulators that were running before the last shutdown
+    auto_restart_emulators_from_previous_session()
+
     # Save Flask server PID
     server.save_pid("flask", os.getpid())
 
     # Run the server directly, regardless of development mode
     run_server()
-
-    # Auto-restart emulators that were running before the last shutdown
-    auto_restart_emulators_from_previous_session()
 
 
 if __name__ == "__main__":
