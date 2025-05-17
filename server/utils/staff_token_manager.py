@@ -12,8 +12,16 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Path to the tokens file
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-TOKENS_FILE = os.path.join(BASE_DIR, "logs", "staff_tokens.json")
+# Store in the AVD profiles directory for persistence across deployments
+# In production this is /opt/android-sdk/profiles
+# In development (Mac) this is {project_root}/user_data
+if os.environ.get("FLASK_ENV") == "development" and os.uname().sysname == "Darwin":
+    # Mac development environment
+    project_root = Path(__file__).resolve().parent.parent.parent
+    TOKENS_FILE = os.path.join(project_root, "user_data", "staff_tokens.json")
+else:
+    # Production environment
+    TOKENS_FILE = "/opt/android-sdk/profiles/staff_tokens.json"
 
 
 def generate_token() -> str:

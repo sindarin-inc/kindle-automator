@@ -72,16 +72,16 @@
     # Delete existing directory contents (but not the directory itself)
     rm -rf /opt/kindle-automator/*
     rm -rf /opt/kindle-automator/.* 2>/dev/null || true
-    
+
     # Copy from temp repo to destination
     cp -R /tmp/kindle-repo/. /opt/kindle-automator/
-    
+
     # Restore venv folder if it was backed up
     if [ -d /tmp/kindle-temp/venv ]; then
       rm -rf /opt/kindle-automator/venv 2>/dev/null || true
       mv /tmp/kindle-temp/venv /opt/kindle-automator/
     fi
-    
+
     # Clean up
     rm -rf /tmp/kindle-repo
     rm -rf /tmp/kindle-temp
@@ -151,7 +151,7 @@
   register: uiautomator2_installed
   ignore_errors: yes
   changed_when: false
-  
+
 # Create systemd service file
 - name: Create systemd service file
   template:
