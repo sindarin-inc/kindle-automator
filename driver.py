@@ -1014,7 +1014,7 @@ class Driver:
 
                     # Set the device ID as both udid and deviceName for proper device targeting
                     options.set_capability("deviceName", self.device_id)
-                    options.set_capability("avd", self.device_id)
+                    options.set_capability("udid", self.device_id)
 
                     # Get Android ID for the device for more reliable identification
                     try:
@@ -1025,8 +1025,7 @@ class Driver:
                             check=True,
                         ).stdout.strip()
                         if android_id:
-                            options.set_capability("androidId", android_id)
-                            options.set_capability("udid", android_id)
+                            options.set_capability("appium:androidId", android_id)
                         else:
                             logger.warning("Could not retrieve Android ID")
                     except Exception as e:
