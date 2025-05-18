@@ -410,31 +410,21 @@ class VNCInstanceManager:
         Returns:
             Optional[int]: The Appium port or None if no instance is assigned
         """
-        try:
-            # Check if we're on macOS development environment
-            import platform as sys_platform  # Import inside the function to avoid name clash
-
-            if sys_platform.system() == "Darwin":
-                # On macOS dev, use a fixed appium port (4723) if no explicit port is assigned
-                # This helps with local debugging/development
-                logger.info(f"On macOS dev environment, using default Appium port 4723 for {email}")
-                return 4723
-        except Exception as e:
-            logger.warning(f"Error checking platform for appium port: {e}")
-            # Default to 4723 if there's any error on macOS
-            return 4723
-
         instance = self.get_instance_for_profile(email)
         if instance:
             # Return stored appium_port if available
             if "appium_port" in instance:
+                logger.info(f"Using VNC instance appium port {instance['appium_port']} for {email}")
                 return instance["appium_port"]
 
-            # Calculate port from ID if emulator_port is not available
+            # Calculate port from ID if appium_port is not available
             instance_id = instance.get("id")
             if instance_id:
-                return self.calculate_appium_port(instance_id)
+                calculated_port = self.calculate_appium_port(instance_id)
+                logger.info(f"Calculated appium port {calculated_port} from instance ID {instance_id} for {email}")
+                return calculated_port
 
+        logger.info(f"No VNC instance found for {email}, no appium port available")
         return None
 
     def get_emulator_id(self, email: str) -> Optional[str]:

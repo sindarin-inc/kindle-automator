@@ -42,24 +42,28 @@ def calculate_appium_port(email: str = None, instance_id: int = None) -> int:
         Calculated Appium port number
 
     Note:
-        In macOS development environment, always returns the base port (4723)
-        for compatibility with driver code.
+        In macOS development environment, returns the base port (4723)
+        only when no instance_id is provided. With an instance_id,
+        it correctly calculates unique ports for multiple emulators.
     """
     # Check if we're in macOS development environment
     environment = os.getenv("ENVIRONMENT", "DEV")
     is_mac_dev = environment.lower() == "dev" and platform.system() == "Darwin"
 
+    # If we have an instance_id, use it regardless of platform
+    if instance_id is not None:
+        # Sequential calculation for instance ID
+        return PortConfig.APPIUM_BASE_PORT + instance_id
+    
+    # Only use macOS default if no instance_id is provided
     if is_mac_dev:
-        # On macOS dev, always use port 4723 for consistency with driver code
+        # On macOS dev, use port 4723 when no instance is specified
         return PortConfig.APPIUM_BASE_PORT
 
     if email is not None:
         # Hash-based calculation for email
         email_hash = hash(email) % PortConfig.APPIUM_PORT_RANGE
         return PortConfig.APPIUM_BASE_PORT + email_hash
-    elif instance_id is not None:
-        # Sequential calculation for instance ID
-        return PortConfig.APPIUM_BASE_PORT + instance_id
     else:
         # Default to base port if no identifier provided
         return PortConfig.APPIUM_BASE_PORT

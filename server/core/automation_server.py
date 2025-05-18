@@ -379,6 +379,11 @@ class AutomationServer:
 
         # Import centralized port utilities
         from server.utils.port_utils import PortConfig, calculate_appium_port
+        from server.utils.vnc_instance_manager import VNCInstanceManager
+
+        # Get VNC instance manager to check for existing appium port assignment
+        vnc_manager = VNCInstanceManager.get_instance()
+        vnc_assigned_appium_port = vnc_manager.get_appium_port(email)
 
         # Find the next available slot
         # Check existing allocations and find a free slot
@@ -392,6 +397,9 @@ class AutomationServer:
         while slot in used_slots:
             slot += 1
 
+        # Use VNC assigned appium port if available, otherwise calculate
+        appium_port = vnc_assigned_appium_port if vnc_assigned_appium_port else calculate_appium_port(instance_id=slot)
+
         # Allocate ports using centralized configuration
         ports = {
             "slot": slot,
@@ -399,7 +407,7 @@ class AutomationServer:
             "bootstrapPort": PortConfig.BOOTSTRAP_BASE_PORT + slot,
             "chromedriverPort": PortConfig.CHROMEDRIVER_BASE_PORT + slot,
             "mjpegServerPort": PortConfig.MJPEG_BASE_PORT + slot,
-            "appiumPort": calculate_appium_port(instance_id=slot),
+            "appiumPort": appium_port,
         }
 
         self.allocated_ports[allocation_key] = ports
