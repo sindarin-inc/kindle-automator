@@ -285,13 +285,13 @@ class VNCInstanceManager:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
         # Look directly for the email in assigned_profile
-        logger.info(f"Looking for VNC instance for profile {email} in {self.instances}")
+        # logger.info(f"Looking for VNC instance for profile {email} in {self.instances}")
         for instance in self.instances:
             assigned_profile = instance.get("assigned_profile")
             if assigned_profile == email:
                 return instance
 
-        logger.info(f"No VNC instance found for email {email}")
+        # logger.info(f"No VNC instance found for email {email}")
         return None
 
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:

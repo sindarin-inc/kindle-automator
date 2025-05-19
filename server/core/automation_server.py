@@ -68,6 +68,7 @@ class AutomationServer:
 
         with EmailContext(email):
             # Initialize a new automator
+            logger.info(f"Initializing automator for profile {email}")
             automator = KindleAutomator()
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
@@ -80,6 +81,7 @@ class AutomationServer:
             # Set initial activity time
             self.update_activity(email)
 
+            logger.info(f"Initializing driver for profile {email}")
             automator.initialize_driver()
 
         return automator
@@ -156,7 +158,9 @@ class AutomationServer:
                 if not is_running:
                     logger.info(f"Emulator not running for {email} according to ADB")
                 if not device_available:
-                    logger.info(f"Device ID {self.automators[email].device_id} no longer available in ADB")
+                    logger.info(
+                        f"Device ID {self.automators[email].device_id} no longer available in ADB: {self.automators[email]}"
+                    )
 
                 if not force_new_emulator:
                     # We no longer have a concept of "current" profile
