@@ -16,13 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class Driver:
-    _instance = None
     _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(Driver, cls).__new__(cls)
-        return cls._instance
 
     def __init__(self):
         if hasattr(self, "_initialized_attributes"):
@@ -1329,15 +1323,3 @@ class Driver:
                 self.driver = None
                 self.device_id = None
                 Driver._initialized = False  # Allow reinitialization
-
-    @classmethod
-    def reset(cls):
-        """Reset the singleton instance"""
-        logger.info("Resetting Driver")
-        if cls._instance:
-            try:
-                cls._instance.quit()
-            except Exception as e:
-                logger.error(f"Error quitting driver: {e}")
-            cls._instance = None
-            cls._initialized = False

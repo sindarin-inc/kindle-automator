@@ -37,16 +37,18 @@ class KindleAutomator:
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
+        logger.info(f"Initializing driver in KindleAutomator {self}")
         # Create and initialize driver
         driver = Driver()
         # Set the automator reference in the driver
         driver.automator = self
-
+        logger.info(f"Initialized driver in KindleAutomator {driver}")
         if not driver.initialize():
             logger.error("Failed to initialize driver")
             return False
 
         self.driver = driver.get_appium_driver_instance()
+        logger.info(f"Initialized driver.driver in KindleAutomator {self.driver}")
 
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it
