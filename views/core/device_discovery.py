@@ -92,12 +92,12 @@ class DeviceDiscovery:
                     return avd_name
 
             # Use AVD Profile Manager to find the AVD name
+            from server.utils.request_utils import get_sindarin_email
             from views.core.avd_profile_manager import AVDProfileManager
-            from server.profile.profile_manager import get_sindarin_email
-            
+
             avd_manager = AVDProfileManager()
             sindarin_email = get_sindarin_email()
-            
+
             # First check if the current sindarin email has a profile
             if sindarin_email and sindarin_email in avd_manager.profiles_index:
                 profile = avd_manager.profiles_index[sindarin_email]
@@ -105,9 +105,11 @@ class DeviceDiscovery:
                 if avd_name:
                     avd_path = os.path.join(avd_manager.avd_dir, f"{avd_name}.avd")
                     if os.path.exists(avd_path):
-                        logger.info(f"[DIAG] Found AVD {avd_name} for current sindarin email {sindarin_email}")
+                        logger.info(
+                            f"[DIAG] Found AVD {avd_name} for current sindarin email {sindarin_email}"
+                        )
                         return avd_name
-            
+
             # Fallback: Check each profile to see if it could be running on this emulator
             for email, profile in avd_manager.profiles_index.items():
                 avd_name = profile.get("avd_name")
@@ -118,7 +120,7 @@ class DeviceDiscovery:
                         logger.info(f"[DIAG] Found existing AVD {avd_name} for profile {email}")
                         # For now, assume first found AVD is the one
                         return avd_name
-            
+
             logger.info(f"[DIAG] No AVD found for emulator {emulator_id} in profiles")
         except Exception as e:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
