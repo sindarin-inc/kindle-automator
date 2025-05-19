@@ -2030,7 +2030,12 @@ def cleanup_resources():
     logger.info(f"Checking {len(server.automators)} automators for running emulators...")
 
     for email, automator in server.automators.items():
-        if automator and hasattr(automator, "driver") and automator.driver:
+        if (
+            automator
+            and hasattr(automator, "driver")
+            and automator.driver
+            and automator.driver.check_connection()
+        ):
             try:
                 logger.info(f"✓ Marking {email} as running at restart for deployment recovery")
                 vnc_manager.mark_running_for_deployment(email)

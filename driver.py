@@ -792,8 +792,7 @@ class Driver:
             logger.error(f"Error getting Kindle launch activity: {e}")
             return None
 
-    def initialize(self):
-        """Initialize Appium driver with retry logic. Safe to call multiple times."""
+    def check_connection(self):
         if self.driver:
             # Test if driver is still connected
             try:
@@ -805,6 +804,11 @@ class Driver:
             except Exception as e:
                 logger.info(f"Driver not connected - reinitializing {self}")
                 self.driver = None
+
+    def initialize(self):
+        """Initialize Appium driver with retry logic. Safe to call multiple times."""
+        if self.check_connection():
+            return True
 
         # Get device ID first, using specific device ID from profile if available
         target_device_id = None
@@ -1122,7 +1126,7 @@ class Driver:
 
             import requests
 
-            max_retries = 3
+            max_retries = 5
             retry_delay = 1
 
             # Ensure we have a valid appium port - use centralized default as fallback
