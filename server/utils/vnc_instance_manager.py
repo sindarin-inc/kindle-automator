@@ -565,7 +565,7 @@ class VNCInstanceManager:
         """
         try:
             reset_count = 0
-            for instance in self.instances.values():
+            for instance in self.instances:  # instances is a list, not a dict
                 if instance.get("appium_running", False):
                     instance["appium_running"] = False
                     instance["appium_pid"] = None

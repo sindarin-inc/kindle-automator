@@ -425,8 +425,17 @@ class AVDProfileManager:
         Returns:
             Optional[str]: The emulator ID if found, None otherwise
         """
+        # First check if emulator_manager has cached info
+        cached_info = None
+        if hasattr(self.emulator_manager, '_emulator_cache'):
+            for email, (emulator_id, cached_avd_name, _) in self.emulator_manager._emulator_cache.items():
+                if cached_avd_name == avd_name:
+                    logger.info(f"Found cached emulator {emulator_id} for AVD {avd_name}")
+                    cached_info = (avd_name, emulator_id)
+                    break
+        
         # Look for running emulators with this AVD name
-        running_emulators = self.device_discovery.map_running_emulators()
+        running_emulators = self.device_discovery.map_running_emulators(cached_info=cached_info)
         emulator_id = running_emulators.get(avd_name)
         return emulator_id
 
@@ -612,11 +621,53 @@ class AVDProfileManager:
             Optional[Dict]: Profile information for a running emulator or None if none found
         """
         try:
-            # Check for running emulators
-            running_emulators = self.device_discovery.map_running_emulators()
-            logger.info(f"[DIAG] Running emulators map: {running_emulators}")
             sindarin_email = get_sindarin_email()
             logger.info(f"[DIAG] Sindarin email: {sindarin_email}")
+            
+            # Special case for macOS development environment
+            is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
+            
+            # First check if we have a valid cached profile and emulator
+            if (sindarin_email and hasattr(self.emulator_manager, '_emulator_cache') 
+                and sindarin_email in self.emulator_manager._emulator_cache):
+                emulator_id, avd_name, cache_time = self.emulator_manager._emulator_cache[sindarin_email]
+                logger.info(f"[DIAG] Found cached emulator info for {sindarin_email}: {emulator_id}, {avd_name}")
+                
+                # Quick verification that the emulator is still running
+                if self.emulator_manager.emulator_launcher._verify_emulator_running(emulator_id):
+                    logger.info(f"[DIAG] Cached emulator {emulator_id} is verified running")
+                    
+                    # Check if we have this profile
+                    if sindarin_email in self.profiles_index:
+                        profile = self.profiles_index[sindarin_email].copy()  # Make a copy
+                        logger.info(f"[DIAG] Using cached profile for {sindarin_email}")
+                        
+                        # Add user preferences if available
+                        if sindarin_email in self.user_preferences:
+                            for key, value in self.user_preferences[sindarin_email].items():
+                                if key not in profile:  # Don't overwrite profile data
+                                    profile[key] = value
+                        
+                        # Update it with the running emulator ID
+                        profile["emulator_id"] = emulator_id
+                        # Update last used timestamp
+                        profile["last_used"] = int(time.time())
+                        return profile
+                else:
+                    logger.info(f"[DIAG] Cached emulator {emulator_id} no longer running, clearing cache")
+                    del self.emulator_manager._emulator_cache[sindarin_email]
+            
+            # Only call map_running_emulators if we don't have valid cached data
+            cached_info = None
+            if (sindarin_email and hasattr(self.emulator_manager, '_emulator_cache') 
+                and sindarin_email in self.emulator_manager._emulator_cache):
+                emulator_id, avd_name, _ = self.emulator_manager._emulator_cache[sindarin_email]
+                cached_info = (avd_name, emulator_id)
+                logger.info(f"[DIAG] Preparing cached info for map_running_emulators: {cached_info}")
+            
+            # Check for running emulators
+            running_emulators = self.device_discovery.map_running_emulators(cached_info=cached_info)
+            logger.info(f"[DIAG] Running emulators map: {running_emulators}")
 
             # Special case for macOS development environment
             is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"

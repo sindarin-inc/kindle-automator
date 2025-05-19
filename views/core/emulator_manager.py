@@ -29,6 +29,24 @@ class EmulatorManager:
         from server.utils.emulator_launcher import EmulatorLauncher
 
         self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
+        
+        # Cache for emulator state to avoid repeated ADB queries
+        # Maps email to (emulator_id, avd_name, last_check_time)
+        self._emulator_cache = {}
+        
+    def get_cached_emulator_info(self, email: str) -> Optional[Tuple[str, str]]:
+        """Get cached emulator info without doing ADB queries.
+        
+        Args:
+            email: The email address
+            
+        Returns:
+            Tuple of (emulator_id, avd_name) if cached and valid, None otherwise
+        """
+        if email in self._emulator_cache:
+            emulator_id, avd_name, _ = self._emulator_cache[email]
+            return emulator_id, avd_name
+        return None
 
     def is_emulator_running(self) -> bool:
         """Check if an emulator is currently running."""
@@ -89,7 +107,18 @@ class EmulatorManager:
             from views.core.device_discovery import DeviceDiscovery
 
             device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
-            running_emulators = device_discovery.map_running_emulators()
+            
+            # Check if we have cached info for the target AVD
+            cached_info = None
+            if target_avd_name:
+                # Look through our cache to find matching AVD name
+                for email, (emulator_id, avd_name, _) in self._emulator_cache.items():
+                    if avd_name == target_avd_name:
+                        cached_info = (avd_name, emulator_id)
+                        logger.info(f"Found cached info for target AVD {target_avd_name}: {emulator_id}")
+                        break
+            
+            running_emulators = device_discovery.map_running_emulators(cached_info=cached_info)
             logger.info(f"Found running emulators: {running_emulators}")
 
             if running_emulators:
@@ -173,7 +202,15 @@ class EmulatorManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        return self._stop_specific_emulator(emulator_id)
+        success = self._stop_specific_emulator(emulator_id)
+        if success:
+            # Clear cache for this emulator
+            for email, (cached_id, _, _) in list(self._emulator_cache.items()):
+                if cached_id == emulator_id:
+                    del self._emulator_cache[email]
+                    logger.info(f"Cleared cache for emulator {emulator_id} (email: {email})")
+                    break
+        return success
 
     def _stop_specific_emulator(self, emulator_id: str) -> bool:
         """
@@ -268,6 +305,8 @@ class EmulatorManager:
             # Final check
             if not self.is_emulator_running():
                 logger.info("All emulators stopped successfully")
+                # Clear cache when all emulators are stopped
+                self._emulator_cache.clear()
                 return True
             else:
                 logger.warning("Failed to completely terminate all emulator processes")
@@ -284,6 +323,19 @@ class EmulatorManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
+            # Check if we have cached emulator info for this email
+            if email in self._emulator_cache:
+                emulator_id, avd_name, cache_time = self._emulator_cache[email]
+                logger.info(f"Found cached emulator info for {email}: {emulator_id}, {avd_name}")
+                
+                # Verify the cached emulator is still running
+                if self.emulator_launcher._verify_emulator_running(emulator_id):
+                    logger.info(f"Cached emulator {emulator_id} is still running for {email}")
+                    return True
+                else:
+                    logger.info(f"Cached emulator {emulator_id} is no longer running, removing from cache")
+                    del self._emulator_cache[email]
+            
             # First check for stale cache entries and clean them before launching
             avd_name = self.emulator_launcher._extract_avd_name_from_email(email)
             if avd_name and avd_name in self.emulator_launcher.running_emulators:
@@ -316,6 +368,21 @@ class EmulatorManager:
 
             if success:
                 logger.info(f"Emulator {emulator_id} launched successfully on display :{display_num}")
+                
+                # Cache the emulator info to avoid repeated ADB queries
+                self._emulator_cache[email] = (emulator_id, avd_name, time.time())
+                logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
+                
+                # For macOS simplified mode, also ensure the profile has the proper AVD name
+                if self.use_simplified_mode and avd_name:
+                    from views.core.avd_profile_manager import AVDProfileManager
+                    profile_manager = AVDProfileManager()
+                    if email in profile_manager.profiles_index:
+                        profile = profile_manager.profiles_index[email]
+                        if not profile.get("avd_name"):
+                            profile["avd_name"] = avd_name
+                            profile_manager._save_profiles_index()
+                            logger.info(f"Updated profile with AVD name {avd_name} for {email} in simplified mode")
 
                 # Check adb devices immediately after launch to see if it's detected
                 try:

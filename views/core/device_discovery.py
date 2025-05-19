@@ -97,6 +97,15 @@ class DeviceDiscovery:
 
             avd_manager = AVDProfileManager()
             sindarin_email = get_sindarin_email()
+            
+            # In simplified mode, we may not have AVD names in profiles
+            if avd_manager.use_simplified_mode:
+                logger.info(f"[DIAG] Simplified mode active, skipping AVD name lookup")
+                # In simplified mode, return a placeholder AVD name that includes the email
+                if sindarin_email:
+                    normalized_email = sindarin_email.replace("@", "_").replace(".", "_")
+                    return f"KindleAVD_{normalized_email}"
+                return None
 
             # First check if the current sindarin email has a profile
             if sindarin_email and sindarin_email in avd_manager.profiles_index:
@@ -127,17 +136,27 @@ class DeviceDiscovery:
 
         return None
 
-    def map_running_emulators(self) -> Dict[str, str]:
+    def map_running_emulators(self, cached_info: Optional[Tuple[str, str]] = None) -> Dict[str, str]:
         """
         Map running emulators to their device IDs.
         This method never kills or restarts the ADB server if it's already running properly.
         It only starts the server if the initial version check indicates issues.
+
+        Args:
+            cached_info: Optional tuple of (avd_name, emulator_id) to skip ADB query for this specific emulator
 
         Returns:
             Dict[str, str]: Mapping of emulator names to device IDs
         """
         running_emulators = {}
         logger.info("[DIAG] Starting map_running_emulators")
+        
+        # If we have cached info, add it to the result without ADB query
+        if cached_info:
+            avd_name, emulator_id = cached_info
+            logger.info(f"[DIAG] Using cached info: {avd_name} -> {emulator_id}")
+            running_emulators[avd_name] = emulator_id
+            # Still check ADB for other emulators that might be running
 
         try:
             # Try a faster check first
