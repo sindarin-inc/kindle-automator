@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import time
 from typing import Dict, Optional, Tuple
@@ -72,7 +73,7 @@ class DeviceDiscovery:
 
     def _get_avd_name_for_emulator(self, emulator_id: str, current_profile=None) -> Optional[str]:
         """
-        Get the AVD name for a running emulator.
+        Get the AVD name for a running emulator using AVD Profile Manager.
 
         Args:
             emulator_id: The emulator device ID (e.g., 'emulator-5554')
@@ -81,7 +82,7 @@ class DeviceDiscovery:
         Returns:
             Optional[str]: The AVD name or None if not found
         """
-        logger.info(f"[DIAG] Getting AVD name for emulator {emulator_id}")
+        logger.info(f"[DIAG] Getting AVD name for emulator {emulator_id} using AVD Profile Manager")
         try:
             # First check current profile if we have a matching emulator ID
             if current_profile and current_profile.get("emulator_id") == emulator_id:
@@ -90,72 +91,35 @@ class DeviceDiscovery:
                     logger.info(f"Found AVD {avd_name} in current profile for emulator {emulator_id}")
                     return avd_name
 
-            # Use adb to get the AVD name via shell getprop with a short timeout
-            cmd = [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"]
-            logger.info(f"[DIAG] Running command: {' '.join(cmd)}")
-            result = subprocess.run(
-                cmd,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=2,  # Very short timeout to avoid hanging
-            )
-
-            if result.returncode == 0 and result.stdout.strip():
-                # Clean the AVD name - remove any newlines or trailing OK messages
-                raw_name = result.stdout.strip()
-                logger.info(f"[DIAG] Got raw AVD name: '{raw_name}'")
-
-                # Clean the name - sometimes it comes with "OK" suffix or newlines
-                if "\n" in raw_name:
-                    # Split by newline and take the first part that's not empty
-                    parts = [p.strip() for p in raw_name.split("\n") if p.strip()]
-                    if parts:
-                        clean_name = parts[0]
-                        avd_name = clean_name
-                    else:
-                        avd_name = raw_name  # Fallback to raw if no good parts
-                else:
-                    avd_name = raw_name
-
-                # Further cleanup - remove trailing "OK" which sometimes appears
-                if avd_name.endswith(" OK") or avd_name.endswith("\nOK"):
-                    avd_name = avd_name.replace(" OK", "").replace("\nOK", "")
-                    logger.info(f"Removed trailing 'OK' from AVD name: {avd_name}")
-
-                logger.info(f"[DIAG] Returning cleaned AVD name: '{avd_name}'")
-                return avd_name
-            else:
-                logger.info(f"[DIAG] Failed to get AVD name via 'emu avd name': returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'")
-
-            # Alternative approach - try to get product.device property with short timeout
-            result = subprocess.run(
-                [
-                    f"{self.android_home}/platform-tools/adb",
-                    "-s",
-                    emulator_id,
-                    "shell",
-                    "getprop",
-                    "ro.build.product",
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-
-            if result.returncode == 0 and result.stdout.strip():
-                # This gives us the device name (e.g., 'pixel'), not the AVD name
-                device_name = result.stdout.strip()
-
-                # If we have a current profile and there's only one entry, use that
-                if current_profile:
-                    avd_name = current_profile.get("avd_name")
-                    if avd_name:
-                        logger.info(f"Using current profile AVD {avd_name} for emulator {emulator_id}")
+            # Use AVD Profile Manager to find the AVD name
+            from views.core.avd_profile_manager import AVDProfileManager
+            from server.profile.profile_manager import get_sindarin_email
+            
+            avd_manager = AVDProfileManager()
+            sindarin_email = get_sindarin_email()
+            
+            # First check if the current sindarin email has a profile
+            if sindarin_email and sindarin_email in avd_manager.profiles_index:
+                profile = avd_manager.profiles_index[sindarin_email]
+                avd_name = profile.get("avd_name")
+                if avd_name:
+                    avd_path = os.path.join(avd_manager.avd_dir, f"{avd_name}.avd")
+                    if os.path.exists(avd_path):
+                        logger.info(f"[DIAG] Found AVD {avd_name} for current sindarin email {sindarin_email}")
                         return avd_name
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Timeout getting AVD name for emulator {emulator_id}")
+            
+            # Fallback: Check each profile to see if it could be running on this emulator
+            for email, profile in avd_manager.profiles_index.items():
+                avd_name = profile.get("avd_name")
+                if avd_name:
+                    # Check if this AVD exists and could be our emulator
+                    avd_path = os.path.join(avd_manager.avd_dir, f"{avd_name}.avd")
+                    if os.path.exists(avd_path):
+                        logger.info(f"[DIAG] Found existing AVD {avd_name} for profile {email}")
+                        # For now, assume first found AVD is the one
+                        return avd_name
+            
+            logger.info(f"[DIAG] No AVD found for emulator {emulator_id} in profiles")
         except Exception as e:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
 
@@ -293,7 +257,7 @@ class DeviceDiscovery:
 
                         # Only proceed if the emulator device is actually available (not 'offline')
                         if device_state != "offline":
-                            # Query emulator for AVD name with timeout
+                            # Query AVD name using AVD Profile Manager
                             avd_name = self._get_avd_name_for_emulator(emulator_id)
                             logger.info(f"[DIAG] AVD name for {emulator_id}: {avd_name}")
                             if avd_name:

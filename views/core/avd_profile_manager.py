@@ -621,10 +621,41 @@ class AVDProfileManager:
             # Special case for macOS development environment
             is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
 
-            # If there are running emulators or we're in macOS dev mode, try to find the profile
+            # Always check if we have a profile for the current user
+            logger.info(f"[DIAG] Profiles index contains: {list(self.profiles_index.keys())}")
+            if sindarin_email in self.profiles_index:
+                profile = self.profiles_index[sindarin_email]
+                logger.info(f"[DIAG] Found profile for {sindarin_email}: {profile}")
+                
+                # Also check if there's a running emulator at all
+                try:
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    
+                    if result.returncode == 0:
+                        lines = result.stdout.strip().split("\n")
+                        has_emulator = any("emulator-" in line for line in lines[1:])
+                        logger.info(f"[DIAG] ADB shows emulator running: {has_emulator}")
+                        
+                        if has_emulator or is_mac_dev:
+                            # Add user preferences if available
+                            if sindarin_email in self.user_preferences:
+                                for key, value in self.user_preferences[sindarin_email].items():
+                                    if key not in profile:  # Don't overwrite profile
+                                        profile[key] = value
+                            
+                            return profile
+                except Exception as e:
+                    logger.warning(f"Error checking for running emulators: {e}")
+            
+            # Fallback to original logic if needed
             if running_emulators or is_mac_dev:
                 # First, try to find a profile that matches one of the running emulators
-                logger.info(f"[DIAG] Profiles index contains: {list(self.profiles_index.keys())}")
                 for email, profile in self.profiles_index.items():
                     logger.info(f"[DIAG] Checking email {email} against sindarin_email {sindarin_email}")
                     if email != sindarin_email:
