@@ -51,10 +51,16 @@ class AppiumDriver:
             logger.error(f"No VNC instance found for profile {email}")
             return False
             
-        # Check if already running
+        # Check if already running - verify with actual health check
         if instance.get("appium_running", False):
-            logger.info(f"Appium already running for {email}")
-            return True
+            # Verify the process is actually healthy
+            if self._check_appium_health(email):
+                logger.info(f"Appium already running and healthy for {email}")
+                return True
+            else:
+                logger.info(f"Appium marked as running but not healthy for {email}, restarting")
+                instance["appium_running"] = False
+                self.vnc_manager.save_instances()
             
         port = instance["appium_port"]
         process_name = f"appium_{email}"
@@ -90,18 +96,24 @@ class AppiumDriver:
                     if os.path.exists(bin_path) and bin_path not in env.get("PATH", ""):
                         env["PATH"] = f"{bin_path}:{env.get('PATH', '')}"
             
+            cmd = [
+                appium_cmd,
+                "--port", str(port),
+                "--log-level", "info",
+            ]
+            logger.info(f"Starting Appium with command: {' '.join(cmd)}")
+            logger.info(f"Using appium executable: {appium_cmd}")
+            logger.info(f"Logging to: {log_file}")
+            
             with open(log_file, "w") as log:
                 process = subprocess.Popen(
-                    [
-                        appium_cmd,
-                        "--port", str(port),
-                        "--log-level", "info",
-                    ],
+                    cmd,
                     stdout=log,
                     stderr=log,
                     text=True,
                     env=env,
                 )
+                logger.info(f"Appium process started with PID: {process.pid}")
                 
             # Save PID
             self._save_pid(process_name, process.pid)
@@ -136,7 +148,7 @@ class AppiumDriver:
             return False
                 
         except Exception as e:
-            logger.error(f"Error starting Appium for {email}: {e}")
+            logger.error(f"Error starting Appium for {email}: {e}", exc_info=True)
             return False
     
     def stop_appium_for_profile(self, email: str) -> bool:
@@ -305,9 +317,12 @@ class AppiumDriver:
             "/opt/homebrew/bin/appium",  # Common macOS Homebrew location
             "/usr/local/bin/appium",  # Common Linux/macOS location
             "/usr/bin/appium",  # Common Linux location
+            "/usr/local/lib/node_modules/.bin/appium",  # npm bin symlink
             os.path.expanduser("~/.nvm/versions/node/*/bin/appium"),  # NVM install
             os.path.expanduser("~/.npm-global/bin/appium"),  # NPM global
         ]
+        
+        logger.info(f"Searching for Appium executable in: {appium_paths}")
         
         for path in appium_paths:
             # Handle wildcards
@@ -320,11 +335,15 @@ class AppiumDriver:
                     
             # Skip PATH check for now
             if path != "appium":
-                if not os.path.exists(path) or not os.access(path, os.X_OK):
+                exists = os.path.exists(path)
+                executable = os.access(path, os.X_OK) if exists else False
+                logger.debug(f"Checking path {path}: exists={exists}, executable={executable}")
+                if not exists or not executable:
                     continue
                     
             # Try to verify it works
             try:
+                logger.debug(f"Testing appium at {path}")
                 version_check = subprocess.run(
                     [path, "--version"],
                     capture_output=True,
@@ -332,9 +351,12 @@ class AppiumDriver:
                     check=False,
                     timeout=2
                 )
+                logger.debug(f"Version check for {path}: returncode={version_check.returncode}, stdout={version_check.stdout[:100]}")
                 if version_check.returncode == 0:
+                    logger.info(f"Found working appium at: {path}")
                     return path
-            except (subprocess.SubprocessError, OSError):
+            except (subprocess.SubprocessError, OSError) as e:
+                logger.debug(f"Error checking {path}: {e}")
                 continue
                 
         # Fallback to PATH

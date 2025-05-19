@@ -8,6 +8,7 @@ from typing import Optional
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from flask import current_app
+from urllib3.exceptions import MaxRetryError
 
 from server.utils.request_utils import get_sindarin_email
 
@@ -24,7 +25,7 @@ class Driver:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, '_initialized_attributes'):
+        if hasattr(self, "_initialized_attributes"):
             return
         self.driver = None
         self.device_id = None
@@ -1205,7 +1206,12 @@ class Driver:
 
             logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
 
-            self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
+            try:
+                self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
+            except MaxRetryError as e:
+                logger.error(f"Failed to connect to Appium server on port {appium_port}: {e}")
+                return False
+
             logger.info(f"Driver initialized successfully on port {appium_port} for device {self.device_id}")
 
             # Force a state check after driver initialization with a timeout
