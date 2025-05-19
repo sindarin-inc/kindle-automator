@@ -60,24 +60,16 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
 
                     # Use email override context to ensure proper email routing
                     with email_override(email):
-                        # Use switch_profile instead of start_emulator to ensure proper initialization
-                        success, message = server.switch_profile(email, force_new_emulator=False)
-
-                        if success:
-                            # Initialize the automator to ensure the driver is ready
-                            automator = server.initialize_automator(email)
-                            if automator and automator.initialize_driver():
-                                logger.info(f"✓ Successfully restarted emulator for {email}")
-                                successfully_restarted.append(email)
-                                # Add a delay between restarts to avoid overwhelming the system
-                                time.sleep(5)
-                            else:
-                                logger.error(f"✗ Failed to initialize driver for {email}")
-                                failed_restarts.append(email)
+                        # Initialize the automator to ensure the driver is ready
+                        automator = server.initialize_automator(email)
+                        if automator and automator.initialize_driver():
+                            logger.info(f"✓ Successfully restarted emulator for {email}")
+                            successfully_restarted.append(email)
+                            # Add a delay between restarts to avoid overwhelming the system
+                            time.sleep(5)
                         else:
-                            logger.error(f"✗ Failed to start emulator for {email}: {message}")
+                            logger.error(f"✗ Failed to initialize driver for {email}")
                             failed_restarts.append(email)
-
                 except Exception as e:
                     logger.error(f"✗ Error restarting emulator for {email}: {e}")
                     failed_restarts.append(email)

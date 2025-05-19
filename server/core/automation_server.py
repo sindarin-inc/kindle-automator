@@ -110,7 +110,7 @@ class AutomationServer:
 
     def _switch_profile_impl(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """Internal implementation of switch_profile with email context already set."""
-
+        logger.info(f"Switching profile for {email}")
         # current_email field has been removed
         # Always use explicit email parameters in all operations
 
