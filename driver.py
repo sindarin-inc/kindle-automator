@@ -184,7 +184,7 @@ class Driver:
                     logger.warning("Cannot update profile setting: no current profile")
                     return
 
-                email = profile.get("assigned_profile")
+                email = get_sindarin_email()
                 avd_name = profile.get("avd_name")
 
                 if email and avd_name:

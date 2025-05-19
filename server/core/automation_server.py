@@ -69,44 +69,6 @@ class AutomationServer:
         # Create a new one
         return self.initialize_automator(email)
 
-    def start_emulator(self, email):
-        """Start an emulator for the given email address.
-
-        Args:
-            email: The email address to start emulator for
-
-        Returns:
-            bool: True if emulator started successfully, False otherwise
-        """
-        if not email:
-            logger.error("Email parameter is required for start_emulator")
-            return False
-
-        from server.utils.request_utils import email_override
-
-        try:
-            # Use email override context to ensure proper email routing
-            with email_override(email):
-                # Use switch_profile to share the same emulator launching logic
-                success, message = self.switch_profile(email, force_new_emulator=False)
-
-                if success:
-                    # Initialize the automator to ensure the driver is ready
-                    automator = self.initialize_automator(email)
-                    if automator and automator.initialize_driver():
-                        logger.info(f"Successfully started emulator for {email}")
-                        return True
-                    else:
-                        logger.error(f"Failed to initialize driver for {email}")
-                        return False
-                else:
-                    logger.error(f"Failed to start emulator for {email}: {message}")
-                    return False
-
-        except Exception as e:
-            logger.error(f"Error starting emulator for {email}: {e}")
-            return False
-
     def initialize_automator(self, email):
         """Initialize automator for VNC-based manual authentication.
 
@@ -398,7 +360,9 @@ class AutomationServer:
             slot += 1
 
         # Use VNC assigned appium port if available, otherwise calculate
-        appium_port = vnc_assigned_appium_port if vnc_assigned_appium_port else calculate_appium_port(instance_id=slot)
+        appium_port = (
+            vnc_assigned_appium_port if vnc_assigned_appium_port else calculate_appium_port(instance_id=slot)
+        )
 
         # Allocate ports using centralized configuration
         ports = {
