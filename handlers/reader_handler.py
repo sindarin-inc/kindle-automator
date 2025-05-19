@@ -13,6 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
 from server.utils.request_utils import get_sindarin_email
+from server.utils.screenshot_utils import take_adb_screenshot
 from views.reading.interaction_strategies import (
     ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
     BOTTOM_SHEET_IDENTIFIERS,
@@ -961,18 +962,32 @@ class ReaderHandler:
         try:
             logger.info("Capturing page screenshot...")
 
-            # Take screenshot using adb for better quality
-            result = subprocess.run(
-                ["adb", "exec-out", "screencap", "-p"],
-                check=True,
-                capture_output=True,
-            )
+            # Get device ID from driver
+            device_id = None
+            if hasattr(self.driver, "automator") and self.driver.automator:
+                device_id = self.driver.automator.device_id
+            elif hasattr(self.driver, "_caps") and "udid" in self.driver._caps:
+                device_id = self.driver._caps["udid"]
+            else:
+                # Try to get from adb devices
+                result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+                lines = result.stdout.strip().split("\n")[1:]
+                if lines and "device" in lines[0]:
+                    device_id = lines[0].split("\t")[0]
 
-            image = Image.open(BytesIO(result.stdout))
+            if not device_id:
+                logger.error("Could not determine device ID for screenshot")
+                return False
+
             screenshot_path = os.path.join(self.screenshots_dir, "reading_page.png")
-            image.save(screenshot_path)
-            logger.info(f"Successfully saved page screenshot to {screenshot_path}")
-            return True
+            result_path = take_adb_screenshot(device_id, screenshot_path)
+
+            if result_path:
+                logger.info(f"Successfully saved page screenshot to {result_path}")
+                return True
+            else:
+                logger.error("Failed to capture page screenshot")
+                return False
 
         except Exception as e:
             logger.error(f"Error capturing page screenshot: {e}")

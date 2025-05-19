@@ -10,6 +10,7 @@ from selenium.common.exceptions import NoSuchElementException
 
 from server.logging_config import store_page_source
 from server.utils.request_utils import get_sindarin_email
+from server.utils.screenshot_utils import take_adb_screenshot, take_secure_screenshot
 from views.auth.interaction_strategies import (
     EMAIL_FIELD_STRATEGIES,
     PASSWORD_FIELD_STRATEGIES,
@@ -667,11 +668,18 @@ class ViewInspector:
             try:
                 screenshot_path = os.path.join(self.screenshots_dir, "unknown_view.png")
 
-                # Try to use secure screenshot method if we have automator reference
+                # Try to use secure screenshot method if we have device_id
                 success = False
-                if self.automator and hasattr(self.automator, "take_secure_screenshot"):
+                if hasattr(self, "automator") and self.automator and hasattr(self.automator, "device_id"):
+                    device_id = self.automator.device_id
                     logger.info("Attempting secure screenshot for unknown view...")
-                    secure_path = self.automator.take_secure_screenshot(screenshot_path)
+                    # Get current state if available
+                    current_state = None
+                    if hasattr(self.automator, "state_machine") and self.automator.state_machine:
+                        current_state = self.automator.state_machine.current_state
+                    secure_path = take_secure_screenshot(
+                        device_id=device_id, output_path=screenshot_path, current_state=current_state
+                    )
                     if secure_path:
                         logger.info(f"Saved secure screenshot of unknown view to {secure_path}")
                         success = True
@@ -696,11 +704,18 @@ class ViewInspector:
             try:
                 screenshot_path = os.path.join(self.screenshots_dir, "error_view.png")
 
-                # Try to use secure screenshot method if we have automator reference
+                # Try to use secure screenshot method if we have device_id
                 success = False
-                if self.automator and hasattr(self.automator, "take_secure_screenshot"):
+                if hasattr(self, "automator") and self.automator and hasattr(self.automator, "device_id"):
+                    device_id = self.automator.device_id
                     logger.info("Attempting secure screenshot for error view...")
-                    secure_path = self.automator.take_secure_screenshot(screenshot_path)
+                    # Get current state if available
+                    current_state = None
+                    if hasattr(self.automator, "state_machine") and self.automator.state_machine:
+                        current_state = self.automator.state_machine.current_state
+                    secure_path = take_secure_screenshot(
+                        device_id=device_id, output_path=screenshot_path, current_state=current_state
+                    )
                     if secure_path:
                         logger.info(f"Saved secure screenshot of error view to {secure_path}")
                         success = True

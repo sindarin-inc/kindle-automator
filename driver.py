@@ -14,19 +14,6 @@ from server.utils.request_utils import get_sindarin_email
 logger = logging.getLogger(__name__)
 
 
-def ensure_session_active(func):
-    """Decorator to ensure driver session is active before executing a method."""
-
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        # Only apply to instance methods of Driver class
-        if hasattr(self, "_ensure_session_active"):
-            self._ensure_session_active()
-        return func(self, *args, **kwargs)
-
-    return wrapper
-
-
 class Driver:
     _instance = None
     _initialized = False
@@ -1085,18 +1072,6 @@ class Driver:
                     options.set_capability("chromedriverPort", allocated_ports["chromedriverPort"])
                     options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
                     logger.info(f"Using allocated ports for {email}: {allocated_ports}")
-                else:
-                    # Fallback to hash-based approach using centralized port utilities
-                    from server.utils.port_utils import PortConfig
-
-                    instance_num = hash(instance_id) % 50  # Limit to 50 instances
-                    options.set_capability("systemPort", PortConfig.SYSTEM_BASE_PORT + instance_num)
-                    options.set_capability("bootstrapPort", PortConfig.BOOTSTRAP_BASE_PORT + instance_num)
-                    options.set_capability(
-                        "chromedriverPort", PortConfig.CHROMEDRIVER_BASE_PORT + instance_num
-                    )
-                    options.set_capability("mjpegServerPort", PortConfig.MJPEG_BASE_PORT + instance_num)
-                    logger.warning(f"Using hash-based ports for {email} (fallback)")
 
                 # Temporary directory for this instance
                 import tempfile
@@ -1297,34 +1272,26 @@ class Driver:
 
         logger.warning("Driver session is no longer active, attempting to reconnect...")
 
-        # Try to reconnect up to max retries
-        for attempt in range(self._max_session_retries):
-            try:
-                logger.info(f"Reconnection attempt {attempt + 1}/{self._max_session_retries}")
+        # Clean up old session
+        try:
+            if self.driver:
+                self.driver.quit()
+        except Exception:
+            pass
 
-                # Clean up old session
-                try:
-                    if self.driver:
-                        self.driver.quit()
-                except Exception:
-                    pass
+        self.driver = None
+        Driver._initialized = False
 
-                self.driver = None
-                Driver._initialized = False
-
-                # Reinitialize through automator if available
-                if self.automator:
-                    if self.automator.initialize_driver():
-                        logger.info("Successfully reconnected driver session")
-                        self._session_retries = 0
-                        return True
-                    else:
-                        logger.error("Failed to reinitialize driver through automator")
-                else:
-                    logger.error("No automator reference available for reconnection")
-
-            except Exception as e:
-                logger.error(f"Error during reconnection attempt {attempt + 1}: {e}")
+        # Reinitialize through automator if available
+        if self.automator:
+            if self.automator.initialize_driver():
+                logger.info("Successfully reconnected driver session")
+                self._session_retries = 0
+                return True
+            else:
+                logger.error("Failed to reinitialize driver through automator")
+        else:
+            logger.error("No automator reference available for reconnection")
 
         logger.error("Failed to reconnect driver session after all attempts")
         return False

@@ -68,8 +68,6 @@ else:
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
-# We'll handle captcha solutions at runtime when passed via API, not from environment
-
 app = Flask(__name__)
 api = Api(app)
 
