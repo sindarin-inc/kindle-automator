@@ -1017,7 +1017,7 @@ class Driver:
                 ).stdout.strip()
                 if android_id:
                     logger.debug(f"Setting Android ID in appium: {android_id}")
-                    options.set_capability("udid", android_id)
+                    options.set_capability("appium:androidId", android_id)
                 else:
                     logger.warning("Could not retrieve Android ID")
             except Exception as e:
@@ -1061,21 +1061,22 @@ class Driver:
             if instance_id and email:
                 # Get allocated ports from server - pass device ID for proper allocation
                 allocated_ports = None
-                server = current_app.config.get("server_instance")
-                if server and hasattr(server, "get_unique_ports_for_email"):
-                    # First update the profile with the device ID we're using
-                    if hasattr(server, "profile_manager") and self.device_id:
-                        profile = server.profile_manager.get_profile_for_email(email)
-                        if profile and profile.get("emulator_id") != self.device_id:
-                            logger.info(
-                                f"Updating profile device ID to {self.device_id} before port allocation"
-                            )
-                            if hasattr(server.profile_manager, "_save_profile_status"):
-                                server.profile_manager._save_profile_status(
-                                    email, profile.get("avd_name"), self.device_id
+                if current_app:
+                    server = current_app.config.get("server_instance")
+                    if server and hasattr(server, "get_unique_ports_for_email"):
+                        # First update the profile with the device ID we're using
+                        if hasattr(server, "profile_manager") and self.device_id:
+                            profile = server.profile_manager.get_profile_for_email(email)
+                            if profile and profile.get("emulator_id") != self.device_id:
+                                logger.info(
+                                    f"Updating profile device ID to {self.device_id} before port allocation"
                                 )
+                                if hasattr(server.profile_manager, "_save_profile_status"):
+                                    server.profile_manager._save_profile_status(
+                                        email, profile.get("avd_name"), self.device_id
+                                    )
 
-                    allocated_ports = server.get_unique_ports_for_email(email)
+                        allocated_ports = server.get_unique_ports_for_email(email)
 
                 if allocated_ports:
                     # Use the allocated ports
@@ -1124,7 +1125,7 @@ class Driver:
                 if current_profile and "email" in current_profile:
                     email = current_profile["email"]
                     # Try to get appium_port from server's allocated ports or appium_processes
-                    try:
+                    if current_app:
                         server = current_app.config.get("server_instance")
                         if server:
                             # First try to get from allocated ports
@@ -1136,8 +1137,6 @@ class Driver:
                             # Fall back to appium_processes if available
                             elif hasattr(server, "appium_processes") and email in server.appium_processes:
                                 self.appium_port = server.appium_processes[email]["port"]
-                    except (ImportError, RuntimeError) as e:
-                        logger.debug(f"Could not access server for Appium port: {e}")
 
             # First verify the Appium server is actually responding
             # This prevents attempting to connect to a non-responsive server
@@ -1195,7 +1194,7 @@ class Driver:
                         )
 
                         # Check if we need to start Appium ourselves
-                        try:
+                        if current_app:
                             server = current_app.config.get("server_instance")
                             if server:
                                 logger.info(f"Attempting to start Appium server directly from driver...")
@@ -1211,8 +1210,6 @@ class Driver:
                                     else:
                                         time.sleep(0.2)  # Give it time to start
                                         continue  # Retry the check
-                        except Exception as start_error:
-                            logger.error(f"Error starting Appium from driver: {start_error}")
 
                         raise Exception(f"Cannot connect to Appium server on port {appium_port}: {e}")
 
