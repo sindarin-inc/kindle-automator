@@ -1015,7 +1015,7 @@ class Driver:
 
             # Tell UiAutomator2 to strictly use this device and not fall back to others
             options.set_capability("enforceAppiumPrefixes", True)  # Ensure strict capability naming
-            options.set_capability("ensureWebviewsHavePages", True)  # Helps with stability
+            options.set_capability("appium:ensureWebviewsHavePages", True)  # Helps with stability
 
             options.app_package = "com.amazon.kindle"
             options.app_activity = app_activity
@@ -1028,20 +1028,20 @@ class Driver:
             options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
 
             # Prevent app relaunch on Appium session start
-            options.set_capability("autoLaunch", False)  # Disable app relaunch on session start
-            options.set_capability("noReset", True)
-            options.set_capability("dontStopAppOnReset", True)  # Prevent closing app when session stops
+            options.set_capability("appium:autoLaunch", False)  # Disable app relaunch on session start
+            options.set_capability("appium:noReset", True)
+            options.set_capability("appium:dontStopAppOnReset", True)  # Prevent closing app when session stops
 
             # Set shorter waitForIdleTimeout to make Appium faster
-            options.set_capability("waitForIdleTimeout", 1000)  # 1 second wait for idle state
+            options.set_capability("appium:waitForIdleTimeout", 1000)  # 1 second wait for idle state
 
             # Set longer timeouts to avoid connection issues
             options.set_capability(
-                "uiautomator2ServerLaunchTimeout", 60000
+                "appium:uiautomator2ServerLaunchTimeout", 60000
             )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
             # Leave this higher since we need time for ADB commands during actual operations
-            options.set_capability("adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
-            options.set_capability("connectionTimeout", 10000)  # 10 seconds for connection timeout
+            options.set_capability("appium:adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
+            options.set_capability("appium:connectionTimeout", 10000)  # 10 seconds for connection timeout
 
             # Add parallel execution capabilities
             instance_id = None
@@ -1062,10 +1062,11 @@ class Driver:
 
                 if allocated_ports:
                     # Use the allocated ports
-                    options.set_capability("systemPort", allocated_ports["systemPort"])
-                    options.set_capability("bootstrapPort", allocated_ports["bootstrapPort"])
-                    options.set_capability("chromedriverPort", allocated_ports["chromedriverPort"])
-                    options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
+                    # Using proper UiAutomator2 capability names
+                    options.set_capability("appium:systemPort", allocated_ports["systemPort"])
+                    options.set_capability("appium:uiautomator2ServerPort", allocated_ports["bootstrapPort"])
+                    options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
+                    options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     logger.info(f"Using allocated ports for {email}: {allocated_ports}")
                 else:
                     logger.error(f"No allocated ports found for {email}")
@@ -1076,20 +1077,20 @@ class Driver:
 
                 temp_dir = os.path.join(tempfile.gettempdir(), f"appium_{instance_id}")
                 os.makedirs(temp_dir, exist_ok=True)
-                options.set_capability("tmpDir", temp_dir)
+                options.set_capability("appium:tmpDir", temp_dir)
 
             # Clean up system files to avoid conflicts
-            options.set_capability("clearSystemFiles", True)
-            options.set_capability("skipServerInstallation", False)
+            options.set_capability("appium:clearSystemFiles", True)
+            options.set_capability("appium:skipServerInstallation", False)
 
             # Force server shutdown on disconnect to prevent port conflicts
-            options.set_capability("relaxedSecurity", True)
-            options.set_capability("shutdownOnPowerDisconnect", True)
-            options.set_capability("disableWindowAnimation", True)
+            options.set_capability("appium:relaxedSecurity", True)
+            options.set_capability("appium:shutdownOnPowerDisconnect", True)
+            options.set_capability("appium:disableWindowAnimation", True)
 
             # Ensure clean session management
-            options.set_capability("skipUnlock", True)
-            options.set_capability("dontStopAppOnReset", True)  # Keep app running when session ends
+            options.set_capability("appium:skipUnlock", True)
+            options.set_capability("appium:dontStopAppOnReset", True)  # Keep app running when session ends
 
             # Use longer timeout on webdriver initialization
             import socket

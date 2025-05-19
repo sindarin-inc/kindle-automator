@@ -96,27 +96,14 @@ class AppiumDriver:
                     if os.path.exists(bin_path) and bin_path not in env.get("PATH", ""):
                         env["PATH"] = f"{bin_path}:{env.get('PATH', '')}"
             
-            # Get additional ports from the instance
-            system_port = instance.get("appium_system_port")
-            bootstrap_port = instance.get("appium_bootstrap_port")
-            chromedriver_port = instance.get("appium_chromedriver_port")
-            mjpeg_server_port = instance.get("appium_mjpeg_server_port")
+            # No need to pass additional ports via command line
+            # These ports are configured via appium:capabilities in the client
             
             cmd = [
                 appium_cmd,
                 "--port", str(port),
                 "--log-level", "info",
             ]
-            
-            # Add additional ports if available
-            if system_port:
-                cmd.extend(["--system-port", str(system_port)])
-            if bootstrap_port:
-                cmd.extend(["--bootstrap-port", str(bootstrap_port)])
-            if chromedriver_port:
-                cmd.extend(["--chromedriver-port", str(chromedriver_port)])
-            if mjpeg_server_port:
-                cmd.extend(["--mjpeg-server-port", str(mjpeg_server_port)])
             logger.info(f"Starting Appium with command: {' '.join(cmd)}")
             logger.info(f"Using appium executable: {appium_cmd}")
             logger.info(f"Logging to: {log_file}")
