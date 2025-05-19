@@ -1119,6 +1119,13 @@ class Driver:
                         if allocated_ports and "appiumPort" in allocated_ports:
                             self.appium_port = allocated_ports["appiumPort"]
                             logger.info(f"Using allocated appium port {self.appium_port} for {email}")
+                else:
+                    logger.warning(f"No profile found for starting Appium server: {email}")
+            else:
+                logger.warning(
+                    f"No profile found for starting Appium server: {self.automator} {self.automator.profile_manager}"
+                )
+                self.appium_port = PortConfig.APPIUM_BASE_PORT
 
             # First verify the Appium server is actually responding
             # This prevents attempting to connect to a non-responsive server
