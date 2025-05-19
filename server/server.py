@@ -1431,7 +1431,7 @@ class AuthResource(Resource):
             if platform.system() != "Darwin":
                 try:
                     # Get VNC instance manager to find the display
-                    vnc_manager = VNCInstanceManager()
+                    vnc_manager = VNCInstanceManager.get_instance()
                     display_num_to_restart = None
                     vnc_port_to_restart = None
 

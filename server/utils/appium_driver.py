@@ -28,29 +28,29 @@ class AppiumDriver:
     Works in conjunction with VNCInstanceManager to provide centralized
     instance management.
     """
-    
+
     def __init__(self):
         """Initialize the Appium driver manager."""
         self.vnc_manager = VNCInstanceManager.get_instance()
         self.pid_dir = "logs"
         os.makedirs(self.pid_dir, exist_ok=True)
-        
+
     def start_appium_for_profile(self, email: str) -> bool:
         """
         Start Appium server for a specific profile.
-        
+
         Args:
             email: Email address of the profile
-            
+
         Returns:
             bool: True if Appium started successfully, False otherwise
         """
         # Get instance for this profile
         instance = self.vnc_manager.get_instance_for_profile(email)
         if not instance:
-            logger.error(f"No VNC instance found for profile {email}")
+            logger.error(f"Could not start appium, no VNC instance found for profile {email}")
             return False
-            
+
         # Check if already running - verify with actual health check
         if instance.get("appium_running", False):
             # Verify the process is actually healthy
@@ -61,33 +61,33 @@ class AppiumDriver:
                 logger.info(f"Appium marked as running but not healthy for {email}, restarting")
                 instance["appium_running"] = False
                 self.vnc_manager.save_instances()
-            
+
         port = instance["appium_port"]
         process_name = f"appium_{email}"
-        
+
         # First check if anything is already using this port
         if self._check_appium_health(email):
             logger.info(f"Healthy Appium server already on port {port}, marking as running")
             instance["appium_running"] = True
             self.vnc_manager.save_instances()
             return True
-            
+
         # Kill any existing process on this port
         self._kill_process_on_port(port)
-        
+
         # Kill any existing process by name
         self._kill_existing_process(process_name)
-            
+
         # Start Appium
         try:
             # Create logs directory
             logs_dir = os.path.join(self.pid_dir, "appium_logs")
             os.makedirs(logs_dir, exist_ok=True)
             log_file = os.path.join(logs_dir, f"{process_name}.log")
-            
+
             # Find appium executable
             appium_cmd = self._find_appium_executable()
-                
+
             # Start Appium with all necessary ports
             env = os.environ.copy()
             # Ensure proper PATH for macOS
@@ -95,19 +95,21 @@ class AppiumDriver:
                 for bin_path in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
                     if os.path.exists(bin_path) and bin_path not in env.get("PATH", ""):
                         env["PATH"] = f"{bin_path}:{env.get('PATH', '')}"
-            
+
             # No need to pass additional ports via command line
             # These ports are configured via appium:capabilities in the client
-            
+
             cmd = [
                 appium_cmd,
-                "--port", str(port),
-                "--log-level", "info",
+                "--port",
+                str(port),
+                "--log-level",
+                "info",
             ]
             logger.info(f"Starting Appium with command: {' '.join(cmd)}")
             logger.info(f"Using appium executable: {appium_cmd}")
             logger.info(f"Logging to: {log_file}")
-            
+
             with open(log_file, "w") as log:
                 process = subprocess.Popen(
                     cmd,
@@ -117,50 +119,50 @@ class AppiumDriver:
                     env=env,
                 )
                 logger.info(f"Appium process started with PID: {process.pid}")
-                
+
             # Save PID
             self._save_pid(process_name, process.pid)
-            
+
             # Update instance with process info
             instance["appium_pid"] = process.pid
             instance["appium_running"] = True
             instance["appium_last_health_check"] = time.time()
             self.vnc_manager.save_instances()
-            
+
             # Keep process reference in memory only (not serialized)
-            self._runtime_processes = getattr(self, '_runtime_processes', {})
+            self._runtime_processes = getattr(self, "_runtime_processes", {})
             self._runtime_processes[email] = process
-            
+
             # Wait for Appium to start with retries
             max_retries = 3
             retry_delay = 1
-            
+
             for attempt in range(max_retries):
                 if self._check_appium_health(email):
                     logger.info(f"Appium started successfully on port {port} for {email}")
                     return True
-                    
+
                 if attempt < max_retries - 1:
                     logger.info(f"Waiting {retry_delay}s before checking Appium again...")
                     time.sleep(retry_delay)
                     retry_delay *= 2
-                    
+
             # Failed after all retries
             logger.error(f"Appium failed to start correctly on port {port}")
             self.stop_appium_for_profile(email)
             return False
-                
+
         except Exception as e:
             logger.error(f"Error starting Appium for {email}: {e}", exc_info=True)
             return False
-    
+
     def stop_appium_for_profile(self, email: str) -> bool:
         """
         Stop Appium server for a specific profile.
-        
+
         Args:
             email: Email address of the profile
-            
+
         Returns:
             bool: True if stopped successfully, False otherwise
         """
@@ -168,7 +170,7 @@ class AppiumDriver:
         if not instance:
             logger.warning(f"No instance found for profile {email}")
             return False
-            
+
         # Try to stop the process gracefully
         if instance.get("appium_pid"):
             try:
@@ -181,47 +183,44 @@ class AppiumDriver:
                     pass
             except Exception as e:
                 logger.warning(f"Error stopping Appium process: {e}")
-                
+
         # Remove from runtime processes
-        runtime_processes = getattr(self, '_runtime_processes', {})
+        runtime_processes = getattr(self, "_runtime_processes", {})
         if email in runtime_processes:
             del runtime_processes[email]
-                
+
         # Clear process info
         instance["appium_pid"] = None
         instance["appium_running"] = False
         self.vnc_manager.save_instances()
-        
+
         return True
-        
+
     def _check_appium_health(self, email: str) -> bool:
         """
         Check if Appium server is healthy for a profile.
-        
+
         Args:
             email: Email address of the profile
-            
+
         Returns:
             bool: True if healthy, False otherwise
         """
         instance = self.vnc_manager.get_instance_for_profile(email)
         if not instance:
             return False
-            
+
         port = instance["appium_port"]
-        
+
         try:
             # Check if anything is listening on the port first
             port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"],
-                capture_output=True,
-                text=True,
-                check=False
+                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
             )
             if not port_check.stdout.strip():
                 logger.debug(f"No process found listening on port {port}")
                 return False
-            
+
             # Check Appium status endpoint
             check_result = subprocess.run(
                 ["curl", "-s", f"http://localhost:{port}/status"],
@@ -230,28 +229,28 @@ class AppiumDriver:
                 check=False,
                 timeout=5,
             )
-            
+
             if check_result.returncode != 0:
                 logger.debug(f"Appium health check failed with return code {check_result.returncode}")
                 return False
-                
+
             # Parse response for both Appium 1.x and 2.x formats
             try:
                 response = json.loads(check_result.stdout)
-                
+
                 # Appium 1.x: {"status": 0}
                 if "status" in response and response["status"] == 0:
                     logger.debug(f"Healthy Appium 1.x server found on port {port}")
                     return True
-                    
+
                 # Appium 2.x: {"value": {"ready": true}}
                 if "value" in response and isinstance(response["value"], dict):
                     if response["value"].get("ready") == True:
                         logger.debug(f"Healthy Appium 2.x server found on port {port}")
                         return True
-                        
+
                 logger.debug(f"Appium server on port {port} returned unknown format: {response}")
-                
+
             except json.JSONDecodeError:
                 # Fallback to string check
                 if '"status":0' in check_result.stdout or '"ready":true' in check_result.stdout:
@@ -259,26 +258,26 @@ class AppiumDriver:
                     return True
                 else:
                     logger.debug(f"Invalid JSON response from Appium on port {port}")
-                    
+
         except Exception as e:
             logger.debug(f"Error checking Appium health on port {port}: {e}")
-            
+
         return False
-        
+
     def get_appium_ports_for_profile(self, email: str) -> Optional[Dict]:
         """
         Get all Appium-related ports for a profile.
-        
+
         Args:
             email: Email address of the profile
-            
+
         Returns:
             Dict with all Appium ports or None if no instance
         """
         instance = self.vnc_manager.get_instance_for_profile(email)
         if not instance:
             return None
-            
+
         return {
             "appiumPort": instance.get("appium_port"),
             "systemPort": instance.get("appium_system_port"),
@@ -286,32 +285,32 @@ class AppiumDriver:
             "chromedriverPort": instance.get("appium_chromedriver_port"),
             "mjpegServerPort": instance.get("appium_mjpeg_server_port"),
         }
-        
+
     def get_appium_process_info(self, email: str) -> Optional[Dict]:
         """
         Get Appium process information for a profile.
-        
+
         Args:
             email: Email address of the profile
-            
+
         Returns:
             Dict with process info or None if not running
         """
         instance = self.vnc_manager.get_instance_for_profile(email)
         if not instance or not instance.get("appium_running"):
             return None
-            
+
         return {
             "pid": instance.get("appium_pid"),
             "port": instance.get("appium_port"),
             "running": instance.get("appium_running", False),
             "last_health_check": instance.get("appium_last_health_check"),
         }
-        
+
     def _find_appium_executable(self) -> str:
         """
         Find the Appium executable path.
-        
+
         Returns:
             str: Path to Appium executable
         """
@@ -324,18 +323,19 @@ class AppiumDriver:
             os.path.expanduser("~/.nvm/versions/node/*/bin/appium"),  # NVM install
             os.path.expanduser("~/.npm-global/bin/appium"),  # NPM global
         ]
-        
+
         logger.info(f"Searching for Appium executable in: {appium_paths}")
-        
+
         for path in appium_paths:
             # Handle wildcards
             if "*" in path:
                 import glob
+
                 matching_paths = glob.glob(path)
                 matching_paths.sort(reverse=True)  # Prefer newer versions
                 if matching_paths:
                     path = matching_paths[0]
-                    
+
             # Skip PATH check for now
             if path != "appium":
                 exists = os.path.exists(path)
@@ -343,34 +343,32 @@ class AppiumDriver:
                 logger.debug(f"Checking path {path}: exists={exists}, executable={executable}")
                 if not exists or not executable:
                     continue
-                    
+
             # Try to verify it works
             try:
                 logger.debug(f"Testing appium at {path}")
                 version_check = subprocess.run(
-                    [path, "--version"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=2
+                    [path, "--version"], capture_output=True, text=True, check=False, timeout=2
                 )
-                logger.debug(f"Version check for {path}: returncode={version_check.returncode}, stdout={version_check.stdout[:100]}")
+                logger.debug(
+                    f"Version check for {path}: returncode={version_check.returncode}, stdout={version_check.stdout[:100]}"
+                )
                 if version_check.returncode == 0:
                     logger.info(f"Found working appium at: {path}")
                     return path
             except (subprocess.SubprocessError, OSError) as e:
                 logger.debug(f"Error checking {path}: {e}")
                 continue
-                
+
         # Fallback to PATH
         logger.warning("Could not find Appium in standard locations, falling back to PATH")
         return "appium"
-        
+
     def _save_pid(self, name: str, pid: int):
         """Save process ID to file."""
         pid_dir = os.path.join(self.pid_dir, "appium_logs")
         os.makedirs(pid_dir, exist_ok=True)
-        
+
         pid_file = os.path.join(pid_dir, f"{name}.pid")
         try:
             with open(pid_file, "w") as f:
@@ -378,7 +376,7 @@ class AppiumDriver:
             os.chmod(pid_file, 0o644)
         except Exception as e:
             logger.error(f"Error saving PID file: {e}")
-            
+
     def _kill_existing_process(self, name: str):
         """Kill existing process by name."""
         try:
@@ -386,15 +384,12 @@ class AppiumDriver:
             logger.info(f"Killed existing {name} processes")
         except Exception as e:
             logger.error(f"Error killing {name} process: {e}")
-            
+
     def _kill_process_on_port(self, port: int):
         """Kill any process using the specified port."""
         try:
             port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"],
-                capture_output=True,
-                text=True,
-                check=False
+                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
             )
             if port_check.stdout.strip():
                 pids = port_check.stdout.strip().split("\n")

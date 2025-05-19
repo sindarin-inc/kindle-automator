@@ -153,13 +153,13 @@ class VNCInstanceManager:
             next_id = max(existing_ids) + 1
 
         # Calculate ports based on instance ID
-        from server.utils.port_utils import calculate_emulator_ports, PortConfig
+        from server.utils.port_utils import PortConfig, calculate_emulator_ports
 
         ports = calculate_emulator_ports(next_id)
         emulator_port = ports["emulator_port"]
         vnc_port = ports["vnc_port"]
         appium_port = ports["appium_port"]
-        
+
         # Get additional Appium-related ports
         appium_system_port = ports.get("system_port", PortConfig.SYSTEM_BASE_PORT + next_id)
         appium_bootstrap_port = ports.get("bootstrap_port", PortConfig.BOOTSTRAP_BASE_PORT + next_id)
@@ -196,7 +196,7 @@ class VNCInstanceManager:
         try:
             # Ensure directory exists before saving
             os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
-            
+
             data = {"instances": self.instances, "version": 1}
             with open(self.map_path, "w") as f:
                 json.dump(data, f, indent=2)
@@ -285,6 +285,7 @@ class VNCInstanceManager:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
         # Look directly for the email in assigned_profile
+        logger.info(f"Looking for VNC instance for profile {email} in {self.instances}")
         for instance in self.instances:
             assigned_profile = instance.get("assigned_profile")
             if assigned_profile == email:
@@ -523,15 +524,11 @@ class VNCInstanceManager:
             running_emails = []
 
             # Check each profile for the was_running_at_restart flag
-            logger.info(f"Checking {len(avd_manager.profiles_index)} profiles for restart flags")
             for email in avd_manager.profiles_index.keys():
                 was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
-                logger.debug(f"Profile {email}: was_running_at_restart = {was_running}")
                 if was_running:
                     running_emails.append(email)
-                    logger.info(f"✓ Found {email} marked for restart")
 
-            logger.info(f"Total emulators marked for restart: {len(running_emails)}")
             return running_emails
         except Exception as e:
             logger.error(f"Error getting running at restart emails: {e}")
@@ -557,7 +554,7 @@ class VNCInstanceManager:
             logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}")
-    
+
     def reset_appium_states_on_startup(self) -> None:
         """
         Reset all appium_running states to false on server startup.
@@ -571,7 +568,7 @@ class VNCInstanceManager:
                     instance["appium_pid"] = None
                     reset_count += 1
                     logger.info(f"Reset appium_running state for instance {instance['id']}")
-            
+
             if reset_count > 0:
                 self.save_instances()
                 logger.info(f"Reset {reset_count} appium_running states on startup")
