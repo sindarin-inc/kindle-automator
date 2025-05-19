@@ -33,42 +33,112 @@ class DeviceDiscovery:
             - emulator_id: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
             - avd_name: The AVD name associated with the email/emulator if found, None otherwise
         """
-        # Force refresh running emulator data from ADB to ensure accuracy
-        # This avoids stale emulator information
-        running_emulators = self.map_running_emulators()
-
-        if not running_emulators:
-            # Get the AVD name for this email from profiles_index or generate a standard one
-            avd_name = None
-            if profiles_index and email in profiles_index:
-                profile_entry = profiles_index.get(email)
-
-                # Handle different formats (backward compatibility)
-                if isinstance(profile_entry, str):
-                    avd_name = profile_entry
-                elif isinstance(profile_entry, dict) and "avd_name" in profile_entry:
-                    avd_name = profile_entry["avd_name"]
-
-            return False, None, avd_name
-
-        # First try the exact AVD name match based on email
         avd_name = None
+        
+        # First check if this email has a profile with an emulator_id stored directly
         if profiles_index and email in profiles_index:
             profile_entry = profiles_index.get(email)
-            avd_name = profile_entry.get("avd_name")
-
-            if avd_name and avd_name in running_emulators:
-                emulator_id = running_emulators[avd_name]
-                logger.info(f"Found AVD {avd_name} running on {emulator_id} for email {email}")
-                return True, emulator_id, avd_name
-
+            
+            # Check if profile has emulator_id field
+            if isinstance(profile_entry, dict):
+                # Get the AVD name
+                avd_name = profile_entry.get("avd_name")
+                
+                # Check if there's a direct emulator_id in the profile
+                stored_emulator_id = profile_entry.get("emulator_id")
+                if stored_emulator_id:
+                    # Verify if this emulator is running
+                    try:
+                        result = subprocess.run(
+                            [f"{self.android_home}/platform-tools/adb", "devices"],
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=3,
+                        )
+                        if stored_emulator_id in result.stdout and "device" in result.stdout:
+                            logger.info(f"Found emulator {stored_emulator_id} in profile for {email} and it's running")
+                            return True, stored_emulator_id, avd_name
+                    except Exception as e:
+                        logger.warning(f"Error checking if stored emulator {stored_emulator_id} is running: {e}")
+            elif isinstance(profile_entry, str):
+                avd_name = profile_entry
+        
+        # Next, try to get emulator_id from VNC instance manager
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_emulator_id = vnc_manager.get_emulator_id(email)
+            
+            if vnc_emulator_id:
+                # Verify if this emulator is running
+                try:
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                    )
+                    if vnc_emulator_id in result.stdout and "device" in result.stdout:
+                        logger.info(f"Found emulator {vnc_emulator_id} in VNC instance for {email} and it's running")
+                        return True, vnc_emulator_id, avd_name
+                except Exception as e:
+                    logger.warning(f"Error checking if VNC emulator {vnc_emulator_id} is running: {e}")
+        except Exception as e:
+            logger.warning(f"Error accessing VNC instance manager: {e}")
+        
+        # If we didn't find a running emulator through the direct methods above,
+        # fall back to looking up the AVD in running emulators
+        running_emulators = self.map_running_emulators()
+        if not running_emulators:
+            # No running emulators found, return failure
+            return False, None, avd_name
+            
+        # Try to find the user's AVD in running emulators
+        if avd_name and avd_name in running_emulators:
+            emulator_id = running_emulators[avd_name]
+            logger.info(f"Found AVD {avd_name} running on {emulator_id} for email {email}")
+            
+            # Update VNC instance with this emulator ID for future reference
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+                vnc_manager = VNCInstanceManager.get_instance()
+                vnc_manager.set_emulator_id(email, emulator_id)
+                logger.info(f"Updated VNC instance with emulator ID {emulator_id} for {email}")
+            except Exception as e:
+                logger.error(f"Error updating VNC instance with emulator ID: {e}")
+                
+            # Also update the profile directly
+            try:
+                if profiles_index and email in profiles_index:
+                    profile_entry = profiles_index.get(email)
+                    if isinstance(profile_entry, dict):
+                        profile_entry["emulator_id"] = emulator_id
+                        # Save changes
+                        try:
+                            from views.core.avd_profile_manager import AVDProfileManager
+                            avd_manager = AVDProfileManager()
+                            if email in avd_manager.profiles_index:
+                                avd_manager.profiles_index[email]["emulator_id"] = emulator_id
+                                avd_manager._save_profiles_index()
+                                logger.info(f"Updated profile with emulator ID {emulator_id} for {email}")
+                        except Exception as e:
+                            logger.error(f"Error updating profile with emulator ID: {e}")
+            except Exception as e:
+                logger.error(f"Error setting emulator_id in profile: {e}")
+                
+            return True, emulator_id, avd_name
+            
         # Never use another user's AVD
         # If we have a specific AVD for this user and it's not running, we should fail
         if avd_name and avd_name not in running_emulators:
             # Return failure to find the user's specific AVD
+            logger.info(f"User's AVD {avd_name} exists but is not running")
             return False, None, avd_name
 
         # No running emulator found for this email
+        logger.info(f"No running emulator found for {email}")
         return False, None, avd_name
 
     def _get_avd_name_for_emulator(self, emulator_id: str, current_profile=None) -> Optional[str]:
@@ -91,46 +161,54 @@ class DeviceDiscovery:
                     logger.info(f"Found AVD {avd_name} in current profile for emulator {emulator_id}")
                     return avd_name
 
-            # Use AVD Profile Manager to find the AVD name
-            from server.utils.request_utils import get_sindarin_email
+            # Use AVD Profile Manager
             from views.core.avd_profile_manager import AVDProfileManager
-
             avd_manager = AVDProfileManager()
-            sindarin_email = get_sindarin_email()
             
             # In simplified mode, we may not have AVD names in profiles
             if avd_manager.use_simplified_mode:
                 logger.info(f"[DIAG] Simplified mode active, skipping AVD name lookup")
-                # In simplified mode, return a placeholder AVD name that includes the email
-                if sindarin_email:
-                    normalized_email = sindarin_email.replace("@", "_").replace(".", "_")
-                    return f"KindleAVD_{normalized_email}"
+                # Don't assume any email, just return None
                 return None
 
-            # First check if the current sindarin email has a profile
-            if sindarin_email and sindarin_email in avd_manager.profiles_index:
-                profile = avd_manager.profiles_index[sindarin_email]
-                avd_name = profile.get("avd_name")
-                if avd_name:
-                    avd_path = os.path.join(avd_manager.avd_dir, f"{avd_name}.avd")
-                    if os.path.exists(avd_path):
-                        logger.info(
-                            f"[DIAG] Found AVD {avd_name} for current sindarin email {sindarin_email}"
-                        )
-                        return avd_name
-
-            # Fallback: Check each profile to see if it could be running on this emulator
+            # First, search for the emulator_id in all profiles
             for email, profile in avd_manager.profiles_index.items():
-                avd_name = profile.get("avd_name")
-                if avd_name:
-                    # Check if this AVD exists and could be our emulator
-                    avd_path = os.path.join(avd_manager.avd_dir, f"{avd_name}.avd")
-                    if os.path.exists(avd_path):
-                        logger.info(f"[DIAG] Found existing AVD {avd_name} for profile {email}")
-                        # For now, assume first found AVD is the one
+                if isinstance(profile, dict) and profile.get("emulator_id") == emulator_id:
+                    avd_name = profile.get("avd_name")
+                    if avd_name:
+                        logger.info(f"[DIAG] Found AVD {avd_name} for email {email} with matching emulator_id {emulator_id}")
                         return avd_name
 
-            logger.info(f"[DIAG] No AVD found for emulator {emulator_id} in profiles")
+            # Next, check VNC instances for this emulator ID
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+                vnc_manager = VNCInstanceManager.get_instance()
+                
+                # Find which email is using this emulator
+                matched_email = None
+                for instance in vnc_manager.instances:
+                    if instance.get("emulator_id") == emulator_id and instance.get("assigned_profile"):
+                        matched_email = instance.get("assigned_profile")
+                        logger.info(f"[DIAG] Found emulator {emulator_id} assigned to {matched_email} in VNC instances")
+                        break
+                
+                # If found, look up the AVD name for this email
+                if matched_email and matched_email in avd_manager.profiles_index:
+                    profile = avd_manager.profiles_index[matched_email]
+                    avd_name = profile.get("avd_name")
+                    if avd_name:
+                        avd_path = os.path.join(avd_manager.avd_dir, f"{avd_name}.avd")
+                        if os.path.exists(avd_path):
+                            logger.info(f"[DIAG] Found AVD {avd_name} for {matched_email} from VNC instances")
+                            return avd_name
+            except Exception as e:
+                logger.warning(f"Error checking VNC instances for emulator {emulator_id}: {e}")
+
+            # If we got here, we can't reliably determine which AVD this emulator is running
+            # Instead of guessing, return None
+            logger.info(f"[DIAG] No reliable AVD match found for emulator {emulator_id}")
+            return None
+            
         except Exception as e:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
 

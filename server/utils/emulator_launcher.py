@@ -548,6 +548,16 @@ class EmulatorLauncher:
                     logger.info(
                         f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
                     )
+                    
+                    # Store this emulator ID in the VNC instance
+                    try:
+                        from server.utils.vnc_instance_manager import VNCInstanceManager
+                        vnc_manager = VNCInstanceManager.get_instance()
+                        vnc_manager.set_emulator_id(email, emulator_id)
+                        logger.info(f"Updated VNC instance with emulator ID {emulator_id} for {email}")
+                    except Exception as e:
+                        logger.error(f"Failed to update VNC instance with emulator ID: {e}")
+                    
                     return True, emulator_id, display_num
                 else:
                     # Emulator not actually running according to adb, remove from our cache
@@ -727,9 +737,32 @@ class EmulatorLauncher:
                     cwd="/tmp",  # Run in /tmp to avoid permission issues
                 )
 
-            # IMPORTANT: Store the running emulator info with the AVD name as key, not email
+            # Store the running emulator info in multiple places to ensure tracking:
+            
+            # 1. Store in running_emulators map with AVD name as key
             self.running_emulators[avd_name] = (emulator_id, display_num)
             logger.info(f"[DIAG] Stored in running_emulators map: {avd_name} -> ({emulator_id}, {display_num})")
+            
+            # 2. Also store the emulator ID in the VNC instance manager
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+                vnc_manager = VNCInstanceManager.get_instance()
+                vnc_manager.set_emulator_id(email, emulator_id)
+                logger.info(f"Set emulator ID {emulator_id} for {email} in VNC instance manager")
+            except Exception as e:
+                logger.error(f"Error storing emulator ID in VNC instance: {e}")
+            
+            # 3. Update the user profile directly
+            try:
+                from views.core.avd_profile_manager import AVDProfileManager
+                avd_manager = AVDProfileManager()
+                if email in avd_manager.profiles_index:
+                    avd_manager.profiles_index[email]["emulator_id"] = emulator_id
+                    avd_manager._save_profiles_index()
+                    logger.info(f"Updated profile with emulator ID {emulator_id} for {email}")
+            except Exception as e:
+                logger.error(f"Error updating profile with emulator ID: {e}")
+            
             logger.info(f"[DIAG] Current running_emulators map: {self.running_emulators}")
 
             # Now ensure VNC is running for this display after emulator is launched
