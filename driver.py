@@ -7,6 +7,7 @@ from typing import Optional
 
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
+from flask import current_app
 
 from server.utils.request_utils import get_sindarin_email
 
@@ -806,673 +807,464 @@ class Driver:
 
     def initialize(self):
         """Initialize Appium driver with retry logic. Safe to call multiple times."""
-        try:
-            if self.driver:
-                # Test if driver is still connected
-                try:
-                    self.driver.current_activity
-                except Exception as e:
-                    logger.info("Driver not connected - reinitializing")
-                    self.driver = None
-                else:
-                    logger.info("Driver already initialized, reinitializing")
-                    self.driver = None
-
-            # Get device ID first, using specific device ID from profile if available
-            target_device_id = None
-
-            # Check if we have a profile manager with a preferred device ID
-            if self.automator and hasattr(self.automator, "profile_manager"):
-                # Get the current profile for device ID info
-                profile = self.automator.profile_manager.get_current_profile()
-                if profile and "emulator_id" in profile:
-                    # Use the device ID from the profile
-                    target_device_id = profile.get("emulator_id")
-                    logger.info(f"Using target device ID from profile: {target_device_id}")
-                elif profile and "avd_name" in profile:
-                    # Try to get device ID from AVD name mapping
-                    avd_name = profile.get("avd_name")
-                    device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
-                    if device_id:
-                        target_device_id = device_id
-
-            # Get device ID, preferring the specific one if provided
-            self.device_id = self._get_emulator_device_id(target_device_id)
-            if not self.device_id:
-                logger.error("Failed to get device ID")
-                return False
-
-            # Update profile with device ID
-            if not self.automator:
-                logger.error("Cannot update profile: automator not initialized")
-
-            elif not hasattr(self.automator, "profile_manager"):
-                logger.error("Cannot update profile: profile_manager not found")
-
-            elif not hasattr(self.automator.profile_manager, "get_current_profile"):
-                logger.error("Cannot update profile: get_current_profile method not found")
-
+        if self.driver:
+            # Test if driver is still connected
+            try:
+                self.driver.current_activity
+            except Exception as e:
+                logger.info("Driver not connected - reinitializing")
+                self.driver = None
             else:
-                profile = self.automator.profile_manager.get_current_profile()
-                if not profile:
-                    logger.error("Cannot update profile: get_current_profile returned None")
+                logger.info("Driver already initialized, reinitializing")
+                self.driver = None
+
+        # Get device ID first, using specific device ID from profile if available
+        target_device_id = None
+
+        # Check if we have a profile manager with a preferred device ID
+        if self.automator and hasattr(self.automator, "profile_manager"):
+            # Get the current profile for device ID info
+            profile = self.automator.profile_manager.get_current_profile()
+            if profile and "emulator_id" in profile:
+                # Use the device ID from the profile
+                target_device_id = profile.get("emulator_id")
+                logger.info(f"Using target device ID from profile: {target_device_id}")
+            elif profile and "avd_name" in profile:
+                # Try to get device ID from AVD name mapping
+                avd_name = profile.get("avd_name")
+                device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
+                if device_id:
+                    target_device_id = device_id
+
+        # Get device ID, preferring the specific one if provided
+        self.device_id = self._get_emulator_device_id(target_device_id)
+        if not self.device_id:
+            logger.error("Failed to get device ID")
+            return False
+
+        # Update profile with device ID
+        if not self.automator:
+            logger.error("Cannot update profile: automator not initialized")
+
+        elif not hasattr(self.automator, "profile_manager"):
+            logger.error("Cannot update profile: profile_manager not found")
+
+        elif not hasattr(self.automator.profile_manager, "get_current_profile"):
+            logger.error("Cannot update profile: get_current_profile method not found")
+
+        else:
+            profile = self.automator.profile_manager.get_current_profile()
+            if not profile:
+                logger.error("Cannot update profile: get_current_profile returned None")
+            else:
+                email = get_sindarin_email()
+                avd_name = profile.get("avd_name")
+
+                if not email or not avd_name:
+                    logger.error(
+                        f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}"
+                    )
+
                 else:
-                    email = get_sindarin_email()
-                    avd_name = profile.get("avd_name")
-
-                    if not email or not avd_name:
-                        logger.error(
-                            f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}"
-                        )
-
+                    # Use the appropriate method based on what's available
+                    if hasattr(self.automator.profile_manager, "_save_profile_status"):
+                        self.automator.profile_manager._save_profile_status(email, avd_name, self.device_id)
+                    elif hasattr(self.automator.profile_manager, "_save_current_profile"):
+                        self.automator.profile_manager._save_current_profile(email, avd_name, self.device_id)
                     else:
-                        # Use the appropriate method based on what's available
-                        if hasattr(self.automator.profile_manager, "_save_profile_status"):
-                            self.automator.profile_manager._save_profile_status(
-                                email, avd_name, self.device_id
-                            )
-                        elif hasattr(self.automator.profile_manager, "_save_current_profile"):
-                            self.automator.profile_manager._save_current_profile(
-                                email, avd_name, self.device_id
-                            )
-                        else:
-                            logger.error("No method found to save profile status")
+                        logger.error("No method found to save profile status")
 
-            # Check if app is installed
-            if not self._is_kindle_installed():
-                logger.info("Kindle app not installed - attempting to install")
-                if not self._install_kindle():
-                    logger.error("Failed to install Kindle app")
-                    return False
-                logger.info("Successfully installed Kindle app")
-            else:
-                # App is installed - check if an update is available
-                profile_version_name = None
-                profile_version_code = None
-                profile = None
+        # Check if app is installed
+        if not self._is_kindle_installed():
+            logger.info("Kindle app not installed - attempting to install")
+            if not self._install_kindle():
+                logger.error("Failed to install Kindle app")
+                return False
+            logger.info("Successfully installed Kindle app")
+        else:
+            # App is installed - check if an update is available
+            profile_version_name = None
+            profile_version_code = None
+            profile = None
 
-                # Try to get version from profile first (faster)
-                if self.automator and hasattr(self.automator, "profile_manager"):
-                    profile_manager = self.automator.profile_manager
+            # Try to get version from profile first (faster)
+            if self.automator and hasattr(self.automator, "profile_manager"):
+                profile_manager = self.automator.profile_manager
 
-                    # Get current profile email
-                    email = None
-                    if hasattr(profile_manager, "get_current_profile"):
-                        profile = profile_manager.get_current_profile()
-                        if profile:
-                            email = profile.get("email") or profile.get("assigned_profile")
+                # Get current profile email
+                email = None
+                if hasattr(profile_manager, "get_current_profile"):
+                    profile = profile_manager.get_current_profile()
+                    if profile:
+                        email = profile.get("email") or profile.get("assigned_profile")
 
-                    if email and hasattr(profile_manager, "get_user_field"):
-                        # Use the new get_user_field method
-                        profile_version_name = profile_manager.get_user_field(email, "kindle_version_name")
-                        profile_version_code_str = profile_manager.get_user_field(
-                            email, "kindle_version_code"
-                        )
+                if email and hasattr(profile_manager, "get_user_field"):
+                    # Use the new get_user_field method
+                    profile_version_name = profile_manager.get_user_field(email, "kindle_version_name")
+                    profile_version_code_str = profile_manager.get_user_field(email, "kindle_version_code")
+
+                    if profile_version_code_str:
+                        try:
+                            profile_version_code = int(profile_version_code_str)
+                        except ValueError:
+                            profile_version_code = None
+                elif hasattr(profile_manager, "get_current_profile"):
+                    # Fall back to direct profile access
+                    profile = profile_manager.get_current_profile()
+                    if profile:
+                        # Check for version info at top level first
+                        profile_version_name = profile.get("kindle_version_name")
+                        profile_version_code_str = profile.get("kindle_version_code")
 
                         if profile_version_code_str:
                             try:
                                 profile_version_code = int(profile_version_code_str)
                             except ValueError:
                                 profile_version_code = None
-                    elif hasattr(profile_manager, "get_current_profile"):
-                        # Fall back to direct profile access
-                        profile = profile_manager.get_current_profile()
-                        if profile:
-                            # Check for version info at top level first
-                            profile_version_name = profile.get("kindle_version_name")
-                            profile_version_code_str = profile.get("kindle_version_code")
 
-                            if profile_version_code_str:
-                                try:
-                                    profile_version_code = int(profile_version_code_str)
-                                except ValueError:
-                                    profile_version_code = None
+            # If we have profile version info, use it; otherwise query the device
+            if profile_version_name and profile_version_code:
+                installed_version_name = profile_version_name
+                installed_version_code = profile_version_code
+            else:
+                # Get version from device
+                installed_version_name, installed_version_code = self._get_installed_kindle_version()
 
-                # If we have profile version info, use it; otherwise query the device
-                if profile_version_name and profile_version_code:
-                    installed_version_name = profile_version_name
-                    installed_version_code = profile_version_code
-                else:
-                    # Get version from device
-                    installed_version_name, installed_version_code = self._get_installed_kindle_version()
+                # Store version in profile for future reference if we got valid version info
+                if installed_version_name and installed_version_code and profile:
+                    self._update_kindle_version_in_profile(installed_version_name, installed_version_code)
 
-                    # Store version in profile for future reference if we got valid version info
-                    if installed_version_name and installed_version_code and profile:
-                        self._update_kindle_version_in_profile(installed_version_name, installed_version_code)
+            if installed_version_code:
+                logger.info(
+                    f"Current Kindle version: {installed_version_name} (code: {installed_version_code})"
+                )
 
-                if installed_version_code:
-                    logger.info(
-                        f"Current Kindle version: {installed_version_name} (code: {installed_version_code})"
-                    )
+                # Find newest available APK
+                newest_apk = self._find_newest_kindle_apk()
+                if newest_apk:
+                    apk_version_name, apk_version_code = self._get_apk_version(newest_apk)
 
-                    # Find newest available APK
-                    newest_apk = self._find_newest_kindle_apk()
-                    if newest_apk:
-                        apk_version_name, apk_version_code = self._get_apk_version(newest_apk)
+                    if apk_version_code and apk_version_code > installed_version_code:
+                        logger.info(
+                            f"Upgrading Kindle from version {installed_version_name} to {apk_version_name}"
+                        )
 
-                        if apk_version_code and apk_version_code > installed_version_code:
-                            logger.info(
-                                f"Upgrading Kindle from version {installed_version_name} to {apk_version_name}"
-                            )
-
-                            subprocess.run(
-                                ["adb", "-s", self.device_id, "install", "-r", newest_apk],
-                                check=True,
-                                capture_output=True,
-                                text=True,
-                            )
-                            logger.info("Kindle app upgraded successfully")
-
-                            # Update stored version info after successful upgrade
-                            if self.automator and hasattr(self.automator.profile_manager, "set_user_field"):
-                                email = profile.get("email") or profile.get("assigned_profile")
-                                if email:
-                                    # Store version info at top level with generic setter
-                                    self.automator.profile_manager.set_user_field(
-                                        email, "kindle_version_name", apk_version_name
-                                    )
-                                    self.automator.profile_manager.set_user_field(
-                                        email, "kindle_version_code", str(apk_version_code)
-                                    )
-                                    # Clean up any version info that might be in preferences
-                                    self._clean_old_version_info(email)
-                            elif profile:
-                                self._update_kindle_version_in_profile(apk_version_name, apk_version_code)
-                        else:
-                            logger.info("Kindle app is already at the latest version")
-
-            # Clean up any existing sessions
-            self._cleanup_old_sessions()
-
-            # Check and disable hardware overlays
-            self._disable_hw_overlays()
-
-            # Disable all system animations
-            self._disable_animations()
-
-            # Disable sleep and app standby to prevent device and app from sleeping
-            self._disable_sleep()
-
-            # Hide the status bar
-            self._disable_status_bar()
-
-            # Get Kindle launch activity
-            app_activity = self._get_kindle_launch_activity()
-            if not app_activity:
-                return False
-
-            # Initialize driver with retry logic
-            for attempt in range(1, 6):  # Increase to 5 attempts
-                try:
-                    logger.info(
-                        f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/5)..."
-                    )
-
-                    options = UiAutomator2Options()
-                    options.platform_name = "Android"
-                    options.automation_name = "UiAutomator2"
-
-                    # Set the device ID as both udid and deviceName for proper device targeting
-                    options.set_capability("deviceName", self.device_id)
-                    options.set_capability("udid", self.device_id)
-
-                    # Get Android ID for the device for more reliable identification
-                    try:
-                        android_id = subprocess.run(
-                            ["adb", "-s", self.device_id, "shell", "settings", "get", "secure", "android_id"],
+                        subprocess.run(
+                            ["adb", "-s", self.device_id, "install", "-r", newest_apk],
+                            check=True,
                             capture_output=True,
                             text=True,
-                            check=True,
-                        ).stdout.strip()
-                        if android_id:
-                            options.set_capability("appium:androidId", android_id)
-                        else:
-                            logger.warning("Could not retrieve Android ID")
-                    except Exception as e:
-                        logger.warning(f"Could not retrieve Android ID: {e}")
-
-                    # Tell UiAutomator2 to strictly use this device and not fall back to others
-                    options.set_capability("enforceAppiumPrefixes", True)  # Ensure strict capability naming
-                    options.set_capability("ensureWebviewsHavePages", True)  # Helps with stability
-
-                    options.app_package = "com.amazon.kindle"
-                    options.app_activity = app_activity
-                    options.app_wait_activity = "com.amazon.*"
-                    options.no_reset = True
-                    options.auto_grant_permissions = True
-                    options.enable_multi_windows = True
-                    options.ignore_unimportant_views = False
-                    options.allow_invisible_elements = True
-                    options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
-
-                    # Set shorter waitForIdleTimeout to make Appium faster
-                    options.set_capability("waitForIdleTimeout", 1000)  # 1 second wait for idle state
-
-                    # Set longer timeouts to avoid connection issues
-                    options.set_capability(
-                        "uiautomator2ServerLaunchTimeout", 60000
-                    )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
-                    # Leave this higher since we need time for ADB commands during actual operations
-                    options.set_capability("adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
-                    options.set_capability("connectionTimeout", 10000)  # 10 seconds for connection timeout
-
-                    # Add parallel execution capabilities
-                    instance_id = None
-                    profile = self.automator.profile_manager.get_current_profile()
-                    if profile:
-                        email = profile.get("email") or profile.get("assigned_profile")
-                        if email:
-                            # Create instance-specific ID
-                            instance_id = email.split("@")[0].replace(".", "_")
-
-                    # If we have instance_id, add unique ports for parallel execution
-                    if instance_id and email:
-                        # Get allocated ports from server - pass device ID for proper allocation
-                        allocated_ports = None
-                        try:
-                            from flask import current_app
-
-                            server = current_app.config.get("server_instance")
-                            if server and hasattr(server, "get_unique_ports_for_email"):
-                                # First update the profile with the device ID we're using
-                                if hasattr(server, "profile_manager") and self.device_id:
-                                    profile = server.profile_manager.get_profile_for_email(email)
-                                    if profile and profile.get("emulator_id") != self.device_id:
-                                        logger.info(
-                                            f"Updating profile device ID to {self.device_id} before port allocation"
-                                        )
-                                        if hasattr(server.profile_manager, "_save_profile_status"):
-                                            server.profile_manager._save_profile_status(
-                                                email, profile.get("avd_name"), self.device_id
-                                            )
-
-                                allocated_ports = server.get_unique_ports_for_email(email)
-                        except Exception as e:
-                            logger.warning(f"Could not get allocated ports from server: {e}")
-
-                        if allocated_ports:
-                            # Use the allocated ports
-                            options.set_capability("systemPort", allocated_ports["systemPort"])
-                            options.set_capability("bootstrapPort", allocated_ports["bootstrapPort"])
-                            options.set_capability("chromedriverPort", allocated_ports["chromedriverPort"])
-                            options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
-                            logger.info(f"Using allocated ports for {email}: {allocated_ports}")
-                        else:
-                            # Fallback to hash-based approach using centralized port utilities
-                            from server.utils.port_utils import PortConfig
-
-                            instance_num = hash(instance_id) % 50  # Limit to 50 instances
-                            options.set_capability("systemPort", PortConfig.SYSTEM_BASE_PORT + instance_num)
-                            options.set_capability(
-                                "bootstrapPort", PortConfig.BOOTSTRAP_BASE_PORT + instance_num
-                            )
-                            options.set_capability(
-                                "chromedriverPort", PortConfig.CHROMEDRIVER_BASE_PORT + instance_num
-                            )
-                            options.set_capability(
-                                "mjpegServerPort", PortConfig.MJPEG_BASE_PORT + instance_num
-                            )
-                            logger.warning(f"Using hash-based ports for {email} (fallback)")
-
-                        # Temporary directory for this instance
-                        import tempfile
-
-                        temp_dir = os.path.join(tempfile.gettempdir(), f"appium_{instance_id}")
-                        os.makedirs(temp_dir, exist_ok=True)
-                        options.set_capability("tmpDir", temp_dir)
-
-                    # Clean up system files to avoid conflicts
-                    options.set_capability("clearSystemFiles", True)
-                    options.set_capability("skipServerInstallation", False)
-
-                    # Use longer timeout on webdriver initialization
-                    import socket
-
-                    original_timeout = socket.getdefaulttimeout()
-                    socket.setdefaulttimeout(10)  # 10 second timeout - increased from 5
-                    try:
-                        # Determine Appium port
-                        # If automator has a profile manager with a specific port for this email, use that
-                        if (
-                            self.automator
-                            and hasattr(self.automator, "profile_manager")
-                            and hasattr(self.automator.profile_manager, "get_current_profile")
-                        ):
-                            current_profile = self.automator.profile_manager.get_current_profile()
-                            if current_profile and "email" in current_profile:
-                                email = current_profile["email"]
-                                # Try to get appium_port from server's allocated ports or appium_processes
-                                try:
-                                    from flask import current_app
-
-                                    server = current_app.config.get("server_instance")
-                                    if server:
-                                        # First try to get from allocated ports
-                                        if hasattr(server, "get_unique_ports_for_email"):
-                                            allocated_ports = server.get_unique_ports_for_email(email)
-                                            if allocated_ports and "appiumPort" in allocated_ports:
-                                                self.appium_port = allocated_ports["appiumPort"]
-                                                logger.info(
-                                                    f"Using allocated appium port {self.appium_port} for {email}"
-                                                )
-                                        # Fall back to appium_processes if available
-                                        elif (
-                                            hasattr(server, "appium_processes")
-                                            and email in server.appium_processes
-                                        ):
-                                            self.appium_port = server.appium_processes[email]["port"]
-                                except (ImportError, RuntimeError) as e:
-                                    logger.debug(f"Could not access server for Appium port: {e}")
-
-                        # First verify the Appium server is actually responding
-                        # This prevents attempting to connect to a non-responsive server
-                        import time
-
-                        import requests
-
-                        max_retries = 3
-                        retry_delay = 1
-
-                        # Ensure we have a valid appium port - use centralized default as fallback
-                        from server.utils.port_utils import PortConfig
-
-                        appium_port = (
-                            self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
                         )
+                        logger.info("Kindle app upgraded successfully")
 
-                        for attempt in range(max_retries):
-                            try:
-                                logger.info(
-                                    f"Checking Appium server (127.0.0.1:{appium_port}) status (attempt {attempt+1}/{max_retries})..."
+                        # Update stored version info after successful upgrade
+                        if self.automator and hasattr(self.automator.profile_manager, "set_user_field"):
+                            email = profile.get("email") or profile.get("assigned_profile")
+                            if email:
+                                # Store version info at top level with generic setter
+                                self.automator.profile_manager.set_user_field(
+                                    email, "kindle_version_name", apk_version_name
                                 )
-                                status_response = requests.get(
-                                    f"http://127.0.0.1:{appium_port}/status", timeout=5
+                                self.automator.profile_manager.set_user_field(
+                                    email, "kindle_version_code", str(apk_version_code)
                                 )
-                                # Handle both Appium 1.x and 2.x response formats
-                                response_json = status_response.json()
-
-                                # Check for Appium 1.x format: {"status": 0, ...}
-                                appium1_format = "status" in response_json and response_json["status"] == 0
-
-                                # Check for Appium 2.x format: {"value": {"ready": true, ...}}
-                                appium2_format = (
-                                    "value" in response_json
-                                    and isinstance(response_json["value"], dict)
-                                    and response_json["value"].get("ready") == True
-                                )
-
-                                if status_response.status_code == 200 and (appium1_format or appium2_format):
-                                    break
-                                else:
-                                    logger.warning(
-                                        f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries})"
-                                    )
-
-                                    # If this is the last retry, raise an exception
-                                    if attempt == max_retries - 1:
-                                        raise Exception(
-                                            f"Appium server not ready on port {self.appium_port} after {max_retries} attempts"
-                                        )
-
-                                    # Wait before retrying
-                                    time.sleep(retry_delay)
-                                    retry_delay *= 2
-                            except requests.RequestException as e:
-                                if attempt == max_retries - 1:
-                                    logger.error(
-                                        f"Failed to connect to Appium server on port {appium_port} after {max_retries} attempts: {e}"
-                                    )
-
-                                    # Check if we need to start Appium ourselves
-                                    from flask import current_app
-
-                                    try:
-                                        server = current_app.config.get("server_instance")
-                                        if server:
-                                            logger.info(
-                                                f"Attempting to start Appium server directly from driver..."
-                                            )
-                                            email = (
-                                                current_profile["email"]
-                                                if current_profile and "email" in current_profile
-                                                else None
-                                            )
-                                            if email:
-                                                started = server.start_appium(port=appium_port, email=email)
-                                                if not started:
-                                                    logger.error("Failed to start Appium server from driver")
-                                                else:
-                                                    time.sleep(0.2)  # Give it time to start
-                                                    continue  # Retry the check
-                                    except Exception as start_error:
-                                        logger.error(f"Error starting Appium from driver: {start_error}")
-
-                                    raise Exception(
-                                        f"Cannot connect to Appium server on port {appium_port}: {e}"
-                                    )
-
-                                logger.warning(
-                                    f"Appium connection error (attempt {attempt+1}/{max_retries}): {e}"
-                                )
-                                time.sleep(retry_delay)
-                                retry_delay *= 2
-
-                        # Initialize driver with the options using the specific port
-                        # Ensure we have a valid appium port - use centralized default as fallback
-                        from server.utils.port_utils import PortConfig
-
-                        appium_port = (
-                            self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
-                        )
-
-                        logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
-
-                        # Add retry logic for driver creation to handle socket hang-ups
-                        driver_creation_retries = 3
-                        driver_retry_delay = 5
-
-                        for driver_attempt in range(driver_creation_retries):
-                            try:
-                                self.driver = webdriver.Remote(
-                                    f"http://127.0.0.1:{appium_port}", options=options
-                                )
-                                logger.info(
-                                    f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
-                                )
-                                break
-                            except Exception as e:
-                                error_msg = str(e).lower()
-                                if (
-                                    "socket hang up" in error_msg or "econnreset" in error_msg
-                                ) and driver_attempt < driver_creation_retries - 1:
-                                    wait_time = driver_retry_delay * (driver_attempt + 1)
-                                    logger.warning(
-                                        f"Socket hang up during driver creation, retrying in {wait_time}s..."
-                                    )
-                                    time.sleep(wait_time)
-                                    continue
-                                # If it's not a socket hang up error or it's the last attempt, re-raise
-                                raise
-                    finally:
-                        socket.setdefaulttimeout(original_timeout)  # Restore original timeout
-
-                    # Force a state check after driver initialization with a timeout
-                    import concurrent.futures
-                    import threading
-
-                    def check_connection():
-                        self.driver.current_activity  # This will force Appium to check connection
-                        return True
-
-                    # Run the check with a timeout
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(check_connection)
-                        try:
-                            result = future.result(timeout=15)  # 15 second timeout - increased from 5
-                            return True
-                        except concurrent.futures.TimeoutError:
-                            logger.error("Connection check timed out after 15 seconds")
-
-                            # Try to dump device state again to diagnose the issue
-                            try:
-                                logger.info("Trying to capture device state after timeout...")
-                                dump_cmd = [
-                                    "adb",
-                                    "-s",
-                                    self.device_id,
-                                    "shell",
-                                    "uiautomator dump /sdcard/window_dump_after_timeout.xml",
-                                ]
-                                result = subprocess.run(dump_cmd, check=True, capture_output=True, text=True)
-
-                                # Pull the file
-                                pull_cmd = [
-                                    "adb",
-                                    "-s",
-                                    self.device_id,
-                                    "pull",
-                                    "/sdcard/window_dump_after_timeout.xml",
-                                    "fixtures/dumps/post_timeout.xml",
-                                ]
-                                result = subprocess.run(pull_cmd, check=True, capture_output=True, text=True)
-                                logger.info("Saved post-timeout UI dump to fixtures/dumps/post_timeout.xml")
-
-                                # Also take a screenshot
-                                screenshot_cmd = [
-                                    "adb",
-                                    "-s",
-                                    self.device_id,
-                                    "shell",
-                                    "screencap -p /sdcard/screen_after_timeout.png",
-                                ]
-                                result = subprocess.run(
-                                    screenshot_cmd, check=True, capture_output=True, text=True
-                                )
-
-                                # Pull the screenshot
-                                pull_screenshot_cmd = [
-                                    "adb",
-                                    "-s",
-                                    self.device_id,
-                                    "pull",
-                                    "/sdcard/screen_after_timeout.png",
-                                    "screenshots/post_timeout.png",
-                                ]
-                                result = subprocess.run(
-                                    pull_screenshot_cmd, check=True, capture_output=True, text=True
-                                )
-                                logger.info("Saved post-timeout screenshot to screenshots/post_timeout.png")
-                            except Exception as e:
-                                logger.warning(f"Failed to capture post-timeout device state: {e}")
-
-                            try:
-                                # Try to quit the driver that may be in a bad state
-                                if self.driver:
-                                    self.driver.quit()
-                            except:
-                                pass
-                            self.driver = None
-                            raise TimeoutError("Connection check timed out")
-
-                except Exception as e:
-                    error_msg = str(e)
-                    # Check if error is related to Appium port
-                    if "Failed to parse" in error_msg and "None/status" in error_msg:
-                        from server.utils.port_utils import PortConfig
-
-                        logger.error(
-                            f"Detected None port error - forcing port to {PortConfig.APPIUM_BASE_PORT}"
-                        )
-                        self.appium_port = PortConfig.APPIUM_BASE_PORT
-
-                    logger.info(f"Failed to initialize driver (attempt {attempt}/5): {e}")
-                    if attempt < 5:
-                        # Increase the retry delay progressively to give more time for app initialization
-                        retry_delay = attempt * 2  # 2, 4, 6, 8 seconds
-                        logger.info(f"Waiting {retry_delay} seconds before retrying...")
-                        time.sleep(retry_delay)
-
-                        # Dump device state between retries to see what's happening
-                        try:
-                            logger.info(f"Dumping device state before retry {attempt+1}...")
-                            dump_cmd = [
-                                "adb",
-                                "-s",
-                                self.device_id,
-                                "shell",
-                                "uiautomator dump /sdcard/retry_dump.xml",
-                            ]
-                            result = subprocess.run(dump_cmd, check=True, capture_output=True, text=True)
-
-                            pull_cmd = [
-                                "adb",
-                                "-s",
-                                self.device_id,
-                                "pull",
-                                "/sdcard/retry_dump.xml",
-                                f"fixtures/dumps/retry_{attempt}_dump.xml",
-                            ]
-                            result = subprocess.run(pull_cmd, check=True, capture_output=True, text=True)
-                            logger.info(f"Saved retry dump to fixtures/dumps/retry_{attempt}_dump.xml")
-
-                            # Also take a screenshot
-                            screenshot_cmd = [
-                                "adb",
-                                "-s",
-                                self.device_id,
-                                "shell",
-                                "screencap -p /sdcard/retry_screen.png",
-                            ]
-                            result = subprocess.run(
-                                screenshot_cmd, check=True, capture_output=True, text=True
-                            )
-
-                            pull_screenshot_cmd = [
-                                "adb",
-                                "-s",
-                                self.device_id,
-                                "pull",
-                                "/sdcard/retry_screen.png",
-                                f"screenshots/retry_{attempt}_screen.png",
-                            ]
-                            result = subprocess.run(
-                                pull_screenshot_cmd, check=True, capture_output=True, text=True
-                            )
-                            logger.info(f"Saved retry screenshot to screenshots/retry_{attempt}_screen.png")
-
-                            # Try to launch Kindle app directly before the next retry
-                            if attempt > 1:  # Only do this after the first retry fails
-                                launch_cmd = [
-                                    "adb",
-                                    "-s",
-                                    self.device_id,
-                                    "shell",
-                                    f"am start -n com.amazon.kindle/{app_activity}",
-                                ]
-                                result = subprocess.run(
-                                    launch_cmd, check=True, capture_output=True, text=True
-                                )
-                                logger.info(
-                                    f"Explicitly launched Kindle app before retry: {result.stdout.strip()}"
-                                )
-                                time.sleep(2)  # Give the app a moment to start
-                        except Exception as dump_error:
-                            logger.warning(f"Failed to dump device state before retry: {dump_error}")
+                                # Clean up any version info that might be in preferences
+                                self._clean_old_version_info(email)
+                        elif profile:
+                            self._update_kindle_version_in_profile(apk_version_name, apk_version_code)
                     else:
-                        logger.error("Failed to initialize driver after 5 attempts")
-                        logger.error(f"Last error: {e}")
-                        logger.info("\nPlease ensure:")
-                        logger.info("1. Appium server is running (start with 'appium')")
-                        logger.info("2. Android SDK is installed at ~/Library/Android/sdk")
-                        logger.info("3. Android device/emulator is connected (check with 'adb devices')")
-                        logger.info(
-                            "4. Check the XML dumps and screenshots in fixtures/dumps/ and screenshots/ for debugging"
-                        )
-                        return False
+                        logger.info("Kindle app is already at the latest version")
 
-        except Exception as e:
-            logger.error(f"Error initializing driver: {e}")
+        # Clean up any existing sessions
+        self._cleanup_old_sessions()
+
+        # Check and disable hardware overlays
+        self._disable_hw_overlays()
+
+        # Disable all system animations
+        self._disable_animations()
+
+        # Disable sleep and app standby to prevent device and app from sleeping
+        self._disable_sleep()
+
+        # Hide the status bar
+        self._disable_status_bar()
+
+        # Get Kindle launch activity
+        app_activity = self._get_kindle_launch_activity()
+        if not app_activity:
             return False
+
+        # Initialize driver with retry logic
+        for attempt in range(1, 2):  # Increase to 5 attempts
+            logger.info(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/5)...")
+
+            options = UiAutomator2Options()
+            options.platform_name = "Android"
+            options.automation_name = "UiAutomator2"
+
+            # Set the device ID as both udid and deviceName for proper device targeting
+            options.set_capability("deviceName", self.device_id)
+            options.set_capability("udid", self.device_id)
+
+            # Get Android ID for the device for more reliable identification
+            try:
+                android_id = subprocess.run(
+                    ["adb", "-s", self.device_id, "shell", "settings", "get", "secure", "android_id"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+                if android_id:
+                    logger.debug(f"Setting Android ID in appium: {android_id}")
+                    options.set_capability("udid", android_id)
+                else:
+                    logger.warning("Could not retrieve Android ID")
+            except Exception as e:
+                logger.warning(f"Could not retrieve Android ID: {e}")
+
+            # Tell UiAutomator2 to strictly use this device and not fall back to others
+            options.set_capability("enforceAppiumPrefixes", True)  # Ensure strict capability naming
+            options.set_capability("ensureWebviewsHavePages", True)  # Helps with stability
+
+            options.app_package = "com.amazon.kindle"
+            options.app_activity = app_activity
+            options.app_wait_activity = "com.amazon.*"
+            options.no_reset = True
+            options.auto_grant_permissions = True
+            options.enable_multi_windows = True
+            options.ignore_unimportant_views = False
+            options.allow_invisible_elements = True
+            options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
+
+            # Set shorter waitForIdleTimeout to make Appium faster
+            options.set_capability("waitForIdleTimeout", 1000)  # 1 second wait for idle state
+
+            # Set longer timeouts to avoid connection issues
+            options.set_capability(
+                "uiautomator2ServerLaunchTimeout", 60000
+            )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
+            # Leave this higher since we need time for ADB commands during actual operations
+            options.set_capability("adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
+            options.set_capability("connectionTimeout", 10000)  # 10 seconds for connection timeout
+
+            # Add parallel execution capabilities
+            instance_id = None
+            profile = self.automator.profile_manager.get_current_profile()
+            if profile:
+                email = profile.get("email") or profile.get("assigned_profile")
+                if email:
+                    # Create instance-specific ID
+                    instance_id = email.split("@")[0].replace(".", "_")
+
+            # If we have instance_id, add unique ports for parallel execution
+            if instance_id and email:
+                # Get allocated ports from server - pass device ID for proper allocation
+                allocated_ports = None
+                server = current_app.config.get("server_instance")
+                if server and hasattr(server, "get_unique_ports_for_email"):
+                    # First update the profile with the device ID we're using
+                    if hasattr(server, "profile_manager") and self.device_id:
+                        profile = server.profile_manager.get_profile_for_email(email)
+                        if profile and profile.get("emulator_id") != self.device_id:
+                            logger.info(
+                                f"Updating profile device ID to {self.device_id} before port allocation"
+                            )
+                            if hasattr(server.profile_manager, "_save_profile_status"):
+                                server.profile_manager._save_profile_status(
+                                    email, profile.get("avd_name"), self.device_id
+                                )
+
+                    allocated_ports = server.get_unique_ports_for_email(email)
+
+                if allocated_ports:
+                    # Use the allocated ports
+                    options.set_capability("systemPort", allocated_ports["systemPort"])
+                    options.set_capability("bootstrapPort", allocated_ports["bootstrapPort"])
+                    options.set_capability("chromedriverPort", allocated_ports["chromedriverPort"])
+                    options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
+                    logger.info(f"Using allocated ports for {email}: {allocated_ports}")
+                else:
+                    # Fallback to hash-based approach using centralized port utilities
+                    from server.utils.port_utils import PortConfig
+
+                    instance_num = hash(instance_id) % 50  # Limit to 50 instances
+                    options.set_capability("systemPort", PortConfig.SYSTEM_BASE_PORT + instance_num)
+                    options.set_capability("bootstrapPort", PortConfig.BOOTSTRAP_BASE_PORT + instance_num)
+                    options.set_capability(
+                        "chromedriverPort", PortConfig.CHROMEDRIVER_BASE_PORT + instance_num
+                    )
+                    options.set_capability("mjpegServerPort", PortConfig.MJPEG_BASE_PORT + instance_num)
+                    logger.warning(f"Using hash-based ports for {email} (fallback)")
+
+                # Temporary directory for this instance
+                import tempfile
+
+                temp_dir = os.path.join(tempfile.gettempdir(), f"appium_{instance_id}")
+                os.makedirs(temp_dir, exist_ok=True)
+                options.set_capability("tmpDir", temp_dir)
+
+            # Clean up system files to avoid conflicts
+            options.set_capability("clearSystemFiles", True)
+            options.set_capability("skipServerInstallation", False)
+
+            # Use longer timeout on webdriver initialization
+            import socket
+
+            original_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(10)  # 10 second timeout - increased from 5
+            # Determine Appium port
+            # If automator has a profile manager with a specific port for this email, use that
+            if (
+                self.automator
+                and hasattr(self.automator, "profile_manager")
+                and hasattr(self.automator.profile_manager, "get_current_profile")
+            ):
+                current_profile = self.automator.profile_manager.get_current_profile()
+                if current_profile and "email" in current_profile:
+                    email = current_profile["email"]
+                    # Try to get appium_port from server's allocated ports or appium_processes
+                    try:
+                        server = current_app.config.get("server_instance")
+                        if server:
+                            # First try to get from allocated ports
+                            if hasattr(server, "get_unique_ports_for_email"):
+                                allocated_ports = server.get_unique_ports_for_email(email)
+                                if allocated_ports and "appiumPort" in allocated_ports:
+                                    self.appium_port = allocated_ports["appiumPort"]
+                                    logger.info(f"Using allocated appium port {self.appium_port} for {email}")
+                            # Fall back to appium_processes if available
+                            elif hasattr(server, "appium_processes") and email in server.appium_processes:
+                                self.appium_port = server.appium_processes[email]["port"]
+                    except (ImportError, RuntimeError) as e:
+                        logger.debug(f"Could not access server for Appium port: {e}")
+
+            # First verify the Appium server is actually responding
+            # This prevents attempting to connect to a non-responsive server
+            import time
+
+            import requests
+
+            max_retries = 3
+            retry_delay = 1
+
+            # Ensure we have a valid appium port - use centralized default as fallback
+            from server.utils.port_utils import PortConfig
+
+            appium_port = self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
+
+            for attempt in range(max_retries):
+                try:
+                    logger.info(
+                        f"Checking Appium server (127.0.0.1:{appium_port}) status (attempt {attempt+1}/{max_retries})..."
+                    )
+                    status_response = requests.get(f"http://127.0.0.1:{appium_port}/status", timeout=5)
+                    # Handle both Appium 1.x and 2.x response formats
+                    response_json = status_response.json()
+
+                    # Check for Appium 1.x format: {"status": 0, ...}
+                    appium1_format = "status" in response_json and response_json["status"] == 0
+
+                    # Check for Appium 2.x format: {"value": {"ready": true, ...}}
+                    appium2_format = (
+                        "value" in response_json
+                        and isinstance(response_json["value"], dict)
+                        and response_json["value"].get("ready") == True
+                    )
+
+                    if status_response.status_code == 200 and (appium1_format or appium2_format):
+                        break
+                    else:
+                        logger.warning(
+                            f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries})"
+                        )
+
+                        # If this is the last retry, raise an exception
+                        if attempt == max_retries - 1:
+                            raise Exception(
+                                f"Appium server not ready on port {self.appium_port} after {max_retries} attempts"
+                            )
+
+                        # Wait before retrying
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                except requests.RequestException as e:
+                    if attempt == max_retries - 1:
+                        logger.error(
+                            f"Failed to connect to Appium server on port {appium_port} after {max_retries} attempts: {e}"
+                        )
+
+                        # Check if we need to start Appium ourselves
+                        try:
+                            server = current_app.config.get("server_instance")
+                            if server:
+                                logger.info(f"Attempting to start Appium server directly from driver...")
+                                email = (
+                                    current_profile["email"]
+                                    if current_profile and "email" in current_profile
+                                    else None
+                                )
+                                if email:
+                                    started = server.start_appium(port=appium_port, email=email)
+                                    if not started:
+                                        logger.error("Failed to start Appium server from driver")
+                                    else:
+                                        time.sleep(0.2)  # Give it time to start
+                                        continue  # Retry the check
+                        except Exception as start_error:
+                            logger.error(f"Error starting Appium from driver: {start_error}")
+
+                        raise Exception(f"Cannot connect to Appium server on port {appium_port}: {e}")
+
+                    logger.warning(f"Appium connection error (attempt {attempt+1}/{max_retries}): {e}")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+
+            # Initialize driver with the options using the specific port
+            # Ensure we have a valid appium port - use centralized default as fallback
+            from server.utils.port_utils import PortConfig
+
+            appium_port = self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
+
+            logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
+
+            # Add retry logic for driver creation to handle socket hang-ups
+            driver_creation_retries = 3
+            driver_retry_delay = 5
+
+            for driver_attempt in range(driver_creation_retries):
+                self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
+                logger.info(
+                    f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
+                )
+                break
+            socket.setdefaulttimeout(original_timeout)  # Restore original timeout
+
+            # Force a state check after driver initialization with a timeout
+            import concurrent.futures
+            import threading
+
+            def check_connection():
+                self.driver.current_activity  # This will force Appium to check connection
+                return True
+
+            # Run the check with a timeout
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(check_connection)
+                try:
+                    result = future.result(timeout=15)  # 15 second timeout - increased from 5
+                    return True
+                except concurrent.futures.TimeoutError:
+                    logger.error("Connection check timed out after 15 seconds")
+
+                    try:
+                        # Try to quit the driver that may be in a bad state
+                        if self.driver:
+                            self.driver.quit()
+                    except:
+                        pass
+                    self.driver = None
+                    raise TimeoutError("Connection check timed out")
 
     def _is_session_active(self) -> bool:
         """Check if the current driver session is active and healthy."""

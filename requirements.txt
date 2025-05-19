@@ -9,3 +9,4 @@ requests==2.32.3
 flask_restful==0.3.10
 mistralai==1.5.1
 python-dotenv==1.0.1
+pytz==2024.1

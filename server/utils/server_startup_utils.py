@@ -94,6 +94,7 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                 except Exception as e:
                     logger.error(f"✗ Error restarting emulator for {email}: {e}")
                     failed_restarts.append(email)
+                    raise e
 
             # Summary report
             logger.info("=== Session restoration complete ===")

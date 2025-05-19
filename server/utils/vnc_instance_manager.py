@@ -421,7 +421,9 @@ class VNCInstanceManager:
             instance_id = instance.get("id")
             if instance_id:
                 calculated_port = self.calculate_appium_port(instance_id)
-                logger.info(f"Calculated appium port {calculated_port} from instance ID {instance_id} for {email}")
+                logger.info(
+                    f"Calculated appium port {calculated_port} from instance ID {instance_id} for {email}"
+                )
                 return calculated_port
 
         logger.info(f"No VNC instance found for {email}, no appium port available")

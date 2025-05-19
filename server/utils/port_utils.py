@@ -54,7 +54,7 @@ def calculate_appium_port(email: str = None, instance_id: int = None) -> int:
     if instance_id is not None:
         # Sequential calculation for instance ID
         return PortConfig.APPIUM_BASE_PORT + instance_id
-    
+
     # Only use macOS default if no instance_id is provided
     if is_mac_dev:
         # On macOS dev, use port 4723 when no instance is specified

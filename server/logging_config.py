@@ -3,7 +3,10 @@ import logging.config
 import os
 import sys
 import threading
+from datetime import datetime
 from typing import Dict, Optional
+
+import pytz
 
 # Remove circular import - DynamicEmailHandler will get email from flask.g only
 
@@ -78,7 +81,7 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
         # Use the same formatter as the main logger
         formatter = RelativePathFormatter(
             "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
-            datefmt="%H:%M:%S",
+            datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
         file_handler.setFormatter(formatter)
 
@@ -202,6 +205,22 @@ class DynamicEmailHandler(logging.Handler):
 class RelativePathFormatter(logging.Formatter):
     """Format the pathname to be relative to the project root."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pst_tz = pytz.timezone("US/Pacific")
+
+    def formatTime(self, record, datefmt=None):
+        """Override formatTime to use PT timezone"""
+        # Convert the timestamp to PT timezone
+        ct = datetime.fromtimestamp(record.created, tz=pytz.UTC)
+        ct = ct.astimezone(self.pst_tz)
+
+        if datefmt:
+            s = ct.strftime(datefmt)
+        else:
+            s = ct.strftime("%-m-%-d-%y %-H:%M:%S %Z")
+        return s
+
     def format(self, record):
         # Get the project root directory (parent of server/server.py)
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -265,7 +284,7 @@ def setup_logger():
     # Create the formatter
     formatter = RelativePathFormatter(
         "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
-        datefmt="%H:%M:%S",
+        datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
 
     # Create the custom filter
