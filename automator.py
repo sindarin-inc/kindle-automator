@@ -63,9 +63,9 @@ class KindleAutomator:
             profile_emulator_id = profile["emulator_id"]
             if profile_emulator_id and profile_emulator_id != self.device_id:
                 logger.warning(
-                    f"Device ID mismatch: driver has {self.device_id}, profile has {profile_emulator_id}"
+                    f"Device ID mismatch: driver has {self.device_id}, profile has {profile_emulator_id}. Profile: {profile}"
                 )
-                # Trust the driver's device ID as it's what we're actually connected to
+                return False
 
         logger.info(f"Initialized driver {self.driver} with device_id: {self.device_id}")
 

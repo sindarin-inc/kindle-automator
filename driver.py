@@ -802,10 +802,12 @@ class Driver:
             # Test if driver is still connected
             try:
                 self.driver.current_activity
-                logger.info("Driver already initialized and connected")
+                logger.info(
+                    f"Driver already initialized and connected, id: {self.device_id}, instance: {self}"
+                )
                 return True  # Return early if driver is already connected
             except Exception as e:
-                logger.info("Driver not connected - reinitializing")
+                logger.info(f"Driver not connected - reinitializing {self}")
                 self.driver = None
 
         # Get device ID first, using specific device ID from profile if available
@@ -1030,7 +1032,9 @@ class Driver:
             # Prevent app relaunch on Appium session start
             options.set_capability("appium:autoLaunch", False)  # Disable app relaunch on session start
             options.set_capability("appium:noReset", True)
-            options.set_capability("appium:dontStopAppOnReset", True)  # Prevent closing app when session stops
+            options.set_capability(
+                "appium:dontStopAppOnReset", True
+            )  # Prevent closing app when session stops
 
             # Set shorter waitForIdleTimeout to make Appium faster
             options.set_capability("appium:waitForIdleTimeout", 1000)  # 1 second wait for idle state
