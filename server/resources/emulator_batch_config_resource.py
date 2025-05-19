@@ -85,7 +85,7 @@ class EmulatorBatchConfigResource(Resource):
                     # Boot the emulator
                     logger.info(f"{GREEN}Starting emulator for {email}{RESET}")
                     # Use switch_profile to start emulator, same as the successful flow
-                    success, message = self.server.switch_profile(email, force_new_emulator=False)
+                    success, message = self.server.switch_profile(email)
 
                     if not success:
                         logger.error(f"{RED}Failed to start emulator for {email}: {message}{RESET}")

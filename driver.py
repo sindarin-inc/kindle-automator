@@ -26,6 +26,7 @@ class Driver:
 
     def __init__(self):
         if hasattr(self, "_initialized_attributes"):
+            logger.info(f"Driver already initialized, instance: {self}")
             return
         self.driver = None
         self.device_id = None
@@ -34,6 +35,7 @@ class Driver:
         self._session_retries = 0
         self._max_session_retries = 2
         self._initialized_attributes = True
+        logger.info(f"Driver initialized, instance: {self}")
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
@@ -803,7 +805,7 @@ class Driver:
             try:
                 self.driver.current_activity
                 logger.info(
-                    f"Driver already initialized and connected, id: {self.device_id}, instance: {self}"
+                    f"Driver already initialized and connected, id: {self.device_id}, instance: {self.driver} {self}"
                 )
                 return True  # Return early if driver is already connected
             except Exception as e:

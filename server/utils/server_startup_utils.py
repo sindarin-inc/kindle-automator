@@ -61,7 +61,7 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                     # Use email override context to ensure proper email routing
                     with email_override(email):
                         # Use switch_profile instead of start_emulator to ensure proper initialization
-                        success, message = server.switch_profile(email, force_new_emulator=False)
+                        success, message = server.switch_profile(email)
 
                         if success:
                             # Initialize the automator to ensure the driver is ready
