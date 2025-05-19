@@ -90,8 +90,8 @@ app.config.update(
 # Create the server instance
 server = AutomationServer()
 
-# Initialize the dictionary to track per-email Appium processes
-server.appium_processes = {}
+# Appium processes are now managed by AppiumDriver/VNCInstanceManager
+# No longer needed: server.appium_processes = {}
 
 # Store server instance in app config for access in middleware
 app.config["server_instance"] = server
@@ -2053,12 +2053,23 @@ def cleanup_resources():
         except Exception as e:
             logger.error(f"✗ Error shutting down {email}: {e}")
 
-    # Kill Appium server only
+    # Stop Appium servers for all running emulators
+    from server.utils.appium_driver import AppiumDriver
+    appium_driver = AppiumDriver()
+    
+    for email in running_emails:
+        try:
+            logger.info(f"Stopping Appium server for {email}")
+            appium_driver.stop_appium_for_profile(email)
+        except Exception as e:
+            logger.error(f"Error stopping Appium for {email} during shutdown: {e}")
+    
+    # Kill any remaining Appium processes (legacy cleanup)
     try:
-        logger.info("Stopping Appium server")
+        logger.info("Cleaning up any remaining Appium processes")
         server.kill_existing_process("appium")
     except Exception as e:
-        logger.error(f"Error stopping Appium during shutdown: {e}")
+        logger.error(f"Error killing remaining Appium processes: {e}")
 
     logger.info(f"=== Graceful shutdown complete ===")
     logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")
@@ -2089,6 +2100,12 @@ def run_server():
 def main():
     # Kill any Flask processes on the same port (but leave Appium servers alone)
     server.kill_existing_process("flask")
+    
+    # Reset any lingering appium states from a previous run
+    from server.utils.vnc_instance_manager import VNCInstanceManager
+    vnc_manager = VNCInstanceManager.get_instance()
+    logger.info("Resetting appium states from previous run...")
+    vnc_manager.reset_appium_states_on_startup()
 
     # Check ADB connectivity
     check_and_restart_adb_server()

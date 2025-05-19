@@ -19,9 +19,6 @@ logger = logging.getLogger(__name__)
 class AutomationServer:
     def __init__(self):
         self.automators = {}  # Dictionary to track multiple automators by email
-        self.appium_process = None
-        self.appium_processes = {}  # Dictionary to track appium instances by email
-        self.allocated_ports = {}  # Track allocated ports to prevent conflicts
         self.pid_dir = "logs"
         self.current_books = {}  # Track the currently open book title for each email
         self.last_activity = {}  # Track last activity time for each email
@@ -47,27 +44,6 @@ class AutomationServer:
             return None
 
         return self.automators.get(email)
-
-    def get_or_create_automator(self, email):
-        """Get existing automator or create a new one for the given email.
-
-        Args:
-            email: The email address to get or create automator for
-
-        Returns:
-            The automator instance or None if creation failed
-        """
-        if not email:
-            logger.error("Email parameter is required for get_or_create_automator")
-            return None
-
-        # Check if we already have an automator
-        existing = self.get_automator(email)
-        if existing:
-            return existing
-
-        # Create a new one
-        return self.initialize_automator(email)
 
     def initialize_automator(self, email):
         """Initialize automator for VNC-based manual authentication.
@@ -215,377 +191,6 @@ class AutomationServer:
 
         return True, message
 
-    def save_pid(self, name: str, pid: int):
-        """Save process ID to file"""
-        # For appium processes, save in the appium_logs directory
-        if name.startswith("appium"):
-            pid_dir = os.path.join(self.pid_dir, "appium_logs")
-            os.makedirs(pid_dir, exist_ok=True)
-        else:
-            pid_dir = self.pid_dir
-
-        pid_file = os.path.join(pid_dir, f"{name}.pid")
-        try:
-            with open(pid_file, "w") as f:
-                f.write(str(pid))
-            # Set file permissions to be readable by all
-            os.chmod(pid_file, 0o644)
-        except Exception as e:
-            logger.error(f"Error saving PID file: {e}")
-
-    def kill_existing_process(self, name: str):
-        """Kill existing process if running on port 4098"""
-        try:
-            if name == "flask":
-                # Use lsof to find process on port 4098
-                pid = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
-                if pid:
-                    os.kill(int(pid), signal.SIGTERM)
-                    logger.info(f"Killed existing flask process with PID {pid}")
-            elif name == "appium":
-                subprocess.run(["pkill", "-f", "appium"], check=False)
-                logger.info("Killed existing appium processes")
-        except subprocess.CalledProcessError:
-            logger.info(f"No existing {name} process found")
-        except Exception as e:
-            logger.error(f"Error killing {name} process: {e}")
-
-    def _check_appium_health(self, port):
-        """Check if Appium server is healthy on the specified port.
-
-        Args:
-            port: The port to check
-
-        Returns:
-            bool: True if Appium is running and healthy, False otherwise
-        """
-        try:
-            # Check if anything is listening on the port
-            port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
-            )
-            if not port_check.stdout.strip():
-                logger.debug(f"No process found listening on port {port}")
-                return False
-
-            # Check Appium server status endpoint
-            check_result = subprocess.run(
-                ["curl", "-s", f"http://localhost:{port}/status"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
-
-            if check_result.returncode != 0:
-                logger.debug(f"Appium health check failed with return code {check_result.returncode}")
-                return False
-
-            # Parse the response
-            import json
-
-            try:
-                response_json = json.loads(check_result.stdout)
-
-                # Check for Appium 1.x format: {"status": 0, ...}
-                if "status" in response_json and response_json["status"] == 0:
-                    logger.debug(f"Healthy Appium 1.x server found on port {port}")
-                    return True
-
-                # Check for Appium 2.x format: {"value": {"ready": true, ...}}
-                if "value" in response_json and isinstance(response_json["value"], dict):
-                    if response_json["value"].get("ready") == True:
-                        logger.debug(f"Healthy Appium 2.x server found on port {port}")
-                        return True
-
-                logger.debug(f"Appium server on port {port} returned unknown format: {response_json}")
-
-            except json.JSONDecodeError:
-                # Not valid JSON, fallback to string check
-                if '"status":0' in check_result.stdout or '"ready":true' in check_result.stdout:
-                    logger.debug(f"Healthy Appium server found on port {port} (string check)")
-                    return True
-                else:
-                    logger.debug(f"Invalid JSON response from Appium on port {port}: {check_result.stdout}")
-
-        except Exception as e:
-            logger.debug(f"Error checking Appium health on port {port}: {e}")
-
-        return False
-
-    def get_unique_ports_for_email(self, email):
-        """Get unique port numbers for an email, ensuring no conflicts.
-
-        This method now includes device ID to ensure different devices get different ports.
-
-        Args:
-            email: The email to get ports for
-
-        Returns:
-            dict: A dictionary of port assignments
-        """
-        # Get the current device ID for this email from the profile
-        device_id = None
-        if hasattr(self, "profile_manager"):
-            profile = self.profile_manager.get_profile_for_email(email)
-            if profile:
-                device_id = profile.get("emulator_id")
-
-        # Create a unique key combining email and device
-        allocation_key = f"{email}:{device_id}" if device_id else email
-
-        # Check if we already have ports allocated for this email+device combination
-        if allocation_key in self.allocated_ports:
-            logger.info(f"Reusing existing ports for {allocation_key}")
-            return self.allocated_ports[allocation_key]
-
-        # Import centralized port utilities
-        from server.utils.port_utils import PortConfig, calculate_appium_port
-        from server.utils.vnc_instance_manager import VNCInstanceManager
-
-        # Get VNC instance manager to check for existing appium port assignment
-        vnc_manager = VNCInstanceManager.get_instance()
-        vnc_assigned_appium_port = vnc_manager.get_appium_port(email)
-
-        # Find the next available slot
-        # Check existing allocations and find a free slot
-        used_slots = set()
-        for allocated in self.allocated_ports.values():
-            slot = allocated.get("slot", 0)
-            used_slots.add(slot)
-
-        # Find the first available slot
-        slot = 0
-        while slot in used_slots:
-            slot += 1
-
-        # Use VNC assigned appium port if available, otherwise calculate
-        appium_port = (
-            vnc_assigned_appium_port if vnc_assigned_appium_port else calculate_appium_port(instance_id=slot)
-        )
-
-        # Allocate ports using centralized configuration
-        ports = {
-            "slot": slot,
-            "systemPort": PortConfig.SYSTEM_BASE_PORT + slot,
-            "bootstrapPort": PortConfig.BOOTSTRAP_BASE_PORT + slot,
-            "chromedriverPort": PortConfig.CHROMEDRIVER_BASE_PORT + slot,
-            "mjpegServerPort": PortConfig.MJPEG_BASE_PORT + slot,
-            "appiumPort": appium_port,
-        }
-
-        self.allocated_ports[allocation_key] = ports
-        logger.info(f"Allocated ports for {allocation_key}: {ports}")
-        return ports
-
-    def start_appium(self, port=4723, email=None):
-        """Start Appium server for a specific profile on a specific port.
-
-        Args:
-            port: The port to start Appium on (default: 4723)
-            email: The email address for which this Appium instance is being started
-                   If provided, this will be used to track the Appium instance
-
-        Returns:
-            bool: True if Appium server started successfully, False otherwise
-        """
-        # If email is provided, get the allocated port for this email
-        if email:
-            ports = self.get_unique_ports_for_email(email)
-            port = ports["appiumPort"]
-            logger.info(f"Using allocated port {port} for {email}")
-
-        # Generate a unique name for the Appium process - either based on email or port
-        process_name = f"appium_{email}" if email else f"appium_{port}"
-
-        # First, check if Appium is already running on this port and is healthy
-        if self._check_appium_health(port):
-            logger.info(f"Healthy Appium server already running on port {port}, reusing it")
-
-            # Get the PID of the existing process
-            existing_pid = None
-            try:
-                pid_check = subprocess.run(
-                    ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
-                )
-                if pid_check.stdout.strip():
-                    # lsof might return multiple PIDs; take the first one
-                    pids = pid_check.stdout.strip().split("\n")
-                    existing_pid = int(pids[0])
-                    logger.debug(
-                        f"Found existing Appium process with PID {existing_pid} (total PIDs: {len(pids)})"
-                    )
-            except Exception as e:
-                logger.warning(f"Could not get PID of existing Appium process: {e}")
-
-            # Store the process reference if we have an email
-            if email:
-                # Update our tracking with the existing process
-                self.appium_processes[email] = {
-                    "process": None,  # We don't have the process object, but it's running
-                    "port": port,
-                    "pid": existing_pid,
-                }
-
-            return True
-
-        # If Appium isn't healthy or not running, then kill any existing process on this port
-        try:
-            # Try to find and kill any process using this port
-            port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
-            )
-            if port_check.stdout.strip():
-                pid = port_check.stdout.strip()
-                logger.info(f"Killing unhealthy/stale process with PID {pid} on port {port}")
-                try:
-                    os.kill(int(pid), signal.SIGTERM)
-                    time.sleep(1)  # Give it time to terminate
-                except Exception as kill_e:
-                    logger.warning(f"Error killing process on port {port}: {kill_e}")
-        except Exception as e:
-            logger.warning(f"Error checking for processes on port {port}: {e}")
-
-        # Also try killing by name pattern
-        self.kill_existing_process(process_name)
-
-        try:
-            # Start Appium on the specified port
-            logger.info(f"Starting Appium server for {email if email else 'default'} on port {port}")
-
-            # Path for log files
-            logs_dir = os.path.join(self.pid_dir, "appium_logs")
-            os.makedirs(logs_dir, exist_ok=True)
-            log_file = os.path.join(logs_dir, f"{process_name}.log")
-
-            # Start Appium with the specific port
-            # Find the appium executable - first check common locations
-            appium_paths = [
-                "appium",  # Try PATH first
-                "/opt/homebrew/bin/appium",  # Common macOS Homebrew location
-                "/usr/local/bin/appium",  # Common Linux/macOS location
-                "/usr/bin/appium",  # Common Linux location
-                os.path.expanduser("~/.nvm/versions/node/*/bin/appium"),  # NVM install
-                os.path.expanduser("~/.npm-global/bin/appium"),  # NPM global
-            ]
-
-            # Try each potential path
-            appium_cmd = None
-            for path in appium_paths:
-                # If path contains a wildcard, try to expand it
-                if "*" in path:
-                    import glob
-
-                    matching_paths = glob.glob(path)
-                    # Sort by version (assuming newer is better)
-                    matching_paths.sort(reverse=True)
-                    if matching_paths:
-                        path = matching_paths[0]
-
-                # Check if the path exists and is executable
-                if path != "appium":  # Skip PATH check
-                    if not os.path.exists(path) or not os.access(path, os.X_OK):
-                        continue
-
-                # Try to run the command to verify it works
-                try:
-                    version_check = subprocess.run(
-                        [path, "--version"], capture_output=True, text=True, check=False, timeout=2
-                    )
-                    if version_check.returncode == 0:
-                        appium_cmd = path
-                        break
-                except (subprocess.SubprocessError, OSError):
-                    continue
-
-            # If we didn't find Appium, try PATH as a last resort
-            if not appium_cmd:
-                appium_cmd = "appium"
-                logger.warning(f"Could not find Appium in standard locations, falling back to PATH")
-
-            # Add environment variables to ensure proper Node.js execution
-            env = os.environ.copy()
-
-            # Ensure these paths are in PATH if they exist
-            for bin_path in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
-                if os.path.exists(bin_path) and bin_path not in env.get("PATH", ""):
-                    env["PATH"] = f"{bin_path}:{env.get('PATH', '')}"
-
-            # Start Appium with more detailed logs
-            with open(log_file, "w") as log:
-                appium_process = subprocess.Popen(
-                    [
-                        appium_cmd,
-                        "--port",
-                        str(port),
-                        "--log-level",
-                        "info",
-                    ],
-                    stdout=log,
-                    stderr=log,
-                    text=True,
-                    env=env,
-                )
-
-            # Save the PID
-            self.save_pid(process_name, appium_process.pid)
-
-            # Store the process in either the global appium_process or in the per-email dictionary
-            if email:
-                # Create a dictionary to track per-email Appium processes if it doesn't exist
-                if not hasattr(self, "appium_processes"):
-                    self.appium_processes = {}
-
-                # Store the process and port information
-                self.appium_processes[email] = {
-                    "process": appium_process,
-                    "port": port,
-                    "pid": appium_process.pid,
-                }
-            else:
-                # Fall back to the global appium_process for backward compatibility
-                self.appium_process = appium_process
-
-            # Wait briefly for Appium to start up
-            time.sleep(2)
-
-            # Verify Appium is running on this port - try multiple times with increasing delays
-            max_retries = 3
-            retry_delay = 1  # Start with 1 second, will increase
-
-            for attempt in range(max_retries):
-                if self._check_appium_health(port):
-                    logger.info(f"Appium server successfully started and responsive on port {port}")
-                    return True
-
-                # If this is the last attempt, don't continue
-                if attempt == max_retries - 1:
-                    logger.error(f"Appium server failed to respond correctly after {max_retries} attempts")
-
-                    # Kill the process since it's not working properly
-                    if email and email in self.appium_processes:
-                        try:
-                            process = self.appium_processes[email].get("process")
-                            if process:
-                                process.terminate()
-                                logger.info(f"Terminated non-responsive Appium process for {email}")
-                        except Exception as term_e:
-                            logger.warning(f"Error terminating non-responsive Appium process: {term_e}")
-
-                    return False
-
-                # Wait before trying again
-                logger.info(f"Waiting {retry_delay}s before checking Appium server again...")
-                time.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
-
-            # Should never reach here due to returns in the loop
-            return False
-
-        except Exception as e:
-            logger.error(f"Failed to start Appium server on port {port}: {e}")
-            return False
-
     def set_current_book(self, book_title, email):
         """Set the currently open book title for a specific email
 
@@ -631,41 +236,29 @@ class AutomationServer:
 
     # current_book property has been removed - use get_current_book(email) instead
 
-    def release_allocated_ports(self, email):
-        """Release allocated ports for an email when they're no longer needed.
+    def save_pid(self, name: str, pid: int):
+        """Save process ID to file for Flask process."""
+        pid_file = os.path.join(self.pid_dir, f"{name}.pid")
+        try:
+            with open(pid_file, "w") as f:
+                f.write(str(pid))
+            os.chmod(pid_file, 0o644)
+        except Exception as e:
+            logger.error(f"Error saving PID file: {e}")
 
-        Args:
-            email: The email to release ports for
-        """
-        # Try to release with device ID first
-        device_id = None
-        if hasattr(self, "profile_manager"):
-            profile = self.profile_manager.get_profile_for_email(email)
-            if profile:
-                device_id = profile.get("emulator_id")
-
-        allocation_key = f"{email}:{device_id}" if device_id else email
-
-        # Try to release with the key that includes device ID
-        if allocation_key in self.allocated_ports:
-            logger.info(
-                f"Releasing allocated ports for {allocation_key}: {self.allocated_ports[allocation_key]}"
-            )
-            del self.allocated_ports[allocation_key]
-        # Also try with just email for backward compatibility
-        elif email in self.allocated_ports:
-            logger.info(f"Releasing allocated ports for {email}: {self.allocated_ports[email]}")
-            del self.allocated_ports[email]
-
-        # Also clean up appium_processes if the instance is no longer running
-        if email in self.appium_processes:
-            appium_info = self.appium_processes[email]
-            port = appium_info.get("port")
-
-            # Check if the process is still running
-            if port and not self._check_appium_health(port):
-                logger.info(f"Removing dead appium process info for {email}")
-                del self.appium_processes[email]
+    def kill_existing_process(self, name: str):
+        """Kill existing Flask process if running on port 4098."""
+        if name == "flask":
+            try:
+                # Use lsof to find process on port 4098
+                pid = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
+                if pid:
+                    os.kill(int(pid), signal.SIGTERM)
+                    logger.info(f"Killed existing flask process with PID {pid}")
+            except subprocess.CalledProcessError:
+                logger.info("No existing flask process found")
+            except Exception as e:
+                logger.error(f"Error killing flask process: {e}")
 
     def update_activity(self, email):
         """Update the last activity timestamp for an email.
@@ -687,13 +280,3 @@ class AutomationServer:
             The last activity timestamp or None if not found
         """
         return self.last_activity.get(email)
-
-    def clear_activity(self, email):
-        """Clear the activity tracking for an email.
-
-        Args:
-            email: The email address to clear activity for
-        """
-        if email in self.last_activity:
-            del self.last_activity[email]
-            logger.debug(f"Cleared activity tracking for {email}")

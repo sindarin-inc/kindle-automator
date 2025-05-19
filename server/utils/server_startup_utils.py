@@ -32,6 +32,10 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
 
         logger.info("=== Beginning session restoration check ===")
         vnc_manager = VNCInstanceManager.get_instance()
+        
+        # Reset any lingering appium states from previous run
+        logger.info("Resetting appium states from previous run...")
+        vnc_manager.reset_appium_states_on_startup()
 
         emulators_to_restart = vnc_manager.get_running_at_restart()
 
@@ -57,17 +61,13 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                     # Use email override context to ensure proper email routing
                     with email_override(email):
                         # First start Appium for this email if not already running
-                        if email not in server.appium_processes:
-                            from server.utils.port_utils import (
-                                get_appium_port_for_email,
-                            )
-
-                            port = get_appium_port_for_email(
-                                email,
-                                vnc_manager=vnc_manager,
-                                profiles_index=server.profile_manager.profiles_index,
-                            )
-                            appium_started = server.start_appium(port=port, email=email)
+                        from server.utils.appium_driver import AppiumDriver
+                        
+                        appium_driver = AppiumDriver()
+                        appium_info = appium_driver.get_appium_process_info(email)
+                        
+                        if not appium_info or not appium_info.get("running"):
+                            appium_started = appium_driver.start_appium_for_profile(email)
                             if not appium_started:
                                 logger.error(f"Failed to start Appium server for {email}")
                                 failed_restarts.append(email)

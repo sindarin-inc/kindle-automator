@@ -153,12 +153,18 @@ class VNCInstanceManager:
             next_id = max(existing_ids) + 1
 
         # Calculate ports based on instance ID
-        from server.utils.port_utils import calculate_emulator_ports
+        from server.utils.port_utils import calculate_emulator_ports, PortConfig
 
         ports = calculate_emulator_ports(next_id)
         emulator_port = ports["emulator_port"]
         vnc_port = ports["vnc_port"]
         appium_port = ports["appium_port"]
+        
+        # Get additional Appium-related ports
+        appium_system_port = ports.get("system_port", PortConfig.SYSTEM_BASE_PORT + next_id)
+        appium_bootstrap_port = ports.get("bootstrap_port", PortConfig.BOOTSTRAP_BASE_PORT + next_id)
+        appium_chromedriver_port = ports.get("chromedriver_port", PortConfig.CHROMEDRIVER_BASE_PORT + next_id)
+        appium_mjpeg_server_port = PortConfig.MJPEG_BASE_PORT + next_id
 
         # Create a new instance with the next available ID
         return {
@@ -169,6 +175,15 @@ class VNCInstanceManager:
             "emulator_port": emulator_port,
             "emulator_id": None,
             "assigned_profile": None,
+            # New fields for Appium process tracking
+            "appium_pid": None,
+            "appium_running": False,
+            "appium_last_health_check": None,
+            # Additional Appium-related ports
+            "appium_system_port": appium_system_port,
+            "appium_bootstrap_port": appium_bootstrap_port,
+            "appium_chromedriver_port": appium_chromedriver_port,
+            "appium_mjpeg_server_port": appium_mjpeg_server_port,
         }
 
     def save_instances(self) -> bool:
@@ -179,6 +194,9 @@ class VNCInstanceManager:
             bool: True if instances were saved successfully, False otherwise
         """
         try:
+            # Ensure directory exists before saving
+            os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
+            
             data = {"instances": self.instances, "version": 1}
             with open(self.map_path, "w") as f:
                 json.dump(data, f, indent=2)
@@ -539,3 +557,25 @@ class VNCInstanceManager:
             logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}")
+    
+    def reset_appium_states_on_startup(self) -> None:
+        """
+        Reset all appium_running states to false on server startup.
+        This ensures clean state after unexpected shutdowns.
+        """
+        try:
+            reset_count = 0
+            for instance in self.instances.values():
+                if instance.get("appium_running", False):
+                    instance["appium_running"] = False
+                    instance["appium_pid"] = None
+                    reset_count += 1
+                    logger.info(f"Reset appium_running state for instance {instance['id']}")
+            
+            if reset_count > 0:
+                self.save_instances()
+                logger.info(f"Reset {reset_count} appium_running states on startup")
+            else:
+                logger.info("No appium_running states needed resetting")
+        except Exception as e:
+            logger.error(f"Error resetting appium states on startup: {e}")

@@ -24,12 +24,15 @@ class Driver:
         return cls._instance
 
     def __init__(self):
+        if hasattr(self, '_initialized_attributes'):
+            return
         self.driver = None
         self.device_id = None
         self.automator = None  # Reference to the automator instance
         self.appium_port = None  # Default port, can be overridden
         self._session_retries = 0
         self._max_session_retries = 2
+        self._initialized_attributes = True
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
@@ -798,11 +801,10 @@ class Driver:
             # Test if driver is still connected
             try:
                 self.driver.current_activity
+                logger.info("Driver already initialized and connected")
+                return True  # Return early if driver is already connected
             except Exception as e:
                 logger.info("Driver not connected - reinitializing")
-                self.driver = None
-            else:
-                logger.info("Driver already initialized, reinitializing")
                 self.driver = None
 
         # Get device ID first, using specific device ID from profile if available
@@ -983,8 +985,8 @@ class Driver:
             return False
 
         # Initialize driver with retry logic
-        for attempt in range(1, 2):  # Increase to 5 attempts
-            logger.info(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/5)...")
+        for attempt in range(1, 2):
+            logger.info(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/2)...")
 
             options = UiAutomator2Options()
             options.platform_name = "Android"
@@ -1024,6 +1026,11 @@ class Driver:
             options.allow_invisible_elements = True
             options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
 
+            # Prevent app relaunch on Appium session start
+            options.set_capability("autoLaunch", False)  # Disable app relaunch on session start
+            options.set_capability("noReset", True)
+            options.set_capability("dontStopAppOnReset", True)  # Prevent closing app when session stops
+
             # Set shorter waitForIdleTimeout to make Appium faster
             options.set_capability("waitForIdleTimeout", 1000)  # 1 second wait for idle state
 
@@ -1046,24 +1053,11 @@ class Driver:
 
             # If we have instance_id, add unique ports for parallel execution
             if instance_id and email:
-                # Get allocated ports from server - pass device ID for proper allocation
-                allocated_ports = None
-                if current_app:
-                    server = current_app.config.get("server_instance")
-                    if server and hasattr(server, "get_unique_ports_for_email"):
-                        # First update the profile with the device ID we're using
-                        if hasattr(server, "profile_manager") and self.device_id:
-                            profile = server.profile_manager.get_profile_for_email(email)
-                            if profile and profile.get("emulator_id") != self.device_id:
-                                logger.info(
-                                    f"Updating profile device ID to {self.device_id} before port allocation"
-                                )
-                                if hasattr(server.profile_manager, "_save_profile_status"):
-                                    server.profile_manager._save_profile_status(
-                                        email, profile.get("avd_name"), self.device_id
-                                    )
+                # Get allocated ports from VNCInstanceManager via AppiumDriver
+                from server.utils.appium_driver import AppiumDriver
 
-                        allocated_ports = server.get_unique_ports_for_email(email)
+                appium_driver = AppiumDriver()
+                allocated_ports = appium_driver.get_appium_ports_for_profile(email)
 
                 if allocated_ports:
                     # Use the allocated ports
@@ -1072,6 +1066,9 @@ class Driver:
                     options.set_capability("chromedriverPort", allocated_ports["chromedriverPort"])
                     options.set_capability("mjpegServerPort", allocated_ports["mjpegServerPort"])
                     logger.info(f"Using allocated ports for {email}: {allocated_ports}")
+                else:
+                    logger.error(f"No allocated ports found for {email}")
+                    return False
 
                 # Temporary directory for this instance
                 import tempfile
@@ -1084,11 +1081,19 @@ class Driver:
             options.set_capability("clearSystemFiles", True)
             options.set_capability("skipServerInstallation", False)
 
+            # Force server shutdown on disconnect to prevent port conflicts
+            options.set_capability("relaxedSecurity", True)
+            options.set_capability("shutdownOnPowerDisconnect", True)
+            options.set_capability("disableWindowAnimation", True)
+
+            # Ensure clean session management
+            options.set_capability("skipUnlock", True)
+            options.set_capability("dontStopAppOnReset", True)  # Keep app running when session ends
+
             # Use longer timeout on webdriver initialization
             import socket
 
             original_timeout = socket.getdefaulttimeout()
-            socket.setdefaulttimeout(10)  # 10 second timeout - increased from 5
             # Determine Appium port
             # If automator has a profile manager with a specific port for this email, use that
             if (
@@ -1097,21 +1102,17 @@ class Driver:
                 and hasattr(self.automator.profile_manager, "get_current_profile")
             ):
                 current_profile = self.automator.profile_manager.get_current_profile()
-                if current_profile and "email" in current_profile:
-                    email = current_profile["email"]
-                    # Try to get appium_port from server's allocated ports or appium_processes
-                    if current_app:
-                        server = current_app.config.get("server_instance")
-                        if server:
-                            # First try to get from allocated ports
-                            if hasattr(server, "get_unique_ports_for_email"):
-                                allocated_ports = server.get_unique_ports_for_email(email)
-                                if allocated_ports and "appiumPort" in allocated_ports:
-                                    self.appium_port = allocated_ports["appiumPort"]
-                                    logger.info(f"Using allocated appium port {self.appium_port} for {email}")
-                            # Fall back to appium_processes if available
-                            elif hasattr(server, "appium_processes") and email in server.appium_processes:
-                                self.appium_port = server.appium_processes[email]["port"]
+                if current_profile:
+                    email = current_profile.get("email") or current_profile.get("assigned_profile")
+                    if email:
+                        # Get appium_port from AppiumDriver/VNCInstanceManager
+                        from server.utils.appium_driver import AppiumDriver
+
+                        appium_driver = AppiumDriver()
+                        allocated_ports = appium_driver.get_appium_ports_for_profile(email)
+                        if allocated_ports and "appiumPort" in allocated_ports:
+                            self.appium_port = allocated_ports["appiumPort"]
+                            logger.info(f"Using allocated appium port {self.appium_port} for {email}")
 
             # First verify the Appium server is actually responding
             # This prevents attempting to connect to a non-responsive server
@@ -1174,12 +1175,16 @@ class Driver:
                             if server:
                                 logger.info(f"Attempting to start Appium server directly from driver...")
                                 email = (
-                                    current_profile["email"]
-                                    if current_profile and "email" in current_profile
+                                    current_profile.get("email") or current_profile.get("assigned_profile")
+                                    if current_profile
                                     else None
                                 )
                                 if email:
-                                    started = server.start_appium(port=appium_port, email=email)
+                                    # Use AppiumDriver to start Appium for this profile
+                                    from server.utils.appium_driver import AppiumDriver
+
+                                    appium_driver = AppiumDriver()
+                                    started = appium_driver.start_appium_for_profile(email)
                                     if not started:
                                         logger.error("Failed to start Appium server from driver")
                                     else:
@@ -1200,17 +1205,8 @@ class Driver:
 
             logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
 
-            # Add retry logic for driver creation to handle socket hang-ups
-            driver_creation_retries = 3
-            driver_retry_delay = 5
-
-            for driver_attempt in range(driver_creation_retries):
-                self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
-                logger.info(
-                    f"Driver initialized successfully on port {appium_port} for device {self.device_id}"
-                )
-                break
-            socket.setdefaulttimeout(original_timeout)  # Restore original timeout
+            self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
+            logger.info(f"Driver initialized successfully on port {appium_port} for device {self.device_id}")
 
             # Force a state check after driver initialization with a timeout
             import concurrent.futures
@@ -1224,6 +1220,7 @@ class Driver:
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(check_connection)
                 try:
+                    logger.debug("Checking connection to Appium server...")
                     result = future.result(timeout=15)  # 15 second timeout - increased from 5
                     return True
                 except concurrent.futures.TimeoutError:
@@ -1309,10 +1306,16 @@ class Driver:
         """Quit the Appium driver"""
         logger.info(f"Quitting driver: {self.driver}")
         if self.driver:
-            self.driver.quit()
-            self.driver = None
-            self.device_id = None
-            Driver._initialized = False  # Allow reinitialization
+            try:
+                # Properly quit the Appium session which should release the ports
+                self.driver.quit()
+                logger.info("Successfully quit Appium driver session")
+            except Exception as e:
+                logger.error(f"Error during driver.quit(): {e}")
+            finally:
+                self.driver = None
+                self.device_id = None
+                Driver._initialized = False  # Allow reinitialization
 
     @classmethod
     def reset(cls):

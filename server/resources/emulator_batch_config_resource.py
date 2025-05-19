@@ -102,7 +102,7 @@ class EmulatorBatchConfigResource(Resource):
                     time.sleep(10)  # Give it time to boot
 
                     # Get the automator for this profile
-                    automator = self.server.get_or_create_automator(email)
+                    automator = self.server.get_automator(email)
                     if not automator:
                         logger.error(f"{RED}Failed to create automator for {email}{RESET}")
                         result["status"] = "failed"

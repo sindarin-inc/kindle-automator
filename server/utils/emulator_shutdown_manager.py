@@ -96,7 +96,7 @@ class EmulatorShutdownManager:
                         # Continue with shutdown even if parking fails
                 else:
                     logger.info(f"Preserving reading state - staying in current view for {email}")
-                    current_state = state_machine.identify_current_state()
+                    current_state = state_machine._get_current_state()
                     if current_state == AppState.READING:
                         logger.info(f"Emulator is in reading view - taking snapshot in current state")
                     else:

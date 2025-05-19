@@ -168,24 +168,40 @@ def ensure_user_profile_loaded(f):
             server.profile_manager.register_email_to_avd(sindarin_email, "Pixel_API_30")
 
         # First check if we need to start a dedicated Appium server for this email
-        if sindarin_email not in server.appium_processes:
-            from server.utils.port_utils import get_appium_port_for_email
-            from server.utils.vnc_instance_manager import VNCInstanceManager
-
-            vnc_manager = VNCInstanceManager.get_instance()
-            port = get_appium_port_for_email(
-                sindarin_email, vnc_manager=vnc_manager, profiles_index=server.profile_manager.profiles_index
-            )
-            logger.info(f"Using Appium port {port} for {sindarin_email}")
-
-            # Start the Appium server on this port and check for success
-            appium_started = server.start_appium(port=port, email=sindarin_email)
+        from server.utils.appium_driver import AppiumDriver
+        from server.utils.vnc_instance_manager import VNCInstanceManager
+        
+        appium_driver = AppiumDriver()
+        vnc_manager = VNCInstanceManager.get_instance()
+        
+        # Ensure VNC instance exists for this profile (even in macOS dev where we don't use VNC)
+        # This is needed for port allocation and tracking
+        vnc_instance = vnc_manager.get_instance_for_profile(sindarin_email)
+        if not vnc_instance:
+            logger.info(f"Creating VNC instance for {sindarin_email} for port tracking")
+            vnc_instance = vnc_manager.assign_instance_to_profile(sindarin_email)
+            if not vnc_instance:
+                logger.error(f"Failed to assign VNC instance for {sindarin_email}")
+                return {
+                    "error": f"Failed to create instance tracking for {sindarin_email}",
+                    "message": "Could not initialize instance tracking",
+                }, 500
+        
+        # Check if Appium is already running for this profile
+        appium_info = appium_driver.get_appium_process_info(sindarin_email)
+        if not appium_info or not appium_info.get("running"):
+            logger.info(f"Starting Appium server for {sindarin_email}")
+            
+            # Start the Appium server for this profile
+            appium_started = appium_driver.start_appium_for_profile(sindarin_email)
             if not appium_started:
-                logger.error(f"Failed to start Appium server for {sindarin_email} on port {port}")
+                logger.error(f"Failed to start Appium server for {sindarin_email}")
                 return {
                     "error": f"Failed to start Appium server for {sindarin_email}",
                     "message": "Could not initialize Appium server",
                 }, 500
+        else:
+            logger.info(f"Appium already running for {sindarin_email} on port {appium_info['port']}")
 
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
