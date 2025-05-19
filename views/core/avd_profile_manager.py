@@ -614,7 +614,9 @@ class AVDProfileManager:
         try:
             # Check for running emulators
             running_emulators = self.device_discovery.map_running_emulators()
+            logger.info(f"[DIAG] Running emulators map: {running_emulators}")
             sindarin_email = get_sindarin_email()
+            logger.info(f"[DIAG] Sindarin email: {sindarin_email}")
 
             # Special case for macOS development environment
             is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
@@ -622,9 +624,12 @@ class AVDProfileManager:
             # If there are running emulators or we're in macOS dev mode, try to find the profile
             if running_emulators or is_mac_dev:
                 # First, try to find a profile that matches one of the running emulators
+                logger.info(f"[DIAG] Profiles index contains: {list(self.profiles_index.keys())}")
                 for email, profile in self.profiles_index.items():
+                    logger.info(f"[DIAG] Checking email {email} against sindarin_email {sindarin_email}")
                     if email != sindarin_email:
                         continue
+                    logger.info(f"[DIAG] Found matching profile for {email}: {profile}")
 
                     # Add user preferences if available
                     if email in self.user_preferences:

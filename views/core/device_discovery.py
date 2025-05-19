@@ -81,6 +81,7 @@ class DeviceDiscovery:
         Returns:
             Optional[str]: The AVD name or None if not found
         """
+        logger.info(f"[DIAG] Getting AVD name for emulator {emulator_id}")
         try:
             # First check current profile if we have a matching emulator ID
             if current_profile and current_profile.get("emulator_id") == emulator_id:
@@ -90,8 +91,10 @@ class DeviceDiscovery:
                     return avd_name
 
             # Use adb to get the AVD name via shell getprop with a short timeout
+            cmd = [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"]
+            logger.info(f"[DIAG] Running command: {' '.join(cmd)}")
             result = subprocess.run(
-                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"],
+                cmd,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -101,6 +104,7 @@ class DeviceDiscovery:
             if result.returncode == 0 and result.stdout.strip():
                 # Clean the AVD name - remove any newlines or trailing OK messages
                 raw_name = result.stdout.strip()
+                logger.info(f"[DIAG] Got raw AVD name: '{raw_name}'")
 
                 # Clean the name - sometimes it comes with "OK" suffix or newlines
                 if "\n" in raw_name:
@@ -119,7 +123,10 @@ class DeviceDiscovery:
                     avd_name = avd_name.replace(" OK", "").replace("\nOK", "")
                     logger.info(f"Removed trailing 'OK' from AVD name: {avd_name}")
 
+                logger.info(f"[DIAG] Returning cleaned AVD name: '{avd_name}'")
                 return avd_name
+            else:
+                logger.info(f"[DIAG] Failed to get AVD name via 'emu avd name': returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'")
 
             # Alternative approach - try to get product.device property with short timeout
             result = subprocess.run(
@@ -164,6 +171,7 @@ class DeviceDiscovery:
             Dict[str, str]: Mapping of emulator names to device IDs
         """
         running_emulators = {}
+        logger.info("[DIAG] Starting map_running_emulators")
 
         try:
             # Try a faster check first
@@ -250,6 +258,7 @@ class DeviceDiscovery:
 
             # Parse output to get emulator IDs
             lines = result.stdout.strip().split("\n")
+            logger.info(f"[DIAG] ADB devices output: {result.stdout}")
 
             # Make sure we get valid output - needs at least the header line
             if len(lines) < 1 or "List of devices attached" not in lines[0]:
@@ -280,16 +289,20 @@ class DeviceDiscovery:
                     if len(parts) >= 2 and "emulator" in parts[0]:
                         emulator_id = parts[0].strip()
                         device_state = parts[1].strip()
+                        logger.info(f"[DIAG] Found emulator {emulator_id} in state: {device_state}")
 
                         # Only proceed if the emulator device is actually available (not 'offline')
                         if device_state != "offline":
                             # Query emulator for AVD name with timeout
                             avd_name = self._get_avd_name_for_emulator(emulator_id)
+                            logger.info(f"[DIAG] AVD name for {emulator_id}: {avd_name}")
                             if avd_name:
                                 running_emulators[avd_name] = emulator_id
+                                logger.info(f"[DIAG] Added to map: {avd_name} -> {emulator_id}")
                         else:
                             logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
 
+            logger.info(f"[DIAG] Final emulator map: {running_emulators}")
             return running_emulators
         except subprocess.TimeoutExpired:
             logger.warning("Timeout mapping running emulators")

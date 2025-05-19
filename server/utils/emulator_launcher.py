@@ -260,7 +260,9 @@ class EmulatorLauncher:
 
                 if email in users:
                     user_entry = users.get(email)
-                    return user_entry.get("avd_name")
+                    avd_name = user_entry.get("avd_name")
+                    logger.info(f"[DIAG] Found existing AVD name '{avd_name}' for email '{email}' in profiles")
+                    return avd_name
 
             # No existing entry, detect email format and create appropriate AVD name
             is_normalized = (
@@ -286,7 +288,7 @@ class EmulatorLauncher:
                 domain = domain.replace(".", "_")
                 avd_name = f"KindleAVD_{username}_{domain}"
 
-            logger.info(f"Using standard AVD name {avd_name} for {email}")
+            logger.info(f"[DIAG] Using standard AVD name '{avd_name}' for email '{email}'")
 
             # Register this profile in profiles_index
             try:
@@ -535,8 +537,11 @@ class EmulatorLauncher:
             # IMPORTANT: Use AVD name as key for running_emulators, not email
             # Check if emulator already running for this AVD
             # If this AVD is in our running_emulators cache
+            logger.info(f"[DIAG] checking running_emulators map for AVD {avd_name}")
+            logger.info(f"[DIAG] current running_emulators: {self.running_emulators}")
             if avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
+                logger.info(f"[DIAG] Found cached entry: {emulator_id} on display :{display_num}")
 
                 # Verify the emulator is actually running via adb devices
                 if self._verify_emulator_running(emulator_id):
@@ -550,6 +555,8 @@ class EmulatorLauncher:
                         f"Emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
                     )
                     del self.running_emulators[avd_name]
+            else:
+                logger.info(f"[DIAG] AVD {avd_name} NOT found in running_emulators cache")
 
             # Get assigned display and emulator port for this profile
             display_num = self.get_x_display(email)
@@ -572,6 +579,7 @@ class EmulatorLauncher:
 
             # Calculate emulator ID based on port
             emulator_id = f"emulator-{emulator_port}"
+            logger.info(f"[DIAG] Creating emulator ID: {emulator_id} for AVD: {avd_name}")
 
             # Set up environment variables
             env = os.environ.copy()
@@ -721,6 +729,8 @@ class EmulatorLauncher:
 
             # IMPORTANT: Store the running emulator info with the AVD name as key, not email
             self.running_emulators[avd_name] = (emulator_id, display_num)
+            logger.info(f"[DIAG] Stored in running_emulators map: {avd_name} -> ({emulator_id}, {display_num})")
+            logger.info(f"[DIAG] Current running_emulators map: {self.running_emulators}")
 
             # Now ensure VNC is running for this display after emulator is launched
             if platform.system() != "Darwin":
