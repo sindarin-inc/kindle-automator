@@ -62,13 +62,13 @@ class ReaderHandler:
 
     def _check_for_download_limit_dialog(self) -> bool:
         """Check if a Download Limit dialog is currently visible.
-        
+
         Returns:
             bool: True if a Download Limit dialog is found, False otherwise.
         """
         try:
             # Check all possible ways the dialog could be detected
-            
+
             # Method 1: Check for dialog title
             for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS):
                 try:
@@ -82,7 +82,7 @@ class ReaderHandler:
                     pass
                 except Exception as e:
                     logger.debug(f"Error in dialog title check #{idx}: {e}")
-            
+
             # Method 2: Check for download limit error text
             for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_ERROR_TEXT):
                 try:
@@ -95,7 +95,7 @@ class ReaderHandler:
                     pass
                 except Exception as e:
                     logger.debug(f"Error in error text check #{idx}: {e}")
-            
+
             # Method 3: Check for device list with button combination
             try:
                 # Check if we have both a device list and remove button
@@ -123,14 +123,14 @@ class ReaderHandler:
                     return True
             except Exception as e:
                 logger.debug(f"Error in device list + button check: {e}")
-            
+
             # If we reach here, no dialog was found
             return False
-            
+
         except Exception as e:
             logger.error(f"Error checking for Download Limit dialog: {e}")
             return False
-    
+
     def handle_download_limit_dialog(self) -> bool:
         """Handle the 'Download Limit Reached' dialog by selecting the top device and clicking 'Remove and Download'.
 
@@ -232,7 +232,9 @@ class ReaderHandler:
                         if parent and parent.is_displayed():
                             # Now find the CheckedTextView inside this parent
                             try:
-                                checkbox = parent.find_element(AppiumBy.CLASS_NAME, "android.widget.CheckedTextView")
+                                checkbox = parent.find_element(
+                                    AppiumBy.CLASS_NAME, "android.widget.CheckedTextView"
+                                )
                                 if checkbox and checkbox.is_displayed():
                                     checkbox.click()
                                     logger.info(f"Found and clicked checkbox inside first device #{idx}")
@@ -242,7 +244,9 @@ class ReaderHandler:
                             except NoSuchElementException:
                                 logger.debug(f"CheckedTextView inside first LinearLayout #{idx} not found")
                             except Exception as e:
-                                logger.warning(f"Error clicking CheckedTextView inside LinearLayout #{idx}: {e}")
+                                logger.warning(
+                                    f"Error clicking CheckedTextView inside LinearLayout #{idx}: {e}"
+                                )
                     except NoSuchElementException:
                         continue
 
@@ -327,7 +331,9 @@ class ReaderHandler:
                                 enabled = button.is_enabled()
                                 if enabled:
                                     button_enabled = True
-                                    logger.info(f"Button #{idx} is now enabled after {time.time() - start_time:.1f}s")
+                                    logger.info(
+                                        f"Button #{idx} is now enabled after {time.time() - start_time:.1f}s"
+                                    )
                                     break
                             except:
                                 try:
@@ -335,16 +341,18 @@ class ReaderHandler:
                                     enabled_attr = button.get_attribute("enabled")
                                     if enabled_attr == "true":
                                         button_enabled = True
-                                        logger.info(f"Button #{idx} is now enabled via attribute after {time.time() - start_time:.1f}s")
+                                        logger.info(
+                                            f"Button #{idx} is now enabled via attribute after {time.time() - start_time:.1f}s"
+                                        )
                                         break
                                 except:
                                     pass
                     except:
                         pass
-                
+
                 if not button_enabled:
                     time.sleep(0.2)  # Short wait before checking again
-            
+
             # Method 1: Standard button search and click
             for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_REMOVE_BUTTON):
                 try:
@@ -444,7 +452,7 @@ class ReaderHandler:
             bool: True if reading view was successfully handled, False otherwise.
         """
         logger.info(f"Starting reading flow for book: {book_title}")
-        
+
         # First, check immediately if we have a download limit dialog before waiting for anything else
         # This addresses the issue where we could miss detecting it during transitions
         download_limit_found = self._check_for_download_limit_dialog()
@@ -463,7 +471,7 @@ class ReaderHandler:
             # or for the download limit dialog
             def reading_view_or_download_limit_present(driver):
                 # First check for download limit dialog - try all detection methods
-                
+
                 # Method 1: Check for download limit dialog headers
                 for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS):
                     try:
@@ -564,6 +572,7 @@ class ReaderHandler:
                     logger.info("Successfully handled Download Limit dialog, waiting for reading view")
                     # Now wait for the reading view after handling the dialog
                     try:
+
                         def reading_view_present(driver):
                             for strategy in READING_VIEW_IDENTIFIERS:
                                 try:
