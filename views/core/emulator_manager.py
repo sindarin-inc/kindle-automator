@@ -148,7 +148,7 @@ class EmulatorManager:
                 logger.info(f"Found cached emulator info for {email}: {emulator_id}, {avd_name}")
 
                 # Verify the cached emulator is still running
-                if self.emulator_launcher._verify_emulator_running(emulator_id):
+                if self.emulator_launcher._verify_emulator_running(emulator_id, email):
                     logger.info(f"Cached emulator {emulator_id} is still running for {email}")
                     return True
                 else:
@@ -161,7 +161,7 @@ class EmulatorManager:
                 emulator_id, display_num = self.emulator_launcher.running_emulators[avd_name]
 
                 # Verify the emulator is actually running via adb devices
-                if not self.emulator_launcher._verify_emulator_running(emulator_id):
+                if not self.emulator_launcher._verify_emulator_running(emulator_id, email):
                     # Emulator not actually running according to adb, remove from cache
                     logger.info(
                         f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache before launch"

@@ -145,7 +145,10 @@ env:
 
 ssh:
 	ssh -i ansible/keys/kindle.key root@65.108.97.170
-	
+ssh-staging:
+	ssh -i ansible/keys/kindle.key root@157.180.75.100
+staging-ssh: ssh-staging
+
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."

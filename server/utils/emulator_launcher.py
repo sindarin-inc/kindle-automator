@@ -102,17 +102,19 @@ class EmulatorLauncher:
         logger.info(f"Running emulator IDs: {running_ids}")
         return running_ids
 
-    def _verify_emulator_running(self, emulator_id: str) -> bool:
+    def _verify_emulator_running(self, emulator_id: str, email: str) -> bool:
         """
-        Verify if a specific emulator is running using adb devices.
+        Verify if a specific emulator is running using adb devices and has the correct AVD.
 
-        This checks if the emulator is in adb devices in any state (device or offline).
+        This checks if the emulator is in adb devices in any state (device or offline)
+        and verifies that the emulator's AVD matches the expected AVD for the email.
 
         Args:
             emulator_id: The emulator ID to check (e.g., 'emulator-5554')
+            email: The email to verify that the AVD name matches the expected one
 
         Returns:
-            True if the emulator is running, False otherwise
+            True if the emulator is running with the correct AVD, False otherwise
         """
         try:
             devices_result = subprocess.run(
@@ -124,14 +126,149 @@ class EmulatorLauncher:
             )
 
             # Check if the emulator ID appears in the output at all (includes offline state)
-            if emulator_id in devices_result.stdout:
-                return True
+            if emulator_id not in devices_result.stdout:
+                logger.debug(f"Emulator {emulator_id} not found in adb devices output")
+                return False
 
-            logger.debug(f"Emulator {emulator_id} not found in adb devices output")
-            return False
+            # Get expected AVD name for this email
+            email_avd = self._extract_avd_name_from_email(email)
+
+            # Get actual AVD name from running emulator
+            emulator_avd = self._extract_avd_name_from_emulator_id(emulator_id)
+
+            # Verify AVD names match
+            if not email_avd:
+                logger.warning(f"Could not determine expected AVD name for email {email}")
+                return False
+
+            if not emulator_avd:
+                logger.warning(f"Could not determine actual AVD name for emulator {emulator_id}")
+                return False
+
+            logger.info(f"Comparing AVD names: expected={email_avd}, actual={emulator_avd}")
+
+            # Check if the AVD names match
+            if emulator_avd == email_avd:
+                logger.info(f"Emulator {emulator_id} is running with expected AVD {email_avd}")
+                return True
+            else:
+                logger.warning(
+                    f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
+                )
+                return False
+
         except Exception as e:
             logger.error(f"Error running adb devices: {e}")
             return False
+
+    def _extract_avd_name_from_emulator_id(self, emulator_id: str) -> Optional[str]:
+        """
+        Extract the AVD name from an emulator by querying the emulator with adb to get the avd name.
+
+        Args:
+            emulator_id: The emulator ID (e.g. 'emulator-5554')
+
+        Returns:
+            The AVD name (e.g. 'KindleAVD_user_example_com') or None if not found
+        """
+        try:
+            # Parse the port from the emulator ID
+            if not emulator_id.startswith("emulator-"):
+                logger.warning(f"Invalid emulator ID format: {emulator_id}")
+                return None
+
+            # Get the AVD name from the emulator property ro.kernel.qemu.avd_name
+            try:
+                result = subprocess.run(
+                    [
+                        f"{self.android_home}/platform-tools/adb",
+                        "-s",
+                        emulator_id,
+                        "shell",
+                        "getprop",
+                        "ro.kernel.qemu.avd_name",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    avd_name = result.stdout.strip()
+                    logger.info(f"Found AVD name for {emulator_id} via ro.kernel.qemu.avd_name: {avd_name}")
+                    return avd_name
+                else:
+                    logger.debug(
+                        f"Could not get AVD name via ro.kernel.qemu.avd_name: {result.stderr.strip()}"
+                    )
+
+            except Exception as adb_error:
+                logger.warning(f"Error getting ro.kernel.qemu.avd_name via ADB: {adb_error}")
+
+            # Try alternative property that might contain AVD information
+            try:
+                result = subprocess.run(
+                    [
+                        f"{self.android_home}/platform-tools/adb",
+                        "-s",
+                        emulator_id,
+                        "shell",
+                        "getprop",
+                        "qemu.avd_name",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    avd_name = result.stdout.strip()
+                    logger.info(f"Found AVD name for {emulator_id} via qemu.avd_name: {avd_name}")
+                    return avd_name
+
+            except Exception as adb_error:
+                logger.warning(f"Error getting qemu.avd_name via ADB: {adb_error}")
+
+            # If we still don't have an AVD name, try more generic properties
+            try:
+                result = subprocess.run(
+                    [
+                        f"{self.android_home}/platform-tools/adb",
+                        "-s",
+                        emulator_id,
+                        "shell",
+                        "getprop",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0:
+                    # Look for any properties that might contain "avd" in their names
+                    properties = result.stdout.strip().split("\n")
+                    for prop in properties:
+                        if "avd" in prop.lower():
+                            logger.info(f"Found potential AVD-related property: {prop}")
+                            # Extract property value if possible
+                            if ": [" in prop and "]" in prop:
+                                value = prop.split(": [")[1].split("]")[0]
+                                if value:
+                                    logger.info(f"Using AVD name from property: {value}")
+                                    return value
+
+            except Exception as adb_error:
+                logger.warning(f"Error getting all properties via ADB: {adb_error}")
+
+            logger.warning(f"Could not determine AVD name for emulator {emulator_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error extracting AVD name from emulator ID {emulator_id}: {e}")
+            return None
 
     def get_x_display(self, email: str) -> Optional[int]:
         """
@@ -191,12 +328,14 @@ class EmulatorLauncher:
         # First check running emulators cache
         if email in self.running_emulators:
             emulator_id, _ = self.running_emulators[email]
-            # Verify the emulator is actually running via adb devices
-            if self._verify_emulator_running(emulator_id):
+            # Verify the emulator is actually running via adb devices with the correct AVD
+            if self._verify_emulator_running(emulator_id, email):
                 return emulator_id
             else:
-                # Not found in adb devices, remove from cache
-                logger.debug(f"Cached emulator {emulator_id} for {email} not found in adb devices")
+                # Not found in adb devices or AVD mismatch, remove from cache
+                logger.debug(
+                    f"Cached emulator {emulator_id} for {email} not found in adb devices or has wrong AVD"
+                )
                 del self.running_emulators[email]
 
         # Then try to build from port
@@ -537,8 +676,8 @@ class EmulatorLauncher:
             if avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
 
-                # Verify the emulator is actually running via adb devices
-                if self._verify_emulator_running(emulator_id):
+                # Verify the emulator is actually running via adb devices with the correct AVD
+                if self._verify_emulator_running(emulator_id, email):
                     logger.info(
                         f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
                     )
@@ -830,8 +969,8 @@ class EmulatorLauncher:
             if avd_name and avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
 
-                # Verify the emulator is actually running via adb devices
-                if self._verify_emulator_running(emulator_id):
+                # Verify the emulator is actually running via adb devices with the correct AVD
+                if self._verify_emulator_running(emulator_id, email):
                     logger.info(
                         f"Stopping emulator {emulator_id} for AVD {avd_name} (email {email}) on display :{display_num}"
                     )
@@ -889,8 +1028,8 @@ class EmulatorLauncher:
             elif email in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[email]
 
-                # Verify the emulator is actually running via adb devices
-                if self._verify_emulator_running(emulator_id):
+                # Verify the emulator is actually running via adb devices with the correct AVD
+                if self._verify_emulator_running(emulator_id, email):
                     logger.info(
                         f"Stopping emulator {emulator_id} for {email} on display :{display_num} (legacy key)"
                     )
@@ -992,7 +1131,7 @@ class EmulatorLauncher:
                 except Exception as adb_e:
                     logger.error(f"Error running adb devices: {adb_e}")
                     # Fall back to our regular verify method if adb command fails
-                    if self._verify_emulator_running(emulator_id):
+                    if self._verify_emulator_running(emulator_id, email):
                         return emulator_id, display_num
                     else:
                         del self.running_emulators[avd_name]
@@ -1054,8 +1193,8 @@ class EmulatorLauncher:
                 return False
 
             # First check if device is connected using our helper
-            if not self._verify_emulator_running(emulator_id):
-                logger.info(f"Emulator {emulator_id} not found in adb devices")
+            if not self._verify_emulator_running(emulator_id, email):
+                logger.info(f"Emulator {emulator_id} not found in adb devices or has wrong AVD")
                 # Cache cleanup is now handled earlier in the process
                 return False
 
