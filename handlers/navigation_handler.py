@@ -77,6 +77,11 @@ class NavigationResourceHandler:
             f"placemark={show_placemark}, base64={use_base64}, ocr={perform_ocr}"
         )
 
+        # First, check for and handle the 'last read page' dialog before any navigation
+        dialog_handled = self._handle_last_read_page_dialog()
+        if dialog_handled:
+            logger.info("Handled 'last read page' dialog before navigation")
+        
         # If navigate_count is 0 and no preview is requested, just return current page info
         if navigate_count == 0 and preview_count == 0:
             # Get current page info without navigation
@@ -106,6 +111,9 @@ class NavigationResourceHandler:
 
         # If we're doing a preview with navigate_count=0, handle it specially
         if preview_count != 0 and navigate_count == 0:
+            # Check for last read page dialog again (which may appear after handling another dialog)
+            self._handle_last_read_page_dialog()
+            
             if preview_direction_forward:
                 return self._preview_pages_forward(abs_preview_count, show_placemark)
             else:
@@ -159,6 +167,46 @@ class NavigationResourceHandler:
 
         return response_data, 200
 
+    def _handle_last_read_page_dialog(self) -> bool:
+        """Check for and handle the 'last read page' dialog.
+        
+        Returns:
+            bool: True if dialog was found and handled, False otherwise.
+        """
+        from views.reading.view_strategies import LAST_READ_PAGE_DIALOG_IDENTIFIERS
+        from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
+        from selenium.common.exceptions import NoSuchElementException
+        
+        try:
+            dialog_found = False
+            for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
+                try:
+                    message = self.automator.driver.find_element(strategy, locator)
+                    if message.is_displayed() and (
+                        "You are currently on page" in message.text
+                        or "You are currently at location" in message.text
+                        or "Go to that page?" in message.text
+                    ):
+                        logger.info("Found 'last read page/location' dialog - clicking YES")
+                        dialog_found = True
+                        for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
+                            try:
+                                yes_button = self.automator.driver.find_element(btn_strategy, btn_locator)
+                                if yes_button.is_displayed():
+                                    yes_button.click()
+                                    logger.info("Clicked YES button")
+                                    time.sleep(0.5)  # Give dialog time to dismiss
+                                    return True
+                            except NoSuchElementException:
+                                continue
+                        break
+                except NoSuchElementException:
+                    continue
+            return dialog_found
+        except Exception as e:
+            logger.error(f"Error handling 'last read page/location' dialog: {e}")
+            return False
+    
     def _navigate_pages(self, forward: bool, count: int) -> bool:
         """Navigate multiple pages forward or backward.
 
@@ -172,6 +220,9 @@ class NavigationResourceHandler:
         if count <= 0:
             # No navigation needed
             return True
+            
+        # Check for and handle the 'last read page' dialog before navigating
+        self._handle_last_read_page_dialog()
 
         logger.info(f"Navigating {count} pages {'forward' if forward else 'backward'}")
 
