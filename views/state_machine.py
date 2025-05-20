@@ -310,6 +310,20 @@ class KindleStateMachine:
                 from views.common.dialog_strategies import (
                     DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
                 )
+                from views.reading.view_strategies import (
+                    ITEM_REMOVED_DIALOG_IDENTIFIERS,
+                    is_item_removed_dialog_visible,
+                )
+                from views.reading.interaction_strategies import handle_item_removed_dialog
+
+                # Check for Item Removed dialog
+                if is_item_removed_dialog_visible(self.driver):
+                    logger.info("Item Removed dialog detected in reading view")
+                    # Handle the dialog - this will close it and take us back to library
+                    handle_item_removed_dialog(self.driver)
+                    # We'll need to transition back to library
+                    self.current_state = AppState.LIBRARY
+                    return self.current_state
 
                 download_limit_elements = 0
                 for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:

@@ -31,6 +31,7 @@ from views.reading.interaction_strategies import (
     READING_TOOLBAR_STRATEGIES,
     WORD_WISE_DIALOG_IDENTIFIERS,
     WORD_WISE_NO_THANKS_BUTTON,
+    handle_item_removed_dialog,
 )
 from views.reading.view_strategies import (
     BLACK_BG_IDENTIFIERS,
@@ -38,6 +39,8 @@ from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
+    ITEM_REMOVED_DIALOG_IDENTIFIERS,
+    ITEM_REMOVED_DIALOG_CLOSE_BUTTON,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     LAYOUT_TAB_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
@@ -48,6 +51,7 @@ from views.reading.view_strategies import (
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
     WHITE_BG_IDENTIFIERS,
+    is_item_removed_dialog_visible,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,6 +152,9 @@ class ReaderHandler:
             bool: True if successfully handled the dialog, False otherwise.
         """
         try:
+            # Store page source for debugging
+            store_page_source(self.driver.page_source, "download_limit_before_handling")
+            
             # Check all possible places the dialog could be found
             dialog_found = False
 
@@ -212,233 +219,124 @@ class ReaderHandler:
 
             if not dialog_found:
                 logger.info("Download Limit Reached dialog not found after trying all approaches")
+                self.driver.save_screenshot("screenshots/download_limit_not_found.png")
                 return False
 
-            # Find and tap the first device in the list - try multiple methods with longer wait times
+            # Use a direct approach based on the XML structure
             first_device_tapped = False
-
-            # Method 1: Find and click LinearLayout containing the first device in the list
-            for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_FIRST_DEVICE):
+            
+            # Direct approach using XPath to click the first LinearLayout in the device list
+            try:
+                # Simple XPath to find the first clickable LinearLayout in the device list
+                first_device_layout = self.driver.find_element(
+                    AppiumBy.XPATH, 
+                    "//android.widget.ListView[@resource-id='com.amazon.kindle:id/rlr_device_list']/android.widget.LinearLayout[1]"
+                )
+                if first_device_layout:
+                    first_device_layout.click()
+                    logger.info("Successfully clicked first device layout directly")
+                    first_device_tapped = True
+                    time.sleep(1)  # Short wait for UI to update
+            except Exception as e:
+                logger.warning(f"Error clicking first device: {e}")
+                
+                # Fallback to coordinate-based tap if direct method fails
                 try:
-                    element = self.driver.find_element(strategy, locator)
-                    if element and element.is_displayed():
-                        # Try clicking directly on the LinearLayout
-                        element.click()
-                        logger.info(f"Tapped first device method 1 using #{idx}: {strategy}={locator}")
-                        first_device_tapped = True
-                        time.sleep(1.5)  # Longer wait for UI update
-                        break
-                except NoSuchElementException:
-                    logger.debug(f"First device #{idx} not found")
-                except Exception as e:
-                    logger.warning(f"Error tapping first device #{idx}: {e}")
+                    # Get screen dimensions to calculate tap position
+                    window_size = self.driver.get_window_size()
+                    width = window_size['width']
+                    
+                    # Calculate position for first device (based on XML layout)
+                    x = width // 2
+                    y = 1335  # From the XML, the first device's CheckedTextView is around y=1283-1336
+                    
+                    # Perform tap
+                    self.driver.tap([(x, y)])
+                    logger.info(f"Used coordinate tap at ({x}, {y}) for first device")
+                    first_device_tapped = True
+                    time.sleep(1)
+                except Exception as e2:
+                    logger.warning(f"Error with coordinate tap approach: {e2}")
+            
+            # Save a screenshot after the selection attempt
+            self.driver.save_screenshot("screenshots/after_device_selection.png")
 
-            # Method 2: Find and click the CheckedTextView inside the first LinearLayout
-            if not first_device_tapped:
-                logger.info("Trying CheckedTextView within first LinearLayout approach")
-                for idx, (list_strategy, list_locator) in enumerate(DOWNLOAD_LIMIT_FIRST_DEVICE):
-                    try:
-                        parent = self.driver.find_element(list_strategy, list_locator)
-                        if parent and parent.is_displayed():
-                            # Now find the CheckedTextView inside this parent
-                            try:
-                                checkbox = parent.find_element(
-                                    AppiumBy.CLASS_NAME, "android.widget.CheckedTextView"
-                                )
-                                if checkbox and checkbox.is_displayed():
-                                    checkbox.click()
-                                    logger.info(f"Found and clicked checkbox inside first device #{idx}")
-                                    first_device_tapped = True
-                                    time.sleep(1.5)
-                                    break
-                            except NoSuchElementException:
-                                logger.debug(f"CheckedTextView inside first LinearLayout #{idx} not found")
-                            except Exception as e:
-                                logger.warning(
-                                    f"Error clicking CheckedTextView inside LinearLayout #{idx}: {e}"
-                                )
-                    except NoSuchElementException:
-                        continue
-
-            # Method 3: Try to find and click the first CheckedTextView directly
-            if not first_device_tapped:
-                logger.info("Trying to find and click the first CheckedTextView directly")
-                try:
-                    # Try to get all CheckedTextViews
-                    for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_CHECKEDTEXTVIEW):
-                        try:
-                            # First try to get direct element
-                            device = self.driver.find_element(strategy, locator)
-                            if device and device.is_displayed():
-                                device.click()
-                                logger.info(f"Tapped checked text view #{idx} directly")
-                                first_device_tapped = True
-                                time.sleep(1.5)
-                                break
-                        except NoSuchElementException:
-                            # Try to get all elements of this type
-                            try:
-                                devices = self.driver.find_elements(strategy, locator)
-                                if devices and len(devices) > 0:
-                                    # Click the first device in the list
-                                    devices[0].click()
-                                    logger.info(
-                                        f"Tapped first of {len(devices)} checked text views from collection #{idx}"
-                                    )
-                                    first_device_tapped = True
-                                    time.sleep(1.5)
-                                    break
-                            except Exception as e_list:
-                                logger.debug(f"Error with device collection #{idx}: {e_list}")
-                        except Exception as e:
-                            logger.warning(f"Error with direct checked text view #{idx}: {e}")
-                except Exception as e:
-                    logger.warning(f"General error in CheckedTextView approach: {e}")
-
-            # Method 4: Find device list and tap in top area
-            if not first_device_tapped:
-                logger.info("Trying device list area approach")
-                for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_DEVICE_LIST):
-                    try:
-                        device_list = self.driver.find_element(strategy, locator)
-                        if device_list and device_list.is_displayed():
-                            # Get location and size to tap in upper area
-                            location = device_list.location
-                            size = device_list.size
-
-                            # Calculate tap point in upper portion of list
-                            x = location["x"] + (size["width"] // 2)
-                            y = location["y"] + 70  # Tap higher in list
-
-                            # Try tapping
-                            self.driver.tap([(x, y)])
-                            logger.info(f"Tapped at ({x}, {y}) in device list #{idx} upper area")
-                            first_device_tapped = True
-                            time.sleep(1.5)
-                            break
-                    except NoSuchElementException:
-                        logger.debug(f"Device list #{idx} not found for area tap")
-                    except Exception as e:
-                        logger.warning(f"Error with area tap #{idx}: {e}")
-
-            # If we still couldn't tap a device, we'll try to tap button anyway
-            if not first_device_tapped:
-                logger.warning("Could not tap any device after multiple methods. Will try button anyway")
-
-            # Find and tap the "Remove and Read Now" button with retry logic
+            # Find and tap the "Remove and Read Now" button
             remove_button_tapped = False
-
-            # Check if the button is now enabled after tapping a device
-            # Wait for up to 3 seconds for the button to become enabled
+            
+            # Wait for up to 2 seconds for the button to become enabled
             start_time = time.time()
             button_enabled = False
-            while time.time() - start_time < 3 and not button_enabled:
-                for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_REMOVE_BUTTON):
-                    try:
-                        button = self.driver.find_element(strategy, locator)
-                        if button and button.is_displayed():
-                            try:
-                                enabled = button.is_enabled()
-                                if enabled:
-                                    button_enabled = True
-                                    logger.info(
-                                        f"Button #{idx} is now enabled after {time.time() - start_time:.1f}s"
-                                    )
-                                    break
-                            except:
-                                try:
-                                    # Fallback to attribute
-                                    enabled_attr = button.get_attribute("enabled")
-                                    if enabled_attr == "true":
-                                        button_enabled = True
-                                        logger.info(
-                                            f"Button #{idx} is now enabled via attribute after {time.time() - start_time:.1f}s"
-                                        )
-                                        break
-                                except:
-                                    pass
-                    except:
-                        pass
-
-                if not button_enabled:
-                    time.sleep(0.2)  # Short wait before checking again
-
-            # Method 1: Standard button search and click
-            for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_REMOVE_BUTTON):
+            enable_wait_time = 2  # seconds
+            
+            logger.info(f"Waiting up to {enable_wait_time}s for button to become enabled")
+            while time.time() - start_time < enable_wait_time and not button_enabled:
                 try:
-                    button = self.driver.find_element(strategy, locator)
+                    button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button")
                     if button and button.is_displayed():
-                        # Check if it's enabled
-                        try:
-                            button_enabled = button.is_enabled()
-                        except:
-                            try:
-                                # Fallback to attribute
-                                enabled_attr = button.get_attribute("enabled")
-                                button_enabled = enabled_attr == "true"
-                            except:
-                                # Last resort - just assume it might work
-                                button_enabled = True
-                                logger.warning("Couldn't determine button state, attempting click anyway")
-
-                        if button_enabled:
-                            button.click()
-                            logger.info(f"Tapped enabled Remove/Read button #{idx}")
-                            remove_button_tapped = True
-                            time.sleep(3)  # Longer wait for download start
+                        enabled_attr = button.get_attribute("enabled")
+                        if enabled_attr == "true":
+                            button_enabled = True
+                            logger.info(f"Button is now enabled")
                             break
-                        else:
-                            logger.warning(f"Button #{idx} found but disabled")
-                except NoSuchElementException:
-                    logger.debug(f"Remove/Read button #{idx} not found")
+                except Exception:
+                    pass
+                time.sleep(0.2)
+            
+            # Try clicking the button by ID first
+            try:
+                button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button")
+                button.click()
+                logger.info("Clicked 'REMOVE AND READ NOW' button by ID")
+                remove_button_tapped = True
+            except Exception as e:
+                logger.warning(f"Error clicking button by ID: {e}")
+            
+            # If that didn't work, try clicking by text
+            if not remove_button_tapped:
+                try:
+                    button = self.driver.find_element(AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND READ NOW']")
+                    button.click()
+                    logger.info("Clicked 'REMOVE AND READ NOW' button by text")
+                    remove_button_tapped = True
                 except Exception as e:
-                    logger.warning(f"Error with Remove/Read button #{idx}: {e}")
-
-            # Method 2: Try one more round of device selection then button tap
+                    logger.warning(f"Error clicking button by text: {e}")
+            
+            # Last resort - use coordinates based on XML
             if not remove_button_tapped:
-                logger.info("Button not tapped. Trying one more round of device+button...")
-
-                # Try all device strategies again with more forceful clicking
-                for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_FIRST_DEVICE):
-                    try:
-                        element = self.driver.find_element(strategy, locator)
-                        if element and element.is_displayed():
-                            # Double tap with longer wait
-                            element.click()
-                            time.sleep(0.5)
-                            element.click()  # Double tap
-                            logger.info(f"Double-tapped device #{idx} in second attempt")
-                            time.sleep(2)
-
-                            # Now try all buttons again
-                            for btn_idx, (btn_strategy, btn_locator) in enumerate(
-                                DOWNLOAD_LIMIT_REMOVE_BUTTON
-                            ):
-                                try:
-                                    button = self.driver.find_element(btn_strategy, btn_locator)
-                                    if button.is_displayed() and button.is_enabled():
-                                        button.click()
-                                        logger.info(f"Tapped button #{btn_idx} after second device selection")
-                                        remove_button_tapped = True
-                                        time.sleep(3)
-                                        break
-                                except:
-                                    continue
-
-                            if remove_button_tapped:
-                                break
-                    except:
-                        continue
-
-            if not remove_button_tapped:
-                logger.error("Could not tap the Remove and Download button after all attempts")
-                # Return false since we couldn't tap the button
+                try:
+                    # Button is at bounds="[81,2132][999,2227]" in the XML
+                    window_size = self.driver.get_window_size()
+                    width = window_size['width']
+                    
+                    x = width // 2  # Center horizontally
+                    y = 2180  # Based on XML bounds
+                    
+                    self.driver.tap([(x, y)])
+                    logger.info(f"Used coordinate tap for button at ({x}, {y})")
+                    remove_button_tapped = True
+                except Exception as e:
+                    logger.warning(f"Error using coordinate tap for button: {e}")
+            
+            # Check if dialog is still visible
+            dialog_still_visible = False
+            try:
+                dialog_title = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/rlr_title")
+                if dialog_title and dialog_title.is_displayed():
+                    dialog_still_visible = True
+                    logger.warning("Download Limit dialog still visible after attempts")
+                else:
+                    logger.info("Dialog no longer visible - successfully handled")
+            except:
+                logger.info("Dialog title element not found - dialog may have closed")
+            
+            if dialog_still_visible and not remove_button_tapped:
+                logger.error("Could not handle the Download Limit dialog")
                 return False
-
-            # Wait for reading view to appear after download
-            logger.info("Remove button tapped successfully, waiting for download...")
-            time.sleep(5)  # Longer wait for download to start showing
-
+            
+            # Wait a short time for the UI transition
+            time.sleep(1)
+            
             return True
 
         except Exception as e:
@@ -463,8 +361,37 @@ class ReaderHandler:
         """
         logger.info(f"Starting reading flow for book: {book_title}")
 
-        # First, check immediately if we have a download limit dialog before waiting for anything else
-        # This addresses the issue where we could miss detecting it during transitions
+        # First, check immediately for special dialogs that need handling before waiting for anything else
+        # This addresses the issue where we could miss detecting them during transitions
+        
+        # Check for Item Removed dialog first
+        if is_item_removed_dialog_visible(self.driver):
+            logger.info("Item Removed dialog detected immediately - handling it")
+            if handle_item_removed_dialog(self.driver):
+                logger.info("Successfully handled Item Removed dialog immediately")
+                # After handling this, check if we're now looking at the Download Limit dialog
+                # This can happen when the book is removed and when trying to re-open, hits download limit
+                time.sleep(1)  # Short wait to ensure UI is updated
+                
+                # After Item Removed dialog closes, we're back in library view and the book may be clicked again
+                # Check if Download Limit dialog appears immediately after
+                if self._check_for_download_limit_dialog():
+                    logger.info("Download Limit dialog detected after Item Removed dialog - handling it")
+                    if self.handle_download_limit_dialog():
+                        logger.info("Successfully handled Download Limit dialog after Item Removed dialog")
+                        # Now wait for reading view after handling both dialogs
+                        return True
+                    else:
+                        logger.error("Failed to handle Download Limit dialog after Item Removed dialog")
+                        return False
+                
+                # If no Download Limit dialog, then we're just back to library view
+                return True
+            else:
+                logger.error("Failed to handle Item Removed dialog detected immediately")
+                return False
+        
+        # Check for download limit dialog
         download_limit_found = self._check_for_download_limit_dialog()
         if download_limit_found:
             logger.info("Download Limit dialog detected immediately - handling it")
@@ -568,7 +495,7 @@ class ReaderHandler:
             # If we already found and handled the download limit dialog, skip the wait
             if not download_limit_found:
                 # Wait for either reading view element or download limit dialog to appear
-                result = WebDriverWait(self.driver, 10).until(reading_view_or_download_limit_present)
+                result = WebDriverWait(self.driver, 5).until(reading_view_or_download_limit_present)  # Shorter timeout
             else:
                 # We already handled the download limit dialog, just wait for reading view
                 logger.info("Skipping wait since download limit dialog was already handled")
@@ -595,9 +522,9 @@ class ReaderHandler:
 
                         # Wait for reading view now that download limit is handled
                         try:
-                            WebDriverWait(self.driver, 30).until(
+                            WebDriverWait(self.driver, 5).until(
                                 reading_view_present
-                            )  # Longer timeout for download
+                            )  # Shorter timeout for download after limit handling
                             logger.info("Reading view detected after handling download limit")
                         except TimeoutException:
                             # If we timeout waiting for the reading view, we might be back at the library
@@ -1650,7 +1577,18 @@ class ReaderHandler:
         logger.info("Handling reading state - navigating back to library...")
 
         try:
-            # Check for and dismiss the comic book view first
+            # Check for Item Removed dialog first
+            if is_item_removed_dialog_visible(self.driver):
+                logger.info("Item Removed dialog detected - handling it")
+                if handle_item_removed_dialog(self.driver):
+                    logger.info("Successfully handled Item Removed dialog")
+                    # After handling this, we'll be back in library view, so return True
+                    return True
+                else:
+                    logger.error("Failed to handle Item Removed dialog")
+                    # Continue with other methods to try getting back to library
+            
+            # Check for and dismiss the comic book view
             if self.handle_comic_book_view():
                 logger.info("Successfully dismissed comic book view during navigation")
                 # Refresh page source for logging

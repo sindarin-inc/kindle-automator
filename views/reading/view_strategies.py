@@ -1,4 +1,5 @@
 from appium.webdriver.common.appiumby import AppiumBy
+from selenium.webdriver.common.by import By
 
 # View identification strategies
 READING_VIEW_IDENTIFIERS = [
@@ -368,3 +369,27 @@ WORD_WISE_DIALOG_IDENTIFIERS = [
         "//android.widget.TextView[@resource-id='com.amazon.kindle:id/wordwise_ftue_title' and @text='Word Wise']",
     ),
 ]
+
+# Item Removed dialog identifiers
+ITEM_REMOVED_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Item Removed')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Item Removed']"),
+]
+
+ITEM_REMOVED_DIALOG_CLOSE_BUTTON = [
+    (AppiumBy.XPATH, "//android.widget.Button[@text='CLOSE']"),
+    (AppiumBy.ID, "android:id/button1"),
+]
+
+def is_item_removed_dialog_visible(driver):
+    """Check if the 'Item Removed' dialog is visible."""
+    try:
+        for strategy, selector in ITEM_REMOVED_DIALOG_IDENTIFIERS:
+            try:
+                dialog_title = driver.find_element(strategy, selector)
+                return True
+            except Exception:
+                continue
+        return False
+    except Exception:
+        return False

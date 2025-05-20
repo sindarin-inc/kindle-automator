@@ -996,7 +996,22 @@ class BookOpenResource(Resource):
 
         # If we're already in READING state, we should NOT close the book - get the title!
         if current_state == AppState.READING:
-            # First, check if we have current_book set
+            # First check for Download Limit dialog which needs to be handled even for already-open books
+            try:
+                # Check if we're dealing with the Download Limit dialog
+                if automator.state_machine.reader_handler._check_for_download_limit_dialog():
+                    logger.info("Found Download Limit dialog for current book - handling it")
+                    # Handle the dialog
+                    if automator.state_machine.reader_handler.handle_download_limit_dialog():
+                        logger.info("Successfully handled Download Limit dialog")
+                        # Continue with normal flow after handling dialog
+                    else:
+                        logger.error("Failed to handle Download Limit dialog")
+                        return {"error": "Failed to handle Download Limit dialog"}, 500
+            except Exception as e:
+                logger.error(f"Error checking for Download Limit dialog: {e}")
+            
+            # Then, check if we have current_book set
             if current_book:
                 # Compare with the requested book
                 normalized_request_title = "".join(

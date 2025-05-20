@@ -160,6 +160,30 @@ COMIC_BOOK_X_BUTTON = [
     (AppiumBy.XPATH, "//android.widget.ImageButton[@resource-id='com.amazon.kindle:id/brochure_x_button']"),
 ]
 
+# Item Removed dialog functions
+def handle_item_removed_dialog(driver):
+    """Handle the 'Item Removed' dialog by clicking the Close button."""
+    from views.reading.view_strategies import ITEM_REMOVED_DIALOG_CLOSE_BUTTON
+    import logging
+    
+    try:
+        for strategy, selector in ITEM_REMOVED_DIALOG_CLOSE_BUTTON:
+            try:
+                close_button = driver.find_element(strategy, selector)
+                close_button.click()
+                logging.info("Clicked Close button on Item Removed dialog")
+                return True
+            except Exception:
+                continue
+        
+        logging.warning("Could not find Close button on Item Removed dialog")
+        driver.save_screenshot("item_removed_dialog_error.png")
+        return False
+    except Exception as e:
+        logging.error(f"Error handling Item Removed dialog: {e}")
+        driver.save_screenshot("item_removed_dialog_error.png")
+        return False
+
 COMIC_BOOK_NEXT_BUTTON = [
     (AppiumBy.ID, "com.amazon.kindle:id/brochure_button_next"),
     (AppiumBy.XPATH, "//android.widget.TextView[@content-desc='Show next set of options']"),

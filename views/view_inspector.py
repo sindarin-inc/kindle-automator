@@ -40,9 +40,12 @@ from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIER
 from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
+    ITEM_REMOVED_DIALOG_IDENTIFIERS,
+    ITEM_REMOVED_DIALOG_CLOSE_BUTTON,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
+    is_item_removed_dialog_visible,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
 
@@ -424,6 +427,13 @@ class ViewInspector:
                 logger.info("   Treating download limit dialog as part of reading state")
                 return AppView.READING
 
+            # Check for Item Removed dialog which is a specific reading state dialog
+            if is_item_removed_dialog_visible(self.driver):
+                logger.info("   Found Item Removed dialog - treating as reading view")
+                # Store page source for debugging
+                store_page_source(self.driver.page_source, "item_removed_dialog")
+                return AppView.READING
+                
             # Check for reading view identifiers
             reading_view_elements_found = 0
             for strategy, locator in READING_VIEW_IDENTIFIERS:
