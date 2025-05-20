@@ -52,8 +52,10 @@ DOWNLOAD_LIMIT_CHECKEDTEXTVIEW = [
 
 DOWNLOAD_LIMIT_REMOVE_BUTTON = [
     (AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND READ NOW']"),
     (AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND DOWNLOAD']"),
     (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'REMOVE AND')]"),
+    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'READ NOW')]"),
     (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'Download')]"),
 ]
 

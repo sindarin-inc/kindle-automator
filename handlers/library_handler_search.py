@@ -15,6 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
+from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
     SEARCH_BACK_BUTTON_IDENTIFIERS,
     SEARCH_BOX_IDENTIFIERS,
@@ -32,6 +33,8 @@ class LibraryHandlerSearch:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
+        # Initialize the smart scroller
+        self.scroller = SmartScroller(driver)
 
     def _title_match(self, title1: str, title2: str) -> bool:
         """

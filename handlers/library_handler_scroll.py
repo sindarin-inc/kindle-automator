@@ -18,6 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
+from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
     BOOK_CONTAINER_RELATIONSHIPS,
     BOOK_METADATA_IDENTIFIERS,
@@ -33,97 +34,10 @@ class LibraryHandlerScroll:
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
-
-    def _perform_hook_scroll(
-        self,
-        center_x: int,
-        scroll_start_y: int,
-        scroll_end_y: int,
-        total_duration_ms: int,
-    ):
-        """
-        Performs a scroll gesture that starts fast and decelerates towards the end
-        to achieve precise positioning without inertia.
-        Uses W3C Actions with ActionBuilder.
-        """
-        # Get ActionBuilder from ActionChains
-        action_builder = ActionChains(self.driver).w3c_actions
-
-        # Add a new pointer input source of type touch and get the PointerInput object
-        # POINTER_TOUCH is 'touch'
-        finger = action_builder.add_pointer_input(POINTER_TOUCH, "finger")
-
-        # Sequence of actions for the 'finger'
-        # These methods on 'finger' (PointerInput) will add actions to the 'action_builder'
-
-        # 1. Move pointer to start position (instantaneous)
-        finger.create_pointer_move(duration=0, x=center_x, y=scroll_start_y)
-        # 2. Press down (button=0 is typically the main touch/mouse button)
-        finger.create_pointer_down(button=0)
-        # 3. Small pause (duration is in seconds for create_pause)
-        finger.create_pause(0.01)  # 10ms
-
-        if scroll_start_y == scroll_end_y:
-            # If there's no vertical movement, just perform a press for the specified duration
-            # The initial 10ms pause is already accounted for.
-            # Remaining duration for the press itself.
-            press_duration_s = max(0, (total_duration_ms - 10) / 1000.0)
-            if press_duration_s > 0:
-                finger.create_pause(press_duration_s)
-        else:
-            # Multi-segment scroll for deceleration using 5 segments
-            # Ratios: distance [0.30, 0.25, 0.20, 0.15, 0.10]
-            # Ratios: time     [0.10, 0.15, 0.20, 0.25, 0.30]
-
-            # Calculate durations for each segment (ensure they sum to total_duration_ms - 10ms pause)
-            effective_total_duration_ms = total_duration_ms - 10  # Account for the initial 10ms pause
-
-            duration1_ms = int(round(effective_total_duration_ms * 0.10))
-            duration2_ms = int(round(effective_total_duration_ms * 0.15))
-            duration3_ms = int(round(effective_total_duration_ms * 0.20))
-            duration4_ms = int(round(effective_total_duration_ms * 0.25))
-            # duration5_ms takes the remainder to ensure sum is correct
-            duration5_ms = (
-                effective_total_duration_ms - duration1_ms - duration2_ms - duration3_ms - duration4_ms
-            )
-
-            # Ensure all durations are non-negative
-            duration1_ms = max(0, duration1_ms)
-            duration2_ms = max(0, duration2_ms)
-            duration3_ms = max(0, duration3_ms)
-            duration4_ms = max(0, duration4_ms)
-            duration5_ms = max(0, duration5_ms)
-
-            delta_y = scroll_end_y - scroll_start_y
-
-            # Calculate target y-coordinates for each segment
-            y1_target = scroll_start_y + 0.30 * delta_y
-            y2_target = scroll_start_y + (0.30 + 0.25) * delta_y  # Cumulative distance
-            y3_target = scroll_start_y + (0.30 + 0.25 + 0.20) * delta_y
-            y4_target = scroll_start_y + (0.30 + 0.25 + 0.20 + 0.15) * delta_y
-            # y5_target is scroll_end_y
-
-            # Perform the scroll segments
-            # Segment 1
-            finger.create_pointer_move(duration=duration1_ms, x=center_x, y=int(round(y1_target)))
-            # Segment 2
-            finger.create_pointer_move(duration=duration2_ms, x=center_x, y=int(round(y2_target)))
-            # Segment 3
-            finger.create_pointer_move(duration=duration3_ms, x=center_x, y=int(round(y3_target)))
-            # Segment 4
-            finger.create_pointer_move(duration=duration4_ms, x=center_x, y=int(round(y4_target)))
-            # Segment 5
-            finger.create_pointer_move(duration=duration5_ms, x=center_x, y=scroll_end_y)
-
-        # Release the pointer
-        finger.create_pointer_up(button=0)
-
-        try:
-            # Perform all actions defined in the ActionBuilder
-            action_builder.perform()
-        except Exception as e:
-            logger.error(f"Error performing scroll: {e}")
-            store_page_source(self.driver, "scroll_error")
+        # Initialize the smart scroller
+        self.scroller = SmartScroller(driver)
+        # Store partial matches for later retrieval
+        self.partial_matches = []
 
     def _log_page_summary(self, page_number, new_titles, total_found):
         """Log a concise summary of books found on current page.
@@ -261,7 +175,7 @@ class LibraryHandlerScroll:
         # If we found partially visible books, use the first one
         if partially_visible_books:
             first_partial = partially_visible_books[0]
-            logger.info(f"Using partially visible book as scroll reference: '{first_partial['title']}'")
+            # logger.info(f"Using partially visible book as scroll reference: '{first_partial['title']}'")
             return first_partial
 
         # Fall back to last fully visible book
@@ -294,21 +208,8 @@ class LibraryHandlerScroll:
             ref_container: Dict with element and position info
             screen_size: Dict with screen dimensions
         """
-        start_y = ref_container["top"]
-        end_y = screen_size["height"] * 0.1  # 10% from top
-
-        # Verify start point is below end point by a reasonable amount
-        if start_y - end_y < 100:
-            logger.warning("Scroll distance too small, using default scroll")
-            self._default_page_scroll(screen_size["height"] * 0.8, screen_size["height"] * 0.2)
-        else:
-            logger.info(f"Smart scrolling: moving y={start_y} to y={end_y}")
-            self._perform_hook_scroll(
-                screen_size["width"] // 2,
-                start_y,
-                end_y,
-                1001,
-            )
+        # Use the common SmartScroller to scroll the reference container to 10% from top
+        self.scroller.scroll_to_position(ref_container["element"], 0.1)
 
     def _default_page_scroll(self, start_y, end_y):
         """Wrapper for default page scroll operation.
@@ -317,13 +218,8 @@ class LibraryHandlerScroll:
             start_y: Starting Y coordinate
             end_y: Ending Y coordinate
         """
-        screen_size = self.driver.get_window_size()
-        self._perform_hook_scroll(
-            screen_size["width"] // 2,
-            start_y,
-            end_y,
-            1001,
-        )
+        # Use the common SmartScroller for default page scroll
+        self.scroller.scroll_down()
 
     def _final_result_handling(self, target_title, books, seen_titles, title_match_func, callback):
         """Handle final result logic for target title searches.
@@ -554,7 +450,9 @@ class LibraryHandlerScroll:
 
         return False, None, None
 
-    def _update_collections(self, book_info, seen_titles, books_list, new_books_batch, new_titles_on_page):
+    def _update_collections(
+        self, book_info, seen_titles, books_list, new_books_batch, new_titles_on_page, target_title=None
+    ):
         """Update book collections with centralized deduping and batching logic.
 
         Args:
@@ -563,6 +461,7 @@ class LibraryHandlerScroll:
             books_list: Main list of all books
             new_books_batch: Current batch for callback
             new_titles_on_page: List of new titles found on this page
+            target_title: Optional target title we're searching for (for partial match collection)
 
         Returns:
             bool: True if book was newly added, False if already seen
@@ -572,11 +471,29 @@ class LibraryHandlerScroll:
             books_list.append(book_info)
             new_books_batch.append(book_info)
             new_titles_on_page.append(book_info["title"])
+
+            # If we're searching for a target title, check for partial matches
+            if target_title:
+                title = book_info["title"]
+                # Check if target title is part of this book's title or vice versa
+                if target_title.lower() in title.lower() or title.lower() in target_title.lower():
+                    # Store this as a partial match
+                    self.partial_matches.append((None, None, book_info))
+                    logger.info(f"Stored partial match: '{title}' for target '{target_title}'")
+
             return True
         else:
             if book_info["title"]:
                 logger.info(f"Already seen book ({len(seen_titles)} found): {book_info['title']}")
             return False
+
+    def get_partial_matches(self):
+        """Get any partial matches collected during scrolling.
+
+        Returns:
+            list: List of tuples (parent_container, button, book_info) representing partial matches
+        """
+        return self.partial_matches
 
     def _extract_author_from_content_desc(self, book_info, content_desc):
         """Extract author information from content description attribute.
@@ -788,7 +705,14 @@ class LibraryHandlerScroll:
             If target_title provided: (found_container, found_button, book_info) or (None, None, None)
             If no target_title: List of book info dictionaries
             If callback provided: List may still be returned, but books are also sent to callback as found
+
+        Note:
+            When searching with target_title, partial matches will be collected and stored
+            in the self.partial_matches list. These can be retrieved after the search if no
+            exact match is found.
         """
+        # Clear partial matches at the start of each search
+        self.partial_matches = []
         try:
             # Get screen metrics
             metrics = self._get_screen_metrics()
@@ -846,7 +770,12 @@ class LibraryHandlerScroll:
 
                             # Update collections
                             was_new = self._update_collections(
-                                book_info, seen_titles, books, new_books_batch, new_titles_on_page
+                                book_info,
+                                seen_titles,
+                                books,
+                                new_books_batch,
+                                new_titles_on_page,
+                                target_title,
                             )
                             if was_new:
                                 books_added_in_current_page_processing = True
@@ -909,9 +838,15 @@ class LibraryHandlerScroll:
 
             # Handle final results for target title searches
             if target_title:
-                return self._final_result_handling(
+                result = self._final_result_handling(
                     target_title, books, seen_titles, title_match_func, callback
                 )
+                # If no exact match found, we might have partial matches stored
+                if result[0] is None and self.partial_matches:
+                    logger.info(
+                        f"No exact match for '{target_title}', but {len(self.partial_matches)} partial matches found"
+                    )
+                return result
 
             return books
 
@@ -923,6 +858,9 @@ class LibraryHandlerScroll:
                 callback(None, error=str(e))
 
             if target_title:
+                # Log any partial matches we might have found before the error
+                if self.partial_matches:
+                    logger.info(f"Found {len(self.partial_matches)} partial matches before error")
                 return None, None, None
             return []
 

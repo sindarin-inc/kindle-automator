@@ -1492,13 +1492,45 @@ class LibraryHandler:
                 book_title, title_match_func=self.search_handler._title_match
             )
 
-            # If standard search failed, try partial matching as fallback
+            # If standard search failed, check for partial matches
             if not parent_container:
-                logger.info(f"Standard search failed for '{book_title}', trying partial matching fallback")
-                parent_container, button, book_info = self.search_handler._find_book_by_partial_match(
-                    book_title,
-                    scroll_through_library_func=lambda: self.scroll_handler._scroll_through_library(),
-                )
+                logger.info(f"Standard search failed for '{book_title}', checking for partial matches")
+
+                # Get any partial matches that were collected during scrolling
+                partial_matches = self.scroll_handler.get_partial_matches()
+
+                if partial_matches:
+                    logger.info(f"Found {len(partial_matches)} partial matches during the scroll")
+
+                    # Use the first partial match
+                    _, _, book_info = partial_matches[0]
+                    if book_info and book_info.get("title"):
+                        logger.info(f"Using partial match: '{book_info['title']}' for '{book_title}'")
+
+                        # Try to find this book on screen
+                        visible_book_result = self.search_handler._check_book_visible_on_screen(
+                            book_info["title"]
+                        )
+                        if visible_book_result:
+                            parent_container, button, _ = visible_book_result
+                            logger.info(f"Found partial match '{book_info['title']}' visible on screen")
+                        else:
+                            # If not visible, scroll to top and try to find it again
+                            logger.info(f"Partial match not visible, scrolling to top to find it")
+                            self.scroll_handler.scroll_to_list_top()
+
+                            # Now search for this specific book by title
+                            parent_container, button, _ = self.scroll_handler._scroll_through_library(
+                                book_info["title"], title_match_func=self.search_handler._title_match
+                            )
+
+                # If no partial matches found or couldn't locate the book, fall back to original method
+                if not parent_container:
+                    logger.info("No usable partial matches, falling back to word-based matching")
+                    parent_container, button, book_info = self.search_handler._find_book_by_partial_match(
+                        book_title,
+                        scroll_through_library_func=lambda: self.scroll_handler._scroll_through_library(),
+                    )
 
                 if not parent_container:
                     logger.error(f"Failed to find book '{book_title}' using all search methods")
