@@ -163,9 +163,6 @@ class AutomationServer:
                     )
 
                 if not force_new_emulator:
-                    # We no longer have a concept of "current" profile
-                    # Always switch to the requested profile if needed
-
                     # We need to force a new emulator since the old one is no longer available
                     logger.info(f"Emulator for {email} no longer available, forcing new emulator creation")
                     # Cleanup existing automator

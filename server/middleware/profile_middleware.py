@@ -170,10 +170,10 @@ def ensure_user_profile_loaded(f):
         # First check if we need to start a dedicated Appium server for this email
         from server.utils.appium_driver import AppiumDriver
         from server.utils.vnc_instance_manager import VNCInstanceManager
-        
+
         appium_driver = AppiumDriver()
         vnc_manager = VNCInstanceManager.get_instance()
-        
+
         # Ensure VNC instance exists for this profile (even in macOS dev where we don't use VNC)
         # This is needed for port allocation and tracking
         vnc_instance = vnc_manager.get_instance_for_profile(sindarin_email)
@@ -186,28 +186,10 @@ def ensure_user_profile_loaded(f):
                     "error": f"Failed to create instance tracking for {sindarin_email}",
                     "message": "Could not initialize instance tracking",
                 }, 500
-        
-        # Check if Appium is already running for this profile
-        appium_info = appium_driver.get_appium_process_info(sindarin_email)
-        if not appium_info or not appium_info.get("running"):
-            logger.info(f"Starting Appium server for {sindarin_email}")
-            
-            # Start the Appium server for this profile
-            appium_started = appium_driver.start_appium_for_profile(sindarin_email)
-            if not appium_started:
-                logger.error(f"Failed to start Appium server for {sindarin_email}")
-                return {
-                    "error": f"Failed to start Appium server for {sindarin_email}",
-                    "message": "Could not initialize Appium server",
-                }, 500
-        else:
-            logger.info(f"Appium already running for {sindarin_email} on port {appium_info['port']}")
 
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
         if automator and hasattr(automator, "driver") and automator.driver:
-            # Set as current email for backward compatibility
-            # No longer setting current_email as it has been removed
             logger.info(f"Already have automator for email: {sindarin_email}")
 
             # Special case for macOS dev environment
@@ -228,9 +210,6 @@ def ensure_user_profile_loaded(f):
         # Need to switch to this profile - server.switch_profile handles both:
         # 1. Switching to an existing profile
         # 2. Loading a profile with a running emulator
-
-        # We no longer have a concept of "current" profile
-        # Always use the individual profile for the requested email
 
         # Only use force_new_emulator when explicitly requested with recreate=1
         force_new_emulator = request.args.get("recreate") == "1"

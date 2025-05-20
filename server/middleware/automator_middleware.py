@@ -42,8 +42,6 @@ def ensure_automator_healthy(f):
             logger.error("No sindarin_email found in request or current state")
             return {"error": "No email provided to identify which profile to use"}, 400
 
-        # No longer setting current_email as it has been removed
-
         # Update activity timestamp for this email
         server.update_activity(sindarin_email)
 

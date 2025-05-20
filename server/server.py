@@ -920,8 +920,6 @@ class BookOpenResource(Resource):
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        # No longer setting current_email as it has been removed
-
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
@@ -1321,7 +1319,6 @@ class AuthResource(Resource):
                 if automator:
                     automator.cleanup()
                     server.automators[sindarin_email] = None
-            # Legacy automator field is no longer used
 
         automator = server.automators.get(sindarin_email)
         logger.info(
@@ -1565,176 +1562,6 @@ class CoverImageResource(Resource):
             return {"error": str(e)}, 500
 
 
-class ProfilesResource(Resource):
-    def get(self):
-        """List all available profiles"""
-        profiles = server.profile_manager.list_profiles()
-        current = server.profile_manager.get_current_profile()
-
-        # Get additional info about running emulators
-        running_emulators = server.profile_manager.device_discovery.map_running_emulators()
-
-        # Get VNC and emulator information for each profile
-        vnc_instances = {}
-        for profile in profiles:
-            email = profile.get("email")
-            if email and email in server.automators:
-                # Get VNC info using emulator_launcher
-                automator = server.automators.get(email)
-                if (
-                    automator
-                    and hasattr(automator, "emulator_manager")
-                    and hasattr(automator.emulator_manager, "emulator_launcher")
-                ):
-                    (
-                        emulator_id,
-                        display_num,
-                    ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
-                    if display_num:
-                        from server.utils.port_utils import calculate_vnc_port
-
-                        vnc_instances[email] = {
-                            "instance_id": display_num,  # Use display number as instance ID
-                            "display": display_num,
-                            "vnc_port": calculate_vnc_port(display_num),
-                            "emulator_id": emulator_id,
-                        }
-
-        # Add information about which automators are active
-        active_automators = {}
-        for email, automator in server.automators.items():
-            if automator and hasattr(automator, "driver") and automator.driver:
-                is_running = True
-                device_id = automator.device_id if hasattr(automator, "device_id") else None
-                current_book = server.current_books.get(email) if email in server.current_books else None
-
-                active_automators[email] = {
-                    "device_id": device_id,
-                    "is_running": is_running,
-                    "current_book": current_book,
-                }
-
-                # Add VNC instance info if available
-                if email in vnc_instances:
-                    active_automators[email]["vnc_instance"] = vnc_instances[email]
-
-        # Include a specific profile if requested
-        specific_email = request.args.get("email")
-        if specific_email:
-            # Find the specific profile
-            specific_profile = None
-            for profile in profiles:
-                if profile.get("email") == specific_email:
-                    specific_profile = profile
-                    break
-
-            # Include VNC info for this specific profile
-            vnc_info = vnc_instances.get(specific_email, {})
-            automator_info = active_automators.get(specific_email, {})
-
-            if specific_profile:
-                return {
-                    "profile": specific_profile,
-                    "vnc_instance": vnc_info,
-                    "automator": automator_info,
-                    "is_current": current and current.get("email") == specific_email,
-                }, 200
-            else:
-                return {"error": f"Profile {specific_email} not found"}, 404
-
-        return {
-            "profiles": profiles,
-            "current": current,
-            "running_emulators": running_emulators,
-            "active_automators": active_automators,
-            "vnc_instances": vnc_instances,
-        }, 200
-
-    def post(self):
-        """Create, delete or manage a profile"""
-        data = request.get_json()
-        action = data.get("action")
-        email = data.get("email")
-
-        if action == "reset_styles":
-            # Special case for resetting style preferences without needing an email
-            if server.profile_manager.current_profile:
-                if server.profile_manager.update_style_preference(False):
-                    return {"success": True, "message": "Style preferences reset successfully"}, 200
-                else:
-                    return {"success": False, "message": "Failed to reset style preferences"}, 500
-            else:
-                return {"success": False, "message": "No current profile found"}, 400
-
-        elif action == "list_active":
-            # List all active emulators with their details
-            running_emulators = server.profile_manager.device_discovery.map_running_emulators()
-            active_automators = {}
-
-            for email, automator in server.automators.items():
-                if automator and hasattr(automator, "driver") and automator.driver:
-                    device_id = automator.device_id if hasattr(automator, "device_id") else None
-                    current_book = server.current_books.get(email) if email in server.current_books else None
-
-                    active_automators[email] = {"device_id": device_id, "current_book": current_book}
-
-            return {"running_emulators": running_emulators, "active_automators": active_automators}, 200
-
-        # For all other actions, email is required
-        if not email:
-            return {"error": "Email is required for this action"}, 400
-
-        if action == "create":
-            success, message = server.profile_manager.create_profile(email)
-            return {"success": success, "message": message}, 200 if success else 500
-
-        elif action == "delete":
-            success, message = server.profile_manager.delete_profile(email)
-            return {"success": success, "message": message}, 200 if success else 500
-
-        elif action == "switch":
-            success, message = server.switch_profile(email)
-            return {"success": success, "message": message}, 200 if success else 500
-
-        elif action == "stop_emulator":
-            # Find the automator for this email
-            automator = server.automators.get(email)
-            if (
-                not automator
-                or not hasattr(automator, "emulator_manager")
-                or not hasattr(automator.emulator_manager, "emulator_launcher")
-            ):
-                return {"success": False, "message": f"No valid automator found for {email}"}, 404
-
-            # Check if there's a running emulator for this email
-            emulator_id, display_num = automator.emulator_manager.emulator_launcher.get_running_emulator(
-                email
-            )
-            if not emulator_id:
-                return {"success": False, "message": f"No running emulator found for {email}"}, 404
-
-            # Stop the emulator using the launcher
-            logger.info(f"Stopping emulator for {email} using emulator_launcher")
-            success = automator.emulator_manager.emulator_launcher.stop_emulator(email)
-
-            # Clean up the automator if it exists
-            if email in server.automators and server.automators[email]:
-                logger.info(f"Cleaning up automator for {email}")
-                server.automators[email].cleanup()
-                server.automators[email] = None
-
-            # Clear current book
-            server.clear_current_book(email)
-
-            if success:
-                return {"success": True, "message": f"Stopped emulator for {email}"}, 200
-            else:
-                return {"success": False, "message": f"Failed to stop emulator for {email}"}, 500
-
-        else:
-            return {"error": f"Invalid action: {action}"}, 400
-
-
 class TextResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1959,7 +1786,6 @@ api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
-api.add_resource(ProfilesResource, "/profiles")
 api.add_resource(TextResource, "/text")
 api.add_resource(
     ShutdownResource,
@@ -2023,6 +1849,7 @@ def cleanup_resources():
     from server.utils.vnc_instance_manager import VNCInstanceManager
 
     vnc_manager = VNCInstanceManager.get_instance()
+
     shutdown_manager = EmulatorShutdownManager(server)
 
     # Track which emulators are running and mark them for restart
@@ -2030,12 +1857,7 @@ def cleanup_resources():
     logger.info(f"Checking {len(server.automators)} automators for running emulators...")
 
     for email, automator in server.automators.items():
-        if (
-            automator
-            and hasattr(automator, "driver")
-            and automator.driver
-            and automator.driver.check_connection()
-        ):
+        if automator.emulator_manager.is_emulator_running(email):
             try:
                 logger.info(f"✓ Marking {email} as running at restart for deployment recovery")
                 vnc_manager.mark_running_for_deployment(email)

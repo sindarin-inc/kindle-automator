@@ -1,15 +1,18 @@
 import logging
 import os
 import subprocess
+import tempfile
 import time
 from functools import wraps
 from typing import Optional
 
+import requests
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from flask import current_app
 from urllib3.exceptions import MaxRetryError
 
+from server.utils.appium_driver import AppiumDriver
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -25,7 +28,7 @@ class Driver:
         self.driver = None
         self.device_id = None
         self.automator = None  # Reference to the automator instance
-        self.appium_port = None  # Default port, can be overridden
+        self.appium_port = None  # Must be set
         self._session_retries = 0
         self._max_session_retries = 2
         self._initialized_attributes = True
@@ -105,22 +108,17 @@ class Driver:
         """Disable hardware overlays to improve WebView visibility."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                profile = self.automator.profile_manager.get_current_profile()
-                device_id = profile.get("emulator_id") if profile else None
+            profile = self.automator.profile_manager.get_current_profile()
+            device_id = profile.get("emulator_id") if profile else None
 
-                # If this is the same device and we already set hw_overlays_disabled, skip
-                if (
-                    device_id
-                    and device_id == self.device_id
-                    and profile
-                    and profile.get("hw_overlays_disabled", False)
-                ):
-                    return True
+            # If this is the same device and we already set hw_overlays_disabled, skip
+            if (
+                device_id
+                and device_id == self.device_id
+                and profile
+                and profile.get("hw_overlays_disabled", False)
+            ):
+                return True
 
             # Check current state
             result = subprocess.run(
@@ -162,42 +160,34 @@ class Driver:
             value: The value to set
         """
         try:
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                profile = self.automator.profile_manager.get_current_profile()
-                if not profile:
-                    logger.warning("Cannot update profile setting: no current profile")
-                    return
+            profile = self.automator.profile_manager.get_current_profile()
+            if not profile:
+                logger.warning("Cannot update profile setting: no current profile")
+                return
 
-                email = get_sindarin_email()
-                avd_name = profile.get("avd_name")
+            email = get_sindarin_email()
+            avd_name = profile.get("avd_name")
 
-                if email and avd_name:
-                    # Update the setting in the current profile
-                    profile[setting_name] = value
+            if email and avd_name:
+                # Update the setting in the current profile
+                profile[setting_name] = value
 
-                    # Update the profile in the profile manager
-                    emulator_id = profile.get("emulator_id")
+                # Update the profile in the profile manager
+                emulator_id = profile.get("emulator_id")
 
-                    # Check which method is available in profile_manager
-                    if hasattr(self.automator.profile_manager, "_save_profile_status"):
-                        self.automator.profile_manager._save_profile_status(email, avd_name, emulator_id)
-                    elif hasattr(self.automator.profile_manager, "_save_current_profile"):
-                        self.automator.profile_manager._save_current_profile(email, avd_name, emulator_id)
+                # Check which method is available in profile_manager
+                self.automator.profile_manager._save_profile_status(email, avd_name, emulator_id)
 
-                    # Also update user preferences for persistence
-                    if email not in self.automator.profile_manager.user_preferences:
-                        self.automator.profile_manager.user_preferences[email] = {}
+                # Also update user preferences for persistence
+                if email not in self.automator.profile_manager.user_preferences:
+                    self.automator.profile_manager.user_preferences[email] = {}
 
-                    self.automator.profile_manager.user_preferences[email][setting_name] = value
-                    self.automator.profile_manager._save_user_preferences()
+                self.automator.profile_manager.user_preferences[email][setting_name] = value
+                self.automator.profile_manager._save_user_preferences()
 
-                    logger.info(f"Updated profile setting {setting_name}={value} for {email}")
-                else:
-                    logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
+                logger.info(f"Updated profile setting {setting_name}={value} for {email}")
+            else:
+                logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
         except Exception as e:
             logger.error(f"Error updating profile setting {setting_name}: {e}")
             # Continue execution even if we can't update the profile
@@ -209,28 +199,23 @@ class Driver:
             email: Email address of the profile
         """
         try:
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "profiles_index")
-            ):
-                profile_index = self.automator.profile_manager.profiles_index
+            profile_index = self.automator.profile_manager.profiles_index
 
-                if email in profile_index and "preferences" in profile_index[email]:
-                    preferences = profile_index[email]["preferences"]
-                    cleaned = False
+            if email in profile_index and "preferences" in profile_index[email]:
+                preferences = profile_index[email]["preferences"]
+                cleaned = False
 
-                    # Remove version info from preferences if present
-                    if "kindle_version_name" in preferences:
-                        preferences.pop("kindle_version_name")
-                        cleaned = True
-                    if "kindle_version_code" in preferences:
-                        preferences.pop("kindle_version_code")
-                        cleaned = True
+                # Remove version info from preferences if present
+                if "kindle_version_name" in preferences:
+                    preferences.pop("kindle_version_name")
+                    cleaned = True
+                if "kindle_version_code" in preferences:
+                    preferences.pop("kindle_version_code")
+                    cleaned = True
 
-                    # Save changes if we cleaned anything
-                    if cleaned and hasattr(self.automator.profile_manager, "_save_profiles_index"):
-                        self.automator.profile_manager._save_profiles_index()
+                # Save changes if we cleaned anything
+                if cleaned:
+                    self.automator.profile_manager._save_profiles_index()
         except Exception as e:
             logger.error(f"Error cleaning old version info for {email}: {e}")
 
@@ -241,70 +226,38 @@ class Driver:
             version_name: The version name (e.g. "8.121.0.100")
             version_code: The version code (e.g. 1286055411)
         """
-        try:
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                profile = self.automator.profile_manager.get_current_profile()
-                if not profile:
-                    logger.warning("Cannot update Kindle version in profile: no current profile")
-                    return
+        profile = self.automator.profile_manager.get_current_profile()
+        if not profile:
+            logger.warning("Cannot update Kindle version in profile: no current profile")
+            return
 
-                email = profile.get("email") or profile.get("assigned_profile")
-                avd_name = profile.get("avd_name")
+        email = profile.get("email") or profile.get("assigned_profile")
+        avd_name = profile.get("avd_name")
 
-                if email and avd_name:
-                    # Update version info at top level using generic field setter if available
-                    if hasattr(self.automator.profile_manager, "set_user_field"):
-                        self.automator.profile_manager.set_user_field(
-                            email, "kindle_version_name", version_name
-                        )
-                        self.automator.profile_manager.set_user_field(
-                            email, "kindle_version_code", str(version_code)
-                        )
-                    else:
-                        # Fall back to direct profile update
-                        profile["kindle_version_name"] = version_name
-                        profile["kindle_version_code"] = str(version_code)
+        if email and avd_name:
+            # Update version info at top level using generic field setter if available
+            self.automator.profile_manager.set_user_field(email, "kindle_version_name", version_name)
+            self.automator.profile_manager.set_user_field(email, "kindle_version_code", str(version_code))
 
-                        # Update the profile in the profile manager
-                        emulator_id = profile.get("emulator_id")
-
-                        # Check which method is available in profile_manager
-                        if hasattr(self.automator.profile_manager, "_save_profile_status"):
-                            self.automator.profile_manager._save_profile_status(email, avd_name, emulator_id)
-                        elif hasattr(self.automator.profile_manager, "_save_current_profile"):
-                            self.automator.profile_manager._save_current_profile(email, avd_name, emulator_id)
-
-                    logger.info(
-                        f"Updated Kindle version in profile to {version_name} (code: {version_code}) for {email}"
-                    )
-        except Exception as e:
-            logger.error(f"Error updating Kindle version in profile: {e}")
-            # Continue execution even if we can't update the profile
+            logger.info(
+                f"Updated Kindle version in profile to {version_name} (code: {version_code}) for {email}"
+            )
 
     def _disable_animations(self) -> bool:
         """Disable all system animations to improve reliability."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                profile = self.automator.profile_manager.get_current_profile()
-                device_id = profile.get("emulator_id") if profile else None
+            profile = self.automator.profile_manager.get_current_profile()
+            device_id = profile.get("emulator_id") if profile else None
 
-                # If this is the same device and we already set animations_disabled, skip
-                if (
-                    device_id
-                    and device_id == self.device_id
-                    and profile
-                    and profile.get("animations_disabled", False)
-                ):
-                    return True
+            # If this is the same device and we already set animations_disabled, skip
+            if (
+                device_id
+                and device_id == self.device_id
+                and profile
+                and profile.get("animations_disabled", False)
+            ):
+                return True
 
             logger.info(f"Disabling system animations on device {self.device_id}")
 
@@ -372,22 +325,12 @@ class Driver:
         """Disable sleep and app standby modes to prevent the device and app from sleeping."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                profile = self.automator.profile_manager.get_current_profile()
-                device_id = profile.get("emulator_id") if profile else None
+            profile = self.automator.profile_manager.get_current_profile()
+            device_id = profile.get("emulator_id") if profile else None
 
-                # If this is the same device and we already set sleep_disabled, skip
-                if (
-                    device_id
-                    and device_id == self.device_id
-                    and profile
-                    and profile.get("sleep_disabled", False)
-                ):
-                    return True
+            # If this is the same device and we already set sleep_disabled, skip
+            if device_id and device_id == self.device_id and profile and profile.get("sleep_disabled", False):
+                return True
 
             logger.info(f"Disabling sleep and app standby for device {self.device_id}")
 
@@ -460,22 +403,17 @@ class Driver:
         """Hide the status bar at runtime using ADB."""
         try:
             # Check if we already applied this setting to the current emulator
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                profile = self.automator.profile_manager.get_current_profile()
-                device_id = profile.get("emulator_id") if profile else None
+            profile = self.automator.profile_manager.get_current_profile()
+            device_id = profile.get("emulator_id") if profile else None
 
-                # If this is the same device and we already set status_bar_disabled, skip
-                if (
-                    device_id
-                    and device_id == self.device_id
-                    and profile
-                    and profile.get("status_bar_disabled", False)
-                ):
-                    return True
+            # If this is the same device and we already set status_bar_disabled, skip
+            if (
+                device_id
+                and device_id == self.device_id
+                and profile
+                and profile.get("status_bar_disabled", False)
+            ):
+                return True
 
             logger.info(f"Hiding status bar for device {self.device_id}")
 
@@ -810,23 +748,24 @@ class Driver:
         if self.check_connection():
             return True
 
+        email = get_sindarin_email()
+
         # Get device ID first, using specific device ID from profile if available
         target_device_id = None
 
         # Check if we have a profile manager with a preferred device ID
-        if self.automator and hasattr(self.automator, "profile_manager"):
-            # Get the current profile for device ID info
-            profile = self.automator.profile_manager.get_current_profile()
-            if profile and "emulator_id" in profile:
-                # Use the device ID from the profile
-                target_device_id = profile.get("emulator_id")
-                logger.info(f"Using target device ID from profile: {target_device_id}")
-            elif profile and "avd_name" in profile:
-                # Try to get device ID from AVD name mapping
-                avd_name = profile.get("avd_name")
-                device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
-                if device_id:
-                    target_device_id = device_id
+        # Get the current profile for device ID info
+        profile = self.automator.profile_manager.get_current_profile()
+        if profile and "emulator_id" in profile:
+            # Use the device ID from the profile
+            target_device_id = profile.get("emulator_id")
+            logger.info(f"Using target device ID from profile: {target_device_id}")
+        elif profile and "avd_name" in profile:
+            # Try to get device ID from AVD name mapping
+            avd_name = profile.get("avd_name")
+            device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
+            if device_id:
+                target_device_id = device_id
 
         # Get device ID, preferring the specific one if provided
         self.device_id = self._get_emulator_device_id(target_device_id)
@@ -835,36 +774,20 @@ class Driver:
             return False
 
         # Update profile with device ID
-        if not self.automator:
-            logger.error("Cannot update profile: automator not initialized")
-
-        elif not hasattr(self.automator, "profile_manager"):
-            logger.error("Cannot update profile: profile_manager not found")
-
-        elif not hasattr(self.automator.profile_manager, "get_current_profile"):
-            logger.error("Cannot update profile: get_current_profile method not found")
-
+        profile = self.automator.profile_manager.get_current_profile()
+        if not profile:
+            logger.error("Cannot update profile: get_current_profile returned None")
         else:
-            profile = self.automator.profile_manager.get_current_profile()
-            if not profile:
-                logger.error("Cannot update profile: get_current_profile returned None")
+            avd_name = profile.get("avd_name")
+
+            if not email or not avd_name:
+                logger.error(
+                    f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}"
+                )
+
             else:
-                email = get_sindarin_email()
-                avd_name = profile.get("avd_name")
-
-                if not email or not avd_name:
-                    logger.error(
-                        f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}"
-                    )
-
-                else:
-                    # Use the appropriate method based on what's available
-                    if hasattr(self.automator.profile_manager, "_save_profile_status"):
-                        self.automator.profile_manager._save_profile_status(email, avd_name, self.device_id)
-                    elif hasattr(self.automator.profile_manager, "_save_current_profile"):
-                        self.automator.profile_manager._save_current_profile(email, avd_name, self.device_id)
-                    else:
-                        logger.error("No method found to save profile status")
+                # Use the appropriate method based on what's available
+                self.automator.profile_manager._save_profile_status(email, avd_name, self.device_id)
 
         # Check if app is installed
         if not self._is_kindle_installed():
@@ -880,39 +803,16 @@ class Driver:
             profile = None
 
             # Try to get version from profile first (faster)
-            if self.automator and hasattr(self.automator, "profile_manager"):
-                profile_manager = self.automator.profile_manager
+            profile_manager = self.automator.profile_manager
 
-                # Get current profile email
-                email = None
-                if hasattr(profile_manager, "get_current_profile"):
-                    profile = profile_manager.get_current_profile()
-                    if profile:
-                        email = profile.get("email") or profile.get("assigned_profile")
+            profile_version_name = profile_manager.get_user_field(email, "kindle_version_name")
+            profile_version_code_str = profile_manager.get_user_field(email, "kindle_version_code")
 
-                if email and hasattr(profile_manager, "get_user_field"):
-                    # Use the new get_user_field method
-                    profile_version_name = profile_manager.get_user_field(email, "kindle_version_name")
-                    profile_version_code_str = profile_manager.get_user_field(email, "kindle_version_code")
-
-                    if profile_version_code_str:
-                        try:
-                            profile_version_code = int(profile_version_code_str)
-                        except ValueError:
-                            profile_version_code = None
-                elif hasattr(profile_manager, "get_current_profile"):
-                    # Fall back to direct profile access
-                    profile = profile_manager.get_current_profile()
-                    if profile:
-                        # Check for version info at top level first
-                        profile_version_name = profile.get("kindle_version_name")
-                        profile_version_code_str = profile.get("kindle_version_code")
-
-                        if profile_version_code_str:
-                            try:
-                                profile_version_code = int(profile_version_code_str)
-                            except ValueError:
-                                profile_version_code = None
+            if profile_version_code_str:
+                try:
+                    profile_version_code = int(profile_version_code_str)
+                except ValueError:
+                    profile_version_code = None
 
             # If we have profile version info, use it; otherwise query the device
             if profile_version_name and profile_version_code:
@@ -950,20 +850,15 @@ class Driver:
                         logger.info("Kindle app upgraded successfully")
 
                         # Update stored version info after successful upgrade
-                        if self.automator and hasattr(self.automator.profile_manager, "set_user_field"):
-                            email = profile.get("email") or profile.get("assigned_profile")
-                            if email:
-                                # Store version info at top level with generic setter
-                                self.automator.profile_manager.set_user_field(
-                                    email, "kindle_version_name", apk_version_name
-                                )
-                                self.automator.profile_manager.set_user_field(
-                                    email, "kindle_version_code", str(apk_version_code)
-                                )
-                                # Clean up any version info that might be in preferences
-                                self._clean_old_version_info(email)
-                        elif profile:
-                            self._update_kindle_version_in_profile(apk_version_name, apk_version_code)
+                        # Store version info at top level with generic setter
+                        self.automator.profile_manager.set_user_field(
+                            email, "kindle_version_name", apk_version_name
+                        )
+                        self.automator.profile_manager.set_user_field(
+                            email, "kindle_version_code", str(apk_version_code)
+                        )
+                        # Clean up any version info that might be in preferences
+                        self._clean_old_version_info(email)
                     else:
                         logger.info("Kindle app is already at the latest version")
 
@@ -987,6 +882,25 @@ class Driver:
         if not app_activity:
             return False
 
+        # Check if Appium is already running for this profile
+        appium_driver = AppiumDriver()
+        appium_info = appium_driver.get_appium_process_info(email)
+        if not appium_info or not appium_info.get("running"):
+            logger.info(f"Starting Appium server for {email}")
+
+            # Start the Appium server for this profile
+            appium_started = appium_driver.start_appium_for_profile(email)
+            if not appium_started:
+                logger.error(f"Failed to start Appium server for {email}")
+                return {
+                    "error": f"Failed to start Appium server for {email}",
+                    "message": "Could not initialize Appium server",
+                }, 500
+        elif self.driver:
+            logger.info(f"Appium already running for {email} on port {appium_info['port']}")
+            self.appium_port = appium_info["port"]
+            return True
+
         # Initialize driver with retry logic
         for attempt in range(1, 2):
             logger.info(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/2)...")
@@ -999,24 +913,23 @@ class Driver:
             options.set_capability("deviceName", self.device_id)
             options.set_capability("udid", self.device_id)
 
-            # Get Android ID for the device for more reliable identification
-            try:
-                android_id = subprocess.run(
-                    ["adb", "-s", self.device_id, "shell", "settings", "get", "secure", "android_id"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                ).stdout.strip()
-                if android_id:
-                    logger.debug(f"Setting Android ID in appium: {android_id}")
-                    options.set_capability("appium:androidId", android_id)
-                else:
-                    logger.warning("Could not retrieve Android ID")
-            except Exception as e:
-                logger.warning(f"Could not retrieve Android ID: {e}")
+            # # Get Android ID for the device for more reliable identification
+            # try:
+            #     android_id = subprocess.run(
+            #         ["adb", "-s", self.device_id, "shell", "settings", "get", "secure", "android_id"],
+            #         capture_output=True,
+            #         text=True,
+            #         check=True,
+            #     ).stdout.strip()
+            #     if android_id:
+            #         logger.debug(f"Setting Android ID in appium: {android_id}")
+            #         options.set_capability("appium:androidId", android_id)
+            #     else:
+            #         logger.warning("Could not retrieve Android ID")
+            # except Exception as e:
+            #     logger.warning(f"Could not retrieve Android ID: {e}")
 
             # Tell UiAutomator2 to strictly use this device and not fall back to others
-            options.set_capability("enforceAppiumPrefixes", True)  # Ensure strict capability naming
             options.set_capability("appium:ensureWebviewsHavePages", True)  # Helps with stability
 
             options.app_package = "com.amazon.kindle"
@@ -1036,16 +949,12 @@ class Driver:
                 "appium:dontStopAppOnReset", True
             )  # Prevent closing app when session stops
 
-            # Set shorter waitForIdleTimeout to make Appium faster
-            options.set_capability("appium:waitForIdleTimeout", 1000)  # 1 second wait for idle state
-
             # Set longer timeouts to avoid connection issues
             options.set_capability(
                 "appium:uiautomator2ServerLaunchTimeout", 60000
             )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
             # Leave this higher since we need time for ADB commands during actual operations
             options.set_capability("appium:adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
-            options.set_capability("appium:connectionTimeout", 10000)  # 10 seconds for connection timeout
 
             # Add parallel execution capabilities
             instance_id = None
@@ -1059,187 +968,99 @@ class Driver:
             # If we have instance_id, add unique ports for parallel execution
             if instance_id and email:
                 # Get allocated ports from VNCInstanceManager via AppiumDriver
-                from server.utils.appium_driver import AppiumDriver
-
-                appium_driver = AppiumDriver()
                 allocated_ports = appium_driver.get_appium_ports_for_profile(email)
 
                 if allocated_ports:
                     # Use the allocated ports
                     # Using proper UiAutomator2 capability names
                     options.set_capability("appium:systemPort", allocated_ports["systemPort"])
-                    options.set_capability("appium:uiautomator2ServerPort", allocated_ports["bootstrapPort"])
                     options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
                     options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
+                    self.appium_port = allocated_ports["appiumPort"]
+
                     logger.info(f"Using allocated ports for {email}: {allocated_ports}")
                 else:
                     logger.error(f"No allocated ports found for {email}")
                     return False
-
-                # Temporary directory for this instance
-                import tempfile
-
-                temp_dir = os.path.join(tempfile.gettempdir(), f"appium_{instance_id}")
-                os.makedirs(temp_dir, exist_ok=True)
-                options.set_capability("appium:tmpDir", temp_dir)
 
             # Clean up system files to avoid conflicts
             options.set_capability("appium:clearSystemFiles", True)
             options.set_capability("appium:skipServerInstallation", False)
 
             # Force server shutdown on disconnect to prevent port conflicts
-            options.set_capability("appium:relaxedSecurity", True)
-            options.set_capability("appium:shutdownOnPowerDisconnect", True)
             options.set_capability("appium:disableWindowAnimation", True)
 
             # Ensure clean session management
             options.set_capability("appium:skipUnlock", True)
             options.set_capability("appium:dontStopAppOnReset", True)  # Keep app running when session ends
 
-            # Use longer timeout on webdriver initialization
-            import socket
-
-            original_timeout = socket.getdefaulttimeout()
-            # Determine Appium port
-            # If automator has a profile manager with a specific port for this email, use that
-            if (
-                self.automator
-                and hasattr(self.automator, "profile_manager")
-                and hasattr(self.automator.profile_manager, "get_current_profile")
-            ):
-                current_profile = self.automator.profile_manager.get_current_profile()
-                if current_profile:
-                    email = current_profile.get("email") or current_profile.get("assigned_profile")
-                    if email:
-                        # Get appium_port from AppiumDriver/VNCInstanceManager
-                        from server.utils.appium_driver import AppiumDriver
-
-                        appium_driver = AppiumDriver()
-                        allocated_ports = appium_driver.get_appium_ports_for_profile(email)
-                        if allocated_ports and "appiumPort" in allocated_ports:
-                            self.appium_port = allocated_ports["appiumPort"]
-                            logger.info(f"Using allocated appium port {self.appium_port} for {email}")
-                else:
-                    logger.warning(f"No profile found for starting Appium server: {email}")
-            else:
-                logger.warning(
-                    f"No profile found for starting Appium server: {self.automator} {self.automator.profile_manager}"
-                )
-                self.appium_port = PortConfig.APPIUM_BASE_PORT
-
             # First verify the Appium server is actually responding
             # This prevents attempting to connect to a non-responsive server
-            import time
-
-            import requests
 
             max_retries = 5
             retry_delay = 1
 
-            # Ensure we have a valid appium port - use centralized default as fallback
-            from server.utils.port_utils import PortConfig
-
-            appium_port = self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
-
             for attempt in range(max_retries):
-                try:
-                    logger.info(
-                        f"Checking Appium server (127.0.0.1:{appium_port}) status (attempt {attempt+1}/{max_retries})..."
+                logger.info(
+                    f"Checking Appium server (127.0.0.1:{self.appium_port}) status (attempt {attempt+1}/{max_retries})..."
+                )
+                status_response = requests.get(f"http://127.0.0.1:{self.appium_port}/status", timeout=5)
+                # Handle both Appium 1.x and 2.x response formats
+                response_json = status_response.json()
+
+                # Check for Appium 1.x format: {"status": 0, ...}
+                appium1_format = "status" in response_json and response_json["status"] == 0
+
+                # Check for Appium 2.x format: {"value": {"ready": true, ...}}
+                appium2_format = (
+                    "value" in response_json
+                    and isinstance(response_json["value"], dict)
+                    and response_json["value"].get("ready") == True
+                )
+
+                if status_response.status_code == 200 and (appium1_format or appium2_format):
+                    time.sleep(1)
+                    break
+                else:
+                    logger.warning(
+                        f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries})"
                     )
-                    status_response = requests.get(f"http://127.0.0.1:{appium_port}/status", timeout=5)
-                    # Handle both Appium 1.x and 2.x response formats
-                    response_json = status_response.json()
 
-                    # Check for Appium 1.x format: {"status": 0, ...}
-                    appium1_format = "status" in response_json and response_json["status"] == 0
-
-                    # Check for Appium 2.x format: {"value": {"ready": true, ...}}
-                    appium2_format = (
-                        "value" in response_json
-                        and isinstance(response_json["value"], dict)
-                        and response_json["value"].get("ready") == True
-                    )
-
-                    if status_response.status_code == 200 and (appium1_format or appium2_format):
-                        break
-                    else:
-                        logger.warning(
-                            f"Appium server not ready on port {self.appium_port} (attempt {attempt+1}/{max_retries})"
-                        )
-
-                        # If this is the last retry, raise an exception
-                        if attempt == max_retries - 1:
-                            raise Exception(
-                                f"Appium server not ready on port {self.appium_port} after {max_retries} attempts"
-                            )
-
-                        # Wait before retrying
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                except requests.RequestException as e:
+                    # If this is the last retry, raise an exception
                     if attempt == max_retries - 1:
-                        logger.error(
-                            f"Failed to connect to Appium server on port {appium_port} after {max_retries} attempts: {e}"
+                        raise Exception(
+                            f"Appium server not ready on port {self.appium_port} after {max_retries} attempts"
                         )
 
-                        # Check if we need to start Appium ourselves
-                        if current_app:
-                            server = current_app.config.get("server_instance")
-                            if server:
-                                logger.info(f"Attempting to start Appium server directly from driver...")
-                                email = (
-                                    current_profile.get("email") or current_profile.get("assigned_profile")
-                                    if current_profile
-                                    else None
-                                )
-                                if email:
-                                    # Use AppiumDriver to start Appium for this profile
-                                    from server.utils.appium_driver import AppiumDriver
-
-                                    appium_driver = AppiumDriver()
-                                    started = appium_driver.start_appium_for_profile(email)
-                                    if not started:
-                                        logger.error("Failed to start Appium server from driver")
-                                    else:
-                                        time.sleep(0.2)  # Give it time to start
-                                        continue  # Retry the check
-
-                        raise Exception(f"Cannot connect to Appium server on port {appium_port}: {e}")
-
-                    logger.warning(f"Appium connection error (attempt {attempt+1}/{max_retries}): {e}")
+                    # Wait before retrying
                     time.sleep(retry_delay)
                     retry_delay *= 2
 
             # Initialize driver with the options using the specific port
             # Ensure we have a valid appium port - use centralized default as fallback
-            from server.utils.port_utils import PortConfig
-
-            appium_port = self.appium_port if self.appium_port is not None else PortConfig.APPIUM_BASE_PORT
-
-            logger.info(f"Connecting to Appium on port {appium_port} for device {self.device_id}")
+            logger.info(f"Connecting to Appium on port {self.appium_port} for device {self.device_id}")
 
             try:
-                self.driver = webdriver.Remote(f"http://127.0.0.1:{appium_port}", options=options)
+                self.driver = webdriver.Remote(f"http://127.0.0.1:{self.appium_port}", options=options)
             except MaxRetryError as e:
-                logger.error(f"Failed to connect to Appium server on port {appium_port}: {e}")
+                logger.error(f"Failed to connect to Appium server on port {self.appium_port}: {e}")
                 return False
 
-            logger.info(f"Driver initialized successfully on port {appium_port} for device {self.device_id}")
+            logger.info(
+                f"Driver initialized successfully on port {self.appium_port} for device {self.device_id}"
+            )
 
             # Force a state check after driver initialization with a timeout
             import concurrent.futures
             import threading
 
-            def check_connection():
-                self.driver.current_activity  # This will force Appium to check connection
-                return True
-
             # Run the check with a timeout
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(check_connection)
+                future = executor.submit(self.check_connection)
                 try:
                     logger.debug("Checking connection to Appium server...")
                     result = future.result(timeout=15)  # 15 second timeout - increased from 5
+                    logger.debug(f"Connection check result: {result}")
                     return True
                 except concurrent.futures.TimeoutError:
                     logger.error("Connection check timed out after 15 seconds")

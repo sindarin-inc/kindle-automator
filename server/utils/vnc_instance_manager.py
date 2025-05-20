@@ -162,7 +162,6 @@ class VNCInstanceManager:
 
         # Get additional Appium-related ports
         appium_system_port = ports.get("system_port", PortConfig.SYSTEM_BASE_PORT + next_id)
-        appium_bootstrap_port = ports.get("bootstrap_port", PortConfig.BOOTSTRAP_BASE_PORT + next_id)
         appium_chromedriver_port = ports.get("chromedriver_port", PortConfig.CHROMEDRIVER_BASE_PORT + next_id)
         appium_mjpeg_server_port = PortConfig.MJPEG_BASE_PORT + next_id
 
@@ -181,7 +180,6 @@ class VNCInstanceManager:
             "appium_last_health_check": None,
             # Additional Appium-related ports
             "appium_system_port": appium_system_port,
-            "appium_bootstrap_port": appium_bootstrap_port,
             "appium_chromedriver_port": appium_chromedriver_port,
             "appium_mjpeg_server_port": appium_mjpeg_server_port,
         }

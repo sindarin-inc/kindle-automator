@@ -68,7 +68,6 @@ class AVDProfileManager:
         self.base_dir = base_dir
 
         # In the new structure, we store everything directly in user_data/
-        # No longer need a separate "profiles" subdirectory
         if self.use_simplified_mode:
             self.profiles_dir = base_dir
             self.users_file = os.path.join(self.profiles_dir, "users.json")
@@ -80,7 +79,7 @@ class AVDProfileManager:
         # Ensure directories exist
         os.makedirs(self.profiles_dir, exist_ok=True)
         # Initialize component managers
-        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
+        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir, self.use_simplified_mode)
         self.emulator_manager = EmulatorManager(
             self.android_home, self.avd_dir, self.host_arch, self.use_simplified_mode
         )
@@ -435,9 +434,13 @@ class AVDProfileManager:
                     break
 
         # Look for running emulators with this AVD name
-        running_emulators = self.device_discovery.map_running_emulators(cached_info=cached_info)
+        running_emulators = self.device_discovery.map_running_emulators(
+            self.profiles_index, cached_info=cached_info
+        )
         emulator_id = running_emulators.get(avd_name)
-        logger.info(f"Found emulator id: {emulator_id} for AVD: {avd_name}. {cached_info}")
+        logger.info(
+            f"Found emulator id: {emulator_id} for AVD: {avd_name}. {running_emulators} {cached_info}"
+        )
         return emulator_id
 
     def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
@@ -486,7 +489,7 @@ class AVDProfileManager:
             List[Dict]: List of profile information dictionaries
         """
         # First get running emulators
-        running_emulators = self.device_discovery.map_running_emulators()
+        running_emulators = self.device_discovery.map_running_emulators(self.profiles_index)
 
         result = []
         for email, profile_entry in self.profiles_index.items():
@@ -623,7 +626,6 @@ class AVDProfileManager:
         """
         try:
             sindarin_email = get_sindarin_email()
-            logger.info(f"[DIAG] Sindarin email: {sindarin_email}")
 
             # Special case for macOS development environment
             is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
@@ -635,18 +637,13 @@ class AVDProfileManager:
                 and sindarin_email in self.emulator_manager._emulator_cache
             ):
                 emulator_id, avd_name, cache_time = self.emulator_manager._emulator_cache[sindarin_email]
-                logger.info(
-                    f"[DIAG] Found cached emulator info for {sindarin_email}: {emulator_id}, {avd_name}"
-                )
 
                 # Quick verification that the emulator is still running
                 if self.emulator_manager.emulator_launcher._verify_emulator_running(emulator_id):
-                    logger.info(f"[DIAG] Cached emulator {emulator_id} is verified running")
 
                     # Check if we have this profile
                     if sindarin_email in self.profiles_index:
                         profile = self.profiles_index[sindarin_email].copy()  # Make a copy
-                        logger.info(f"[DIAG] Using cached profile for {sindarin_email}")
 
                         # Add user preferences if available
                         if sindarin_email in self.user_preferences:
@@ -660,7 +657,7 @@ class AVDProfileManager:
                         profile["last_used"] = int(time.time())
                         return profile
                 else:
-                    logger.info(f"[DIAG] Cached emulator {emulator_id} no longer running, clearing cache")
+                    logger.info(f"Cached emulator {emulator_id} no longer running, clearing cache")
                     del self.emulator_manager._emulator_cache[sindarin_email]
 
             # Only call map_running_emulators if we don't have valid cached data
@@ -672,11 +669,11 @@ class AVDProfileManager:
             ):
                 emulator_id, avd_name, _ = self.emulator_manager._emulator_cache[sindarin_email]
                 cached_info = (avd_name, emulator_id)
-                logger.info(f"[DIAG] Preparing cached info for map_running_emulators: {cached_info}")
 
             # Check for running emulators
-            running_emulators = self.device_discovery.map_running_emulators(cached_info=cached_info)
-            logger.info(f"[DIAG] Running emulators map: {running_emulators}")
+            running_emulators = self.device_discovery.map_running_emulators(
+                self.profiles_index, cached_info=cached_info
+            )
 
             # Special case for macOS development environment
             is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
@@ -698,7 +695,6 @@ class AVDProfileManager:
                     if result.returncode == 0:
                         lines = result.stdout.strip().split("\n")
                         has_emulator = any("emulator-" in line for line in lines[1:])
-                        logger.info(f"[DIAG] ADB shows emulator running: {has_emulator}")
 
                         if has_emulator or is_mac_dev:
                             # Add user preferences if available
@@ -717,7 +713,6 @@ class AVDProfileManager:
                 for email, profile in self.profiles_index.items():
                     if email != sindarin_email:
                         continue
-                    logger.info(f"[DIAG] Found matching profile for {email}: {profile}")
 
                     # Add user preferences if available
                     if email in self.user_preferences:
@@ -786,7 +781,7 @@ class AVDProfileManager:
         self.register_profile(email, normalized_avd_name)
 
         # Try to find if this user's AVD is already running
-        running_emulators = self.device_discovery.map_running_emulators()
+        running_emulators = self.device_discovery.map_running_emulators(self.profiles_index)
         if normalized_avd_name in running_emulators:
             emulator_id = running_emulators[normalized_avd_name]
             logger.info(f"Found user's AVD {normalized_avd_name} already running at {emulator_id}")
@@ -794,7 +789,7 @@ class AVDProfileManager:
         else:
             self._save_profile_status(email, normalized_avd_name)
 
-    def stop_emulator(self, device_id: str = None) -> bool:
+    def stop_emulator(self, device_id: str) -> bool:
         """
         Stop an emulator by device ID or the currently running emulator.
 
@@ -805,10 +800,7 @@ class AVDProfileManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        if device_id:
-            return self.emulator_manager.stop_specific_emulator(device_id)
-        else:
-            return self.emulator_manager.stop_emulator()
+        return self.emulator_manager.stop_specific_emulator(device_id)
 
     def start_emulator(self, email: str) -> bool:
         """

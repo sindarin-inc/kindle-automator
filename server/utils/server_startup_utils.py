@@ -5,6 +5,7 @@ Utility functions for server startup and emulator restoration.
 import logging
 import threading
 import time
+import traceback
 from typing import List
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,8 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                         if success:
                             # Initialize the automator to ensure the driver is ready
                             automator = server.initialize_automator(email)
-                            if automator and automator.initialize_driver():
+                            logger.info(f"Initialized startup automator for {email}: {automator}")
+                            if automator:
                                 logger.info(f"✓ Successfully restarted emulator for {email}")
                                 successfully_restarted.append(email)
                                 # Add a delay between restarts to avoid overwhelming the system
@@ -80,6 +82,9 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
 
                 except Exception as e:
                     logger.error(f"✗ Error restarting emulator for {email}: {e}")
+                    logger.debug(
+                        f"Backtrace for error restarting emulator for {email}: {traceback.format_exc()}"
+                    )
                     failed_restarts.append(email)
 
             # Summary report

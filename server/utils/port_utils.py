@@ -25,7 +25,6 @@ class PortConfig:
 
     # Other ports used by the system
     SYSTEM_BASE_PORT = 8200
-    BOOTSTRAP_BASE_PORT = 5000
     CHROMEDRIVER_BASE_PORT = 9515
     MJPEG_BASE_PORT = 7810
 
@@ -116,7 +115,6 @@ def calculate_emulator_ports(instance_id: int) -> dict:
         "emulator_port": calculate_emulator_port(instance_id),
         "vnc_port": calculate_vnc_port(instance_id),
         "system_port": PortConfig.SYSTEM_BASE_PORT + instance_id,
-        "bootstrap_port": PortConfig.BOOTSTRAP_BASE_PORT + instance_id,
         "chromedriver_port": PortConfig.CHROMEDRIVER_BASE_PORT + instance_id,
     }
 

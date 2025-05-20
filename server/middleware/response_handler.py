@@ -135,8 +135,6 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
             logger.error("No email found to restart driver")
             return False
 
-        # No longer setting current_email as it has been removed
-
         # Check if we have an automator for this email
         if sindarin_email not in server_instance.automators or not server_instance.automators[sindarin_email]:
             logger.info(f"Initializing automator for {sindarin_email}")
@@ -163,8 +161,6 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
         if not sindarin_email:
             logger.error("No email found to restart emulator")
             return False
-
-        # No longer setting current_email as it has been removed
 
         logger.info(f"Attempting to restart emulator for profile: {sindarin_email}")
         # Force a new emulator to be created
@@ -383,8 +379,6 @@ def handle_automator_response(server_instance):
             if not automator and hasattr(server_instance, "automator"):
                 automator = server_instance.automator
 
-            # No longer taking pre-operation snapshots to improve performance
-
             try:
                 # Wrap the function call in retry logic
                 def wrapped_func():
@@ -403,8 +397,6 @@ def handle_automator_response(server_instance):
                         result, status_code = response
                     else:
                         result, status_code = response, 200
-
-                    # No longer taking post-operation snapshots to improve performance
 
                     # Check for special states that need handling
                     if automator and hasattr(automator, "state_machine") and automator.state_machine:

@@ -281,7 +281,6 @@ class AppiumDriver:
         return {
             "appiumPort": instance.get("appium_port"),
             "systemPort": instance.get("appium_system_port"),
-            "bootstrapPort": instance.get("appium_bootstrap_port"),
             "chromedriverPort": instance.get("appium_chromedriver_port"),
             "mjpegServerPort": instance.get("appium_mjpeg_server_port"),
         }

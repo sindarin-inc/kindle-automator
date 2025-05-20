@@ -31,7 +31,6 @@ class KindleAutomator:
     def cleanup(self):
         """Cleanup resources."""
         if self.driver:
-            Driver.reset()  # This will allow reinitialization
             self.driver = None
             self.device_id = None
 
