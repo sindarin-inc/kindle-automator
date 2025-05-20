@@ -60,6 +60,77 @@ class ReaderHandler:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
+    def _check_for_download_limit_dialog(self) -> bool:
+        """Check if a Download Limit dialog is currently visible.
+        
+        Returns:
+            bool: True if a Download Limit dialog is found, False otherwise.
+        """
+        try:
+            # Check all possible ways the dialog could be detected
+            
+            # Method 1: Check for dialog title
+            for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS):
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        logger.info(f"Found Download Limit dialog title with #{idx}: {strategy}={locator}")
+                        # Take page source for diagnostics
+                        store_page_source(self.driver.page_source, "download_limit_dialog_detected")
+                        return True
+                except NoSuchElementException:
+                    pass
+                except Exception as e:
+                    logger.debug(f"Error in dialog title check #{idx}: {e}")
+            
+            # Method 2: Check for download limit error text
+            for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_ERROR_TEXT):
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        logger.info(f"Found Download Limit error text #{idx}: {strategy}={locator}")
+                        store_page_source(self.driver.page_source, "download_limit_error_text_detected")
+                        return True
+                except NoSuchElementException:
+                    pass
+                except Exception as e:
+                    logger.debug(f"Error in error text check #{idx}: {e}")
+            
+            # Method 3: Check for device list with button combination
+            try:
+                # Check if we have both a device list and remove button
+                device_list = None
+                for dl_strat, dl_loc in DOWNLOAD_LIMIT_DEVICE_LIST:
+                    try:
+                        device_list = self.driver.find_element(dl_strat, dl_loc)
+                        if device_list.is_displayed():
+                            break
+                    except:
+                        device_list = None
+
+                button = None
+                for btn_strat, btn_loc in DOWNLOAD_LIMIT_REMOVE_BUTTON:
+                    try:
+                        button = self.driver.find_element(btn_strat, btn_loc)
+                        if button.is_displayed():
+                            break
+                    except:
+                        button = None
+
+                if device_list and button:
+                    logger.info("Found Download Limit dialog via device list + button combination")
+                    store_page_source(self.driver.page_source, "download_limit_combo_detected")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error in device list + button check: {e}")
+            
+            # If we reach here, no dialog was found
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error checking for Download Limit dialog: {e}")
+            return False
+    
     def handle_download_limit_dialog(self) -> bool:
         """Handle the 'Download Limit Reached' dialog by selecting the top device and clicking 'Remove and Download'.
 
@@ -136,11 +207,12 @@ class ReaderHandler:
             # Find and tap the first device in the list - try multiple methods with longer wait times
             first_device_tapped = False
 
-            # Method 1: Direct targeting of first device LinearLayout
+            # Method 1: Find and click LinearLayout containing the first device in the list
             for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_FIRST_DEVICE):
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
+                        # Try clicking directly on the LinearLayout
                         element.click()
                         logger.info(f"Tapped first device method 1 using #{idx}: {strategy}={locator}")
                         first_device_tapped = True
@@ -151,9 +223,32 @@ class ReaderHandler:
                 except Exception as e:
                     logger.warning(f"Error tapping first device #{idx}: {e}")
 
-            # Method 2: Try to find and click CheckedTextView directly
+            # Method 2: Find and click the CheckedTextView inside the first LinearLayout
             if not first_device_tapped:
-                logger.info("Trying CheckedTextView direct approach")
+                logger.info("Trying CheckedTextView within first LinearLayout approach")
+                for idx, (list_strategy, list_locator) in enumerate(DOWNLOAD_LIMIT_FIRST_DEVICE):
+                    try:
+                        parent = self.driver.find_element(list_strategy, list_locator)
+                        if parent and parent.is_displayed():
+                            # Now find the CheckedTextView inside this parent
+                            try:
+                                checkbox = parent.find_element(AppiumBy.CLASS_NAME, "android.widget.CheckedTextView")
+                                if checkbox and checkbox.is_displayed():
+                                    checkbox.click()
+                                    logger.info(f"Found and clicked checkbox inside first device #{idx}")
+                                    first_device_tapped = True
+                                    time.sleep(1.5)
+                                    break
+                            except NoSuchElementException:
+                                logger.debug(f"CheckedTextView inside first LinearLayout #{idx} not found")
+                            except Exception as e:
+                                logger.warning(f"Error clicking CheckedTextView inside LinearLayout #{idx}: {e}")
+                    except NoSuchElementException:
+                        continue
+
+            # Method 3: Try to find and click the first CheckedTextView directly
+            if not first_device_tapped:
+                logger.info("Trying to find and click the first CheckedTextView directly")
                 try:
                     # Try to get all CheckedTextViews
                     for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_CHECKEDTEXTVIEW):
@@ -186,7 +281,7 @@ class ReaderHandler:
                 except Exception as e:
                     logger.warning(f"General error in CheckedTextView approach: {e}")
 
-            # Method 3: Find device list and tap in top area
+            # Method 4: Find device list and tap in top area
             if not first_device_tapped:
                 logger.info("Trying device list area approach")
                 for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_DEVICE_LIST):
@@ -216,16 +311,46 @@ class ReaderHandler:
             if not first_device_tapped:
                 logger.warning("Could not tap any device after multiple methods. Will try button anyway")
 
-            # Find and tap the "Remove and Download" button with retry logic
+            # Find and tap the "Remove and Read Now" button with retry logic
             remove_button_tapped = False
 
+            # Check if the button is now enabled after tapping a device
+            # Wait for up to 3 seconds for the button to become enabled
+            start_time = time.time()
+            button_enabled = False
+            while time.time() - start_time < 3 and not button_enabled:
+                for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_REMOVE_BUTTON):
+                    try:
+                        button = self.driver.find_element(strategy, locator)
+                        if button and button.is_displayed():
+                            try:
+                                enabled = button.is_enabled()
+                                if enabled:
+                                    button_enabled = True
+                                    logger.info(f"Button #{idx} is now enabled after {time.time() - start_time:.1f}s")
+                                    break
+                            except:
+                                try:
+                                    # Fallback to attribute
+                                    enabled_attr = button.get_attribute("enabled")
+                                    if enabled_attr == "true":
+                                        button_enabled = True
+                                        logger.info(f"Button #{idx} is now enabled via attribute after {time.time() - start_time:.1f}s")
+                                        break
+                                except:
+                                    pass
+                    except:
+                        pass
+                
+                if not button_enabled:
+                    time.sleep(0.2)  # Short wait before checking again
+            
             # Method 1: Standard button search and click
             for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_REMOVE_BUTTON):
                 try:
                     button = self.driver.find_element(strategy, locator)
                     if button and button.is_displayed():
                         # Check if it's enabled
-                        button_enabled = False
                         try:
                             button_enabled = button.is_enabled()
                         except:
@@ -240,16 +365,16 @@ class ReaderHandler:
 
                         if button_enabled:
                             button.click()
-                            logger.info(f"Tapped enabled Remove/Download button #{idx}")
+                            logger.info(f"Tapped enabled Remove/Read button #{idx}")
                             remove_button_tapped = True
                             time.sleep(3)  # Longer wait for download start
                             break
                         else:
                             logger.warning(f"Button #{idx} found but disabled")
                 except NoSuchElementException:
-                    logger.debug(f"Remove/Download button #{idx} not found")
+                    logger.debug(f"Remove/Read button #{idx} not found")
                 except Exception as e:
-                    logger.warning(f"Error with Remove/Download button #{idx}: {e}")
+                    logger.warning(f"Error with Remove/Read button #{idx}: {e}")
 
             # Method 2: Try one more round of device selection then button tap
             if not remove_button_tapped:
@@ -319,6 +444,18 @@ class ReaderHandler:
             bool: True if reading view was successfully handled, False otherwise.
         """
         logger.info(f"Starting reading flow for book: {book_title}")
+        
+        # First, check immediately if we have a download limit dialog before waiting for anything else
+        # This addresses the issue where we could miss detecting it during transitions
+        download_limit_found = self._check_for_download_limit_dialog()
+        if download_limit_found:
+            logger.info("Download Limit dialog detected immediately - handling it")
+            if self.handle_download_limit_dialog():
+                logger.info("Successfully handled Download Limit dialog immediately")
+                # Continue to reading view handling below
+            else:
+                logger.error("Failed to handle Download Limit dialog detected immediately")
+                return False
 
         # Wait for the reading view to appear
         try:
@@ -326,7 +463,7 @@ class ReaderHandler:
             # or for the download limit dialog
             def reading_view_or_download_limit_present(driver):
                 # First check for download limit dialog - try all detection methods
-
+                
                 # Method 1: Check for download limit dialog headers
                 for idx, (strategy, locator) in enumerate(DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS):
                     try:
@@ -410,17 +547,23 @@ class ReaderHandler:
 
                 return False
 
-            # Wait for either reading view element or download limit dialog to appear
-            result = WebDriverWait(self.driver, 10).until(reading_view_or_download_limit_present)
+            # If we already found and handled the download limit dialog, skip the wait
+            if not download_limit_found:
+                # Wait for either reading view element or download limit dialog to appear
+                result = WebDriverWait(self.driver, 10).until(reading_view_or_download_limit_present)
+            else:
+                # We already handled the download limit dialog, just wait for reading view
+                logger.info("Skipping wait since download limit dialog was already handled")
+                # Set result to avoid undefined variable
+                result = "reading_view"
 
-            # Handle download limit dialog if it appeared
-            if result == "download_limit":
+            # Handle download limit dialog if it appeared and wasn't already handled
+            if result == "download_limit" and not download_limit_found:
                 logger.info("Download Limit dialog detected - handling it")
                 if self.handle_download_limit_dialog():
                     logger.info("Successfully handled Download Limit dialog, waiting for reading view")
                     # Now wait for the reading view after handling the dialog
                     try:
-
                         def reading_view_present(driver):
                             for strategy in READING_VIEW_IDENTIFIERS:
                                 try:
