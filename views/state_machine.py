@@ -310,11 +310,13 @@ class KindleStateMachine:
                 from views.common.dialog_strategies import (
                     DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
                 )
+                from views.reading.interaction_strategies import (
+                    handle_item_removed_dialog,
+                )
                 from views.reading.view_strategies import (
                     ITEM_REMOVED_DIALOG_IDENTIFIERS,
                     is_item_removed_dialog_visible,
                 )
-                from views.reading.interaction_strategies import handle_item_removed_dialog
 
                 # Check for Item Removed dialog
                 if is_item_removed_dialog_visible(self.driver):

@@ -40,8 +40,8 @@ from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIER
 from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
-    ITEM_REMOVED_DIALOG_IDENTIFIERS,
     ITEM_REMOVED_DIALOG_CLOSE_BUTTON,
+    ITEM_REMOVED_DIALOG_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
@@ -433,7 +433,7 @@ class ViewInspector:
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "item_removed_dialog")
                 return AppView.READING
-                
+
             # Check for reading view identifiers
             reading_view_elements_found = 0
             for strategy, locator in READING_VIEW_IDENTIFIERS:

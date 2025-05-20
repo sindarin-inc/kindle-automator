@@ -1239,6 +1239,85 @@ class LibraryHandler:
                 callback(None, error=str(e))
             return []
 
+    def _check_unable_to_download_dialog(self, book_title, context=""):
+        """Check for and handle the 'Unable to Download' dialog.
+
+        Args:
+            book_title: The title of the book being downloaded/opened
+            context: Context description for logging (e.g., "after clicking book")
+
+        Returns:
+            bool: True if dialog was found and handled, False otherwise
+        """
+        from views.library.interaction_strategies import (
+            UNABLE_TO_DOWNLOAD_DIALOG_BUTTONS,
+            UNABLE_TO_DOWNLOAD_DIALOG_IDENTIFIERS,
+        )
+
+        try:
+            for strategy, locator in UNABLE_TO_DOWNLOAD_DIALOG_IDENTIFIERS:
+                try:
+                    dialog_title = self.driver.find_element(strategy, locator)
+                    if dialog_title.is_displayed():
+                        if dialog_title.text == "Unable to Download" or strategy == AppiumBy.ID:
+                            logger.info(f"Found 'Unable to Download' dialog {context}")
+
+                            # Store page source for diagnostics
+                            store_page_source(
+                                self.driver.page_source,
+                                f"unable_to_download_dialog_{context.replace(' ', '_')}",
+                            )
+
+                            # Get the error message text if available
+                            error_message = "Book is not available to download"
+                            try:
+                                message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
+                                if message_element and message_element.is_displayed():
+                                    error_message = message_element.text
+                                    logger.info(f"Unable to Download dialog message: {error_message}")
+                            except:
+                                logger.debug("Could not get error message text from dialog")
+
+                            # Click the CANCEL button
+                            cancel_clicked = False
+                            for btn_strategy, btn_locator in UNABLE_TO_DOWNLOAD_DIALOG_BUTTONS:
+                                try:
+                                    btn = self.driver.find_element(btn_strategy, btn_locator)
+                                    if btn.is_displayed() and (
+                                        btn.text == "CANCEL" or "button2" in str(btn_locator)
+                                    ):
+                                        btn.click()
+                                        logger.info(f"Clicked CANCEL button on 'Unable to Download' dialog")
+                                        cancel_clicked = True
+                                        time.sleep(1)  # Wait for dialog to dismiss
+                                        break
+                                except:
+                                    continue
+
+                            if not cancel_clicked:
+                                logger.warning("Could not click CANCEL button on 'Unable to Download' dialog")
+
+                            # Set an error property on the automator to inform the client
+                            if hasattr(self.driver, "automator"):
+                                self.driver.automator.last_error = {
+                                    "type": "unable_to_download",
+                                    "message": error_message,
+                                    "book_title": book_title,
+                                }
+
+                            # Return True to indicate dialog was found and handled
+                            return True
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error checking for 'Unable to Download' dialog: {e}")
+
+            # Dialog not found
+            return False
+        except Exception as e:
+            logger.error(f"Error in _check_unable_to_download_dialog: {e}")
+            return False
+
     def _handle_book_click_and_transition(self, parent_container, button, book_info, book_title):
         """Handle clicking a book, waiting for download if needed, and transitioning to reading view.
 
@@ -1247,6 +1326,7 @@ class LibraryHandler:
         1. Checking if the book needs to be downloaded
         2. Waiting for download to complete if needed
         3. Clicking the book and verifying transition to reading view
+        4. Checking and handling dialogs like "Unable to Download"
 
         Args:
             parent_container: The parent element containing the book
@@ -1267,6 +1347,10 @@ class LibraryHandler:
                 logger.info("Book is not downloaded yet, initiating download...")
                 button.click()
                 logger.info("Clicked book to start download")
+
+                # Check for "Unable to Download" dialog
+                if self._check_unable_to_download_dialog(book_title, "after clicking non-downloaded book"):
+                    return False
 
                 # After clicking the book, first check if we've already left the library view
                 # This happens when the book downloads very quickly or is already downloaded
@@ -1291,6 +1375,12 @@ class LibraryHandler:
                 max_attempts = 30
                 for attempt in range(max_attempts):
                     try:
+                        # Check again for "Unable to Download" dialog that might appear during download
+                        if self._check_unable_to_download_dialog(
+                            book_title, f"during download attempt {attempt}"
+                        ):
+                            return False
+
                         # First check if we've already left the library view (download finished and opened)
                         try:
                             # Check if we're still in library view
@@ -1332,6 +1422,12 @@ class LibraryHandler:
                                 time.sleep(1)  # Short wait for UI to stabilize
                                 parent_container.click()
                                 logger.info("Clicked book button after download")
+
+                                # Check for "Unable to Download" dialog again after clicking downloaded book
+                                if self._check_unable_to_download_dialog(
+                                    book_title, "after clicking downloaded book"
+                                ):
+                                    return False
 
                                 # Check if we successfully left the library view
                                 try:
@@ -1398,6 +1494,10 @@ class LibraryHandler:
             button.click()
             logger.info("Clicked book button")
 
+            # Check for "Unable to Download" dialog for already downloaded books
+            if self._check_unable_to_download_dialog(book_title, "after clicking already downloaded book"):
+                return False
+
             # Wait for library view to disappear (we've left it)
             try:
                 WebDriverWait(self.driver, 5).until_not(
@@ -1409,6 +1509,10 @@ class LibraryHandler:
                 logger.error("Still in library view after clicking book")
                 # Try clicking one more time
                 button.click()
+
+                # Check for "Unable to Download" dialog after second click
+                if self._check_unable_to_download_dialog(book_title, "after second click"):
+                    return False
 
                 # Wait again for library view to disappear
                 try:
@@ -1423,6 +1527,10 @@ class LibraryHandler:
                     logger.error("Still in library view after second click, trying with parent container")
                     # Try clicking the parent container instead
                     parent_container.click()
+
+                    # Check for "Unable to Download" dialog after parent container click
+                    if self._check_unable_to_download_dialog(book_title, "after parent container click"):
+                        return False
 
                     # Wait one more time for library view to disappear
                     try:

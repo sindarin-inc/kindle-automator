@@ -39,8 +39,8 @@ from views.reading.view_strategies import (
     GO_TO_LOCATION_DIALOG_IDENTIFIERS,
     GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS,
     GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS,
-    ITEM_REMOVED_DIALOG_IDENTIFIERS,
     ITEM_REMOVED_DIALOG_CLOSE_BUTTON,
+    ITEM_REMOVED_DIALOG_IDENTIFIERS,
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     LAYOUT_TAB_IDENTIFIERS,
     PAGE_NAVIGATION_ZONES,
@@ -154,7 +154,7 @@ class ReaderHandler:
         try:
             # Store page source for debugging
             store_page_source(self.driver.page_source, "download_limit_before_handling")
-            
+
             # Check all possible places the dialog could be found
             dialog_found = False
 
@@ -224,13 +224,13 @@ class ReaderHandler:
 
             # Use a direct approach based on the XML structure
             first_device_tapped = False
-            
+
             # Direct approach using XPath to click the first LinearLayout in the device list
             try:
                 # Simple XPath to find the first clickable LinearLayout in the device list
                 first_device_layout = self.driver.find_element(
-                    AppiumBy.XPATH, 
-                    "//android.widget.ListView[@resource-id='com.amazon.kindle:id/rlr_device_list']/android.widget.LinearLayout[1]"
+                    AppiumBy.XPATH,
+                    "//android.widget.ListView[@resource-id='com.amazon.kindle:id/rlr_device_list']/android.widget.LinearLayout[1]",
                 )
                 if first_device_layout:
                     first_device_layout.click()
@@ -239,17 +239,17 @@ class ReaderHandler:
                     time.sleep(1)  # Short wait for UI to update
             except Exception as e:
                 logger.warning(f"Error clicking first device: {e}")
-                
+
                 # Fallback to coordinate-based tap if direct method fails
                 try:
                     # Get screen dimensions to calculate tap position
                     window_size = self.driver.get_window_size()
-                    width = window_size['width']
-                    
+                    width = window_size["width"]
+
                     # Calculate position for first device (based on XML layout)
                     x = width // 2
                     y = 1335  # From the XML, the first device's CheckedTextView is around y=1283-1336
-                    
+
                     # Perform tap
                     self.driver.tap([(x, y)])
                     logger.info(f"Used coordinate tap at ({x}, {y}) for first device")
@@ -257,22 +257,24 @@ class ReaderHandler:
                     time.sleep(1)
                 except Exception as e2:
                     logger.warning(f"Error with coordinate tap approach: {e2}")
-            
+
             # Save a screenshot after the selection attempt
             self.driver.save_screenshot("screenshots/after_device_selection.png")
 
             # Find and tap the "Remove and Read Now" button
             remove_button_tapped = False
-            
+
             # Wait for up to 2 seconds for the button to become enabled
             start_time = time.time()
             button_enabled = False
             enable_wait_time = 2  # seconds
-            
+
             logger.info(f"Waiting up to {enable_wait_time}s for button to become enabled")
             while time.time() - start_time < enable_wait_time and not button_enabled:
                 try:
-                    button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button")
+                    button = self.driver.find_element(
+                        AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button"
+                    )
                     if button and button.is_displayed():
                         enabled_attr = button.get_attribute("enabled")
                         if enabled_attr == "true":
@@ -282,42 +284,46 @@ class ReaderHandler:
                 except Exception:
                     pass
                 time.sleep(0.2)
-            
+
             # Try clicking the button by ID first
             try:
-                button = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button")
+                button = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button"
+                )
                 button.click()
                 logger.info("Clicked 'REMOVE AND READ NOW' button by ID")
                 remove_button_tapped = True
             except Exception as e:
                 logger.warning(f"Error clicking button by ID: {e}")
-            
+
             # If that didn't work, try clicking by text
             if not remove_button_tapped:
                 try:
-                    button = self.driver.find_element(AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND READ NOW']")
+                    button = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE AND READ NOW']"
+                    )
                     button.click()
                     logger.info("Clicked 'REMOVE AND READ NOW' button by text")
                     remove_button_tapped = True
                 except Exception as e:
                     logger.warning(f"Error clicking button by text: {e}")
-            
+
             # Last resort - use coordinates based on XML
             if not remove_button_tapped:
                 try:
                     # Button is at bounds="[81,2132][999,2227]" in the XML
                     window_size = self.driver.get_window_size()
-                    width = window_size['width']
-                    
+                    width = window_size["width"]
+
                     x = width // 2  # Center horizontally
                     y = 2180  # Based on XML bounds
-                    
+
                     self.driver.tap([(x, y)])
                     logger.info(f"Used coordinate tap for button at ({x}, {y})")
                     remove_button_tapped = True
                 except Exception as e:
                     logger.warning(f"Error using coordinate tap for button: {e}")
-            
+
             # Check if dialog is still visible
             dialog_still_visible = False
             try:
@@ -329,14 +335,14 @@ class ReaderHandler:
                     logger.info("Dialog no longer visible - successfully handled")
             except:
                 logger.info("Dialog title element not found - dialog may have closed")
-            
+
             if dialog_still_visible and not remove_button_tapped:
                 logger.error("Could not handle the Download Limit dialog")
                 return False
-            
+
             # Wait a short time for the UI transition
             time.sleep(1)
-            
+
             return True
 
         except Exception as e:
@@ -363,7 +369,7 @@ class ReaderHandler:
 
         # First, check immediately for special dialogs that need handling before waiting for anything else
         # This addresses the issue where we could miss detecting them during transitions
-        
+
         # Check for Item Removed dialog first
         if is_item_removed_dialog_visible(self.driver):
             logger.info("Item Removed dialog detected immediately - handling it")
@@ -372,7 +378,7 @@ class ReaderHandler:
                 # After handling this, check if we're now looking at the Download Limit dialog
                 # This can happen when the book is removed and when trying to re-open, hits download limit
                 time.sleep(1)  # Short wait to ensure UI is updated
-                
+
                 # After Item Removed dialog closes, we're back in library view and the book may be clicked again
                 # Check if Download Limit dialog appears immediately after
                 if self._check_for_download_limit_dialog():
@@ -384,13 +390,13 @@ class ReaderHandler:
                     else:
                         logger.error("Failed to handle Download Limit dialog after Item Removed dialog")
                         return False
-                
+
                 # If no Download Limit dialog, then we're just back to library view
                 return True
             else:
                 logger.error("Failed to handle Item Removed dialog detected immediately")
                 return False
-        
+
         # Check for download limit dialog
         download_limit_found = self._check_for_download_limit_dialog()
         if download_limit_found:
@@ -495,7 +501,9 @@ class ReaderHandler:
             # If we already found and handled the download limit dialog, skip the wait
             if not download_limit_found:
                 # Wait for either reading view element or download limit dialog to appear
-                result = WebDriverWait(self.driver, 5).until(reading_view_or_download_limit_present)  # Shorter timeout
+                result = WebDriverWait(self.driver, 5).until(
+                    reading_view_or_download_limit_present
+                )  # Shorter timeout
             else:
                 # We already handled the download limit dialog, just wait for reading view
                 logger.info("Skipping wait since download limit dialog was already handled")
@@ -1587,7 +1595,7 @@ class ReaderHandler:
                 else:
                     logger.error("Failed to handle Item Removed dialog")
                     # Continue with other methods to try getting back to library
-            
+
             # Check for and dismiss the comic book view
             if self.handle_comic_book_view():
                 logger.info("Successfully dismissed comic book view during navigation")

@@ -1010,7 +1010,7 @@ class BookOpenResource(Resource):
                         return {"error": "Failed to handle Download Limit dialog"}, 500
             except Exception as e:
                 logger.error(f"Error checking for Download Limit dialog: {e}")
-            
+
             # Then, check if we have current_book set
             if current_book:
                 # Compare with the requested book

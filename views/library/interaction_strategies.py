@@ -92,3 +92,22 @@ SAFE_TAP_AREAS = [
     (0.9, 0.9),  # Bottom-right corner
     (0.5, 0.5),  # Center of screen
 ]
+
+# Unable to Download dialog identifiers and buttons
+UNABLE_TO_DOWNLOAD_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Unable to Download']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/alertTitle' and @text='Unable to Download']",
+    ),
+    (AppiumBy.ID, "com.amazon.kindle:id/alertTitle"),
+]
+
+UNABLE_TO_DOWNLOAD_DIALOG_BUTTONS = [
+    (AppiumBy.XPATH, "//android.widget.Button[@text='CANCEL']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/button2']"),
+    (AppiumBy.ID, "android:id/button2"),  # CANCEL button
+    (AppiumBy.XPATH, "//android.widget.Button[@text='TRY AGAIN']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/button1']"),
+    (AppiumBy.ID, "android:id/button1"),  # TRY AGAIN button
+]

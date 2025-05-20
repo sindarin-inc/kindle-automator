@@ -381,6 +381,7 @@ ITEM_REMOVED_DIALOG_CLOSE_BUTTON = [
     (AppiumBy.ID, "android:id/button1"),
 ]
 
+
 def is_item_removed_dialog_visible(driver):
     """Check if the 'Item Removed' dialog is visible."""
     try:
