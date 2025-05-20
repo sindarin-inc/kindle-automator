@@ -956,6 +956,12 @@ class BookOpenResource(Resource):
 
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
+            # Check for and handle the 'last read page' dialog before getting page info
+            from handlers.navigation_handler import NavigationResourceHandler
+            nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
+            if nav_handler._handle_last_read_page_dialog():
+                logger.info("Handled 'last read page' dialog in open-book endpoint")
+            
             # Get reading progress
             progress = automator.state_machine.reader_handler.get_reading_progress(
                 show_placemark=show_placemark
