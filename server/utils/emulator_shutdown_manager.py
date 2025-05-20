@@ -50,13 +50,22 @@ class EmulatorShutdownManager:
         )
 
         # Mark for restart if requested (for deployment restarts)
-        if mark_for_restart:
-            try:
-                vnc_manager = VNCInstanceManager.get_instance()
+        # or clear the flag if we're shutting down due to idle/close timer
+        try:
+            vnc_manager = VNCInstanceManager.get_instance()
+            if mark_for_restart:
                 logger.info(f"Marking {email} as running at restart for deployment recovery")
                 vnc_manager.mark_running_for_deployment(email)
-            except Exception as e:
-                logger.error(f"Failed to mark {email} for restart: {e}")
+            else:
+                # This is an idle timer or on-close timer shutdown, so clear the flag
+                from views.core.avd_profile_manager import AVDProfileManager
+                avd_manager = AVDProfileManager()
+                was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
+                if was_running:
+                    logger.info(f"Clearing was_running_at_restart flag for {email} during idle/close shutdown")
+                    avd_manager.set_user_field(email, "was_running_at_restart", None)
+        except Exception as e:
+            logger.error(f"Failed to handle was_running_at_restart flag for {email}: {e}")
 
         # Track what was shut down
         shutdown_summary = {
