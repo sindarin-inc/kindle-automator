@@ -45,6 +45,21 @@ APP_NOT_RESPONDING_DIALOG_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/aerr_wait' and @text='Wait']"),
 ]
 
+# Download limit reached dialog identifiers
+DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS = [
+    # Title that says "DOWNLOAD LIMIT REACHED"
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_title"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@content-desc='download limit reached header']"),
+    # Error message containing "download limit"
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_error_title"),
+    # Device list container
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_device_list"),
+    # Remove and Read Now button
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_remove_and_read_now_button"),
+    # Cancel button
+    (AppiumBy.ID, "com.amazon.kindle:id/rlr_cancel"),
+]
+
 # Dialog interaction strategies
 APP_NOT_RESPONDING_CLOSE_APP_BUTTON = (
     AppiumBy.XPATH,

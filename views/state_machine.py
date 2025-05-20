@@ -83,6 +83,15 @@ class KindleStateMachine:
             self.current_state = self._get_current_state()
             logger.info(f"Current state: {self.current_state}")
 
+            # Special handling for RemoteLicenseReleaseActivity dialog
+            try:
+                current_activity = self.driver.current_activity
+                if "RemoteLicenseReleaseActivity" in current_activity:
+                    logger.info("Detected Download Limit dialog during transition - treating as READING")
+                    self.current_state = AppState.READING
+            except Exception as e:
+                logger.debug(f"Error checking for RemoteLicenseReleaseActivity: {e}")
+
             # If we have a server reference and we're not in reading state but have a current book
             # Clear the current book to ensure state consistency
             if server and self.current_state != AppState.READING:
@@ -276,6 +285,16 @@ class KindleStateMachine:
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
 
+            # Simple check for RemoteLicenseReleaseActivity if state is UNKNOWN
+            if self.current_state == AppState.UNKNOWN:
+                try:
+                    current_activity = self.driver.current_activity
+                    if "RemoteLicenseReleaseActivity" in current_activity:
+                        logger.info("Detected RemoteLicenseReleaseActivity - setting state to READING")
+                        self.current_state = AppState.READING
+                except Exception as e:
+                    logger.debug(f"Error checking for RemoteLicenseReleaseActivity: {e}")
+
             # Cache the state detection time and value
             self._last_state_check_time = time.time()
             self._last_state_value = self.current_state
@@ -287,6 +306,37 @@ class KindleStateMachine:
 
             # If we detect READING but we've just clicked close book, make a special check
             if self.current_state == AppState.READING:
+                # Check for download limit dialog first, which is a special case within reading state
+                from views.common.dialog_strategies import (
+                    DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
+                )
+
+                download_limit_elements = 0
+                for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        if element.is_displayed():
+                            download_limit_elements += 1
+                            logger.info(f"Found download limit dialog element: {strategy}={locator}")
+                    except Exception:
+                        continue
+
+                # Also check for specific activity name
+                try:
+                    current_activity = self.driver.current_activity
+                    if "RemoteLicenseReleaseActivity" in current_activity:
+                        download_limit_elements += 1
+                        logger.info(f"Found RemoteLicenseReleaseActivity: {current_activity}")
+                except Exception as e:
+                    logger.debug(f"Error checking current activity: {e}")
+
+                # If we found at least 2 elements of the download limit dialog, we're confident we need
+                # to handle this dialog via reader_handler before continuing
+                if download_limit_elements >= 2:
+                    logger.info("Download limit reached dialog detected within READING state")
+                    # Don't override the state as it's correctly detected as READING already
+                    return self.current_state
+
                 # Double check for library elements
                 library_elements_found = False
                 logger.info("State detected as READING - double checking for library elements...")
@@ -333,9 +383,11 @@ class KindleStateMachine:
                     # If the current activity is not Kindle (e.g. NexusLauncherActivity), the app has quit
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
                     # Also accept the Google Play review dialog which can appear over the Kindle app
+                    # Explicitly handle the RemoteLicenseReleaseActivity (Download Limit dialog) as a known activity
                     if not (
                         current_activity.startswith("com.amazon.kindle")
                         or current_activity.startswith("com.amazon.kcp")
+                        or "RemoteLicenseReleaseActivity" in current_activity
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):

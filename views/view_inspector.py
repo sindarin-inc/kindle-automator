@@ -22,7 +22,10 @@ from views.auth.view_strategies import (
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
 )
-from views.common.dialog_strategies import APP_NOT_RESPONDING_DIALOG_IDENTIFIERS
+from views.common.dialog_strategies import (
+    APP_NOT_RESPONDING_DIALOG_IDENTIFIERS,
+    DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
+)
 from views.core.app_state import AppState, AppView
 from views.core.tab_strategies import get_tab_selection_strategies
 from views.home.view_strategies import HOME_TAB_IDENTIFIERS, HOME_VIEW_IDENTIFIERS
@@ -139,6 +142,7 @@ class ViewInspector:
 
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                     # Also handle the Google Play review dialog which can appear over the Kindle app
+                    # Also recognize the RemoteLicenseReleaseActivity (Download Limit dialog) as a valid activity
                     if (
                         current_activity.startswith("com.amazon")
                         or current_activity
@@ -388,6 +392,37 @@ class ViewInspector:
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.APP_NOT_RESPONDING
                 return AppView.APP_NOT_RESPONDING
+
+            # Check for download limit reached dialog
+            # This can happen when trying to open a book with RemoteLicenseReleaseActivity
+            download_limit_elements = 0
+            for strategy, locator in DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        download_limit_elements += 1
+                        logger.info(f"   Found download limit dialog element: {strategy}={locator}")
+                except NoSuchElementException:
+                    continue
+
+            # Also check for specific activity name
+            try:
+                current_activity = self.driver.current_activity
+                if "RemoteLicenseReleaseActivity" in current_activity:
+                    download_limit_elements += 1
+                    logger.info(f"   Found RemoteLicenseReleaseActivity: {current_activity}")
+            except Exception as e:
+                logger.debug(f"   Error checking current activity: {e}")
+
+            # If we found at least 2 elements of the download limit dialog, we're confident
+            if download_limit_elements >= 2:
+                logger.info("   Download limit reached dialog detected")
+                # Store page source for debugging
+                store_page_source(self.driver.page_source, "download_limit_dialog")
+
+                # Set this as reading state with a dialog, since it's related to book opening
+                logger.info("   Treating download limit dialog as part of reading state")
+                return AppView.READING
 
             # Check for reading view identifiers
             reading_view_elements_found = 0

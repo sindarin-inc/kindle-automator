@@ -124,6 +124,16 @@ class ReaderHandler:
             except Exception as e:
                 logger.debug(f"Error in device list + button check: {e}")
 
+            # Method 4: Check current activity directly
+            try:
+                current_activity = self.driver.current_activity
+                if "RemoteLicenseReleaseActivity" in current_activity:
+                    logger.info(f"Found Download Limit dialog via activity name: {current_activity}")
+                    store_page_source(self.driver.page_source, "download_limit_activity_detected")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error checking activity name: {e}")
+
             # If we reach here, no dialog was found
             return False
 
