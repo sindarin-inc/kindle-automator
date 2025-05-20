@@ -7,6 +7,7 @@ import signal
 import subprocess
 import time
 import traceback
+import urllib.parse
 from pathlib import Path
 
 from appium.webdriver.common.appiumby import AppiumBy
@@ -909,6 +910,13 @@ class NavigationResource(Resource):
 class BookOpenResource(Resource):
     def _open_book(self, book_title):
         """Open a specific book - shared implementation for GET and POST."""
+        # URL decode the book title to handle plus signs and other encoded characters
+        if book_title:
+            decoded_book_title = urllib.parse.unquote_plus(book_title)
+            if decoded_book_title != book_title:
+                logger.info(f"Decoded book title: '{book_title}' -> '{decoded_book_title}'")
+                book_title = decoded_book_title
+
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
