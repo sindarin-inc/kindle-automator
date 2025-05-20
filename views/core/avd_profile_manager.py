@@ -624,109 +624,105 @@ class AVDProfileManager:
         Returns:
             Optional[Dict]: Profile information for a running emulator or None if none found
         """
-        try:
-            sindarin_email = get_sindarin_email()
+        sindarin_email = get_sindarin_email()
 
-            # Special case for macOS development environment
-            is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
+        # Special case for macOS development environment
+        is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
 
-            # First check if we have a valid cached profile and emulator
-            if (
-                sindarin_email
-                and hasattr(self.emulator_manager, "_emulator_cache")
-                and sindarin_email in self.emulator_manager._emulator_cache
-            ):
-                emulator_id, avd_name, cache_time = self.emulator_manager._emulator_cache[sindarin_email]
+        # First check if we have a valid cached profile and emulator
+        if (
+            sindarin_email
+            and hasattr(self.emulator_manager, "_emulator_cache")
+            and sindarin_email in self.emulator_manager._emulator_cache
+        ):
+            emulator_id, avd_name, cache_time = self.emulator_manager._emulator_cache[sindarin_email]
 
-                # Quick verification that the emulator is still running
-                if self.emulator_manager.emulator_launcher._verify_emulator_running(emulator_id):
+            # Quick verification that the emulator is still running
+            if self.emulator_manager.emulator_launcher._verify_emulator_running(emulator_id, sindarin_email):
 
-                    # Check if we have this profile
-                    if sindarin_email in self.profiles_index:
-                        profile = self.profiles_index[sindarin_email].copy()  # Make a copy
+                # Check if we have this profile
+                if sindarin_email in self.profiles_index:
+                    profile = self.profiles_index[sindarin_email].copy()  # Make a copy
 
+                    # Add user preferences if available
+                    if sindarin_email in self.user_preferences:
+                        for key, value in self.user_preferences[sindarin_email].items():
+                            if key not in profile:  # Don't overwrite profile data
+                                profile[key] = value
+
+                    # Update it with the running emulator ID
+                    profile["emulator_id"] = emulator_id
+                    # Update last used timestamp
+                    profile["last_used"] = int(time.time())
+                    return profile
+            else:
+                logger.info(f"Cached emulator {emulator_id} no longer running, clearing cache")
+                del self.emulator_manager._emulator_cache[sindarin_email]
+
+        # Only call map_running_emulators if we don't have valid cached data
+        cached_info = None
+        if (
+            sindarin_email
+            and hasattr(self.emulator_manager, "_emulator_cache")
+            and sindarin_email in self.emulator_manager._emulator_cache
+        ):
+            emulator_id, avd_name, _ = self.emulator_manager._emulator_cache[sindarin_email]
+            cached_info = (avd_name, emulator_id)
+
+        # Check for running emulators
+        running_emulators = self.device_discovery.map_running_emulators(
+            self.profiles_index, cached_info=cached_info
+        )
+
+        # Special case for macOS development environment
+        is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
+
+        # Always check if we have a profile for the current user
+        if sindarin_email in self.profiles_index:
+            profile = self.profiles_index[sindarin_email]
+
+            # Also check if there's a running emulator at all
+            try:
+                result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "devices"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split("\n")
+                    has_emulator = any("emulator-" in line for line in lines[1:])
+
+                    if has_emulator or is_mac_dev:
                         # Add user preferences if available
                         if sindarin_email in self.user_preferences:
                             for key, value in self.user_preferences[sindarin_email].items():
-                                if key not in profile:  # Don't overwrite profile data
+                                if key not in profile:  # Don't overwrite profile
                                     profile[key] = value
 
-                        # Update it with the running emulator ID
-                        profile["emulator_id"] = emulator_id
-                        # Update last used timestamp
-                        profile["last_used"] = int(time.time())
                         return profile
-                else:
-                    logger.info(f"Cached emulator {emulator_id} no longer running, clearing cache")
-                    del self.emulator_manager._emulator_cache[sindarin_email]
+            except Exception as e:
+                logger.warning(f"Error checking for running emulators: {e}")
 
-            # Only call map_running_emulators if we don't have valid cached data
-            cached_info = None
-            if (
-                sindarin_email
-                and hasattr(self.emulator_manager, "_emulator_cache")
-                and sindarin_email in self.emulator_manager._emulator_cache
-            ):
-                emulator_id, avd_name, _ = self.emulator_manager._emulator_cache[sindarin_email]
-                cached_info = (avd_name, emulator_id)
+        # Fallback to original logic if needed
+        if running_emulators or is_mac_dev:
+            # First, try to find a profile that matches one of the running emulators
+            for email, profile in self.profiles_index.items():
+                if email != sindarin_email:
+                    continue
 
-            # Check for running emulators
-            running_emulators = self.device_discovery.map_running_emulators(
-                self.profiles_index, cached_info=cached_info
-            )
+                # Add user preferences if available
+                if email in self.user_preferences:
+                    for key, value in self.user_preferences[email].items():
+                        if key not in profile:  # Don't overwrite profile
+                            profile[key] = value
 
-            # Special case for macOS development environment
-            is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
+                return profile
 
-            # Always check if we have a profile for the current user
-            if sindarin_email in self.profiles_index:
-                profile = self.profiles_index[sindarin_email]
-
-                # Also check if there's a running emulator at all
-                try:
-                    result = subprocess.run(
-                        [f"{self.android_home}/platform-tools/adb", "devices"],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                    )
-
-                    if result.returncode == 0:
-                        lines = result.stdout.strip().split("\n")
-                        has_emulator = any("emulator-" in line for line in lines[1:])
-
-                        if has_emulator or is_mac_dev:
-                            # Add user preferences if available
-                            if sindarin_email in self.user_preferences:
-                                for key, value in self.user_preferences[sindarin_email].items():
-                                    if key not in profile:  # Don't overwrite profile
-                                        profile[key] = value
-
-                            return profile
-                except Exception as e:
-                    logger.warning(f"Error checking for running emulators: {e}")
-
-            # Fallback to original logic if needed
-            if running_emulators or is_mac_dev:
-                # First, try to find a profile that matches one of the running emulators
-                for email, profile in self.profiles_index.items():
-                    if email != sindarin_email:
-                        continue
-
-                    # Add user preferences if available
-                    if email in self.user_preferences:
-                        for key, value in self.user_preferences[email].items():
-                            if key not in profile:  # Don't overwrite profile
-                                profile[key] = value
-
-                    return profile
-
-            logger.warning("No running emulators or profiles found")
-            return None
-        except Exception as e:
-            logger.error(f"Error in get_current_profile: {e}")
-            return None
+        logger.warning("No running emulators or profiles found")
+        return None
 
     def register_profile(self, email: str, avd_name: str, vnc_instance: int = None) -> None:
         """
