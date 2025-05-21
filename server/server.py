@@ -1842,8 +1842,21 @@ class LastReadPageDialogResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
+    def get(self):
+        """Handle Last read page dialog choice from the client via GET request."""
+        # Call the implementation method that handles both GET and POST requests
+        return self._handle_last_read_page_dialog_choice()
+    
+    @ensure_user_profile_loaded
+    @ensure_automator_healthy
+    @handle_automator_response(server)
     def post(self):
-        """Handle Last read page dialog choice from the client."""
+        """Handle Last read page dialog choice from the client via POST request."""
+        # Call the implementation method that handles both GET and POST requests
+        return self._handle_last_read_page_dialog_choice()
+    
+    def _handle_last_read_page_dialog_choice(self):
+        """Implementation for handling Last read page dialog choice from both GET and POST requests."""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
@@ -1876,17 +1889,26 @@ class LastReadPageDialogResource(Resource):
         else:
             logger.info("Placemark mode disabled - will avoid tapping to prevent placemark display")
 
-        # Get the decision parameter from the request
-        data = request.get_json(silent=True) or {}
+        # Get the goto_last_read_page parameter from either query params or JSON body
+        # First check query params
+        goto_last_read_page = None
+        goto_last_read_page_param = request.args.get("goto_last_read_page")
+        if goto_last_read_page_param is not None:
+            goto_last_read_page = goto_last_read_page_param.lower() in ("1", "true", "yes")
+            logger.info(f"Found goto_last_read_page in query params: {goto_last_read_page}")
 
-        # Get goto_last_read_page parameter
-        goto_last_read_page = data.get("goto_last_read_page")
-
-        # Check query params if not in JSON body
+        # Then check JSON body if not found in query params
         if goto_last_read_page is None:
-            goto_last_read_page_param = request.args.get("goto_last_read_page")
-            if goto_last_read_page_param is not None:
-                goto_last_read_page = goto_last_read_page_param.lower() in ("1", "true", "yes")
+            data = request.get_json(silent=True) or {}
+            if "goto_last_read_page" in data:
+                goto_last_read_page_json = data.get("goto_last_read_page")
+                if isinstance(goto_last_read_page_json, bool):
+                    goto_last_read_page = goto_last_read_page_json
+                elif isinstance(goto_last_read_page_json, str):
+                    goto_last_read_page = goto_last_read_page_json.lower() in ("1", "true", "yes")
+                elif isinstance(goto_last_read_page_json, int):
+                    goto_last_read_page = goto_last_read_page_json == 1
+                logger.info(f"Found goto_last_read_page in JSON body: {goto_last_read_page}")
 
         # If parameter wasn't provided, return an error
         if goto_last_read_page is None:
@@ -1897,11 +1919,7 @@ class LastReadPageDialogResource(Resource):
                 ),
             }, 400
 
-        # Convert to boolean if it's a string or number
-        if isinstance(goto_last_read_page, str):
-            goto_last_read_page = goto_last_read_page.lower() in ("1", "true", "yes")
-        elif isinstance(goto_last_read_page, int):
-            goto_last_read_page = goto_last_read_page == 1
+        # Value is already converted to boolean when extracted from either source
 
         logger.info(f"Last read page dialog choice: goto_last_read_page={goto_last_read_page}")
 
