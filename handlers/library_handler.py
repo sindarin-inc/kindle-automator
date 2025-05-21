@@ -1733,6 +1733,28 @@ class LibraryHandler:
                     wait = WebDriverWait(self.driver, 5)
 
                     def check_for_elements(driver):
+                        # Check for Last Read Page dialog first
+                        try:
+                            last_read = driver.find_element(
+                                AppiumBy.XPATH,
+                                "//android.widget.TextView[contains(@text, 'Go to that page?')]",
+                            )
+                            if last_read and last_read.is_displayed():
+                                logger.info("Last Read Page dialog detected when opening book")
+                                return "last_read_page_dialog"
+                        except NoSuchElementException:
+                            # Also try location version of dialog
+                            try:
+                                last_read = driver.find_element(
+                                    AppiumBy.XPATH,
+                                    "//android.widget.TextView[contains(@text, 'Go to that location?')]",
+                                )
+                                if last_read and last_read.is_displayed():
+                                    logger.info("Last Read Location dialog detected when opening book")
+                                    return "last_read_page_dialog"
+                            except NoSuchElementException:
+                                pass
+
                         # Check for Title Not Available dialog
                         for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
                             try:
@@ -1772,6 +1794,9 @@ class LibraryHandler:
                     if result == "title_not_available":
                         logger.info("Title Not Available dialog detected after clicking book")
                         return self._handle_loading_timeout(book_title)
+                    elif result == "last_read_page_dialog":
+                        logger.info("Last Read Page dialog detected, delegating to reader handler")
+                        return self._delegate_to_reader_handler(book_title)
                     elif result == "reading_view":
                         logger.info("Successfully entered reading view")
                         return self._delegate_to_reader_handler(book_title)
