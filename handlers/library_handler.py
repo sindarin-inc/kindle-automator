@@ -94,6 +94,64 @@ class LibraryHandler:
         except Exception as e:
             logger.error(f"Error discovering and saving library preferences: {e}")
 
+    def pull_to_refresh(self):
+        """Perform pull-to-refresh gesture by swiping from top 1/3 to bottom 1/3 of screen.
+
+        Captures page source 0.2s after swipe starts to identify refresh indicator XML.
+
+        Returns:
+            bool: True if pull-to-refresh was successfully performed, False otherwise
+        """
+        try:
+            # Get screen dimensions
+            screen_size = self.driver.get_window_size()
+            screen_width = screen_size["width"]
+            screen_height = screen_size["height"]
+
+            # Calculate swipe coordinates (from top 1/3 to bottom 1/3)
+            start_x = screen_width // 2  # Center horizontally
+            start_y = screen_height // 3  # Top 1/3
+            end_x = screen_width // 2  # Stay centered horizontally
+            end_y = (screen_height * 2) // 3  # Bottom 1/3 (2/3 down from top)
+
+            logger.info(f"Performing pull-to-refresh swipe: ({start_x}, {start_y}) -> ({end_x}, {end_y})")
+            logger.info(f"Screen size: {screen_width}x{screen_height}")
+
+            # Start the swipe gesture
+            self.driver.swipe(start_x, start_y, end_x, end_y, duration=800)
+
+            # Capture page source 0.2s after swipe starts to see refresh indicator
+            time.sleep(0.2)
+            try:
+                timestamp = int(time.time())
+                page_source_filename = f"pull_refresh_indicator_{timestamp}.xml"
+                page_source_path = os.path.join(self.screenshots_dir, page_source_filename)
+
+                page_source = self.driver.page_source
+                with open(page_source_path, "w", encoding="utf-8") as f:
+                    f.write(page_source)
+                logger.info(f"Captured page source during refresh: {page_source_path}")
+
+                # Also take a screenshot to see the visual state
+                screenshot_filename = f"pull_refresh_indicator_{timestamp}.png"
+                screenshot_path = os.path.join(self.screenshots_dir, screenshot_filename)
+                self.driver.save_screenshot(screenshot_path)
+                logger.info(f"Captured screenshot during refresh: {screenshot_path}")
+
+            except Exception as e:
+                logger.warning(f"Could not capture page source during refresh: {e}")
+
+            # Wait for refresh to complete (give it a moment to settle)
+            time.sleep(1.5)
+
+            logger.info("Pull-to-refresh gesture completed")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error performing pull-to-refresh: {e}")
+            store_page_source(self.driver, "pull_refresh_error")
+            return False
+
     def _is_library_view_preferences_correctly_set(self):
         """Check if library view preferences are correctly set to list view with group_by_series=false.
 
@@ -1152,7 +1210,7 @@ class LibraryHandler:
             logger.error(f"Error handling library sign-in: {e}")
             return False
 
-    def get_book_titles(self, callback=None):
+    def get_book_titles(self, callback=None, sync=False):
         """Get a list of all books in the library with their metadata.
 
         Args:
@@ -1160,6 +1218,7 @@ class LibraryHandler:
                      If provided, books will be streamed to this function in batches.
                      The callback should accept a list of book dictionaries as its first argument,
                      and optional kwargs for control messages.
+            sync: If True, perform pull-to-refresh to ensure we're working with the latest book list.
 
         Returns:
             List of book dictionaries, or None if authentication is required.
@@ -1225,9 +1284,17 @@ class LibraryHandler:
                     return []
                 logger.info("Successfully switched to list view")
 
-            # Scroll to top of list
+            # Scroll to top of list (hits All/Downloaded tabs to ensure we're at the top)
             if not self.scroll_handler.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
+
+            # Perform pull-to-refresh if sync=True to ensure latest book list (after we're at the top)
+            if sync:
+                logger.info("Sync requested, performing pull-to-refresh to get latest book list")
+                if not self.pull_to_refresh():
+                    logger.warning("Pull-to-refresh failed, continuing anyway...")
+                else:
+                    logger.info("Pull-to-refresh completed successfully")
 
             # Use the scroll handler's method to get all books
             # If callback is provided, pass it to the scroll handler for streaming

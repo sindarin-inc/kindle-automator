@@ -504,6 +504,10 @@ class BooksStreamResource(Resource):
                 },
             )
 
+        # Extract sync parameter
+        sync = request.args.get("sync", "false").lower() in ("true", "1")
+        logger.info(f"Sync parameter: {sync}")
+
         # Standard implementation with book retrieval
         def generate_stream():
             import json
@@ -575,8 +579,12 @@ class BooksStreamResource(Resource):
 
                 set_email_context(sindarin_email)
                 try:
-                    logger.info("Starting book retrieval with processing callback in a new thread.")
-                    automator.state_machine.library_handler.get_book_titles(callback=book_processing_callback)
+                    logger.info(
+                        f"Starting book retrieval with processing callback in a new thread (sync={sync})."
+                    )
+                    automator.state_machine.library_handler.get_book_titles(
+                        callback=book_processing_callback, sync=sync
+                    )
                     logger.info("Book retrieval process (get_book_titles) completed in its thread.")
                 except Exception as e:
                     logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")

@@ -716,7 +716,7 @@ class LibraryHandlerSearch:
         # Check for search results within 1 second
         search_results_found = self._wait_until(
             lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
-            timeout=1,
+            timeout=2,
         )
 
         if not search_results_found:
