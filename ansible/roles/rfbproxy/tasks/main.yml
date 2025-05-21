@@ -1,0 +1,83 @@
+---
+# Tasks for installing and configuring rfbproxy
+
+- name: Install required dependencies
+  apt:
+    name: "{{ rust_packages }}"
+    state: present
+    update_cache: yes
+  become: yes
+  when: ansible_os_family == "Debian"
+
+- name: Check if rustup is installed
+  command: which rustup
+  register: rustup_installed
+  ignore_errors: yes
+  changed_when: false
+
+- name: Install Rust using rustup (for non-root user)
+  shell: |
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  args:
+    creates: "{{ ansible_env.HOME }}/.cargo/bin/rustup"
+  when: rustup_installed.rc != 0
+  become: no
+
+- name: Add Cargo bin directory to PATH
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: 'export PATH="$HOME/.cargo/bin:$PATH"'
+    state: present
+  become: no
+  when: rustup_installed.rc != 0
+
+- name: Source .bashrc for current shell (when Rust was just installed)
+  shell: |
+    source {{ ansible_env.HOME }}/.bashrc
+  args:
+    executable: /bin/bash
+  when: rustup_installed.rc != 0
+  become: no
+
+- name: Check if rfbproxy is already installed
+  command: which rfbproxy
+  register: rfbproxy_installed
+  ignore_errors: yes
+  changed_when: false
+
+- name: Create source directory
+  file:
+    path: "{{ rfbproxy_src_dir }}"
+    state: directory
+    mode: '0755'
+  become: yes
+  when: install_from_source and rfbproxy_installed.rc != 0
+
+- name: Clone rfbproxy repository
+  git:
+    repo: "{{ rfbproxy_repo }}"
+    dest: "{{ rfbproxy_src_dir }}"
+    version: "{{ rfbproxy_version }}"
+    update: yes
+  become: yes
+  when: install_from_source and rfbproxy_installed.rc != 0
+
+- name: Build rfbproxy from source
+  shell: |
+    cd {{ rfbproxy_src_dir }} && cargo build --release
+  environment:
+    PATH: "{{ ansible_env.HOME }}/.cargo/bin:{{ ansible_env.PATH }}"
+  become: yes
+  when: install_from_source and rfbproxy_installed.rc != 0
+
+- name: Install rfbproxy
+  copy:
+    src: "{{ rfbproxy_src_dir }}/target/release/rfbproxy"
+    dest: "{{ rfbproxy_bin_dir }}/rfbproxy"
+    mode: '0755'
+    remote_src: yes
+  become: yes
+  when: install_from_source and rfbproxy_installed.rc != 0
+
+# No service is created since rfbproxy will be started on-demand with per-user configurations
+# The WebSocketProxyManager in Python handles starting and stopping rfbproxy processes

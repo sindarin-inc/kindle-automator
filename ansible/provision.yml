@@ -9,5 +9,6 @@
     - { role: mezmo, tags: mezmo }
     - { role: android_x86, tags: android-x86 }
     - { role: scrcpy, tags: scrcpy }
+    - { role: rfbproxy, tags: rfbproxy }
     - { role: vnc_server, tags: vnc }
     - { role: server, tags: server }

@@ -26,7 +26,7 @@ import logging
 import os
 import threading
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Tuple
 
 from flask import request
 
@@ -145,6 +145,58 @@ def get_automator_for_request(server):
         tuple: (automator, sindarin_email, error_response)
         where error_response is None if successful, or a tuple of (error_dict, status_code) if failed
     """
+
+
+def is_websockets_requested() -> bool:
+    """Check if websockets are requested in the current request.
+
+    Returns:
+        bool: True if websockets are requested, False otherwise
+    """
+    from flask import has_request_context
+
+    # Check if we're in a request context
+    if not has_request_context():
+        return False
+
+    # Check query parameters
+    websockets_param = request.args.get("websockets", "0")
+    if websockets_param in ("1", "true", "yes"):
+        return True
+
+    # Check JSON body
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        websockets_json = data.get("websockets")
+        if websockets_json in (1, True, "1", "true", "yes"):
+            return True
+
+    # Check form data
+    websockets_form = request.form.get("websockets")
+    if websockets_form in ("1", "true", "yes"):
+        return True
+
+    return False
+
+
+def get_vnc_and_websocket_urls(sindarin_email: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+    """Get both VNC and WebSocket URLs for the given email.
+
+    Args:
+        sindarin_email: The email to get URLs for
+
+    Returns:
+        Tuple[Optional[str], Optional[str]]: (vnc_url, websocket_url)
+    """
+    # Get standard VNC URL
+    vnc_url = get_formatted_vnc_url(sindarin_email, use_websockets=False)
+
+    # Get WebSocket URL if VNC URL was available
+    websocket_url = None
+    if vnc_url:
+        websocket_url = get_formatted_vnc_url(sindarin_email, use_websockets=True)
+
+    return vnc_url, websocket_url
     # Get sindarin_email from request to determine which automator to use
     sindarin_email = get_sindarin_email()
 
@@ -164,18 +216,19 @@ def get_automator_for_request(server):
     return automator, sindarin_email, None
 
 
-def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]:
+def get_formatted_vnc_url(
+    sindarin_email: Optional[str] = None, use_websockets: bool = False
+) -> Optional[str]:
     """
     Format the VNC URL with the given sindarin_email.
-    Returns a VNC protocol URL (vnc://hostname:port).
+    Returns a VNC protocol URL (vnc://hostname:port) or WebSocket URL if use_websockets=True.
 
     Args:
         sindarin_email: The email to include in the VNC URL
-        view_type: Optional view type (unused in direct VNC protocol URL)
-        emulator_id: Optional emulator ID to explicitly find the VNC port by emulator ID
+        use_websockets: Whether to return a WebSocket URL for noVNC instead of a direct VNC URL
 
     Returns:
-        Optional[str]: The VNC protocol URL for the allocated VNC server, or None if not found
+        Optional[str]: The VNC protocol URL or WebSocket URL for the allocated VNC server, or None if not found
     """
     # Import needed modules
     import platform
@@ -210,7 +263,27 @@ def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]
 
         # If port is found, verify VNC server is running and restart if needed
         if vnc_port:
-            # Return the VNC URL
+            # Handle WebSocket URL if requested
+            if use_websockets:
+                # Import WebSocketProxyManager and start a proxy
+                from server.utils.websocket_proxy_manager import WebSocketProxyManager
+
+                ws_manager = WebSocketProxyManager.get_instance()
+
+                # Start the proxy and get the WebSocket port
+                ws_port = ws_manager.start_proxy(sindarin_email, vnc_port)
+
+                if ws_port:
+                    # Return the WebSocket URL (for noVNC)
+                    # Format: ws://hostname:port/websockify
+                    ws_url = f"ws://{hostname}:{ws_port}/websockify"
+                    logger.info(f"WebSocket URL for {sindarin_email}: {ws_url}")
+                    return ws_url
+                else:
+                    logger.error(f"Failed to start WebSocket proxy for {sindarin_email}")
+                    # Fall back to regular VNC URL
+
+            # Return the regular VNC URL
             vnc_url = f"vnc://{hostname}:{vnc_port}"
             logger.info(f"VNC URL for {sindarin_email}: {vnc_url}")
             return vnc_url
@@ -227,6 +300,26 @@ def get_formatted_vnc_url(sindarin_email: Optional[str] = None) -> Optional[str]
             logger.info(f"Attempting to assign a VNC instance to {sindarin_email}")
             instance = vnc_manager.assign_instance_to_profile(sindarin_email)
             if instance and "vnc_port" in instance:
+                if use_websockets:
+                    # Import WebSocketProxyManager and start a proxy
+                    from server.utils.websocket_proxy_manager import (
+                        WebSocketProxyManager,
+                    )
+
+                    ws_manager = WebSocketProxyManager.get_instance()
+
+                    # Start the proxy and get the WebSocket port
+                    ws_port = ws_manager.start_proxy(sindarin_email, instance["vnc_port"])
+
+                    if ws_port:
+                        # Return the WebSocket URL (for noVNC)
+                        ws_url = f"ws://{hostname}:{ws_port}/websockify"
+                        logger.info(f"WebSocket URL for {sindarin_email}: {ws_url}")
+                        return ws_url
+                    else:
+                        logger.error(f"Failed to start WebSocket proxy for {sindarin_email}")
+                        # Fall back to regular VNC URL
+
                 vnc_url = f"vnc://{hostname}:{instance['vnc_port']}"
                 logger.info(f"Assigned new VNC URL for {sindarin_email}: {vnc_url}")
                 return vnc_url

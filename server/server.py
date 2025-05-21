@@ -44,6 +44,8 @@ from server.utils.request_utils import (
     get_automator_for_request,
     get_formatted_vnc_url,
     get_sindarin_email,
+    get_vnc_and_websocket_urls,
+    is_websockets_requested,
 )
 from views.core.app_state import AppState
 
@@ -1345,7 +1347,7 @@ class TwoFactorResource(Resource):
 class AuthResource(Resource):
     @ensure_user_profile_loaded
     def _auth(self):
-        """Set up a profile for manual authentication via VNC"""
+        """Set up a profile for manual authentication via VNC or WebSockets"""
         # Create a unified params dict that combines query params and JSON body
         params = {}
 
@@ -1397,9 +1399,13 @@ class AuthResource(Resource):
         # Get boolean parameters
         recreate = get_bool_param("recreate", False)
         restart_vnc = get_bool_param("restart_vnc", False)
+        use_websockets = get_bool_param("websockets", False)
 
         if restart_vnc:
             logger.info(f"Restart VNC requested for {sindarin_email}")
+
+        if use_websockets:
+            logger.info(f"WebSockets requested for {sindarin_email} (will use rfbproxy)")
 
         # Log authentication attempt details
         logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
@@ -1551,10 +1557,17 @@ class AuthResource(Resource):
                 except Exception as e:
                     logger.error(f"Error restarting VNC server: {e}")
 
-        # Get the formatted VNC URL with the profile email and emulator ID
-        # emulator_id is already available from above code
+        # Get the formatted VNC URL with the profile email
         # This will also start the VNC server if it's not running
-        formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+        # If websockets are requested, also get the websocket URL
+        if use_websockets:
+            # Get both VNC and WebSocket URLs
+            vnc_url, ws_url = get_vnc_and_websocket_urls(sindarin_email)
+            formatted_vnc_url = vnc_url  # Keep using vnc_url for backward compatibility
+        else:
+            # Just get the regular VNC URL
+            formatted_vnc_url = get_formatted_vnc_url(sindarin_email)
+            ws_url = None
 
         # Prepare manual auth response with details from auth_status
         current_state = automator.state_machine.current_state
@@ -1580,7 +1593,9 @@ class AuthResource(Resource):
         if "message" in auth_status:
             response_data["message"] = auth_status["message"]
 
-        # Add Python launcher information to the response if available
+        # Add WebSocket URL to the response if available
+        if use_websockets and ws_url:
+            response_data["websocket_url"] = ws_url
 
         # Log the final response in detail
         logger.info(f"Returning auth response: {response_data}")
@@ -2141,6 +2156,16 @@ def cleanup_resources():
     """Clean up resources before exiting"""
     logger.info("=== Beginning graceful shutdown sequence ===")
     logger.info("Cleaning up resources before shutdown...")
+
+    # Clean up any active WebSocket proxies
+    try:
+        from server.utils.websocket_proxy_manager import WebSocketProxyManager
+
+        ws_manager = WebSocketProxyManager.get_instance()
+        ws_manager.cleanup()
+        logger.info("Successfully cleaned up WebSocket proxies")
+    except Exception as e:
+        logger.error(f"Error cleaning up WebSocket proxies: {e}")
 
     # Mark all running emulators for restart and shutdown gracefully with preserved state
     from server.utils.emulator_shutdown_manager import EmulatorShutdownManager

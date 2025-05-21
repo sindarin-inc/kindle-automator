@@ -1,0 +1,23 @@
+---
+# Default variables for rfbproxy role
+
+# Whether to install from source or from binary
+install_from_source: true
+
+# Source repository
+rfbproxy_repo: "https://github.com/replit/rfbproxy.git"
+rfbproxy_version: "main"
+
+# Installation directories
+rfbproxy_bin_dir: "/usr/local/bin"
+rfbproxy_src_dir: "/usr/local/src/rfbproxy"
+
+# Dependencies
+rust_packages:
+  - curl
+  - build-essential
+  - pkg-config
+  - libssl-dev
+  - libmp3lame-dev
+  - libpulse-dev
+  - libopus-dev
