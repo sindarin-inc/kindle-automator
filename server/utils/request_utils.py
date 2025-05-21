@@ -166,30 +166,30 @@ def get_automator_for_request(server):
 
 def get_boolean_param(param_name: str, default=False):
     """Extract boolean parameter from request (query params, JSON body, or form data).
-    
+
     Similar to the OCR parameter extraction pattern.
-    
+
     Args:
-        param_name: Name of the parameter to extract  
+        param_name: Name of the parameter to extract
         default: Default value if parameter not found
-        
+
     Returns:
         bool: The extracted boolean value
     """
     from flask import has_request_context
-    
+
     # Check if we're in a request context
     if not has_request_context():
         return default
-        
+
     # Check URL query parameters first
     query_param = request.args.get(param_name)
     if query_param is not None:
         if isinstance(query_param, str):
             return query_param.lower() in ("1", "true", "yes")
         return bool(query_param)
-    
-    # Check JSON body 
+
+    # Check JSON body
     if request.is_json:
         try:
             json_data = request.get_json(silent=True) or {}
@@ -203,14 +203,14 @@ def get_boolean_param(param_name: str, default=False):
                     return json_param == 1
         except Exception as e:
             logger.warning(f"Error parsing JSON for {param_name} parameter: {e}")
-    
+
     # Check form data
     form_param = request.form.get(param_name)
     if form_param is not None:
         if isinstance(form_param, str):
             return form_param.lower() in ("1", "true", "yes")
         return bool(form_param)
-        
+
     return default
 
 

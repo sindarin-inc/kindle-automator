@@ -36,7 +36,7 @@ class ShutdownResource(Resource):
         from server.utils.request_utils import get_boolean_param
 
         preserve_reading_state = get_boolean_param("preserve_reading_state", default=True)
-        
+
         # Only set mark_for_restart when explicitly requested (True), otherwise None
         # This ensures was_running_at_restart flag is only set when mark_for_restart=true
         mark_for_restart_param = get_boolean_param("mark_for_restart", default=None)
