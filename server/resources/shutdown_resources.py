@@ -33,14 +33,14 @@ class ShutdownResource(Resource):
         # Check if we should preserve reading state (default: True)
         # Note: UI clients should pass preserve_reading_state=false for user-initiated shutdowns
         # to ensure the Kindle app navigates to library and syncs reading position
-        from flask import request
+        from server.utils.request_utils import get_boolean_param
 
-        preserve_reading_state = request.args.get("preserve_reading_state", "true").lower() == "true"
-        mark_for_restart = request.args.get("mark_for_restart")
-
-        # Convert mark_for_restart to boolean or None
-        if mark_for_restart is not None:
-            mark_for_restart = mark_for_restart.lower() == "true"
+        preserve_reading_state = get_boolean_param("preserve_reading_state", default=True)
+        
+        # Only set mark_for_restart when explicitly requested (True), otherwise None
+        # This ensures was_running_at_restart flag is only set when mark_for_restart=true
+        mark_for_restart_param = get_boolean_param("mark_for_restart", default=None)
+        mark_for_restart = True if mark_for_restart_param is True else None
 
         try:
             # Use the shutdown manager to handle the shutdown

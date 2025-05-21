@@ -164,36 +164,63 @@ def get_automator_for_request(server):
     return automator, sindarin_email, None
 
 
+def get_boolean_param(param_name: str, default=False):
+    """Extract boolean parameter from request (query params, JSON body, or form data).
+    
+    Similar to the OCR parameter extraction pattern.
+    
+    Args:
+        param_name: Name of the parameter to extract  
+        default: Default value if parameter not found
+        
+    Returns:
+        bool: The extracted boolean value
+    """
+    from flask import has_request_context
+    
+    # Check if we're in a request context
+    if not has_request_context():
+        return default
+        
+    # Check URL query parameters first
+    query_param = request.args.get(param_name)
+    if query_param is not None:
+        if isinstance(query_param, str):
+            return query_param.lower() in ("1", "true", "yes")
+        return bool(query_param)
+    
+    # Check JSON body 
+    if request.is_json:
+        try:
+            json_data = request.get_json(silent=True) or {}
+            json_param = json_data.get(param_name)
+            if json_param is not None:
+                if isinstance(json_param, bool):
+                    return json_param
+                elif isinstance(json_param, str):
+                    return json_param.lower() in ("1", "true", "yes")
+                elif isinstance(json_param, int):
+                    return json_param == 1
+        except Exception as e:
+            logger.warning(f"Error parsing JSON for {param_name} parameter: {e}")
+    
+    # Check form data
+    form_param = request.form.get(param_name)
+    if form_param is not None:
+        if isinstance(form_param, str):
+            return form_param.lower() in ("1", "true", "yes")
+        return bool(form_param)
+        
+    return default
+
+
 def is_websockets_requested() -> bool:
     """Check if websockets are requested in the current request.
 
     Returns:
         bool: True if websockets are requested, False otherwise
     """
-    from flask import has_request_context
-
-    # Check if we're in a request context
-    if not has_request_context():
-        return False
-
-    # Check query parameters
-    websockets_param = request.args.get("websockets", "0")
-    if websockets_param in ("1", "true", "yes"):
-        return True
-
-    # Check JSON body
-    if request.is_json:
-        data = request.get_json(silent=True) or {}
-        websockets_json = data.get("websockets")
-        if websockets_json in (1, True, "1", "true", "yes"):
-            return True
-
-    # Check form data
-    websockets_form = request.form.get("websockets")
-    if websockets_form in ("1", "true", "yes"):
-        return True
-
-    return False
+    return get_boolean_param("websockets", False)
 
 
 def get_vnc_and_websocket_urls(sindarin_email: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:

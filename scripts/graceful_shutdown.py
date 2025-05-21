@@ -57,7 +57,7 @@ def shutdown_emulator(email):
     """Shutdown an emulator for a specific email."""
     # The endpoint accepts email as either query param or JSON body
     # Using query param for simpler implementation
-    url = f"{BASE_URL}/shutdown?sindarin_email={email}"
+    url = f"{BASE_URL}/shutdown?sindarin_email={email}&preserve_reading_state=true&mark_for_restart=true"
 
     logger.info(f"Shutting down emulator for {email}...")
 
