@@ -145,6 +145,23 @@ def get_automator_for_request(server):
         tuple: (automator, sindarin_email, error_response)
         where error_response is None if successful, or a tuple of (error_dict, status_code) if failed
     """
+    # Get sindarin_email from request to determine which automator to use
+    sindarin_email = get_sindarin_email()
+
+    if not sindarin_email:
+        error = {"error": "No email provided to identify which profile to use"}
+        logger.error("No email provided in request to identify profile")
+        return None, None, (error, 400)
+
+    # Get the appropriate automator
+    automator = server.automators.get(sindarin_email)
+    if not automator:
+        error = {"error": f"No automator found for {sindarin_email}"}
+        logger.error(f"No automator found for {sindarin_email}")
+        return None, None, (error, 404)
+
+    logger.debug(f"Found automator for {sindarin_email}")
+    return automator, sindarin_email, None
 
 
 def is_websockets_requested() -> bool:
@@ -197,23 +214,6 @@ def get_vnc_and_websocket_urls(sindarin_email: Optional[str] = None) -> Tuple[Op
         websocket_url = get_formatted_vnc_url(sindarin_email, use_websockets=True)
 
     return vnc_url, websocket_url
-    # Get sindarin_email from request to determine which automator to use
-    sindarin_email = get_sindarin_email()
-
-    if not sindarin_email:
-        error = {"error": "No email provided to identify which profile to use"}
-        logger.error("No email provided in request to identify profile")
-        return None, None, (error, 400)
-
-    # Get the appropriate automator
-    automator = server.automators.get(sindarin_email)
-    if not automator:
-        error = {"error": f"No automator found for {sindarin_email}"}
-        logger.error(f"No automator found for {sindarin_email}")
-        return None, None, (error, 404)
-
-    logger.debug(f"Found automator for {sindarin_email}")
-    return automator, sindarin_email, None
 
 
 def get_formatted_vnc_url(
