@@ -1,5 +1,18 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
+# Invalid Item dialog detection
+INVALID_ITEM_DIALOG_IDENTIFIERS = [
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@text='Invalid Item' and @resource-id='com.amazon.kindle:id/alertTitle']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/alertTitle' and @text='Invalid Item']",
+    ),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Please remove the item from your device')]"),
+]
+
 # View identification strategies
 LIBRARY_VIEW_IDENTIFIERS = [
     # Primary identifiers - most specific and reliable

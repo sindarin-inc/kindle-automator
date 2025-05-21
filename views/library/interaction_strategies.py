@@ -1,5 +1,13 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
+# Invalid Item dialog elements
+INVALID_ITEM_DIALOG_BUTTONS = [
+    (AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE' and @resource-id='android:id/button1']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/button1']"),  # REMOVE button
+    (AppiumBy.XPATH, "//android.widget.Button[@text='CANCEL' and @resource-id='android:id/button2']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/button2']"),  # CANCEL button
+]
+
 # Navigation elements
 LIBRARY_TAB_STRATEGIES = [
     (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"),

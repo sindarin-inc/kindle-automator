@@ -1846,7 +1846,7 @@ class LastReadPageDialogResource(Resource):
         """Handle Last read page dialog choice from the client via GET request."""
         # Call the implementation method that handles both GET and POST requests
         return self._handle_last_read_page_dialog_choice()
-    
+
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
@@ -1854,7 +1854,7 @@ class LastReadPageDialogResource(Resource):
         """Handle Last read page dialog choice from the client via POST request."""
         # Call the implementation method that handles both GET and POST requests
         return self._handle_last_read_page_dialog_choice()
-    
+
     def _handle_last_read_page_dialog_choice(self):
         """Implementation for handling Last read page dialog choice from both GET and POST requests."""
         # Get sindarin_email from request to determine which automator to use
