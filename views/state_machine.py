@@ -79,6 +79,8 @@ class KindleStateMachine:
         unknown_retries = 0
         MAX_UNKNOWN_RETRIES = 2  # Maximum times to try recovering from UNKNOWN state
 
+        logger.info(f"Attempting to transition to library from {self.current_state}")
+
         while transitions < max_transitions:
             self.current_state = self._get_current_state()
             logger.info(f"Current state: {self.current_state}")
@@ -242,6 +244,36 @@ class KindleStateMachine:
         except Exception as e:
             logger.error(f"Failed to save transition error data: {e}")
 
+    def handle_state(self) -> bool:
+        """Handle the current state using the appropriate state handler.
+
+        This method is called when we want to execute the handler for the current state
+        without forcing a transition to a specific target state.
+
+        Returns:
+            bool: True if state was handled successfully, False otherwise
+        """
+        # Make sure we have the latest state
+        self.update_current_state()
+
+        # Get the handler for the current state
+        handler = self.transitions.get_handler_for_state(self.current_state)
+        if not handler:
+            logger.error(f"No handler found for state {self.current_state}")
+            return False
+
+        # Execute the handler
+        logger.info(f"Handling current state: {self.current_state}")
+        result = handler()
+
+        # Log the result
+        if result:
+            logger.info(f"Successfully handled state {self.current_state}")
+        else:
+            logger.error(f"Failed to handle state {self.current_state}")
+
+        return result
+
     def update_current_state(self) -> AppState:
         """Update and return the current state of the app.
 
@@ -265,14 +297,15 @@ class KindleStateMachine:
                     self.auth_handler.hide_keyboard_if_visible()
 
             # Check if we have a current state we already know about
-            # For HOME and LIBRARY states that were recently detected, avoid redundant checks
+            # For HOME, LIBRARY, and SEARCH_RESULTS states that were recently detected, avoid redundant checks
             # within a short timeframe
             if hasattr(self, "_last_state_check_time") and hasattr(self, "_last_state_value"):
                 time_since_last_check = time.time() - self._last_state_check_time
-                # If we've checked state within the last second and it was HOME or LIBRARY, just return the cached value
+                # If we've checked state within the last second and it was HOME, LIBRARY, or SEARCH_RESULTS, just return the cached value
                 if time_since_last_check < 1.0 and self._last_state_value in [
                     AppState.HOME,
                     AppState.LIBRARY,
+                    AppState.SEARCH_RESULTS,
                 ]:
                     logger.info(
                         f"Using cached state from {time_since_last_check:.2f}s ago: {self._last_state_value}"
@@ -299,9 +332,9 @@ class KindleStateMachine:
             self._last_state_check_time = time.time()
             self._last_state_value = self.current_state
 
-            # For HOME and LIBRARY states, trust the detection and return immediately
+            # For HOME, LIBRARY, and SEARCH_RESULTS states, trust the detection and return immediately
             # These are the most common states and we're confident in our detection
-            if self.current_state in [AppState.HOME, AppState.LIBRARY]:
+            if self.current_state in [AppState.HOME, AppState.LIBRARY, AppState.SEARCH_RESULTS]:
                 return self.current_state
 
             # If we detect READING but we've just clicked close book, make a special check

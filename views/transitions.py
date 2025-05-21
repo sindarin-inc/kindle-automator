@@ -138,6 +138,95 @@ class StateTransitions:
 
         return result
 
+    def handle_search_results(self):
+        """Handle SEARCH_RESULTS state - attempt to open a book from search results.
+
+        This method:
+        1. Checks if the search input already contains the query we're looking for
+        2. Checks if the book is in the "In your library" section
+        3. Opens the book if found, otherwise navigates back to library
+        """
+        logger.info("Handling SEARCH_RESULTS state...")
+
+        # Check for book_to_open first (set by server.py for this specific purpose)
+        # This is the most reliable source of what book we're trying to open
+        book_title = None
+        if (
+            hasattr(self.driver, "automator")
+            and hasattr(self.driver.automator, "book_to_open")
+            and self.driver.automator.book_to_open
+        ):
+            book_title = self.driver.automator.book_to_open
+            logger.info(f"Found book_to_open in context: '{book_title}', checking if it's in search results")
+        # Fall back to current_book_title if book_to_open isn't set
+        elif (
+            hasattr(self.driver, "automator")
+            and hasattr(self.driver.automator, "current_book_title")
+            and self.driver.automator.current_book_title
+        ):
+            book_title = self.driver.automator.current_book_title
+            logger.info(
+                f"Using current_book_title as fallback: '{book_title}', checking if it's in search results"
+            )
+
+        if book_title:
+            # Check current search input to see if it matches our desired search
+            current_search_query = ""
+            try:
+                search_query_element = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/search_query"
+                )
+                if search_query_element and search_query_element.is_displayed():
+                    current_search_query = search_query_element.text
+                    logger.info(f"Current search query: '{current_search_query}'")
+
+                    # If search query contains our book title (partial match is fine)
+                    # or book title contains the search query, likely a match
+                    if (
+                        current_search_query.lower() in book_title.lower()
+                        or book_title.lower() in current_search_query.lower()
+                    ):
+                        logger.info(
+                            f"Search query matches book title: '{current_search_query}' ~ '{book_title}'"
+                        )
+                    else:
+                        logger.info(f"Search query doesn't match book title, but will still check")
+            except Exception as e:
+                logger.debug(f"Error checking search query: {e}")
+
+            # Try to open the book directly from search results
+            # library_handler.open_book already has the logic to look for books on screen
+            result = self.library_handler.open_book(book_title)
+
+            if result.get("success"):
+                logger.info(f"Successfully opened book '{book_title}' from search results")
+                # Clear book_to_open since we successfully handled it
+                if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "book_to_open"):
+                    self.driver.automator.book_to_open = None
+                    logger.info("Cleared book_to_open after successful handling")
+                return True
+
+            logger.info(f"Book '{book_title}' not found in search results, navigating back to library")
+        else:
+            logger.info("No book title found in context, navigating back to library")
+
+        # If we couldn't open the book or there's no book title, navigate back to library
+        # Navigate back to library by clicking the back button
+        try:
+            back_button = self.driver.find_element(
+                AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
+            )
+            if back_button and back_button.is_displayed():
+                logger.info("Clicking back button to exit search results")
+                back_button.click()
+                time.sleep(1)  # Give time for transition
+                return True
+        except Exception as e:
+            logger.error(f"Error clicking back button: {e}")
+
+        # If back button wasn't found or clicked, try a different approach
+        return self.view_inspector.ensure_app_foreground()
+
     def handle_captcha(self):
         """Handle CAPTCHA state by attempting to solve captcha."""
         logger.info("Handling CAPTCHA state...")
@@ -217,15 +306,14 @@ class StateTransitions:
             AppState.SIGN_IN_PASSWORD: self.handle_sign_in_password,
             AppState.LIBRARY_SIGN_IN: self.handle_library_sign_in,
             AppState.LIBRARY: self.handle_library,
+            AppState.SEARCH_RESULTS: self.handle_search_results,  # Add new SEARCH_RESULTS handler
             AppState.READING: self.handle_reading,
             AppState.CAPTCHA: self._handle_captcha,  # Add new CAPTCHA handler
             AppState.APP_NOT_RESPONDING: self.handle_app_not_responding,  # Add app not responding handler
         }
 
         handler = handlers.get(state)
-        if handler:
-            logger.info(f"Found handler for state {state}: {handler.__name__}")
-        else:
+        if not handler:
             logger.error(f"No handler found for state {state}")
         return handler
 

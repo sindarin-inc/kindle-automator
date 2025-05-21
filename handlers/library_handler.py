@@ -1807,24 +1807,6 @@ class LibraryHandler:
                     logger.error("Timeout while checking view state")
                     return {"success": False, "error": "Timeout while checking view state"}
 
-                    # Wait again for library view to disappear
-                    try:
-                        WebDriverWait(self.driver, 5).until_not(
-                            EC.presence_of_element_located(
-                                (AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
-                            )
-                        )
-                        logger.info("Successfully left library view after second click")
-
-                        # Now delegate to reader_handler
-                        return self._delegate_to_reader_handler(book_title)
-                    except TimeoutException:
-                        logger.error("Failed to leave library view even after second click")
-                        return {
-                            "success": False,
-                            "error": "Failed to leave library view even after second click",
-                        }
-
             # If book is not already visible, proceed with search and find methods
             logger.info(f"Proceeding to search for '{book_title}'")
 
@@ -1865,14 +1847,14 @@ class LibraryHandler:
 
         # Wait for the reading view to appear with a longer timeout
         try:
-            # Wait for any of the reading view identifiers to appear
-            WebDriverWait(self.driver, 15).until(
-                lambda x: any(
-                    self._check_element_present(x, strategy, locator)
-                    for strategy, locator in READING_VIEW_IDENTIFIERS
-                )
-            )
-            logger.info("Reading view loaded successfully")
+            # # Wait for any of the reading view identifiers to appear
+            # WebDriverWait(self.driver, 3).until(
+            #     lambda x: any(
+            #         self._check_element_present(x, strategy, locator)
+            #         for strategy, locator in READING_VIEW_IDENTIFIERS
+            #     )
+            # )
+            # logger.info("Reading view loaded successfully")
 
             # Now that we're in the reading view, let reader_handler handle the dialogs
             # We use show_placemark=False to avoid showing the placemark ribbon

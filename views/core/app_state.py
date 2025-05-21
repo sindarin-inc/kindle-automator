@@ -15,6 +15,7 @@ class AppState(Enum):
     SIGN_IN_PASSWORD = auto()  # Password entry screen
     LIBRARY = auto()  # Library tab is selected
     LIBRARY_SIGN_IN = auto()  # Library view with sign in button
+    SEARCH_RESULTS = auto()  # Search results view with "In your library" and "Results from Kindle" sections
     READING = auto()  # Book reading view
     CAPTCHA = auto()  # Captcha verification screen
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
@@ -30,6 +31,7 @@ class AppView(Enum):
     SIGN_IN_PASSWORD = auto()
     LIBRARY = auto()
     LIBRARY_SIGN_IN = auto()
+    SEARCH_RESULTS = auto()  # Search results view with "In your library" and "Results from Kindle" sections
     READING = auto()
     CAPTCHA = auto()  # Captcha verification screen
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing

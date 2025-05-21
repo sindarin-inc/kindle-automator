@@ -326,7 +326,7 @@ LIBRARY_VIEW_DETECTION_STRATEGIES = [
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/library_top_tool_bar_layout']"),
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/sort_filter']"),  # View options button
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/filter_root']"),  # Filter section
-    (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/search_box']"),  # Search box
+    # Search box removed as it overlaps with search results view
 ]
 
 # View options menu strategies

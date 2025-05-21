@@ -106,9 +106,6 @@ class AppiumDriver:
                 "--log-level",
                 "info",
             ]
-            logger.info(f"Starting Appium with command: {' '.join(cmd)}")
-            logger.info(f"Using appium executable: {appium_cmd}")
-            logger.info(f"Logging to: {log_file}")
 
             with open(log_file, "w") as log:
                 process = subprocess.Popen(
@@ -118,7 +115,7 @@ class AppiumDriver:
                     text=True,
                     env=env,
                 )
-                logger.info(f"Appium process started with PID: {process.pid}")
+                logger.info(f"Appium process started on port {port} with PID: {process.pid}")
 
             # Save PID
             self._save_pid(process_name, process.pid)
@@ -218,7 +215,6 @@ class AppiumDriver:
                 ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
             )
             if not port_check.stdout.strip():
-                logger.debug(f"No process found listening on port {port}")
                 return False
 
             # Check Appium status endpoint
@@ -323,8 +319,6 @@ class AppiumDriver:
             os.path.expanduser("~/.npm-global/bin/appium"),  # NPM global
         ]
 
-        logger.info(f"Searching for Appium executable in: {appium_paths}")
-
         for path in appium_paths:
             # Handle wildcards
             if "*" in path:
@@ -345,15 +339,10 @@ class AppiumDriver:
 
             # Try to verify it works
             try:
-                logger.debug(f"Testing appium at {path}")
                 version_check = subprocess.run(
                     [path, "--version"], capture_output=True, text=True, check=False, timeout=2
                 )
-                logger.debug(
-                    f"Version check for {path}: returncode={version_check.returncode}, stdout={version_check.stdout[:100]}"
-                )
                 if version_check.returncode == 0:
-                    logger.info(f"Found working appium at: {path}")
                     return path
             except (subprocess.SubprocessError, OSError) as e:
                 logger.debug(f"Error checking {path}: {e}")

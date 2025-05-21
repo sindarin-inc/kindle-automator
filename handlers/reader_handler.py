@@ -728,57 +728,47 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Unexpected error handling bottom sheet: {e}")
 
-        # Check for and handle "last read page" dialog
-        try:
-            for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
-                try:
-                    message = self.driver.find_element(strategy, locator)
-                    if message.is_displayed() and (
-                        "You are currently on page" in message.text
-                        or "You are currently at location" in message.text
-                    ):
-                        logger.info("Found 'last read page/location' dialog - clicking YES")
-                        for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
-                            try:
-                                yes_button = self.driver.find_element(btn_strategy, btn_locator)
-                                if yes_button.is_displayed():
-                                    yes_button.click()
-                                    logger.info("Clicked YES button")
-                                    break
-                            except NoSuchElementException:
-                                continue
-                        break
-                except NoSuchElementException:
-                    continue
-        except Exception as e:
-            logger.error(f"Error handling 'last read page/location' dialog: {e}")
+        # We'll use the NavigationResourceHandler to handle the last read page dialog
+        # so we can return it to the client for decision instead of automatically clicking YES
+        from handlers.navigation_handler import NavigationResourceHandler
 
-        # Check for and handle "Go to that location?" dialog
         try:
+            nav_handler = NavigationResourceHandler(self.driver.automator, self.screenshots_dir)
+            # We don't auto-accept the dialog - we'll return it to the client
+            # The client will then use the /last-read-page-dialog endpoint to make a decision
+            dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+
+            # If dialog was found, we let the caller handle it and don't click anything
+            if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
+                logger.info("Found 'last read page' dialog - leaving it for client to decide")
+                # We don't click anything - the client will decide using the /last-read-page-dialog endpoint
+        except Exception as e:
+            logger.error(f"Error checking for 'last read page/location' dialog: {e}")
+
+        # The "Go to that location/page?" dialog is essentially the same as "Last read page" dialog,
+        # so we handle both identically - either could be shown when opening a book
+        # We've already checked for the "Last read page" dialog above and don't click either one
+
+        # We'll add the "Go to that page" text to the dialog detection in NavigationResourceHandler
+        # nav_handler is already created above, so we'll keep this section simple
+        try:
+            # Check for "Go to that location/page?" dialog
             for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
                 try:
                     message = self.driver.find_element(strategy, locator)
                     if message.is_displayed() and (
                         "Go to that location?" in message.text or "Go to that page?" in message.text
                     ):
-                        logger.info("Found 'Go to that location/page?' dialog - clicking YES")
-                        for (
-                            btn_strategy,
-                            btn_locator,
-                        ) in LAST_READ_PAGE_DIALOG_BUTTONS:  # Reuse the same buttons as last read page dialog
-                            try:
-                                yes_button = self.driver.find_element(btn_strategy, btn_locator)
-                                if yes_button.is_displayed():
-                                    yes_button.click()
-                                    logger.info("Clicked YES button")
-                                    break
-                            except NoSuchElementException:
-                                continue
+                        logger.info(
+                            "Found 'Go to that location/page?' dialog - leaving it for client to decide"
+                        )
+                        # Don't click anything - client will decide via /last-read-page-dialog endpoint
+                        # The /last-read-page-dialog endpoint already looks for both types of dialogs
                         break
                 except NoSuchElementException:
                     continue
         except Exception as e:
-            logger.error(f"Error handling 'Go to that location/page?' dialog: {e}")
+            logger.error(f"Error checking for 'Go to that location/page?' dialog: {e}")
 
         # Check for and dismiss Goodreads auto-update dialog
         try:

@@ -618,10 +618,10 @@ class ViewInspector:
             except NoSuchElementException:
                 pass
 
-            # First check if we're in search interface (which is part of library)
+            # Check if we're in search results interface (which is separate from library)
             if self._is_in_search_interface():
-                logger.info("   Detected search interface, treating as LIBRARY view")
-                return AppView.LIBRARY
+                logger.info("   Detected search results interface, treating as SEARCH_RESULTS view")
+                return AppView.SEARCH_RESULTS
 
             # First check the more accurate tab selection because library_root_view exists for both tabs
             if self._is_tab_selected("LIBRARY"):
@@ -880,6 +880,8 @@ class ViewInspector:
         """
         Check if we're currently in the search results interface.
         This can be misidentified as the library view because it uses some of the same elements.
+
+        Search results view is identified by the presence of "In your library" and "Results from Kindle" sections.
         """
         try:
             # Check for search-specific elements
@@ -916,13 +918,50 @@ class ViewInspector:
             except NoSuchElementException:
                 pass
 
+            # Check for "In your library" section header - a key indicator of search results
+            try:
+                in_library_header = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='In your library']"
+                )
+                if in_library_header and in_library_header.is_displayed():
+                    search_indicators += 2  # Strong indicator, count as 2
+                    logger.info("Found 'In your library' section header in search results")
+            except NoSuchElementException:
+                try:
+                    # Alternative way to find the header by text
+                    in_library_text = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.TextView[@text='In your library']"
+                    )
+                    if in_library_text and in_library_text.is_displayed():
+                        search_indicators += 2  # Strong indicator, count as 2
+                        logger.info("Found 'In your library' text in search results")
+                except NoSuchElementException:
+                    pass
+
+            # Check for "Results from Kindle" section header - another key indicator
+            try:
+                store_results_header = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='Results from Kindle']"
+                )
+                if store_results_header and store_results_header.is_displayed():
+                    search_indicators += 2  # Strong indicator, count as 2
+                    logger.info("Found 'Results from Kindle' section header in search results")
+            except NoSuchElementException:
+                try:
+                    # Alternative way to find the header by text
+                    store_results_text = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.TextView[@text='Results from Kindle']"
+                    )
+                    if store_results_text and store_results_text.is_displayed():
+                        search_indicators += 2  # Strong indicator, count as 2
+                        logger.info("Found 'Results from Kindle' text in search results")
+                except NoSuchElementException:
+                    pass
+
             # We need at least 2 indicators to be confident we're in search view
             is_search = search_indicators >= 2
             if is_search:
                 logger.info(f"Detected search interface with {search_indicators} indicators")
-                # Save page source for debugging
-
-                store_page_source(self.driver.page_source, "search_interface_detected")
             return is_search
 
         except Exception as e:

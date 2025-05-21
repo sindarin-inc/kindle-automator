@@ -77,11 +77,25 @@ class NavigationResourceHandler:
             f"placemark={show_placemark}, base64={use_base64}, ocr={perform_ocr}"
         )
 
-        # First, check for and handle the 'last read page' dialog before any navigation
-        dialog_handled = self._handle_last_read_page_dialog()
-        if dialog_handled:
-            logger.info("Handled 'last read page' dialog before navigation")
-        
+        # First, check for the 'last read page' dialog before any navigation
+        dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+        if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
+            # Dialog found, return it to the client instead of handling it
+            logger.info("Found 'last read page' dialog - returning to client for decision")
+
+            # We don't need screenshots or page source
+
+            # Build response with dialog info
+            response_data = {
+                "success": True,
+                "last_read_dialog": True,
+                "dialog_text": dialog_result.get("dialog_text"),
+                "message": "Last read page dialog detected",
+            }
+            # No screenshot data to add
+
+            return response_data, 200
+
         # If navigate_count is 0 and no preview is requested, just return current page info
         if navigate_count == 0 and preview_count == 0:
             # Get current page info without navigation
@@ -112,8 +126,24 @@ class NavigationResourceHandler:
         # If we're doing a preview with navigate_count=0, handle it specially
         if preview_count != 0 and navigate_count == 0:
             # Check for last read page dialog again (which may appear after handling another dialog)
-            self._handle_last_read_page_dialog()
-            
+            dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+            if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
+                # Dialog found, return it to the client instead of handling it
+                logger.info("Found 'last read page' dialog during preview - returning to client for decision")
+
+                # We don't need screenshots or page source
+
+                # Build response with dialog info
+                response_data = {
+                    "success": True,
+                    "last_read_dialog": True,
+                    "dialog_text": dialog_result.get("dialog_text"),
+                    "message": "Last read page dialog detected during preview",
+                }
+                # No screenshot data to add
+
+                return response_data, 200
+
             if preview_direction_forward:
                 return self._preview_pages_forward(abs_preview_count, show_placemark)
             else:
@@ -167,18 +197,31 @@ class NavigationResourceHandler:
 
         return response_data, 200
 
-    def _handle_last_read_page_dialog(self) -> bool:
-        """Check for and handle the 'last read page' dialog.
-        
+    def _handle_last_read_page_dialog(self, auto_accept=False):
+        """Check for and get the 'last read page' dialog or 'Go to that location?' dialog.
+        Can optionally auto-accept it.
+
+        Args:
+            auto_accept (bool): If True, automatically click YES. If False, only detect the dialog.
+
         Returns:
-            bool: True if dialog was found and handled, False otherwise.
+            dict or bool: If auto_accept is False and dialog is found, returns a dict with dialog info.
+                        If auto_accept is True, returns True if dialog was found and handled.
+                        Returns False if dialog was not found or error occurred.
         """
-        from views.reading.view_strategies import LAST_READ_PAGE_DIALOG_IDENTIFIERS
-        from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
         from selenium.common.exceptions import NoSuchElementException
-        
+
+        from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
+        from views.reading.view_strategies import (
+            GO_TO_LOCATION_DIALOG_IDENTIFIERS,
+            LAST_READ_PAGE_DIALOG_IDENTIFIERS,
+        )
+
         try:
             dialog_found = False
+            dialog_text = None
+
+            # Check for Last read page dialog
             for strategy, locator in LAST_READ_PAGE_DIALOG_IDENTIFIERS:
                 try:
                     message = self.automator.driver.find_element(strategy, locator)
@@ -187,26 +230,57 @@ class NavigationResourceHandler:
                         or "You are currently at location" in message.text
                         or "Go to that page?" in message.text
                     ):
-                        logger.info("Found 'last read page/location' dialog - clicking YES")
                         dialog_found = True
-                        for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
-                            try:
-                                yes_button = self.automator.driver.find_element(btn_strategy, btn_locator)
-                                if yes_button.is_displayed():
-                                    yes_button.click()
-                                    logger.info("Clicked YES button")
-                                    time.sleep(0.5)  # Give dialog time to dismiss
-                                    return True
-                            except NoSuchElementException:
-                                continue
+                        dialog_text = message.text
+                        logger.info(f"Found 'last read page/location' dialog with text: {dialog_text}")
                         break
                 except NoSuchElementException:
                     continue
-            return dialog_found
+
+            # Also check for Go to that location dialog if we didn't find the Last read page dialog
+            if not dialog_found:
+                for strategy, locator in GO_TO_LOCATION_DIALOG_IDENTIFIERS:
+                    try:
+                        message = self.automator.driver.find_element(strategy, locator)
+                        if message.is_displayed() and (
+                            "Go to that location?" in message.text or "Go to that page?" in message.text
+                        ):
+                            dialog_found = True
+                            dialog_text = message.text
+                            logger.info(f"Found 'Go to that location/page' dialog with text: {dialog_text}")
+                            break
+                    except NoSuchElementException:
+                        continue
+
+            if dialog_found:
+                if auto_accept:
+                    logger.info("Auto-accept is enabled - clicking YES")
+                    for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
+                        try:
+                            yes_button = self.automator.driver.find_element(btn_strategy, btn_locator)
+                            if yes_button.is_displayed():
+                                yes_button.click()
+                                logger.info("Clicked YES button")
+                                time.sleep(0.5)  # Give dialog time to dismiss
+                                return True
+                        except NoSuchElementException:
+                            continue
+                else:
+                    # Return dialog info instead of clicking
+                    return {"dialog_found": True, "dialog_text": dialog_text, "dialog_type": "last_read_page"}
+
+            if not dialog_found:
+                return False
+
+            if auto_accept:
+                # If we got here with auto_accept=True, it means we found the dialog but failed to click YES
+                logger.warning("Found dialog but failed to click YES button")
+                return False
+
         except Exception as e:
             logger.error(f"Error handling 'last read page/location' dialog: {e}")
             return False
-    
+
     def _navigate_pages(self, forward: bool, count: int) -> bool:
         """Navigate multiple pages forward or backward.
 
@@ -220,9 +294,10 @@ class NavigationResourceHandler:
         if count <= 0:
             # No navigation needed
             return True
-            
+
         # Check for and handle the 'last read page' dialog before navigating
-        self._handle_last_read_page_dialog()
+        # When actually navigating pages, we do want to auto-accept the dialog
+        dialog_result = self._handle_last_read_page_dialog(auto_accept=True)
 
         logger.info(f"Navigating {count} pages {'forward' if forward else 'backward'}")
 

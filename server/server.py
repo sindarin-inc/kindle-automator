@@ -934,11 +934,9 @@ class BookOpenResource(Resource):
         # Check if OCR is requested
         perform_ocr = is_ocr_requested()
         if perform_ocr:
-            logger.info("OCR requested for open-book, will process image with OCR")
             if not use_base64:
                 # Force base64 encoding for OCR
                 use_base64 = True
-                logger.info("Forcing base64 encoding for OCR processing")
 
         # Check if placemark is requested - default is FALSE which means DO NOT show placemark
         show_placemark = False
@@ -946,8 +944,6 @@ class BookOpenResource(Resource):
         if placemark_param and placemark_param.lower() in ("1", "true", "yes"):
             show_placemark = True
             logger.info("Placemark mode enabled for this request")
-        else:
-            logger.info("Placemark mode disabled - will avoid tapping to prevent placemark display")
 
         logger.info(f"Opening book: {book_title}")
 
@@ -956,23 +952,42 @@ class BookOpenResource(Resource):
 
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
-            # Check for and handle the 'last read page' dialog before getting page info
+            # Check for the 'last read page' dialog without auto-accepting
             from handlers.navigation_handler import NavigationResourceHandler
+
             nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
-            if nav_handler._handle_last_read_page_dialog():
-                logger.info("Handled 'last read page' dialog in open-book endpoint")
-            
+            dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+
+            # If dialog was found, return it to the client for decision
+            if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
+                logger.info(
+                    "Found 'last read page' dialog in open-book endpoint - returning to client for decision"
+                )
+
+                # We don't need screenshots or page source
+
+                # Build response with dialog info
+                response_data = {
+                    "success": True,
+                    "last_read_dialog": True,
+                    "dialog_text": dialog_result.get("dialog_text"),
+                    "message": "Last read page dialog detected",
+                }
+
+                # Add flag if book was already open
+                if already_open:
+                    response_data["already_open"] = True
+
+                # No screenshot data to add
+
+                return response_data, 200
+
+            # No dialog found, continue with normal flow
             # Get reading progress
             progress = automator.state_machine.reader_handler.get_reading_progress(
                 show_placemark=show_placemark
             )
             logger.info(f"Progress: {progress}")
-
-            # Save screenshot with unique ID
-            screenshot_id = f"page_{int(time.time())}"
-            screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
-            time.sleep(0.5)
-            automator.driver.save_screenshot(screenshot_path)
 
             # Create response data with progress info
             response_data = {"success": True, "progress": progress}
@@ -981,12 +996,26 @@ class BookOpenResource(Resource):
             if already_open:
                 response_data["already_open"] = True
 
-            # Process the screenshot (either base64 encode, add URL, or OCR)
-            screenshot_path = get_image_path(screenshot_id)
-            screenshot_data = process_screenshot_response(
-                screenshot_id, screenshot_path, use_base64, perform_ocr
-            )
-            response_data.update(screenshot_data)
+            # We need OCR text if requested, but without screenshots
+            if perform_ocr:
+                # Take a screenshot just for OCR then discard it
+                screenshot_id = f"ocr_temp_{int(time.time())}"
+                screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+                automator.driver.save_screenshot(screenshot_path)
+
+                # Get OCR text
+                with open(screenshot_path, "rb") as img_file:
+                    image_data = img_file.read()
+
+                ocr_text, _ = KindleOCR.process_ocr(image_data)
+                if ocr_text:
+                    response_data["ocr_text"] = ocr_text
+
+                # Delete the temporary screenshot
+                try:
+                    os.remove(screenshot_path)
+                except Exception as e:
+                    logger.error(f"Error removing temporary OCR screenshot: {e}")
 
             return response_data, 200
 
@@ -1196,11 +1225,48 @@ class BookOpenResource(Resource):
 
         logger.info(f"Reloaded current state: {current_state}")
 
-        # If we get here, we need to go to library and open the book
+        # If we get here, we need to go to library or handle search results directly
         logger.info(
-            f"Not already reading requested book: {book_title} != {current_book}, transitioning from {current_state} to library"
+            f"Not already reading requested book: {book_title} != {current_book}, current state: {current_state}"
         )
-        # If we're not already reading the requested book, transition to library and open it
+
+        # If we're in search results view, we can open books directly without transitioning to library
+        if current_state == AppState.SEARCH_RESULTS:
+            logger.info("Currently in SEARCH_RESULTS view, opening book directly")
+
+            # Set book_to_open attribute on automator for the state handler to use
+            automator.book_to_open = book_title
+            logger.info(f"Set automator.book_to_open to '{book_title}' for handle_search_results")
+
+            # First try to handle the search results state which will look for the book
+            if automator.state_machine.handle_state():
+                logger.info("Successfully handled SEARCH_RESULTS state")
+                # Check if we've moved to READING state
+                automator.state_machine.update_current_state()
+                if automator.state_machine.current_state == AppState.READING:
+                    # Set the current book in the server state
+                    server.set_current_book(book_title, sindarin_email)
+                    return capture_book_state()
+
+            # If handle_state didn't succeed or we're not in READING state, try direct approach
+            logger.info("Falling back to direct library_handler.open_book for search results")
+            result = automator.state_machine.library_handler.open_book(book_title)
+            logger.info(f"Book open result from search results: {result}")
+
+            # Handle dictionary response from library handler
+            if result.get("status") == "title_not_available":
+                # Return the error response directly
+                return result, 400
+            elif result.get("success"):
+                # Set the current book in the server state
+                server.set_current_book(book_title, sindarin_email)
+                return capture_book_state()
+            else:
+                # Return the error from the result
+                return result, 500
+
+        # For other states, transition to library and open the book
+        logger.info(f"Transitioning from {current_state} to library")
         if automator.state_machine.transition_to_library(server=server):
             # Use library_handler to open the book instead of reader_handler
             result = automator.state_machine.library_handler.open_book(book_title)
@@ -1766,6 +1832,190 @@ class TextResource(Resource):
         return self._extract_text()
 
 
+class LastReadPageDialogResource(Resource):
+    """Resource for handling the 'Last read page' dialog decisions.
+
+    This endpoint allows the client to decide whether to click "Yes" or "No"
+    on the "Last read page" dialog that appears when opening a book or navigating.
+    """
+
+    @ensure_user_profile_loaded
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def post(self):
+        """Handle Last read page dialog choice from the client."""
+        # Get sindarin_email from request to determine which automator to use
+        sindarin_email = get_sindarin_email()
+
+        if not sindarin_email:
+            return {"error": "No email provided to identify which profile to use"}, 400
+
+        # Get the appropriate automator
+        automator = server.automators.get(sindarin_email)
+        if not automator:
+            return {"error": f"No automator found for {sindarin_email}"}, 404
+
+        # Check if base64 parameter is provided
+        use_base64 = is_base64_requested()
+
+        # Check if OCR is requested
+        perform_ocr = is_ocr_requested()
+        if perform_ocr:
+            logger.info("OCR requested, will process image with OCR")
+            if not use_base64:
+                # Force base64 encoding for OCR
+                use_base64 = True
+                logger.info("Forcing base64 encoding for OCR processing")
+
+        # Check if placemark is requested - default is FALSE
+        show_placemark = False
+        placemark_param = request.args.get("placemark", "0")
+        if placemark_param and placemark_param.lower() in ("1", "true", "yes"):
+            show_placemark = True
+            logger.info("Placemark mode enabled for this request")
+        else:
+            logger.info("Placemark mode disabled - will avoid tapping to prevent placemark display")
+
+        # Get the decision parameter from the request
+        data = request.get_json(silent=True) or {}
+
+        # Get goto_last_read_page parameter
+        goto_last_read_page = data.get("goto_last_read_page")
+
+        # Check query params if not in JSON body
+        if goto_last_read_page is None:
+            goto_last_read_page_param = request.args.get("goto_last_read_page")
+            if goto_last_read_page_param is not None:
+                goto_last_read_page = goto_last_read_page_param.lower() in ("1", "true", "yes")
+
+        # If parameter wasn't provided, return an error
+        if goto_last_read_page is None:
+            return {
+                "error": "Parameter 'goto_last_read_page' is required (boolean)",
+                "message": (
+                    "Must specify whether to go to the last read page (true) or start from beginning (false)"
+                ),
+            }, 400
+
+        # Convert to boolean if it's a string or number
+        if isinstance(goto_last_read_page, str):
+            goto_last_read_page = goto_last_read_page.lower() in ("1", "true", "yes")
+        elif isinstance(goto_last_read_page, int):
+            goto_last_read_page = goto_last_read_page == 1
+
+        logger.info(f"Last read page dialog choice: goto_last_read_page={goto_last_read_page}")
+
+        # Use NavigationResourceHandler to handle the dialog
+        from handlers.navigation_handler import NavigationResourceHandler
+
+        nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
+
+        # First check if the dialog is still visible before trying to click
+        dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+        if not dialog_result or not isinstance(dialog_result, dict) or not dialog_result.get("dialog_found"):
+            logger.warning("Last read page dialog no longer visible - may have timed out or been dismissed")
+            return {"error": "Last read page dialog not found"}, 404
+
+        # Get dialog info for response
+        dialog_text = dialog_result.get("dialog_text", "")
+
+        # Now click the appropriate button based on the client's choice
+        from selenium.common.exceptions import NoSuchElementException
+
+        from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
+        from views.reading.view_strategies import LAST_READ_PAGE_DIALOG_IDENTIFIERS
+
+        try:
+            # Try to click YES or NO based on the goto_last_read_page value
+            button_clicked = False
+
+            # YES button - go to last read page
+            if goto_last_read_page:
+                logger.info("Client chose to go to last read page - clicking YES")
+                for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
+                    try:
+                        yes_button = automator.driver.find_element(btn_strategy, btn_locator)
+                        if yes_button.is_displayed():
+                            yes_button.click()
+                            logger.info("Clicked YES button")
+                            button_clicked = True
+                            time.sleep(0.5)  # Give dialog time to dismiss
+                            break
+                    except NoSuchElementException:
+                        continue
+            # NO button - start from the beginning
+            else:
+                logger.info("Client chose to start from beginning - clicking NO")
+                # The NO button is usually the second button (button2)
+                try:
+                    no_button = automator.driver.find_element("id", "android:id/button2")
+                    if no_button.is_displayed():
+                        no_button.click()
+                        logger.info("Clicked NO button")
+                        button_clicked = True
+                        time.sleep(0.5)  # Give dialog time to dismiss
+                except NoSuchElementException:
+                    # Try another approach - look for "NO" text
+                    try:
+                        no_button = automator.driver.find_element(
+                            "xpath", "//android.widget.Button[@text='NO']"
+                        )
+                        if no_button.is_displayed():
+                            no_button.click()
+                            logger.info("Clicked NO button by text")
+                            button_clicked = True
+                            time.sleep(0.5)  # Give dialog time to dismiss
+                    except NoSuchElementException:
+                        logger.warning("NO button not found by text")
+
+            if not button_clicked:
+                logger.error(f"Failed to click {'YES' if goto_last_read_page else 'NO'} button")
+                return {"error": f"Failed to click {'YES' if goto_last_read_page else 'NO'} button"}, 500
+
+            # Get reading progress
+            progress = automator.state_machine.reader_handler.get_reading_progress(
+                show_placemark=show_placemark
+            )
+
+            # Build response
+            response_data = {
+                "success": True,
+                "message": (
+                    f"Successfully clicked {'YES' if goto_last_read_page else 'NO'} on Last read page dialog"
+                ),
+                "dialog_text": dialog_text,
+                "progress": progress,
+            }
+
+            # We need OCR text if requested, but without screenshots
+            if perform_ocr:
+                # Take a screenshot just for OCR then discard it
+                screenshot_id = f"ocr_temp_{int(time.time())}"
+                screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
+                automator.driver.save_screenshot(screenshot_path)
+
+                # Get OCR text
+                with open(screenshot_path, "rb") as img_file:
+                    image_data = img_file.read()
+
+                ocr_text, _ = KindleOCR.process_ocr(image_data)
+                if ocr_text:
+                    response_data["ocr_text"] = ocr_text
+
+                # Delete the temporary screenshot
+                try:
+                    os.remove(screenshot_path)
+                except Exception as e:
+                    logger.error(f"Error removing temporary OCR screenshot: {e}")
+
+            return response_data, 200
+
+        except Exception as e:
+            logger.error(f"Error handling Last read page dialog choice: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"error": f"Failed to handle dialog choice: {str(e)}"}, 500
+
+
 # Import resource modules
 from server.resources.idle_check_resources import IdleCheckResource
 from server.resources.shutdown_resources import ShutdownResource
@@ -1816,6 +2066,7 @@ api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
 api.add_resource(TextResource, "/text")
+api.add_resource(LastReadPageDialogResource, "/last-read-page-dialog")
 api.add_resource(
     ShutdownResource,
     "/shutdown",
@@ -1903,7 +2154,7 @@ def cleanup_resources():
                 f"Gracefully shutting down {email} with preserve_reading_state=True, mark_for_restart=True"
             )
             shutdown_manager.shutdown_emulator(email, preserve_reading_state=True, mark_for_restart=True)
-        except Exception as e:
+        except KeyError as e:
             logger.error(f"✗ Error shutting down {email}: {e}")
 
     # Stop Appium servers for all running emulators
