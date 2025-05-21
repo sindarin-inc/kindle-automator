@@ -479,33 +479,34 @@ class VNCInstanceManager:
             return True
         return False
 
-    def mark_running_for_deployment(self, email: str) -> bool:
+    def mark_running_for_deployment(self, email: str, should_restart: bool = True) -> bool:
         """
-        Mark an emulator as running at deployment time.
+        Set or clear the restart flag for an emulator.
 
         Args:
             email: Email address of the profile
+            should_restart: True to mark for restart (default), False to clear the flag
 
         Returns:
-            bool: True if marked successfully
+            bool: True if updated successfully
         """
         try:
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager()
-            success = avd_manager.set_user_field(email, "was_running_at_restart", True)
+            success = avd_manager.set_user_field(
+                email, "was_running_at_restart", should_restart if should_restart else None
+            )
 
             if success:
-                logger.info(f"✓ Successfully marked {email} as running at deployment")
-                # Verify it was saved
-                verify = avd_manager.get_user_field(email, "was_running_at_restart", False)
-                logger.info(f"Verification: {email} was_running_at_restart = {verify}")
+                action = "marked for restart" if should_restart else "cleared restart flag"
+                logger.info(f"✓ Successfully {action} for {email}")
                 return True
             else:
-                logger.warning(f"Failed to mark {email} as running at deployment")
+                logger.warning(f"Failed to update restart flag for {email}")
                 return False
         except Exception as e:
-            logger.error(f"Error marking {email} as running at deployment: {e}")
+            logger.error(f"Error setting restart flag for {email}: {e}")
             return False
 
     def get_running_at_restart(self) -> List[str]:
