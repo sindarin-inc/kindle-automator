@@ -145,8 +145,40 @@ class KindleStateMachine:
 
                 # If still unknown, try checking for library-specific elements
                 if self.current_state == AppState.UNKNOWN:
-                    logger.info("Still in UNKNOWN state, checking for library-specific elements...")
-                    # Use library handler's existing view detection logic
+                    logger.info("Still in UNKNOWN state, checking for dialogs...")
+                    # Check for common dialogs that might be causing the UNKNOWN state
+                    from views.common.dialog_handler import DialogHandler
+
+                    dialog_handler = DialogHandler(self.driver)
+
+                    # Get the current activity name
+                    current_activity = None
+                    try:
+                        current_activity = self.driver.current_activity
+                        logger.info(f"Current activity: {current_activity}")
+                    except Exception as e:
+                        logger.debug(f"Error getting current activity: {e}")
+
+                    # Check specifically for AlertActivity which often contains dialogs
+                    if current_activity and "AlertActivity" in current_activity:
+                        logger.info(f"Detected AlertActivity, checking for known dialogs...")
+
+                        # Check for dialogs without requiring book title
+                        handled, dialog_type = dialog_handler.check_all_dialogs(None, "in UNKNOWN state")
+                        if handled:
+                            logger.info(f"Successfully handled {dialog_type} dialog in UNKNOWN state")
+                            # Try to update state after handling dialog
+                            self.current_state = self._get_current_state()
+                            # If still unknown, try to re-enter the app
+                            if self.current_state == AppState.UNKNOWN:
+                                if self.view_inspector.ensure_app_foreground():
+                                    logger.info("Brought app to foreground after handling dialog")
+                                    time.sleep(1)
+                                    self.current_state = self._get_current_state()
+                            return True
+
+                    # If dialog handling didn't work, try checking for library-specific elements
+                    logger.info("Checking for library-specific elements...")
                     if self.library_handler._is_library_tab_selected():
                         logger.info("Library handler detected library view")
                         return True

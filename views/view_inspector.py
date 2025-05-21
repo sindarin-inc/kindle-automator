@@ -739,6 +739,26 @@ class ViewInspector:
                 logger.warning(f"Failed to save screenshot: {str(e)[:100]}")
 
             logger.debug("Not in main app view")
+
+            # Check if we're in an AlertActivity which could contain a dialog
+            try:
+                current_activity = self.driver.current_activity
+                if current_activity and "AlertActivity" in current_activity:
+                    logger.info(f"Detected AlertActivity: {current_activity}, checking for known dialogs")
+
+                    # Import and use dialog handler
+                    from views.common.dialog_handler import DialogHandler
+
+                    dialog_handler = DialogHandler(self.driver)
+
+                    # Check for and handle dialogs without requiring book title
+                    handled, dialog_type = dialog_handler.check_all_dialogs(None, "in UNKNOWN view")
+                    if handled:
+                        logger.info(f"Successfully handled {dialog_type} dialog in AlertActivity")
+                        # Still return UNKNOWN, but the dialog has been handled
+            except Exception as activity_error:
+                logger.debug(f"Error checking current activity: {activity_error}")
+
             return AppView.UNKNOWN
 
         except Exception as e:
