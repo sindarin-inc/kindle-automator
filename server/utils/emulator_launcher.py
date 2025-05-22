@@ -142,7 +142,6 @@ class EmulatorLauncher:
                 return False
 
             if not emulator_avd:
-                logger.warning(f"Could not determine actual AVD name for emulator {emulator_id}")
                 return False
 
             logger.info(f"Comparing AVD names: expected={email_avd}, actual={emulator_avd}")
@@ -198,10 +197,6 @@ class EmulatorLauncher:
                     avd_name = result.stdout.strip()
                     logger.info(f"Found AVD name for {emulator_id} via ro.kernel.qemu.avd_name: {avd_name}")
                     return avd_name
-                else:
-                    logger.debug(
-                        f"Could not get AVD name via ro.kernel.qemu.avd_name: {result.stderr.strip()}"
-                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting ro.kernel.qemu.avd_name via ADB: {adb_error}")
@@ -263,7 +258,6 @@ class EmulatorLauncher:
             except Exception as adb_error:
                 logger.warning(f"Error getting all properties via ADB: {adb_error}")
 
-            logger.warning(f"Could not determine AVD name for emulator {emulator_id}")
             return None
 
         except Exception as e:
@@ -1168,7 +1162,6 @@ class EmulatorLauncher:
         expected_emulator_id = None
         if avd_name and avd_name in self.running_emulators:
             expected_emulator_id, _ = self.running_emulators[avd_name]
-            logger.debug(f"Found cached emulator {expected_emulator_id} for AVD {avd_name}")
 
         # Get the emulator ID using get_running_emulator which handles AVD lookup
         emulator_id, _ = self.get_running_emulator(email)
@@ -1221,8 +1214,6 @@ class EmulatorLauncher:
 
             # First check if device is connected using our helper
             if not self._verify_emulator_running(emulator_id, email):
-                logger.info(f"Emulator {emulator_id} not found in adb devices or has wrong AVD")
-                # Cache cleanup is now handled earlier in the process
                 return False
 
             # First check the device status - it might be in 'offline' state initially
