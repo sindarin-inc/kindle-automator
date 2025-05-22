@@ -75,23 +75,6 @@ class VNCInstanceManager:
         # Determine if we're on macOS/Darwin
         self.is_macos = platform.system() == "Darwin"
 
-        # Path to the profiles index file - use user_data on macOS, otherwise use Android SDK profiles
-        if self.is_macos:
-            # Use project's user_data directory for macOS
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            self.profiles_dir = os.path.join(project_root, "user_data")
-            logger.info(f"Using {self.profiles_dir} for users.json on macOS")
-        else:
-            # For non-Mac environments, use standard directory structure
-            android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
-            self.profiles_dir = os.path.join(android_home, "profiles")
-
-        self.users_file_path = os.path.join(self.profiles_dir, "users.json")
-        self.profiles_index = {}  # Email to AVD mapping
-
-        # Load the profiles index if it exists
-        self._load_profiles_index()
-
         # Load VNC instances or create new ones with email-based assignments
         self.load_instances()
 
@@ -202,75 +185,6 @@ class VNCInstanceManager:
         except Exception as e:
             logger.error(f"Error saving VNC instances: {e}")
             return False
-
-    def _load_profiles_index(self) -> Dict:
-        """
-        Load the profiles index file.
-
-        Returns:
-            Dict: The profiles index mapping (email -> AVD ID)
-        """
-        try:
-            if os.path.exists(self.users_file_path):
-                with open(self.users_file_path, "r") as f:
-                    self.profiles_index = json.load(f)
-            else:
-                logger.debug(f"No profiles index found at {self.users_file_path}")
-                self.profiles_index = {}
-        except Exception as e:
-            logger.error(f"Error loading profiles index: {e}")
-            self.profiles_index = {}
-
-        return self.profiles_index
-
-    def _get_avd_id_for_email(self, email: str) -> Optional[str]:
-        """
-        Get the AVD ID for a given email from the profiles index.
-
-        Args:
-            email: The user's email address
-
-        Returns:
-            Optional[str]: The AVD ID or None if not found
-        """
-        if not email:
-            return None
-
-        # Check if we need to reload the profiles index
-        if not self.profiles_index:
-            self._load_profiles_index()
-
-        # Get the AVD ID from the profiles index
-        avd_id = self.profiles_index.get(email)
-        if avd_id:
-            # Handle both string and dictionary formats for backward compatibility
-            if isinstance(avd_id, dict):
-                # If it's a dictionary, look for avd_name key
-                if "avd_name" in avd_id:
-                    avd_name = avd_id["avd_name"]
-                    # Extract unique identifier if it's the full AVD name
-                    if isinstance(avd_name, str) and avd_name.startswith("KindleAVD_"):
-                        return avd_name[len("KindleAVD_") :]
-                    else:
-                        return avd_name
-                else:
-                    # No avd_name key in dictionary
-                    logger.warning(f"AVD ID dictionary for {email} has no avd_name key: {avd_id}")
-                    return None
-            elif isinstance(avd_id, str):
-                # Extract just the unique identifier part (e.g., 'kindle_solreader_com')
-                # from AVD name like 'KindleAVD_kindle_solreader_com'
-                if avd_id.startswith("KindleAVD_"):
-                    return avd_id[len("KindleAVD_") :]
-                else:
-                    return avd_id
-            else:
-                # Unexpected type
-                logger.warning(f"Unexpected AVD ID type for {email}: {type(avd_id)}")
-                return None
-
-        logger.debug(f"No AVD ID found for email {email}")
-        return None
 
     def get_instance_for_profile(self, email: str) -> Optional[Dict]:
         """
@@ -523,10 +437,14 @@ class VNCInstanceManager:
             running_emails = []
 
             # Check each profile for the was_running_at_restart flag
-            for email in avd_manager.profiles_index.keys():
-                was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
-                if was_running:
-                    running_emails.append(email)
+            # Get all profiles and check each one
+            profiles = avd_manager.list_profiles()
+            for profile in profiles:
+                email = profile.get("email")
+                if email:
+                    was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
+                    if was_running:
+                        running_emails.append(email)
 
             return running_emails
         except Exception as e:
@@ -544,8 +462,10 @@ class VNCInstanceManager:
 
             # Clear flags for all profiles
             cleared_count = 0
-            for email in avd_manager.profiles_index.keys():
-                if avd_manager.get_user_field(email, "was_running_at_restart", False):
+            profiles = avd_manager.list_profiles()
+            for profile in profiles:
+                email = profile.get("email")
+                if email and avd_manager.get_user_field(email, "was_running_at_restart", False):
                     avd_manager.set_user_field(email, "was_running_at_restart", None)
                     cleared_count += 1
                     logger.debug(f"Cleared was_running_at_restart flag for {email}")
