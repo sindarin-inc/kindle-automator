@@ -82,12 +82,43 @@ class EmulatorShutdownManager:
                 return shutdown_summary
 
             if not preserve_reading_state:
-                logger.info(f"Parking emulator in Library view before shutdown for {email}")
+                logger.info(f"Parking emulator in Library view and syncing before shutdown for {email}")
                 # Transition to library (this handles navigation from any state)
                 try:
+                    # First check if we're in READING state
+                    current_state = state_machine._get_current_state()
+                    was_reading = current_state == AppState.READING
+
+                    if was_reading:
+                        logger.info("Currently in READING state - will sync before parking")
+
+                    # Transition to library first
                     result = state_machine.transition_to_library(max_transitions=10, server=self.server)
-                    if result and result == AppState.LIBRARY:
-                        logger.info("Successfully parked emulator in Library view")
+                    if result:
+                        logger.info("Successfully transitioned to Library view")
+
+                        # If we were reading, navigate to More tab and sync
+                        if was_reading and state_machine.library_handler:
+                            logger.info("Navigating to More tab to sync reading progress...")
+
+                            # Navigate to More tab
+                            if state_machine.library_handler.navigate_to_more_settings():
+                                logger.info("Successfully navigated to More tab")
+
+                                # Perform sync
+                                if state_machine.library_handler.sync_in_more_tab():
+                                    logger.info("Successfully synced in More tab")
+                                else:
+                                    logger.warning("Sync may not have completed fully")
+
+                                # Navigate back to Library
+                                if state_machine.library_handler.navigate_from_more_to_library():
+                                    logger.info("Successfully navigated back to Library from More tab")
+                                else:
+                                    logger.warning("Failed to navigate back to Library from More tab")
+                            else:
+                                logger.warning("Failed to navigate to More tab for sync")
+
                         # Wait 5 seconds as requested
                         time.sleep(5)
                     else:

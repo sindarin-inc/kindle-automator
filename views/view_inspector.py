@@ -35,6 +35,7 @@ from views.library.view_strategies import (
     LIBRARY_VIEW_DETECTION_STRATEGIES,
     LIBRARY_VIEW_IDENTIFIERS,
 )
+from views.more.view_strategies import MORE_SETTINGS_VIEW_IDENTIFIERS
 from views.notifications.view_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
 from views.reading.interaction_strategies import ABOUT_BOOK_SLIDEOVER_IDENTIFIERS
 from views.reading.view_strategies import (
@@ -694,6 +695,24 @@ class ViewInspector:
                     element = self.driver.find_element(strategy, locator)
                     logger.info(f"   Found sign in view element: {element.get_attribute('text')}")
                     return AppView.SIGN_IN
+                except NoSuchElementException:
+                    continue
+
+            # Check if we're in MORE tab/settings view
+            if self._is_tab_selected("MORE"):
+                logger.info("   MORE tab is selected, confirming we are in more settings view")
+                # Cache this view detection
+                self._current_view_cache_time = time.time()
+                self._current_view_cache = AppView.MORE_SETTINGS
+                return AppView.MORE_SETTINGS
+
+            # Also check for specific MORE_SETTINGS identifiers
+            for strategy, locator in MORE_SETTINGS_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info(f"   Found MORE_SETTINGS element: {strategy}={locator}")
+                        return AppView.MORE_SETTINGS
                 except NoSuchElementException:
                     continue
 

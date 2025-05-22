@@ -620,6 +620,160 @@ class LibraryHandler:
                 logger.error(f"Failed to save diagnostics: {screenshot_error}")
             return False
 
+    def navigate_to_more_settings(self):
+        """Navigate to the More tab/settings"""
+        try:
+            from views.more.interaction_strategies import MORE_TAB_STRATEGIES
+
+            logger.info("Navigating to More tab...")
+
+            # Check if more tab is already selected
+            if self._is_more_tab_selected():
+                logger.info("More tab is already selected")
+                return True
+
+            # Try to find and click the More tab
+            for strategy, locator in MORE_TAB_STRATEGIES:
+                try:
+                    more_tab = self.driver.find_element(strategy, locator)
+                    if more_tab.is_displayed():
+                        more_tab.click()
+                        logger.info(f"Clicked More tab using {strategy}")
+                        time.sleep(1)  # Wait for tab switch animation
+
+                        # Verify we're in More settings view
+                        if self._is_more_tab_selected():
+                            logger.info("Successfully switched to More tab")
+                            return True
+                except Exception as e:
+                    logger.debug(f"Strategy {strategy} failed: {e}")
+                    continue
+
+            logger.error("Failed to find More tab with any strategy")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error navigating to More settings: {e}")
+            return False
+
+    def navigate_from_more_to_library(self):
+        """Navigate from More tab back to Library tab"""
+        try:
+            logger.info("Navigating from More tab to Library tab...")
+
+            # First check if we're actually in More tab
+            if not self._is_more_tab_selected():
+                logger.warning("Not in More tab, checking if we're already in Library")
+                if self._is_library_tab_selected():
+                    return True
+
+            # Navigate to library using existing method
+            return self.navigate_to_library()
+
+        except Exception as e:
+            logger.error(f"Error navigating from More to Library: {e}")
+            return False
+
+    def sync_in_more_tab(self):
+        """Click the Sync Now button in the More tab and wait for completion"""
+        try:
+            from views.more.interaction_strategies import (
+                SYNC_BUTTON_STRATEGIES,
+                SYNC_PROGRESS_INDICATORS,
+                SYNC_STATUS_STRATEGIES,
+            )
+
+            logger.info("Looking for Sync Now button...")
+
+            # Find and click the sync button
+            sync_clicked = False
+            for strategy, locator in SYNC_BUTTON_STRATEGIES:
+                try:
+                    sync_button = self.driver.find_element(strategy, locator)
+                    if sync_button.is_displayed():
+                        sync_button.click()
+                        logger.info("Clicked Sync Now button")
+                        sync_clicked = True
+                        break
+                except Exception as e:
+                    logger.debug(f"Sync button strategy {strategy} failed: {e}")
+                    continue
+
+            if not sync_clicked:
+                logger.error("Could not find Sync Now button")
+                return False
+
+            # Wait for sync to start
+            time.sleep(1)
+
+            # Monitor sync progress
+            sync_complete = False
+            max_wait_time = 30  # Maximum 30 seconds for sync
+            start_time = time.time()
+
+            while time.time() - start_time < max_wait_time:
+                # Check if sync is still in progress
+                sync_in_progress = False
+                for strategy, locator in SYNC_PROGRESS_INDICATORS:
+                    try:
+                        progress_element = self.driver.find_element(strategy, locator)
+                        if progress_element.is_displayed():
+                            sync_in_progress = True
+                            logger.info("Sync is in progress...")
+                            break
+                    except:
+                        continue
+
+                if not sync_in_progress:
+                    # Check sync status to see if it's complete
+                    for strategy, locator in SYNC_STATUS_STRATEGIES:
+                        try:
+                            status_element = self.driver.find_element(strategy, locator)
+                            if status_element.is_displayed():
+                                status_text = status_element.text
+                                logger.info(f"Sync status: {status_text}")
+
+                                # Check if sync is complete (status shows "Last synced" with recent time)
+                                if "Last synced" in status_text:
+                                    logger.info("Sync completed successfully")
+                                    sync_complete = True
+                                    break
+                        except:
+                            continue
+
+                    if sync_complete:
+                        break
+
+                time.sleep(1)  # Check every second
+
+            if not sync_complete:
+                logger.warning("Sync may not have completed within timeout period")
+
+            return sync_complete
+
+        except Exception as e:
+            logger.error(f"Error during sync: {e}")
+            return False
+
+    def _is_more_tab_selected(self):
+        """Check if More tab is currently selected"""
+        try:
+            from views.more.view_strategies import MORE_TAB_SELECTION_IDENTIFIERS
+
+            for strategy, locator in MORE_TAB_SELECTION_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.debug(f"More tab is selected (found via {strategy})")
+                        return True
+                except:
+                    continue
+
+            return False
+        except Exception as e:
+            logger.error(f"Error checking if More tab is selected: {e}")
+            return False
+
     def _is_grid_view(self):
         """Check if currently in grid view"""
         try:

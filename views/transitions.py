@@ -289,6 +289,11 @@ class StateTransitions:
                 logger.error(f"Failed to recover: {e2}")
             return False
 
+    def handle_more_settings(self):
+        """Handle MORE_SETTINGS state - navigate back to library."""
+        logger.info("Handling MORE_SETTINGS state - navigating back to library...")
+        return self.library_handler.navigate_to_library()
+
     def get_handler_for_state(self, state):
         """Get the appropriate handler method for a given state.
 
@@ -310,6 +315,7 @@ class StateTransitions:
             AppState.READING: self.handle_reading,
             AppState.CAPTCHA: self._handle_captcha,  # Add new CAPTCHA handler
             AppState.APP_NOT_RESPONDING: self.handle_app_not_responding,  # Add app not responding handler
+            AppState.MORE_SETTINGS: self.handle_more_settings,  # Add more settings handler
         }
 
         handler = handlers.get(state)
