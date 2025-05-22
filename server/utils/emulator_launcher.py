@@ -1305,8 +1305,14 @@ class EmulatorLauncher:
             # Get the running emulator ID for this email
             emulator_id, _ = self.get_running_emulator(email)
             if not emulator_id:
-                logger.error(f"No running emulator found for {email}")
-                return False
+                # Try using cached emulator if get_running_emulator fails
+                avd_name = self._extract_avd_name_from_email(email)
+                if avd_name and avd_name in self.running_emulators:
+                    emulator_id, _ = self.running_emulators[avd_name]
+                    logger.info(f"Using cached emulator ID {emulator_id} for snapshot")
+                else:
+                    logger.error(f"No running emulator found for {email}")
+                    return False
 
             # Use avdmanager to save the snapshot
             # First, get the AVD name for this email
@@ -1315,10 +1321,60 @@ class EmulatorLauncher:
                 logger.error(f"Could not determine AVD name for {email}")
                 return False
 
-            # Save the snapshot using telnet to the emulator console
+            # Method 1: Try using ADB emu command first (more reliable than telnet)
+            try:
+                logger.info(f"Attempting to save snapshot '{snapshot_name}' using adb emu command")
+                adb_result = subprocess.run(
+                    [
+                        f"{self.android_home}/platform-tools/adb",
+                        "-s",
+                        emulator_id,
+                        "emu",
+                        "avd",
+                        "snapshot",
+                        "save",
+                        snapshot_name,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,  # Give it more time for snapshot creation
+                )
+
+                if adb_result.returncode == 0:
+                    logger.info(
+                        f"Successfully saved snapshot '{snapshot_name}' for {email} on emulator {emulator_id}"
+                    )
+                    # Verify the snapshot was created
+                    if self.has_snapshot(email, snapshot_name):
+                        logger.info(f"Verified snapshot '{snapshot_name}' exists on disk")
+                        return True
+                    else:
+                        logger.warning(f"Snapshot command succeeded but snapshot not found on disk")
+                else:
+                    logger.warning(f"ADB emu snapshot failed: {adb_result.stderr}")
+            except Exception as adb_e:
+                logger.warning(f"ADB emu method failed: {adb_e}")
+
+            # Method 2: Fall back to telnet if ADB method fails
+            logger.info("Falling back to telnet method for snapshot creation")
             # The emulator port is the last part of the emulator-xxxx ID
             emulator_port = int(emulator_id.split("-")[1])
             console_port = emulator_port - 1  # Console port is usually emulator_port - 1
+
+            # First check if console port is available
+            import socket
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            try:
+                result = sock.connect_ex(("localhost", console_port))
+                sock.close()
+                if result != 0:
+                    logger.error(f"Console port {console_port} is not available")
+                    return False
+            except Exception as sock_e:
+                logger.error(f"Error checking console port: {sock_e}")
+                return False
 
             # Create the telnet command to save the snapshot
             telnet_commands = f"avd snapshot save {snapshot_name}\nquit\n"

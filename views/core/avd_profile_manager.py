@@ -1283,13 +1283,32 @@ class AVDProfileManager:
         # Check if AVD exists before trying to start it
         if not avd_exists:
             logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
-            # Try to create the AVD
-            success, result = self.create_new_avd(email)
-            if not success:
-                logger.error(f"Failed to create AVD: {result}")
-                return False, f"Failed to create AVD for {email}: {result}"
-            # Update avd_name with newly created AVD
-            avd_name = result
+
+            # Check if we can use the seed clone for faster AVD creation
+            if self.avd_creator.is_seed_clone_ready():
+                logger.info("Seed clone is ready - using fast AVD copy method")
+                success, result = self.avd_creator.copy_avd_from_seed_clone(email)
+                if success:
+                    avd_name = result
+                    logger.info(f"Successfully created AVD {avd_name} from seed clone for {email}")
+                else:
+                    logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
+                    # Fall back to normal AVD creation
+                    success, result = self.create_new_avd(email)
+                    if not success:
+                        logger.error(f"Failed to create AVD: {result}")
+                        return False, f"Failed to create AVD for {email}: {result}"
+                    avd_name = result
+            else:
+                # Seed clone not ready, use normal AVD creation
+                logger.info("Seed clone not ready, using normal AVD creation")
+                success, result = self.create_new_avd(email)
+                if not success:
+                    logger.error(f"Failed to create AVD: {result}")
+                    return False, f"Failed to create AVD for {email}: {result}"
+                avd_name = result
+
+            # Update profile with new AVD
             self.register_profile(email, avd_name)
             logger.info(f"Created new AVD {avd_name} for {email}")
 
