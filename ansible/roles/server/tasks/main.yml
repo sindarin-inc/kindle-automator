@@ -176,21 +176,6 @@
     state: directory
     mode: "0755"
 
-# Set up idle check cronjob
-- name: Create idle check script
-  template:
-    src: idle_check_cron.sh.j2
-    dest: /opt/kindle-automator/scripts/idle_check_cron.sh
-    mode: "0755"
-
-# Add idle check cron job
-- name: Add idle check cron job
-  cron:
-    name: "Kindle Automator idle check"
-    user: root
-    minute: "*/15"
-    job: "/opt/kindle-automator/scripts/idle_check_cron.sh"
-    state: present
 
 # Configure logrotate for all Kindle Automator logs
 - name: Configure logrotate for Kindle Automator logs

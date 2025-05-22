@@ -10,6 +10,9 @@ import traceback
 import urllib.parse
 from pathlib import Path
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
 from flask import Flask, Response, make_response, request, send_file
@@ -2160,10 +2163,35 @@ def check_and_restart_adb_server():
             logger.error(f"Error restarting ADB server: {adb_e}")
 
 
+def run_idle_check():
+    """Run idle check using the IdleCheckResource directly."""
+    try:
+        logger.info("Running scheduled idle check...")
+        idle_check = IdleCheckResource(server_instance=server)
+        result, status_code = idle_check.get()
+        
+        if status_code == 200:
+            shut_down = result.get('shut_down', 0)
+            active = result.get('active', 0)
+            logger.info(f"Idle check completed: {shut_down} emulators shut down, {active} active")
+        else:
+            logger.error(f"Idle check failed with status {status_code}: {result}")
+    except Exception as e:
+        logger.error(f"Error during scheduled idle check: {e}")
+
+
 def cleanup_resources():
     """Clean up resources before exiting"""
     logger.info("=== Beginning graceful shutdown sequence ===")
     logger.info("Cleaning up resources before shutdown...")
+    
+    # Shutdown the scheduler if it exists
+    if hasattr(app, 'scheduler') and app.scheduler:
+        try:
+            logger.info("Shutting down APScheduler...")
+            app.scheduler.shutdown(wait=False)
+        except Exception as e:
+            logger.error(f"Error shutting down scheduler: {e}")
 
     # Clean up any active WebSocket proxies
     try:
@@ -2274,6 +2302,19 @@ def main():
     from server.utils.server_startup_utils import auto_restart_emulators_after_startup
 
     auto_restart_emulators_after_startup(server, delay=3.0)
+
+    # Initialize APScheduler for idle checks
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        func=run_idle_check,
+        trigger=CronTrigger(minute='0,15,30,45'),
+        id='idle_check',
+        name='Idle Emulator Check',
+        replace_existing=True
+    )
+    scheduler.start()
+    app.scheduler = scheduler
+    logger.info("Started APScheduler for idle checks (at :00, :15, :30, :45 each hour)")
 
     # Run the server directly, regardless of development mode
     run_server()
