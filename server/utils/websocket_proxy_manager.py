@@ -89,14 +89,22 @@ class WebSocketProxyManager:
             logger.info(f"Starting WebSocket proxy for {email}: {' '.join(cmd)}")
 
             # Create log files for this proxy instance
-            log_dir = "/tmp/rfbproxy_logs"
-            os.makedirs(log_dir, exist_ok=True)
+            # Use the project's logs directory
+            from pathlib import Path
+            from server.utils.cover_utils import slugify
+            
+            project_root = Path(__file__).resolve().parent.parent.parent
+            log_dir = project_root / "logs" / "rfbproxy"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Use the same slugify function used elsewhere for consistency
+            email_slug = slugify(email)
             timestamp = int(time.time())
-            stdout_log = f"{log_dir}/rfbproxy_{email}_{timestamp}.stdout.log"
-            stderr_log = f"{log_dir}/rfbproxy_{email}_{timestamp}.stderr.log"
+            stdout_log = log_dir / f"rfbproxy_{email_slug}_{timestamp}.stdout.log"
+            stderr_log = log_dir / f"rfbproxy_{email_slug}_{timestamp}.stderr.log"
             
             # Launch process with appropriate settings
-            with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
+            with open(str(stdout_log), "w") as stdout_file, open(str(stderr_log), "w") as stderr_file:
                 process = subprocess.Popen(
                     cmd,
                     stdout=stdout_file,
