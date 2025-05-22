@@ -407,7 +407,7 @@ class VNCInstanceManager:
         try:
             from views.core.avd_profile_manager import AVDProfileManager
 
-            avd_manager = AVDProfileManager()
+            avd_manager = AVDProfileManager.get_instance()
             success = avd_manager.set_user_field(
                 email, "was_running_at_restart", should_restart if should_restart else None
             )
@@ -433,7 +433,7 @@ class VNCInstanceManager:
         try:
             from views.core.avd_profile_manager import AVDProfileManager
 
-            avd_manager = AVDProfileManager()
+            avd_manager = AVDProfileManager.get_instance()
             running_emails = []
 
             # Check each profile for the was_running_at_restart flag
@@ -458,7 +458,7 @@ class VNCInstanceManager:
         try:
             from views.core.avd_profile_manager import AVDProfileManager
 
-            avd_manager = AVDProfileManager()
+            avd_manager = AVDProfileManager.get_instance()
 
             # Clear flags for all profiles
             cleared_count = 0

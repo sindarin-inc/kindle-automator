@@ -129,7 +129,7 @@ class DeviceDiscovery:
                         try:
                             from views.core.avd_profile_manager import AVDProfileManager
 
-                            avd_manager = AVDProfileManager()
+                            avd_manager = AVDProfileManager.get_instance()
                             if email in avd_manager.profiles_index:
                                 avd_manager.profiles_index[email]["emulator_id"] = emulator_id
                                 avd_manager._save_profiles_index()

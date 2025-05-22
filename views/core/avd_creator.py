@@ -404,7 +404,7 @@ class AVDCreator:
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
 
-                avd_manager = AVDProfileManager()
+                avd_manager = AVDProfileManager.get_instance()
                 avd_manager.set_user_field(email, "created_from_seed_clone", True)
                 logger.info(f"Marked {email} as created from seed clone")
             except Exception as e:

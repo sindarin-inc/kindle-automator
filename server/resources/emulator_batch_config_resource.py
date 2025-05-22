@@ -46,7 +46,7 @@ class EmulatorBatchConfigResource(Resource):
             logger.info(f"{CYAN}Starting batch configuration of all emulators{RESET}")
 
             # Initialize managers
-            avd_manager = AVDProfileManager()
+            avd_manager = AVDProfileManager.get_instance()
             shutdown_manager = EmulatorShutdownManager(self.server)
 
             # Get all profiles

@@ -196,7 +196,7 @@ class EmulatorManager:
                 if self.use_simplified_mode and avd_name:
                     from views.core.avd_profile_manager import AVDProfileManager
 
-                    profile_manager = AVDProfileManager()
+                    profile_manager = AVDProfileManager.get_instance()
                     if email in profile_manager.profiles_index:
                         profile = profile_manager.profiles_index[email]
                         if not profile.get("avd_name"):

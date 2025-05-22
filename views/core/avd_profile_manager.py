@@ -14,6 +14,9 @@ from views.core.emulator_manager import EmulatorManager
 
 logger = logging.getLogger(__name__)
 
+# Singleton instance
+_instance = None
+
 
 class AVDProfileManager:
     """
@@ -28,7 +31,28 @@ class AVDProfileManager:
     4. Track the currently active AVD/email
     """
 
+    @classmethod
+    def get_instance(cls, base_dir: str = "/opt/android-sdk") -> "AVDProfileManager":
+        """
+        Get the singleton instance of AVDProfileManager.
+
+        Args:
+            base_dir: Base directory for Android SDK (default: "/opt/android-sdk")
+
+        Returns:
+            AVDProfileManager: The singleton instance
+        """
+        global _instance
+        if _instance is None:
+            _instance = cls(base_dir)
+        return _instance
+
     def __init__(self, base_dir: str = "/opt/android-sdk"):
+        # Check if this is being called directly or through get_instance()
+        global _instance
+        if _instance is not None and _instance is not self:
+            logger.warning("AVDProfileManager initialized directly. Use get_instance() instead.")
+
         # Detect host architecture and operating system first
         self.host_arch = self._detect_host_architecture()
         self.is_macos = platform.system() == "Darwin"

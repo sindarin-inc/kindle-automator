@@ -739,7 +739,7 @@ class EmulatorLauncher:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
 
-                avd_manager = AVDProfileManager()
+                avd_manager = AVDProfileManager.get_instance()
                 saved_snapshot = avd_manager.get_user_field(email, "last_snapshot")
 
                 if saved_snapshot and self.has_snapshot(email, saved_snapshot):
@@ -916,7 +916,7 @@ class EmulatorLauncher:
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
 
-                avd_manager = AVDProfileManager()
+                avd_manager = AVDProfileManager.get_instance()
                 if email in avd_manager.profiles_index:
                     avd_manager.profiles_index[email]["emulator_id"] = emulator_id
                     avd_manager._save_profiles_index()

@@ -26,7 +26,7 @@ class AutomationServer:
 
         # Initialize the AVD profile manager
         self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
-        self.profile_manager = AVDProfileManager(base_dir=self.android_home)
+        self.profile_manager = AVDProfileManager.get_instance(base_dir=self.android_home)
 
         # Flag to track if seed clone preparation has been attempted
         self.seed_clone_prepared = False

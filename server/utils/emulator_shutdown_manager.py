@@ -167,7 +167,7 @@ class EmulatorShutdownManager:
                         try:
                             from views.core.avd_profile_manager import AVDProfileManager
 
-                            avd_manager = AVDProfileManager()
+                            avd_manager = AVDProfileManager.get_instance()
                             avd_manager.set_user_field(email, "last_snapshot", snapshot_name)
                             logger.info(f"Saved snapshot name '{snapshot_name}' to user profile for {email}")
                         except Exception as profile_error:
