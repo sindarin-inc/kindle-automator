@@ -760,6 +760,10 @@ class EmulatorLauncher:
                             f"AVD for {email} was created from seed clone, checking for snapshot '{AVDCreator.SEED_CLONE_SNAPSHOT}'"
                         )
                         # Check if we have the seed clone snapshot
+                        # List all available snapshots first
+                        all_snapshots = self.list_snapshots(email)
+                        logger.info(f"All available snapshots for {email}: {all_snapshots}")
+
                         has_seed_snapshot = self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT)
                         logger.info(
                             f"has_snapshot({email}, '{AVDCreator.SEED_CLONE_SNAPSHOT}') returned: {has_seed_snapshot}"

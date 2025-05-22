@@ -86,7 +86,7 @@ class AVDProfileManager:
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
 
         # Load profile index if it exists, otherwise create empty one
-        self.profiles_index = self._load_profiles_index()
+        self._load_profiles_index()
 
         # Load user preferences from the profiles_index
         self.user_preferences = self._load_user_preferences()
@@ -224,7 +224,9 @@ class AVDProfileManager:
         if os.path.exists(self.users_file):
             try:
                 with open(self.users_file, "r") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    self.profiles_index = data
+                    return data
             except Exception as e:
                 logger.error(f"Error loading profiles index: {e}")
                 return {}
@@ -324,6 +326,9 @@ class AVDProfileManager:
             bool: True if successful, False otherwise
         """
         try:
+            # Reload profiles to ensure we have the latest data
+            self._load_profiles_index()
+
             # Make sure the email exists in profiles_index
             if email not in self.profiles_index:
                 logger.warning(f"Cannot update field {field}: email {email} not found in profiles_index")
@@ -342,7 +347,7 @@ class AVDProfileManager:
 
             # Save the updated profiles_index
             self._save_profiles_index()
-            logger.info(f"Updated {section + '.' if section else ''}field {field} for {email}")
+            logger.info(f"Updated {section + '.' if section else ''}field {field} for {email} to {value}")
             return True
         except Exception as e:
             logger.error(f"Error setting user field {field} for {email}: {e}")
