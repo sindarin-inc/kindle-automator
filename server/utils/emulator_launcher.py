@@ -746,15 +746,31 @@ class EmulatorLauncher:
                     snapshot_name = saved_snapshot
                     logger.info(f"Using saved snapshot '{snapshot_name}' from user profile for {email}")
                 else:
+                    # Refresh profiles to ensure we have the latest data
+                    avd_manager._load_profiles_index()
+
                     # Check if this AVD was created from seed clone - if so, use seed clone snapshot
-                    if avd_manager.get_user_field(email, "created_from_seed_clone"):
+                    created_from_seed = avd_manager.get_user_field(email, "created_from_seed_clone")
+                    logger.info(
+                        f"Checking seed clone status for {email}: created_from_seed_clone={created_from_seed}"
+                    )
+
+                    if created_from_seed:
+                        logger.info(
+                            f"AVD for {email} was created from seed clone, checking for snapshot '{AVDCreator.SEED_CLONE_SNAPSHOT}'"
+                        )
                         # Check if we have the seed clone snapshot
-                        if self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT):
+                        has_seed_snapshot = self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT)
+                        logger.info(
+                            f"has_snapshot({email}, '{AVDCreator.SEED_CLONE_SNAPSHOT}') returned: {has_seed_snapshot}"
+                        )
+
+                        if has_seed_snapshot:
                             snapshot_name = AVDCreator.SEED_CLONE_SNAPSHOT
                             logger.info(f"Using seed clone snapshot '{snapshot_name}' for {email}")
                         else:
                             logger.warning(
-                                f"User was created from seed clone but seed clone snapshot not found"
+                                f"User was created from seed clone but seed clone snapshot '{AVDCreator.SEED_CLONE_SNAPSHOT}' not found"
                             )
 
                     if not snapshot_name:
@@ -815,7 +831,7 @@ class EmulatorLauncher:
                 logger.info(f"Using snapshot '{snapshot_name}' for {email} for faster startup")
                 common_args.extend(["-snapshot", snapshot_name])
             else:
-                logger.info(f"No library park snapshot found for {email}, starting emulator normally")
+                logger.info(f"No snapshot found for {email}, starting emulator normally")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":
