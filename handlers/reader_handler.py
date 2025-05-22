@@ -408,6 +408,13 @@ class ReaderHandler:
                 logger.error("Failed to handle Download Limit dialog detected immediately")
                 return False
 
+        # Check for Read and Listen dialog (audible dialog)
+        from views.common.dialog_handler import DialogHandler
+        dialog_handler = DialogHandler(self.driver)
+        if dialog_handler.check_for_read_and_listen_dialog():
+            logger.info("Read and Listen dialog detected and handled - continuing with reading flow")
+            # Continue to reading view handling below
+
         # Wait for the reading view to appear
         try:
             # Custom wait condition to check for any of the reading view identifiers

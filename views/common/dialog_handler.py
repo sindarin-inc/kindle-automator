@@ -9,6 +9,8 @@ from server.logging_config import store_page_source
 from views.common.dialog_strategies import (
     APP_NOT_RESPONDING_DIALOG_IDENTIFIERS,
     DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
+    READ_AND_LISTEN_CLOSE_BUTTON,
+    READ_AND_LISTEN_DIALOG_IDENTIFIERS,
 )
 from views.library.interaction_strategies import INVALID_ITEM_DIALOG_BUTTONS
 from views.library.view_strategies import INVALID_ITEM_DIALOG_IDENTIFIERS
@@ -138,6 +140,56 @@ class DialogHandler:
             logger.error(f"Error in check_for_app_not_responding_dialog: {e}")
             return False
 
+    def check_for_read_and_listen_dialog(self):
+        """Check for and handle the 'Read and Listen' dialog.
+
+        Returns:
+            bool: True if dialog was found and handled (by clicking the X button),
+                False otherwise
+        """
+        try:
+            for strategy, locator in READ_AND_LISTEN_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info("Found 'Read and Listen' dialog")
+
+                        # Store page source for diagnostics
+                        store_page_source(
+                            self.driver.page_source,
+                            "read_and_listen_dialog_detected",
+                        )
+
+                        # Click the X button
+                        x_clicked = False
+                        for btn_strategy, btn_locator in READ_AND_LISTEN_CLOSE_BUTTON:
+                            try:
+                                x_btn = self.driver.find_element(btn_strategy, btn_locator)
+                                if x_btn.is_displayed():
+                                    x_btn.click()
+                                    logger.info("Clicked X button on 'Read and Listen' dialog")
+                                    x_clicked = True
+                                    time.sleep(1)  # Wait for dialog to dismiss
+                                    break
+                            except:
+                                continue
+
+                        if not x_clicked:
+                            logger.warning("Could not click X button on 'Read and Listen' dialog")
+
+                        # Return True to indicate dialog was found and handled
+                        return True
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error checking for 'Read and Listen' dialog: {e}")
+
+            # Dialog not found
+            return False
+        except Exception as e:
+            logger.error(f"Error in check_for_read_and_listen_dialog: {e}")
+            return False
+
     def check_all_dialogs(self, book_title=None, context=""):
         """Check for all known dialogs and handle them appropriately.
 
@@ -158,6 +210,10 @@ class DialogHandler:
         # Check for App Not Responding dialog
         if self.check_for_app_not_responding_dialog():
             return True, "app_not_responding"
+
+        # Check for Read and Listen dialog
+        if self.check_for_read_and_listen_dialog():
+            return True, "read_and_listen"
 
         # Add checks for other dialogs as needed
 

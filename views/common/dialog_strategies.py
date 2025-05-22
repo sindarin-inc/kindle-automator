@@ -60,6 +60,21 @@ DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/rlr_cancel"),
 ]
 
+# Read and Listen dialog identifiers
+READ_AND_LISTEN_DIALOG_IDENTIFIERS = [
+    # Title that says "Read and listen"
+    (AppiumBy.ID, "com.amazon.kindle:id/brochure_pager_title"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Read and listen']"),
+    # Brochure layout container
+    (AppiumBy.ID, "com.amazon.kindle:id/brochure_layout"),
+]
+
+# Read and Listen dialog close button
+READ_AND_LISTEN_CLOSE_BUTTON = [
+    (AppiumBy.ID, "com.amazon.kindle:id/brochure_x_button"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Close' and @resource-id='com.amazon.kindle:id/brochure_x_button']"),
+]
+
 # Dialog interaction strategies
 APP_NOT_RESPONDING_CLOSE_APP_BUTTON = (
     AppiumBy.XPATH,
