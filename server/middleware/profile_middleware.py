@@ -127,6 +127,11 @@ def ensure_user_profile_loaded(f):
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
         avd_exists = os.path.exists(avd_path)
 
+        # If AVD doesn't exist and this is the /auth endpoint, try to prepare seed clone
+        if not avd_exists and request.path.endswith("/auth"):
+            logger.info(f"AVD doesn't exist for {sindarin_email}, preparing seed clone for fast creation")
+            server.ensure_seed_clone_prepared()
+
         # Check if the AVD is already running for this email - make sure we use the actual email, not a normalized version
         # Important: Always pass the original email to find_running_emulator_for_email, never a normalized version
         is_running, emulator_id, _ = server.profile_manager.find_running_emulator_for_email(sindarin_email)

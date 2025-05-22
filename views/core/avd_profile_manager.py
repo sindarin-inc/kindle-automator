@@ -103,6 +103,104 @@ class AVDProfileManager:
         """
         return self.avd_creator.get_avd_name_from_email(email)
 
+    def _start_emulator_and_create_snapshot(self, email: str, snapshot_name: str) -> Tuple[bool, str]:
+        """
+        Helper method to start an emulator, wait for it to be ready, create a snapshot, and stop it.
+
+        Args:
+            email: Email of the emulator to start
+            snapshot_name: Name of the snapshot to create
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        # Start the emulator
+        logger.info(f"Starting emulator for {email}")
+        if not self.emulator_manager.start_emulator_with_retries(email):
+            return False, "Failed to start emulator"
+
+        # Wait for emulator to be ready
+        logger.info("Waiting for emulator to be ready...")
+        from server.utils.emulator_launcher import EmulatorLauncher
+
+        launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+
+        # Wait up to 2 minutes for emulator to be ready
+        for i in range(24):  # 24 * 5 seconds = 2 minutes
+            if launcher.is_emulator_ready(email):
+                logger.info("Emulator is ready")
+                break
+            time.sleep(5)
+        else:
+            return False, "Emulator failed to become ready"
+
+        # Take snapshot
+        logger.info(f"Creating snapshot: {snapshot_name}")
+        if launcher.save_snapshot(email, snapshot_name):
+            logger.info(f"Successfully created snapshot: {snapshot_name}")
+            # Stop the emulator
+            self.emulator_manager.emulator_launcher.stop_emulator(email)
+            return True, "Snapshot created successfully"
+        else:
+            return False, "Failed to create snapshot"
+
+    def ensure_seed_clone_ready(self) -> Tuple[bool, str]:
+        """
+        Ensure the seed clone AVD is ready for use. This includes:
+        1. Creating the seed clone AVD if it doesn't exist
+        2. Starting it and waiting for it to be ready
+        3. Taking a snapshot before Kindle installation
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            # Check if seed clone already exists and has snapshot
+            if self.avd_creator.is_seed_clone_ready():
+                logger.info("Seed clone AVD is already ready")
+                return True, "Seed clone is ready"
+
+            seed_email = AVDCreator.SEED_CLONE_EMAIL
+
+            # Check if seed clone AVD exists but needs snapshot
+            if self.avd_creator.has_seed_clone() and not self.avd_creator.has_seed_clone_snapshot():
+                logger.info("Seed clone AVD exists but needs snapshot")
+
+                # Check if emulator is already running
+                if self.emulator_manager.is_emulator_running(seed_email):
+                    logger.info("Seed clone emulator is already running")
+                else:
+                    # Start emulator and create snapshot
+                    success, message = self._start_emulator_and_create_snapshot(
+                        seed_email, AVDCreator.SEED_CLONE_SNAPSHOT
+                    )
+                    if success:
+                        return True, "Seed clone is now ready"
+                    else:
+                        return False, f"Failed to prepare seed clone: {message}"
+
+            # Seed clone doesn't exist at all, create it
+            logger.info("Creating seed clone AVD for fast user initialization")
+            success, avd_name = self.avd_creator.create_seed_clone_avd()
+            if not success:
+                return False, f"Failed to create seed clone AVD: {avd_name}"
+
+            # Register the seed clone in profiles
+            self.register_profile(seed_email, avd_name)
+
+            # Start emulator and create snapshot
+            success, message = self._start_emulator_and_create_snapshot(
+                seed_email, AVDCreator.SEED_CLONE_SNAPSHOT
+            )
+            if success:
+                return True, "Seed clone is now ready"
+            else:
+                return False, f"Failed to prepare seed clone: {message}"
+
+        except Exception as e:
+            logger.error(f"Error ensuring seed clone ready: {e}")
+            return False, str(e)
+
     def _detect_host_architecture(self) -> str:
         """
         Detect the host machine's architecture.
@@ -815,6 +913,36 @@ class AVDProfileManager:
         """
         return self.avd_creator.create_new_avd(email)
 
+    def _create_avd_with_seed_clone_fallback(self, email: str, normalized_avd_name: str) -> str:
+        """
+        Create a new AVD using seed clone if available, otherwise fall back to normal creation.
+
+        Args:
+            email: User's email address
+            normalized_avd_name: The normalized AVD name for this email
+
+        Returns:
+            str: The final AVD name
+        """
+        # Check if we can use the seed clone for faster AVD creation
+        if self.avd_creator.is_seed_clone_ready():
+            logger.info("Seed clone is ready - using fast AVD copy method")
+            success, result = self.avd_creator.copy_avd_from_seed_clone(email)
+            if success:
+                logger.info(f"Successfully created AVD {result} from seed clone for {email}")
+                return result
+            else:
+                logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
+
+        # Seed clone not ready or failed, use normal AVD creation
+        logger.info("Using normal AVD creation")
+        success, result = self.create_new_avd(email)
+        if not success:
+            logger.warning(f"Failed to create AVD: {result}, but profile was registered")
+            return normalized_avd_name
+        else:
+            return result
+
     def _get_preference_value(self, email: str, key: str, default=None):
         """
         Get a preference value for a user from the preferences section.
@@ -1089,17 +1217,12 @@ class AVDProfileManager:
             self.register_profile(email, normalized_avd_name)
             logger.info(f"Registered AVD {normalized_avd_name} for email {email} in profiles_index")
 
-            # Try to create the AVD - even if this fails, we'll have the profile registered
-            success, result = self.create_new_avd(email)
-            if not success:
-                logger.warning(f"Failed to create AVD: {result}, but profile was registered")
-                # Set AVD name to the one we registered to continue
-                avd_name = normalized_avd_name
-            else:
-                avd_name = result
-                # Update the profile with the final AVD name if different
-                if avd_name != normalized_avd_name:
-                    self.register_profile(email, avd_name)
+            # Create AVD using seed clone if available
+            avd_name = self._create_avd_with_seed_clone_fallback(email, normalized_avd_name)
+
+            # Update the profile with the final AVD name if different
+            if avd_name != normalized_avd_name:
+                self.register_profile(email, avd_name)
 
         # Check if this AVD actually exists - it might not if we're using
         # manually registered AVDs but the Android Studio AVD was renamed or deleted

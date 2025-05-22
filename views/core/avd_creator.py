@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import subprocess
 from typing import List, Optional, Tuple
 
@@ -10,6 +11,10 @@ class AVDCreator:
     """
     Handles the creation and configuration of Android Virtual Devices (AVDs).
     """
+
+    # Seed clone constants
+    SEED_CLONE_EMAIL = "seed@clone.local"
+    SEED_CLONE_SNAPSHOT = "pre_kindle_install"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
@@ -316,3 +321,167 @@ class AVDCreator:
 
         except Exception as e:
             logger.error(f"Error configuring AVD: {e}")
+
+    def get_seed_clone_avd_name(self) -> str:
+        """Get the AVD name for the seed clone."""
+        return self.get_avd_name_from_email(self.SEED_CLONE_EMAIL)
+
+    def has_seed_clone(self) -> bool:
+        """Check if the seed clone AVD exists."""
+        seed_clone_name = self.get_seed_clone_avd_name()
+        avd_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
+        return os.path.exists(avd_path)
+
+    def has_seed_clone_snapshot(self) -> bool:
+        """Check if the seed clone has the pre-kindle install snapshot."""
+        if not self.has_seed_clone():
+            return False
+
+        seed_clone_name = self.get_seed_clone_avd_name()
+        avd_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
+        snapshots_dir = os.path.join(avd_path, "snapshots")
+        snapshot_path = os.path.join(snapshots_dir, self.SEED_CLONE_SNAPSHOT)
+
+        return os.path.exists(snapshot_path)
+
+    def create_seed_clone_avd(self) -> Tuple[bool, str]:
+        """
+        Create the seed clone AVD that will be used as a template for all new users.
+
+        Returns:
+            Tuple[bool, str]: (success, avd_name or error message)
+        """
+        logger.info("Creating seed clone AVD for fast user initialization")
+        return self.create_new_avd(self.SEED_CLONE_EMAIL)
+
+    def copy_avd_from_seed_clone(self, email: str) -> Tuple[bool, str]:
+        """
+        Copy the seed clone AVD to create a new AVD for the given email.
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            Tuple[bool, str]: (success, avd_name or error message)
+        """
+        if not self.has_seed_clone():
+            logger.error("Seed clone AVD does not exist")
+            return False, "Seed clone AVD does not exist"
+
+        if not self.has_seed_clone_snapshot():
+            logger.error("Seed clone snapshot does not exist")
+            return False, "Seed clone snapshot does not exist"
+
+        try:
+            # Get AVD names
+            seed_clone_name = self.get_seed_clone_avd_name()
+            new_avd_name = self.get_avd_name_from_email(email)
+
+            # Source and destination paths
+            seed_clone_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
+            new_avd_path = os.path.join(self.avd_dir, f"{new_avd_name}.avd")
+
+            # Check if destination already exists
+            if os.path.exists(new_avd_path):
+                logger.info(f"AVD {new_avd_name} already exists, reusing it")
+                return True, new_avd_name
+
+            logger.info(f"Copying seed clone AVD to create {new_avd_name}")
+
+            # Copy the entire AVD directory
+            shutil.copytree(seed_clone_path, new_avd_path)
+
+            # Also copy the .ini file
+            seed_clone_ini = os.path.join(self.avd_dir, f"{seed_clone_name}.ini")
+            new_avd_ini = os.path.join(self.avd_dir, f"{new_avd_name}.ini")
+            if os.path.exists(seed_clone_ini):
+                shutil.copy2(seed_clone_ini, new_avd_ini)
+
+            # Update the AVD configuration files to reference the new name
+            self._update_avd_config_for_new_name(seed_clone_name, new_avd_name, email)
+
+            # Mark this AVD as created from seed clone in the user profile
+            try:
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                avd_manager = AVDProfileManager()
+                avd_manager.set_user_field(email, "created_from_seed_clone", True)
+                logger.info(f"Marked {email} as created from seed clone")
+            except Exception as e:
+                logger.warning(f"Could not mark AVD as created from seed clone: {e}")
+
+            logger.info(f"Successfully copied seed clone AVD to {new_avd_name}")
+            return True, new_avd_name
+
+        except Exception as e:
+            logger.error(f"Error copying seed clone AVD: {e}")
+            return False, str(e)
+
+    def _replace_avd_name_in_file(self, file_path: str, old_avd_name: str, new_avd_name: str) -> bool:
+        """
+        Replace AVD name references in a configuration file.
+
+        Args:
+            file_path: Path to the file to update
+            old_avd_name: Old AVD name to replace
+            new_avd_name: New AVD name
+
+        Returns:
+            bool: True if file was updated, False if file doesn't exist
+        """
+        if not os.path.exists(file_path):
+            return False
+
+        try:
+            with open(file_path, "r") as f:
+                content = f.read()
+
+            # Replace references to old AVD name
+            updated_content = content.replace(old_avd_name, new_avd_name)
+
+            # Only write if content changed
+            if content != updated_content:
+                with open(file_path, "w") as f:
+                    f.write(updated_content)
+
+            return True
+        except Exception as e:
+            logger.error(f"Error updating file {file_path}: {e}")
+            return False
+
+    def _update_avd_config_for_new_name(self, old_avd_name: str, new_avd_name: str, email: str) -> None:
+        """
+        Update AVD configuration files to reference the new AVD name instead of the seed clone.
+
+        Args:
+            old_avd_name: The seed clone AVD name
+            new_avd_name: The new AVD name
+            email: The user's email address
+        """
+        try:
+            # Update the .ini file
+            ini_path = os.path.join(self.avd_dir, f"{new_avd_name}.ini")
+            if self._replace_avd_name_in_file(ini_path, old_avd_name, new_avd_name):
+                logger.info(f"Updated {new_avd_name}.ini file")
+
+            # Update config.ini inside the AVD directory
+            config_path = os.path.join(self.avd_dir, f"{new_avd_name}.avd", "config.ini")
+            if self._replace_avd_name_in_file(config_path, old_avd_name, new_avd_name):
+                logger.info(f"Updated config.ini for {new_avd_name}")
+
+            # Update hardware-qemu.ini if it exists
+            hw_qemu_path = os.path.join(self.avd_dir, f"{new_avd_name}.avd", "hardware-qemu.ini")
+            if self._replace_avd_name_in_file(hw_qemu_path, old_avd_name, new_avd_name):
+                logger.info(f"Updated hardware-qemu.ini for {new_avd_name}")
+
+        except Exception as e:
+            logger.error(f"Error updating AVD config files: {e}")
+
+    def is_seed_clone_ready(self) -> bool:
+        """
+        Check if the seed clone is ready to be used (has AVD and snapshot).
+
+        Returns:
+            bool: True if seed clone is ready, False otherwise
+        """
+        return self.has_seed_clone() and self.has_seed_clone_snapshot()

@@ -28,6 +28,9 @@ class AutomationServer:
         self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         self.profile_manager = AVDProfileManager(base_dir=self.android_home)
 
+        # Flag to track if seed clone preparation has been attempted
+        self.seed_clone_prepared = False
+
     # automator property has been removed - use get_automator(email) instead
 
     def get_automator(self, email):
@@ -281,3 +284,34 @@ class AutomationServer:
             The last activity timestamp or None if not found
         """
         return self.last_activity.get(email)
+
+    def ensure_seed_clone_prepared(self):
+        """Ensure the seed clone AVD is prepared for fast user initialization.
+
+        This method will be called lazily when the first new user needs to be created.
+        It ensures that a seed clone AVD exists with a pre-boot snapshot.
+
+        Returns:
+            bool: True if seed clone is ready, False otherwise
+        """
+        # Skip if already prepared
+        if self.seed_clone_prepared:
+            return True
+
+        try:
+            logger.info("Checking if seed clone AVD needs to be prepared...")
+            success, message = self.profile_manager.ensure_seed_clone_ready()
+
+            self.seed_clone_prepared = success
+
+            if success:
+                logger.info(f"Seed clone AVD is ready: {message}")
+            else:
+                logger.error(f"Failed to prepare seed clone AVD: {message}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error preparing seed clone AVD: {e}")
+            self.seed_clone_prepared = False
+            return False

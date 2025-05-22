@@ -742,6 +742,7 @@ class EmulatorLauncher:
 
             # First check if the user profile has a saved snapshot name
             try:
+                from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
 
                 avd_manager = AVDProfileManager()
@@ -751,28 +752,40 @@ class EmulatorLauncher:
                     snapshot_name = saved_snapshot
                     logger.info(f"Using saved snapshot '{snapshot_name}' from user profile for {email}")
                 else:
-                    # Fall back to looking for the most recent library park snapshot
-                    # Get the AVD identifier for snapshot naming
-                    if avd_name and avd_name.startswith("KindleAVD_"):
-                        avd_identifier = avd_name.replace("KindleAVD_", "")
-                    else:
-                        avd_identifier = email.replace("@", "_").replace(".", "_")
+                    # Check if this AVD was created from seed clone - if so, use seed clone snapshot
+                    if avd_manager.get_user_field(email, "created_from_seed_clone"):
+                        # Check if we have the seed clone snapshot
+                        if self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT):
+                            snapshot_name = AVDCreator.SEED_CLONE_SNAPSHOT
+                            logger.info(f"Using seed clone snapshot '{snapshot_name}' for {email}")
+                        else:
+                            logger.warning(
+                                f"User was created from seed clone but seed clone snapshot not found"
+                            )
 
-                    # List all snapshots and find the most recent library park snapshot
-                    available_snapshots = self.list_snapshots(email)
-                    library_snapshots = [
-                        s for s in available_snapshots if s.startswith(f"library_park_{avd_identifier}_")
-                    ]
+                    if not snapshot_name:
+                        # Fall back to looking for the most recent library park snapshot
+                        # Get the AVD identifier for snapshot naming
+                        if avd_name and avd_name.startswith("KindleAVD_"):
+                            avd_identifier = avd_name.replace("KindleAVD_", "")
+                        else:
+                            avd_identifier = email.replace("@", "_").replace(".", "_")
 
-                    if library_snapshots:
-                        # Sort by timestamp embedded in the filename (newest first)
-                        library_snapshots.sort(reverse=True)
-                        snapshot_name = library_snapshots[0]
-                        logger.info(
-                            f"Found {len(library_snapshots)} library park snapshots, using most recent: {snapshot_name}"
-                        )
-                    else:
-                        logger.info(f"No library park snapshots found for {avd_identifier}")
+                        # List all snapshots and find the most recent library park snapshot
+                        available_snapshots = self.list_snapshots(email)
+                        library_snapshots = [
+                            s for s in available_snapshots if s.startswith(f"library_park_{avd_identifier}_")
+                        ]
+
+                        if library_snapshots:
+                            # Sort by timestamp embedded in the filename (newest first)
+                            library_snapshots.sort(reverse=True)
+                            snapshot_name = library_snapshots[0]
+                            logger.info(
+                                f"Found {len(library_snapshots)} library park snapshots, using most recent: {snapshot_name}"
+                            )
+                        else:
+                            logger.info(f"No library park snapshots found for {avd_identifier}")
             except Exception as e:
                 logger.warning(f"Error accessing user profile for snapshot lookup: {e}")
                 # Proceed without the saved snapshot
