@@ -1168,32 +1168,46 @@ class EmulatorLauncher:
         expected_emulator_id = None
         if avd_name and avd_name in self.running_emulators:
             expected_emulator_id, _ = self.running_emulators[avd_name]
+            logger.debug(f"Found cached emulator {expected_emulator_id} for AVD {avd_name}")
 
         # Get the emulator ID using get_running_emulator which handles AVD lookup
         emulator_id, _ = self.get_running_emulator(email)
         if not emulator_id:
-            logger.info(f"No running emulator found for {email}")
-
-            # Additional debugging: directly check adb devices output
-            try:
-                devices_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
+            # Special handling: if we have an expected emulator ID in cache, check if it's actually running
+            if expected_emulator_id:
+                logger.info(
+                    f"No emulator found via get_running_emulator for {email}, but have cached ID {expected_emulator_id}"
                 )
-                logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
+                # Verify the cached emulator is still running
+                if self._verify_emulator_running(expected_emulator_id, email):
+                    logger.info(f"Cached emulator {expected_emulator_id} is still running, using it")
+                    emulator_id = expected_emulator_id
+                else:
+                    logger.info(f"Cached emulator {expected_emulator_id} is not running anymore")
 
-                # If expected_emulator_id is in the output but not recognized, log this discrepancy
-                if expected_emulator_id and expected_emulator_id in devices_result.stdout:
-                    logger.warning(
-                        f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
+            if not emulator_id:
+                logger.info(f"No running emulator found for {email}")
+
+                # Additional debugging: directly check adb devices output
+                try:
+                    devices_result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
                     )
-            except Exception as e:
-                logger.error(f"Error during direct adb devices check: {e}")
+                    logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
 
-            return False
+                    # If expected_emulator_id is in the output but not recognized, log this discrepancy
+                    if expected_emulator_id and expected_emulator_id in devices_result.stdout:
+                        logger.warning(
+                            f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
+                        )
+                except Exception as e:
+                    logger.error(f"Error during direct adb devices check: {e}")
+
+                return False
 
         try:
             # Check process first - is the emulator still running?

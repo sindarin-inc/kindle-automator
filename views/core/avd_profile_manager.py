@@ -121,9 +121,9 @@ class AVDProfileManager:
 
         # Wait for emulator to be ready
         logger.info("Waiting for emulator to be ready...")
-        from server.utils.emulator_launcher import EmulatorLauncher
 
-        launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+        # Use the existing launcher from emulator_manager to maintain cache consistency
+        launcher = self.emulator_manager.emulator_launcher
 
         # Wait up to 2 minutes for emulator to be ready
         for i in range(24):  # 24 * 5 seconds = 2 minutes
@@ -139,7 +139,7 @@ class AVDProfileManager:
         if launcher.save_snapshot(email, snapshot_name):
             logger.info(f"Successfully created snapshot: {snapshot_name}")
             # Stop the emulator
-            self.emulator_manager.emulator_launcher.stop_emulator(email)
+            launcher.stop_emulator(email)
             return True, "Snapshot created successfully"
         else:
             return False, "Failed to create snapshot"
