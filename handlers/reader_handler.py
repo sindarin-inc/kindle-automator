@@ -410,6 +410,7 @@ class ReaderHandler:
 
         # Check for Read and Listen dialog (audible dialog)
         from views.common.dialog_handler import DialogHandler
+
         dialog_handler = DialogHandler(self.driver)
         if dialog_handler.check_for_read_and_listen_dialog():
             logger.info("Read and Listen dialog detected and handled - continuing with reading flow")

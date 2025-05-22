@@ -72,7 +72,10 @@ READ_AND_LISTEN_DIALOG_IDENTIFIERS = [
 # Read and Listen dialog close button
 READ_AND_LISTEN_CLOSE_BUTTON = [
     (AppiumBy.ID, "com.amazon.kindle:id/brochure_x_button"),
-    (AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Close' and @resource-id='com.amazon.kindle:id/brochure_x_button']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.ImageButton[@content-desc='Close' and @resource-id='com.amazon.kindle:id/brochure_x_button']",
+    ),
 ]
 
 # Dialog interaction strategies

@@ -10,10 +10,9 @@ import traceback
 import urllib.parse
 from pathlib import Path
 
+from appium.webdriver.common.appiumby import AppiumBy
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-
-from appium.webdriver.common.appiumby import AppiumBy
 from dotenv import load_dotenv
 from flask import Flask, Response, make_response, request, send_file
 from flask_restful import Api, Resource
@@ -2169,10 +2168,10 @@ def run_idle_check():
         logger.info("Running scheduled idle check...")
         idle_check = IdleCheckResource(server_instance=server)
         result, status_code = idle_check.get()
-        
+
         if status_code == 200:
-            shut_down = result.get('shut_down', 0)
-            active = result.get('active', 0)
+            shut_down = result.get("shut_down", 0)
+            active = result.get("active", 0)
             logger.info(f"Idle check completed: {shut_down} emulators shut down, {active} active")
         else:
             logger.error(f"Idle check failed with status {status_code}: {result}")
@@ -2184,9 +2183,9 @@ def cleanup_resources():
     """Clean up resources before exiting"""
     logger.info("=== Beginning graceful shutdown sequence ===")
     logger.info("Cleaning up resources before shutdown...")
-    
+
     # Shutdown the scheduler if it exists
-    if hasattr(app, 'scheduler') and app.scheduler:
+    if hasattr(app, "scheduler") and app.scheduler:
         try:
             logger.info("Shutting down APScheduler...")
             app.scheduler.shutdown(wait=False)
@@ -2307,10 +2306,10 @@ def main():
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(
         func=run_idle_check,
-        trigger=CronTrigger(minute='0,15,30,45'),
-        id='idle_check',
-        name='Idle Emulator Check',
-        replace_existing=True
+        trigger=CronTrigger(minute="0,15,30,45"),
+        id="idle_check",
+        name="Idle Emulator Check",
+        replace_existing=True,
     )
     scheduler.start()
     app.scheduler = scheduler
