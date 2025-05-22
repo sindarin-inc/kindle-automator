@@ -88,14 +88,23 @@ class WebSocketProxyManager:
 
             logger.info(f"Starting WebSocket proxy for {email}: {' '.join(cmd)}")
 
+            # Create log files for this proxy instance
+            log_dir = "/tmp/rfbproxy_logs"
+            os.makedirs(log_dir, exist_ok=True)
+            timestamp = int(time.time())
+            stdout_log = f"{log_dir}/rfbproxy_{email}_{timestamp}.stdout.log"
+            stderr_log = f"{log_dir}/rfbproxy_{email}_{timestamp}.stderr.log"
+            
             # Launch process with appropriate settings
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,  # Allows the process to run independently
-            )
+            with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    text=True,
+                    start_new_session=True,  # Allows the process to run independently
+                )
+                logger.info(f"rfbproxy logs: stdout={stdout_log}, stderr={stderr_log}")
 
             # Give it a moment to start and check if it's still running
             time.sleep(0.5)
