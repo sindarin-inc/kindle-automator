@@ -721,7 +721,6 @@ class AVDProfileManager:
 
                 return profile
 
-        logger.warning("No running emulators or profiles found")
         return None
 
     def register_profile(self, email: str, avd_name: str, vnc_instance: int = None) -> None:
