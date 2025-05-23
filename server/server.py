@@ -1420,16 +1420,33 @@ class AuthResource(Resource):
 
         # If recreate is requested, delete both user AVD and seed clone AVD, then recreate
         if recreate:
-            logger.info(f"Recreate requested for {sindarin_email}, deleting AVDs and cleaning up")
+            logger.info(f"Recreate requested for {sindarin_email}, force deleting AVDs and cleaning up")
 
-            # Get profile manager to access AVD creator
+            # Import necessary modules
+            import shutil
             from views.core.avd_creator import AVDCreator
             from views.core.avd_profile_manager import AVDProfileManager
 
             profile_manager = AVDProfileManager.get_instance()
             avd_creator = profile_manager.avd_creator
 
-            # First clean up the automator
+            # First stop any running emulators
+            from server.utils.emulator_launcher import EmulatorLauncher
+            launcher = EmulatorLauncher()
+            
+            # Stop user's emulator if running
+            if launcher.is_emulator_running(sindarin_email):
+                logger.info(f"Stopping running emulator for {sindarin_email}")
+                launcher.stop_emulator(sindarin_email)
+                time.sleep(2)  # Give it time to shut down
+                
+            # Stop seed clone emulator if running
+            if launcher.is_emulator_running(AVDCreator.SEED_CLONE_EMAIL):
+                logger.info("Stopping running seed clone emulator")
+                launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                time.sleep(2)  # Give it time to shut down
+
+            # Clean up the automator
             if sindarin_email in server.automators:
                 logger.info(f"Cleaning up existing automator for {sindarin_email}")
                 automator = server.automators[sindarin_email]
@@ -1437,40 +1454,54 @@ class AuthResource(Resource):
                     automator.cleanup()
                 del server.automators[sindarin_email]
 
-            # Delete the user's AVD if it exists
-            logger.info(f"Checking if AVD exists for {sindarin_email}")
+            # Force delete the user's AVD directory
             avd_name = avd_creator.get_avd_name_from_email(sindarin_email)
             avd_path = os.path.join(avd_creator.avd_dir, f"{avd_name}.avd")
+            avd_ini_path = os.path.join(avd_creator.avd_dir, f"{avd_name}.ini")
+            
+            logger.info(f"Force deleting user AVD at {avd_path}")
             if os.path.exists(avd_path):
-                logger.info(f"Deleting AVD for {sindarin_email}")
-                success, msg = avd_creator.delete_avd(sindarin_email)
-                if success:
-                    logger.info(f"User AVD deleted: {msg}")
-                else:
-                    logger.warning(f"Failed to delete user AVD: {msg}")
-            else:
-                logger.info(f"No AVD found for {sindarin_email}, skipping deletion")
+                shutil.rmtree(avd_path, ignore_errors=True)
+                logger.info(f"Deleted AVD directory: {avd_path}")
+            if os.path.exists(avd_ini_path):
+                try:
+                    os.remove(avd_ini_path)
+                    logger.info(f"Deleted AVD ini file: {avd_ini_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete AVD ini file: {e}")
 
-            # Delete the seed clone AVD if it exists
-            logger.info("Checking if seed clone AVD exists")
-            if avd_creator.has_seed_clone():
-                logger.info("Deleting seed clone AVD")
-                success, msg = avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
-                if success:
-                    logger.info(f"Seed clone AVD deleted: {msg}")
-                else:
-                    logger.warning(f"Failed to delete seed clone AVD: {msg}")
-            else:
-                logger.info("No seed clone AVD found, skipping deletion")
+            # Force delete the seed clone AVD directory
+            seed_avd_name = avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
+            seed_avd_path = os.path.join(avd_creator.avd_dir, f"{seed_avd_name}.avd")
+            seed_avd_ini_path = os.path.join(avd_creator.avd_dir, f"{seed_avd_name}.ini")
+            
+            logger.info(f"Force deleting seed clone AVD at {seed_avd_path}")
+            if os.path.exists(seed_avd_path):
+                shutil.rmtree(seed_avd_path, ignore_errors=True)
+                logger.info(f"Deleted seed clone AVD directory: {seed_avd_path}")
+            if os.path.exists(seed_avd_ini_path):
+                try:
+                    os.remove(seed_avd_ini_path)
+                    logger.info(f"Deleted seed clone AVD ini file: {seed_avd_ini_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete seed clone AVD ini file: {e}")
+
+            # Clear any cached emulator data
+            launcher.running_emulators.pop(avd_name, None)
+            launcher.running_emulators.pop(seed_avd_name, None)
 
             # Remove the user from profiles index
             if sindarin_email in profile_manager.profiles_index:
                 del profile_manager.profiles_index[sindarin_email]
                 profile_manager._save_profiles_index()
                 logger.info(f"Removed {sindarin_email} from profiles index")
+                
+            # Force the profile manager to reload
+            profile_manager._load_profiles_index()
 
         # Get or create automator (this will create a new one if recreate was used)
-        automator = get_automator_for_request(request)
+        # The ensure_user_profile_loaded decorator should have already created the automator
+        automator = server.automators.get(sindarin_email)
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
