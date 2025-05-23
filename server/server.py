@@ -1373,13 +1373,15 @@ class AuthResource(Resource):
         launcher = profile_manager.emulator_manager.emulator_launcher
         
         # Stop user's emulator if running
-        if launcher.is_emulator_running(sindarin_email):
+        user_emulator_id, _ = launcher.get_running_emulator(sindarin_email)
+        if user_emulator_id:
             logger.info(f"Stopping running emulator for {sindarin_email}")
             launcher.stop_emulator(sindarin_email)
             time.sleep(2)  # Give it time to shut down
             
         # Stop seed clone emulator if running
-        if launcher.is_emulator_running(AVDCreator.SEED_CLONE_EMAIL):
+        seed_emulator_id, _ = launcher.get_running_emulator(AVDCreator.SEED_CLONE_EMAIL)
+        if seed_emulator_id:
             logger.info("Stopping running seed clone emulator")
             launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
             time.sleep(2)  # Give it time to shut down
