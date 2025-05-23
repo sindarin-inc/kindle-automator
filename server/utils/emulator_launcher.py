@@ -747,12 +747,7 @@ class EmulatorLauncher:
                 # Special handling for seed clone AVDs
                 created_from_seed = avd_manager.get_user_field(email, "created_from_seed_clone")
                 if created_from_seed:
-                    # Check if we still have the seed clone snapshot that we should convert to default_boot
-                    if self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT):
-                        logger.info(
-                            f"AVD was created from seed clone and has {AVDCreator.SEED_CLONE_SNAPSHOT} snapshot"
-                        )
-                        # Note: We might want to convert this to default_boot in the future
+                    logger.info(f"AVD was created from seed clone")
 
             except Exception as e:
                 logger.warning(f"Error accessing user profile for snapshot info: {e}")

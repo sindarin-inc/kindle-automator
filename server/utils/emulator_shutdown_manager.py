@@ -174,7 +174,7 @@ class EmulatorShutdownManager:
                         # No longer need to clean up old snapshots since we're using default_boot
                         logger.info("Using default_boot snapshot - no cleanup needed")
                     else:
-                        logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}")
+                        logger.error(f"Failed to save snapshot for {email}")
 
         try:
             # Stop the emulator

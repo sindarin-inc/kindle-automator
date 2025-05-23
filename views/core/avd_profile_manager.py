@@ -127,13 +127,12 @@ class AVDProfileManager:
         """
         return self.avd_creator.get_avd_name_from_email(email)
 
-    def _start_emulator_and_create_snapshot(self, email: str, snapshot_name: str) -> Tuple[bool, str]:
+    def _start_emulator_and_create_snapshot(self, email: str) -> Tuple[bool, str]:
         """
         Helper method to start an emulator, wait for it to be ready, create a snapshot, and stop it.
 
         Args:
             email: Email of the emulator to start
-            snapshot_name: Name of the snapshot to create
 
         Returns:
             Tuple[bool, str]: (success, message)
@@ -158,10 +157,10 @@ class AVDProfileManager:
         else:
             return False, "Emulator failed to become ready"
 
-        # Take snapshot
-        logger.info(f"Creating snapshot: {snapshot_name}")
-        if launcher.save_snapshot(email, snapshot_name):
-            logger.info(f"Successfully created snapshot: {snapshot_name}")
+        # Take snapshot (always saves to default)
+        logger.info(f"Creating snapshot for {email}")
+        if launcher.save_snapshot(email):
+            logger.info(f"Successfully created snapshot for {email}")
             # Stop the emulator
             launcher.stop_emulator(email)
             return True, "Snapshot created successfully"
@@ -195,9 +194,7 @@ class AVDProfileManager:
                     logger.info("Seed clone emulator is already running")
                 else:
                     # Start emulator and create snapshot
-                    success, message = self._start_emulator_and_create_snapshot(
-                        seed_email, AVDCreator.SEED_CLONE_SNAPSHOT
-                    )
+                    success, message = self._start_emulator_and_create_snapshot(seed_email)
                     if success:
                         return True, "Seed clone is now ready"
                     else:
@@ -213,9 +210,7 @@ class AVDProfileManager:
             self.register_profile(seed_email, avd_name)
 
             # Start emulator and create snapshot
-            success, message = self._start_emulator_and_create_snapshot(
-                seed_email, AVDCreator.SEED_CLONE_SNAPSHOT
-            )
+            success, message = self._start_emulator_and_create_snapshot(seed_email)
             if success:
                 return True, "Seed clone is now ready"
             else:

@@ -333,14 +333,15 @@ class AVDCreator:
         return os.path.exists(avd_path)
 
     def has_seed_clone_snapshot(self) -> bool:
-        """Check if the seed clone has the pre-kindle install snapshot."""
+        """Check if the seed clone has a snapshot (now always checks for default_boot)."""
         if not self.has_seed_clone():
             return False
 
         seed_clone_name = self.get_seed_clone_avd_name()
         avd_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
         snapshots_dir = os.path.join(avd_path, "snapshots")
-        snapshot_path = os.path.join(snapshots_dir, self.SEED_CLONE_SNAPSHOT)
+        # Now check for default_boot snapshot instead of named snapshot
+        snapshot_path = os.path.join(snapshots_dir, "default_boot")
 
         return os.path.exists(snapshot_path)
 
