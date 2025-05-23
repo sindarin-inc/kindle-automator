@@ -726,78 +726,37 @@ class EmulatorLauncher:
             if platform.system() != "Darwin":
                 env["DISPLAY"] = f":{display_num}"
 
-            # Check if there's a library snapshot for this AVD
-            snapshot_name = None
-
-            # First check if the user profile has a saved snapshot name
+            # No longer explicitly loading snapshots - the emulator will use default_boot automatically
+            # Log when the default_boot snapshot was last updated
             try:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
 
                 avd_manager = AVDProfileManager.get_instance()
-                saved_snapshot = avd_manager.get_user_field(email, "last_snapshot")
+                last_snapshot_timestamp = avd_manager.get_user_field(email, "last_snapshot_timestamp")
 
-                if saved_snapshot and self.has_snapshot(email, saved_snapshot):
-                    snapshot_name = saved_snapshot
-                    logger.info(f"Using saved snapshot '{snapshot_name}' from user profile for {email}")
-                else:
-                    # Refresh profiles to ensure we have the latest data
-                    avd_manager._load_profiles_index()
-
-                    # Check if this AVD was created from seed clone - if so, use seed clone snapshot
-                    created_from_seed = avd_manager.get_user_field(email, "created_from_seed_clone")
+                if last_snapshot_timestamp:
                     logger.info(
-                        f"Checking seed clone status for {email}: created_from_seed_clone={created_from_seed}"
+                        f"Default boot snapshot was last updated at {last_snapshot_timestamp} for {email}"
+                    )
+                else:
+                    logger.info(
+                        f"No snapshot timestamp found for {email}, emulator will use default boot if available"
                     )
 
-                    if created_from_seed:
+                # Special handling for seed clone AVDs
+                created_from_seed = avd_manager.get_user_field(email, "created_from_seed_clone")
+                if created_from_seed:
+                    # Check if we still have the seed clone snapshot that we should convert to default_boot
+                    if self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT):
                         logger.info(
-                            f"AVD for {email} was created from seed clone, checking for snapshot '{AVDCreator.SEED_CLONE_SNAPSHOT}'"
+                            f"AVD was created from seed clone and has {AVDCreator.SEED_CLONE_SNAPSHOT} snapshot"
                         )
-                        # Check if we have the seed clone snapshot
-                        # List all available snapshots first
-                        all_snapshots = self.list_snapshots(email)
-                        logger.info(f"All available snapshots for {email}: {all_snapshots}")
+                        # Note: We might want to convert this to default_boot in the future
 
-                        has_seed_snapshot = self.has_snapshot(email, AVDCreator.SEED_CLONE_SNAPSHOT)
-                        logger.info(
-                            f"has_snapshot({email}, '{AVDCreator.SEED_CLONE_SNAPSHOT}') returned: {has_seed_snapshot}"
-                        )
-
-                        if has_seed_snapshot:
-                            snapshot_name = AVDCreator.SEED_CLONE_SNAPSHOT
-                            logger.info(f"Using seed clone snapshot '{snapshot_name}' for {email}")
-                        else:
-                            logger.warning(
-                                f"User was created from seed clone but seed clone snapshot '{AVDCreator.SEED_CLONE_SNAPSHOT}' not found"
-                            )
-
-                    if not snapshot_name:
-                        # Fall back to looking for the most recent library park snapshot
-                        # Get the AVD identifier for snapshot naming
-                        if avd_name and avd_name.startswith("KindleAVD_"):
-                            avd_identifier = avd_name.replace("KindleAVD_", "")
-                        else:
-                            avd_identifier = email.replace("@", "_").replace(".", "_")
-
-                        # List all snapshots and find the most recent library park snapshot
-                        available_snapshots = self.list_snapshots(email)
-                        library_snapshots = [
-                            s for s in available_snapshots if s.startswith(f"library_park_{avd_identifier}_")
-                        ]
-
-                        if library_snapshots:
-                            # Sort by timestamp embedded in the filename (newest first)
-                            library_snapshots.sort(reverse=True)
-                            snapshot_name = library_snapshots[0]
-                            logger.info(
-                                f"Found {len(library_snapshots)} library park snapshots, using most recent: {snapshot_name}"
-                            )
-                        else:
-                            logger.info(f"No library park snapshots found for {avd_identifier}")
             except Exception as e:
-                logger.warning(f"Error accessing user profile for snapshot lookup: {e}")
-                # Proceed without the saved snapshot
+                logger.warning(f"Error accessing user profile for snapshot info: {e}")
+                # Proceed normally - emulator will use default_boot if available
 
             # Common emulator arguments for all platforms
             common_args = [
@@ -825,12 +784,8 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
-            # Check if we found a snapshot and add it to arguments if we did
-            if snapshot_name:
-                logger.info(f"Using snapshot '{snapshot_name}' for {email} for faster startup")
-                common_args.extend(["-snapshot", snapshot_name])
-            else:
-                logger.info(f"No snapshot found for {email}, starting emulator normally")
+            # No longer specifying snapshot - emulator will use default_boot automatically
+            logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":
@@ -1299,13 +1254,15 @@ class EmulatorLauncher:
             logger.error(f"Error checking if emulator is ready for {email}: {e}")
             return False
 
-    def save_snapshot(self, email: str, snapshot_name: str) -> bool:
+    def save_snapshot(self, email: str) -> bool:
         """
         Save a snapshot of the current emulator state.
 
+        Uses the default snapshot which is automatically loaded by the emulator
+        on startup. This avoids accumulating multiple 4GB snapshots.
+
         Args:
             email: The user's email address
-            snapshot_name: Name of the snapshot to save
 
         Returns:
             True if snapshot was saved successfully, False otherwise
@@ -1332,7 +1289,7 @@ class EmulatorLauncher:
 
             # Method 1: Try using ADB emu command first (more reliable than telnet)
             try:
-                logger.info(f"Attempting to save snapshot '{snapshot_name}' using adb emu command")
+                logger.info(f"Attempting to save snapshot using adb emu command")
                 adb_result = subprocess.run(
                     [
                         f"{self.android_home}/platform-tools/adb",
@@ -1342,7 +1299,6 @@ class EmulatorLauncher:
                         "avd",
                         "snapshot",
                         "save",
-                        snapshot_name,
                     ],
                     capture_output=True,
                     text=True,
@@ -1350,12 +1306,10 @@ class EmulatorLauncher:
                 )
 
                 if adb_result.returncode == 0:
-                    logger.info(
-                        f"Successfully saved snapshot '{snapshot_name}' for {email} on emulator {emulator_id}"
-                    )
+                    logger.info(f"Successfully saved snapshot for {email} on emulator {emulator_id}")
                     # Verify the snapshot was created
-                    if self.has_snapshot(email, snapshot_name):
-                        logger.info(f"Verified snapshot '{snapshot_name}' exists on disk")
+                    if self.has_snapshot(email, "default_boot"):
+                        logger.info(f"Verified snapshot exists on disk")
                         return True
                     else:
                         logger.warning(f"Snapshot command succeeded but snapshot not found on disk")
@@ -1386,7 +1340,7 @@ class EmulatorLauncher:
                 return False
 
             # Create the telnet command to save the snapshot
-            telnet_commands = f"avd snapshot save {snapshot_name}\nquit\n"
+            telnet_commands = f"avd snapshot save\nquit\n"
 
             # Execute the command
             result = subprocess.run(
@@ -1398,16 +1352,14 @@ class EmulatorLauncher:
             )
 
             if result.returncode == 0 and "OK" in result.stdout:
-                logger.info(
-                    f"Successfully saved snapshot '{snapshot_name}' for {email} on emulator {emulator_id}"
-                )
+                logger.info(f"Successfully saved snapshot for {email} on emulator {emulator_id}")
                 return True
             else:
-                logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}: {result.stderr}")
+                logger.error(f"Failed to save snapshot for {email}: {result.stderr}")
                 return False
 
         except Exception as e:
-            logger.error(f"Error saving snapshot '{snapshot_name}' for {email}: {e}")
+            logger.error(f"Error saving snapshot for {email}: {e}")
             return False
 
     def has_snapshot(self, email: str, snapshot_name: str) -> bool:

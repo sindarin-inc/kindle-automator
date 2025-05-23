@@ -1096,30 +1096,6 @@ class AVDProfileManager:
             logger.error(f"Error saving style setting {setting_name}: {e}")
             return False
 
-    def get_last_snapshot(self, email: str) -> Optional[str]:
-        """
-        Get the last snapshot name saved for a user.
-
-        Args:
-            email: The email address of the user
-
-        Returns:
-            Optional[str]: The snapshot name or None if not found
-        """
-        return self.get_user_field(email, "last_snapshot")
-
-    def clear_last_snapshot(self, email: str) -> bool:
-        """
-        Clear the last snapshot name for a user.
-
-        Args:
-            email: The email address of the user
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        return self.set_user_field(email, "last_snapshot", None)
-
     def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
         """
         Update the styles_updated preference for a profile.

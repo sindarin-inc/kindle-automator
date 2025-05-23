@@ -152,39 +152,27 @@ class EmulatorShutdownManager:
                     else:
                         avd_identifier = email.replace("@", "_").replace(".", "_")
 
-                    # Include date for snapshot version management
-                    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    # Adjust snapshot name based on whether we preserved reading state
-                    if preserve_reading_state:
-                        snapshot_name = f"deploy_snapshot_{avd_identifier}_{date_str}"
-                    else:
-                        snapshot_name = f"library_park_{avd_identifier}_{date_str}"
-
-                    if automator.emulator_manager.emulator_launcher.save_snapshot(email, snapshot_name):
-                        logger.info(f"Saved snapshot '{snapshot_name}' for {email}")
+                    if automator.emulator_manager.emulator_launcher.save_snapshot(email):
+                        logger.info(f"Saved snapshot for {email}")
                         shutdown_summary["snapshot_taken"] = True
-                        # Save the snapshot name to the user profile
+                        # Save the snapshot timestamp to the user profile for reference
+                        # Even though we're using default_boot, we can track when it was last saved
                         try:
                             from views.core.avd_profile_manager import AVDProfileManager
 
                             avd_manager = AVDProfileManager.get_instance()
-                            avd_manager.set_user_field(email, "last_snapshot", snapshot_name)
-                            logger.info(f"Saved snapshot name '{snapshot_name}' to user profile for {email}")
-                        except Exception as profile_error:
-                            logger.warning(f"Failed to save snapshot name to profile: {profile_error}")
-                        # Clean up old snapshots to save disk space
-                        try:
-                            deleted_count = (
-                                automator.emulator_manager.emulator_launcher.cleanup_old_snapshots(
-                                    email, keep_count=3
-                                )
+                            # Save the timestamp of when default_boot was last updated
+                            snapshot_timestamp = datetime.now().isoformat()
+                            avd_manager.set_user_field(email, "last_snapshot_timestamp", snapshot_timestamp)
+                            # Clear the old last_snapshot field since we're not using named snapshots anymore
+                            avd_manager.set_user_field(email, "last_snapshot", None)
+                            logger.info(
+                                f"Updated default_boot snapshot timestamp to {snapshot_timestamp} for {email}"
                             )
-                            if deleted_count > 0:
-                                logger.info(
-                                    f"Cleaned up {deleted_count} old library park snapshots for {email}"
-                                )
-                        except Exception as cleanup_error:
-                            logger.warning(f"Failed to clean up old snapshots: {cleanup_error}")
+                        except Exception as profile_error:
+                            logger.warning(f"Failed to save snapshot timestamp to profile: {profile_error}")
+                        # No longer need to clean up old snapshots since we're using default_boot
+                        logger.info("Using default_boot snapshot - no cleanup needed")
                     else:
                         logger.error(f"Failed to save snapshot '{snapshot_name}' for {email}")
 
