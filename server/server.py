@@ -1435,23 +1435,33 @@ class AuthResource(Resource):
                 automator = server.automators[sindarin_email]
                 if automator:
                     automator.cleanup()
-                    server.automators[sindarin_email] = None
+                del server.automators[sindarin_email]
 
-            # Delete the user's AVD
-            logger.info(f"Deleting AVD for {sindarin_email}")
-            success, msg = avd_creator.delete_avd(sindarin_email)
-            if success:
-                logger.info(f"User AVD deleted: {msg}")
+            # Delete the user's AVD if it exists
+            logger.info(f"Checking if AVD exists for {sindarin_email}")
+            avd_name = avd_creator.get_avd_name_from_email(sindarin_email)
+            avd_path = os.path.join(avd_creator.avd_dir, f"{avd_name}.avd")
+            if os.path.exists(avd_path):
+                logger.info(f"Deleting AVD for {sindarin_email}")
+                success, msg = avd_creator.delete_avd(sindarin_email)
+                if success:
+                    logger.info(f"User AVD deleted: {msg}")
+                else:
+                    logger.warning(f"Failed to delete user AVD: {msg}")
             else:
-                logger.warning(f"Failed to delete user AVD: {msg}")
+                logger.info(f"No AVD found for {sindarin_email}, skipping deletion")
 
-            # Delete the seed clone AVD
-            logger.info("Deleting seed clone AVD")
-            success, msg = avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
-            if success:
-                logger.info(f"Seed clone AVD deleted: {msg}")
+            # Delete the seed clone AVD if it exists
+            logger.info("Checking if seed clone AVD exists")
+            if avd_creator.has_seed_clone():
+                logger.info("Deleting seed clone AVD")
+                success, msg = avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+                if success:
+                    logger.info(f"Seed clone AVD deleted: {msg}")
+                else:
+                    logger.warning(f"Failed to delete seed clone AVD: {msg}")
             else:
-                logger.warning(f"Failed to delete seed clone AVD: {msg}")
+                logger.info("No seed clone AVD found, skipping deletion")
 
             # Remove the user from profiles index
             if sindarin_email in profile_manager.profiles_index:
@@ -1459,16 +1469,21 @@ class AuthResource(Resource):
                 profile_manager._save_profiles_index()
                 logger.info(f"Removed {sindarin_email} from profiles index")
 
-        automator = server.automators.get(sindarin_email)
+        # Get or create automator (this will create a new one if recreate was used)
+        automator = get_automator_for_request(request)
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
         # This fixes the "Could not access automator from driver session" error
-        if automator.driver and not hasattr(automator.driver, "automator"):
+        if automator and automator.driver and not hasattr(automator.driver, "automator"):
             logger.info("Setting automator on driver object for state transitions")
             automator.driver.automator = automator
 
-        # Ensure the driver is healthy and all components are initialized
+        # Ensure the automator exists and driver is healthy and all components are initialized
+        if not automator:
+            logger.error("Failed to get automator for request")
+            return {"error": "Failed to initialize automator"}, 500
+            
         if not automator.ensure_driver_running():
             logger.error("Failed to ensure driver is running, cannot proceed with authentication")
             return {"error": "Failed to initialize automator driver"}, 500
