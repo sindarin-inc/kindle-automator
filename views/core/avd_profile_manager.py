@@ -163,7 +163,7 @@ class AVDProfileManager:
         logger.info("Installing Kindle APK and navigating to Library view for seed clone...")
 
         # Import necessary modules
-        from automator import Automator
+        from automator import KindleAutomator
         from driver import Driver
         from server.utils.appium_driver import AppiumDriver
 
@@ -177,7 +177,7 @@ class AVDProfileManager:
             return False, "Failed to get VNC instance for seed clone"
 
         # Create a temporary automator instance for the seed clone
-        automator = Automator()
+        automator = KindleAutomator()
         automator.profile_manager = self  # Use current profile manager
 
         # Create and initialize driver
