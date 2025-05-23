@@ -728,19 +728,25 @@ class ViewInspector:
             try:
                 screenshot_path = os.path.join(self.screenshots_dir, "unknown_view.png")
 
-                # For unknown views, use regular ADB screenshot for speed
+                # Try to use secure screenshot method if we have device_id
                 success = False
                 if hasattr(self, "automator") and self.automator and hasattr(self.automator, "device_id"):
                     device_id = self.automator.device_id
-                    logger.info("Taking ADB screenshot for unknown view...")
-                    adb_path = take_adb_screenshot(device_id=device_id, output_path=screenshot_path)
-                    if adb_path:
-                        logger.info(f"Saved ADB screenshot of unknown view to {adb_path}")
+                    logger.info("Attempting secure screenshot for unknown view...")
+                    # Get current state if available
+                    current_state = None
+                    if hasattr(self.automator, "state_machine") and self.automator.state_machine:
+                        current_state = self.automator.state_machine.current_state
+                    secure_path = take_secure_screenshot(
+                        device_id=device_id, output_path=screenshot_path, current_state=current_state
+                    )
+                    if secure_path:
+                        logger.info(f"Saved secure screenshot of unknown view to {secure_path}")
                         success = True
                     else:
-                        logger.warning("ADB screenshot failed, falling back to standard method")
+                        logger.warning("Secure screenshot failed, falling back to standard method")
 
-                # Fall back to standard method if ADB screenshot failed or not available
+                # Fall back to standard method if secure screenshot failed or not available
                 if not success:
                     self.driver.save_screenshot(screenshot_path)
                     logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
