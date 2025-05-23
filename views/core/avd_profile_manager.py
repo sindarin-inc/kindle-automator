@@ -127,12 +127,15 @@ class AVDProfileManager:
         """
         return self.avd_creator.get_avd_name_from_email(email)
 
-    def _start_emulator_and_create_snapshot(self, email: str) -> Tuple[bool, str]:
+    def _start_emulator_and_create_snapshot(
+        self, email: str, prepare_kindle: bool = False
+    ) -> Tuple[bool, str]:
         """
         Helper method to start an emulator, wait for it to be ready, create a snapshot, and stop it.
 
         Args:
             email: Email of the emulator to start
+            prepare_kindle: If True, install Kindle APK and navigate to Library before snapshot
 
         Returns:
             Tuple[bool, str]: (success, message)
@@ -156,6 +159,69 @@ class AVDProfileManager:
             time.sleep(5)
         else:
             return False, "Emulator failed to become ready"
+
+        # If prepare_kindle is True, install Kindle and navigate to Library
+        if prepare_kindle:
+            logger.info("Installing Kindle APK and navigating to Library view...")
+
+            # Import necessary modules
+            from automator import Automator
+            from driver import Driver
+            from server.utils.appium_driver import AppiumDriver
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+            from views.state_machine import KindleStateMachine
+
+            # Get the allocated VNC instance and ports for this email
+            vnc_manager = VNCInstanceManager.get_instance()
+            instance = vnc_manager.get_instance_for_profile(email)
+
+            if not instance:
+                return False, "Failed to get VNC instance for seed clone"
+
+            # Create a temporary automator instance
+            automator = Automator()
+            automator.profile_manager = self
+
+            # Create and initialize driver
+            driver_instance = Driver()
+            driver_instance.automator = automator
+
+            # Set the appium port from the VNC instance
+            driver_instance.appium_port = instance.get("appium_port", 4723)
+
+            # Ensure Appium is running for this instance
+            appium_driver = AppiumDriver()
+            if not appium_driver.start_appium_for_profile(email):
+                return False, "Failed to start Appium for Kindle preparation"
+
+            try:
+                # Initialize the driver (this will install Kindle if needed)
+                logger.info("Initializing driver to install Kindle APK...")
+                if not driver_instance.initialize():
+                    return False, "Failed to initialize driver for Kindle installation"
+
+                # Create state machine to navigate to Library
+                state_machine = KindleStateMachine(driver_instance.driver)
+
+                # Set the flag to indicate we're preparing for snapshot
+                state_machine.preparing_seed_clone = True
+
+                # Transition to library view (will stop at LIBRARY_SIGN_IN)
+                logger.info("Navigating to Library view...")
+                if not state_machine.transition_to_library(max_transitions=10):
+                    logger.error("Failed to navigate to Library view")
+                    return False, "Failed to navigate to Library view"
+
+                logger.info("Successfully reached Library view with sign-in button")
+
+            finally:
+                # Clean up driver and Appium but keep app running
+                if hasattr(driver_instance, "driver") and driver_instance.driver:
+                    driver_instance.driver.quit()
+                appium_driver.stop_appium_for_profile(email)
+
+                # Give the app a moment to settle
+                time.sleep(2)
 
         # Take snapshot (always saves to default)
         logger.info(f"Creating snapshot for {email}")
@@ -194,7 +260,9 @@ class AVDProfileManager:
                     logger.info("Seed clone emulator is already running")
                 else:
                     # Start emulator and create snapshot
-                    success, message = self._start_emulator_and_create_snapshot(seed_email)
+                    success, message = self._start_emulator_and_create_snapshot(
+                        seed_email, prepare_kindle=True
+                    )
                     if success:
                         return True, "Seed clone is now ready"
                     else:
@@ -210,7 +278,7 @@ class AVDProfileManager:
             self.register_profile(seed_email, avd_name)
 
             # Start emulator and create snapshot
-            success, message = self._start_emulator_and_create_snapshot(seed_email)
+            success, message = self._start_emulator_and_create_snapshot(seed_email, prepare_kindle=True)
             if success:
                 return True, "Seed clone is now ready"
             else:
@@ -759,7 +827,6 @@ class AVDProfileManager:
 
             # Quick verification that the emulator is still running
             if self.emulator_manager.emulator_launcher._verify_emulator_running(emulator_id, sindarin_email):
-
                 # Check if we have this profile
                 if sindarin_email in self.profiles_index:
                     profile = self.profiles_index[sindarin_email].copy()  # Make a copy
