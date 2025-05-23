@@ -1355,13 +1355,13 @@ class TwoFactorResource(Resource):
 
 
 class AuthResource(Resource):
-        
     def _handle_recreate(self, sindarin_email):
         """Handle deletion of AVDs when recreate is requested"""
         logger.info(f"Recreate requested for {sindarin_email}, force deleting AVDs and cleaning up")
 
         # Import necessary modules
         import shutil
+
         from views.core.avd_creator import AVDCreator
         from views.core.avd_profile_manager import AVDProfileManager
 
@@ -1371,14 +1371,14 @@ class AuthResource(Resource):
         # First stop any running emulators
         # Get the launcher from emulator manager which already has proper initialization
         launcher = profile_manager.emulator_manager.emulator_launcher
-        
+
         # Stop user's emulator if running
         user_emulator_id, _ = launcher.get_running_emulator(sindarin_email)
         if user_emulator_id:
             logger.info(f"Stopping running emulator for {sindarin_email}")
             launcher.stop_emulator(sindarin_email)
             time.sleep(2)  # Give it time to shut down
-            
+
         # Stop seed clone emulator if running
         seed_emulator_id, _ = launcher.get_running_emulator(AVDCreator.SEED_CLONE_EMAIL)
         if seed_emulator_id:
@@ -1398,7 +1398,7 @@ class AuthResource(Resource):
         avd_name = avd_creator.get_avd_name_from_email(sindarin_email)
         avd_path = os.path.join(avd_creator.avd_dir, f"{avd_name}.avd")
         avd_ini_path = os.path.join(avd_creator.avd_dir, f"{avd_name}.ini")
-        
+
         logger.info(f"Force deleting user AVD at {avd_path}")
         if os.path.exists(avd_path):
             shutil.rmtree(avd_path, ignore_errors=True)
@@ -1414,7 +1414,7 @@ class AuthResource(Resource):
         seed_avd_name = avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
         seed_avd_path = os.path.join(avd_creator.avd_dir, f"{seed_avd_name}.avd")
         seed_avd_ini_path = os.path.join(avd_creator.avd_dir, f"{seed_avd_name}.ini")
-        
+
         logger.info(f"Force deleting seed clone AVD at {seed_avd_path}")
         if os.path.exists(seed_avd_path):
             shutil.rmtree(seed_avd_path, ignore_errors=True)
@@ -1435,10 +1435,10 @@ class AuthResource(Resource):
             del profile_manager.profiles_index[sindarin_email]
             profile_manager._save_profiles_index()
             logger.info(f"Removed {sindarin_email} from profiles index")
-            
+
         # Force the profile manager to reload
         profile_manager._load_profiles_index()
-        
+
     @ensure_user_profile_loaded
     def _auth(self):
         """Set up a profile for manual authentication via VNC or WebSockets"""
@@ -1514,7 +1514,7 @@ class AuthResource(Resource):
         if not automator:
             logger.error("Failed to get automator for request")
             return {"error": "Failed to initialize automator"}, 500
-            
+
         if not automator.ensure_driver_running():
             logger.error("Failed to ensure driver is running, cannot proceed with authentication")
             return {"error": "Failed to initialize automator driver"}, 500
@@ -1689,11 +1689,11 @@ class AuthResource(Resource):
         params = {}
         for key, value in request.args.items():
             params[key] = value
-            
+
         sindarin_email = params.get("sindarin_email")
         if sindarin_email and params.get("recreate") == "1":
             self._handle_recreate(sindarin_email)
-            
+
         # Now proceed with normal auth flow
         return self._auth()
 
@@ -1703,11 +1703,11 @@ class AuthResource(Resource):
         params = {}
         if request.is_json:
             params = request.get_json() or {}
-            
+
         sindarin_email = params.get("sindarin_email") or params.get("email")
         if sindarin_email and (params.get("recreate") == 1 or params.get("recreate") == "1"):
             self._handle_recreate(sindarin_email)
-            
+
         # Now proceed with normal auth flow
         return self._auth()
 

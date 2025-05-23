@@ -200,6 +200,10 @@ class AVDProfileManager:
                 if not driver_instance.initialize():
                     return False, "Failed to initialize driver for Kindle installation"
 
+                # Ensure the driver has reference to automator (needed by state machine)
+                if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
+                    driver_instance.driver.automator = automator
+
                 # Create state machine to navigate to Library
                 state_machine = KindleStateMachine(driver_instance.driver)
 
