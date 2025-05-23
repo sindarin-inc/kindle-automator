@@ -138,7 +138,9 @@ provision:
 provision-android:
 	ansible-playbook ansible/provision.yml -t android
 deploy:
-	ansible-playbook ansible/deploy.yml
+	ansible-playbook ansible/deploy.yml --limit prod
+staging:
+	ansible-playbook ansible/deploy.yml --limit staging
 env:
 	ansible-playbook ansible/provision.yml -t env
 # SSH
@@ -260,7 +262,7 @@ test-auth-recreate:
 	@[ -n "$(PASSWORD)" ] || (echo "ERROR: PASSWORD parameter required. Usage: make test-auth-recreate EMAIL=kindle@solreader.com PASSWORD=yourpassword" && exit 1)
 	@curl -X POST http://localhost:4098/auth \
 		-H "Content-Type: application/json" \
-		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)", "recreate": true}' \
+		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)", "recreate": 1}' \
 		-v
 
 # Test auth endpoint without auth credentials (for manual VNC authentication)

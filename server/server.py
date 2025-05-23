@@ -1418,16 +1418,46 @@ class AuthResource(Resource):
         # Log authentication attempt details
         logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
 
-        # If recreate is requested, just clean up the automator but don't force a new emulator
+        # If recreate is requested, delete both user AVD and seed clone AVD, then recreate
         if recreate:
-            logger.info(f"Recreate requested for {sindarin_email}, cleaning up existing automator")
-            # First check if we have an automator for this email specifically
+            logger.info(f"Recreate requested for {sindarin_email}, deleting AVDs and cleaning up")
+
+            # Get profile manager to access AVD creator
+            from views.core.avd_creator import AVDCreator
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            profile_manager = AVDProfileManager.get_instance()
+            avd_creator = profile_manager.avd_creator
+
+            # First clean up the automator
             if sindarin_email in server.automators:
                 logger.info(f"Cleaning up existing automator for {sindarin_email}")
                 automator = server.automators[sindarin_email]
                 if automator:
                     automator.cleanup()
                     server.automators[sindarin_email] = None
+
+            # Delete the user's AVD
+            logger.info(f"Deleting AVD for {sindarin_email}")
+            success, msg = avd_creator.delete_avd(sindarin_email)
+            if success:
+                logger.info(f"User AVD deleted: {msg}")
+            else:
+                logger.warning(f"Failed to delete user AVD: {msg}")
+
+            # Delete the seed clone AVD
+            logger.info("Deleting seed clone AVD")
+            success, msg = avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+            if success:
+                logger.info(f"Seed clone AVD deleted: {msg}")
+            else:
+                logger.warning(f"Failed to delete seed clone AVD: {msg}")
+
+            # Remove the user from profiles index
+            if sindarin_email in profile_manager.profiles_index:
+                del profile_manager.profiles_index[sindarin_email]
+                profile_manager._save_profiles_index()
+                logger.info(f"Removed {sindarin_email} from profiles index")
 
         automator = server.automators.get(sindarin_email)
 

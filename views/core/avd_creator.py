@@ -345,6 +345,49 @@ class AVDCreator:
 
         return os.path.exists(snapshot_path)
 
+    def delete_avd(self, email: str) -> Tuple[bool, str]:
+        """
+        Delete an AVD for the given email.
+
+        Args:
+            email: Email address of the AVD to delete
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            avd_name = self.get_avd_name_from_email(email)
+            logger.info(f"Deleting AVD: {avd_name}")
+
+            # Use avdmanager to delete the AVD
+            cmd = [
+                os.path.join(self.android_home, "cmdline-tools", "latest", "bin", "avdmanager"),
+                "delete",
+                "avd",
+                "-n",
+                avd_name,
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                logger.info(f"Successfully deleted AVD: {avd_name}")
+
+                # Also remove the AVD directory if it still exists
+                avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+                if os.path.exists(avd_path):
+                    shutil.rmtree(avd_path)
+                    logger.info(f"Removed AVD directory: {avd_path}")
+
+                return True, f"Successfully deleted AVD: {avd_name}"
+            else:
+                logger.error(f"Failed to delete AVD: {result.stderr}")
+                return False, f"Failed to delete AVD: {result.stderr}"
+
+        except Exception as e:
+            logger.error(f"Error deleting AVD: {e}")
+            return False, str(e)
+
     def create_seed_clone_avd(self) -> Tuple[bool, str]:
         """
         Create the seed clone AVD that will be used as a template for all new users.
