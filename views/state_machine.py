@@ -45,6 +45,8 @@ class KindleStateMachine:
         self.current_state = AppState.UNKNOWN
         # Track the last captcha screenshot for use in responses
         self.last_captcha_screenshot_id = None
+        # Flag to indicate we're preparing a seed clone (skip sign-in)
+        self.preparing_seed_clone = False
 
     def get_captcha_screenshot_id(self):
         """Get the ID of the last captcha screenshot taken.
@@ -115,6 +117,12 @@ class KindleStateMachine:
                 # Switch to list view if needed
                 if not self.library_handler.switch_to_list_view():
                     logger.warning("Failed to switch to list view, but we're still in library")
+                return True
+
+            # Special handling for LIBRARY_SIGN_IN when preparing seed clone
+            if self.current_state == AppState.LIBRARY_SIGN_IN and self.preparing_seed_clone:
+                logger.info("In LIBRARY_SIGN_IN state and preparing_seed_clone=True - stopping here")
+                # We've reached the library view with sign-in button, which is what we want for seed clone
                 return True
 
             # If we're in UNKNOWN state, try to bring app to foreground
