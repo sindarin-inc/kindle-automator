@@ -150,7 +150,6 @@ class AuthenticationHandler:
             # Option 1: Check if the driver has an automator attribute directly
             if hasattr(self.driver, "automator"):
                 automator = self.driver.automator
-                logger.info(f"Found automator directly on driver object {automator}/{automator.driver}")
 
             # Option 2: Check for _driver.automator attribute (old structure)
             elif hasattr(self.driver, "_driver"):

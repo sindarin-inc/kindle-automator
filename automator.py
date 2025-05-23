@@ -41,13 +41,11 @@ class KindleAutomator:
         driver = Driver()
         # Set the automator reference in the driver
         driver.automator = self
-        logger.info(f"Initialized driver in KindleAutomator {driver}")
         if not driver.initialize():
             logger.error("Failed to initialize driver")
             return False
 
         self.driver = driver.get_appium_driver_instance()
-        logger.info(f"Initialized driver.driver in KindleAutomator {self.driver}")
 
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it
@@ -68,14 +66,11 @@ class KindleAutomator:
                 )
                 return False
 
-        logger.info(f"Initialized driver {self.driver} with device_id: {self.device_id}")
-
         # Initialize state machine without credentials or captcha
         self.state_machine = KindleStateMachine(self.driver)
 
         # Ensure the view_inspector has the device_id directly
         if self.device_id and hasattr(self.state_machine, "view_inspector"):
-            logger.info(f"Setting device_id {self.device_id} directly on view_inspector")
             self.state_machine.view_inspector.device_id = self.device_id
 
         # The profile_manager reference is set on the automator instance
@@ -94,13 +89,9 @@ class KindleAutomator:
             ):
                 logger.warning("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
-                    logger.info(
-                        f"Successfully launched Kindle app after initialization, driver: {self.driver}, device_id: {self.device_id}"
-                    )
-
                     # Verify we're back in the app
                     current_activity = self.driver.current_activity
-                    logger.info(f"New current activity after relaunch: {current_activity}")
+
                     if not (
                         current_activity.startswith("com.amazon")
                         or current_activity
@@ -191,10 +182,6 @@ class KindleAutomator:
                     ):
                         logger.error(f"UiAutomator2 server crashed: {error_message}")
                         raise activity_error
-
-                # Skip window size check - it seems to trigger crashes
-                # The activity check above is sufficient for health monitoring
-                logger.debug("Skipping window size check to avoid potential crashes")
 
                 # Check if we're in the app not responding state
                 if self.state_machine:

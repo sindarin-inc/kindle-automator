@@ -1387,8 +1387,6 @@ class AuthResource(Resource):
         if not sindarin_email:
             logger.error("No sindarin_email provided for profile identification")
             return {"error": "sindarin_email is required for profile identification"}, 400
-        else:
-            logger.info(f"Using sindarin_email for profile: {sindarin_email}")
 
         # Process boolean parameters in a unified way
         # For query params, "1", "true", "yes" (case-insensitive) are considered true
@@ -1432,9 +1430,6 @@ class AuthResource(Resource):
                     server.automators[sindarin_email] = None
 
         automator = server.automators.get(sindarin_email)
-        logger.info(
-            f"Using automator: {automator}/{automator.driver} for {sindarin_email} ({server.automators})"
-        )
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions

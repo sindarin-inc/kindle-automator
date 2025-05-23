@@ -721,7 +721,6 @@ class Driver:
             for line in result.stdout.splitlines():
                 if "name=" in line and "com.amazon.kindle" in line:
                     activity = line.split("name=")[1].strip()
-                    logger.info(f"Found Kindle launch activity: {activity}")
                     return activity
 
             logger.error("Could not find Kindle launch activity")
@@ -886,8 +885,6 @@ class Driver:
         appium_driver = AppiumDriver()
         appium_info = appium_driver.get_appium_process_info(email)
         if not appium_info or not appium_info.get("running"):
-            logger.info(f"Starting Appium server for {email}")
-
             # Start the Appium server for this profile
             appium_started = appium_driver.start_appium_for_profile(email)
             if not appium_started:
@@ -977,8 +974,6 @@ class Driver:
                     options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
                     options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     self.appium_port = allocated_ports["appiumPort"]
-
-                    logger.info(f"Using allocated ports for {email}: {allocated_ports}")
                 else:
                     logger.error(f"No allocated ports found for {email}")
                     return False
@@ -1046,13 +1041,8 @@ class Driver:
                 logger.error(f"Failed to connect to Appium server on port {self.appium_port}: {e}")
                 return False
 
-            logger.info(
-                f"Driver initialized successfully on port {self.appium_port} for device {self.device_id}"
-            )
-
             # Force a state check after driver initialization with a timeout
             import concurrent.futures
-            import threading
 
             # Run the check with a timeout
             with concurrent.futures.ThreadPoolExecutor() as executor:

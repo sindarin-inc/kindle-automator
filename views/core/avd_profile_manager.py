@@ -316,8 +316,6 @@ class AVDProfileManager:
 
             # Reload user preferences from profiles_index to ensure our cache is up-to-date
             self.user_preferences = self._load_user_preferences()
-
-            logger.debug("Saved user preferences by updating profiles_index and refreshed preferences cache")
         except Exception as e:
             logger.error(f"Error saving user preferences: {e}")
 

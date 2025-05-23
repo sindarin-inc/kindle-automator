@@ -1,9 +1,4 @@
 ---
-# Include Android build tools setup for parallel Appium execution
-- include_tasks: android_build_tools.yml
-  tags:
-    - android_build_tools
-    - parallel_appium
 
 - name: Ensure required dependencies are installed (Ubuntu x86_64)
   apt:

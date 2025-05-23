@@ -56,7 +56,6 @@ logger = logging.getLogger(__name__)
 class ViewInspector:
     def __init__(self, driver):
         self.driver = driver
-        logger.info(f"ViewInspector initialized with driver: {self.driver}")
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
@@ -152,9 +151,6 @@ class ViewInspector:
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
-                        logger.info(
-                            f"Successfully verified Kindle app is in foreground after {time.time() - start_time:.2f}s: {current_activity}"
-                        )
                         app_ready = True
 
                         # Try to dismiss the Google Play review dialog if it's showing

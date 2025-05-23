@@ -287,7 +287,6 @@ def ensure_user_profile_loaded(f):
             and hasattr(automator.state_machine, "view_inspector")
         ):
             try:
-                logger.info("Ensuring Kindle app is in foreground")
                 automator.state_machine.view_inspector.ensure_app_foreground()
             except Exception as e:
                 logger.warning(f"Error ensuring app is in foreground: {e}")

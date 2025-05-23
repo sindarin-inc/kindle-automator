@@ -144,11 +144,8 @@ class EmulatorLauncher:
             if not emulator_avd:
                 return False
 
-            logger.info(f"Comparing AVD names: expected={email_avd}, actual={emulator_avd}")
-
             # Check if the AVD names match
             if emulator_avd == email_avd:
-                logger.info(f"Emulator {emulator_id} is running with expected AVD {email_avd}")
                 return True
             else:
                 logger.warning(
@@ -195,7 +192,6 @@ class EmulatorLauncher:
 
                 if result.returncode == 0 and result.stdout.strip():
                     avd_name = result.stdout.strip()
-                    logger.info(f"Found AVD name for {emulator_id} via ro.kernel.qemu.avd_name: {avd_name}")
                     return avd_name
 
             except Exception as adb_error:
@@ -220,7 +216,6 @@ class EmulatorLauncher:
 
                 if result.returncode == 0 and result.stdout.strip():
                     avd_name = result.stdout.strip()
-                    logger.info(f"Found AVD name for {emulator_id} via qemu.avd_name: {avd_name}")
                     return avd_name
 
             except Exception as adb_error:
@@ -1263,8 +1258,6 @@ class EmulatorLauncher:
                     elif device_status != "device":
                         logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
                         return False
-
-                    logger.info(f"Emulator {emulator_id} is in 'device' state, checking boot completion")
                 else:
                     logger.info(f"Emulator {emulator_id} not found in adb devices output")
                     return False
@@ -1299,10 +1292,6 @@ class EmulatorLauncher:
             result = boot_completed.stdout.strip() == "1"
             if result:
                 logger.info(f"Emulator {emulator_id} is fully booted (sys.boot_completed=1)")
-            else:
-                logger.info(
-                    f"Emulator {emulator_id} is still booting (sys.boot_completed={boot_completed.stdout.strip()})"
-                )
 
             return result
 
