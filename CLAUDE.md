@@ -35,6 +35,8 @@
 - **Git commits**: Keep commit messages short and focused on a single change
 - **Backwards compatibility**: Don't ever write logic to handle backwards compatibility unless asked
 - **DRY**: Keep it DRY, so do extra thinking to ensure we don't repeat code
+- **Comments**: Only include comments if they add context that's not readily apparent in the next line of code or if the code block has some complexity
+- **Comments**: Don't add comments that are simply addressing the prompt, only add them if the comments clear up confusion
 
 ## Project Structure
 
