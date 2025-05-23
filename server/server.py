@@ -1369,8 +1369,8 @@ class AuthResource(Resource):
         avd_creator = profile_manager.avd_creator
 
         # First stop any running emulators
-        from server.utils.emulator_launcher import EmulatorLauncher
-        launcher = EmulatorLauncher()
+        # Get the launcher from emulator manager which already has proper initialization
+        launcher = profile_manager.emulator_manager.emulator_launcher
         
         # Stop user's emulator if running
         if launcher.is_emulator_running(sindarin_email):
