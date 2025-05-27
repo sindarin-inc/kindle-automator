@@ -1357,6 +1357,7 @@ class TwoFactorResource(Resource):
 class AuthResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @handle_automator_response(server)
     def _auth(self):
         """Set up a profile for manual authentication via VNC or WebSockets"""
         # Create a unified params dict that combines query params and JSON body
