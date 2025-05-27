@@ -10,6 +10,7 @@ from datetime import datetime
 from selenium.common.exceptions import InvalidSessionIdException
 
 from server.utils.vnc_instance_manager import VNCInstanceManager
+from server.utils.websocket_proxy_manager import WebSocketProxyManager
 from views.core.app_state import AppState
 from views.state_machine import KindleStateMachine
 
@@ -62,6 +63,7 @@ class EmulatorShutdownManager:
             "emulator_stopped": False,
             "vnc_stopped": False,
             "xvfb_stopped": False,
+            "websocket_stopped": False,
             "automator_cleaned": False,
             "snapshot_taken": False,
         }
@@ -234,6 +236,21 @@ class EmulatorShutdownManager:
                         logger.info(f"Released VNC instance for {email}")
                     except Exception as e:
                         logger.error(f"Error releasing VNC instance: {e}")
+
+                    # Stop WebSocket proxy server (Linux only, along with VNC)
+                    try:
+                        ws_proxy_manager = WebSocketProxyManager.get_instance()
+                        if ws_proxy_manager.is_proxy_running(email):
+                            logger.info(f"Stopping WebSocket proxy for {email}")
+                            if ws_proxy_manager.stop_proxy(email):
+                                logger.info(f"Successfully stopped WebSocket proxy for {email}")
+                                shutdown_summary["websocket_stopped"] = True
+                            else:
+                                logger.error(f"Failed to stop WebSocket proxy for {email}")
+                        else:
+                            logger.info(f"No WebSocket proxy running for {email}")
+                    except Exception as e:
+                        logger.error(f"Error stopping WebSocket proxy: {e}")
 
             # Clean up the automator
             if automator:
