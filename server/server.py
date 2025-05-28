@@ -387,7 +387,9 @@ class BooksStreamResource(Resource):
             logger.error(f"No automator found for {sindarin_email}")
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        current_state = automator.state_machine.current_state
+        # Update current state since middleware no longer does it
+        current_state = automator.state_machine.update_current_state()
+        logger.info(f"Current state for books-stream: {current_state}")
 
         # Handle different states - similar to _get_books but with appropriate streaming responses
         if current_state != AppState.LIBRARY:
@@ -839,11 +841,8 @@ class NavigationResource(Resource):
         self.default_direction = default_direction
         super().__init__()
 
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def post(self, direction=None):
-        """Handle page navigation"""
+    def _navigate_impl(self, direction=None):
+        """Internal implementation for navigation - shared by GET and POST."""
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
 
@@ -879,24 +878,21 @@ class NavigationResource(Resource):
             show_placemark=params["show_placemark"],
             use_base64=params["use_base64"],
             perform_ocr=params["perform_ocr"],
+            book_title=params.get("title"),
         )
+
+    @ensure_user_profile_loaded
+    @ensure_automator_healthy
+    @handle_automator_response(server)
+    def post(self, direction=None):
+        """Handle page navigation via POST."""
+        return self._navigate_impl(direction)
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
     def get(self):
         """Handle navigation via GET requests, using query parameters"""
-        # Get sindarin_email from request to determine which automator to use
-        sindarin_email = get_sindarin_email()
-
-        if not sindarin_email:
-            return {"error": "No email provided to identify which profile to use"}, 400
-
-        # Get the appropriate automator
-        automator = server.automators.get(sindarin_email)
-        if not automator:
-            return {"error": f"No automator found for {sindarin_email}"}, 404
-
         # For preview endpoints, add preview parameter if not present
         endpoint = request.endpoint if hasattr(request, "endpoint") else ""
         if endpoint in ["preview_next", "preview_previous"] and "preview" not in request.args:
@@ -915,8 +911,8 @@ class NavigationResource(Resource):
         else:
             direction = None  # Will use the parsed navigate_count from params
 
-        # Call the post method with the appropriate direction
-        return self.post(direction)
+        # Call the internal implementation
+        return self._navigate_impl(direction)
 
 
 class BookOpenResource(Resource):

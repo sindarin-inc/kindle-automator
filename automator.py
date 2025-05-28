@@ -183,25 +183,39 @@ class KindleAutomator:
                         logger.error(f"UiAutomator2 server crashed: {error_message}")
                         raise activity_error
 
-                # Check if we're in the app not responding state
+                # Quick check for app not responding dialog without full state determination
                 if self.state_machine:
-                    # Skip the diagnostic page source dump here since it's redundant
-                    current_state = self.state_machine.update_current_state()
-                    if current_state == AppState.APP_NOT_RESPONDING:
-                        logger.info("Detected app not responding dialog - restarting app")
-                        # Handle the app not responding state by using the appropriate handler
-                        handler = self.state_machine.transitions.get_handler_for_state(current_state)
-                        if handler:
-                            result = handler()
-                            if result:
-                                logger.info("Successfully handled app not responding state")
-                                return True
-                            else:
-                                logger.error(
-                                    "Failed to handle app not responding state, reinitializing driver"
-                                )
-                                self.cleanup()
-                                return self.initialize_driver()
+                    try:
+                        # Just check for the specific dialog elements
+                        from views.common.dialog_strategies import (
+                            APP_NOT_RESPONDING_DIALOG_IDENTIFIERS,
+                        )
+
+                        for strategy, locator in APP_NOT_RESPONDING_DIALOG_IDENTIFIERS:
+                            try:
+                                element = self.driver.find_element(strategy, locator)
+                                if element.is_displayed():
+                                    logger.info("Detected app not responding dialog - handling it")
+                                    # Get the handler for APP_NOT_RESPONDING state
+                                    handler = self.state_machine.transitions.get_handler_for_state(
+                                        AppState.APP_NOT_RESPONDING
+                                    )
+                                    if handler:
+                                        result = handler()
+                                        if result:
+                                            logger.info("Successfully handled app not responding state")
+                                            return True
+                                    # If handler failed, reinitialize
+                                    logger.error(
+                                        "Failed to handle app not responding state, reinitializing driver"
+                                    )
+                                    self.cleanup()
+                                    return self.initialize_driver()
+                            except Exception:
+                                # Element not found, continue checking
+                                continue
+                    except Exception as e:
+                        logger.debug(f"Error checking for app not responding dialog: {e}")
 
                 # Try checking app activity
                 try:

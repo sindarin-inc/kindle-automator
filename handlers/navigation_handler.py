@@ -22,6 +22,7 @@ from server.utils.ocr_utils import (
     is_ocr_requested,
     process_screenshot_response,
 )
+from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class NavigationResourceHandler:
         show_placemark: bool = False,
         use_base64: bool = False,
         perform_ocr: bool = False,
+        book_title: Optional[str] = None,
     ) -> Tuple[Dict, int]:
         """Handle page navigation with support for multi-page navigation and preview.
 
@@ -58,6 +60,7 @@ class NavigationResourceHandler:
             show_placemark: Whether to show placemark in reading progress.
             use_base64: Whether to return base64 encoded image.
             perform_ocr: Whether to perform OCR on the image.
+            book_title: Book title to reopen if not in reading view.
 
         Returns:
             Tuple of (response_data, status_code)
@@ -74,8 +77,46 @@ class NavigationResourceHandler:
         logger.info(
             f"Navigation request: navigate={navigate_count}, preview={preview_count}, "
             f"direction={'forward' if direction_forward else 'backward'}, "
-            f"placemark={show_placemark}, base64={use_base64}, ocr={perform_ocr}"
+            f"placemark={show_placemark}, base64={use_base64}, ocr={perform_ocr}, "
+            f"book_title={book_title}"
         )
+
+        # First check if we're in reading view using lightweight check
+        if not self.automator.state_machine.is_reading_view():
+            logger.warning("Not in reading view - checking if we need to reopen book")
+
+            # If book_title is provided, try to reopen the book
+            if book_title:
+                logger.info(f"Book title provided: {book_title}, attempting to reopen book")
+
+                # Get current state to understand where we are
+                current_state = self.automator.state_machine.update_current_state()
+                logger.info(f"Current state: {current_state}")
+
+                # Try to transition to library first
+                if not self.automator.state_machine.transition_to_library():
+                    logger.error("Failed to transition to library to reopen book")
+                    return {"error": "Failed to reach library to reopen book"}, 500
+
+                # Now open the book
+                logger.info(f"Opening book: {book_title}")
+                if not self.automator.state_machine.library_handler.open_book(book_title):
+                    logger.error(f"Failed to open book: {book_title}")
+                    return {"error": f"Failed to open book: {book_title}"}, 500
+
+                # Wait for book to open
+                time.sleep(2)
+
+                # Verify we're now in reading view
+                if not self.automator.state_machine.is_reading_view():
+                    logger.error("Still not in reading view after opening book")
+                    return {"error": "Failed to reach reading view after opening book"}, 500
+
+                logger.info("Successfully reopened book, now in reading view")
+            else:
+                # No book title provided, can't recover
+                logger.error("Not in reading view and no book_title provided to reopen")
+                return {"error": "Not in reading view. Please provide title parameter to reopen book."}, 400
 
         # First, check for the 'last read page' dialog before any navigation
         dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
@@ -485,7 +526,7 @@ class NavigationResourceHandler:
             return None, str(e)
 
     @staticmethod
-    def parse_navigation_params(request_obj) -> Dict[str, Union[int, bool]]:
+    def parse_navigation_params(request_obj) -> Dict[str, Union[int, bool, str]]:
         """Parse navigation parameters from request.
 
         Args:
@@ -501,6 +542,7 @@ class NavigationResourceHandler:
             "show_placemark": False,
             "use_base64": False,
             "perform_ocr": False,
+            "title": None,  # Book title for fallback if not in reading view
         }
 
         # Check for navigate parameter in query string
@@ -528,6 +570,17 @@ class NavigationResourceHandler:
         # Check for placemark parameter
         placemark_param = request_obj.args.get("placemark", "0")
         params["show_placemark"] = placemark_param.lower() in ("1", "true", "yes")
+
+        # Check for title parameter (same as /open-book endpoint)
+        title = request_obj.args.get("title")
+        if title:
+            # URL decode the book title to handle plus signs and other encoded characters
+            import urllib.parse
+
+            decoded_title = urllib.parse.unquote_plus(title)
+            if decoded_title != title:
+                logger.info(f"Decoded book title: '{title}' -> '{decoded_title}'")
+            params["title"] = decoded_title
 
         # Check if base64 parameter is provided
         params["use_base64"] = is_base64_requested()
@@ -581,6 +634,17 @@ class NavigationResourceHandler:
                         params["show_placemark"] = placemark_param.lower() in ("1", "true", "yes")
                     elif isinstance(placemark_param, int):
                         params["show_placemark"] = placemark_param == 1
+
+                # Override title if provided in JSON (same as /open-book endpoint)
+                if "title" in json_data and json_data["title"]:
+                    # URL decode the book title to handle plus signs and other encoded characters
+                    import urllib.parse
+
+                    title = json_data["title"]
+                    decoded_title = urllib.parse.unquote_plus(title)
+                    if decoded_title != title:
+                        logger.info(f"Decoded book title from JSON: '{title}' -> '{decoded_title}'")
+                    params["title"] = decoded_title
 
             except Exception as e:
                 logger.warning(f"Error parsing JSON request body: {e}")
