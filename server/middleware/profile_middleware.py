@@ -123,6 +123,28 @@ def ensure_user_profile_loaded(f):
         # Now check if this profile exists by looking for an AVD
         avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
 
+        # Check if profile is in cold storage
+        cold_storage_date = server.profile_manager.get_user_field(sindarin_email, "cold_storage_date")
+        if cold_storage_date:
+            logger.info(f"Profile {sindarin_email} is in cold storage since {cold_storage_date}")
+
+            # Restore from cold storage
+            from server.utils.cold_storage_manager import ColdStorageManager
+
+            cold_storage_manager = ColdStorageManager.get_instance()
+
+            logger.info(f"Restoring profile {sindarin_email} from cold storage...")
+            if cold_storage_manager.restore_avd_from_cold_storage(sindarin_email):
+                # Clear the cold storage date
+                server.profile_manager.set_user_field(sindarin_email, "cold_storage_date", None)
+                logger.info(f"Successfully restored profile {sindarin_email} from cold storage")
+            else:
+                logger.error(f"Failed to restore profile {sindarin_email} from cold storage")
+                return {
+                    "error": "Failed to restore profile from cold storage",
+                    "message": f"Could not restore AVD for {sindarin_email} from cold storage",
+                }, 500
+
         # Check if AVD file path exists
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")
         avd_exists = os.path.exists(avd_path)
