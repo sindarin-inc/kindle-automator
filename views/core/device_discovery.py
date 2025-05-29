@@ -46,27 +46,34 @@ class DeviceDiscovery:
                 # Get the AVD name
                 avd_name = profile_entry.get("avd_name")
 
-                # Check if there's a direct emulator_id in the profile
-                stored_emulator_id = profile_entry.get("emulator_id")
-                if stored_emulator_id:
-                    # Verify if this emulator is running
-                    try:
-                        result = subprocess.run(
-                            [f"{self.android_home}/platform-tools/adb", "devices"],
-                            check=False,
-                            capture_output=True,
-                            text=True,
-                            timeout=3,
-                        )
-                        if stored_emulator_id in result.stdout and "device" in result.stdout:
-                            logger.info(
-                                f"Found emulator {stored_emulator_id} in profile for {email} and it's running"
+                # Check if there's an emulator_id in VNC instance manager
+                try:
+                    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                    vnc_manager = VNCInstanceManager.get_instance()
+                    stored_emulator_id = vnc_manager.get_emulator_id(email)
+
+                    if stored_emulator_id:
+                        # Verify if this emulator is running
+                        try:
+                            result = subprocess.run(
+                                [f"{self.android_home}/platform-tools/adb", "devices"],
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=3,
                             )
-                            return True, stored_emulator_id, avd_name
-                    except Exception as e:
-                        logger.warning(
-                            f"Error checking if stored emulator {stored_emulator_id} is running: {e}"
-                        )
+                            if stored_emulator_id in result.stdout and "device" in result.stdout:
+                                logger.info(
+                                    f"Found emulator {stored_emulator_id} from VNC instance for {email} and it's running"
+                                )
+                                return True, stored_emulator_id, avd_name
+                        except Exception as e:
+                            logger.warning(
+                                f"Error checking if VNC emulator {stored_emulator_id} is running: {e}"
+                            )
+                except Exception as e:
+                    logger.warning(f"Error accessing VNC instance manager: {e}")
             elif isinstance(profile_entry, str):
                 avd_name = profile_entry
 
@@ -119,25 +126,7 @@ class DeviceDiscovery:
             except Exception as e:
                 logger.error(f"Error updating VNC instance with emulator ID: {e}")
 
-            # Also update the profile directly
-            try:
-                if profiles_index and email in profiles_index:
-                    profile_entry = profiles_index.get(email)
-                    if isinstance(profile_entry, dict):
-                        profile_entry["emulator_id"] = emulator_id
-                        # Save changes
-                        try:
-                            from views.core.avd_profile_manager import AVDProfileManager
-
-                            avd_manager = AVDProfileManager.get_instance()
-                            if email in avd_manager.profiles_index:
-                                avd_manager.profiles_index[email]["emulator_id"] = emulator_id
-                                avd_manager._save_profiles_index()
-                                logger.info(f"Updated profile with emulator ID {emulator_id} for {email}")
-                        except Exception as e:
-                            logger.error(f"Error updating profile with emulator ID: {e}")
-            except Exception as e:
-                logger.error(f"Error setting emulator_id in profile: {e}")
+            # No longer storing emulator_id in profiles - VNC instance manager is the source of truth
 
             return True, emulator_id, avd_name
 

@@ -55,16 +55,20 @@ class KindleAutomator:
         # Get device ID from driver
         self.device_id = driver.get_device_id()
 
-        # Verify the device ID matches what's in the profile
+        # Verify the device ID matches what's assigned in VNC instance manager
         email = get_sindarin_email()
-        profile = self.profile_manager.get_profile_for_email(email)
-        if profile and "emulator_id" in profile:
-            profile_emulator_id = profile["emulator_id"]
-            if profile_emulator_id and profile_emulator_id != self.device_id:
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_emulator_id = vnc_manager.get_emulator_id(email)
+            if vnc_emulator_id and vnc_emulator_id != self.device_id:
                 logger.warning(
-                    f"Device ID mismatch: driver has {self.device_id}, profile has {profile_emulator_id}. Profile: {profile}"
+                    f"Device ID mismatch: driver has {self.device_id}, VNC instance has {vnc_emulator_id} for {email}"
                 )
                 return False
+        except Exception as e:
+            logger.warning(f"Could not verify device ID from VNC instance manager: {e}")
 
         # Initialize state machine without credentials or captcha
         self.state_machine = KindleStateMachine(self.driver)

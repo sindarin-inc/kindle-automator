@@ -499,8 +499,7 @@ class AVDProfileManager:
                 vnc_manager.set_emulator_id(email, emulator_id)
             except Exception as e:
                 logger.warning(f"Error storing emulator ID in VNC instance: {e}")
-                # Fallback to storing in profile data for backward compatibility
-                self.profiles_index[email]["emulator_id"] = emulator_id
+                # No longer storing emulator_id in profiles - VNC instance manager is the source of truth
 
         # Only store preferences in the designated "preferences" key
         # Ensure we don't duplicate preference data at root level
