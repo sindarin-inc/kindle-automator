@@ -2232,7 +2232,7 @@ def cleanup_resources():
     # Stop Appium servers for all running emulators
     from server.utils.appium_driver import AppiumDriver
 
-    appium_driver = AppiumDriver()
+    appium_driver = AppiumDriver.get_instance()
 
     for email in running_emails:
         try:

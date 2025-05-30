@@ -45,6 +45,27 @@ def ensure_automator_healthy(f):
         # Update activity timestamp for this email
         server.update_activity(sindarin_email)
 
+        # Proactively check for stale Appium processes before attempting operations
+        try:
+            from server.utils.appium_driver import AppiumDriver
+
+            appium_driver = AppiumDriver.get_instance()
+            appium_info = appium_driver.get_appium_process_info(sindarin_email)
+
+            if appium_info and appium_info.get("running"):
+                # Check if it's actually healthy
+                if not appium_driver._check_appium_health(sindarin_email):
+                    logger.warning(
+                        f"Detected stale Appium process for {sindarin_email} before operation, cleaning up"
+                    )
+                    appium_driver.stop_appium_for_profile(sindarin_email)
+                    # Clear the automator as well since it has a stale driver
+                    if sindarin_email in server.automators and server.automators[sindarin_email]:
+                        server.automators[sindarin_email].cleanup()
+                        server.automators[sindarin_email] = None
+        except Exception as e:
+            logger.warning(f"Error checking for stale Appium processes: {e}")
+
         for attempt in range(max_retries):
             try:
                 # Get the automator for this email
@@ -147,10 +168,24 @@ def ensure_automator_healthy(f):
                     try:
                         logger.info(f"Resetting Appium server state for email {sindarin_email}")
 
+                        from server.utils.appium_driver import AppiumDriver
                         from server.utils.port_utils import get_appium_port_for_email
                         from server.utils.vnc_instance_manager import VNCInstanceManager
 
                         vnc_manager = VNCInstanceManager.get_instance()
+                        appium_driver = AppiumDriver.get_instance()
+
+                        # Check if Appium is running but not healthy (stale process)
+                        appium_info = appium_driver.get_appium_process_info(sindarin_email)
+                        if appium_info and appium_info.get("running"):
+                            # Check if it's actually healthy
+                            if not appium_driver._check_appium_health(sindarin_email):
+                                logger.warning(
+                                    f"Found stale Appium process for {sindarin_email}, stopping it"
+                                )
+                                appium_driver.stop_appium_for_profile(sindarin_email)
+                                time.sleep(2)
+
                         port = get_appium_port_for_email(
                             sindarin_email,
                             vnc_manager=vnc_manager,

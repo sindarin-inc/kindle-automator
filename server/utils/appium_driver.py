@@ -27,13 +27,34 @@ class AppiumDriver:
     Manages Appium server instances for multiple profiles.
     Works in conjunction with VNCInstanceManager to provide centralized
     instance management.
+
+    This is a singleton class - use AppiumDriver.get_instance() to access it.
     """
+
+    _instance = None
+
+    def __new__(cls):
+        """Enforce singleton pattern."""
+        if cls._instance is None:
+            cls._instance = super(AppiumDriver, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
 
     def __init__(self):
         """Initialize the Appium driver manager."""
+        if self._initialized:
+            return
         self.vnc_manager = VNCInstanceManager.get_instance()
         self.pid_dir = "logs"
         os.makedirs(self.pid_dir, exist_ok=True)
+        self._initialized = True
+
+    @classmethod
+    def get_instance(cls):
+        """Get the singleton instance of AppiumDriver."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def start_appium_for_profile(self, email: str) -> bool:
         """

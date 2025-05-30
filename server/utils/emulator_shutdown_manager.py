@@ -256,11 +256,28 @@ class EmulatorShutdownManager:
             if automator:
                 try:
                     logger.info(f"Cleaning up automator for {email}")
+
+                    # Also check if Appium needs to be stopped
+                    # This handles cases where the automator cleanup doesn't properly stop Appium
+                    try:
+                        from server.utils.appium_driver import AppiumDriver
+
+                        appium_driver = AppiumDriver.get_instance()
+                        appium_info = appium_driver.get_appium_process_info(email)
+
+                        if appium_info and appium_info.get("running"):
+                            logger.info(f"Stopping Appium process for {email}")
+                            appium_driver.stop_appium_for_profile(email)
+                    except Exception as appium_e:
+                        logger.warning(f"Error checking/stopping Appium during shutdown: {appium_e}")
+
                     automator.cleanup()
                     self.server.automators[email] = None
                     shutdown_summary["automator_cleaned"] = True
                 except Exception as e:
                     logger.error(f"Error cleaning up automator: {e}")
+                    # Even if cleanup fails, try to clear the automator reference
+                    self.server.automators[email] = None
 
             # Clear current book tracking
             self.server.clear_current_book(email)

@@ -882,7 +882,7 @@ class Driver:
             return False
 
         # Check if Appium is already running for this profile
-        appium_driver = AppiumDriver()
+        appium_driver = AppiumDriver.get_instance()
         appium_info = appium_driver.get_appium_process_info(email)
         if not appium_info or not appium_info.get("running"):
             # Start the Appium server for this profile
