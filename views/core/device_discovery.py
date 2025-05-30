@@ -141,6 +141,37 @@ class DeviceDiscovery:
         logger.info(f"No running emulator found for {email}")
         return False, None, avd_name
 
+    def _query_emulator_avd_name(self, emulator_id: str) -> Optional[str]:
+        """
+        Query the emulator directly to get its AVD name.
+
+        Args:
+            emulator_id: The emulator device ID (e.g., 'emulator-5554')
+
+        Returns:
+            Optional[str]: The AVD name or None if not found
+        """
+        try:
+            # Query the emulator's AVD name directly via adb
+            result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+
+            if result.returncode == 0 and result.stdout:
+                avd_name = result.stdout.strip()
+                if avd_name:
+                    logger.info(f"Queried emulator {emulator_id} directly, running AVD: {avd_name}")
+                    return avd_name
+
+        except Exception as e:
+            logger.warning(f"Error querying emulator {emulator_id} for AVD name: {e}")
+
+        return None
+
     def _get_avd_name_for_emulator(self, emulator_id: str, profiles_index: Dict) -> Optional[str]:
         """
         Get the AVD name for a running emulator using AVD Profile Manager.
@@ -152,17 +183,15 @@ class DeviceDiscovery:
             Optional[str]: The AVD name or None if not found
         """
         try:
+            # First, try to query the emulator directly - this is the most reliable method
+            avd_name = self._query_emulator_avd_name(emulator_id)
+            if avd_name:
+                return avd_name
+
             # In simplified mode, we may not have AVD names in profiles
             if self.use_simplified_mode:
                 # Don't assume any email, just return None
                 return None
-
-            # First, search for the emulator_id in all profiles
-            for email, profile in profiles_index.items():
-                if isinstance(profile, dict) and profile.get("emulator_id") == emulator_id:
-                    avd_name = profile.get("avd_name")
-                    if avd_name:
-                        return avd_name
 
             # Next, check VNC instances for this emulator ID
             try:
