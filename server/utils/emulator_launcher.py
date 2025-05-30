@@ -830,7 +830,7 @@ class EmulatorLauncher:
             logger.info(
                 f"Starting emulator for AVD {avd_name} (email {email}) on display :{display_num} and port {emulator_port}"
             )
-            # logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
+            logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
@@ -857,17 +857,7 @@ class EmulatorLauncher:
             except Exception as e:
                 logger.error(f"Error storing emulator ID in VNC instance: {e}")
 
-            # 3. Update the user profile directly
-            try:
-                from views.core.avd_profile_manager import AVDProfileManager
-
-                avd_manager = AVDProfileManager.get_instance()
-                if email in avd_manager.profiles_index:
-                    avd_manager.profiles_index[email]["emulator_id"] = emulator_id
-                    avd_manager._save_profiles_index()
-                    logger.info(f"Updated profile with emulator ID {emulator_id} for {email}")
-            except Exception as e:
-                logger.error(f"Error updating profile with emulator ID: {e}")
+            # 3. No longer storing emulator_id in profiles - VNC instance manager is the source of truth
 
             # Now ensure VNC is running for this display after emulator is launched
             if platform.system() != "Darwin":

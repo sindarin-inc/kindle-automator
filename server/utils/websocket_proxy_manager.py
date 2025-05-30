@@ -105,6 +105,10 @@ class WebSocketProxyManager:
             stderr_log = log_dir / f"rfbproxy_{email_slug}_{timestamp}.stderr.log"
 
             # Launch process with appropriate settings
+            # Set RUST_LOG=debug for verbose logging
+            env = os.environ.copy()
+            env["RUST_LOG"] = "debug"
+
             with open(str(stdout_log), "w") as stdout_file, open(str(stderr_log), "w") as stderr_file:
                 process = subprocess.Popen(
                     cmd,
@@ -112,6 +116,7 @@ class WebSocketProxyManager:
                     stderr=stderr_file,
                     text=True,
                     start_new_session=True,  # Allows the process to run independently
+                    env=env,
                 )
                 logger.info(f"rfbproxy logs: stdout={stdout_log}, stderr={stderr_log}")
 

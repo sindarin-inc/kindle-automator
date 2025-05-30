@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 import time
 import traceback
 from functools import wraps
@@ -257,12 +258,18 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
                     logger.info("Captcha required response - passing through without retry")
                     return format_response(result)
                 elif status_code >= 400:
-                    # For other errors, include status_code in the response to maintain it through retries
-                    response_with_code = response
-                    if isinstance(response, dict):
-                        response_with_code = response.copy()
-                        response_with_code["status_code"] = status_code
-                    raise Exception(response_with_code)
+                    # Client errors (4xx) should not be retried
+                    if 400 <= status_code < 500:
+                        logger.info(f"Client error {status_code} - not retrying")
+                        return format_response((response, status_code))
+                    # Server errors (5xx) should be retried
+                    else:
+                        # For server errors, include status_code in the response to maintain it through retries
+                        response_with_code = response
+                        if isinstance(response, dict):
+                            response_with_code = response.copy()
+                            response_with_code["status_code"] = status_code
+                        raise Exception(response_with_code)
 
             # Success case - format and return the result
             return format_response(result)
@@ -345,6 +352,148 @@ def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
     return {"error": str(last_error), "time_taken": time_taken}, 500
 
 
+def _get_timezone_from_request():
+    """Extract timezone parameter from request (query params, JSON body, or form data).
+
+    Returns:
+        Optional[str]: The timezone string if provided and valid, None otherwise
+    """
+    from flask import has_request_context, request
+
+    if not has_request_context():
+        return None
+
+    # Check URL query parameters first
+    timezone = request.args.get("timezone")
+    if timezone and isinstance(timezone, str) and timezone.strip():
+        return timezone.strip()
+
+    # Check JSON body
+    if request.is_json:
+        try:
+            json_data = request.get_json(silent=True) or {}
+            timezone = json_data.get("timezone")
+            # Ensure it's a non-empty string
+            if timezone and isinstance(timezone, str) and timezone.strip():
+                return timezone.strip()
+        except Exception as e:
+            logger.warning(f"Error parsing JSON for timezone parameter: {e}")
+
+    # Check form data
+    timezone = request.form.get("timezone")
+    if timezone and isinstance(timezone, str) and timezone.strip():
+        return timezone.strip()
+
+    return None
+
+
+def _apply_timezone_to_device(server_instance, sindarin_email: str, timezone: str) -> bool:
+    """Apply timezone setting to the Android device using ADB.
+
+    Args:
+        server_instance: The AutomationServer instance
+        sindarin_email: The user's email
+        timezone: The timezone to set (e.g., "America/Chicago")
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Get the automator for this email
+        automator = None
+        if sindarin_email and hasattr(server_instance, "automators"):
+            automator = server_instance.automators.get(sindarin_email)
+
+        if not automator or not hasattr(automator, "device_id"):
+            logger.warning(f"No automator or device_id found for {sindarin_email}, cannot apply timezone")
+            return False
+
+        device_id = automator.device_id
+        android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
+        adb_path = os.path.join(android_home, "platform-tools", "adb")
+
+        # Set timezone using setprop command
+        cmd = [adb_path, "-s", device_id, "shell", "setprop", "persist.sys.timezone", timezone]
+        logger.info(f"Setting timezone for {sindarin_email} on device {device_id}: {timezone}")
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+
+        if result.returncode != 0:
+            logger.error(f"Failed to set timezone: {result.stderr}")
+            return False
+
+        # Broadcast the time change to ensure apps pick it up
+        broadcast_cmd = [
+            adb_path,
+            "-s",
+            device_id,
+            "shell",
+            "am",
+            "broadcast",
+            "-a",
+            "android.intent.action.TIME_SET",
+        ]
+        subprocess.run(broadcast_cmd, capture_output=True, text=True, timeout=5)
+
+        logger.info(f"Successfully set timezone to {timezone} for {sindarin_email}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error applying timezone to device: {e}")
+        return False
+
+
+def _handle_timezone_parameter(server_instance, sindarin_email: Optional[str]):
+    """Check for timezone parameter in request and handle it if present.
+
+    Args:
+        server_instance: The AutomationServer instance
+        sindarin_email: The user's email
+    """
+    if not sindarin_email:
+        return
+
+    # Check if timezone is provided in the request
+    timezone = _get_timezone_from_request()
+
+    # Ensure timezone is not None, empty string, or just whitespace
+    if timezone and timezone.strip():
+        timezone = timezone.strip()  # Remove any leading/trailing whitespace
+        logger.info(f"Timezone parameter detected: {timezone} for {sindarin_email}")
+
+        try:
+            # Get the profile manager instance
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            profile_manager = AVDProfileManager.get_instance()
+
+            # Get the current timezone from the profile
+            current_timezone = profile_manager.get_user_field(sindarin_email, "timezone")
+
+            # Only update if timezone is different
+            if current_timezone != timezone:
+                logger.info(f"Timezone changed from {current_timezone} to {timezone} for {sindarin_email}")
+
+                # Save the timezone to the user's profile
+                success = profile_manager.set_user_field(sindarin_email, "timezone", timezone)
+
+                if success:
+                    logger.info(f"Saved timezone {timezone} for {sindarin_email}")
+
+                    # Apply timezone to the device
+                    if _apply_timezone_to_device(server_instance, sindarin_email, timezone):
+                        logger.info(f"Applied timezone {timezone} to device for {sindarin_email}")
+                    else:
+                        logger.warning(f"Failed to apply timezone to device for {sindarin_email}")
+                else:
+                    logger.error(f"Failed to save timezone for {sindarin_email}")
+            else:
+                logger.debug(f"Timezone unchanged ({timezone}) for {sindarin_email}, skipping device update")
+
+        except Exception as e:
+            logger.error(f"Error handling timezone parameter: {e}")
+
+
 def handle_automator_response(server_instance):
     """Decorator to standardize response handling for automator endpoints.
 
@@ -369,6 +518,9 @@ def handle_automator_response(server_instance):
 
             # Get sindarin_email using our utility function with fallbacks
             sindarin_email = get_email_with_fallbacks(server_instance)
+
+            # Check if timezone parameter is provided in the request
+            _handle_timezone_parameter(server_instance, sindarin_email)
 
             # Get the appropriate automator instance
             automator = None
@@ -437,9 +589,9 @@ def handle_automator_response(server_instance):
                             }
 
                             if interactive_captcha:
-                                response_data[
-                                    "message"
-                                ] = "Grid-based image captcha detected - app has been restarted automatically"
+                                response_data["message"] = (
+                                    "Grid-based image captcha detected - app has been restarted automatically"
+                                )
                                 response_data["captcha_type"] = "grid"
                                 response_data["requires_restart"] = True
                             else:
@@ -452,6 +604,23 @@ def handle_automator_response(server_instance):
                     if isinstance(result, dict) and result.get("error_type") == "incorrect_password":
                         logger.info("Authentication failed with incorrect password - won't retry")
                         return result, status_code
+
+                    # Check if we need to add timezone_missing flag
+                    if isinstance(result, dict) and sindarin_email:
+                        # Get the profile manager instance
+                        try:
+                            from views.core.avd_profile_manager import AVDProfileManager
+
+                            profile_manager = AVDProfileManager.get_instance()
+
+                            # Check if timezone exists in the user's profile
+                            timezone = profile_manager.get_user_field(sindarin_email, "timezone")
+                            logger.debug(f"Timezone check for {sindarin_email}: {timezone}")
+                            if timezone is None:
+                                logger.info(f"Adding timezone_missing flag for {sindarin_email}")
+                                result["timezone_missing"] = True
+                        except Exception as e:
+                            logger.warning(f"Error checking timezone for {sindarin_email}: {e}")
 
                     # Return original response if no special handling needed
                     return result, status_code

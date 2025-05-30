@@ -314,6 +314,50 @@ class KindleStateMachine:
 
         return result
 
+    def is_reading_view(self) -> bool:
+        """Lightweight check to determine if we're in the reading view.
+
+        This is a cheaper check than the full state detection, specifically for
+        determining if we're currently reading a book.
+
+        Returns:
+            bool: True if we're in the reading view, False otherwise
+        """
+        try:
+            # Import reading view identifiers
+            from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
+
+            # Check for at least 2 reading view elements to be confident
+            reading_elements_count = 0
+            for strategy, locator in READING_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        reading_elements_count += 1
+                        if reading_elements_count >= 2:
+                            logger.debug("Quick reading view check: confirmed reading view")
+                            return True
+                except Exception:
+                    continue
+
+            # Also check for RemoteLicenseReleaseActivity which indicates we're in reading view
+            try:
+                current_activity = self.driver.current_activity
+                if "RemoteLicenseReleaseActivity" in current_activity:
+                    logger.debug("Quick reading view check: RemoteLicenseReleaseActivity detected")
+                    return True
+            except Exception:
+                pass
+
+            logger.debug(
+                f"Quick reading view check: found {reading_elements_count} reading elements - not in reading view"
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Error in is_reading_view check: {e}")
+            return False
+
     def update_current_state(self) -> AppState:
         """Update and return the current state of the app.
 

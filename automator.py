@@ -55,16 +55,20 @@ class KindleAutomator:
         # Get device ID from driver
         self.device_id = driver.get_device_id()
 
-        # Verify the device ID matches what's in the profile
+        # Verify the device ID matches what's assigned in VNC instance manager
         email = get_sindarin_email()
-        profile = self.profile_manager.get_profile_for_email(email)
-        if profile and "emulator_id" in profile:
-            profile_emulator_id = profile["emulator_id"]
-            if profile_emulator_id and profile_emulator_id != self.device_id:
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_emulator_id = vnc_manager.get_emulator_id(email)
+            if vnc_emulator_id and vnc_emulator_id != self.device_id:
                 logger.warning(
-                    f"Device ID mismatch: driver has {self.device_id}, profile has {profile_emulator_id}. Profile: {profile}"
+                    f"Device ID mismatch: driver has {self.device_id}, VNC instance has {vnc_emulator_id} for {email}"
                 )
                 return False
+        except Exception as e:
+            logger.warning(f"Could not verify device ID from VNC instance manager: {e}")
 
         # Initialize state machine without credentials or captcha
         self.state_machine = KindleStateMachine(self.driver)
@@ -183,25 +187,39 @@ class KindleAutomator:
                         logger.error(f"UiAutomator2 server crashed: {error_message}")
                         raise activity_error
 
-                # Check if we're in the app not responding state
+                # Quick check for app not responding dialog without full state determination
                 if self.state_machine:
-                    # Skip the diagnostic page source dump here since it's redundant
-                    current_state = self.state_machine.update_current_state()
-                    if current_state == AppState.APP_NOT_RESPONDING:
-                        logger.info("Detected app not responding dialog - restarting app")
-                        # Handle the app not responding state by using the appropriate handler
-                        handler = self.state_machine.transitions.get_handler_for_state(current_state)
-                        if handler:
-                            result = handler()
-                            if result:
-                                logger.info("Successfully handled app not responding state")
-                                return True
-                            else:
-                                logger.error(
-                                    "Failed to handle app not responding state, reinitializing driver"
-                                )
-                                self.cleanup()
-                                return self.initialize_driver()
+                    try:
+                        # Just check for the specific dialog elements
+                        from views.common.dialog_strategies import (
+                            APP_NOT_RESPONDING_DIALOG_IDENTIFIERS,
+                        )
+
+                        for strategy, locator in APP_NOT_RESPONDING_DIALOG_IDENTIFIERS:
+                            try:
+                                element = self.driver.find_element(strategy, locator)
+                                if element.is_displayed():
+                                    logger.info("Detected app not responding dialog - handling it")
+                                    # Get the handler for APP_NOT_RESPONDING state
+                                    handler = self.state_machine.transitions.get_handler_for_state(
+                                        AppState.APP_NOT_RESPONDING
+                                    )
+                                    if handler:
+                                        result = handler()
+                                        if result:
+                                            logger.info("Successfully handled app not responding state")
+                                            return True
+                                    # If handler failed, reinitialize
+                                    logger.error(
+                                        "Failed to handle app not responding state, reinitializing driver"
+                                    )
+                                    self.cleanup()
+                                    return self.initialize_driver()
+                            except Exception:
+                                # Element not found, continue checking
+                                continue
+                    except Exception as e:
+                        logger.debug(f"Error checking for app not responding dialog: {e}")
 
                 # Try checking app activity
                 try:
