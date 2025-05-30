@@ -324,21 +324,65 @@ class KindleStateMachine:
             bool: True if we're in the reading view, False otherwise
         """
         try:
-            # Import reading view identifiers
-            from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
+            from selenium.common.exceptions import NoSuchElementException
 
-            # Check for at least 2 reading view elements to be confident
+            # Priority elements that are most commonly present in reading view
+            PRIORITY_READING_ELEMENTS = [
+                ("id", "com.amazon.kindle:id/reader_drawer_layout"),
+                ("id", "com.amazon.kindle:id/reader_content_fragment_container"),
+                ("id", "com.amazon.kindle:id/reader_page_fragment_container"),
+                ("id", "com.amazon.kindle:id/reader_content_container"),
+                ("id", "com.amazon.kindle:id/reader_menu_container"),
+            ]
+
+            # Check priority elements first
             reading_elements_count = 0
-            for strategy, locator in READING_VIEW_IDENTIFIERS:
+            elements_found = []
+
+            for strategy, locator in PRIORITY_READING_ELEMENTS:
                 try:
-                    element = self.driver.find_element(strategy, locator)
-                    if element.is_displayed():
-                        reading_elements_count += 1
-                        if reading_elements_count >= 2:
-                            logger.debug("Quick reading view check: confirmed reading view")
-                            return True
-                except Exception:
+                    from appium.webdriver.common.appiumby import AppiumBy
+
+                    element = self.driver.find_element(AppiumBy.ID if strategy == "id" else strategy, locator)
+                    # Just check if element exists, don't require is_displayed() for quick check
+                    reading_elements_count += 1
+                    elements_found.append(locator)
+                    if reading_elements_count >= 2:
+                        logger.debug(
+                            f"Quick reading view check: confirmed reading view with {elements_found}"
+                        )
+                        return True
+                except NoSuchElementException:
+                    # Element not found, continue checking
                     continue
+                except Exception as e:
+                    # Log unexpected errors but continue
+                    logger.debug(f"Unexpected error checking {locator}: {type(e).__name__}")
+                    continue
+
+            # If we didn't find enough priority elements, check the full list
+            if reading_elements_count < 2:
+                from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
+
+                for strategy, locator in READING_VIEW_IDENTIFIERS:
+                    # Skip ones we already checked
+                    if locator in [loc for _, loc in PRIORITY_READING_ELEMENTS]:
+                        continue
+
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        reading_elements_count += 1
+                        elements_found.append(locator)
+                        if reading_elements_count >= 2:
+                            logger.debug(
+                                f"Quick reading view check: confirmed reading view with {elements_found}"
+                            )
+                            return True
+                    except NoSuchElementException:
+                        continue
+                    except Exception as e:
+                        logger.debug(f"Unexpected error checking {locator}: {type(e).__name__}")
+                        continue
 
             # Also check for RemoteLicenseReleaseActivity which indicates we're in reading view
             try:
@@ -350,7 +394,7 @@ class KindleStateMachine:
                 pass
 
             logger.debug(
-                f"Quick reading view check: found {reading_elements_count} reading elements - not in reading view"
+                f"Quick reading view check: found {reading_elements_count} reading elements {elements_found} - not in reading view"
             )
             return False
 
