@@ -192,13 +192,34 @@ class EmulatorShutdownManager:
                     shutdown_summary["emulator_stopped"] = success
                     if success:
                         logger.info(f"Successfully stopped emulator {emulator_id}")
+                        # Clear the emulator_id from VNC instance immediately after stopping
+                        try:
+                            vnc_manager = VNCInstanceManager.get_instance()
+                            vnc_manager.clear_emulator_id_for_profile(email)
+                            logger.info(f"Cleared emulator_id {emulator_id} from VNC instance for {email}")
+                        except Exception as e:
+                            logger.error(f"Error clearing emulator_id from VNC instance: {e}")
                     else:
                         logger.error(f"Failed to stop emulator {emulator_id}")
                 else:
                     logger.info(f"No running emulator found for {email}")
 
+                # Handle platform-specific cleanup
+                if platform.system() == "Darwin":
+                    # macOS: Release VNC instance and stop WebSocket proxy
+                    try:
+                        vnc_manager = VNCInstanceManager.get_instance()
+                        vnc_manager.release_instance_from_profile(email)
+                        logger.info(f"Released VNC instance for {email} on macOS")
+
+                        # The WebSocket proxy cleanup is now handled inside release_instance_from_profile
+                        # when cleanup_resources=True is passed
+                        shutdown_summary["websocket_stopped"] = True
+                    except Exception as e:
+                        logger.error(f"Error releasing VNC instance on macOS: {e}")
+
                 # Stop VNC and Xvfb (Linux only)
-                if platform.system() != "Darwin" and display_num:
+                elif display_num:
                     from server.utils.port_utils import calculate_vnc_port
 
                     vnc_port = calculate_vnc_port(display_num)
@@ -236,21 +257,6 @@ class EmulatorShutdownManager:
                         logger.info(f"Released VNC instance for {email}")
                     except Exception as e:
                         logger.error(f"Error releasing VNC instance: {e}")
-
-                    # Stop WebSocket proxy server (Linux only, along with VNC)
-                    try:
-                        ws_proxy_manager = WebSocketProxyManager.get_instance()
-                        if ws_proxy_manager.is_proxy_running(email):
-                            logger.info(f"Stopping WebSocket proxy for {email}")
-                            if ws_proxy_manager.stop_proxy(email):
-                                logger.info(f"Successfully stopped WebSocket proxy for {email}")
-                                shutdown_summary["websocket_stopped"] = True
-                            else:
-                                logger.error(f"Failed to stop WebSocket proxy for {email}")
-                        else:
-                            logger.info(f"No WebSocket proxy running for {email}")
-                    except Exception as e:
-                        logger.error(f"Error stopping WebSocket proxy: {e}")
 
             # Clean up the automator
             if automator:
