@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -207,25 +208,25 @@ class AVDProfileManager:
 
                     # Set up all the cross-references that normally happen during initialization
                     # Get the device_id from the driver and propagate it
-                    if hasattr(driver_instance, 'device_id') and driver_instance.device_id:
+                    if hasattr(driver_instance, "device_id") and driver_instance.device_id:
                         automator.device_id = driver_instance.device_id
                         logger.info(f"Set device_id on automator: {automator.device_id}")
-                    
+
                     # Set the WebDriver reference on automator
                     automator.driver = driver_instance.driver
-                    
+
                     # Ensure the driver has reference to automator (needed by state machine)
                     if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
                         driver_instance.driver.automator = automator
 
                     # Create state machine to navigate to Library
                     state_machine = KindleStateMachine(driver_instance.driver)
-                    
+
                     # Set the state machine on automator for completeness
                     automator.state_machine = state_machine
-                    
+
                     # Ensure view inspector has device_id
-                    if hasattr(state_machine, 'view_inspector') and automator.device_id:
+                    if hasattr(state_machine, "view_inspector") and automator.device_id:
                         state_machine.view_inspector.device_id = automator.device_id
                         logger.info(f"Set device_id on view_inspector: {automator.device_id}")
 
@@ -1414,3 +1415,91 @@ class AVDProfileManager:
             self._save_profile_status(email, avd_name)
             logger.error(f"Failed to start emulator for profile {email}, but updated profile tracking")
             return False, f"Failed to start emulator for profile {email}"
+
+    def recreate_profile_avd(self, email: str) -> Tuple[bool, str]:
+        """
+        Completely recreate AVD for a profile. This will:
+        1. Stop any running emulators (user and seed clone)
+        2. Delete the user's AVD
+        3. Delete the seed clone AVD
+        4. Clean up profile data
+        5. Clean up any existing automator
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        logger.info(f"Recreating profile AVD for {email}")
+
+        try:
+            # Stop user's emulator if running
+            user_emulator_id, _ = self.emulator_launcher.get_running_emulator(email)
+            if user_emulator_id:
+                logger.info(f"Stopping running emulator for {email}")
+                self.emulator_launcher.stop_emulator(email)
+                time.sleep(2)  # Give it time to shut down
+
+            # Stop seed clone emulator if running
+            seed_emulator_id, _ = self.emulator_launcher.get_running_emulator(AVDCreator.SEED_CLONE_EMAIL)
+            if seed_emulator_id:
+                logger.info("Stopping running seed clone emulator")
+                self.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                time.sleep(2)  # Give it time to shut down
+
+            # Delete the user's AVD
+            avd_name = self.avd_creator.get_avd_name_from_email(email)
+            logger.info(f"Deleting user AVD: {avd_name}")
+            success, msg = self.avd_creator.delete_avd(email)
+            if not success:
+                logger.warning(f"Failed to delete user AVD through avdmanager: {msg}, trying manual deletion")
+                # Manual deletion as fallback
+                avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+                avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
+                if os.path.exists(avd_path):
+                    shutil.rmtree(avd_path, ignore_errors=True)
+                if os.path.exists(avd_ini_path):
+                    try:
+                        os.remove(avd_ini_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete AVD ini file: {e}")
+
+            # Delete the seed clone AVD
+            seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
+            logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
+            success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+            if not success:
+                logger.warning(
+                    f"Failed to delete seed clone AVD through avdmanager: {msg}, trying manual deletion"
+                )
+                # Manual deletion as fallback
+                seed_avd_path = os.path.join(self.avd_dir, f"{seed_avd_name}.avd")
+                seed_avd_ini_path = os.path.join(self.avd_dir, f"{seed_avd_name}.ini")
+                if os.path.exists(seed_avd_path):
+                    shutil.rmtree(seed_avd_path, ignore_errors=True)
+                if os.path.exists(seed_avd_ini_path):
+                    try:
+                        os.remove(seed_avd_ini_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete seed clone AVD ini file: {e}")
+
+            # Clear any cached emulator data
+            self.emulator_launcher.running_emulators.pop(avd_name, None)
+            self.emulator_launcher.running_emulators.pop(seed_avd_name, None)
+
+            # Remove the user from profiles index
+            if email in self.profiles_index:
+                del self.profiles_index[email]
+                self._save_profiles_index()
+                logger.info(f"Removed {email} from profiles index")
+
+            # Force the profile manager to reload
+            self._load_profiles_index()
+
+            logger.info(f"Successfully recreated profile AVD for {email}")
+            return True, "Profile AVD recreated successfully"
+
+        except Exception as e:
+            logger.error(f"Error recreating profile AVD for {email}: {e}")
+            return False, f"Failed to recreate profile AVD: {str(e)}"
