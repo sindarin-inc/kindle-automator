@@ -176,7 +176,7 @@ def ensure_user_profile_loaded(f):
         from server.utils.appium_driver import AppiumDriver
         from server.utils.vnc_instance_manager import VNCInstanceManager
 
-        appium_driver = AppiumDriver()
+        appium_driver = AppiumDriver.get_instance()
         vnc_manager = VNCInstanceManager.get_instance()
 
         # Ensure VNC instance exists for this profile (even in macOS dev where we don't use VNC)

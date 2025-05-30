@@ -280,6 +280,34 @@ class VNCInstanceManager:
         if instance:
             instance_id = instance.get("id")
             assigned_profile = instance.get("assigned_profile")
+
+            # Log if assigned_profile is not None and is not the same as the email
+            if assigned_profile is not None and assigned_profile != email:
+                logger.info(
+                    f"Assigned profile {assigned_profile} is not the same as the email {email}, this is a bug"
+                )
+
+            try:
+                # Stop WebSocket proxy if running
+                from server.utils.websocket_proxy_manager import WebSocketProxyManager
+
+                ws_proxy_manager = WebSocketProxyManager.get_instance()
+                if ws_proxy_manager.is_proxy_running(email):
+                    logger.info(f"Stopping WebSocket proxy for {email} during cleanup")
+                    ws_proxy_manager.stop_proxy(email)
+            except Exception as e:
+                logger.error(f"Error stopping WebSocket proxy during cleanup: {e}")
+
+            # Clear Appium-related fields
+            instance["appium_pid"] = None
+            instance["appium_running"] = False
+            instance["appium_last_health_check"] = None
+
+            # Clear emulator_id - this is important to prevent stale references
+            if instance.get("emulator_id"):
+                logger.info(f"Clearing emulator_id {instance['emulator_id']} for {email}")
+            instance["emulator_id"] = None
+
             instance["assigned_profile"] = None
             self.save_instances()
             logger.info(f"Released VNC instance {instance_id} from profile {email}")
@@ -495,3 +523,39 @@ class VNCInstanceManager:
                 logger.info("No appium_running states needed resetting")
         except Exception as e:
             logger.error(f"Error resetting appium states on startup: {e}")
+
+    def get_all_instances(self) -> List[Dict]:
+        """
+        Get all VNC instances (both assigned and unassigned).
+
+        Returns:
+            List[Dict]: List of all VNC instances
+        """
+        return self.instances.copy()
+
+    def get_assigned_instances(self) -> List[Dict]:
+        """
+        Get only VNC instances that are assigned to profiles.
+
+        Returns:
+            List[Dict]: List of assigned VNC instances
+        """
+        return [instance for instance in self.instances if instance.get("assigned_profile") is not None]
+
+    def clear_emulator_id_for_profile(self, email: str) -> bool:
+        """
+        Clear the emulator_id for a specific profile's VNC instance.
+
+        Args:
+            email: Email address of the profile
+
+        Returns:
+            bool: True if cleared successfully, False otherwise
+        """
+        instance = self.get_instance_for_profile(email)
+        if instance and instance.get("emulator_id"):
+            logger.info(f"Clearing emulator_id {instance['emulator_id']} for profile {email}")
+            instance["emulator_id"] = None
+            self.save_instances()
+            return True
+        return False

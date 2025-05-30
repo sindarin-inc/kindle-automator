@@ -195,10 +195,10 @@ class AVDProfileManager:
                 # Set the appium port from the VNC instance
                 driver_instance.appium_port = instance.get("appium_port", 4723)
 
-                # Ensure Appium is running for this instance
-                appium_driver = AppiumDriver()
-                if not appium_driver.start_appium_for_profile(email):
-                    return False, "Failed to start Appium for Kindle preparation"
+            # Ensure Appium is running for this instance
+            appium_driver = AppiumDriver.get_instance()
+            if not appium_driver.start_appium_for_profile(email):
+                return False, "Failed to start Appium for Kindle preparation"
 
                 try:
                     # Initialize the driver (this will install Kindle if needed)
