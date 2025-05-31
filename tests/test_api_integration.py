@@ -25,11 +25,11 @@ class TestKindleAPIIntegration:
         self.default_params = {"user_email": TEST_USER_EMAIL, "staging": STAGING}
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "KindleAutomator/IntegrationTests"})
-        
+
         # Set Authorization header for API authentication
         if WEB_AUTH_TOKEN:
             self.session.headers.update({"Authorization": f"Tolkien {WEB_AUTH_TOKEN}"})
-        
+
         # Set staff auth cookie for user_email override
         if STAFF_AUTH_TOKEN:
             # Don't set domain to allow cookie to work with any domain
@@ -41,7 +41,6 @@ class TestKindleAPIIntegration:
         """Helper to make API requests."""
         url = f"{self.base_url}/{endpoint}"
         request_params = {**self.default_params, **(params or {})}
-        
 
         if method == "GET":
             response = self.session.get(url, params=request_params, timeout=120)
@@ -99,7 +98,7 @@ class TestKindleAPIIntegration:
             response = self._make_request("shutdown", method="POST")
         except requests.exceptions.ReadTimeout:
             pytest.skip("Shutdown endpoint timed out - may not have an active emulator")
-            
+
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
@@ -115,11 +114,11 @@ class TestKindleAPIIntegration:
         """Test the full sequence of endpoints."""
         # Open book
         open_response = self._make_request("open-random-book")
-        
+
         # Handle case where no books are cached
         if open_response.status_code == 404 and "No books found" in open_response.text:
             pytest.skip("No books found in cache for test user")
-            
+
         assert open_response.status_code == 200
         time.sleep(3)  # Wait for book to load
 

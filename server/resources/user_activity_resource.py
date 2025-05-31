@@ -353,7 +353,7 @@ class UserActivityResource(Resource):
                             desc_parts.append(f"navigate={navigate}")
                         if preview > 0:
                             desc_parts.append(f"preview={preview}")
-                        
+
                         if desc_parts:
                             desc = "navigation request (" + ", ".join(desc_parts) + ")"
                         else:
