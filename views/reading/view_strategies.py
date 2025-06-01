@@ -12,6 +12,7 @@ READING_VIEW_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"),
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_container"),
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),
+    (AppiumBy.ID, "com.amazon.kindle:id/manga_root_layout"),  # Manga/comic reader view
 ]
 
 # Comic book view identifiers
