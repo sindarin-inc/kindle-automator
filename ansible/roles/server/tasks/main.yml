@@ -183,3 +183,4 @@
     src: logrotate-kindle-automator.j2
     dest: /etc/logrotate.d/kindle-automator
     mode: "0644"
+  tags: logrotate

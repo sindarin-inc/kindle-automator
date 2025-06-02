@@ -111,28 +111,42 @@ class ColdStorageStatusResource(Resource):
 
             # Get days parameter from query params
             days_inactive = int(request.args.get("days", request.args.get("days_inactive", 30)))
+            logger.info(f"Checking cold storage status with days_inactive={days_inactive}")
 
             cold_storage_manager = ColdStorageManager.get_instance()
             profile_manager = AVDProfileManager.get_instance()
 
             # Get all profiles
+            logger.info("Fetching all profiles...")
             all_profiles = profile_manager.list_profiles()
+            logger.info(f"Found {len(all_profiles)} total profiles")
 
             cold_storage_profiles = []
             eligible_profiles = []
             active_profiles = []
 
-            for profile in all_profiles:
+            # Get eligible list once to avoid repeated calls
+            logger.info("Getting list of profiles eligible for cold storage...")
+            eligible_list = cold_storage_manager.get_profiles_eligible_for_cold_storage(days_inactive)
+            logger.info(f"Found {len(eligible_list)} eligible profiles")
+
+            logger.info("Processing individual profiles...")
+            for i, profile in enumerate(all_profiles):
                 email = profile["email"]
+                
+                if i % 10 == 0:
+                    logger.info(f"Processing profile {i+1}/{len(all_profiles)}")
 
                 # Check if in cold storage
                 cold_storage_date = profile_manager.get_user_field(email, "cold_storage_date")
                 if cold_storage_date:
+                    logger.debug(f"Profile {email} is in cold storage since {cold_storage_date}")
+                    in_s3 = cold_storage_manager.is_in_cold_storage(email)
                     cold_storage_profiles.append(
                         {
                             "email": email,
                             "cold_storage_date": cold_storage_date,
-                            "in_s3": cold_storage_manager.is_in_cold_storage(email),
+                            "in_s3": in_s3,
                         }
                     )
                 else:
@@ -145,9 +159,10 @@ class ColdStorageStatusResource(Resource):
                             last_used_date = datetime.fromtimestamp(last_used).isoformat()
                         except (ValueError, TypeError):
                             logger.warning(f"Invalid last_used timestamp for {email}: {last_used}")
+                    else:
+                        logger.debug(f"Profile {email} has no last_used timestamp")
 
-                    # Check if eligible for cold storage with custom days parameter
-                    eligible_list = cold_storage_manager.get_profiles_eligible_for_cold_storage(days_inactive)
+                    # Check if eligible for cold storage
                     if email in eligible_list:
                         eligible_profiles.append(
                             {
@@ -162,6 +177,9 @@ class ColdStorageStatusResource(Resource):
                                 "last_used_date": last_used_date,
                             }
                         )
+
+            logger.info(f"Status check complete: {len(cold_storage_profiles)} in cold storage, "
+                       f"{len(eligible_profiles)} eligible, {len(active_profiles)} active")
 
             return {
                 "success": True,
