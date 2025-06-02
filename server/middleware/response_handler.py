@@ -514,7 +514,8 @@ def handle_automator_response(server_instance):
         def wrapper(*args, **kwargs):
             # Try to get start time from request context first (set by request logger middleware)
             from flask import g
-            start_time = getattr(g, 'request_start_time', None)
+
+            start_time = getattr(g, "request_start_time", None)
             if start_time is None:
                 # Fallback to current time if not available
                 start_time = time.time()

@@ -1359,7 +1359,7 @@ class AuthResource(Resource):
             actions.append("user AVD")
         if recreate_seed:
             actions.append("seed clone")
-        
+
         logger.info(f"Recreate requested for {sindarin_email}, will recreate: {', '.join(actions)}")
 
         from views.core.avd_profile_manager import AVDProfileManager
@@ -1654,7 +1654,7 @@ class AuthResource(Resource):
         sindarin_email = params.get("sindarin_email") or params.get("email")
         recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
         recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
-        
+
         if sindarin_email and (recreate_user or recreate_seed):
             success, message = self._handle_recreate(sindarin_email, recreate_user, recreate_seed)
             if not success:

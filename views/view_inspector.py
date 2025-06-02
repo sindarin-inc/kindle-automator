@@ -354,9 +354,11 @@ class ViewInspector:
             try:
                 current_activity = self.driver.current_activity
                 logger.info(f"Current activity: {current_activity}")
-                
+
                 # Check if we're on the Android dashboard/launcher
-                if current_activity and ("NexusLauncher" in current_activity or "Launcher" in current_activity):
+                if current_activity and (
+                    "NexusLauncher" in current_activity or "Launcher" in current_activity
+                ):
                     logger.warning("Detected Android dashboard - Kindle app is not in foreground")
                     # Try to launch the Kindle app
                     if self.ensure_app_foreground():

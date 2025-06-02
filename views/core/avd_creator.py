@@ -444,6 +444,9 @@ class AVDCreator:
             # Update the AVD configuration files to reference the new name
             self._update_avd_config_for_new_name(seed_clone_name, new_avd_name, email)
 
+            # Update snapshot files to reference the new AVD paths
+            self._update_snapshot_references(seed_clone_name, new_avd_name)
+
             # Mark this AVD as created from seed clone in the user profile
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
@@ -520,6 +523,58 @@ class AVDCreator:
 
         except Exception as e:
             logger.error(f"Error updating AVD config files: {e}")
+
+    def _update_snapshot_references(self, old_avd_name: str, new_avd_name: str) -> None:
+        """
+        Update snapshot files to reference the new AVD paths instead of the seed clone paths.
+        This is necessary for snapshots to work correctly after copying an AVD.
+
+        Args:
+            old_avd_name: The seed clone AVD name
+            new_avd_name: The new AVD name
+        """
+        try:
+            snapshots_dir = os.path.join(self.avd_dir, f"{new_avd_name}.avd", "snapshots")
+            if not os.path.exists(snapshots_dir):
+                logger.debug(f"No snapshots directory found for {new_avd_name}")
+                return
+
+            # Process each snapshot
+            for snapshot_name in os.listdir(snapshots_dir):
+                snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+                if not os.path.isdir(snapshot_path):
+                    continue
+
+                logger.info(f"Updating snapshot '{snapshot_name}' references for {new_avd_name}")
+
+                # Update hardware.ini
+                hardware_ini_path = os.path.join(snapshot_path, "hardware.ini")
+                if os.path.exists(hardware_ini_path):
+                    self._replace_avd_name_in_file(hardware_ini_path, old_avd_name, new_avd_name)
+                    logger.debug(f"Updated hardware.ini in snapshot '{snapshot_name}'")
+
+                # Update snapshot.pb (binary protobuf file - requires binary replacement)
+                snapshot_pb_path = os.path.join(snapshot_path, "snapshot.pb")
+                if os.path.exists(snapshot_pb_path):
+                    try:
+                        with open(snapshot_pb_path, "rb") as f:
+                            content = f.read()
+
+                        # Replace old AVD name with new one in binary content
+                        old_bytes = old_avd_name.encode("utf-8")
+                        new_bytes = new_avd_name.encode("utf-8")
+                        updated_content = content.replace(old_bytes, new_bytes)
+
+                        # Only write if content changed
+                        if content != updated_content:
+                            with open(snapshot_pb_path, "wb") as f:
+                                f.write(updated_content)
+                            logger.debug(f"Updated snapshot.pb in snapshot '{snapshot_name}'")
+                    except Exception as e:
+                        logger.warning(f"Failed to update snapshot.pb: {e}")
+
+        except Exception as e:
+            logger.error(f"Error updating snapshot references: {e}")
 
     def is_seed_clone_ready(self) -> bool:
         """

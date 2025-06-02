@@ -1424,7 +1424,9 @@ class AVDProfileManager:
             logger.error(f"Failed to start emulator for profile {email}, but updated profile tracking")
             return False, f"Failed to start emulator for profile {email}"
 
-    def recreate_profile_avd(self, email: str, recreate_user: bool = True, recreate_seed: bool = True) -> Tuple[bool, str]:
+    def recreate_profile_avd(
+        self, email: str, recreate_user: bool = True, recreate_seed: bool = True
+    ) -> Tuple[bool, str]:
         """
         Completely recreate AVD for a profile. This will:
         1. Stop any running emulators (user and/or seed clone based on parameters)
@@ -1446,7 +1448,7 @@ class AVDProfileManager:
             actions.append("user AVD")
         if recreate_seed:
             actions.append("seed clone")
-        
+
         logger.info(f"Recreating profile AVD for {email} - will recreate: {', '.join(actions)}")
 
         try:
@@ -1475,7 +1477,9 @@ class AVDProfileManager:
                 logger.info(f"Deleting user AVD: {avd_name}")
                 success, msg = self.avd_creator.delete_avd(email)
                 if not success:
-                    logger.warning(f"Failed to delete user AVD through avdmanager: {msg}, trying manual deletion")
+                    logger.warning(
+                        f"Failed to delete user AVD through avdmanager: {msg}, trying manual deletion"
+                    )
                     # Manual deletion as fallback
                     avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
                     avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")

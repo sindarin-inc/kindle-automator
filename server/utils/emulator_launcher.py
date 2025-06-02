@@ -781,14 +781,8 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
-            # Check if this AVD was created from seed clone and has a default_boot snapshot
-            load_snapshot = False
-            if created_from_seed and self.has_snapshot(email, "default_boot"):
-                logger.info(f"AVD created from seed clone has default_boot snapshot - will explicitly load it")
-                load_snapshot = True
-                common_args.extend(["-snapshot", "default_boot"])
-            else:
-                logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
+            # No longer need to explicitly specify snapshot since references are now fixed
+            logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":
