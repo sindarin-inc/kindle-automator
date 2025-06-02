@@ -5,6 +5,7 @@ import platform
 import shutil
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -514,6 +515,7 @@ class AVDProfileManager:
 
         # Update the profile status fields
         self.profiles_index[email]["last_used"] = int(time.time())
+        self.profiles_index[email]["last_used_date"] = datetime.now().isoformat()
         self.profiles_index[email]["avd_name"] = avd_name
         self.profiles_index[email]["email"] = email
 
@@ -867,6 +869,7 @@ class AVDProfileManager:
                     profile["emulator_id"] = emulator_id
                     # Update last used timestamp
                     profile["last_used"] = int(time.time())
+                    profile["last_used_date"] = datetime.now().isoformat()
                     return profile
             else:
                 logger.info(f"Cached emulator {emulator_id} no longer running, clearing cache")
@@ -1318,7 +1321,9 @@ class AVDProfileManager:
         # Check if this AVD actually exists - it might not if we're using
         # manually registered AVDs but the Android Studio AVD was renamed or deleted
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-        avd_exists = os.path.exists(avd_path)
+        avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
+        # AVD is only valid if both the directory and ini file exist
+        avd_exists = os.path.exists(avd_path) and os.path.exists(avd_ini_path)
 
         # First check if there's already a running emulator for this email
         is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)

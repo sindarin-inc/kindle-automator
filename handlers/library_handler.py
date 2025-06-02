@@ -712,6 +712,25 @@ class LibraryHandler:
             start_time = time.time()
 
             while time.time() - start_time < max_wait_time:
+                # Always check sync status first to see if it's complete
+                for strategy, locator in SYNC_STATUS_STRATEGIES:
+                    try:
+                        status_element = self.driver.find_element(strategy, locator)
+                        if status_element.is_displayed():
+                            status_text = status_element.text
+                            logger.info(f"Sync status: {status_text}")
+
+                            # Check if sync is complete (status shows "Last synced" with recent time)
+                            if "Last synced" in status_text:
+                                logger.info("Sync completed successfully")
+                                sync_complete = True
+                                break
+                    except:
+                        continue
+
+                if sync_complete:
+                    break
+
                 # Check if sync is still in progress
                 sync_in_progress = False
                 for strategy, locator in SYNC_PROGRESS_INDICATORS:
@@ -723,26 +742,6 @@ class LibraryHandler:
                             break
                     except:
                         continue
-
-                if not sync_in_progress:
-                    # Check sync status to see if it's complete
-                    for strategy, locator in SYNC_STATUS_STRATEGIES:
-                        try:
-                            status_element = self.driver.find_element(strategy, locator)
-                            if status_element.is_displayed():
-                                status_text = status_element.text
-                                logger.info(f"Sync status: {status_text}")
-
-                                # Check if sync is complete (status shows "Last synced" with recent time)
-                                if "Last synced" in status_text:
-                                    logger.info("Sync completed successfully")
-                                    sync_complete = True
-                                    break
-                        except:
-                            continue
-
-                    if sync_complete:
-                        break
 
                 time.sleep(1)  # Check every second
 

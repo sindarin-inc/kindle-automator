@@ -2094,9 +2094,16 @@ class LastReadPageDialogResource(Resource):
 
 
 # Import resource modules
+from server.resources.cold_storage_resources import (
+    ColdStorageArchiveResource,
+    ColdStorageRestoreResource,
+    ColdStorageStatusResource,
+)
 from server.resources.idle_check_resources import IdleCheckResource
+from server.resources.log_timeline_resource import LogTimelineResource
 from server.resources.shutdown_resources import ShutdownResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
+from server.resources.user_activity_resource import UserActivityResource
 
 # Add resources to API
 api.add_resource(StateResource, "/state")
@@ -2164,6 +2171,27 @@ api.add_resource(
     "/batch-configure-emulators",
     resource_class_kwargs={"server_instance": server},
 )
+api.add_resource(
+    ColdStorageArchiveResource,
+    "/cold-storage/archive",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(
+    ColdStorageStatusResource,
+    "/cold-storage/status",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(
+    ColdStorageRestoreResource,
+    "/cold-storage/restore",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(
+    LogTimelineResource,
+    "/logs/timeline",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(UserActivityResource, "/log")
 
 
 def check_and_restart_adb_server():
@@ -2199,18 +2227,34 @@ def check_and_restart_adb_server():
 def run_idle_check():
     """Run idle check using the IdleCheckResource directly."""
     try:
-        logger.info("Running scheduled idle check...")
         idle_check = IdleCheckResource(server_instance=server)
         result, status_code = idle_check.get()
 
         if status_code == 200:
             shut_down = result.get("shut_down", 0)
             active = result.get("active", 0)
-            logger.info(f"Idle check completed: {shut_down} emulators shut down, {active} active")
         else:
             logger.error(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
         logger.error(f"Error during scheduled idle check: {e}")
+
+
+def run_cold_storage_check():
+    """Run cold storage archival check for profiles inactive for 30+ days."""
+    try:
+        logger.info("Running scheduled cold storage check...")
+        from server.utils.cold_storage_manager import ColdStorageManager
+
+        cold_storage_manager = ColdStorageManager.get_instance()
+        success_count, failure_count, storage_info = cold_storage_manager.archive_eligible_profiles(
+            days_inactive=30
+        )
+
+        logger.info(f"Cold storage check completed: {success_count} archived, {failure_count} failed")
+        if storage_info and storage_info.get("total_space_saved", 0) > 0:
+            logger.info(f"Total space saved: {storage_info['total_space_saved_human']}")
+    except Exception as e:
+        logger.error(f"Error during scheduled cold storage check: {e}")
 
 
 def cleanup_resources():
@@ -2336,7 +2380,7 @@ def main():
 
     auto_restart_emulators_after_startup(server, delay=3.0)
 
-    # Initialize APScheduler for idle checks
+    # Initialize APScheduler for idle checks and cold storage
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(
         func=run_idle_check,
@@ -2345,9 +2389,18 @@ def main():
         name="Idle Emulator Check",
         replace_existing=True,
     )
+    # Add cold storage check - runs daily at 3 AM
+    scheduler.add_job(
+        func=run_cold_storage_check,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="cold_storage_check",
+        name="Cold Storage Archival Check",
+        replace_existing=True,
+    )
     scheduler.start()
     app.scheduler = scheduler
     logger.info("Started APScheduler for idle checks (at :00, :15, :30, :45 each hour)")
+    logger.info("Started APScheduler for cold storage checks (daily at 3:00 AM)")
 
     # Run the server directly, regardless of development mode
     run_server()

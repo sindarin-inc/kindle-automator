@@ -75,6 +75,7 @@ class EmulatorShutdownManager:
             return shutdown_summary
 
         # Before shutting down, conditionally park the emulator in the Library view and take a snapshot
+        ui_automator_crashed = False
         if hasattr(automator, "driver") and automator.driver:
             # Initialize state machine to handle transitions
             try:
@@ -82,8 +83,20 @@ class EmulatorShutdownManager:
             except InvalidSessionIdException:
                 logger.warning(f"Emulator for {email} has no valid session ID, skipping shutdown")
                 return shutdown_summary
+            except Exception as e:
+                # Check if this is a UiAutomator2 crash
+                error_msg = str(e)
+                if (
+                    "instrumentation process is not running" in error_msg
+                    or "UiAutomator2 server" in error_msg
+                ):
+                    logger.error(f"UiAutomator2 crashed for {email}, will force shutdown: {e}")
+                    ui_automator_crashed = True
+                else:
+                    logger.error(f"Unexpected error initializing state machine for {email}: {e}")
+                    ui_automator_crashed = True
 
-            if not preserve_reading_state:
+            if not ui_automator_crashed and not preserve_reading_state:
                 logger.info(f"Parking emulator in Library view and syncing before shutdown for {email}")
                 # Transition to library (this handles navigation from any state)
                 try:
@@ -126,18 +139,39 @@ class EmulatorShutdownManager:
                     else:
                         logger.warning("Failed to transition to Library view before shutdown")
                 except Exception as e:
-                    logger.warning(f"Error transitioning to Library before shutdown: {e}")
+                    error_msg = str(e)
+                    if (
+                        "instrumentation process is not running" in error_msg
+                        or "UiAutomator2 server" in error_msg
+                    ):
+                        logger.error(
+                            f"UiAutomator2 crashed during navigation for {email}, skipping UI operations: {e}"
+                        )
+                        ui_automator_crashed = True
+                    else:
+                        logger.warning(f"Error transitioning to Library before shutdown: {e}")
                     # Continue with shutdown even if parking fails
-            else:
+            elif not ui_automator_crashed and preserve_reading_state:
                 logger.info(f"Preserving reading state - staying in current view for {email}")
-                current_state = state_machine._get_current_state()
-                if current_state == AppState.READING:
-                    logger.info(f"Emulator is in reading view - taking snapshot in current state")
-                else:
-                    logger.info(f"Emulator is in {current_state} view - taking snapshot in current state")
+                try:
+                    current_state = state_machine._get_current_state()
+                    if current_state == AppState.READING:
+                        logger.info(f"Emulator is in reading view - taking snapshot in current state")
+                    else:
+                        logger.info(f"Emulator is in {current_state} view - taking snapshot in current state")
+                except Exception as e:
+                    error_msg = str(e)
+                    if (
+                        "instrumentation process is not running" in error_msg
+                        or "UiAutomator2 server" in error_msg
+                    ):
+                        logger.error(f"UiAutomator2 crashed while checking state for {email}: {e}")
+                        ui_automator_crashed = True
+                    else:
+                        logger.warning(f"Error checking current state: {e}")
 
-            # Take snapshot regardless of whether we navigated to library
-            if hasattr(automator.emulator_manager, "emulator_launcher"):
+            # Take snapshot regardless of whether we navigated to library (unless UiAutomator2 crashed)
+            if not ui_automator_crashed and hasattr(automator.emulator_manager, "emulator_launcher"):
                 (
                     emulator_id,
                     _,
@@ -177,15 +211,36 @@ class EmulatorShutdownManager:
                         logger.info("Using default_boot snapshot - no cleanup needed")
                     else:
                         logger.error(f"Failed to save snapshot for {email}")
+            elif ui_automator_crashed:
+                logger.warning(f"Skipping snapshot due to UiAutomator2 crash for {email}")
+                logger.info(f"Will proceed with forced emulator shutdown for {email}")
 
         try:
             # Stop the emulator
             if hasattr(automator, "emulator_manager") and hasattr(
                 automator.emulator_manager, "emulator_launcher"
             ):
-                emulator_id, display_num = automator.emulator_manager.emulator_launcher.get_running_emulator(
-                    email
-                )
+                try:
+                    emulator_id, display_num = (
+                        automator.emulator_manager.emulator_launcher.get_running_emulator(email)
+                    )
+                except Exception as e:
+                    # Even if we can't get emulator info through normal means, try to force stop
+                    logger.error(f"Error getting running emulator info for {email}: {e}")
+                    logger.info(f"Attempting force shutdown for {email} despite error")
+                    emulator_id = None
+                    display_num = None
+
+                    # Try to stop emulator anyway
+                    try:
+                        success = automator.emulator_manager.emulator_launcher.stop_emulator(email)
+                        shutdown_summary["emulator_stopped"] = success
+                        if success:
+                            logger.info(f"Successfully force stopped emulator for {email}")
+                    except Exception as stop_error:
+                        logger.error(f"Failed to force stop emulator for {email}: {stop_error}")
+                        shutdown_summary["emulator_stopped"] = False
+
                 if emulator_id:
                     logger.info(f"Stopping emulator {emulator_id} for {email}")
                     success = automator.emulator_manager.emulator_launcher.stop_emulator(email)
@@ -201,6 +256,9 @@ class EmulatorShutdownManager:
                             logger.error(f"Error clearing emulator_id from VNC instance: {e}")
                     else:
                         logger.error(f"Failed to stop emulator {emulator_id}")
+                elif emulator_id is None and display_num is None:
+                    # Already handled in the exception case above
+                    pass
                 else:
                     logger.info(f"No running emulator found for {email}")
 
