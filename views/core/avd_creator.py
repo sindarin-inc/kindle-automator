@@ -436,21 +436,52 @@ class AVDCreator:
                 logger.info(f"AVD {new_avd_name} already exists, reusing it")
                 return True, new_avd_name
 
-            logger.info(f"Copying seed clone AVD to create {new_avd_name}")
+            logger.info(f"Creating {new_avd_name} from seed clone using avdmanager move strategy")
 
-            # Copy the entire AVD directory
-            shutil.copytree(seed_clone_path, new_avd_path)
-
-            # Also copy the .ini file
+            # Step 1: Create a backup of the seed clone
+            temp_backup_name = f"{seed_clone_name}_backup_temp"
+            temp_backup_path = os.path.join(self.avd_dir, f"{temp_backup_name}.avd")
+            temp_backup_ini = os.path.join(self.avd_dir, f"{temp_backup_name}.ini")
+            
+            logger.info(f"Creating temporary backup of seed clone at {temp_backup_path}")
+            shutil.copytree(seed_clone_path, temp_backup_path)
+            
+            # Copy the .ini file for the backup
             seed_clone_ini = os.path.join(self.avd_dir, f"{seed_clone_name}.ini")
-            new_avd_ini = os.path.join(self.avd_dir, f"{new_avd_name}.ini")
             if os.path.exists(seed_clone_ini):
-                shutil.copy2(seed_clone_ini, new_avd_ini)
+                shutil.copy2(seed_clone_ini, temp_backup_ini)
 
-            # Update the AVD configuration files to reference the new name
-            self._update_avd_config_for_new_name(seed_clone_name, new_avd_name, email)
-
-            # Update snapshot files to reference the new AVD paths
+            # Step 2: Use avdmanager to move seed clone to the new user AVD
+            env = os.environ.copy()
+            env["ANDROID_SDK_ROOT"] = self.android_home
+            env["ANDROID_AVD_HOME"] = self.avd_dir
+            
+            move_cmd = [
+                os.path.join(self.android_home, "cmdline-tools", "latest", "bin", "avdmanager"),
+                "move", "avd",
+                "-n", seed_clone_name,
+                "-r", new_avd_name
+            ]
+            
+            logger.info(f"Moving seed clone to {new_avd_name} using avdmanager")
+            result = subprocess.run(move_cmd, capture_output=True, text=True, env=env)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to move AVD: {result.stderr}")
+                # Clean up backup before failing
+                if os.path.exists(temp_backup_path):
+                    shutil.rmtree(temp_backup_path)
+                if os.path.exists(temp_backup_ini):
+                    os.remove(temp_backup_ini)
+                return False, f"Failed to move AVD: {result.stderr}"
+            
+            # Step 3: Restore the seed clone from backup
+            logger.info("Restoring seed clone from backup")
+            shutil.move(temp_backup_path, seed_clone_path)
+            if os.path.exists(temp_backup_ini):
+                shutil.move(temp_backup_ini, seed_clone_ini)
+            
+            # Step 4: Update snapshot references in the new AVD
             self._update_snapshot_references(seed_clone_name, new_avd_name)
 
             # Mark this AVD as created from seed clone in the user profile
@@ -463,11 +494,19 @@ class AVDCreator:
             except Exception as e:
                 logger.warning(f"Could not mark AVD as created from seed clone: {e}")
 
-            logger.info(f"Successfully copied seed clone AVD to {new_avd_name}")
+            logger.info(f"Successfully created {new_avd_name} from seed clone using avdmanager")
             return True, new_avd_name
 
         except Exception as e:
-            logger.error(f"Error copying seed clone AVD: {e}")
+            logger.error(f"Error creating AVD from seed clone: {e}")
+            # Clean up any temporary files
+            if 'temp_backup_path' in locals() and os.path.exists(temp_backup_path):
+                shutil.rmtree(temp_backup_path, ignore_errors=True)
+            if 'temp_backup_ini' in locals() and os.path.exists(temp_backup_ini):
+                try:
+                    os.remove(temp_backup_ini)
+                except:
+                    pass
             return False, str(e)
 
     def _replace_avd_name_in_file(self, file_path: str, old_avd_name: str, new_avd_name: str) -> bool:
