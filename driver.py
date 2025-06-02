@@ -1136,10 +1136,10 @@ class Driver:
         logger.info(f"Quitting driver: {self.driver}")
         if self.driver:
             import concurrent.futures
-            
+
             def _quit_driver():
                 self.driver.quit()
-            
+
             # Use ThreadPoolExecutor to add a timeout to driver.quit()
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(_quit_driver)
@@ -1153,7 +1153,9 @@ class Driver:
                     error_msg = str(e).lower()
                     # Check if this is an expected error during shutdown
                     if "adb: device offline" in error_msg or "device offline" in error_msg:
-                        logger.info("Device already offline during driver.quit() - this is expected during shutdown")
+                        logger.info(
+                            "Device already offline during driver.quit() - this is expected during shutdown"
+                        )
                     else:
                         logger.error(f"Error during driver.quit(): {e}")
                 finally:

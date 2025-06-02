@@ -1294,7 +1294,9 @@ class AVDProfileManager:
         # Check if this AVD actually exists - it might not if we're using
         # manually registered AVDs but the Android Studio AVD was renamed or deleted
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-        avd_exists = os.path.exists(avd_path)
+        avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
+        # AVD is only valid if both the directory and ini file exist
+        avd_exists = os.path.exists(avd_path) and os.path.exists(avd_ini_path)
 
         # First check if there's already a running emulator for this email
         is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)

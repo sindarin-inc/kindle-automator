@@ -453,7 +453,9 @@ class ColdStorageManager:
                         logger.info(f"Profile {email} has no last_used timestamp, considering it eligible")
                         eligible_profiles.append(email)
                     else:
-                        logger.debug(f"Profile {email} has no last_used timestamp but AVD doesn't exist at {avd_path}")
+                        logger.debug(
+                            f"Profile {email} has no last_used timestamp but AVD doesn't exist at {avd_path}"
+                        )
                 else:
                     logger.debug(f"Profile {email} has no last_used timestamp and no AVD name")
 
