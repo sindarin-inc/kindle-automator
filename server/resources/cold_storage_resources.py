@@ -30,12 +30,14 @@ class ColdStorageArchiveResource(Resource):
 
             # Get parameters from query params (GET) or JSON body (POST)
             if request.method == "GET":
-                days_inactive = int(request.args.get("days_inactive", 30))
+                # Support both 'days' and 'days_inactive' for flexibility
+                days_inactive = int(request.args.get("days", request.args.get("days_inactive", 30)))
                 dry_run = request.args.get("dry_run", "false").lower() in ["true", "1", "yes"]
                 user_email = request.args.get("user_email")
             else:  # POST
                 json_data = request.json or {}
-                days_inactive = json_data.get("days_inactive", 30)
+                # Support both 'days' and 'days_inactive' for flexibility
+                days_inactive = json_data.get("days", json_data.get("days_inactive", 30))
                 dry_run = json_data.get("dry_run", False)
                 user_email = json_data.get("user_email")
 
@@ -103,7 +105,12 @@ class ColdStorageStatusResource(Resource):
     def get(self):
         """Get cold storage status for all profiles"""
         try:
+            from flask import request
+
             from views.core.avd_profile_manager import AVDProfileManager
+
+            # Get days parameter from query params
+            days_inactive = int(request.args.get("days", request.args.get("days_inactive", 30)))
 
             cold_storage_manager = ColdStorageManager.get_instance()
             profile_manager = AVDProfileManager.get_instance()
@@ -129,8 +136,8 @@ class ColdStorageStatusResource(Resource):
                         }
                     )
                 else:
-                    # Check if eligible for cold storage
-                    eligible_list = cold_storage_manager.get_profiles_eligible_for_cold_storage()
+                    # Check if eligible for cold storage with custom days parameter
+                    eligible_list = cold_storage_manager.get_profiles_eligible_for_cold_storage(days_inactive)
                     if email in eligible_list:
                         eligible_profiles.append(
                             {
@@ -151,6 +158,7 @@ class ColdStorageStatusResource(Resource):
                 "cold_storage_profiles": cold_storage_profiles,
                 "eligible_profiles": eligible_profiles,
                 "active_profiles": active_profiles,
+                "days_threshold": days_inactive,
                 "timestamp": datetime.now().isoformat(),
             }
 
