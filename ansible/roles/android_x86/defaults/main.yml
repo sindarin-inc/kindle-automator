@@ -3,7 +3,8 @@
 
 sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 android_home: "/opt/android-sdk"
-avd_name: "KindleAVD"
+# Note: AVD creation is handled by Python code, not Ansible
+# avd_name: "KindleAVD"  # No longer used
 sdk_api_level: "30"
 # Use Google Play system image which includes ARM translation libraries
 sys_img: "system-images;android-30;google_apis_playstore;x86_64"
