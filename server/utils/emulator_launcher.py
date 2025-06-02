@@ -781,6 +781,8 @@ class EmulatorLauncher:
                     "-verbose",
                     "-feature",
                     "-accel",  # Disable hardware acceleration
+                    "-feature",
+                    "-Gfxstream",  # Disable gfxstream to use legacy renderer for snapshot compatibility
                     "-gpu",
                     "swiftshader",
                 ] + common_args
@@ -795,6 +797,8 @@ class EmulatorLauncher:
                     "swiftshader_indirect",
                     "-feature",
                     "-HVF",  # Disable hardware virtualization
+                    "-feature",
+                    "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
                     "off",
                 ] + common_args
@@ -805,6 +809,8 @@ class EmulatorLauncher:
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
+                    "-feature",
+                    "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
                     "on",
                     "-feature",
