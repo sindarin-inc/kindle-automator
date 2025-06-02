@@ -31,8 +31,22 @@ class KindleAutomator:
     def cleanup(self):
         """Cleanup resources."""
         if self.driver:
-            self.driver = None
-            self.device_id = None
+            try:
+                # Get the Driver instance from the driver attribute (which is the Appium driver)
+                # We need to find the Driver instance that contains this Appium driver
+                if hasattr(self, "_driver_instance"):
+                    # If we stored a reference to the Driver instance
+                    logger.info("Calling quit on Driver instance")
+                    self._driver_instance.quit()
+                else:
+                    # Otherwise, try to quit the Appium driver directly
+                    logger.info("Calling quit on Appium driver directly")
+                    self.driver.quit()
+            except Exception as e:
+                logger.error(f"Error during driver cleanup: {e}")
+            finally:
+                self.driver = None
+                self.device_id = None
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
@@ -46,6 +60,8 @@ class KindleAutomator:
             return False
 
         self.driver = driver.get_appium_driver_instance()
+        # Store reference to the Driver instance for cleanup
+        self._driver_instance = driver
 
         # Make sure the driver instance also has a reference to this automator
         # This ensures auth_handler can access it

@@ -830,7 +830,7 @@ class EmulatorLauncher:
             logger.info(
                 f"Starting emulator for AVD {avd_name} (email {email}) on display :{display_num} and port {emulator_port}"
             )
-            # logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
+            logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:

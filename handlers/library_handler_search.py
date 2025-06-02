@@ -340,7 +340,7 @@ class LibraryHandlerSearch:
                         AppiumBy.XPATH,
                         "//*[contains(translate(@text, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'in your library')]",
                     ),
-                    timeout=15,
+                    timeout=3,
                 ):
                     # Try to find headers again
                     in_library_info, results_from_info = self._locate_section_headers()
@@ -542,7 +542,7 @@ class LibraryHandlerSearch:
 
     # === Helper Methods Shared by Both Flows ===
 
-    def _wait_until(self, predicate, timeout=10, poll=0.3):
+    def _wait_until(self, predicate, timeout=3, poll=0.3):
         """Generic WebDriverWait wrapper that centralizes polling/timeout logic."""
         try:
             wait = WebDriverWait(self.driver, timeout, poll_frequency=poll)
@@ -726,6 +726,18 @@ class LibraryHandlerSearch:
             # Refocus on the search field
             if search_field:
                 search_field.click()
+                # Check what's currently in the search field
+                current_text = self._element_text(search_field)
+                logger.info(f"Current search field content: '{current_text}'")
+
+                # If the field is empty or doesn't match our book title, re-enter it
+                if not current_text or current_text != book_title:
+                    logger.info(
+                        f"Search field content doesn't match expected title, re-entering: '{book_title}'"
+                    )
+                    search_field.clear()
+                    search_field.send_keys(book_title)
+
                 self.driver.press_keycode(66)  # Android keycode for Enter
                 logger.info("Pressed Enter key again to submit search")
 
@@ -737,7 +749,7 @@ class LibraryHandlerSearch:
         """Wait up to n seconds for any text containing 'In your library'."""
         return self._wait_until(
             lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
-            timeout=10,
+            timeout=3,
         )
 
     def _click_search_instead_for_if_present(self):

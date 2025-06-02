@@ -2060,8 +2060,10 @@ from server.resources.cold_storage_resources import (
     ColdStorageStatusResource,
 )
 from server.resources.idle_check_resources import IdleCheckResource
+from server.resources.log_timeline_resource import LogTimelineResource
 from server.resources.shutdown_resources import ShutdownResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
+from server.resources.user_activity_resource import UserActivityResource
 
 # Add resources to API
 api.add_resource(StateResource, "/state")
@@ -2144,6 +2146,12 @@ api.add_resource(
     "/cold-storage/restore",
     resource_class_kwargs={"server_instance": server},
 )
+api.add_resource(
+    LogTimelineResource,
+    "/logs/timeline",
+    resource_class_kwargs={"server_instance": server},
+)
+api.add_resource(UserActivityResource, "/log")
 
 
 def check_and_restart_adb_server():
@@ -2268,7 +2276,7 @@ def cleanup_resources():
     # Stop Appium servers for all running emulators
     from server.utils.appium_driver import AppiumDriver
 
-    appium_driver = AppiumDriver()
+    appium_driver = AppiumDriver.get_instance()
 
     for email in running_emails:
         try:

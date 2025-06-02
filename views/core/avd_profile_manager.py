@@ -191,7 +191,7 @@ class AVDProfileManager:
             driver_instance.appium_port = instance.get("appium_port", 4723)
 
             # Ensure Appium is running for this instance
-            appium_driver = AppiumDriver()
+            appium_driver = AppiumDriver.get_instance()
             if not appium_driver.start_appium_for_profile(email):
                 return False, "Failed to start Appium for Kindle preparation"
 
