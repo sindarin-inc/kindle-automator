@@ -1135,13 +1135,28 @@ class Driver:
         """Quit the Appium driver"""
         logger.info(f"Quitting driver: {self.driver}")
         if self.driver:
-            try:
-                # Properly quit the Appium session which should release the ports
+            import concurrent.futures
+            
+            def _quit_driver():
                 self.driver.quit()
-                logger.info("Successfully quit Appium driver session")
-            except Exception as e:
-                logger.error(f"Error during driver.quit(): {e}")
-            finally:
-                self.driver = None
-                self.device_id = None
-                Driver._initialized = False  # Allow reinitialization
+            
+            # Use ThreadPoolExecutor to add a timeout to driver.quit()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(_quit_driver)
+                try:
+                    # Give it 3 seconds to quit gracefully
+                    future.result(timeout=3)
+                    logger.info("Successfully quit Appium driver session")
+                except concurrent.futures.TimeoutError:
+                    logger.warning("Driver.quit() timed out after 3 seconds - likely device already offline")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    # Check if this is an expected error during shutdown
+                    if "adb: device offline" in error_msg or "device offline" in error_msg:
+                        logger.info("Device already offline during driver.quit() - this is expected during shutdown")
+                    else:
+                        logger.error(f"Error during driver.quit(): {e}")
+                finally:
+                    self.driver = None
+                    self.device_id = None
+                    Driver._initialized = False  # Allow reinitialization
