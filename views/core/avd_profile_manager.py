@@ -1477,19 +1477,8 @@ class AVDProfileManager:
                 logger.info(f"Deleting user AVD: {avd_name}")
                 success, msg = self.avd_creator.delete_avd(email)
                 if not success:
-                    logger.warning(
-                        f"Failed to delete user AVD through avdmanager: {msg}, trying manual deletion"
-                    )
-                    # Manual deletion as fallback
-                    avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-                    avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
-                    if os.path.exists(avd_path):
-                        shutil.rmtree(avd_path, ignore_errors=True)
-                    if os.path.exists(avd_ini_path):
-                        try:
-                            os.remove(avd_ini_path)
-                        except Exception as e:
-                            logger.warning(f"Failed to delete AVD ini file: {e}")
+                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}")
+                    raise Exception(f"Failed to delete user AVD: {msg}")
 
             # Delete the seed clone AVD (only if recreate_seed=True)
             seed_avd_name = None
@@ -1498,19 +1487,8 @@ class AVDProfileManager:
                 logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
                 success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
                 if not success:
-                    logger.warning(
-                        f"Failed to delete seed clone AVD through avdmanager: {msg}, trying manual deletion"
-                    )
-                    # Manual deletion as fallback
-                    seed_avd_path = os.path.join(self.avd_dir, f"{seed_avd_name}.avd")
-                    seed_avd_ini_path = os.path.join(self.avd_dir, f"{seed_avd_name}.ini")
-                    if os.path.exists(seed_avd_path):
-                        shutil.rmtree(seed_avd_path, ignore_errors=True)
-                    if os.path.exists(seed_avd_ini_path):
-                        try:
-                            os.remove(seed_avd_ini_path)
-                        except Exception as e:
-                            logger.warning(f"Failed to delete seed clone AVD ini file: {e}")
+                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}")
+                    raise Exception(f"Failed to delete seed clone AVD: {msg}")
 
             # Clear any cached emulator data
             if recreate_user and avd_name:

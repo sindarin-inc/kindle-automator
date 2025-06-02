@@ -369,7 +369,12 @@ class AVDCreator:
                 avd_name,
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Set up environment for avdmanager
+            env = os.environ.copy()
+            env["ANDROID_SDK_ROOT"] = self.android_home
+            env["ANDROID_AVD_HOME"] = self.avd_dir
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
             if result.returncode == 0:
                 logger.info(f"Successfully deleted AVD: {avd_name}")
