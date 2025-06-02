@@ -1636,8 +1636,11 @@ class AuthResource(Resource):
             params[key] = value
 
         sindarin_email = params.get("sindarin_email")
-        if sindarin_email and params.get("recreate") == "1":
-            success, message = self._handle_recreate(sindarin_email)
+        recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
+        recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
+
+        if sindarin_email and (recreate_user or recreate_seed):
+            success, message = self._handle_recreate(sindarin_email, recreate_user, recreate_seed)
             if not success:
                 return {"error": message}, 500
 

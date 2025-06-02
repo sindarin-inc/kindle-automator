@@ -268,6 +268,7 @@ class AVDCreator:
                 "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
                 "hw.cpu.arch": cpu_arch,
                 "ro.kernel.qemu.gles": "1",
+                "hw.gfxstream": "0",  # Disable gfxstream to maintain snapshot compatibility
                 "skin.dynamic": "yes",
                 "skin.name": "1080x1920",
                 "skin.path": "_no_skin",

@@ -764,19 +764,8 @@ class EmulatorLauncher:
                 "-writable-system",
                 "-port",
                 str(emulator_port),
-                # Keyboard configuration - disable soft keyboard
-                "-prop",
-                "hw.keyboard=yes",
-                "-prop",
-                "hw.keyboard.lid=yes",  # Force hardware keyboard mode
-                "-prop",
-                "hw.mainKeys=yes",  # Enable hardware keys
-                # Status bar and nav buttons configuration
-                "-prop",
-                "hw.statusBar=no",  # Disable status bar
-                "-prop",
-                "hw.navButtons=no",  # Disable navigation buttons
-                # Additional keyboard settings to disable soft keyboard
+                # Only qemu.* properties can be set via -prop
+                # hw.* properties are set in the AVD config.ini file
                 "-prop",
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
