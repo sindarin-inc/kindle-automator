@@ -1424,82 +1424,98 @@ class AVDProfileManager:
             logger.error(f"Failed to start emulator for profile {email}, but updated profile tracking")
             return False, f"Failed to start emulator for profile {email}"
 
-    def recreate_profile_avd(self, email: str) -> Tuple[bool, str]:
+    def recreate_profile_avd(self, email: str, recreate_user: bool = True, recreate_seed: bool = True) -> Tuple[bool, str]:
         """
         Completely recreate AVD for a profile. This will:
-        1. Stop any running emulators (user and seed clone)
-        2. Delete the user's AVD
-        3. Delete the seed clone AVD
-        4. Clean up profile data
+        1. Stop any running emulators (user and/or seed clone based on parameters)
+        2. Delete the user's AVD (if recreate_user=True)
+        3. Delete the seed clone AVD (if recreate_seed=True)
+        4. Clean up profile data (if recreate_user=True)
         5. Clean up any existing automator
 
         Args:
             email: The user's email address
+            recreate_user: Whether to recreate the user's AVD (default True)
+            recreate_seed: Whether to recreate the seed clone AVD (default True for backwards compatibility)
 
         Returns:
             Tuple[bool, str]: (success, message)
         """
-        logger.info(f"Recreating profile AVD for {email}")
+        actions = []
+        if recreate_user:
+            actions.append("user AVD")
+        if recreate_seed:
+            actions.append("seed clone")
+        
+        logger.info(f"Recreating profile AVD for {email} - will recreate: {', '.join(actions)}")
 
         try:
-            # Stop user's emulator if running
-            user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
-            if user_emulator_id:
-                logger.info(f"Stopping running emulator for {email}")
-                self.emulator_manager.emulator_launcher.stop_emulator(email)
-                time.sleep(2)  # Give it time to shut down
+            # Stop user's emulator if running (only if recreating user AVD)
+            if recreate_user:
+                user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
+                if user_emulator_id:
+                    logger.info(f"Stopping running emulator for {email}")
+                    self.emulator_manager.emulator_launcher.stop_emulator(email)
+                    time.sleep(2)  # Give it time to shut down
 
-            # Stop seed clone emulator if running
-            seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
-                AVDCreator.SEED_CLONE_EMAIL
-            )
-            if seed_emulator_id:
-                logger.info("Stopping running seed clone emulator")
-                self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
-                time.sleep(2)  # Give it time to shut down
-
-            # Delete the user's AVD
-            avd_name = self.avd_creator.get_avd_name_from_email(email)
-            logger.info(f"Deleting user AVD: {avd_name}")
-            success, msg = self.avd_creator.delete_avd(email)
-            if not success:
-                logger.warning(f"Failed to delete user AVD through avdmanager: {msg}, trying manual deletion")
-                # Manual deletion as fallback
-                avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-                avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
-                if os.path.exists(avd_path):
-                    shutil.rmtree(avd_path, ignore_errors=True)
-                if os.path.exists(avd_ini_path):
-                    try:
-                        os.remove(avd_ini_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete AVD ini file: {e}")
-
-            # Delete the seed clone AVD
-            seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
-            logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
-            success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
-            if not success:
-                logger.warning(
-                    f"Failed to delete seed clone AVD through avdmanager: {msg}, trying manual deletion"
+            # Stop seed clone emulator if running (only if recreating seed clone)
+            if recreate_seed:
+                seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
+                    AVDCreator.SEED_CLONE_EMAIL
                 )
-                # Manual deletion as fallback
-                seed_avd_path = os.path.join(self.avd_dir, f"{seed_avd_name}.avd")
-                seed_avd_ini_path = os.path.join(self.avd_dir, f"{seed_avd_name}.ini")
-                if os.path.exists(seed_avd_path):
-                    shutil.rmtree(seed_avd_path, ignore_errors=True)
-                if os.path.exists(seed_avd_ini_path):
-                    try:
-                        os.remove(seed_avd_ini_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete seed clone AVD ini file: {e}")
+                if seed_emulator_id:
+                    logger.info("Stopping running seed clone emulator")
+                    self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Delete the user's AVD (only if recreate_user=True)
+            avd_name = None
+            if recreate_user:
+                avd_name = self.avd_creator.get_avd_name_from_email(email)
+                logger.info(f"Deleting user AVD: {avd_name}")
+                success, msg = self.avd_creator.delete_avd(email)
+                if not success:
+                    logger.warning(f"Failed to delete user AVD through avdmanager: {msg}, trying manual deletion")
+                    # Manual deletion as fallback
+                    avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+                    avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
+                    if os.path.exists(avd_path):
+                        shutil.rmtree(avd_path, ignore_errors=True)
+                    if os.path.exists(avd_ini_path):
+                        try:
+                            os.remove(avd_ini_path)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete AVD ini file: {e}")
+
+            # Delete the seed clone AVD (only if recreate_seed=True)
+            seed_avd_name = None
+            if recreate_seed:
+                seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
+                logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
+                success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+                if not success:
+                    logger.warning(
+                        f"Failed to delete seed clone AVD through avdmanager: {msg}, trying manual deletion"
+                    )
+                    # Manual deletion as fallback
+                    seed_avd_path = os.path.join(self.avd_dir, f"{seed_avd_name}.avd")
+                    seed_avd_ini_path = os.path.join(self.avd_dir, f"{seed_avd_name}.ini")
+                    if os.path.exists(seed_avd_path):
+                        shutil.rmtree(seed_avd_path, ignore_errors=True)
+                    if os.path.exists(seed_avd_ini_path):
+                        try:
+                            os.remove(seed_avd_ini_path)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete seed clone AVD ini file: {e}")
 
             # Clear any cached emulator data
-            self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
-            self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
+            if recreate_user and avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
+            if recreate_seed and seed_avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
 
-            # Remove the user from profiles index
-            if email in self.profiles_index:
+            # Remove the user from profiles index (only if recreating user AVD)
+            if recreate_user and email in self.profiles_index:
                 del self.profiles_index[email]
                 self._save_profiles_index()
                 logger.info(f"Removed {email} from profiles index")
@@ -1507,8 +1523,8 @@ class AVDProfileManager:
             # Force the profile manager to reload
             self._load_profiles_index()
 
-            logger.info(f"Successfully recreated profile AVD for {email}")
-            return True, "Profile AVD recreated successfully"
+            logger.info(f"Successfully recreated {', '.join(actions)} for {email}")
+            return True, f"Successfully recreated: {', '.join(actions)}"
 
         except Exception as e:
             logger.error(f"Error recreating profile AVD for {email}: {e}")

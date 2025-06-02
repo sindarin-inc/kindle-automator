@@ -1,6 +1,7 @@
 import copy
 import json
 import logging
+import time
 from functools import wraps
 from io import BytesIO
 
@@ -227,6 +228,9 @@ def setup_request_logger(app):
 
     @app.before_request
     def before_request():
+        # Store the request start time for accurate timing
+        g.request_start_time = time.time()
+
         # Get the email from the request
         email = get_sindarin_email()
 

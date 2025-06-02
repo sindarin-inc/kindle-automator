@@ -91,19 +91,22 @@ def serve_image(image_id, delete_after=True):
         return {"error": str(e)}, 500
 
 
-def retry_with_app_relaunch(func, server_instance, *args, **kwargs):
+def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwargs):
     """Helper function to retry operations with app relaunch.
 
     Args:
         func: The function to retry
         server_instance: The AutomationServer instance
+        start_time: Optional start time from the parent function for accurate timing
         *args, **kwargs: Arguments to pass to the function
 
     Returns:
         The result from the function or a formatted error response
     """
     max_retries = 2
-    start_time = time.time()
+    if start_time is None:
+        start_time = time.time()
+    logger.info(f"Starting retry loop for {func.__name__}, time_taken start time: {start_time}")
     last_error = None
 
     def format_response(result):
@@ -509,7 +512,13 @@ def handle_automator_response(server_instance):
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            start_time = time.time()
+            # Try to get start time from request context first (set by request logger middleware)
+            from flask import g
+            start_time = getattr(g, 'request_start_time', None)
+            if start_time is None:
+                # Fallback to current time if not available
+                start_time = time.time()
+                logger.debug("Request start time not found in g, using current time")
 
             # Get the operation name from the function
             operation_name = f.__name__
@@ -630,7 +639,7 @@ def handle_automator_response(server_instance):
                     # Return original response if no special handling needed
                     return result, status_code
 
-                return retry_with_app_relaunch(wrapped_func, server_instance)
+                return retry_with_app_relaunch(wrapped_func, server_instance, start_time)
 
             except Exception as e:
                 time_taken = round(time.time() - start_time, 3)

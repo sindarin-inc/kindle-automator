@@ -1352,9 +1352,15 @@ class TwoFactorResource(Resource):
 
 
 class AuthResource(Resource):
-    def _handle_recreate(self, sindarin_email):
+    def _handle_recreate(self, sindarin_email, recreate_user=True, recreate_seed=False):
         """Handle deletion of AVDs when recreate is requested"""
-        logger.info(f"Recreate requested for {sindarin_email}, force deleting AVDs and cleaning up")
+        actions = []
+        if recreate_user:
+            actions.append("user AVD")
+        if recreate_seed:
+            actions.append("seed clone")
+        
+        logger.info(f"Recreate requested for {sindarin_email}, will recreate: {', '.join(actions)}")
 
         from views.core.avd_profile_manager import AVDProfileManager
 
@@ -1368,13 +1374,13 @@ class AuthResource(Resource):
                 automator.cleanup()
             del server.automators[sindarin_email]
 
-        # Use the new recreate_profile_avd method
-        success, message = profile_manager.recreate_profile_avd(sindarin_email)
+        # Use the new recreate_profile_avd method with parameters
+        success, message = profile_manager.recreate_profile_avd(sindarin_email, recreate_user, recreate_seed)
         if not success:
             logger.error(f"Failed to recreate profile AVD: {message}")
             return False, message
 
-        return True, "Profile AVD recreated successfully"
+        return True, f"Successfully recreated: {', '.join(actions)}"
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1646,8 +1652,11 @@ class AuthResource(Resource):
             params = request.get_json() or {}
 
         sindarin_email = params.get("sindarin_email") or params.get("email")
-        if sindarin_email and (params.get("recreate") == 1 or params.get("recreate") == "1"):
-            success, message = self._handle_recreate(sindarin_email)
+        recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
+        recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
+        
+        if sindarin_email and (recreate_user or recreate_seed):
+            success, message = self._handle_recreate(sindarin_email, recreate_user, recreate_seed)
             if not success:
                 return {"error": message}, 500
 
