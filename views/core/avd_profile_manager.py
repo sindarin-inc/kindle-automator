@@ -1440,17 +1440,19 @@ class AVDProfileManager:
 
         try:
             # Stop user's emulator if running
-            user_emulator_id, _ = self.emulator_launcher.get_running_emulator(email)
+            user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
             if user_emulator_id:
                 logger.info(f"Stopping running emulator for {email}")
-                self.emulator_launcher.stop_emulator(email)
+                self.emulator_manager.emulator_launcher.stop_emulator(email)
                 time.sleep(2)  # Give it time to shut down
 
             # Stop seed clone emulator if running
-            seed_emulator_id, _ = self.emulator_launcher.get_running_emulator(AVDCreator.SEED_CLONE_EMAIL)
+            seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
+                AVDCreator.SEED_CLONE_EMAIL
+            )
             if seed_emulator_id:
                 logger.info("Stopping running seed clone emulator")
-                self.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
                 time.sleep(2)  # Give it time to shut down
 
             # Delete the user's AVD
@@ -1490,8 +1492,8 @@ class AVDProfileManager:
                         logger.warning(f"Failed to delete seed clone AVD ini file: {e}")
 
             # Clear any cached emulator data
-            self.emulator_launcher.running_emulators.pop(avd_name, None)
-            self.emulator_launcher.running_emulators.pop(seed_avd_name, None)
+            self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
+            self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
 
             # Remove the user from profiles index
             if email in self.profiles_index:
