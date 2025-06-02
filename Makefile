@@ -139,6 +139,8 @@ provision-android:
 	ansible-playbook ansible/provision.yml -t android
 deploy:
 	ansible-playbook ansible/deploy.yml
+staging:
+	ansible-playbook ansible/deploy.yml -l staging
 env:
 	ansible-playbook ansible/provision.yml -t env
 # SSH
