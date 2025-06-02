@@ -112,7 +112,9 @@ class ColdStorageManager:
                 - compression_ratio: Compression ratio percentage
                 - dry_run: Whether this was a dry run
         """
+        from server.utils.vnc_instance_manager import VNCInstanceManager
         from views.core.avd_profile_manager import AVDProfileManager
+        from views.core.emulator_manager import EmulatorManager
 
         profile_manager = AVDProfileManager.get_instance()
         avd_name = profile_manager.get_avd_for_email(email)
@@ -120,6 +122,43 @@ class ColdStorageManager:
         if not avd_name:
             logger.warning(f"No AVD name found for email {email}")
             return False, None
+
+        # Check if emulator is running via VNC instance map
+        vnc_manager = VNCInstanceManager.get_instance()
+        emulator_id = vnc_manager.get_emulator_id(email)
+
+        if emulator_id:
+            # Check if the emulator is actually running
+            from views.core.emulator_manager import EmulatorManager
+
+            emulator_manager = EmulatorManager(
+                android_home=os.environ.get("ANDROID_HOME", "/opt/android-sdk"),
+                avd_dir=self.avd_base_path,
+                host_arch="x86_64",  # Default, will be determined by the manager
+                use_simplified_mode=False,
+            )
+
+            if emulator_manager.is_emulator_running(email):
+                logger.warning(f"Cannot archive AVD for {email} - emulator {emulator_id} is still running")
+                logger.info(f"Attempting to stop emulator {emulator_id} before archiving")
+
+                # Try to stop the emulator
+                if not emulator_manager.stop_specific_emulator(emulator_id):
+                    logger.error(f"Failed to stop emulator {emulator_id} for {email}")
+                    return False, {"error": f"Emulator {emulator_id} is running and could not be stopped"}
+
+                # Wait a bit for the emulator to fully shut down
+                time.sleep(3)
+
+                # Double-check it's stopped
+                if emulator_manager.is_emulator_running(email):
+                    logger.error(f"Emulator {emulator_id} still running after stop attempt")
+                    return False, {"error": f"Emulator {emulator_id} is still running after stop attempt"}
+
+                logger.info(f"Successfully stopped emulator {emulator_id} for {email}")
+
+                # Clear the VNC instance mapping for this email
+                vnc_manager.clear_emulator_id_for_profile(email)
 
         avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
         ini_path = os.path.join(self.avd_base_path, f"{avd_name}.ini")
@@ -201,8 +240,21 @@ class ColdStorageManager:
                 logger.info(f"DRY RUN: Moved AVD files to {backup_dir}")
             else:
                 # Normal operation - delete the files
+                logger.info(f"Deleting local AVD files after successful upload")
+                logger.info(f"Deleting AVD directory: {avd_path}")
                 shutil.rmtree(avd_path)
+                logger.info(f"Deleting INI file: {ini_path}")
                 os.unlink(ini_path)
+
+                # Verify deletion
+                if os.path.exists(avd_path):
+                    logger.error(f"AVD directory still exists after deletion attempt: {avd_path}")
+                    raise Exception(f"Failed to delete AVD directory: {avd_path}")
+                if os.path.exists(ini_path):
+                    logger.error(f"INI file still exists after deletion attempt: {ini_path}")
+                    raise Exception(f"Failed to delete INI file: {ini_path}")
+
+                logger.info(f"Successfully deleted local AVD files for {email}")
 
             storage_info = {
                 "original_size": original_size,
@@ -237,11 +289,11 @@ class ColdStorageManager:
     def restore_avd_from_cold_storage(self, email: str, dry_run: bool = False) -> Tuple[bool, Optional[dict]]:
         """
         Restore an AVD from cold storage
-        
+
         Args:
             email: Email address of the profile to restore
             dry_run: If True, download and verify archive without extracting or deleting from S3
-            
+
         Returns:
             Tuple[bool, Optional[dict]]: (success, restore_info) where restore_info contains:
                 - archive_size: Size of the downloaded archive
@@ -266,7 +318,7 @@ class ColdStorageManager:
 
             # Check if archive exists in S3
             response = self.s3_client.head_object(Bucket=self.bucket_name, Key=archive_key)
-            archive_size = int(response.get('ContentLength', 0))
+            archive_size = int(response.get("ContentLength", 0))
             logger.info(f"Found archive in S3: {self._format_bytes(archive_size)}")
 
             # Download archive to temp file
@@ -296,7 +348,7 @@ class ColdStorageManager:
                 "archive_size_human": self._format_bytes(archive_size),
                 "download_time": download_time,
                 "s3_key": archive_key,
-                "dry_run": dry_run
+                "dry_run": dry_run,
             }
 
             if dry_run:
