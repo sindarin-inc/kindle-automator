@@ -728,6 +728,7 @@ class EmulatorLauncher:
 
             # No longer explicitly loading snapshots - the emulator will use default_boot automatically
             # Log when the default_boot snapshot was last updated
+            created_from_seed = False
             try:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
@@ -751,6 +752,7 @@ class EmulatorLauncher:
 
             except Exception as e:
                 logger.warning(f"Error accessing user profile for snapshot info: {e}")
+                created_from_seed = False
                 # Proceed normally - emulator will use default_boot if available
 
             # Common emulator arguments for all platforms
@@ -779,8 +781,14 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
-            # No longer specifying snapshot - emulator will use default_boot automatically
-            logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
+            # Check if this AVD was created from seed clone and has a default_boot snapshot
+            load_snapshot = False
+            if created_from_seed and self.has_snapshot(email, "default_boot"):
+                logger.info(f"AVD created from seed clone has default_boot snapshot - will explicitly load it")
+                load_snapshot = True
+                common_args.extend(["-snapshot", "default_boot"])
+            else:
+                logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":
