@@ -240,7 +240,7 @@ class AVDCreator:
 
             # Define settings to update
             settings = {
-                "hw.ramSize": "4096",
+                "hw.ramSize": "5120",
                 "hw.cpu.ncore": "4",
                 "hw.gpu.enabled": "yes",
                 "hw.gpu.mode": "swiftshader",
