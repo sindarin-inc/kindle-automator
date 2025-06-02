@@ -201,55 +201,55 @@ class AVDProfileManager:
             if not appium_driver.start_appium_for_profile(email):
                 return False, "Failed to start Appium for Kindle preparation"
 
-                try:
-                    # Initialize the driver (this will install Kindle if needed)
-                    logger.info("Initializing driver to install Kindle APK...")
-                    if not driver_instance.initialize():
-                        return False, "Failed to initialize driver for Kindle installation"
+            try:
+                # Initialize the driver (this will install Kindle if needed)
+                logger.info("Initializing driver to install Kindle APK...")
+                if not driver_instance.initialize():
+                    return False, "Failed to initialize driver for Kindle installation"
 
-                    # Set up all the cross-references that normally happen during initialization
-                    # Get the device_id from the driver and propagate it
-                    if hasattr(driver_instance, "device_id") and driver_instance.device_id:
-                        automator.device_id = driver_instance.device_id
-                        logger.info(f"Set device_id on automator: {automator.device_id}")
+                # Set up all the cross-references that normally happen during initialization
+                # Get the device_id from the driver and propagate it
+                if hasattr(driver_instance, "device_id") and driver_instance.device_id:
+                    automator.device_id = driver_instance.device_id
+                    logger.info(f"Set device_id on automator: {automator.device_id}")
 
-                    # Set the WebDriver reference on automator
-                    automator.driver = driver_instance.driver
+                # Set the WebDriver reference on automator
+                automator.driver = driver_instance.driver
 
-                    # Ensure the driver has reference to automator (needed by state machine)
-                    if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
-                        driver_instance.driver.automator = automator
+                # Ensure the driver has reference to automator (needed by state machine)
+                if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
+                    driver_instance.driver.automator = automator
 
-                    # Create state machine to navigate to Library
-                    state_machine = KindleStateMachine(driver_instance.driver)
+                # Create state machine to navigate to Library
+                state_machine = KindleStateMachine(driver_instance.driver)
 
-                    # Set the state machine on automator for completeness
-                    automator.state_machine = state_machine
+                # Set the state machine on automator for completeness
+                automator.state_machine = state_machine
 
-                    # Ensure view inspector has device_id
-                    if hasattr(state_machine, "view_inspector") and automator.device_id:
-                        state_machine.view_inspector.device_id = automator.device_id
-                        logger.info(f"Set device_id on view_inspector: {automator.device_id}")
+                # Ensure view inspector has device_id
+                if hasattr(state_machine, "view_inspector") and automator.device_id:
+                    state_machine.view_inspector.device_id = automator.device_id
+                    logger.info(f"Set device_id on view_inspector: {automator.device_id}")
 
-                    # Set the flag to indicate we're preparing for snapshot
-                    state_machine.preparing_seed_clone = True
+                # Set the flag to indicate we're preparing for snapshot
+                state_machine.preparing_seed_clone = True
 
-                    # Transition to library view (will stop at LIBRARY_SIGN_IN)
-                    logger.info("Navigating to Library view...")
-                    if not state_machine.transition_to_library(max_transitions=10):
-                        logger.error("Failed to navigate to Library view")
-                        return False, "Failed to navigate to Library view"
+                # Transition to library view (will stop at LIBRARY_SIGN_IN)
+                logger.info("Navigating to Library view...")
+                if not state_machine.transition_to_library(max_transitions=10):
+                    logger.error("Failed to navigate to Library view")
+                    return False, "Failed to navigate to Library view"
 
-                    logger.info("Successfully reached Library view with sign-in button")
+                logger.info("Successfully reached Library view with sign-in button")
 
-                finally:
-                    # Clean up driver and Appium but keep app running
-                    if hasattr(driver_instance, "driver") and driver_instance.driver:
-                        driver_instance.driver.quit()
-                    appium_driver.stop_appium_for_profile(email)
+            finally:
+                # Clean up driver and Appium but keep app running
+                if hasattr(driver_instance, "driver") and driver_instance.driver:
+                    driver_instance.driver.quit()
+                appium_driver.stop_appium_for_profile(email)
 
-                    # Give the app a moment to settle
-                    time.sleep(2)
+                # Give the app a moment to settle
+                time.sleep(2)
 
         # Take snapshot (always saves to default)
         logger.info(f"Creating snapshot for {email}")
