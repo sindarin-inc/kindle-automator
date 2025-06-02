@@ -82,11 +82,30 @@ class EmulatorManager:
         success = self._stop_specific_emulator(emulator_id)
         if success:
             # Clear cache for this emulator
+            email_to_release = None
             for email, (cached_id, _, _) in list(self._emulator_cache.items()):
                 if cached_id == emulator_id:
                     del self._emulator_cache[email]
                     logger.info(f"Cleared cache for emulator {emulator_id} (email: {email})")
+                    email_to_release = email
                     break
+
+            # Release the VNC instance assignment
+            vnc_manager = VNCInstanceManager.get_instance()
+
+            # If we found an email in the cache, use it
+            if email_to_release:
+                vnc_manager.release_instance_from_profile(email_to_release)
+                logger.info(f"Released VNC instance for {email_to_release}")
+            else:
+                # Otherwise, find the email by looking through all instances
+                for instance in vnc_manager.instances:
+                    if instance.get("emulator_id") == emulator_id and instance.get("assigned_profile"):
+                        email_to_release = instance.get("assigned_profile")
+                        vnc_manager.release_instance_from_profile(email_to_release)
+                        logger.info(f"Released VNC instance for {email_to_release}")
+                        break
+
         return success
 
     def _stop_specific_emulator(self, emulator_id: str) -> bool:

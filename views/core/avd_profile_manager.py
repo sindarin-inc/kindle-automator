@@ -4,6 +4,7 @@ import os
 import platform
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -487,6 +488,7 @@ class AVDProfileManager:
 
         # Update the profile status fields
         self.profiles_index[email]["last_used"] = int(time.time())
+        self.profiles_index[email]["last_used_date"] = datetime.now().isoformat()
         self.profiles_index[email]["avd_name"] = avd_name
         self.profiles_index[email]["email"] = email
 
