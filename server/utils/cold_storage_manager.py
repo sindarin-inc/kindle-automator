@@ -419,13 +419,26 @@ class ColdStorageManager:
             if cold_storage_date:
                 continue
 
-            last_used_date = profile_manager.get_user_field(email, "last_used_date")
-            if last_used_date:
-                last_used_dt = datetime.fromisoformat(last_used_date)
-                if last_used_dt < cutoff_date:
-                    avd_name = profile["avd_name"]
+            # Check for last_used timestamp (Unix timestamp)
+            last_used = profile_manager.get_user_field(email, "last_used")
+            if last_used:
+                try:
+                    # Convert Unix timestamp to datetime
+                    last_used_dt = datetime.fromtimestamp(last_used)
+                    if last_used_dt < cutoff_date:
+                        avd_name = profile["avd_name"]
+                        avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
+                        if os.path.exists(avd_path):
+                            eligible_profiles.append(email)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Invalid last_used timestamp for {email}: {last_used}")
+            else:
+                # If no last_used timestamp, consider it eligible (very old profile)
+                avd_name = profile.get("avd_name")
+                if avd_name:
                     avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
                     if os.path.exists(avd_path):
+                        logger.info(f"Profile {email} has no last_used timestamp, considering it eligible")
                         eligible_profiles.append(email)
 
         return eligible_profiles

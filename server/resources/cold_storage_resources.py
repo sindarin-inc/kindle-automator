@@ -136,20 +136,30 @@ class ColdStorageStatusResource(Resource):
                         }
                     )
                 else:
+                    # Get last_used timestamp and convert to ISO format
+                    last_used = profile_manager.get_user_field(email, "last_used")
+                    last_used_date = None
+                    if last_used:
+                        try:
+                            # Convert Unix timestamp to ISO format string
+                            last_used_date = datetime.fromtimestamp(last_used).isoformat()
+                        except (ValueError, TypeError):
+                            logger.warning(f"Invalid last_used timestamp for {email}: {last_used}")
+
                     # Check if eligible for cold storage with custom days parameter
                     eligible_list = cold_storage_manager.get_profiles_eligible_for_cold_storage(days_inactive)
                     if email in eligible_list:
                         eligible_profiles.append(
                             {
                                 "email": email,
-                                "last_used_date": profile_manager.get_user_field(email, "last_used_date"),
+                                "last_used_date": last_used_date,
                             }
                         )
                     else:
                         active_profiles.append(
                             {
                                 "email": email,
-                                "last_used_date": profile_manager.get_user_field(email, "last_used_date"),
+                                "last_used_date": last_used_date,
                             }
                         )
 
