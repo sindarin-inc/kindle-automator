@@ -11,6 +11,8 @@ import boto3
 from botocore.client import Config
 from dotenv import load_dotenv
 
+from views.core.avd_creator import AVDCreator
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -415,6 +417,10 @@ class ColdStorageManager:
         for profile in all_profiles:
             email = profile["email"]
 
+            # Special case: never archive the seed clone AVD
+            if email == AVDCreator.SEED_CLONE_EMAIL:
+                continue
+
             cold_storage_date = profile_manager.get_user_field(email, "cold_storage_date")
             if cold_storage_date:
                 continue
@@ -523,6 +529,11 @@ class ColdStorageManager:
         from views.core.avd_profile_manager import AVDProfileManager
 
         profile_manager = AVDProfileManager.get_instance()
+
+        # Special case: never archive the seed clone AVD
+        if email == AVDCreator.SEED_CLONE_EMAIL:
+            logger.warning(f"Cannot archive seed clone AVD")
+            return False, {"error": "Cannot archive seed clone AVD"}
 
         # Check if profile exists
         if email not in profile_manager.profiles_index:

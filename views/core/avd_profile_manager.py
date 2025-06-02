@@ -842,6 +842,7 @@ class AVDProfileManager:
                     profile["emulator_id"] = emulator_id
                     # Update last used timestamp
                     profile["last_used"] = int(time.time())
+                    profile["last_used_date"] = datetime.now().isoformat()
                     return profile
             else:
                 logger.info(f"Cached emulator {emulator_id} no longer running, clearing cache")
