@@ -622,6 +622,11 @@ def handle_automator_response(server_instance):
                         except Exception as e:
                             logger.warning(f"Error checking timezone for {sindarin_email}: {e}")
 
+                    # Add time_taken to successful responses if it's a dict
+                    if isinstance(result, dict):
+                        time_taken = round(time.time() - start_time, 3)
+                        result["time_taken"] = time_taken
+
                     # Return original response if no special handling needed
                     return result, status_code
 
