@@ -28,9 +28,6 @@ class AutomationServer:
         self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         self.profile_manager = AVDProfileManager.get_instance(base_dir=self.android_home)
 
-        # Flag to track if seed clone preparation has been attempted
-        self.seed_clone_prepared = False
-
     # automator property has been removed - use get_automator(email) instead
 
     def get_automator(self, email):
@@ -294,15 +291,9 @@ class AutomationServer:
         Returns:
             bool: True if seed clone is ready, False otherwise
         """
-        # Skip if already prepared
-        if self.seed_clone_prepared:
-            return True
-
         try:
             logger.info("Checking if seed clone AVD needs to be prepared...")
             success, message = self.profile_manager.ensure_seed_clone_ready()
-
-            self.seed_clone_prepared = success
 
             if success:
                 logger.info(f"Seed clone AVD is ready: {message}")
@@ -313,5 +304,4 @@ class AutomationServer:
 
         except Exception as e:
             logger.error(f"Error preparing seed clone AVD: {e}")
-            self.seed_clone_prepared = False
             return False
