@@ -438,6 +438,12 @@ class ColdStorageManager:
                             eligible_profiles.append(email)
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Invalid last_used timestamp for {email}: {last_used}")
+                    # Invalid timestamp, consider it eligible
+                    avd_name = profile.get("avd_name")
+                    if avd_name:
+                        avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
+                        if os.path.exists(avd_path):
+                            eligible_profiles.append(email)
             else:
                 # If no last_used timestamp, consider it eligible (very old profile)
                 avd_name = profile.get("avd_name")

@@ -66,8 +66,8 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
     if not email:
         return None
 
-    # Create logs directory if it doesn't exist
-    os.makedirs("logs", exist_ok=True)
+    # Create logs/email_logs directory if it doesn't exist
+    os.makedirs("logs/email_logs", exist_ok=True)
 
     # Create a logger for this email
     email_logger = logging.getLogger(f"email.{email}")
@@ -75,7 +75,7 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
     # Check if this logger already has handlers to avoid duplicates
     if not email_logger.handlers:
         # Create a file handler for this email
-        log_file = f"logs/{email}.log"
+        log_file = f"logs/email_logs/{email}.log"
         file_handler = logging.FileHandler(log_file)
 
         # Use the same formatter as the main logger
@@ -147,11 +147,11 @@ class DynamicEmailHandler(logging.Handler):
         if email in self.handler_cache:
             return self.handler_cache[email]
 
-        # Create logs directory if it doesn't exist
-        os.makedirs("logs", exist_ok=True)
+        # Create logs/email_logs directory if it doesn't exist
+        os.makedirs("logs/email_logs", exist_ok=True)
 
         # Create a file handler for this email
-        log_file = f"logs/{email}.log"
+        log_file = f"logs/email_logs/{email}.log"
         handler = logging.FileHandler(log_file)
 
         # Use the same formatter as the main handler
