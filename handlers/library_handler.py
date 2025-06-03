@@ -2171,7 +2171,48 @@ class LibraryHandler:
                             button.click()
                             logger.info("Clicked book button again")
 
-                            # Use delegate method which will handle any dialogs
+                            # Wait for state transition - check if we leave library view or enter reading view
+                            try:
+
+                                def check_transition(driver):
+                                    # Check if we're in reading view
+                                    for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
+                                        try:
+                                            element = driver.find_element(identifier_type, identifier_value)
+                                            if element:
+                                                logger.info("Transitioned to reading view after second click")
+                                                return True
+                                        except NoSuchElementException:
+                                            continue
+
+                                    # Check if we're still stuck in library view
+                                    try:
+                                        library_element = driver.find_element(
+                                            AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                                        )
+                                        if library_element.is_displayed():
+                                            # Still in library, but wait will continue
+                                            return False
+                                    except NoSuchElementException:
+                                        # Not in library view anymore, probably transitioning
+                                        return True
+
+                                    return False
+
+                                WebDriverWait(self.driver, 3).until(check_transition)
+                                logger.info("Successfully transitioned from library view")
+
+                            except TimeoutException:
+                                logger.error("Still in library view after second click attempt")
+                                store_page_source(
+                                    self.driver.page_source, "stuck_in_library_after_second_click"
+                                )
+                                return {
+                                    "success": False,
+                                    "error": "Unable to transition from library to reading view after multiple attempts",
+                                }
+
+                            # Now check if we're in reading view or have a dialog
                             return self._delegate_to_reader_handler(book_title)
                         else:
                             logger.error("Could not re-find book button for second click")

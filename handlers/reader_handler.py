@@ -630,6 +630,20 @@ class ReaderHandler:
                     return False
         except TimeoutException:
             logger.error("Failed to detect reading view or download limit dialog after 10 seconds")
+
+            # Check if we're unexpectedly still in the library view
+            try:
+                library_element = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
+                )
+                if library_element.is_displayed():
+                    logger.error("Unexpectedly still in library view - book click may have failed")
+                    store_page_source(self.driver.page_source, "still_in_library_view_in_reader_handler")
+                    return False
+            except NoSuchElementException:
+                # Not in library view, but also not in reading view - unknown state
+                logger.error("Not in library or reading view - unknown state")
+
             store_page_source(self.driver.page_source, "failed_to_detect_reading_view_or_download_limit")
             return False
         except Exception as e:
