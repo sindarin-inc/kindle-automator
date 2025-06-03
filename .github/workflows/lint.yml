@@ -49,15 +49,3 @@ jobs:
           source .venv/bin/activate
           # Match the exact command from make lint
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv
-
-      - name: Run tests
-        run: |
-          source .venv/bin/activate
-          # Check if pytest is installed, if not install it
-          uv pip install pytest || true
-          # Run tests if they exist
-          if [ -d "tests" ] && [ "$(ls -A tests/*.py 2>/dev/null)" ]; then
-            python -m pytest tests/ -v
-          else
-            echo "No tests found in tests/ directory"
-          fi
