@@ -373,7 +373,7 @@ class AVDCreator:
             env = os.environ.copy()
             env["ANDROID_SDK_ROOT"] = self.android_home
             env["ANDROID_AVD_HOME"] = self.avd_dir
-            
+
             result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
             if result.returncode == 0:
@@ -437,7 +437,9 @@ class AVDCreator:
                 logger.info(f"AVD {new_avd_name} already exists, reusing it")
                 return True, new_avd_name
             elif os.path.exists(new_avd_path) and not os.path.exists(new_avd_ini):
-                logger.warning(f"AVD directory {new_avd_path} exists but .ini file is missing, removing incomplete AVD")
+                logger.warning(
+                    f"AVD directory {new_avd_path} exists but .ini file is missing, removing incomplete AVD"
+                )
                 shutil.rmtree(new_avd_path, ignore_errors=True)
 
             logger.info(f"Creating {new_avd_name} from seed clone using avdmanager move strategy")
@@ -446,10 +448,10 @@ class AVDCreator:
             temp_backup_name = f"{seed_clone_name}_backup_temp"
             temp_backup_path = os.path.join(self.avd_dir, f"{temp_backup_name}.avd")
             temp_backup_ini = os.path.join(self.avd_dir, f"{temp_backup_name}.ini")
-            
+
             logger.info(f"Creating temporary backup of seed clone at {temp_backup_path}")
             shutil.copytree(seed_clone_path, temp_backup_path)
-            
+
             # Copy the .ini file for the backup
             seed_clone_ini = os.path.join(self.avd_dir, f"{seed_clone_name}.ini")
             if os.path.exists(seed_clone_ini):
@@ -459,17 +461,20 @@ class AVDCreator:
             env = os.environ.copy()
             env["ANDROID_SDK_ROOT"] = self.android_home
             env["ANDROID_AVD_HOME"] = self.avd_dir
-            
+
             move_cmd = [
                 os.path.join(self.android_home, "cmdline-tools", "latest", "bin", "avdmanager"),
-                "move", "avd",
-                "-n", seed_clone_name,
-                "-r", new_avd_name
+                "move",
+                "avd",
+                "-n",
+                seed_clone_name,
+                "-r",
+                new_avd_name,
             ]
-            
+
             logger.info(f"Moving seed clone to {new_avd_name} using avdmanager")
             result = subprocess.run(move_cmd, capture_output=True, text=True, env=env)
-            
+
             if result.returncode != 0:
                 logger.error(f"Failed to move AVD: {result.stderr}")
                 # Clean up backup before failing
@@ -478,13 +483,13 @@ class AVDCreator:
                 if os.path.exists(temp_backup_ini):
                     os.remove(temp_backup_ini)
                 return False, f"Failed to move AVD: {result.stderr}"
-            
+
             # Step 3: Restore the seed clone from backup
             logger.info("Restoring seed clone from backup")
             shutil.move(temp_backup_path, seed_clone_path)
             if os.path.exists(temp_backup_ini):
                 shutil.move(temp_backup_ini, seed_clone_ini)
-            
+
             # Step 4: Update snapshot references in the new AVD
             self._update_snapshot_references(seed_clone_name, new_avd_name)
 
@@ -504,9 +509,9 @@ class AVDCreator:
         except Exception as e:
             logger.error(f"Error creating AVD from seed clone: {e}")
             # Clean up any temporary files
-            if 'temp_backup_path' in locals() and os.path.exists(temp_backup_path):
+            if "temp_backup_path" in locals() and os.path.exists(temp_backup_path):
                 shutil.rmtree(temp_backup_path, ignore_errors=True)
-            if 'temp_backup_ini' in locals() and os.path.exists(temp_backup_ini):
+            if "temp_backup_ini" in locals() and os.path.exists(temp_backup_ini):
                 try:
                     os.remove(temp_backup_ini)
                 except:

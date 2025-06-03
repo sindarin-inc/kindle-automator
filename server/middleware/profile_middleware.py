@@ -125,7 +125,7 @@ def ensure_user_profile_loaded(f):
 
         # Skip cold storage check on macOS development environment
         is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
-        
+
         if not is_mac_dev:
             # Check if profile is in cold storage
             cold_storage_date = server.profile_manager.get_user_field(sindarin_email, "cold_storage_date")

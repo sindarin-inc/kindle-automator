@@ -104,11 +104,11 @@ class UserActivityResource(Resource):
     def _process_log_with_rotations(self, activities, log_name, user_email):
         """Process a log file and all its rotated versions."""
         log_base_path = os.path.join(self.log_dir, log_name)
-        
+
         # Process current log file
         if os.path.exists(log_base_path):
             activities.extend(self._parse_log_file(log_base_path, user_email))
-        
+
         # Process rotated log files (uncompressed)
         rotation_num = 1
         while True:
@@ -186,9 +186,7 @@ class UserActivityResource(Resource):
                     time_str = timestamp_match.group(1)
                     # Use today's date with the time
                     today = datetime.now().date()
-                    timestamp = datetime.combine(
-                        today, datetime.strptime(time_str, "%H:%M:%S").time()
-                    )
+                    timestamp = datetime.combine(today, datetime.strptime(time_str, "%H:%M:%S").time())
 
             if not timestamp:
                 continue
@@ -308,7 +306,7 @@ class UserActivityResource(Resource):
     def _parse_compressed_log_file(self, log_file, user_email):
         """Parse a gzip compressed log file for user activities."""
         try:
-            with gzip.open(log_file, 'rt', encoding='utf-8', errors='ignore') as f:
+            with gzip.open(log_file, "rt", encoding="utf-8", errors="ignore") as f:
                 # Use the same parsing logic by passing the file object
                 return self._parse_log_lines(f, user_email)
         except Exception as e:
