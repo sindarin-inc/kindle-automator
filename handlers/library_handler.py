@@ -765,10 +765,12 @@ class LibraryHandler:
             else:
                 logger.info(f"Sync completed after {final_elapsed:.1f}s")
 
+            logger.info(f"sync_in_more_tab() finishing, returning: {sync_complete}")
             return sync_complete
 
         except Exception as e:
             logger.error(f"Error during sync: {e}")
+            logger.info("sync_in_more_tab() caught exception, returning False")
             return False
 
     def _is_more_tab_selected(self):
