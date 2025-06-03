@@ -495,10 +495,10 @@ class ReaderHandler:
                 # Check for last read page dialog as a separate detectable state
                 try:
                     last_read = driver.find_element(
-                        AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Go to that page?')]"
+                        AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Go to that')]"
                     )
                     if last_read and last_read.is_displayed():
-                        logger.info("Last Read Page dialog detected during open_book")
+                        logger.info(f"Last Read dialog detected during open_book: {last_read.text}")
                         # We'll treat this as a reading_view since we have handling for it later
                         return "reading_view"
                 except:
