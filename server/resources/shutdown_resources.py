@@ -35,7 +35,7 @@ class ShutdownResource(Resource):
         # to ensure the Kindle app navigates to library and syncs reading position
         from server.utils.request_utils import get_boolean_param
 
-        preserve_reading_state = get_boolean_param("preserve_reading_state", default=True)
+        preserve_reading_state = get_boolean_param("preserve_reading_state", default=False)
         mark_for_restart = get_boolean_param("mark_for_restart", default=False)
 
         try:
