@@ -21,6 +21,7 @@ Example usage:
     GET /logs/timeline?level=ERROR&start_time=2024-12-30T14:00:00
 """
 
+import gzip
 import logging
 import os
 import re
@@ -83,27 +84,45 @@ class LogTimelineResource(Resource):
             # Get list of log files to process
             log_files = []
 
-            # Always include the main server.log
+            # Always include the main server.log and its rotations
             server_log = self.logs_dir / "server.log"
             if server_log.exists():
                 log_files.append(server_log)
+            
+            # Add rotated server logs
+            for rotated_log in sorted(self.logs_dir.glob("server.log.*")):
+                log_files.append(rotated_log)
 
             # If email filter is specified, only include that email's log
             if email_filter:
                 email_log = self.logs_dir / f"{email_filter}.log"
                 if email_log.exists():
                     log_files.append(email_log)
+                
+                # Add rotated email logs
+                for rotated_log in sorted(self.logs_dir.glob(f"{email_filter}.log.*")):
+                    log_files.append(rotated_log)
             else:
                 # Include all email-specific logs
                 for log_file in self.logs_dir.glob("*.log"):
                     if log_file.name != "server.log" and "@" in log_file.name:
                         log_files.append(log_file)
+                
+                # Add rotated email logs
+                for log_file in self.logs_dir.glob("*.log.*"):
+                    if "@" in log_file.name.split(".log")[0]:
+                        log_files.append(log_file)
 
             # Process each log file
             for log_file in log_files:
-                entries = self._parse_log_file(
-                    log_file, min_level, start_dt, end_dt, limit - len(all_entries)
-                )
+                if str(log_file).endswith('.gz'):
+                    entries = self._parse_compressed_log_file(
+                        log_file, min_level, start_dt, end_dt, limit - len(all_entries)
+                    )
+                else:
+                    entries = self._parse_log_file(
+                        log_file, min_level, start_dt, end_dt, limit - len(all_entries)
+                    )
                 all_entries.extend(entries)
 
                 # Stop if we've reached the limit
@@ -146,72 +165,109 @@ class LogTimelineResource(Resource):
         Returns:
             List of parsed log entries
         """
-        entries = []
-        log_levels = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
-
         # Determine the source from the filename
         source = "server" if log_file.name == "server.log" else log_file.stem
 
         try:
             with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-                current_entry = None
+                return self._parse_log_lines(f, source, min_level, start_dt, end_dt, max_entries)
+        except Exception as e:
+            logger.error(f"Error parsing log file {log_file}: {e}")
+            return []
 
-                for line in f:
-                    # Try to match the log pattern
-                    match = self.log_pattern.match(line)
+    def _parse_log_lines(self, file_obj, source, min_level, start_dt, end_dt, max_entries):
+        """Parse log lines from a file object.
 
-                    if match:
-                        # If we had a previous entry, add it
-                        if current_entry and len(entries) < max_entries:
-                            entries.append(current_entry)
+        Args:
+            file_obj: File object to read lines from
+            source: Source identifier for the log
+            min_level: Minimum log level value to include
+            start_dt: Start datetime filter (optional)
+            end_dt: End datetime filter (optional)
+            max_entries: Maximum number of entries to return
 
-                        # Parse the new entry
-                        level, timestamp_str, filepath, line_no, message = match.groups()
+        Returns:
+            List of parsed log entries
+        """
+        entries = []
+        log_levels = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+        current_entry = None
 
-                        # Check log level
-                        if log_levels.get(level, 0) < min_level:
-                            current_entry = None
-                            continue
+        for line in file_obj:
+            # Try to match the log pattern
+            match = self.log_pattern.match(line)
 
-                        # Parse timestamp
-                        try:
-                            # Handle the specific format: "12-30-24 15:30:45 PST"
-                            timestamp = datetime.strptime(
-                                timestamp_str.replace(" PST", "").replace(" PDT", ""), "%m-%d-%y %H:%M:%S"
-                            )
-                            # Add current year century (20xx)
-                            timestamp = timestamp.replace(year=timestamp.year + 2000)
-                        except ValueError:
-                            current_entry = None
-                            continue
-
-                        # Apply time filters
-                        if start_dt and timestamp < start_dt:
-                            current_entry = None
-                            continue
-                        if end_dt and timestamp > end_dt:
-                            current_entry = None
-                            continue
-
-                        # Create new entry
-                        current_entry = {
-                            "timestamp": timestamp.isoformat(),
-                            "level": level,
-                            "source": source,
-                            "file": filepath,
-                            "line": int(line_no),
-                            "message": message.strip(),
-                        }
-
-                    elif current_entry and line.strip():
-                        # This is a continuation of the previous log entry (multi-line)
-                        current_entry["message"] += "\n" + line.strip()
-
-                # Don't forget the last entry
+            if match:
+                # If we had a previous entry, add it
                 if current_entry and len(entries) < max_entries:
                     entries.append(current_entry)
 
-        except Exception as e:
-            logger.error(f"Error parsing log file {log_file}: {e}")
+                # Parse the new entry
+                level, timestamp_str, filepath, line_no, message = match.groups()
+
+                # Check log level
+                if log_levels.get(level, 0) < min_level:
+                    current_entry = None
+                    continue
+
+                # Parse timestamp
+                try:
+                    # Handle the specific format: "12-30-24 15:30:45 PST"
+                    timestamp = datetime.strptime(
+                        timestamp_str.replace(" PST", "").replace(" PDT", ""), "%m-%d-%y %H:%M:%S"
+                    )
+                    # Add current year century (20xx)
+                    timestamp = timestamp.replace(year=timestamp.year + 2000)
+                except ValueError:
+                    current_entry = None
+                    continue
+
+                # Apply time filters
+                if start_dt and timestamp < start_dt:
+                    current_entry = None
+                    continue
+                if end_dt and timestamp > end_dt:
+                    current_entry = None
+                    continue
+
+                # Create new entry
+                current_entry = {
+                    "timestamp": timestamp.isoformat(),
+                    "level": level,
+                    "source": source,
+                    "file": filepath,
+                    "line": int(line_no),
+                    "message": message.strip(),
+                }
+
+            elif current_entry and line.strip():
+                # This is a continuation of the previous log entry (multi-line)
+                current_entry["message"] += "\n" + line.strip()
+
+        # Don't forget the last entry
+        if current_entry and len(entries) < max_entries:
+            entries.append(current_entry)
 
         return entries
+
+    def _parse_compressed_log_file(self, log_file, min_level, start_dt, end_dt, max_entries):
+        """Parse a gzip compressed log file and extract entries matching criteria.
+
+        Args:
+            log_file: Path to the compressed log file
+            min_level: Minimum log level value to include
+            start_dt: Start datetime filter (optional)
+            end_dt: End datetime filter (optional)
+            max_entries: Maximum number of entries to return from this file
+
+        Returns:
+            List of parsed log entries
+        """
+        try:
+            with gzip.open(log_file, "rt", encoding="utf-8", errors="ignore") as f:
+                # Determine the source from the filename
+                source = "server" if "server.log" in str(log_file) else log_file.stem.split('.')[0]
+                return self._parse_log_lines(f, source, min_level, start_dt, end_dt, max_entries)
+        except Exception as e:
+            logger.error(f"Error parsing compressed log file {log_file}: {e}")
+            return []
