@@ -240,7 +240,7 @@ class AVDCreator:
 
             # Define settings to update
             settings = {
-                "hw.ramSize": "4096",
+                "hw.ramSize": "5120",
                 "hw.cpu.ncore": "4",
                 "hw.gpu.enabled": "yes",
                 "hw.gpu.mode": "swiftshader",
@@ -268,6 +268,7 @@ class AVDCreator:
                 "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
                 "hw.cpu.arch": cpu_arch,
                 "ro.kernel.qemu.gles": "1",
+                "hw.gfxstream": "0",  # Disable gfxstream to maintain snapshot compatibility
                 "skin.dynamic": "yes",
                 "skin.name": "1080x1920",
                 "skin.path": "_no_skin",
@@ -345,6 +346,54 @@ class AVDCreator:
 
         return os.path.exists(snapshot_path)
 
+    def delete_avd(self, email: str) -> Tuple[bool, str]:
+        """
+        Delete an AVD for the given email.
+
+        Args:
+            email: Email address of the AVD to delete
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            avd_name = self.get_avd_name_from_email(email)
+            logger.info(f"Deleting AVD: {avd_name}")
+
+            # Use avdmanager to delete the AVD
+            cmd = [
+                os.path.join(self.android_home, "cmdline-tools", "latest", "bin", "avdmanager"),
+                "delete",
+                "avd",
+                "-n",
+                avd_name,
+            ]
+
+            # Set up environment for avdmanager
+            env = os.environ.copy()
+            env["ANDROID_SDK_ROOT"] = self.android_home
+            env["ANDROID_AVD_HOME"] = self.avd_dir
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+            if result.returncode == 0:
+                logger.info(f"Successfully deleted AVD: {avd_name}")
+
+                # Also remove the AVD directory if it still exists
+                avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+                if os.path.exists(avd_path):
+                    shutil.rmtree(avd_path)
+                    logger.info(f"Removed AVD directory: {avd_path}")
+
+                return True, f"Successfully deleted AVD: {avd_name}"
+            else:
+                logger.error(f"Failed to delete AVD: {result.stderr}")
+                return False, f"Failed to delete AVD: {result.stderr}"
+
+        except Exception as e:
+            logger.error(f"Error deleting AVD: {e}")
+            return False, str(e)
+
     def create_seed_clone_avd(self) -> Tuple[bool, str]:
         """
         Create the seed clone AVD that will be used as a template for all new users.
@@ -387,19 +436,53 @@ class AVDCreator:
                 logger.info(f"AVD {new_avd_name} already exists, reusing it")
                 return True, new_avd_name
 
-            logger.info(f"Copying seed clone AVD to create {new_avd_name}")
+            logger.info(f"Creating {new_avd_name} from seed clone using avdmanager move strategy")
 
-            # Copy the entire AVD directory
-            shutil.copytree(seed_clone_path, new_avd_path)
-
-            # Also copy the .ini file
+            # Step 1: Create a backup of the seed clone
+            temp_backup_name = f"{seed_clone_name}_backup_temp"
+            temp_backup_path = os.path.join(self.avd_dir, f"{temp_backup_name}.avd")
+            temp_backup_ini = os.path.join(self.avd_dir, f"{temp_backup_name}.ini")
+            
+            logger.info(f"Creating temporary backup of seed clone at {temp_backup_path}")
+            shutil.copytree(seed_clone_path, temp_backup_path)
+            
+            # Copy the .ini file for the backup
             seed_clone_ini = os.path.join(self.avd_dir, f"{seed_clone_name}.ini")
-            new_avd_ini = os.path.join(self.avd_dir, f"{new_avd_name}.ini")
             if os.path.exists(seed_clone_ini):
-                shutil.copy2(seed_clone_ini, new_avd_ini)
+                shutil.copy2(seed_clone_ini, temp_backup_ini)
 
-            # Update the AVD configuration files to reference the new name
-            self._update_avd_config_for_new_name(seed_clone_name, new_avd_name, email)
+            # Step 2: Use avdmanager to move seed clone to the new user AVD
+            env = os.environ.copy()
+            env["ANDROID_SDK_ROOT"] = self.android_home
+            env["ANDROID_AVD_HOME"] = self.avd_dir
+            
+            move_cmd = [
+                os.path.join(self.android_home, "cmdline-tools", "latest", "bin", "avdmanager"),
+                "move", "avd",
+                "-n", seed_clone_name,
+                "-r", new_avd_name
+            ]
+            
+            logger.info(f"Moving seed clone to {new_avd_name} using avdmanager")
+            result = subprocess.run(move_cmd, capture_output=True, text=True, env=env)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to move AVD: {result.stderr}")
+                # Clean up backup before failing
+                if os.path.exists(temp_backup_path):
+                    shutil.rmtree(temp_backup_path)
+                if os.path.exists(temp_backup_ini):
+                    os.remove(temp_backup_ini)
+                return False, f"Failed to move AVD: {result.stderr}"
+            
+            # Step 3: Restore the seed clone from backup
+            logger.info("Restoring seed clone from backup")
+            shutil.move(temp_backup_path, seed_clone_path)
+            if os.path.exists(temp_backup_ini):
+                shutil.move(temp_backup_ini, seed_clone_ini)
+            
+            # Step 4: Update snapshot references in the new AVD
+            self._update_snapshot_references(seed_clone_name, new_avd_name)
 
             # Mark this AVD as created from seed clone in the user profile
             try:
@@ -411,11 +494,19 @@ class AVDCreator:
             except Exception as e:
                 logger.warning(f"Could not mark AVD as created from seed clone: {e}")
 
-            logger.info(f"Successfully copied seed clone AVD to {new_avd_name}")
+            logger.info(f"Successfully created {new_avd_name} from seed clone using avdmanager")
             return True, new_avd_name
 
         except Exception as e:
-            logger.error(f"Error copying seed clone AVD: {e}")
+            logger.error(f"Error creating AVD from seed clone: {e}")
+            # Clean up any temporary files
+            if 'temp_backup_path' in locals() and os.path.exists(temp_backup_path):
+                shutil.rmtree(temp_backup_path, ignore_errors=True)
+            if 'temp_backup_ini' in locals() and os.path.exists(temp_backup_ini):
+                try:
+                    os.remove(temp_backup_ini)
+                except:
+                    pass
             return False, str(e)
 
     def _replace_avd_name_in_file(self, file_path: str, old_avd_name: str, new_avd_name: str) -> bool:
@@ -477,6 +568,58 @@ class AVDCreator:
 
         except Exception as e:
             logger.error(f"Error updating AVD config files: {e}")
+
+    def _update_snapshot_references(self, old_avd_name: str, new_avd_name: str) -> None:
+        """
+        Update snapshot files to reference the new AVD paths instead of the seed clone paths.
+        This is necessary for snapshots to work correctly after copying an AVD.
+
+        Args:
+            old_avd_name: The seed clone AVD name
+            new_avd_name: The new AVD name
+        """
+        try:
+            snapshots_dir = os.path.join(self.avd_dir, f"{new_avd_name}.avd", "snapshots")
+            if not os.path.exists(snapshots_dir):
+                logger.debug(f"No snapshots directory found for {new_avd_name}")
+                return
+
+            # Process each snapshot
+            for snapshot_name in os.listdir(snapshots_dir):
+                snapshot_path = os.path.join(snapshots_dir, snapshot_name)
+                if not os.path.isdir(snapshot_path):
+                    continue
+
+                logger.info(f"Updating snapshot '{snapshot_name}' references for {new_avd_name}")
+
+                # Update hardware.ini
+                hardware_ini_path = os.path.join(snapshot_path, "hardware.ini")
+                if os.path.exists(hardware_ini_path):
+                    self._replace_avd_name_in_file(hardware_ini_path, old_avd_name, new_avd_name)
+                    logger.debug(f"Updated hardware.ini in snapshot '{snapshot_name}'")
+
+                # Update snapshot.pb (binary protobuf file - requires binary replacement)
+                snapshot_pb_path = os.path.join(snapshot_path, "snapshot.pb")
+                if os.path.exists(snapshot_pb_path):
+                    try:
+                        with open(snapshot_pb_path, "rb") as f:
+                            content = f.read()
+
+                        # Replace old AVD name with new one in binary content
+                        old_bytes = old_avd_name.encode("utf-8")
+                        new_bytes = new_avd_name.encode("utf-8")
+                        updated_content = content.replace(old_bytes, new_bytes)
+
+                        # Only write if content changed
+                        if content != updated_content:
+                            with open(snapshot_pb_path, "wb") as f:
+                                f.write(updated_content)
+                            logger.debug(f"Updated snapshot.pb in snapshot '{snapshot_name}'")
+                    except Exception as e:
+                        logger.warning(f"Failed to update snapshot.pb: {e}")
+
+        except Exception as e:
+            logger.error(f"Error updating snapshot references: {e}")
 
     def is_seed_clone_ready(self) -> bool:
         """

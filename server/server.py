@@ -1352,6 +1352,36 @@ class TwoFactorResource(Resource):
 
 
 class AuthResource(Resource):
+    def _handle_recreate(self, sindarin_email, recreate_user=True, recreate_seed=False):
+        """Handle deletion of AVDs when recreate is requested"""
+        actions = []
+        if recreate_user:
+            actions.append("user AVD")
+        if recreate_seed:
+            actions.append("seed clone")
+
+        logger.info(f"Recreate requested for {sindarin_email}, will recreate: {', '.join(actions)}")
+
+        from views.core.avd_profile_manager import AVDProfileManager
+
+        profile_manager = AVDProfileManager.get_instance()
+
+        # Clean up the automator before recreating AVDs
+        if sindarin_email in server.automators:
+            logger.info(f"Cleaning up existing automator for {sindarin_email}")
+            automator = server.automators[sindarin_email]
+            if automator:
+                automator.cleanup()
+            del server.automators[sindarin_email]
+
+        # Use the new recreate_profile_avd method with parameters
+        success, message = profile_manager.recreate_profile_avd(sindarin_email, recreate_user, recreate_seed)
+        if not success:
+            logger.error(f"Failed to recreate profile AVD: {message}")
+            return False, message
+
+        return True, f"Successfully recreated: {', '.join(actions)}"
+
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response(server)
@@ -1359,8 +1389,6 @@ class AuthResource(Resource):
         """Set up a profile for manual authentication via VNC or WebSockets"""
         # Create a unified params dict that combines query params and JSON body
         params = {}
-
-        # First add all query string parameters to the params dict
         for key, value in request.args.items():
             params[key] = value
 
@@ -1417,27 +1445,21 @@ class AuthResource(Resource):
         # Log authentication attempt details
         logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
 
-        # If recreate is requested, just clean up the automator but don't force a new emulator
-        if recreate:
-            logger.info(f"Recreate requested for {sindarin_email}, cleaning up existing automator")
-            # First check if we have an automator for this email specifically
-            if sindarin_email in server.automators:
-                logger.info(f"Cleaning up existing automator for {sindarin_email}")
-                automator = server.automators[sindarin_email]
-                if automator:
-                    automator.cleanup()
-                    server.automators[sindarin_email] = None
-
+        # Get the automator (should have been created by the decorator)
         automator = server.automators.get(sindarin_email)
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
         # This fixes the "Could not access automator from driver session" error
-        if automator.driver and not hasattr(automator.driver, "automator"):
+        if automator and automator.driver and not hasattr(automator.driver, "automator"):
             logger.info("Setting automator on driver object for state transitions")
             automator.driver.automator = automator
 
-        # Ensure the driver is healthy and all components are initialized
+        # Ensure the automator exists and driver is healthy and all components are initialized
+        if not automator:
+            logger.error("Failed to get automator for request")
+            return {"error": "Failed to initialize automator"}, 500
+
         if not automator.ensure_driver_running():
             logger.error("Failed to ensure driver is running, cannot proceed with authentication")
             return {"error": "Failed to initialize automator driver"}, 500
@@ -1608,10 +1630,40 @@ class AuthResource(Resource):
 
     def get(self):
         """Get the auth status"""
+        # First check if recreate is requested BEFORE profile loading
+        params = {}
+        for key, value in request.args.items():
+            params[key] = value
+
+        sindarin_email = params.get("sindarin_email")
+        recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
+        recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
+
+        if sindarin_email and (recreate_user or recreate_seed):
+            success, message = self._handle_recreate(sindarin_email, recreate_user, recreate_seed)
+            if not success:
+                return {"error": message}, 500
+
+        # Now proceed with normal auth flow
         return self._auth()
 
     def post(self):
         """Set up a profile for manual authentication via VNC"""
+        # First check if recreate is requested BEFORE profile loading
+        params = {}
+        if request.is_json:
+            params = request.get_json() or {}
+
+        sindarin_email = params.get("sindarin_email") or params.get("email")
+        recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
+        recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
+
+        if sindarin_email and (recreate_user or recreate_seed):
+            success, message = self._handle_recreate(sindarin_email, recreate_user, recreate_seed)
+            if not success:
+                return {"error": message}, 500
+
+        # Now proceed with normal auth flow
         return self._auth()
 
 

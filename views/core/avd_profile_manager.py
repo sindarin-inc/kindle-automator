@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -166,63 +167,92 @@ class AVDProfileManager:
             logger.info("Installing Kindle APK and navigating to Library view...")
 
             # Import necessary modules
-            from automator import Automator
+            from automator import KindleAutomator
             from driver import Driver
             from server.utils.appium_driver import AppiumDriver
+            from server.utils.request_utils import email_override
             from server.utils.vnc_instance_manager import VNCInstanceManager
             from views.state_machine import KindleStateMachine
 
-            # Get the allocated VNC instance and ports for this email
-            vnc_manager = VNCInstanceManager.get_instance()
-            instance = vnc_manager.get_instance_for_profile(email)
+            # Use email_override to ensure all operations use seed@clone.local
+            with email_override(email):  # email is seed@clone.local here
+                # Get the allocated VNC instance and ports for this email
+                vnc_manager = VNCInstanceManager.get_instance()
+                instance = vnc_manager.get_instance_for_profile(email)
 
-            if not instance:
-                return False, "Failed to get VNC instance for seed clone"
+                if not instance:
+                    return False, "Failed to get VNC instance for seed clone"
 
-            # Create a temporary automator instance
-            automator = Automator()
-            automator.profile_manager = self
+                # Create a temporary automator instance
+                automator = KindleAutomator()
+                automator.profile_manager = self
+                # Add emulator_manager reference needed by view inspector
+                automator.emulator_manager = self.emulator_manager
 
-            # Create and initialize driver
-            driver_instance = Driver()
-            driver_instance.automator = automator
+                # Create and initialize driver
+                driver_instance = Driver()
+                driver_instance.automator = automator
 
-            # Set the appium port from the VNC instance
-            driver_instance.appium_port = instance.get("appium_port", 4723)
+                # Set the appium port from the VNC instance
+                driver_instance.appium_port = instance.get("appium_port", 4723)
 
-            # Ensure Appium is running for this instance
-            appium_driver = AppiumDriver.get_instance()
-            if not appium_driver.start_appium_for_profile(email):
-                return False, "Failed to start Appium for Kindle preparation"
+                # Ensure Appium is running for this instance
+                appium_driver = AppiumDriver.get_instance()
+                if not appium_driver.start_appium_for_profile(email):
+                    return False, "Failed to start Appium for Kindle preparation"
 
-            try:
-                # Initialize the driver (this will install Kindle if needed)
-                logger.info("Initializing driver to install Kindle APK...")
-                if not driver_instance.initialize():
-                    return False, "Failed to initialize driver for Kindle installation"
+                try:
+                    # Initialize the driver (this will install Kindle if needed)
+                    logger.info("Initializing driver to install Kindle APK...")
+                    if not driver_instance.initialize():
+                        return False, "Failed to initialize driver for Kindle installation"
 
-                # Create state machine to navigate to Library
-                state_machine = KindleStateMachine(driver_instance.driver)
+                    # Set up all the cross-references that normally happen during initialization
+                    # Get the device_id from the driver and propagate it
+                    if hasattr(driver_instance, "device_id") and driver_instance.device_id:
+                        automator.device_id = driver_instance.device_id
+                        logger.info(f"Set device_id on automator: {automator.device_id}")
 
-                # Set the flag to indicate we're preparing for snapshot
-                state_machine.preparing_seed_clone = True
+                    # Set the WebDriver reference on automator
+                    automator.driver = driver_instance.driver
 
-                # Transition to library view (will stop at LIBRARY_SIGN_IN)
-                logger.info("Navigating to Library view...")
-                if not state_machine.transition_to_library(max_transitions=10):
-                    logger.error("Failed to navigate to Library view")
-                    return False, "Failed to navigate to Library view"
+                    # Ensure the driver has reference to automator (needed by state machine)
+                    if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
+                        driver_instance.driver.automator = automator
 
-                logger.info("Successfully reached Library view with sign-in button")
+                    # Create state machine to navigate to Library
+                    state_machine = KindleStateMachine(driver_instance.driver)
 
-            finally:
-                # Clean up driver and Appium but keep app running
-                if hasattr(driver_instance, "driver") and driver_instance.driver:
-                    driver_instance.driver.quit()
-                appium_driver.stop_appium_for_profile(email)
+                    # Set the state machine on automator for completeness
+                    automator.state_machine = state_machine
 
-                # Give the app a moment to settle
-                time.sleep(2)
+                    # Ensure view inspector has device_id and automator reference
+                    if hasattr(state_machine, "view_inspector"):
+                        if automator.device_id:
+                            state_machine.view_inspector.device_id = automator.device_id
+                            logger.info(f"Set device_id on view_inspector: {automator.device_id}")
+                        # Also set the automator reference so view_inspector can access it
+                        state_machine.view_inspector.automator = automator
+
+                    # Set the flag to indicate we're preparing for snapshot
+                    state_machine.preparing_seed_clone = True
+
+                    # Transition to library view (will stop at LIBRARY_SIGN_IN)
+                    logger.info("Navigating to Library view...")
+                    if not state_machine.transition_to_library(max_transitions=10):
+                        logger.error("Failed to navigate to Library view")
+                        return False, "Failed to navigate to Library view"
+
+                    logger.info("Successfully reached Library view with sign-in button")
+
+                finally:
+                    # Clean up driver and Appium but keep app running
+                    if hasattr(driver_instance, "driver") and driver_instance.driver:
+                        driver_instance.driver.quit()
+                    appium_driver.stop_appium_for_profile(email)
+
+                    # Give the app a moment to settle
+                    time.sleep(2)
 
         # Take snapshot (always saves to default)
         logger.info(f"Creating snapshot for {email}")
@@ -1393,3 +1423,91 @@ class AVDProfileManager:
             self._save_profile_status(email, avd_name)
             logger.error(f"Failed to start emulator for profile {email}, but updated profile tracking")
             return False, f"Failed to start emulator for profile {email}"
+
+    def recreate_profile_avd(
+        self, email: str, recreate_user: bool = True, recreate_seed: bool = True
+    ) -> Tuple[bool, str]:
+        """
+        Completely recreate AVD for a profile. This will:
+        1. Stop any running emulators (user and/or seed clone based on parameters)
+        2. Delete the user's AVD (if recreate_user=True)
+        3. Delete the seed clone AVD (if recreate_seed=True)
+        4. Clean up profile data (if recreate_user=True)
+        5. Clean up any existing automator
+
+        Args:
+            email: The user's email address
+            recreate_user: Whether to recreate the user's AVD (default True)
+            recreate_seed: Whether to recreate the seed clone AVD (default True for backwards compatibility)
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        actions = []
+        if recreate_user:
+            actions.append("user AVD")
+        if recreate_seed:
+            actions.append("seed clone")
+
+        logger.info(f"Recreating profile AVD for {email} - will recreate: {', '.join(actions)}")
+
+        try:
+            # Stop user's emulator if running (only if recreating user AVD)
+            if recreate_user:
+                user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
+                if user_emulator_id:
+                    logger.info(f"Stopping running emulator for {email}")
+                    self.emulator_manager.emulator_launcher.stop_emulator(email)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Stop seed clone emulator if running (only if recreating seed clone)
+            if recreate_seed:
+                seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
+                    AVDCreator.SEED_CLONE_EMAIL
+                )
+                if seed_emulator_id:
+                    logger.info("Stopping running seed clone emulator")
+                    self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Delete the user's AVD (only if recreate_user=True)
+            avd_name = None
+            if recreate_user:
+                avd_name = self.avd_creator.get_avd_name_from_email(email)
+                logger.info(f"Deleting user AVD: {avd_name}")
+                success, msg = self.avd_creator.delete_avd(email)
+                if not success:
+                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}")
+                    raise Exception(f"Failed to delete user AVD: {msg}")
+
+            # Delete the seed clone AVD (only if recreate_seed=True)
+            seed_avd_name = None
+            if recreate_seed:
+                seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
+                logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
+                success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+                if not success:
+                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}")
+                    raise Exception(f"Failed to delete seed clone AVD: {msg}")
+
+            # Clear any cached emulator data
+            if recreate_user and avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
+            if recreate_seed and seed_avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
+
+            # Remove the user from profiles index (only if recreating user AVD)
+            if recreate_user and email in self.profiles_index:
+                del self.profiles_index[email]
+                self._save_profiles_index()
+                logger.info(f"Removed {email} from profiles index")
+
+            # Force the profile manager to reload
+            self._load_profiles_index()
+
+            logger.info(f"Successfully recreated {', '.join(actions)} for {email}")
+            return True, f"Successfully recreated: {', '.join(actions)}"
+
+        except Exception as e:
+            logger.error(f"Error recreating profile AVD for {email}: {e}")
+            return False, f"Failed to recreate profile AVD: {str(e)}"

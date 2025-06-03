@@ -445,6 +445,88 @@ class Driver:
             logger.error(f"Error hiding status bar: {e}")
             return False
 
+    def _disable_auto_updates(self) -> bool:
+        """Disable automatic app updates to prevent apps from being killed during updates."""
+        try:
+            # Check if we already applied this setting to the current emulator
+            profile = self.automator.profile_manager.get_current_profile()
+            device_id = profile.get("emulator_id") if profile else None
+
+            # If this is the same device and we already set auto_updates_disabled, skip
+            if (
+                device_id
+                and device_id == self.device_id
+                and profile
+                and profile.get("auto_updates_disabled", False)
+            ):
+                return True
+
+            logger.info(f"Disabling automatic app updates for device {self.device_id}")
+
+            # Disable automatic app updates globally
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "global",
+                    "auto_update_disabled",
+                    "1",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            # Also disable auto-update over WiFi only
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "global",
+                    "update_over_wifi_only",
+                    "0",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            # Disable background data for Play Store to prevent updates
+            subprocess.run(
+                [
+                    "adb",
+                    "-s",
+                    self.device_id,
+                    "shell",
+                    "cmd",
+                    "netpolicy",
+                    "set",
+                    "restrict-background",
+                    "true",
+                    "com.android.vending",
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            # Record this setting in the profile
+            self._update_profile_setting("auto_updates_disabled", True)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to disable auto updates: {e.stderr}")
+            return False
+        except Exception as e:
+            logger.error(f"Error disabling auto updates: {e}")
+            return False
+
     def _cleanup_old_sessions(self):
         """Clean up any existing UiAutomator2 sessions."""
         try:
@@ -875,6 +957,9 @@ class Driver:
 
         # Hide the status bar
         self._disable_status_bar()
+
+        # Disable automatic app updates to prevent crashes
+        self._disable_auto_updates()
 
         # Get Kindle launch activity
         app_activity = self._get_kindle_launch_activity()

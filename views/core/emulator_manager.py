@@ -248,7 +248,7 @@ class EmulatorManager:
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
                 logger.info("Waiting for emulator to boot...")
-                deadline = time.time() + 30  # 30 seconds timeout
+                deadline = time.time() + 50  # 50 seconds timeout
 
                 # Active polling approach - check every second and log consistently
                 check_count = 0
@@ -269,7 +269,7 @@ class EmulatorManager:
                             return True
 
                 logger.error(
-                    f"Timeout waiting for emulator to boot for {email} after 30 seconds and {check_count} checks"
+                    f"Timeout waiting for emulator to boot for {email} after 50 seconds and {check_count} checks"
                 )
                 return False
             else:
