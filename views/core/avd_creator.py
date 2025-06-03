@@ -430,11 +430,15 @@ class AVDCreator:
             # Source and destination paths
             seed_clone_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
             new_avd_path = os.path.join(self.avd_dir, f"{new_avd_name}.avd")
+            new_avd_ini = os.path.join(self.avd_dir, f"{new_avd_name}.ini")
 
-            # Check if destination already exists
-            if os.path.exists(new_avd_path):
+            # Check if destination already exists (both .avd directory and .ini file)
+            if os.path.exists(new_avd_path) and os.path.exists(new_avd_ini):
                 logger.info(f"AVD {new_avd_name} already exists, reusing it")
                 return True, new_avd_name
+            elif os.path.exists(new_avd_path) and not os.path.exists(new_avd_ini):
+                logger.warning(f"AVD directory {new_avd_path} exists but .ini file is missing, removing incomplete AVD")
+                shutil.rmtree(new_avd_path, ignore_errors=True)
 
             logger.info(f"Creating {new_avd_name} from seed clone using avdmanager move strategy")
 
