@@ -24,7 +24,7 @@ shell:
 test:
 	# workon kindle-automator
 	@echo "Running tests..."
-	@pytest tests
+	@PYTHONPATH=$(shell pwd) pytest tests
 
 # Ansible
 
