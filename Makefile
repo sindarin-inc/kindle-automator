@@ -264,7 +264,7 @@ test-auth-recreate:
 		-H "Content-Type: application/json" \
 		-d '{"email": "$(EMAIL)", "password": "$(PASSWORD)", "recreate": 1}' \
 		-v
-		
+
 # Test auth endpoint without auth credentials (for manual VNC authentication)
 test-no-auth:
 	@echo "Authenticating (no auth credentials, manual VNC auth)..."

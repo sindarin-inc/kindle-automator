@@ -2113,6 +2113,7 @@ from server.resources.cold_storage_resources import (
 )
 from server.resources.idle_check_resources import IdleCheckResource
 from server.resources.log_timeline_resource import LogTimelineResource
+from server.resources.logout_resource import LogoutResource
 from server.resources.shutdown_resources import ShutdownResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 from server.resources.user_activity_resource import UserActivityResource
@@ -2157,6 +2158,11 @@ api.add_resource(
 
 api.add_resource(BookOpenResource, "/open-book")
 api.add_resource(TwoFactorResource, "/2fa")
+api.add_resource(
+    LogoutResource,
+    "/logout",
+    resource_class_kwargs={"server_instance": server},
+)
 api.add_resource(AuthResource, "/auth")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
