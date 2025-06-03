@@ -350,6 +350,27 @@ class ViewInspector:
         try:
             logger.info("Determining current view...")
 
+            # First check if we're on the Android dashboard (not in Kindle app)
+            try:
+                current_activity = self.driver.current_activity
+                logger.info(f"Current activity: {current_activity}")
+
+                # Check if we're on the Android dashboard/launcher
+                if current_activity and (
+                    "NexusLauncher" in current_activity or "Launcher" in current_activity
+                ):
+                    logger.warning("Detected Android dashboard - Kindle app is not in foreground")
+                    # Try to launch the Kindle app
+                    if self.ensure_app_foreground():
+                        logger.info("Successfully launched Kindle app from dashboard")
+                        time.sleep(2)  # Give app time to initialize
+                        # Don't recurse, just continue with normal detection
+                    else:
+                        logger.error("Failed to launch Kindle app from dashboard")
+                        return AppView.UNKNOWN
+            except Exception as e:
+                logger.debug(f"Error checking current activity: {e}")
+
             # Check for HOME tab first as it's the most common state
             # This helps avoid all the other expensive checks for common cases
             try:

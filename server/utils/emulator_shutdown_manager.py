@@ -121,7 +121,10 @@ class EmulatorShutdownManager:
                                 logger.info("Successfully navigated to More tab")
 
                                 # Perform sync
-                                if state_machine.library_handler.sync_in_more_tab():
+                                logger.info("Starting sync_in_more_tab() call...")
+                                sync_result = state_machine.library_handler.sync_in_more_tab()
+                                logger.info(f"sync_in_more_tab() returned: {sync_result}")
+                                if sync_result:
                                     logger.info("Successfully synced in More tab")
                                 else:
                                     logger.warning("Sync may not have completed fully")

@@ -8,6 +8,7 @@
 - `make test-*`: Run various API endpoint tests (e.g. `make test-init`, `make test-books`)
 - `make reinstall`: Reinstall the application
 - `make kill-server`: Kill server and appium processes
+- `make ssh`: Use the Makefile to SSH into prod or staging with the appropriate non-interactive command prefix
 
 ## Virtualenv Management
 
@@ -48,3 +49,4 @@
 ## Development Guidelines
 
 - Don't make test files unless directed to
+- If you need to use ssh for prod or staging, read the Makefile to see how `make ssh` and `make ssh-staging` work so you can make a non-interactive ssh command prefix for what you want to do on prod or staging

@@ -708,50 +708,69 @@ class LibraryHandler:
 
             # Monitor sync progress
             sync_complete = False
-            max_wait_time = 30  # Maximum 30 seconds for sync
+            max_wait_time = 15  # Maximum 15 seconds for sync (as expected by user)
             start_time = time.time()
+            logger.info(f"Waiting up to {max_wait_time} seconds for sync to complete...")
 
             while time.time() - start_time < max_wait_time:
-                # Always check sync status first to see if it's complete
-                for strategy, locator in SYNC_STATUS_STRATEGIES:
-                    try:
-                        status_element = self.driver.find_element(strategy, locator)
-                        if status_element.is_displayed():
-                            status_text = status_element.text
-                            logger.info(f"Sync status: {status_text}")
+                try:
+                    # Always check sync status first to see if it's complete
+                    for strategy, locator in SYNC_STATUS_STRATEGIES:
+                        try:
+                            status_element = self.driver.find_element(strategy, locator)
+                            if status_element.is_displayed():
+                                status_text = status_element.text
+                                logger.info(f"Sync status: {status_text}")
 
-                            # Check if sync is complete (status shows "Last synced" with recent time)
-                            if "Last synced" in status_text:
-                                logger.info("Sync completed successfully")
-                                sync_complete = True
+                                # Check if sync is complete (status shows "Last synced" with recent time)
+                                if "Last synced" in status_text:
+                                    logger.info("Sync completed successfully")
+                                    sync_complete = True
+                                    break
+                        except Exception as e:
+                            logger.debug(f"Error checking sync status with strategy {strategy}: {e}")
+                            continue
+
+                    if sync_complete:
+                        break
+
+                    # Check if sync is still in progress
+                    sync_in_progress = False
+                    for strategy, locator in SYNC_PROGRESS_INDICATORS:
+                        try:
+                            progress_element = self.driver.find_element(strategy, locator)
+                            if progress_element.is_displayed():
+                                sync_in_progress = True
+                                logger.info("Sync is in progress...")
                                 break
-                    except:
-                        continue
+                        except Exception as e:
+                            logger.debug(f"Error checking sync progress with strategy {strategy}: {e}")
+                            continue
 
-                if sync_complete:
-                    break
+                    # Log current wait time
+                    elapsed_time = time.time() - start_time
+                    logger.debug(f"Sync wait time: {elapsed_time:.1f}s / {max_wait_time}s")
+                    
+                    time.sleep(1)  # Check every second
+                    
+                except Exception as e:
+                    logger.error(f"Unexpected error in sync monitoring loop: {e}")
+                    # Don't break the loop on errors, just continue
+                    time.sleep(1)
 
-                # Check if sync is still in progress
-                sync_in_progress = False
-                for strategy, locator in SYNC_PROGRESS_INDICATORS:
-                    try:
-                        progress_element = self.driver.find_element(strategy, locator)
-                        if progress_element.is_displayed():
-                            sync_in_progress = True
-                            logger.info("Sync is in progress...")
-                            break
-                    except:
-                        continue
-
-                time.sleep(1)  # Check every second
-
+            # Log final status
+            final_elapsed = time.time() - start_time
             if not sync_complete:
-                logger.warning("Sync may not have completed within timeout period")
+                logger.warning(f"Sync may not have completed within timeout period (waited {final_elapsed:.1f}s)")
+            else:
+                logger.info(f"Sync completed after {final_elapsed:.1f}s")
 
+            logger.info(f"sync_in_more_tab() finishing, returning: {sync_complete}")
             return sync_complete
 
         except Exception as e:
             logger.error(f"Error during sync: {e}")
+            logger.info("sync_in_more_tab() caught exception, returning False")
             return False
 
     def _is_more_tab_selected(self):

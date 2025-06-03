@@ -728,6 +728,7 @@ class EmulatorLauncher:
 
             # No longer explicitly loading snapshots - the emulator will use default_boot automatically
             # Log when the default_boot snapshot was last updated
+            created_from_seed = False
             try:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
@@ -751,6 +752,7 @@ class EmulatorLauncher:
 
             except Exception as e:
                 logger.warning(f"Error accessing user profile for snapshot info: {e}")
+                created_from_seed = False
                 # Proceed normally - emulator will use default_boot if available
 
             # Common emulator arguments for all platforms
@@ -762,24 +764,13 @@ class EmulatorLauncher:
                 "-writable-system",
                 "-port",
                 str(emulator_port),
-                # Keyboard configuration - disable soft keyboard
-                "-prop",
-                "hw.keyboard=yes",
-                "-prop",
-                "hw.keyboard.lid=yes",  # Force hardware keyboard mode
-                "-prop",
-                "hw.mainKeys=yes",  # Enable hardware keys
-                # Status bar and nav buttons configuration
-                "-prop",
-                "hw.statusBar=no",  # Disable status bar
-                "-prop",
-                "hw.navButtons=no",  # Disable navigation buttons
-                # Additional keyboard settings to disable soft keyboard
+                # Only qemu.* properties can be set via -prop
+                # hw.* properties are set in the AVD config.ini file
                 "-prop",
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
-            # No longer specifying snapshot - emulator will use default_boot automatically
+            # No longer need to explicitly specify snapshot since references are now fixed
             logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
 
             # Build platform-specific emulator command
@@ -790,6 +781,8 @@ class EmulatorLauncher:
                     "-verbose",
                     "-feature",
                     "-accel",  # Disable hardware acceleration
+                    "-feature",
+                    "-Gfxstream",  # Disable gfxstream to use legacy renderer for snapshot compatibility
                     "-gpu",
                     "swiftshader",
                 ] + common_args
@@ -804,6 +797,8 @@ class EmulatorLauncher:
                     "swiftshader_indirect",
                     "-feature",
                     "-HVF",  # Disable hardware virtualization
+                    "-feature",
+                    "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
                     "off",
                 ] + common_args
@@ -814,6 +809,8 @@ class EmulatorLauncher:
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
+                    "-feature",
+                    "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
                     "on",
                     "-feature",

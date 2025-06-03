@@ -87,90 +87,16 @@
   environment:
     ANDROID_HOME: "{{ android_home }}"
 
-- name: Ensure AVD directory exists
-  file:
-    path: "{{ android_home }}/avd"
-    state: directory
-    mode: "0755"
-  become: yes
-
-- name: Create an x86 AVD in /opt/android-sdk/avd
-  shell: |
-    {{ android_home }}/cmdline-tools/latest/bin/avdmanager create avd -n {{ avd_name }} -k "{{ sys_img }}" --device "{{ device_skin }}" --force
-  # args:
-  #   creates: "{{ android_home }}/avd/{{ avd_name }}.avd"
-  become: yes
-  environment:
-    ANDROID_SDK_ROOT: "{{ android_home }}"
-    ANDROID_AVD_HOME: "{{ android_home }}/avd"
-
-- name: Ensure AVD config directory exists
-  file:
-    path: "{{ android_home }}/avd/{{ avd_name }}.avd"
-    state: directory
-    mode: "0755"
-  become: yes
-
-- name: Configure AVD settings for better performance
-  lineinfile:
-    path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
-    regexp: "{{ item.regex }}"
-    line: "{{ item.line }}"
-    state: present
-    backrefs: yes
-  with_items:
-    - { regex: "^hw.ramSize=.*", line: "hw.ramSize=4096" }
-    - { regex: "^hw.cpu.ncore=.*", line: "hw.cpu.ncore=4" }
-    - { regex: "^hw.gpu.enabled=.*", line: "hw.gpu.enabled=yes" }
-    - { regex: "^hw.gpu.mode=.*", line: "hw.gpu.mode=swiftshader" }
-    - { regex: "^hw.audioInput=.*", line: "hw.audioInput=no" }
-    - { regex: "^hw.audioOutput=.*", line: "hw.audioOutput=no" }
-    - { regex: "^hw.gps=.*", line: "hw.gps=no" }
-    - { regex: "^hw.camera.back=.*", line: "hw.camera.back=none" }
-    - { regex: "^hw.keyboard=.*", line: "hw.keyboard=yes" }
-    - { regex: "^hw.fastboot=.*", line: "hw.fastboot=no" }
-    - { regex: "^hw.arc=.*", line: "hw.arc=false" }
-    - { regex: "^hw.useext4=.*", line: "hw.useext4=yes" }
-    - { regex: "^kvm.enabled=.*", line: "kvm.enabled=no" }
-    - { regex: "^showWindow=.*", line: "showWindow=no" }
-    - { regex: "^hw.arc.autologin=.*", line: "hw.arc.autologin=no" }
-    - { regex: "^snapshot.present=.*", line: "snapshot.present=no" }
-    - {
-        regex: "^disk.dataPartition.size=.*",
-        line: "disk.dataPartition.size=6G",
-      }
-    # Add ARM translation support
-    - { regex: "^PlayStore.enabled=.*", line: "PlayStore.enabled=true" }
-    - {
-        regex: "^image.sysdir.1=.*",
-        line: "image.sysdir.1=system-images/android-30/google_apis_playstore/x86_64/",
-      }
-    - { regex: "^tag.id=.*", line: "tag.id=google_apis_playstore" }
-    - { regex: "^tag.display=.*", line: "tag.display=Google Play" }
-  become: yes
-
-- name: Add ARM translation support to AVD config
-  lineinfile:
-    path: "{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
-    line: "{{ item }}"
-    state: present
-  with_items:
-    - "hw.cpu.arch=x86_64"
-    - "ro.kernel.qemu.gles=1"
-    - "skin.dynamic=yes"
-    - "skin.name=1080x1920"
-    - "skin.path=_no_skin"
-    - "skin.path.backup=_no_skin"
-  become: yes
+# AVD creation and configuration is handled by the Python code in views/core/avd_creator.py
+# Ansible only manages SDK installation and dependencies
 
 - name: Restart ADB Server
   shell: "{{ android_home }}/platform-tools/adb kill-server && {{ android_home }}/platform-tools/adb start-server"
   become: yes
 
-# Skip waiting for emulator during provisioning as it's now managed by Flask server
-- name: Note about emulator
+- name: Note about AVD and emulator management
   debug:
-    msg: "The Android emulator will be started by the Flask server for each user session, not during provisioning."
+    msg: "AVD creation and emulator management is handled by the Flask server, not during provisioning."
 
 - name: Ensure libhoudini directory exists
   file:
@@ -232,10 +158,9 @@
   ignore_errors: yes
   tags: apk
 
-# Skip waiting for emulator during provisioning as it's now managed by Flask server
 - name: Note about emulator boot
   debug:
-    msg: "The Android emulator will be started by the Flask server for each user session, not during provisioning."
+    msg: "The Android emulator will be started by the Flask server for each user session."
   tags: apk
 
 - name: Note about ARM translation status
@@ -243,48 +168,7 @@
     msg: "ARM translation status will be checked when the emulator is started by the Flask server."
   tags: apk
 
-- name: Prepare AVD config for ARM compatibility
-  shell: |
-    # Only modify AVD config.ini, not the system partition
-    AVD_CONFIG="{{ android_home }}/avd/{{ avd_name }}.avd/config.ini"
-    CONFIG_CHANGES=0
-
-    # Check and set ARM translation settings
-    if ! grep -q "ro.dalvik.vm.isa.arm=x86" "$AVD_CONFIG"; then
-      echo "ro.dalvik.vm.isa.arm=x86" >> "$AVD_CONFIG"
-      echo "Added arm translation setting"
-      CONFIG_CHANGES=1
-    fi
-
-    if ! grep -q "ro.dalvik.vm.isa.arm64=x86_64" "$AVD_CONFIG"; then
-      echo "ro.dalvik.vm.isa.arm64=x86_64" >> "$AVD_CONFIG"
-      echo "Added arm64 translation setting"
-      CONFIG_CHANGES=1
-    fi
-
-    if ! grep -q "ro.enable.native.bridge.exec=1" "$AVD_CONFIG"; then
-      echo "ro.enable.native.bridge.exec=1" >> "$AVD_CONFIG"
-      echo "Added native bridge exec setting"
-      CONFIG_CHANGES=1
-    fi
-
-    # Ensure Play Store is enabled for ARM translation
-    if ! grep -q "PlayStore.enabled=true" "$AVD_CONFIG"; then
-      echo "PlayStore.enabled=true" >> "$AVD_CONFIG"
-      echo "Enabled Play Store for ARM translation"
-      CONFIG_CHANGES=1
-    fi
-
-    if [ $CONFIG_CHANGES -eq 1 ]; then
-      echo "Updated AVD config with ARM translation settings"
-    else
-      echo "No AVD configuration changes needed"
-    fi
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_home }}"
-  ignore_errors: yes
-  tags: apk
+# ARM compatibility settings are handled by the Python code during AVD creation
 
 - name: Verify Kindle APK is ready for installation
   shell: |
