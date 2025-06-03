@@ -53,17 +53,11 @@ class TestKindleAPIIntegration:
     def test_open_random_book(self):
         """Test /kindle/open-random-book endpoint."""
         response = self._make_request("open-random-book")
-        assert (
-            response.status_code == 200
-        ), f"Expected 200, got {response.status_code}: {response.text}"
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
-        assert (
-            "success" in data or "status" in data
-        ), f"Response missing success/status field: {data}"
-        assert (
-            "book" in data or "title" in data or "message" in data
-        ), f"Response missing book info: {data}"
+        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
+        assert "book" in data or "title" in data or "message" in data, f"Response missing book info: {data}"
 
         # Store book info for subsequent tests
         self.__class__.opened_book = data
@@ -83,14 +77,10 @@ class TestKindleAPIIntegration:
         params = {"action": "preview", "preview": "true"}
         response = self._make_request("navigate", params)
 
-        assert (
-            response.status_code == 200
-        ), f"Expected 200, got {response.status_code}: {response.text}"
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
-        assert (
-            "ocr_text" in data or "text" in data or "content" in data
-        ), f"Response missing OCR text: {data}"
+        assert "ocr_text" in data or "text" in data or "content" in data, f"Response missing OCR text: {data}"
 
         # Verify we got actual text back
         text_field = data.get("ocr_text") or data.get("text") or data.get("content", "")
@@ -102,9 +92,7 @@ class TestKindleAPIIntegration:
         # Authenticate via staff-auth endpoint
         auth_url = f"{API_BASE_URL}/kindle/staff-auth"
         auth_response = self.session.get(auth_url, params={"auth": "1"})
-        assert (
-            auth_response.status_code == 200
-        ), f"Staff auth failed: {auth_response.status_code}"
+        assert auth_response.status_code == 200, f"Staff auth failed: {auth_response.status_code}"
 
         try:
             response = self._make_request("shutdown", method="POST")
@@ -112,14 +100,10 @@ class TestKindleAPIIntegration:
             # Don't skip - let the test fail
             raise
 
-        assert (
-            response.status_code == 200
-        ), f"Expected 200, got {response.status_code}: {response.text}"
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
-        assert (
-            "success" in data or "status" in data
-        ), f"Response missing success/status field: {data}"
+        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
 
         # Verify shutdown was acknowledged
         if "success" in data:
@@ -140,9 +124,7 @@ class TestKindleAPIIntegration:
         time.sleep(3)  # Wait for book to load
 
         # Navigate with preview
-        nav_response = self._make_request(
-            "navigate", {"action": "preview", "preview": "true"}
-        )
+        nav_response = self._make_request("navigate", {"action": "preview", "preview": "true"})
         assert nav_response.status_code == 200
         nav_data = nav_response.json()
         assert any(key in nav_data for key in ["ocr_text", "text", "content"])

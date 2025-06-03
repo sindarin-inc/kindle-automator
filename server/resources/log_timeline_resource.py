@@ -88,7 +88,7 @@ class LogTimelineResource(Resource):
             server_log = self.logs_dir / "server.log"
             if server_log.exists():
                 log_files.append(server_log)
-            
+
             # Add rotated server logs
             for rotated_log in sorted(self.logs_dir.glob("server.log.*")):
                 log_files.append(rotated_log)
@@ -98,7 +98,7 @@ class LogTimelineResource(Resource):
                 email_log = self.logs_dir / f"{email_filter}.log"
                 if email_log.exists():
                     log_files.append(email_log)
-                
+
                 # Add rotated email logs
                 for rotated_log in sorted(self.logs_dir.glob(f"{email_filter}.log.*")):
                     log_files.append(rotated_log)
@@ -107,7 +107,7 @@ class LogTimelineResource(Resource):
                 for log_file in self.logs_dir.glob("*.log"):
                     if log_file.name != "server.log" and "@" in log_file.name:
                         log_files.append(log_file)
-                
+
                 # Add rotated email logs
                 for log_file in self.logs_dir.glob("*.log.*"):
                     if "@" in log_file.name.split(".log")[0]:
@@ -115,7 +115,7 @@ class LogTimelineResource(Resource):
 
             # Process each log file
             for log_file in log_files:
-                if str(log_file).endswith('.gz'):
+                if str(log_file).endswith(".gz"):
                     entries = self._parse_compressed_log_file(
                         log_file, min_level, start_dt, end_dt, limit - len(all_entries)
                     )
@@ -266,7 +266,7 @@ class LogTimelineResource(Resource):
         try:
             with gzip.open(log_file, "rt", encoding="utf-8", errors="ignore") as f:
                 # Determine the source from the filename
-                source = "server" if "server.log" in str(log_file) else log_file.stem.split('.')[0]
+                source = "server" if "server.log" in str(log_file) else log_file.stem.split(".")[0]
                 return self._parse_log_lines(f, source, min_level, start_dt, end_dt, max_entries)
         except Exception as e:
             logger.error(f"Error parsing compressed log file {log_file}: {e}")

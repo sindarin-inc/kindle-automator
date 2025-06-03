@@ -750,9 +750,9 @@ class LibraryHandler:
                     # Log current wait time
                     elapsed_time = time.time() - start_time
                     logger.debug(f"Sync wait time: {elapsed_time:.1f}s / {max_wait_time}s")
-                    
+
                     time.sleep(1)  # Check every second
-                    
+
                 except Exception as e:
                     logger.error(f"Unexpected error in sync monitoring loop: {e}")
                     # Don't break the loop on errors, just continue
@@ -761,7 +761,9 @@ class LibraryHandler:
             # Log final status
             final_elapsed = time.time() - start_time
             if not sync_complete:
-                logger.warning(f"Sync may not have completed within timeout period (waited {final_elapsed:.1f}s)")
+                logger.warning(
+                    f"Sync may not have completed within timeout period (waited {final_elapsed:.1f}s)"
+                )
             else:
                 logger.info(f"Sync completed after {final_elapsed:.1f}s")
 
