@@ -745,29 +745,6 @@ class ViewInspector:
             logger.warning("Could not determine current view - dumping page source for debugging")
             self._dump_page_source()
 
-            # Also save a screenshot for visual debugging
-            try:
-                screenshot_path = os.path.join(self.screenshots_dir, "unknown_view.png")
-
-                # For unknown views, use regular ADB screenshot for speed
-                success = False
-                if hasattr(self, "automator") and self.automator and hasattr(self.automator, "device_id"):
-                    device_id = self.automator.device_id
-                    logger.info("Taking ADB screenshot for unknown view...")
-                    adb_path = take_adb_screenshot(device_id=device_id, output_path=screenshot_path)
-                    if adb_path:
-                        logger.info(f"Saved ADB screenshot of unknown view to {adb_path}")
-                        success = True
-                    else:
-                        logger.warning("ADB screenshot failed, falling back to standard method")
-
-                # Fall back to standard method if ADB screenshot failed or not available
-                if not success:
-                    self.driver.save_screenshot(screenshot_path)
-                    logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save screenshot: {str(e)[:100]}")
-
             logger.debug("Not in main app view")
 
             # Check if we're in an AlertActivity which could contain a dialog
