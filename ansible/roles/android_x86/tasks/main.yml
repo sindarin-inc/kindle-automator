@@ -57,6 +57,23 @@
   become: yes
   when: mnt_storage_exists.stat.exists
 
+- name: Create symlink from SDK avd directory to big drives storage
+  file:
+    src: /mnt/storage/avd
+    dest: "{{ android_home }}/avd"
+    state: link
+    force: yes
+  become: yes
+  when: mnt_storage_exists.stat.exists
+
+- name: Create normal AVD directory when no big drives storage
+  file:
+    path: "{{ android_home }}/avd"
+    state: directory
+    mode: "0755"
+  become: yes
+  when: not mnt_storage_exists.stat.exists
+
 - name: Download command line tools
   get_url:
     url: "{{ sdk_tools_url }}"
