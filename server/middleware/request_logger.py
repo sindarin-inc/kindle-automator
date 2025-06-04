@@ -8,7 +8,14 @@ from io import BytesIO
 from flask import Response, current_app, g, request
 
 # Removed set_current_request_email import as it's no longer needed
-from server.utils.ansi_colors import BRIGHT_WHITE, DIM_YELLOW, GREEN, MAGENTA, RESET
+from server.utils.ansi_colors import (
+    BLUE,
+    BRIGHT_WHITE,
+    DIM_YELLOW,
+    GREEN,
+    MAGENTA,
+    RESET,
+)
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -69,20 +76,7 @@ class RequestBodyLogger:
 
         if server_instance:
             email = request_email or "not_authenticated"
-
-            # Get the AVD name specifically for this email, not just the current profile
-            if request_email and hasattr(server_instance, "profile_manager"):
-                avd_name = server_instance.profile_manager.get_avd_for_email(request_email) or "none"
-            else:
-                # Fallback to current profile
-                current_profile = (
-                    server_instance.profile_manager.get_current_profile()
-                    if hasattr(server_instance, "profile_manager")
-                    else None
-                )
-                avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
-
-            user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
+            user_info = f" {GREEN}[User: {email}]{RESET}"
 
         # For GET requests, use query parameters as the body
         if request.method == "GET" and request.args:
@@ -139,6 +133,12 @@ class RequestBodyLogger:
         """Log the response body."""
         response_data = None
 
+        # Calculate elapsed time
+        elapsed_time = ""
+        if hasattr(g, "request_start_time"):
+            elapsed = time.time() - g.request_start_time
+            elapsed_time = f" {BLUE}{elapsed:.1f}s{RESET}"
+
         # Get server instance from the Flask app
         server_instance = current_app.config.get("server_instance", None)
         user_info = ""
@@ -148,24 +148,11 @@ class RequestBodyLogger:
 
         if server_instance:
             email = request_email or "not_authenticated"
-
-            # Get the AVD name specifically for this email, not just the current profile
-            if request_email and hasattr(server_instance, "profile_manager"):
-                avd_name = server_instance.profile_manager.get_avd_for_email(request_email) or "none"
-            else:
-                # Fallback to current profile
-                current_profile = (
-                    server_instance.profile_manager.get_current_profile()
-                    if hasattr(server_instance, "profile_manager")
-                    else None
-                )
-                avd_name = current_profile.get("avd_name", "none") if current_profile else "none"
-
-            user_info = f" {GREEN}[User: {email} | AVD: {avd_name}]{RESET}"
+            user_info = f" {GREEN}[User: {email}]{RESET}"
 
         if response.direct_passthrough:
             logger.info(
-                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
+                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
             )
             return response
 
@@ -185,34 +172,34 @@ class RequestBodyLogger:
                     json_str = json.dumps(sanitized_data, default=str)
                     if len(json_str) > 500:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
                     if len(json_str) > 500:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
                 if len(response_text) > 500:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
+                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
+                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
                     )
         except UnicodeDecodeError:
             logger.info(
-                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
+                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
             )
 
         return response
