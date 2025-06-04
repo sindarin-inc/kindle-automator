@@ -639,6 +639,59 @@ class EmulatorLauncher:
             logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
             return False
 
+    def _ensure_avd_ram_upgraded(self, avd_name: str) -> bool:
+        """
+        Ensure the AVD has at least 8GB of RAM configured.
+        Updates the config.ini file if RAM is less than 8192 MB.
+        
+        Args:
+            avd_name: Name of the AVD to check/upgrade
+            
+        Returns:
+            True if RAM was already sufficient or successfully upgraded, False on error
+        """
+        try:
+            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+            config_path = os.path.join(avd_path, "config.ini")
+            
+            if not os.path.exists(config_path):
+                logger.error(f"Config file not found: {config_path}")
+                return False
+                
+            # Read current config
+            with open(config_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Check current RAM setting
+            ram_updated = False
+            for i, line in enumerate(lines):
+                if line.startswith("hw.ramSize="):
+                    current_ram = int(line.split("=")[1].strip())
+                    if current_ram < 8192:
+                        logger.info(f"Upgrading RAM for {avd_name} from {current_ram}MB to 8192MB")
+                        lines[i] = "hw.ramSize=8192\n"
+                        ram_updated = True
+                    else:
+                        logger.debug(f"AVD {avd_name} already has sufficient RAM: {current_ram}MB")
+                    break
+            else:
+                # hw.ramSize not found, add it
+                logger.info(f"Adding RAM setting to {avd_name} config")
+                lines.append("hw.ramSize=8192\n")
+                ram_updated = True
+            
+            # Write updated config if needed
+            if ram_updated:
+                with open(config_path, 'w') as f:
+                    f.writelines(lines)
+                logger.info(f"Successfully upgraded RAM for {avd_name}")
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error ensuring RAM upgrade for {avd_name}: {e}")
+            return False
+
     def launch_emulator(self, email: str) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
@@ -658,6 +711,10 @@ class EmulatorLauncher:
             if not os.path.exists(avd_path):
                 logger.error(f"AVD {avd_name} does not exist at {avd_path}")
                 return False, None, None
+            
+            # Ensure AVD has sufficient RAM before launching
+            if not self._ensure_avd_ram_upgraded(avd_name):
+                logger.warning(f"Failed to ensure RAM upgrade for {avd_name}, continuing anyway")
 
             # IMPORTANT: Use AVD name as key for running_emulators, not email
             # Check if emulator already running for this AVD

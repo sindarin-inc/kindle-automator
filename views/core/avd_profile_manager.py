@@ -319,7 +319,6 @@ class AVDProfileManager:
             logger.error(f"Error ensuring seed clone ready: {e}")
             return False, str(e)
 
-
     def _detect_host_architecture(self) -> str:
         """
         Detect the host machine's architecture.
