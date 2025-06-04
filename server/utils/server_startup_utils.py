@@ -86,9 +86,11 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
 
                     # Check if this profile's emulator is already in use (local development only)
                     if platform.system() == "Darwin":
-                        is_running, emulator_id, avd_name = (
-                            server.profile_manager.find_running_emulator_for_email(email)
-                        )
+                        (
+                            is_running,
+                            emulator_id,
+                            avd_name,
+                        ) = server.profile_manager.find_running_emulator_for_email(email)
                         if emulator_id and emulator_id in emulators_in_use:
                             other_email = emulators_in_use[emulator_id]
                             logger.warning(
