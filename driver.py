@@ -1294,9 +1294,6 @@ class Driver:
                         logger.info(
                             "Device already offline during driver.quit() - this is expected during shutdown"
                         )
-                    elif "a session is either terminated or not started" in error_msg:
-                        # This is expected when the session was already terminated
-                        logger.debug("Session already terminated during driver.quit() - this is expected")
                     else:
                         logger.error(f"Error during driver.quit(): {e}")
                 finally:

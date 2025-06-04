@@ -25,7 +25,7 @@ def ensure_automator_healthy(f):
 
         server = app.config["server_instance"]
 
-        max_retries = 2  # Allow single retry for UiAutomator2 crashes
+        max_retries = 2  # Allow retries for UiAutomator2 crashes
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
@@ -113,11 +113,9 @@ def ensure_automator_healthy(f):
                 )
                 # Check the specific exception type as well as the message
                 is_driver_error = (
-                    isinstance(
-                        e, (selenium_exceptions.NoSuchDriverException, selenium_exceptions.WebDriverException)
-                    )
+                    isinstance(e, selenium_exceptions.NoSuchDriverException)
                     if hasattr(selenium_exceptions, "NoSuchDriverException")
-                    else isinstance(e, selenium_exceptions.WebDriverException)
+                    else False
                 )
                 is_uiautomator_crash = (
                     is_driver_error
@@ -133,21 +131,15 @@ def ensure_automator_healthy(f):
                             "A session is either terminated or not started" in error_message,
                             "NoSuchDriverError" in error_message,
                             "InvalidSessionIdException" in error_message,
-                            "Could not proxy command to the remote server" in error_message,
-                            "socket hang up" in error_message,
-                            "NoSuchContextException" in error_message,
-                            "InvalidContextError" in error_message,
                         ]
                     )
                 )
 
                 if is_uiautomator_crash and attempt < max_retries - 1:
-                    logger.warning("\n" + "=" * 80)
                     logger.warning(
-                        f"🔄 RETRY: UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
+                        f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
                     )
                     logger.warning(f"Crash error: {error_message}")
-                    logger.warning("=" * 80 + "\n")
 
                     # Kill any leftover UiAutomator2 processes directly via ADB
                     try:
@@ -241,11 +233,9 @@ def ensure_automator_healthy(f):
                     server.clear_current_book(sindarin_email)
 
                     if automator and automator.initialize_driver():
-                        logger.info("\n" + "=" * 80)
                         logger.info(
-                            "✅ RETRY: Successfully restarted driver after UiAutomator2 crash, retrying operation..."
+                            "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
                         )
-                        logger.info("=" * 80 + "\n")
                         continue  # Retry the operation with the next loop iteration
                     else:
                         logger.error("Failed to restart driver after UiAutomator2 crash")

@@ -851,12 +851,6 @@ class LibraryHandlerScroll:
             return books
 
         except Exception as e:
-            # Import and check if this is an Appium error
-            from server.utils.appium_error_utils import is_appium_error
-
-            if is_appium_error(e):
-                raise
-
             logger.error(f"Error scrolling through library: {e}")
 
             # Send error via callback if available
