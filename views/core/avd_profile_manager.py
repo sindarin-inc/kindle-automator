@@ -63,6 +63,9 @@ class AVDProfileManager:
         # Detect if we should use simplified mode (Mac dev environment)
         self.use_simplified_mode = self.is_macos and self.is_dev_mode
 
+        # Check if this server uses big drives storage
+        self.use_big_drives_storage = self._check_big_drives_storage()
+
         # Get Android home from environment or fallback to default
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
 
@@ -88,8 +91,12 @@ class AVDProfileManager:
                 self.avd_dir = os.path.join(user_home, ".android", "avd")
                 logger.info(f"ANDROID_HOME not set, using default AVD directory: {self.avd_dir}")
         else:
-            # For non-Mac or non-dev environments, use standard directory structure
-            self.avd_dir = os.path.join(base_dir, "avd")
+            # For non-Mac or non-dev environments, check if we should use big drives storage
+            if self.use_big_drives_storage:
+                self.avd_dir = "/mnt/storage/avd"
+                logger.info("Using big drives storage for AVDs at /mnt/storage/avd")
+            else:
+                self.avd_dir = os.path.join(base_dir, "avd")
 
         self.base_dir = base_dir
 
@@ -318,6 +325,16 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error ensuring seed clone ready: {e}")
             return False, str(e)
+
+    def _check_big_drives_storage(self) -> bool:
+        """
+        Check if this server is configured to use big drives storage.
+
+        Returns:
+            bool: True if the server should use /mnt/storage/avd, False otherwise
+        """
+        # Simply check if /mnt/storage exists
+        return os.path.exists("/mnt/storage")
 
     def _detect_host_architecture(self) -> str:
         """

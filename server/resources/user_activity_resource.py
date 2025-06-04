@@ -272,13 +272,15 @@ class UserActivityResource(Resource):
                     elif event_type == "response":
                         activity["method"] = match.group(1)
                         activity["endpoint"] = match.group(2)
-                        # Check if elapsed time was captured
-                        if match.group(3):  # This is the elapsed time
+                        # Check if elapsed time was captured (group 3)
+                        if match.group(3) is not None:  # This is the elapsed time
                             activity["duration"] = float(match.group(3))
                             activity["body"] = self._strip_ansi_codes(match.group(4))
                         else:
+                            # No elapsed time in the log, use the last group as body
+                            # When no elapsed time, group 4 is the body
+                            activity["body"] = self._strip_ansi_codes(match.group(4))
                             # Fall back to calculating duration
-                            activity["body"] = self._strip_ansi_codes(match.group(3))
                             if (
                                 current_activity
                                 and current_activity.get("action") == "api_request"

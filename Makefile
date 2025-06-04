@@ -147,6 +147,9 @@ env:
 
 ssh:
 	ssh -i ansible/keys/kindle.key root@65.108.97.170
+ssh-2:
+	ssh -i ansible/keys/kindle.key root@37.27.56.214
+ssh2: ssh-2
 ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging

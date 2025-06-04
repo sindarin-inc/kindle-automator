@@ -43,6 +43,20 @@
     mode: "0755"
   become: yes
 
+- name: Check if /mnt/storage exists
+  stat:
+    path: /mnt/storage
+  register: mnt_storage_exists
+  become: yes
+
+- name: Create AVD directory on big drives storage
+  file:
+    path: /mnt/storage/avd
+    state: directory
+    mode: "0755"
+  become: yes
+  when: mnt_storage_exists.stat.exists
+
 - name: Download command line tools
   get_url:
     url: "{{ sdk_tools_url }}"
