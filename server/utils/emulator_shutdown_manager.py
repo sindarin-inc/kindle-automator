@@ -1,7 +1,9 @@
 """Manager for gracefully shutting down emulators."""
 
 import logging
+import os
 import platform
+import signal
 import subprocess
 import time
 import traceback
@@ -320,6 +322,11 @@ class EmulatorShutdownManager:
                     except Exception as e:
                         logger.error(f"Error releasing VNC instance: {e}")
 
+            # Clean up all ports associated with this emulator before cleaning up automator
+            if emulator_id:
+                logger.info(f"Cleaning up all ports for emulator {emulator_id}")
+                self._cleanup_emulator_ports(emulator_id, email)
+
             # Clean up the automator
             if automator:
                 try:
@@ -394,3 +401,122 @@ class EmulatorShutdownManager:
 
         logger.info(f"Completed shutdown of {len(summaries)} emulators")
         return summaries
+
+    def _cleanup_emulator_ports(self, emulator_id: str, email: str) -> None:
+        """
+        Clean up all ports associated with an emulator.
+
+        This includes:
+        - ADB port forwards (systemPort, chromedriverPort, mjpegServerPort)
+        - WebSocket proxy port (macOS)
+        - Any other ports forwarded to the emulator
+
+        Args:
+            emulator_id: The emulator device ID (e.g., "emulator-5554")
+            email: Email associated with the emulator
+        """
+        try:
+            # 1. Remove all ADB port forwards for this device
+            logger.info(f"Removing all ADB port forwards for {emulator_id}")
+            try:
+                subprocess.run(
+                    [f"adb -s {emulator_id} forward --remove-all"],
+                    shell=True,
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+                logger.info(f"Successfully removed all ADB port forwards for {emulator_id}")
+            except Exception as e:
+                logger.error(f"Error removing ADB port forwards: {e}")
+
+            # 2. Kill any lingering UiAutomator2 processes on the device
+            logger.info(f"Killing UiAutomator2 processes on {emulator_id}")
+            try:
+                subprocess.run(
+                    [f"adb -s {emulator_id} shell pkill -f uiautomator"],
+                    shell=True,
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception as e:
+                logger.warning(f"Error killing UiAutomator2 processes: {e}")
+
+            # 3. Get VNC instance to find all associated ports
+            try:
+                vnc_manager = VNCInstanceManager.get_instance()
+                instance = vnc_manager.get_instance_for_profile(email)
+
+                if instance:
+                    # Get all ports from the instance
+                    ports_to_check = []
+
+                    # Appium ports
+                    if "appium_port" in instance:
+                        ports_to_check.append(instance["appium_port"])
+                    if "appium_system_port" in instance:
+                        ports_to_check.append(instance["appium_system_port"])
+                    if "appium_chromedriver_port" in instance:
+                        ports_to_check.append(instance["appium_chromedriver_port"])
+                    if "appium_mjpeg_server_port" in instance:
+                        ports_to_check.append(instance["appium_mjpeg_server_port"])
+
+                    # Check and kill any processes on these ports
+                    for port in ports_to_check:
+                        self._kill_process_on_port(port)
+
+                    # On macOS, ensure WebSocket proxy is stopped
+                    if platform.system() == "Darwin":
+                        try:
+                            from server.utils.websocket_proxy_manager import (
+                                WebSocketProxyManager,
+                            )
+
+                            ws_manager = WebSocketProxyManager.get_instance()
+                            if ws_manager.is_proxy_running(email):
+                                logger.info(f"Stopping WebSocket proxy for {email}")
+                                ws_manager.stop_proxy(email)
+                        except Exception as e:
+                            logger.warning(f"Error stopping WebSocket proxy: {e}")
+
+            except Exception as e:
+                logger.error(f"Error getting VNC instance for port cleanup: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in _cleanup_emulator_ports: {e}")
+
+    def _kill_process_on_port(self, port: int) -> None:
+        """
+        Kill any process listening on the specified port.
+
+        Args:
+            port: Port number to check and kill processes on
+        """
+        if not port:
+            return
+
+        try:
+            # Check if anything is listening on the port
+            result = subprocess.run(
+                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+            )
+
+            if result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                for pid in pids:
+                    try:
+                        logger.info(f"Killing process {pid} on port {port}")
+                        os.kill(int(pid), signal.SIGTERM)
+                        # Give it a moment to die gracefully
+                        time.sleep(0.5)
+                        # Force kill if still alive
+                        try:
+                            os.kill(int(pid), signal.SIGKILL)
+                        except ProcessLookupError:
+                            # Process already dead, that's fine
+                            pass
+                    except Exception as e:
+                        logger.warning(f"Error killing process {pid}: {e}")
+        except Exception as e:
+            logger.warning(f"Error checking for processes on port {port}: {e}")

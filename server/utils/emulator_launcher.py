@@ -941,6 +941,28 @@ class EmulatorLauncher:
                     del self.running_emulators[avd_name]
                     return False
 
+                # Clean up all ports before killing emulator
+                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                try:
+                    # Remove all ADB port forwards
+                    subprocess.run(
+                        [f"adb -s {emulator_id} forward --remove-all"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    # Kill any UiAutomator2 processes
+                    subprocess.run(
+                        [f"adb -s {emulator_id} shell pkill -f uiautomator"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"Error cleaning up ports before stopping emulator: {e}")
+
                 # Use adb to send kill command to emulator
                 subprocess.run(
                     [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
@@ -999,6 +1021,28 @@ class EmulatorLauncher:
                     )
                     del self.running_emulators[email]
                     return False
+
+                # Clean up all ports before killing emulator
+                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                try:
+                    # Remove all ADB port forwards
+                    subprocess.run(
+                        [f"adb -s {emulator_id} forward --remove-all"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    # Kill any UiAutomator2 processes
+                    subprocess.run(
+                        [f"adb -s {emulator_id} shell pkill -f uiautomator"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"Error cleaning up ports before stopping emulator: {e}")
 
                 # Use adb to send kill command to emulator
                 subprocess.run(

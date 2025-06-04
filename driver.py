@@ -32,7 +32,6 @@ class Driver:
         self._session_retries = 0
         self._max_session_retries = 2
         self._initialized_attributes = True
-        logger.info(f"Driver initialized, instance: {self}")
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
@@ -110,13 +109,17 @@ class Driver:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
             device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set hw_overlays_disabled, skip
             if (
                 device_id
                 and device_id == self.device_id
                 and profile
-                and profile.get("hw_overlays_disabled", False)
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "hw_overlays_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -153,7 +156,7 @@ class Driver:
             return False
 
     def _update_profile_setting(self, setting_name: str, value: bool) -> None:
-        """Update a setting in the current profile.
+        """Update a setting in the current profile under emulator_settings.
 
         Args:
             setting_name: The name of the setting to update
@@ -169,23 +172,12 @@ class Driver:
             avd_name = profile.get("avd_name")
 
             if email and avd_name:
-                # Update the setting in the current profile
-                profile[setting_name] = value
+                # Use the profile manager's set_user_field method to properly store under emulator_settings
+                self.automator.profile_manager.set_user_field(
+                    email, setting_name, value, section="emulator_settings"
+                )
 
-                # Update the profile in the profile manager
-                emulator_id = profile.get("emulator_id")
-
-                # Check which method is available in profile_manager
-                self.automator.profile_manager._save_profile_status(email, avd_name, emulator_id)
-
-                # Also update user preferences for persistence
-                if email not in self.automator.profile_manager.user_preferences:
-                    self.automator.profile_manager.user_preferences[email] = {}
-
-                self.automator.profile_manager.user_preferences[email][setting_name] = value
-                self.automator.profile_manager._save_user_preferences()
-
-                logger.info(f"Updated profile setting {setting_name}={value} for {email}")
+                logger.info(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
             else:
                 logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
         except Exception as e:
@@ -249,13 +241,17 @@ class Driver:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
             device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set animations_disabled, skip
             if (
                 device_id
                 and device_id == self.device_id
                 and profile
-                and profile.get("animations_disabled", False)
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "animations_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -327,9 +323,18 @@ class Driver:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
             device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set sleep_disabled, skip
-            if device_id and device_id == self.device_id and profile and profile.get("sleep_disabled", False):
+            if (
+                device_id
+                and device_id == self.device_id
+                and profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "sleep_disabled", False, section="emulator_settings"
+                )
+            ):
                 return True
 
             logger.info(f"Disabling sleep and app standby for device {self.device_id}")
@@ -405,17 +410,21 @@ class Driver:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
             device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set status_bar_disabled, skip
             if (
                 device_id
                 and device_id == self.device_id
                 and profile
-                and profile.get("status_bar_disabled", False)
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "status_bar_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
-            logger.info(f"Hiding status bar for device {self.device_id}")
+            logger.info(f"Hiding status bar for device {self.device_id}=={device_id} {profile} {email}")
 
             # Run the ADB command to hide the status bar using immersive mode
             subprocess.run(
@@ -451,13 +460,17 @@ class Driver:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
             device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set auto_updates_disabled, skip
             if (
                 device_id
                 and device_id == self.device_id
                 and profile
-                and profile.get("auto_updates_disabled", False)
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "auto_updates_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -1059,6 +1072,18 @@ class Driver:
                     options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
                     options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     self.appium_port = allocated_ports["appiumPort"]
+
+                    # Clean up any existing port forwards for this device to avoid conflicts
+                    logger.info(f"Cleaning up port forwards for {self.device_id} before initialization")
+                    try:
+                        subprocess.run(
+                            [f"adb -s {self.device_id} forward --remove-all"],
+                            shell=True,
+                            check=False,
+                            timeout=5,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error cleaning port forwards: {e}")
                 else:
                     logger.error(f"No allocated ports found for {email}")
                     return False
@@ -1219,6 +1244,34 @@ class Driver:
     def quit(self):
         """Quit the Appium driver"""
         logger.info(f"Quitting driver: {self.driver}")
+
+        # Clean up port forwards before quitting driver
+        if self.device_id:
+            logger.info(f"Cleaning up port forwards for device {self.device_id}")
+            try:
+                subprocess.run(
+                    [f"adb -s {self.device_id} forward --remove-all"],
+                    shell=True,
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+                logger.info(f"Successfully removed all port forwards for {self.device_id}")
+            except Exception as e:
+                logger.warning(f"Error removing port forwards during driver quit: {e}")
+
+            # Also kill any UiAutomator2 processes
+            try:
+                subprocess.run(
+                    [f"adb -s {self.device_id} shell pkill -f uiautomator"],
+                    shell=True,
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception as e:
+                logger.warning(f"Error killing UiAutomator2 processes during driver quit: {e}")
+
         if self.driver:
             import concurrent.futures
 
