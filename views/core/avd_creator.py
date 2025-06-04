@@ -240,7 +240,7 @@ class AVDCreator:
 
             # Define settings to update
             settings = {
-                "hw.ramSize": "8192",
+                "hw.ramSize": "5120",
                 "hw.cpu.ncore": "4",
                 "hw.gpu.enabled": "yes",
                 "hw.gpu.mode": "swiftshader",
@@ -492,7 +492,7 @@ class AVDCreator:
 
             # Step 4: Update snapshot references in the new AVD
             self._update_snapshot_references(seed_clone_name, new_avd_name)
-            
+
             # Step 5: Configure the new AVD with proper settings (including RAM)
             logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
             self._configure_avd(new_avd_name)

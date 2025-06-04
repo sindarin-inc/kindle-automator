@@ -713,8 +713,9 @@ class EmulatorLauncher:
                 return False, None, None
             
             # Ensure AVD has sufficient RAM before launching
-            if not self._ensure_avd_ram_upgraded(avd_name):
-                logger.warning(f"Failed to ensure RAM upgrade for {avd_name}, continuing anyway")
+            # DISABLED: Auto-upgrading to 8GB breaks auth token in Kindle app
+            # if not self._ensure_avd_ram_upgraded(avd_name):
+            #     logger.warning(f"Failed to ensure RAM upgrade for {avd_name}, continuing anyway")
 
             # IMPORTANT: Use AVD name as key for running_emulators, not email
             # Check if emulator already running for this AVD
