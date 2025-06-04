@@ -1144,7 +1144,7 @@ class AVDProfileManager:
             # Look for library_settings at the top level
             logger.info(f"get_style_setting: Looking for {setting_name} in library_settings for {email}")
             logger.info(f"get_style_setting: profiles_index keys: {list(self.profiles_index.keys())}")
-
+            
             if email in self.profiles_index:
                 profile = self.profiles_index[email]
                 logger.info(f"get_style_setting: Found profile for {email}, keys: {list(profile.keys())}")
