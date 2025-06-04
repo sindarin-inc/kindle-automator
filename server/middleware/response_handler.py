@@ -141,7 +141,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
 
         # Check if we have an automator for this email
         if sindarin_email not in server_instance.automators or not server_instance.automators[sindarin_email]:
-            logger.info(f"Initializing automator for {sindarin_email}")
+            logger.info(f"Initializing automator for {sindarin_email} to restart driver")
             automator = server_instance.initialize_automator(sindarin_email)
             return automator.initialize_driver() if automator else False
 
@@ -599,9 +599,9 @@ def handle_automator_response(server_instance):
                             }
 
                             if interactive_captcha:
-                                response_data[
-                                    "message"
-                                ] = "Grid-based image captcha detected - app has been restarted automatically"
+                                response_data["message"] = (
+                                    "Grid-based image captcha detected - app has been restarted automatically"
+                                )
                                 response_data["captcha_type"] = "grid"
                                 response_data["requires_restart"] = True
                             else:

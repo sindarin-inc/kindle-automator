@@ -155,8 +155,23 @@ def ensure_automator_healthy(f):
                         if automator and automator.device_id:
                             device_id = automator.device_id
                             logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
+                            # Kill uiautomator processes
                             subprocess.run(
                                 [f"adb -s {device_id} shell pkill -f uiautomator"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            # Also kill any processes using the system port
+                            subprocess.run(
+                                [f"adb -s {device_id} shell pkill -f 'uiautomator2.*8201'"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            # Forward --remove-all to clear port forwards
+                            subprocess.run(
+                                [f"adb -s {device_id} forward --remove-all"],
                                 shell=True,
                                 check=False,
                                 timeout=5,
@@ -222,7 +237,7 @@ def ensure_automator_healthy(f):
                                     logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
 
                         # Start a dedicated Appium server for this email
-                        if not server.start_appium(port=port, email=sindarin_email):
+                        if not appium_driver.start_appium_for_profile(sindarin_email, port):
                             logger.error(f"Failed to restart Appium server for {sindarin_email}")
                             return {"error": f"Failed to start Appium server for {sindarin_email}"}, 500
 
