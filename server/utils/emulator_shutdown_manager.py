@@ -73,8 +73,50 @@ class EmulatorShutdownManager:
         # Find the automator for this email
         automator = self.server.automators.get(email)
         if not automator:
-            logger.info(f"No automator found for {email}, nothing to shut down")
-            return shutdown_summary
+            logger.info(f"No automator found for {email}, checking VNC instance manager for orphaned emulator")
+            
+            # Check if there's an emulator running via VNC instance manager
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_instance = vnc_manager.get_instance_for_profile(email)
+            
+            if vnc_instance and vnc_instance.get("emulator_id"):
+                emulator_id = vnc_instance["emulator_id"]
+                logger.info(f"Found orphaned emulator {emulator_id} for {email} in VNC instance manager")
+                
+                # Try to stop the emulator using the profile manager's emulator manager
+                try:
+                    from views.core.avd_profile_manager import AVDProfileManager
+                    profile_manager = AVDProfileManager.get_instance()
+                    
+                    if profile_manager.emulator_manager and profile_manager.emulator_manager.emulator_launcher:
+                        if profile_manager.emulator_manager.emulator_launcher.stop_emulator(email):
+                            logger.info(f"Successfully stopped orphaned emulator {emulator_id} for {email}")
+                            shutdown_summary["emulator_stopped"] = True
+                            
+                            # Clear the emulator_id from VNC instance
+                            vnc_manager.clear_emulator_id_for_profile(email)
+                            logger.info(f"Cleared emulator_id from VNC instance for {email}")
+                        else:
+                            logger.error(f"Failed to stop orphaned emulator {emulator_id} for {email}")
+                    else:
+                        logger.error(f"No emulator manager available to stop orphaned emulator for {email}")
+                        
+                except Exception as e:
+                    logger.error(f"Error stopping orphaned emulator for {email}: {e}")
+                
+                # Release the VNC instance assignment
+                try:
+                    if vnc_manager.release_instance_from_profile(email):
+                        logger.info(f"Released VNC instance for {email}")
+                        shutdown_summary["vnc_stopped"] = True
+                        shutdown_summary["websocket_stopped"] = True
+                except Exception as e:
+                    logger.error(f"Error releasing VNC instance for {email}: {e}")
+                    
+                return shutdown_summary
+            else:
+                logger.info(f"No running emulator found in VNC instance manager for {email}")
+                return shutdown_summary
 
         # Before shutting down, conditionally park the emulator in the Library view and take a snapshot
         ui_automator_crashed = False
