@@ -1093,6 +1093,7 @@ class AVDProfileManager:
         """
         email = get_sindarin_email()
         if not email:
+            logger.warning("No email available to check styles_updated")
             return False
 
         # Get the styles_updated from the top level
