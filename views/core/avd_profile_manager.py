@@ -1134,35 +1134,18 @@ class AVDProfileManager:
             # Get email if not provided
             if not email:
                 email = get_sindarin_email()
-                logger.info(f"get_style_setting: No email provided, got '{email}' from get_sindarin_email()")
                 if not email:
                     logger.warning("No email available to get style setting")
                     return default
-            else:
-                logger.info(f"get_style_setting: Using provided email '{email}'")
 
             # Look for library_settings at the top level
-            logger.info(f"get_style_setting: Looking for {setting_name} in library_settings for {email}")
-            logger.info(f"get_style_setting: profiles_index keys: {list(self.profiles_index.keys())}")
-            
             if email in self.profiles_index:
                 profile = self.profiles_index[email]
-                logger.info(f"get_style_setting: Found profile for {email}, keys: {list(profile.keys())}")
                 if "library_settings" in profile:
                     library_settings = profile["library_settings"]
-                    logger.info(f"get_style_setting: Found library_settings: {library_settings}")
                     if setting_name in library_settings:
-                        value = library_settings[setting_name]
-                        logger.info(f"get_style_setting: Returning {setting_name}={value} for {email}")
-                        return value
-                    else:
-                        logger.info(f"get_style_setting: {setting_name} not found in library_settings")
-                else:
-                    logger.info(f"get_style_setting: No library_settings found in profile")
-            else:
-                logger.info(f"get_style_setting: Email {email} not found in profiles_index")
+                        return library_settings[setting_name]
 
-            logger.info(f"get_style_setting: Returning default={default} for {setting_name}")
             return default
         except Exception as e:
             logger.error(f"Error getting style setting {setting_name}: {e}")
