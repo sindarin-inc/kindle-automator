@@ -226,9 +226,10 @@ class EmulatorShutdownManager:
                 automator.emulator_manager, "emulator_launcher"
             ):
                 try:
-                    emulator_id, display_num = (
-                        automator.emulator_manager.emulator_launcher.get_running_emulator(email)
-                    )
+                    (
+                        emulator_id,
+                        display_num,
+                    ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                 except Exception as e:
                     # Even if we can't get emulator info through normal means, try to force stop
                     logger.error(f"Error getting running emulator info for {email}: {e}")
