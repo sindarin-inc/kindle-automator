@@ -92,12 +92,45 @@ class EmulatorShutdownManager:
                         if profile_manager.emulator_manager.emulator_launcher.stop_emulator(email):
                             logger.info(f"Successfully stopped orphaned emulator {emulator_id} for {email}")
                             shutdown_summary["emulator_stopped"] = True
-                            
-                            # Clear the emulator_id from VNC instance
-                            vnc_manager.clear_emulator_id_for_profile(email)
-                            logger.info(f"Cleared emulator_id from VNC instance for {email}")
                         else:
-                            logger.error(f"Failed to stop orphaned emulator {emulator_id} for {email}")
+                            logger.warning(f"Normal stop failed for orphaned emulator {emulator_id}, attempting force kill")
+                            
+                            # The emulator might be running but not visible to adb (offline/unauthorized)
+                            # Try to force kill it using the emulator port
+                            try:
+                                import subprocess
+                                # Extract port from emulator ID (e.g., emulator-5554 -> 5554)
+                                if emulator_id.startswith("emulator-"):
+                                    port = emulator_id.split("-")[1]
+                                    logger.info(f"Force killing emulator process on port {port}")
+                                    
+                                    # Kill emulator process by port
+                                    kill_result = subprocess.run(
+                                        ["pkill", "-f", f"emulator.*-port {port}"], 
+                                        check=False, 
+                                        timeout=3
+                                    )
+                                    
+                                    if kill_result.returncode == 0:
+                                        logger.info(f"Successfully force killed emulator on port {port}")
+                                        shutdown_summary["emulator_stopped"] = True
+                                    else:
+                                        # Try alternative kill pattern
+                                        subprocess.run(
+                                            ["pkill", "-f", f"emulator.*{emulator_id}"], 
+                                            check=False, 
+                                            timeout=3
+                                        )
+                                        shutdown_summary["emulator_stopped"] = True
+                                        logger.info(f"Force killed emulator using pattern {emulator_id}")
+                                        
+                            except Exception as kill_error:
+                                logger.error(f"Error force killing emulator: {kill_error}")
+                        
+                        # Always clear the emulator_id from VNC instance
+                        vnc_manager.clear_emulator_id_for_profile(email)
+                        logger.info(f"Cleared emulator_id from VNC instance for {email}")
+                            
                     else:
                         logger.error(f"No emulator manager available to stop orphaned emulator for {email}")
                         
