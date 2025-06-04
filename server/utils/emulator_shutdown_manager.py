@@ -1,5 +1,8 @@
 """Manager for gracefully shutting down emulators."""
 
+from __future__ import annotations
+
+import contextlib
 import logging
 import os
 import platform
@@ -8,11 +11,11 @@ import subprocess
 import time
 import traceback
 from datetime import datetime
+from typing import Dict, Optional
 
 from selenium.common.exceptions import InvalidSessionIdException
 
 from server.utils.vnc_instance_manager import VNCInstanceManager
-from server.utils.websocket_proxy_manager import WebSocketProxyManager
 from views.core.app_state import AppState
 from views.state_machine import KindleStateMachine
 
@@ -22,576 +25,375 @@ logger = logging.getLogger(__name__)
 class EmulatorShutdownManager:
     """Manages graceful shutdown of emulators."""
 
-    def __init__(self, server_instance):
-        """Initialize the shutdown manager.
+    #: Keys expected by downstream callers in the returned shutdown summary
+    _SUMMARY_KEYS = (
+        "email",
+        "emulator_stopped",
+        "vnc_stopped",
+        "xvfb_stopped",
+        "websocket_stopped",
+        "automator_cleaned",
+        "snapshot_taken",
+    )
 
-        Args:
-            server_instance: The AutomationServer instance
-        """
+    # ---------------------------------------------------------------------
+    # Public helpers
+    # ---------------------------------------------------------------------
+
+    def __init__(self, server_instance):
         self.server = server_instance
 
-    def shutdown_emulator(self, email, preserve_reading_state=False, mark_for_restart=None):
-        """Gracefully shutdown an emulator for a specific email.
+    # ------------------------------------------------------------------
+    # External API ––– keep signature unchanged
+    # ------------------------------------------------------------------
 
-        This parks the emulator in the Library view, takes a snapshot,
-        then stops the emulator and cleans up resources.
+    def shutdown_emulator(  # noqa: C901 (complexity is acceptable for entry‑point)
+        self,
+        email: str,
+        preserve_reading_state: bool = False,
+        mark_for_restart: Optional[bool] = None,
+    ) -> Dict[str, bool]:
+        """Gracefully shut down the emulator attached to *email*.
 
         Args:
-            email: The email address associated with the emulator
-            preserve_reading_state: If True, keep current state instead of navigating to library
-            mark_for_restart: If True, mark emulator to auto-start after server restart.
-                             If None (default), uses the same value as preserve_reading_state
-                             for backward compatibility.
+            email: Profile email.
+            preserve_reading_state: Skip navigation to Library before snapshot.
+            mark_for_restart: Persist running flag for deployment restarts.  If *None*,
+                falls back to *preserve_reading_state* for backwards compatibility.
 
-        Returns:
-            dict: Shutdown summary with status information
+        Returns
+        -------
+        Dict[str, bool]
+            A summary of work performed keyed by ``_SUMMARY_KEYS``.
         """
+        summary = {key: False for key in self._SUMMARY_KEYS}
+        summary["email"] = email
 
         logger.info(
-            f"Processing shutdown request for {email} (preserve_reading_state={preserve_reading_state}, mark_for_restart={mark_for_restart})"
+            "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s)",
+            email,
+            preserve_reading_state,
+            mark_for_restart,
         )
 
-        # Mark for restart if requested (for deployment restarts)
-        # or clear the flag if we're shutting down due to idle/close timer
-        try:
-            vnc_manager = VNCInstanceManager.get_instance()
-            vnc_manager.mark_running_for_deployment(email, should_restart=mark_for_restart)
-        except Exception as e:
-            logger.error(f"Failed to handle was_running_at_restart flag for {email}: {e}")
+        # ------------------------------------------------------------------
+        # 1. Update "was_running_at_restart" flag                     ──────
+        # ------------------------------------------------------------------
+        self._mark_for_restart(email, mark_for_restart)
 
-        # Track what was shut down
-        shutdown_summary = {
-            "email": email,
-            "emulator_stopped": False,
-            "vnc_stopped": False,
-            "xvfb_stopped": False,
-            "websocket_stopped": False,
-            "automator_cleaned": False,
-            "snapshot_taken": False,
-        }
-
-        # Find the automator for this email
+        # ------------------------------------------------------------------
+        # 2. Obtain automator or fall back to orphan‑handling          ──────
+        # ------------------------------------------------------------------
         automator = self.server.automators.get(email)
-        if not automator:
-            logger.info(f"No automator found for {email}, checking VNC instance manager for orphaned emulator")
-            
-            # Check if there's an emulator running via VNC instance manager
-            vnc_manager = VNCInstanceManager.get_instance()
-            vnc_instance = vnc_manager.get_instance_for_profile(email)
-            
-            if vnc_instance and vnc_instance.get("emulator_id"):
-                emulator_id = vnc_instance["emulator_id"]
-                logger.info(f"Found orphaned emulator {emulator_id} for {email} in VNC instance manager")
-                
-                # Try to stop the emulator using the profile manager's emulator manager
-                try:
-                    from views.core.avd_profile_manager import AVDProfileManager
-                    profile_manager = AVDProfileManager.get_instance()
-                    
-                    if profile_manager.emulator_manager and profile_manager.emulator_manager.emulator_launcher:
-                        if profile_manager.emulator_manager.emulator_launcher.stop_emulator(email):
-                            logger.info(f"Successfully stopped orphaned emulator {emulator_id} for {email}")
-                            shutdown_summary["emulator_stopped"] = True
-                        else:
-                            logger.warning(f"Normal stop failed for orphaned emulator {emulator_id}, attempting force kill")
-                            
-                            # The emulator might be running but not visible to adb (offline/unauthorized)
-                            # Try to force kill it using the emulator port
-                            try:
-                                import subprocess
-                                # Extract port from emulator ID (e.g., emulator-5554 -> 5554)
-                                if emulator_id.startswith("emulator-"):
-                                    port = emulator_id.split("-")[1]
-                                    logger.info(f"Force killing emulator process on port {port}")
-                                    
-                                    # Kill emulator process by port
-                                    kill_result = subprocess.run(
-                                        ["pkill", "-f", f"emulator.*-port {port}"], 
-                                        check=False, 
-                                        timeout=3
-                                    )
-                                    
-                                    if kill_result.returncode == 0:
-                                        logger.info(f"Successfully force killed emulator on port {port}")
-                                        shutdown_summary["emulator_stopped"] = True
-                                    else:
-                                        # Try alternative kill pattern
-                                        subprocess.run(
-                                            ["pkill", "-f", f"emulator.*{emulator_id}"], 
-                                            check=False, 
-                                            timeout=3
-                                        )
-                                        shutdown_summary["emulator_stopped"] = True
-                                        logger.info(f"Force killed emulator using pattern {emulator_id}")
-                                        
-                            except Exception as kill_error:
-                                logger.error(f"Error force killing emulator: {kill_error}")
-                        
-                        # Always clear the emulator_id from VNC instance
-                        vnc_manager.clear_emulator_id_for_profile(email)
-                        logger.info(f"Cleared emulator_id from VNC instance for {email}")
-                            
-                    else:
-                        logger.error(f"No emulator manager available to stop orphaned emulator for {email}")
-                        
-                except Exception as e:
-                    logger.error(f"Error stopping orphaned emulator for {email}: {e}")
-                
-                # Release the VNC instance assignment
-                try:
-                    if vnc_manager.release_instance_from_profile(email):
-                        logger.info(f"Released VNC instance for {email}")
-                        shutdown_summary["vnc_stopped"] = True
-                        shutdown_summary["websocket_stopped"] = True
-                except Exception as e:
-                    logger.error(f"Error releasing VNC instance for {email}: {e}")
-                    
-                return shutdown_summary
-            else:
-                logger.info(f"No running emulator found in VNC instance manager for {email}")
-                return shutdown_summary
+        if automator is None:
+            return self._handle_orphaned_emulator(email, summary)
 
-        # Before shutting down, conditionally park the emulator in the Library view and take a snapshot
-        ui_automator_crashed = False
-        if hasattr(automator, "driver") and automator.driver:
-            # Initialize state machine to handle transitions
-            try:
-                state_machine = KindleStateMachine(automator.driver)
-            except InvalidSessionIdException:
-                logger.warning(f"Emulator for {email} has no valid session ID, skipping shutdown")
-                return shutdown_summary
-            except Exception as e:
-                # Check if this is a UiAutomator2 crash
-                error_msg = str(e)
-                if (
-                    "instrumentation process is not running" in error_msg
-                    or "UiAutomator2 server" in error_msg
-                ):
-                    logger.error(f"UiAutomator2 crashed for {email}, will force shutdown: {e}")
-                    ui_automator_crashed = True
-                else:
-                    logger.error(f"Unexpected error initializing state machine for {email}: {e}")
-                    ui_automator_crashed = True
+        # ------------------------------------------------------------------
+        # 3. UI preparation (navigate + snapshot)                      ──────
+        # ------------------------------------------------------------------
+        ui_crashed = not self._prepare_emulator_ui(
+            automator,
+            email,
+            preserve_reading_state,
+            summary,
+        )
 
-            if not ui_automator_crashed and not preserve_reading_state:
-                logger.info(f"Parking emulator in Library view and syncing before shutdown for {email}")
-                # Transition to library (this handles navigation from any state)
-                try:
-                    # First check if we're in READING state
-                    current_state = state_machine._get_current_state()
-                    was_reading = current_state == AppState.READING
-
-                    if was_reading:
-                        logger.info("Currently in READING state - will sync before parking")
-
-                    # Transition to library first
-                    result = state_machine.transition_to_library(max_transitions=10, server=self.server)
-                    if result:
-                        logger.info("Successfully transitioned to Library view")
-
-                        # If we were reading, navigate to More tab and sync
-                        if was_reading and state_machine.library_handler:
-                            logger.info("Navigating to More tab to sync reading progress...")
-
-                            # Navigate to More tab
-                            if state_machine.library_handler.navigate_to_more_settings():
-                                logger.info("Successfully navigated to More tab")
-
-                                # Perform sync
-                                logger.info("Starting sync_in_more_tab() call...")
-                                sync_result = state_machine.library_handler.sync_in_more_tab()
-                                logger.info(f"sync_in_more_tab() returned: {sync_result}")
-                                if sync_result:
-                                    logger.info("Successfully synced in More tab")
-                                else:
-                                    logger.warning("Sync may not have completed fully")
-
-                                # Navigate back to Library
-                                if state_machine.library_handler.navigate_from_more_to_library():
-                                    logger.info("Successfully navigated back to Library from More tab")
-                                else:
-                                    logger.warning("Failed to navigate back to Library from More tab")
-                            else:
-                                logger.warning("Failed to navigate to More tab for sync")
-
-                        # Wait 5 seconds as requested
-                        time.sleep(5)
-                    else:
-                        logger.warning("Failed to transition to Library view before shutdown")
-                except Exception as e:
-                    error_msg = str(e)
-                    if (
-                        "instrumentation process is not running" in error_msg
-                        or "UiAutomator2 server" in error_msg
-                    ):
-                        logger.error(
-                            f"UiAutomator2 crashed during navigation for {email}, skipping UI operations: {e}"
-                        )
-                        ui_automator_crashed = True
-                    else:
-                        logger.warning(f"Error transitioning to Library before shutdown: {e}")
-                    # Continue with shutdown even if parking fails
-            elif not ui_automator_crashed and preserve_reading_state:
-                logger.info(f"Preserving reading state - staying in current view for {email}")
-                try:
-                    current_state = state_machine._get_current_state()
-                    if current_state == AppState.READING:
-                        logger.info(f"Emulator is in reading view - taking snapshot in current state")
-                    else:
-                        logger.info(f"Emulator is in {current_state} view - taking snapshot in current state")
-                except Exception as e:
-                    error_msg = str(e)
-                    if (
-                        "instrumentation process is not running" in error_msg
-                        or "UiAutomator2 server" in error_msg
-                    ):
-                        logger.error(f"UiAutomator2 crashed while checking state for {email}: {e}")
-                        ui_automator_crashed = True
-                    else:
-                        logger.warning(f"Error checking current state: {e}")
-
-            # Take snapshot regardless of whether we navigated to library (unless UiAutomator2 crashed)
-            if not ui_automator_crashed and hasattr(automator.emulator_manager, "emulator_launcher"):
-                (
-                    emulator_id,
-                    _,
-                ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
-                if emulator_id:
-                    logger.info(f"Taking ADB snapshot of emulator {emulator_id}")
-                    # Get AVD name for cleaner snapshot naming
-                    avd_name = automator.emulator_manager.emulator_launcher._extract_avd_name_from_email(
-                        email
-                    )
-                    if avd_name and avd_name.startswith("KindleAVD_"):
-                        # Extract just the email part from the AVD name
-                        avd_identifier = avd_name.replace("KindleAVD_", "")
-                    else:
-                        avd_identifier = email.replace("@", "_").replace(".", "_")
-
-                    if automator.emulator_manager.emulator_launcher.save_snapshot(email):
-                        logger.info(f"Saved snapshot for {email}")
-                        shutdown_summary["snapshot_taken"] = True
-                        # Save the snapshot timestamp to the user profile for reference
-                        # Even though we're using default_boot, we can track when it was last saved
-                        try:
-                            from views.core.avd_profile_manager import AVDProfileManager
-
-                            avd_manager = AVDProfileManager.get_instance()
-                            # Save the timestamp of when default_boot was last updated
-                            snapshot_timestamp = datetime.now().isoformat()
-                            avd_manager.set_user_field(email, "last_snapshot_timestamp", snapshot_timestamp)
-                            # Clear the old last_snapshot field since we're not using named snapshots anymore
-                            avd_manager.set_user_field(email, "last_snapshot", None)
-                            logger.info(
-                                f"Updated default_boot snapshot timestamp to {snapshot_timestamp} for {email}"
-                            )
-                        except Exception as profile_error:
-                            logger.warning(f"Failed to save snapshot timestamp to profile: {profile_error}")
-                        # No longer need to clean up old snapshots since we're using default_boot
-                        logger.info("Using default_boot snapshot - no cleanup needed")
-                    else:
-                        logger.error(f"Failed to save snapshot for {email}")
-            elif ui_automator_crashed:
-                logger.warning(f"Skipping snapshot due to UiAutomator2 crash for {email}")
-                logger.info(f"Will proceed with forced emulator shutdown for {email}")
-
+        # ------------------------------------------------------------------
+        # 4. Stop emulator + auxiliary processes                       ──────
+        # ------------------------------------------------------------------
+        display_num: Optional[int] = None
         try:
-            # Stop the emulator
-            if hasattr(automator, "emulator_manager") and hasattr(
-                automator.emulator_manager, "emulator_launcher"
-            ):
-                try:
-                    (
-                        emulator_id,
-                        display_num,
-                    ) = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
-                except Exception as e:
-                    # Even if we can't get emulator info through normal means, try to force stop
-                    logger.error(f"Error getting running emulator info for {email}: {e}")
-                    logger.info(f"Attempting force shutdown for {email} despite error")
-                    emulator_id = None
-                    display_num = None
-
-                    # Try to stop emulator anyway
-                    try:
-                        success = automator.emulator_manager.emulator_launcher.stop_emulator(email)
-                        shutdown_summary["emulator_stopped"] = success
-                        if success:
-                            logger.info(f"Successfully force stopped emulator for {email}")
-                    except Exception as stop_error:
-                        logger.error(f"Failed to force stop emulator for {email}: {stop_error}")
-                        shutdown_summary["emulator_stopped"] = False
-
-                if emulator_id:
-                    logger.info(f"Stopping emulator {emulator_id} for {email}")
-                    success = automator.emulator_manager.emulator_launcher.stop_emulator(email)
-                    shutdown_summary["emulator_stopped"] = success
-                    if success:
-                        logger.info(f"Successfully stopped emulator {emulator_id}")
-                        # Clear the emulator_id from VNC instance immediately after stopping
-                        try:
-                            vnc_manager = VNCInstanceManager.get_instance()
-                            vnc_manager.clear_emulator_id_for_profile(email)
-                            logger.info(f"Cleared emulator_id {emulator_id} from VNC instance for {email}")
-                        except Exception as e:
-                            logger.error(f"Error clearing emulator_id from VNC instance: {e}")
-                    else:
-                        logger.error(f"Failed to stop emulator {emulator_id}")
-                elif emulator_id is None and display_num is None:
-                    # Already handled in the exception case above
-                    pass
-                else:
-                    logger.info(f"No running emulator found for {email}")
-
-                # Handle platform-specific cleanup
-                if platform.system() == "Darwin":
-                    # macOS: Release VNC instance and stop WebSocket proxy
-                    try:
-                        vnc_manager = VNCInstanceManager.get_instance()
-                        vnc_manager.release_instance_from_profile(email)
-                        logger.info(f"Released VNC instance for {email} on macOS")
-
-                        # The WebSocket proxy cleanup is now handled inside release_instance_from_profile
-                        # when cleanup_resources=True is passed
-                        shutdown_summary["websocket_stopped"] = True
-                    except Exception as e:
-                        logger.error(f"Error releasing VNC instance on macOS: {e}")
-
-                # Stop VNC and Xvfb (Linux only)
-                elif display_num:
-                    from server.utils.port_utils import calculate_vnc_port
-
-                    vnc_port = calculate_vnc_port(display_num)
-
-                    # Stop x11vnc
-                    try:
-                        subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False, timeout=3)
-                        logger.info(f"Stopped VNC server on port {vnc_port}")
-                        shutdown_summary["vnc_stopped"] = True
-                    except Exception as e:
-                        logger.error(f"Error stopping VNC server: {e}")
-
-                    # Stop Xvfb
-                    try:
-                        subprocess.run(["pkill", "-f", f"Xvfb :{display_num}"], check=False, timeout=3)
-                        # Clean up lock files
-                        subprocess.run(
-                            [
-                                "rm",
-                                "-f",
-                                f"/tmp/.X{display_num}-lock",
-                                f"/tmp/.X11-unix/X{display_num}",
-                            ],
-                            check=False,
-                        )
-                        logger.info(f"Stopped Xvfb display :{display_num}")
-                        shutdown_summary["xvfb_stopped"] = True
-                    except Exception as e:
-                        logger.error(f"Error stopping Xvfb: {e}")
-
-                    # Release the VNC instance from the profile
-                    try:
-                        vnc_manager = VNCInstanceManager.get_instance()
-                        vnc_manager.release_instance_from_profile(email)
-                        logger.info(f"Released VNC instance for {email}")
-                    except Exception as e:
-                        logger.error(f"Error releasing VNC instance: {e}")
-
-            # Clean up all ports associated with this emulator before cleaning up automator
+            display_num = self._stop_emulator_processes(automator, email, summary)
+        finally:
+            # Always cleanup ports even when stop_emulator raised.
+            emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]
             if emulator_id:
-                logger.info(f"Cleaning up all ports for emulator {emulator_id}")
                 self._cleanup_emulator_ports(emulator_id, email)
 
-            # Clean up the automator
-            if automator:
-                try:
-                    logger.info(f"Cleaning up automator for {email}")
+        # ------------------------------------------------------------------
+        # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
+        # ------------------------------------------------------------------
+        self._cleanup_display_resources(email, display_num, summary)
 
-                    # Also check if Appium needs to be stopped
-                    # This handles cases where the automator cleanup doesn't properly stop Appium
-                    try:
-                        from server.utils.appium_driver import AppiumDriver
+        # ------------------------------------------------------------------
+        # 6. Final in‑memory cleanups                                   ──────
+        # ------------------------------------------------------------------
+        self._cleanup_automator(email, automator, summary)
+        self.server.clear_current_book(email)
 
-                        appium_driver = AppiumDriver.get_instance()
-                        appium_info = appium_driver.get_appium_process_info(email)
+        return summary
 
-                        if appium_info and appium_info.get("running"):
-                            logger.info(f"Stopping Appium process for {email}")
-                            appium_driver.stop_appium_for_profile(email)
-                    except Exception as appium_e:
-                        logger.warning(f"Error checking/stopping Appium during shutdown: {appium_e}")
-
-                    automator.cleanup()
-                    self.server.automators[email] = None
-                    shutdown_summary["automator_cleaned"] = True
-                except Exception as e:
-                    logger.error(f"Error cleaning up automator: {e}")
-                    # Even if cleanup fails, try to clear the automator reference
-                    self.server.automators[email] = None
-
-            # Clear current book tracking
-            self.server.clear_current_book(email)
-
-            return shutdown_summary
-
-        except Exception as e:
-            logger.error(f"Error during shutdown for {email}: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return shutdown_summary
-
-    def shutdown_all_emulators(self, preserve_reading_state=False):
-        """Shutdown all running emulators gracefully.
-
-        This method will iterate through all active automators and
-        shut them down one by one.
-
-        Args:
-            preserve_reading_state: If True, keep current state during shutdown
-
-        Returns:
-            list: List of shutdown summaries for each emulator
-        """
+    def shutdown_all_emulators(self, preserve_reading_state: bool = False):  # noqa: D401, ANN001
+        """Shutdown every running emulator and return per‑emulator summaries."""
         logger.info(
-            f"Starting graceful shutdown of all running emulators (preserve_reading_state={preserve_reading_state})"
+            "Starting graceful shutdown of all running emulators (preserve_reading_state=%s)",
+            preserve_reading_state,
         )
         summaries = []
-
-        # Get a list of all emails with active automators
-        active_emails = [email for email, automator in self.server.automators.items() if automator]
-
-        if not active_emails:
-            logger.info("No active emulators to shut down")
-            return summaries
-
-        logger.info(f"Found {len(active_emails)} active emulators to shut down")
-
-        # Shut down each emulator
-        for email in active_emails:
-            logger.info(f"Shutting down emulator for {email}")
-            summary = self.shutdown_emulator(email, preserve_reading_state=preserve_reading_state)
-            summaries.append(summary)
-
-            # Brief pause between shutdowns to avoid resource contention
-            time.sleep(1)
-
-        logger.info(f"Completed shutdown of {len(summaries)} emulators")
+        for email in [e for e, a in self.server.automators.items() if a]:
+            summaries.append(self.shutdown_emulator(email, preserve_reading_state))
+            time.sleep(1)  # Avoid resource contention between successive shutdowns.
+        logger.info("Completed shutdown of %d emulators", len(summaries))
         return summaries
 
-    def _cleanup_emulator_ports(self, emulator_id: str, email: str) -> None:
-        """
-        Clean up all ports associated with an emulator.
+    # ------------------------------------------------------------------
+    # Private helpers – orchestration                                   ──────
+    # ------------------------------------------------------------------
 
-        This includes:
-        - ADB port forwards (systemPort, chromedriverPort, mjpegServerPort)
-        - WebSocket proxy port (macOS)
-        - Any other ports forwarded to the emulator
+    @staticmethod
+    def _mark_for_restart(email: str, mark_for_restart: Optional[bool]):
+        """Persist *was_running_at_restart* flag through the VNC manager."""
+        with contextlib.suppress(Exception):
+            VNCInstanceManager.get_instance().mark_running_for_deployment(
+                email, should_restart=mark_for_restart
+            )
 
-        Args:
-            emulator_id: The emulator device ID (e.g., "emulator-5554")
-            email: Email associated with the emulator
-        """
+    # ----------------------- orphan‑handling ------------------------ #
+
+    def _handle_orphaned_emulator(self, email: str, summary: Dict[str, bool]):  # noqa: C901
+        """Stop an emulator that is still running but has no live automator."""
+        vnc_manager = VNCInstanceManager.get_instance()
+        vnc_instance = vnc_manager.get_instance_for_profile(email)
+        if not vnc_instance or not vnc_instance.get("emulator_id"):
+            logger.info("No running emulator found in VNC instance manager for %s", email)
+            return summary
+
+        emulator_id = vnc_instance["emulator_id"]
+        logger.info("Found orphaned emulator %s for %s", emulator_id, email)
+        with contextlib.suppress(Exception):
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            pm = AVDProfileManager.get_instance()
+            if pm.emulator_manager and pm.emulator_manager.emulator_launcher:
+                stopped = pm.emulator_manager.emulator_launcher.stop_emulator(email)
+                summary["emulator_stopped"] = stopped
+                if not stopped:
+                    # Force kill using the port extracted from ``emulator_id``.
+                    port = emulator_id.split("-")[1] if emulator_id.startswith("emulator-") else None
+                    if port:
+                        self._force_kill_emulator_process(port)
+                        summary["emulator_stopped"] = True
+                vnc_manager.clear_emulator_id_for_profile(email)
+        # Release VNC regardless of stop result.
+        with contextlib.suppress(Exception):
+            if vnc_manager.release_instance_from_profile(email):
+                summary["vnc_stopped"] = True
+                summary["websocket_stopped"] = True
+        return summary
+
+    # -------------------- UI preparation + snapshot ----------------- #
+
+    def _prepare_emulator_ui(
+        self,
+        automator,
+        email: str,
+        preserve_reading_state: bool,
+        summary: Dict[str, bool],
+    ) -> bool:
+        """Navigate to Library (if requested) and take emulator snapshot."""
         try:
-            # 1. Remove all ADB port forwards for this device
-            logger.info(f"Removing all ADB port forwards for {emulator_id}")
-            try:
+            driver = automator.driver
+            if not driver:
+                return True  # nothing to do
+            sm = KindleStateMachine(driver)
+        except InvalidSessionIdException:
+            logger.warning("Emulator for %s has no valid session ID, skipping UI ops", email)
+            return False
+        except Exception as exc:
+            # If UiAutomator crashed, instruct caller to skip UI‑dependent steps.
+            logger.error("UiAutomator2 crashed for %s: %s", email, exc)
+            return False
+
+        if not preserve_reading_state:
+            self._park_in_library(sm, email)
+        self._take_snapshot(automator, email, summary)
+        return True
+
+    def _park_in_library(self, state_machine: KindleStateMachine, email: str) -> None:
+        """Navigate from any state into the Library view and optionally sync progress."""
+        try:
+            current_state = state_machine._get_current_state()
+            was_reading = current_state == AppState.READING
+            if state_machine.transition_to_library(max_transitions=10, server=self.server):
+                logger.info("Successfully transitioned to Library view (%s)", email)
+                if was_reading and state_machine.library_handler:
+                    self._sync_from_more_tab(state_machine)
+                time.sleep(5)  # Give Kindle a moment to flush state.
+            else:
+                logger.warning("Failed to transition to Library before shutdown (%s)", email)
+        except Exception as exc:
+            logger.warning("Error while parking emulator %s into Library: %s", email, exc)
+
+    @staticmethod
+    def _sync_from_more_tab(state_machine: KindleStateMachine):
+        """Navigate to *More* tab and perform a manual sync."""
+        lh = state_machine.library_handler
+        if not lh:
+            return
+        if lh.navigate_to_more_settings():
+            if lh.sync_in_more_tab():
+                logger.info("Successfully synced reading progress")
+            lh.navigate_from_more_to_library()
+
+    # ----------------------------- snapshot ------------------------ #
+
+    def _take_snapshot(self, automator, email: str, summary: Dict[str, bool]):
+        launcher = automator.emulator_manager.emulator_launcher
+        emulator_id, _ = launcher.get_running_emulator(email)
+        if not emulator_id:
+            return
+        logger.info("Taking ADB snapshot of emulator %s", emulator_id)
+        if launcher.save_snapshot(email):
+            summary["snapshot_taken"] = True
+            self._update_snapshot_timestamp(email)
+        else:
+            logger.error("Failed to save snapshot for %s", email)
+
+    @staticmethod
+    def _update_snapshot_timestamp(email: str):
+        """Persist the default_boot snapshot timestamp to the user's AVD profile."""
+        with contextlib.suppress(Exception):
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            ts = datetime.now().isoformat()
+            avd_mgr = AVDProfileManager.get_instance()
+            avd_mgr.set_user_field(email, "last_snapshot_timestamp", ts)
+            avd_mgr.set_user_field(email, "last_snapshot", None)
+            logger.info("Updated default_boot snapshot timestamp to %s for %s", ts, email)
+
+    # ------------------- stop emulator + processes ------------------ #
+
+    def _stop_emulator_processes(self, automator, email: str, summary: Dict[str, bool]) -> Optional[int]:
+        """Stop the running emulator and return its display number (if any)."""
+        launcher = automator.emulator_manager.emulator_launcher
+        emulator_id, display_num = None, None
+        try:
+            emulator_id, display_num = launcher.get_running_emulator(email)
+        except Exception as exc:
+            logger.error("Error getting running emulator info for %s: %s", email, exc)
+        finally:
+            stopped = launcher.stop_emulator(email)
+            summary["emulator_stopped"] = stopped
+            if stopped:
+                with contextlib.suppress(Exception):
+                    VNCInstanceManager.get_instance().clear_emulator_id_for_profile(email)
+        return display_num
+
+    # ---------------------- resource cleanup ----------------------- #
+
+    def _cleanup_display_resources(
+        self,
+        email: str,
+        display_num: Optional[int],
+        summary: Dict[str, bool],
+    ) -> None:
+        """Stop VNC/Xvfb/WebSocket resources depending on host platform."""
+        if platform.system() == "Darwin":
+            with contextlib.suppress(Exception):
+                vnc_mgr = VNCInstanceManager.get_instance()
+                vnc_mgr.release_instance_from_profile(email)
+                summary["websocket_stopped"] = True
+        elif display_num is not None:
+            self._stop_vnc_xvfb(display_num, summary)
+            with contextlib.suppress(Exception):
+                VNCInstanceManager.get_instance().release_instance_from_profile(email)
+
+    @staticmethod
+    def _stop_vnc_xvfb(display_num: int, summary: Dict[str, bool]):
+        """Terminate *x11vnc* and *Xvfb* processes tied to *display_num*."""
+        from server.utils.port_utils import calculate_vnc_port
+
+        vnc_port = calculate_vnc_port(display_num)
+        for cmd, key in (
+            (["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], "vnc_stopped"),
+            (["pkill", "-f", f"Xvfb :{display_num}"], "xvfb_stopped"),
+        ):
+            with contextlib.suppress(Exception):
+                subprocess.run(cmd, check=False, timeout=3)
+                summary[key] = True
+        # Remove potential lock files left by Xvfb.
+        with contextlib.suppress(Exception):
+            subprocess.run(
+                ["rm", "-f", f"/tmp/.X{display_num}-lock", f"/tmp/.X11-unix/X{display_num}"],
+                check=False,
+            )
+
+    def _cleanup_automator(self, email: str, automator, summary: Dict[str, bool]):
+        """Stop Appium (if still running) and cleanup automator instance."""
+        with contextlib.suppress(Exception):
+            from server.utils.appium_driver import AppiumDriver
+
+            ad = AppiumDriver.get_instance()
+            if (info := ad.get_appium_process_info(email)) and info.get("running"):
+                ad.stop_appium_for_profile(email)
+        with contextlib.suppress(Exception):
+            automator.cleanup()
+            summary["automator_cleaned"] = True
+        # Clear reference even if cleanup errored.
+        self.server.automators[email] = None
+
+    # ------------------------------------------------------------------
+    # Private helpers – generic utilities                               ──────
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _force_kill_emulator_process(port: str):
+        """Brutally kill an emulator process by listening port."""
+        with contextlib.suppress(subprocess.SubprocessError, OSError):
+            subprocess.run(["pkill", "-f", f"emulator.*-port {port}"], timeout=3)
+
+    # Existing port‑cleanup helpers ––– signatures unchanged ---------- #
+
+    def _cleanup_emulator_ports(self, emulator_id: str, email: str) -> None:  # noqa: D401, ANN001
+        """Clean up all ports associated with *emulator_id* (unchanged signature)."""
+        try:
+            logger.info("Removing all ADB port forwards for %s", emulator_id)
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} forward --remove-all"],
                     shell=True,
-                    check=False,
                     capture_output=True,
                     timeout=5,
                 )
-                logger.info(f"Successfully removed all ADB port forwards for {emulator_id}")
-            except Exception as e:
-                logger.error(f"Error removing ADB port forwards: {e}")
-
-            # 2. Kill any lingering UiAutomator2 processes on the device
-            logger.info(f"Killing UiAutomator2 processes on {emulator_id}")
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} shell pkill -f uiautomator"],
                     shell=True,
-                    check=False,
                     capture_output=True,
                     timeout=5,
                 )
-            except Exception as e:
-                logger.warning(f"Error killing UiAutomator2 processes: {e}")
+            vnc_mgr = VNCInstanceManager.get_instance()
+            if instance := vnc_mgr.get_instance_for_profile(email):
+                ports = [
+                    instance.get("appium_port"),
+                    instance.get("appium_system_port"),
+                    instance.get("appium_chromedriver_port"),
+                    instance.get("appium_mjpeg_server_port"),
+                ]
+                for p in filter(None, ports):
+                    self._kill_process_on_port(p)
+                if platform.system() == "Darwin":
+                    from server.utils.websocket_proxy_manager import (
+                        WebSocketProxyManager,
+                    )
 
-            # 3. Get VNC instance to find all associated ports
-            try:
-                vnc_manager = VNCInstanceManager.get_instance()
-                instance = vnc_manager.get_instance_for_profile(email)
+                    ws_mgr = WebSocketProxyManager.get_instance()
+                    with contextlib.suppress(Exception):
+                        if ws_mgr.is_proxy_running(email):
+                            ws_mgr.stop_proxy(email)
+        except Exception as exc:
+            logger.error("Error in _cleanup_emulator_ports: %s", exc)
 
-                if instance:
-                    # Get all ports from the instance
-                    ports_to_check = []
-
-                    # Appium ports
-                    if "appium_port" in instance:
-                        ports_to_check.append(instance["appium_port"])
-                    if "appium_system_port" in instance:
-                        ports_to_check.append(instance["appium_system_port"])
-                    if "appium_chromedriver_port" in instance:
-                        ports_to_check.append(instance["appium_chromedriver_port"])
-                    if "appium_mjpeg_server_port" in instance:
-                        ports_to_check.append(instance["appium_mjpeg_server_port"])
-
-                    # Check and kill any processes on these ports
-                    for port in ports_to_check:
-                        self._kill_process_on_port(port)
-
-                    # On macOS, ensure WebSocket proxy is stopped
-                    if platform.system() == "Darwin":
-                        try:
-                            from server.utils.websocket_proxy_manager import (
-                                WebSocketProxyManager,
-                            )
-
-                            ws_manager = WebSocketProxyManager.get_instance()
-                            if ws_manager.is_proxy_running(email):
-                                logger.info(f"Stopping WebSocket proxy for {email}")
-                                ws_manager.stop_proxy(email)
-                        except Exception as e:
-                            logger.warning(f"Error stopping WebSocket proxy: {e}")
-
-            except Exception as e:
-                logger.error(f"Error getting VNC instance for port cleanup: {e}")
-
-        except Exception as e:
-            logger.error(f"Error in _cleanup_emulator_ports: {e}")
-
-    def _kill_process_on_port(self, port: int) -> None:
-        """
-        Kill any process listening on the specified port.
-
-        Args:
-            port: Port number to check and kill processes on
-        """
+    def _kill_process_on_port(self, port: int) -> None:  # noqa: ANN001, D401
+        """Kill any process listening on *port* (signature unchanged)."""
         if not port:
             return
-
         try:
-            # Check if anything is listening on the port
-            result = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
-            )
-
-            if result.stdout.strip():
-                pids = result.stdout.strip().split("\n")
-                for pid in pids:
-                    try:
-                        logger.info(f"Killing process {pid} on port {port}")
-                        os.kill(int(pid), signal.SIGTERM)
-                        # Give it a moment to die gracefully
-                        time.sleep(0.5)
-                        # Force kill if still alive
-                        try:
-                            os.kill(int(pid), signal.SIGKILL)
-                        except ProcessLookupError:
-                            # Process already dead, that's fine
-                            pass
-                    except Exception as e:
-                        logger.warning(f"Error killing process {pid}: {e}")
-        except Exception as e:
-            logger.warning(f"Error checking for processes on port {port}: {e}")
+            result = subprocess.run(["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True)
+            for pid in filter(None, result.stdout.split()):
+                with contextlib.suppress(Exception):
+                    os.kill(int(pid), signal.SIGTERM)
+                    time.sleep(0.5)
+                    os.kill(int(pid), signal.SIGKILL)
+        except Exception as exc:
+            logger.warning("Error checking/terminating processes on port %s: %s", port, exc)
