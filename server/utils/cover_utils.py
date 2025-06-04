@@ -550,9 +550,19 @@ def extract_book_covers_from_screen(
                             except:
                                 continue
                 except Exception as parent_err:
+                    # Import and check if this is an Appium error
+                    from server.utils.appium_error_utils import is_appium_error
+
+                    if is_appium_error(parent_err):
+                        raise
                     logger.debug(f"Error finding matching content-desc for container {i}: {parent_err}")
                     continue
             except Exception as container_err:
+                # Import and check if this is an Appium error
+                from server.utils.appium_error_utils import is_appium_error
+
+                if is_appium_error(container_err):
+                    raise
                 logger.debug(f"Error processing cover container {i}: {container_err}")
 
         logger.info(f"Found {len(title_element_map)} visible books with titles and cover elements")
@@ -591,6 +601,11 @@ def extract_book_covers_from_screen(
                     cover_results[title] = {"success": False, "reason": "No valid cover data"}
                     logger.error(f"Failed to extract cover for '{title}': no valid cover data returned")
             except Exception as e:
+                # Import and check if this is an Appium error
+                from server.utils.appium_error_utils import is_appium_error
+
+                if is_appium_error(e):
+                    raise
                 cover_results[title] = {"success": False, "reason": str(e)}
                 logger.error(f"Error extracting cover for book '{title}': {e}")
 
@@ -607,6 +622,11 @@ def extract_book_covers_from_screen(
         return cover_results
 
     except Exception as e:
+        # Import and check if this is an Appium error
+        from server.utils.appium_error_utils import is_appium_error
+
+        if is_appium_error(e):
+            raise
         logger.error(f"Error finding book elements for cover extraction: {e}")
         return {}
 
