@@ -68,6 +68,7 @@ class AutomationServer:
 
         with EmailContext(email):
             # Initialize a new automator
+            logger.info(f"Initializing automator for profile {email}")
             automator = KindleAutomator()
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
@@ -80,6 +81,7 @@ class AutomationServer:
             # Set initial activity time
             self.update_activity(email)
 
+            logger.info(f"Initializing driver for profile {email}")
             automator.initialize_driver()
 
         return automator
@@ -108,33 +110,12 @@ class AutomationServer:
 
     def _switch_profile_impl(self, email: str, force_new_emulator: bool = False) -> Tuple[bool, str]:
         """Internal implementation of switch_profile with email context already set."""
+        logger.info(f"Switching profile for {email}")
         # current_email field has been removed
         # Always use explicit email parameters in all operations
 
         # Check if there's a running emulator for this profile
         is_running, emulator_id, avd_name = self.profile_manager.find_running_emulator_for_email(email)
-
-        # On local development, check if this emulator is already in use by another profile
-        import platform
-
-        if platform.system() == "Darwin" and emulator_id:  # macOS development environment
-            # Check if any other profile is using this emulator
-            for other_email, other_automator in self.automators.items():
-                if other_email != email and other_automator and hasattr(other_automator, "device_id"):
-                    if other_automator.device_id == emulator_id:
-                        # Check if the other automator is actually active
-                        if hasattr(other_automator, "driver") and other_automator.driver:
-                            logger.warning(f"Emulator {emulator_id} is already in use by {other_email}")
-                            logger.info(
-                                f"On local development, only one profile can use an emulator at a time"
-                            )
-                            # Clean up the other automator
-                            logger.info(f"Cleaning up automator for {other_email} to free up {emulator_id}")
-                            try:
-                                other_automator.cleanup()
-                            except Exception as e:
-                                logger.warning(f"Error cleaning up automator for {other_email}: {e}")
-                            self.automators[other_email] = None
 
         # Check if we already have an automator for this email
         if email in self.automators and self.automators[email]:
@@ -288,6 +269,7 @@ class AutomationServer:
         """
         if email:
             self.last_activity[email] = time.time()
+            logger.debug(f"Updated activity timestamp for {email}")
 
     def get_last_activity_time(self, email):
         """Get the last activity timestamp for an email.

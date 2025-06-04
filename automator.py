@@ -50,6 +50,7 @@ class KindleAutomator:
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
+        logger.info(f"Initializing driver in KindleAutomator {self}")
         # Create and initialize driver
         driver = Driver()
         # Set the automator reference in the driver

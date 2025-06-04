@@ -1028,13 +1028,6 @@ class BookOpenResource(Resource):
 
             return response_data, 200
 
-        # Ensure state_machine is initialized
-        if not automator.state_machine:
-            logger.error("State machine not initialized for automator")
-            return {
-                "error": "State machine not initialized. Please ensure the automator is properly initialized."
-            }, 500
-
         # Reload the current state to be sure
         automator.state_machine.update_current_state()
         current_state = automator.state_machine.current_state
@@ -2356,20 +2349,6 @@ def cleanup_resources():
         server.kill_existing_process("appium")
     except Exception as e:
         logger.error(f"Error killing remaining Appium processes: {e}")
-
-    # Clean up ADB port forwards to prevent port conflicts on restart
-    logger.info("Cleaning up ADB port forwards")
-    try:
-        # Get all connected devices
-        result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
-        lines = result.stdout.strip().split("\n")[1:]  # Skip header
-        for line in lines:
-            if "\tdevice" in line:
-                device_id = line.split("\t")[0]
-                logger.info(f"Removing port forwards for device {device_id}")
-                subprocess.run([f"adb -s {device_id} forward --remove-all"], shell=True, check=False)
-    except Exception as e:
-        logger.warning(f"Error cleaning up ADB port forwards: {e}")
 
     logger.info(f"=== Graceful shutdown complete ===")
     logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")

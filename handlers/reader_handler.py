@@ -109,7 +109,7 @@ class ReaderHandler:
                         device_list = self.driver.find_element(dl_strat, dl_loc)
                         if device_list.is_displayed():
                             break
-                    except NoSuchElementException:
+                    except:
                         device_list = None
 
                 button = None
@@ -118,7 +118,7 @@ class ReaderHandler:
                         button = self.driver.find_element(btn_strat, btn_loc)
                         if button.is_displayed():
                             break
-                    except NoSuchElementException:
+                    except:
                         button = None
 
                 if device_list and button:
@@ -126,10 +126,6 @@ class ReaderHandler:
                     store_page_source(self.driver.page_source, "download_limit_combo_detected")
                     return True
             except Exception as e:
-                from server.utils.appium_error_utils import is_appium_error
-
-                if is_appium_error(e):
-                    raise
                 logger.debug(f"Error in device list + button check: {e}")
 
             # Method 4: Check current activity directly
@@ -201,7 +197,7 @@ class ReaderHandler:
                             device_list = self.driver.find_element(dl_strat, dl_loc)
                             if device_list.is_displayed():
                                 break
-                        except NoSuchElementException:
+                        except:
                             device_list = None
 
                     button = None
@@ -210,7 +206,7 @@ class ReaderHandler:
                             button = self.driver.find_element(btn_strat, btn_loc)
                             if button.is_displayed():
                                 break
-                        except NoSuchElementException:
+                        except:
                             button = None
 
                     if device_list and button:
@@ -337,7 +333,7 @@ class ReaderHandler:
                     logger.warning("Download Limit dialog still visible after attempts")
                 else:
                     logger.info("Dialog no longer visible - successfully handled")
-            except NoSuchElementException:
+            except:
                 logger.info("Dialog title element not found - dialog may have closed")
 
             if dialog_still_visible and not remove_button_tapped:
@@ -466,7 +462,7 @@ class ReaderHandler:
                             if el.is_displayed():
                                 device_list = True
                                 break
-                        except NoSuchElementException:
+                        except:
                             pass
 
                     remove_button = None
@@ -476,7 +472,7 @@ class ReaderHandler:
                             if el.is_displayed():
                                 remove_button = True
                                 break
-                        except NoSuchElementException:
+                        except:
                             pass
 
                     if device_list and remove_button:
@@ -505,7 +501,7 @@ class ReaderHandler:
                         logger.info(f"Last Read dialog detected during open_book: {last_read.text}")
                         # We'll treat this as a reading_view since we have handling for it later
                         return "reading_view"
-                except NoSuchElementException:
+                except:
                     pass
 
                 return False
@@ -564,7 +560,7 @@ class ReaderHandler:
                                     )
                                     if library_element.is_displayed():
                                         library_view = True
-                                except NoSuchElementException:
+                                except:
                                     # Try another library indicator
                                     try:
                                         library_tab = self.driver.find_element(
@@ -573,7 +569,7 @@ class ReaderHandler:
                                         )
                                         if library_tab.is_displayed():
                                             library_view = True
-                                    except NoSuchElementException:
+                                    except:
                                         pass
 
                                 if library_view:
@@ -1158,7 +1154,7 @@ class ReaderHandler:
                         self.driver.tap([(center_x, center_y)])
                         time.sleep(0.5)  # Wait for toolbar to hide
                         break
-                except NoSuchElementException:
+                except:
                     continue  # Try the next strategy
 
             # Get screen dimensions and calculate tap coordinates
