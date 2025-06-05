@@ -2106,6 +2106,7 @@ class LastReadPageDialogResource(Resource):
 
 
 # Import resource modules
+from server.resources.auth_check_resource import AuthCheckResource
 from server.resources.cold_storage_resources import (
     ColdStorageArchiveResource,
     ColdStorageRestoreResource,
@@ -2164,6 +2165,7 @@ api.add_resource(
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(AuthResource, "/auth")
+api.add_resource(AuthCheckResource, "/auth-check")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
