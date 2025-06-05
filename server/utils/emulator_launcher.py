@@ -1266,10 +1266,6 @@ class EmulatorLauncher:
                 logger.info(f"No emulator process found running")
                 return False
 
-            # First check if device is connected using our helper
-            if not self._verify_emulator_running(emulator_id, email):
-                return False
-
             # First check the device status - it might be in 'offline' state initially
             try:
                 device_result = subprocess.run(
@@ -1297,7 +1293,12 @@ class EmulatorLauncher:
                     elif device_status != "device":
                         logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
                         return False
+                    
+                    # Only verify emulator AVD name after confirming it's online
+                    if not self._verify_emulator_running(emulator_id, email):
+                        return False
                 else:
+                    # Emulator not in adb devices at all
                     logger.info(f"Emulator {emulator_id} not found in adb devices output")
                     return False
             except Exception as e:
