@@ -10,6 +10,7 @@ from flask import request
 from flask_restful import Resource
 from selenium.common import exceptions as selenium_exceptions
 
+from server.logging_config import store_page_source
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
@@ -138,7 +139,11 @@ class LogoutResource(Resource):
             if not sign_out_clicked:
                 logger.error("Failed to find or click Sign Out button")
                 # Store diagnostics
-                automator.store_page_source()
+                try:
+                    page_source = automator.driver.page_source
+                    store_page_source(page_source, "logout_failed")
+                except Exception as ps_error:
+                    logger.error(f"Failed to store page source: {ps_error}")
                 automator.driver.save_screenshot(os.path.join(automator.screenshots_dir, "logout_failed.png"))
                 return {"error": "Failed to find Sign Out button"}, 500
 
@@ -195,7 +200,11 @@ class LogoutResource(Resource):
 
                 if not sign_out_confirm_clicked:
                     logger.error("Failed to click SIGN OUT button in confirmation dialog")
-                    automator.store_page_source()
+                    try:
+                        page_source = automator.driver.page_source
+                        store_page_source(page_source, "logout_confirm_failed")
+                    except Exception as ps_error:
+                        logger.error(f"Failed to store page source: {ps_error}")
                     automator.driver.save_screenshot(
                         os.path.join(automator.screenshots_dir, "logout_confirm_failed.png")
                     )
@@ -258,7 +267,11 @@ class LogoutResource(Resource):
             logger.error(f"Error during logout: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             # Store diagnostics
-            automator.store_page_source()
+            try:
+                page_source = automator.driver.page_source
+                store_page_source(page_source, "logout_error")
+            except Exception as ps_error:
+                logger.error(f"Failed to store page source: {ps_error}")
             automator.driver.save_screenshot(os.path.join(automator.screenshots_dir, "logout_error.png"))
             return {"error": f"Failed to logout: {str(e)}"}, 500
 
