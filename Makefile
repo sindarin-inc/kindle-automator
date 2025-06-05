@@ -150,6 +150,9 @@ ssh:
 ssh-2:
 	ssh -i ansible/keys/kindle.key root@37.27.56.214
 ssh2: ssh-2
+ssh-3:
+	ssh -i ansible/keys/kindle.key root@37.27.57.241
+ssh3: ssh-3
 ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging

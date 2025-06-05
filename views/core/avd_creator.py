@@ -418,10 +418,6 @@ class AVDCreator:
             logger.error("Seed clone AVD does not exist")
             return False, "Seed clone AVD does not exist"
 
-        if not self.has_seed_clone_snapshot():
-            logger.error("Seed clone snapshot does not exist")
-            return False, "Seed clone snapshot does not exist"
-
         try:
             # Get AVD names
             seed_clone_name = self.get_seed_clone_avd_name()
@@ -636,9 +632,9 @@ class AVDCreator:
 
     def is_seed_clone_ready(self) -> bool:
         """
-        Check if the seed clone is ready to be used (has AVD and snapshot).
+        Check if the seed clone is ready to be used (has AVD).
 
         Returns:
             bool: True if seed clone is ready, False otherwise
         """
-        return self.has_seed_clone() and self.has_seed_clone_snapshot()
+        return self.has_seed_clone()

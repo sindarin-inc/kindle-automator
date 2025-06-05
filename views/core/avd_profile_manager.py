@@ -251,53 +251,49 @@ class AVDProfileManager:
                         driver_instance.driver.quit()
                     appium_driver.stop_appium_for_profile(email)
 
-                    # Give the app a moment to settle
-                    time.sleep(2)
+                    # Give the app and system time to complete background processes
+                    logger.info("Waiting 10 minutes for background processes (Play Store updates, etc.) to complete...")
+                    logger.info("This ensures the seed clone is fully prepared for copying")
+                    # Log progress every minute
+                    for minute in range(1, 11):
+                        time.sleep(60)  # Wait 1 minute
+                        logger.info(f"Seed clone preparation wait: {minute}/10 minutes elapsed...")
+                    logger.info("10-minute wait period complete, proceeding with shutdown")
 
-        # Take snapshot (always saves to default)
-        logger.info(f"Creating snapshot for {email}")
-        if launcher.save_snapshot(email):
-            logger.info(f"Successfully created snapshot for {email}")
-            # Stop the emulator
+        # Check if this is the seed clone
+        if email == AVDCreator.SEED_CLONE_EMAIL:
+            # For seed clone, just stop the emulator normally without snapshot
+            logger.info(f"Stopping seed clone emulator normally (no snapshot)")
             launcher.stop_emulator(email)
-            return True, "Snapshot created successfully"
+            return True, "Seed clone prepared successfully"
         else:
-            return False, "Failed to create snapshot"
+            # Take snapshot (always saves to default)
+            logger.info(f"Creating snapshot for {email}")
+            if launcher.save_snapshot(email):
+                logger.info(f"Successfully created snapshot for {email}")
+                # Stop the emulator
+                launcher.stop_emulator(email)
+                return True, "Snapshot created successfully"
+            else:
+                return False, "Failed to create snapshot"
 
     def ensure_seed_clone_ready(self) -> Tuple[bool, str]:
         """
         Ensure the seed clone AVD is ready for use. This includes:
         1. Creating the seed clone AVD if it doesn't exist
         2. Starting it and waiting for it to be ready
-        3. Taking a snapshot before Kindle installation
+        3. Installing Kindle and letting it settle for 10 minutes
 
         Returns:
             Tuple[bool, str]: (success, message)
         """
         try:
-            # Check if seed clone already exists and has snapshot
-            if self.avd_creator.is_seed_clone_ready():
-                logger.info("Seed clone AVD is already ready")
-                return True, "Seed clone is ready"
-
             seed_email = AVDCreator.SEED_CLONE_EMAIL
-
-            # Check if seed clone AVD exists but needs snapshot
-            if self.avd_creator.has_seed_clone() and not self.avd_creator.has_seed_clone_snapshot():
-                logger.info("Seed clone AVD exists but needs snapshot")
-
-                # Check if emulator is already running
-                if self.emulator_manager.is_emulator_running(seed_email):
-                    logger.info("Seed clone emulator is already running")
-                else:
-                    # Start emulator and create snapshot
-                    success, message = self._start_emulator_and_create_snapshot(
-                        seed_email, prepare_kindle=True
-                    )
-                    if success:
-                        return True, "Seed clone is now ready"
-                    else:
-                        return False, f"Failed to prepare seed clone: {message}"
+            
+            # Check if seed clone already exists
+            if self.avd_creator.has_seed_clone():
+                logger.info("Seed clone AVD already exists")
+                return True, "Seed clone is ready"
 
             # Seed clone doesn't exist at all, create it
             logger.info("Creating seed clone AVD for fast user initialization")
