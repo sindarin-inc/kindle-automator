@@ -564,6 +564,50 @@ def handle_automator_response(server_instance):
                     if automator and hasattr(automator, "state_machine") and automator.state_machine:
                         current_state = automator.state_machine.current_state
 
+                        # Handle LIBRARY_SIGN_IN state - lost auth token
+                        if current_state == AppState.LIBRARY_SIGN_IN:
+                            # Check if user was previously authenticated (has auth_date)
+                            profile_manager = automator.profile_manager
+                            auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+
+                            # Only return auth error if user was previously authenticated
+                            if auth_date:
+                                logger.info(
+                                    f"User {sindarin_email} was previously authenticated on {auth_date}"
+                                )
+                                time_taken = round(time.time() - start_time, 3)
+
+                                logger.info(
+                                    "LIBRARY_SIGN_IN state detected - auth token lost, manual login required"
+                                )
+
+                                # Get the emulator ID for this email if possible
+                                emulator_id = None
+                                if (
+                                    automator
+                                    and hasattr(automator, "emulator_manager")
+                                    and hasattr(automator.emulator_manager, "emulator_launcher")
+                                ):
+                                    emulator_id = (
+                                        automator.emulator_manager.emulator_launcher.get_emulator_id(
+                                            sindarin_email
+                                        )
+                                    )
+                                    logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
+
+                                return {
+                                    "error": "Authentication required",
+                                    "manual_login_required": True,
+                                    "current_state": current_state.name,
+                                    "message": "Authentication is required via VNC",
+                                    "emulator_id": emulator_id,
+                                    "time_taken": time_taken,
+                                }, 401
+                            else:
+                                logger.info(
+                                    f"LIBRARY_SIGN_IN state detected but user {sindarin_email} has no auth_date - not treating as lost auth"
+                                )
+
                         # Handle CAPTCHA state
                         if current_state == AppState.CAPTCHA:
                             time_taken = round(time.time() - start_time, 3)
@@ -599,9 +643,9 @@ def handle_automator_response(server_instance):
                             }
 
                             if interactive_captcha:
-                                response_data[
-                                    "message"
-                                ] = "Grid-based image captcha detected - app has been restarted automatically"
+                                response_data["message"] = (
+                                    "Grid-based image captcha detected - app has been restarted automatically"
+                                )
                                 response_data["captcha_type"] = "grid"
                                 response_data["requires_restart"] = True
                             else:

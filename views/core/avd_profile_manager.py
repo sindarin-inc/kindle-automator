@@ -252,7 +252,9 @@ class AVDProfileManager:
                     appium_driver.stop_appium_for_profile(email)
 
                     # Give the app and system time to complete background processes
-                    logger.info("Waiting 10 minutes for background processes (Play Store updates, etc.) to complete...")
+                    logger.info(
+                        "Waiting 10 minutes for background processes (Play Store updates, etc.) to complete..."
+                    )
                     logger.info("This ensures the seed clone is fully prepared for copying")
                     # Log progress every minute
                     for minute in range(1, 11):
@@ -289,7 +291,7 @@ class AVDProfileManager:
         """
         try:
             seed_email = AVDCreator.SEED_CLONE_EMAIL
-            
+
             # Check if seed clone already exists
             if self.avd_creator.has_seed_clone():
                 logger.info("Seed clone AVD already exists")

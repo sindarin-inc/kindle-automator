@@ -446,6 +446,42 @@ class KindleStateMachine:
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
 
+            # Track authentication state changes
+            if self.current_state in [AppState.LIBRARY, AppState.LIBRARY_SIGN_IN]:
+                try:
+                    from datetime import datetime
+
+                    profile_manager = self.driver.automator.profile_manager
+                    profile = profile_manager.get_current_profile()
+                    email = profile.get("email")
+
+                    current_date = datetime.now().isoformat()
+
+                    if self.current_state == AppState.LIBRARY:
+                        # User is authenticated - set auth_date if not already set
+                        auth_date = profile_manager.get_user_field(email, "auth_date")
+                        if not auth_date:
+                            logger.info(f"Setting auth_date for {email} as user is in LIBRARY state")
+                            profile_manager.set_user_field(email, "auth_date", current_date)
+
+                        # Clear auth_failed_date if it exists
+                        auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                        if auth_failed_date:
+                            logger.info(
+                                f"Clearing auth_failed_date for {email} as user is back in LIBRARY state"
+                            )
+                            profile_manager.set_user_field(email, "auth_failed_date", None)
+
+                    elif self.current_state == AppState.LIBRARY_SIGN_IN:
+                        # User lost authentication - set auth_failed_date
+                        logger.info(
+                            f"Setting auth_failed_date for {email} as user is in LIBRARY_SIGN_IN state"
+                        )
+                        profile_manager.set_user_field(email, "auth_failed_date", current_date)
+
+                except Exception as e:
+                    logger.warning(f"Error tracking auth state: {e}")
+
             # Simple check for RemoteLicenseReleaseActivity if state is UNKNOWN
             if self.current_state == AppState.UNKNOWN:
                 try:

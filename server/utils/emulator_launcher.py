@@ -643,25 +643,25 @@ class EmulatorLauncher:
         """
         Ensure the AVD has at least 8GB of RAM configured.
         Updates the config.ini file if RAM is less than 8192 MB.
-        
+
         Args:
             avd_name: Name of the AVD to check/upgrade
-            
+
         Returns:
             True if RAM was already sufficient or successfully upgraded, False on error
         """
         try:
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
             config_path = os.path.join(avd_path, "config.ini")
-            
+
             if not os.path.exists(config_path):
                 logger.error(f"Config file not found: {config_path}")
                 return False
-                
+
             # Read current config
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 lines = f.readlines()
-            
+
             # Check current RAM setting
             ram_updated = False
             for i, line in enumerate(lines):
@@ -679,15 +679,15 @@ class EmulatorLauncher:
                 logger.info(f"Adding RAM setting to {avd_name} config")
                 lines.append("hw.ramSize=8192\n")
                 ram_updated = True
-            
+
             # Write updated config if needed
             if ram_updated:
-                with open(config_path, 'w') as f:
+                with open(config_path, "w") as f:
                     f.writelines(lines)
                 logger.info(f"Successfully upgraded RAM for {avd_name}")
-                
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Error ensuring RAM upgrade for {avd_name}: {e}")
             return False
@@ -711,7 +711,7 @@ class EmulatorLauncher:
             if not os.path.exists(avd_path):
                 logger.error(f"AVD {avd_name} does not exist at {avd_path}")
                 return False, None, None
-            
+
             # Ensure AVD has sufficient RAM before launching
             # DISABLED: Auto-upgrading to 8GB breaks auth token in Kindle app
             # if not self._ensure_avd_ram_upgraded(avd_name):
