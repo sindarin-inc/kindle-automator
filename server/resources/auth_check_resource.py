@@ -6,7 +6,6 @@ from datetime import datetime
 from flask import jsonify, request
 from flask_restful import Resource
 
-from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.utils.request_utils import get_sindarin_email
 from views.core.avd_profile_manager import AVDProfileManager
 
@@ -16,14 +15,13 @@ logger = logging.getLogger(__name__)
 class AuthCheckResource(Resource):
     """Resource for checking authentication status of a user."""
 
-    @ensure_user_profile_loaded
     def get(self):
         """Check the authentication status for the current user.
         
         Returns three possible states:
         1. authenticated: User has auth_date set (was authenticated)
         2. auth_failed: User has auth_failed_date set (authentication was lost)  
-        3. never_authenticated: Neither auth_date nor auth_failed_date exists
+        3. never_authenticated: No profile exists OR neither auth_date nor auth_failed_date exists
         """
         try:
             # Get the user's email
@@ -37,6 +35,16 @@ class AuthCheckResource(Resource):
             
             # Get the profile manager instance
             profile_manager = AVDProfileManager.get_instance()
+            
+            # Check if profile exists
+            if sindarin_email not in profile_manager.profiles_index:
+                # No profile = never authenticated
+                return {
+                    "authenticated": False,
+                    "status": "never_authenticated",
+                    "message": "User has never been authenticated",
+                    "email": sindarin_email
+                }, 200
             
             # Check authentication fields
             auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
