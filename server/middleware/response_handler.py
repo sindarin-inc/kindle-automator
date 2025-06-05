@@ -15,31 +15,6 @@ from views.core.app_state import AppState
 logger = logging.getLogger(__name__)
 
 
-# Utility function to get email and handle fallbacks consistently
-def get_email_with_fallbacks(server_instance, use_helper=True) -> Optional[str]:
-    """
-    Get sindarin_email with consistent fallbacks across functions.
-
-    Args:
-        server_instance: The AutomationServer instance
-        use_helper: Whether to use the get_sindarin_email helper function
-
-    Returns:
-        The email to use, or None if not found
-    """
-    # Get sindarin_email from request using the helper in utils (without a default)
-    sindarin_email = get_sindarin_email()
-
-    # Fall back to current profile if still no email
-    if not sindarin_email:
-        current_profile = server_instance.profile_manager.get_current_profile()
-        if current_profile and "email" in current_profile:
-            sindarin_email = current_profile["email"]
-            logger.debug(f"Using email from current profile: {sindarin_email}")
-
-    return sindarin_email
-
-
 def get_image_path(image_id):
     """Get full path for an image file."""
     # Build path to image using project root
@@ -132,8 +107,8 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
 
     def restart_driver():
         """Restart the Appium driver for the current email"""
-        # Get sindarin_email using our utility function with fallbacks
-        sindarin_email = get_email_with_fallbacks(server_instance)
+        # Get sindarin_email from request
+        sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
             logger.error("No email found to restart driver")
@@ -159,8 +134,8 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
         """Restart the emulator if it's not running properly"""
         logger.info("Restarting emulator due to device list error")
 
-        # Get sindarin_email using our utility function with fallbacks
-        sindarin_email = get_email_with_fallbacks(server_instance)
+        # Get sindarin_email from request
+        sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
             logger.error("No email found to restart emulator")
@@ -403,12 +378,9 @@ def _apply_timezone_to_device(server_instance, sindarin_email: str, timezone: st
     """
     try:
         # Get the automator for this email
-        automator = None
-        if sindarin_email and hasattr(server_instance, "automators"):
-            automator = server_instance.automators.get(sindarin_email)
-
-        if not automator or not hasattr(automator, "device_id"):
-            logger.warning(f"No automator or device_id found for {sindarin_email}, cannot apply timezone")
+        automator = server_instance.automators.get(sindarin_email)
+        if not automator:
+            logger.warning(f"No automator found for {sindarin_email}, cannot apply timezone")
             return False
 
         device_id = automator.device_id
@@ -497,209 +469,193 @@ def _handle_timezone_parameter(server_instance, sindarin_email: Optional[str]):
             logger.error(f"Error handling timezone parameter: {e}")
 
 
-def handle_automator_response(server_instance):
+def handle_automator_response(f):
     """Decorator to standardize response handling for automator endpoints.
 
     Handles special cases like CAPTCHA requirements and ensures consistent
     response format across all endpoints. Includes retry logic with app relaunch.
     Also captures diagnostic snapshots before and after operations.
     Works with the multi-emulator approach.
-
-    Args:
-        server_instance: The AutomationServer instance containing the automators
     """
 
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            # Try to get start time from request context first (set by request logger middleware)
-            from flask import g
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        # Try to get start time from request context first (set by request logger middleware)
+        from flask import g, request
 
-            start_time = getattr(g, "request_start_time", None)
-            if start_time is None:
-                # Fallback to current time if not available
-                start_time = time.time()
-                logger.debug("Request start time not found in g, using current time")
+        start_time = getattr(g, "request_start_time", None)
+        if start_time is None:
+            # Fallback to current time if not available
+            start_time = time.time()
+            logger.debug("Request start time not found in g, using current time")
 
-            # Get the operation name from the function
-            operation_name = f.__name__
-            if operation_name.startswith("_"):
-                operation_name = operation_name[1:]  # Remove leading underscore
+        # Get server instance from request context
+        server_instance = request.app.config.get("server_instance")
+        if server_instance is None:
+            logger.error("No server instance found in app config")
+            return {"error": "Server configuration error"}, 500
 
-            # Get sindarin_email using our utility function with fallbacks
-            sindarin_email = get_email_with_fallbacks(server_instance)
+        # Get the operation name from the function
+        operation_name = f.__name__
+        if operation_name.startswith("_"):
+            operation_name = operation_name[1:]  # Remove leading underscore
 
-            # Check if timezone parameter is provided in the request
-            _handle_timezone_parameter(server_instance, sindarin_email)
+        # Get sindarin_email from request
+        sindarin_email = get_sindarin_email()
 
-            # Get the appropriate automator instance
-            automator = None
-            if sindarin_email and hasattr(server_instance, "automators"):
-                automator = server_instance.automators.get(sindarin_email)
+        # Check if timezone parameter is provided in the request
+        _handle_timezone_parameter(server_instance, sindarin_email)
 
-            # For backward compatibility
-            if not automator and hasattr(server_instance, "automator"):
-                automator = server_instance.automator
+        # Get the appropriate automator instance
+        automator = None
+        if sindarin_email:
+            automator = server_instance.automators.get(sindarin_email)
 
-            try:
-                # Wrap the function call in retry logic
-                def wrapped_func():
-                    # Get the original response from the endpoint
-                    response = f(*args, **kwargs)
+        try:
+            # Wrap the function call in retry logic
+            def wrapped_func():
+                # Get the original response from the endpoint
+                response = f(*args, **kwargs)
 
-                    # Handle Flask Response objects directly
-                    import flask
-                    from flask import Response
+                # Handle Flask Response objects directly
+                import flask
+                from flask import Response
 
-                    if isinstance(response, (flask.Response, Response)):
-                        return response
+                if isinstance(response, (flask.Response, Response)):
+                    return response
 
-                    # If response is already a tuple with status code, unpack it
-                    if isinstance(response, tuple):
-                        result, status_code = response
-                    else:
-                        result, status_code = response, 200
+                # If response is already a tuple with status code, unpack it
+                if isinstance(response, tuple):
+                    result, status_code = response
+                else:
+                    result, status_code = response, 200
 
-                    # Check for special states that need handling
-                    if automator and hasattr(automator, "state_machine") and automator.state_machine:
-                        current_state = automator.state_machine.current_state
+                # Check for special states that need handling
+                if automator and hasattr(automator, "state_machine") and automator.state_machine:
+                    current_state = automator.state_machine.current_state
 
-                        # Handle LIBRARY_SIGN_IN state - lost auth token
-                        if current_state == AppState.LIBRARY_SIGN_IN:
-                            # Check if user was previously authenticated (has auth_date)
-                            profile_manager = automator.profile_manager
-                            auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+                    # Handle LIBRARY_SIGN_IN state - lost auth token
+                    if current_state == AppState.LIBRARY_SIGN_IN:
+                        # Check if user was previously authenticated (has auth_date)
+                        profile_manager = automator.profile_manager
+                        auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
 
-                            # Only return auth error if user was previously authenticated
-                            if auth_date:
-                                logger.info(
-                                    f"User {sindarin_email} was previously authenticated on {auth_date}"
-                                )
-                                time_taken = round(time.time() - start_time, 3)
-
-                                logger.info(
-                                    "LIBRARY_SIGN_IN state detected - auth token lost, manual login required"
-                                )
-
-                                # Get the emulator ID for this email if possible
-                                emulator_id = None
-                                if (
-                                    automator
-                                    and hasattr(automator, "emulator_manager")
-                                    and hasattr(automator.emulator_manager, "emulator_launcher")
-                                ):
-                                    emulator_id = (
-                                        automator.emulator_manager.emulator_launcher.get_emulator_id(
-                                            sindarin_email
-                                        )
-                                    )
-                                    logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-                                return {
-                                    "error": "Authentication required",
-                                    "manual_login_required": True,
-                                    "current_state": current_state.name,
-                                    "message": "Authentication is required via VNC",
-                                    "emulator_id": emulator_id,
-                                    "time_taken": time_taken,
-                                }, 401
-                            else:
-                                logger.info(
-                                    f"LIBRARY_SIGN_IN state detected but user {sindarin_email} has no auth_date - not treating as lost auth"
-                                )
-
-                        # Handle CAPTCHA state
-                        if current_state == AppState.CAPTCHA:
+                        # Only return auth error if user was previously authenticated
+                        if auth_date:
+                            logger.info(f"User {sindarin_email} was previously authenticated on {auth_date}")
                             time_taken = round(time.time() - start_time, 3)
 
-                            # Get the screenshot ID directly from the state machine
-                            # This comes from the auth handler's captured screenshot during captcha processing
-                            screenshot_id = automator.state_machine.get_captcha_screenshot_id()
+                            logger.info(
+                                "LIBRARY_SIGN_IN state detected - auth token lost, manual login required"
+                            )
 
-                            # Default fallback URL - use image endpoint for consistent access
-                            image_url = "/image/captcha"
+                            # Get the emulator ID for this email
+                            emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
+                                sindarin_email
+                            )
+                            logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
-                            # Use the captured screenshot ID if available
-                            if screenshot_id:
-                                image_url = f"/image/{screenshot_id}"
-                                logger.info(f"Using captcha screenshot from auth handler: {image_url}")
-                            else:
-                                logger.info(
-                                    f"No captcha screenshot ID found, using fallback URL: {image_url}"
-                                )
-
-                            # Check if we have an interactive captcha
-                            interactive_captcha = False
-                            if hasattr(automator.state_machine.auth_handler, "interactive_captcha_detected"):
-                                interactive_captcha = (
-                                    automator.state_machine.auth_handler.interactive_captcha_detected
-                                )
-
-                            # Create response body with appropriate message
-                            response_data = {
-                                "status": "captcha_required",
+                            return {
+                                "error": "Authentication required",
+                                "manual_login_required": True,
+                                "current_state": current_state.name,
+                                "message": "Authentication is required via VNC",
+                                "emulator_id": emulator_id,
                                 "time_taken": time_taken,
-                                "image_url": image_url,
-                            }
+                            }, 401
+                        else:
+                            logger.info(
+                                f"LIBRARY_SIGN_IN state detected but user {sindarin_email} has no auth_date - not treating as lost auth"
+                            )
 
-                            if interactive_captcha:
-                                response_data["message"] = (
-                                    "Grid-based image captcha detected - app has been restarted automatically"
-                                )
-                                response_data["captcha_type"] = "grid"
-                                response_data["requires_restart"] = True
-                            else:
-                                response_data["message"] = "Authentication requires captcha solution"
-                                response_data["captcha_type"] = "text"
-
-                            return response_data, 403
-
-                    # Check if this is a known authentication error that shouldn't be retried
-                    if isinstance(result, dict) and result.get("error_type") == "incorrect_password":
-                        logger.info("Authentication failed with incorrect password - won't retry")
-                        return result, status_code
-
-                    # Check if we need to add timezone_missing flag
-                    if isinstance(result, dict) and sindarin_email:
-                        # Get the profile manager instance
-                        try:
-                            from views.core.avd_profile_manager import AVDProfileManager
-
-                            profile_manager = AVDProfileManager.get_instance()
-
-                            # Check if timezone exists in the user's profile
-                            timezone = profile_manager.get_user_field(sindarin_email, "timezone")
-                            logger.debug(f"Timezone check for {sindarin_email}: {timezone}")
-                            if timezone is None:
-                                logger.info(f"Adding timezone_missing flag for {sindarin_email}")
-                                result["timezone_missing"] = True
-                        except Exception as e:
-                            logger.warning(f"Error checking timezone for {sindarin_email}: {e}")
-
-                    # Add time_taken to successful responses if it's a dict
-                    if isinstance(result, dict):
+                    # Handle CAPTCHA state
+                    if current_state == AppState.CAPTCHA:
                         time_taken = round(time.time() - start_time, 3)
-                        result["time_taken"] = time_taken
 
-                    # Return original response if no special handling needed
+                        # Get the screenshot ID directly from the state machine
+                        # This comes from the auth handler's captured screenshot during captcha processing
+                        screenshot_id = automator.state_machine.get_captcha_screenshot_id()
+
+                        # Default fallback URL - use image endpoint for consistent access
+                        image_url = "/image/captcha"
+
+                        # Use the captured screenshot ID if available
+                        if screenshot_id:
+                            image_url = f"/image/{screenshot_id}"
+                            logger.info(f"Using captcha screenshot from auth handler: {image_url}")
+                        else:
+                            logger.info(f"No captcha screenshot ID found, using fallback URL: {image_url}")
+
+                        # Check if we have an interactive captcha
+                        interactive_captcha = False
+                        if hasattr(automator.state_machine.auth_handler, "interactive_captcha_detected"):
+                            interactive_captcha = (
+                                automator.state_machine.auth_handler.interactive_captcha_detected
+                            )
+
+                        # Create response body with appropriate message
+                        response_data = {
+                            "status": "captcha_required",
+                            "time_taken": time_taken,
+                            "image_url": image_url,
+                        }
+
+                        if interactive_captcha:
+                            response_data["message"] = (
+                                "Grid-based image captcha detected - app has been restarted automatically"
+                            )
+                            response_data["captcha_type"] = "grid"
+                            response_data["requires_restart"] = True
+                        else:
+                            response_data["message"] = "Authentication requires captcha solution"
+                            response_data["captcha_type"] = "text"
+
+                        return response_data, 403
+
+                # Check if this is a known authentication error that shouldn't be retried
+                if isinstance(result, dict) and result.get("error_type") == "incorrect_password":
+                    logger.info("Authentication failed with incorrect password - won't retry")
                     return result, status_code
 
-                return retry_with_app_relaunch(wrapped_func, server_instance, start_time)
-
-            except Exception as e:
-                time_taken = round(time.time() - start_time, 3)
-                logger.error(f"Error in endpoint {operation_name}: {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-
-                # We still take error snapshots for debugging
-                if automator and hasattr(automator, "driver") and automator.driver:
+                # Check if we need to add timezone_missing flag
+                if isinstance(result, dict) and sindarin_email:
+                    # Get the profile manager instance
                     try:
-                        automator.take_diagnostic_snapshot(f"error_{operation_name}")
-                    except Exception as snap_e:
-                        logger.warning(f"Failed to take error snapshot for {operation_name}: {snap_e}")
+                        from views.core.avd_profile_manager import AVDProfileManager
 
-                return {"error": str(e), "time_taken": time_taken}, 500
+                        profile_manager = AVDProfileManager.get_instance()
 
-        return wrapper
+                        # Check if timezone exists in the user's profile
+                        timezone = profile_manager.get_user_field(sindarin_email, "timezone")
+                        logger.debug(f"Timezone check for {sindarin_email}: {timezone}")
+                        if timezone is None:
+                            logger.info(f"Adding timezone_missing flag for {sindarin_email}")
+                            result["timezone_missing"] = True
+                    except Exception as e:
+                        logger.warning(f"Error checking timezone for {sindarin_email}: {e}")
 
-    return decorator
+                # Add time_taken to successful responses if it's a dict
+                if isinstance(result, dict):
+                    time_taken = round(time.time() - start_time, 3)
+                    result["time_taken"] = time_taken
+
+                # Return original response if no special handling needed
+                return result, status_code
+
+            return retry_with_app_relaunch(wrapped_func, server_instance, start_time)
+
+        except Exception as e:
+            time_taken = round(time.time() - start_time, 3)
+            logger.error(f"Error in endpoint {operation_name}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            # We still take error snapshots for debugging
+            if automator and hasattr(automator, "driver") and automator.driver:
+                try:
+                    automator.take_diagnostic_snapshot(f"error_{operation_name}")
+                except Exception as snap_e:
+                    logger.warning(f"Failed to take error snapshot for {operation_name}: {snap_e}")
+
+            return {"error": str(e), "time_taken": time_taken}, 500
+
+    return wrapper

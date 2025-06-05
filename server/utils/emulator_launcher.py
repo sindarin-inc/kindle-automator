@@ -1293,7 +1293,7 @@ class EmulatorLauncher:
                     elif device_status != "device":
                         logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
                         return False
-                    
+
                     # Only verify emulator AVD name after confirming it's online
                     if not self._verify_emulator_running(emulator_id, email):
                         return False

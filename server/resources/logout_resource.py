@@ -27,7 +27,7 @@ class LogoutResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(None)
+    @handle_automator_response
     def _logout(self):
         """Sign out of the Kindle app"""
         # Get server instance from the request context if not provided

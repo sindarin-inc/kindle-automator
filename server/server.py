@@ -120,7 +120,7 @@ class StateResource(Resource):
 class CaptchaResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Get current captcha status and image if present"""
         # Return simple success response - the response handler will
@@ -129,7 +129,7 @@ class CaptchaResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """Submit captcha solution"""
         automator, _, error_response = get_automator_for_request(server)
@@ -155,7 +155,7 @@ class CaptchaResource(Resource):
 class BooksResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def _get_books(self):
         """Get list of available books with metadata"""
         # Get sindarin_email from request to determine which automator to use
@@ -777,7 +777,7 @@ class ScreenshotResource(Resource):
             return serve_image(image_id, delete_after=False)
 
         # For JSON responses, we can wrap with the automator response handler
-        @handle_automator_response(server)
+        @handle_automator_response
         def get_screenshot_json():
             # Prepare the response data
             response_data = {}
@@ -884,14 +884,14 @@ class NavigationResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self, direction=None):
         """Handle page navigation via POST."""
         return self._navigate_impl(direction)
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Handle navigation via GET requests, using query parameters"""
         # For preview endpoints, add preview parameter if not present
@@ -1330,7 +1330,7 @@ class BookOpenResource(Resource):
 class TwoFactorResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """Submit 2FA code"""
         automator, _, error_response = get_automator_for_request(server)
@@ -1384,7 +1384,7 @@ class AuthResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def _auth(self):
         """Set up a profile for manual authentication via VNC or WebSockets"""
         # Create a unified params dict that combines query params and JSON body
@@ -1670,7 +1670,7 @@ class AuthResource(Resource):
 class FixturesResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """Create fixtures for major views"""
         try:
@@ -1731,7 +1731,7 @@ class CoverImageResource(Resource):
 class TextResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def _extract_text(self):
         """Shared implementation for extracting text from the current reading page."""
         try:
@@ -1891,13 +1891,13 @@ class TextResource(Resource):
             return {"error": str(e)}, 500
 
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Get OCR text of the current reading page without turning the page."""
         return self._extract_text()
 
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """POST endpoint for OCR text extraction (identical to GET but allows for future parameters)."""
         return self._extract_text()
@@ -1912,7 +1912,7 @@ class LastReadPageDialogResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Handle Last read page dialog choice from the client via GET request."""
         # Call the implementation method that handles both GET and POST requests
@@ -1920,7 +1920,7 @@ class LastReadPageDialogResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """Handle Last read page dialog choice from the client via POST request."""
         # Call the implementation method that handles both GET and POST requests
