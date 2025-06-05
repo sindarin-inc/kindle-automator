@@ -6,7 +6,7 @@ import traceback
 from functools import wraps
 from typing import Optional
 
-from flask import Response, make_response, send_file
+from flask import Response, current_app, make_response, send_file
 from selenium.common import exceptions as selenium_exceptions
 
 from server.utils.request_utils import get_sindarin_email
@@ -490,7 +490,7 @@ def handle_automator_response(f):
             logger.debug("Request start time not found in g, using current time")
 
         # Get server instance from request context
-        server_instance = request.app.config.get("server_instance")
+        server_instance = current_app.config.get("server_instance")
         if server_instance is None:
             logger.error("No server instance found in app config")
             return {"error": "Server configuration error"}, 500
