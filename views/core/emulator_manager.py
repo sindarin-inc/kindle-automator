@@ -298,7 +298,7 @@ class EmulatorManager:
             
             # Check if memory optimizations have been applied to this AVD
             memory_optimized = profile_manager.get_user_field(
-                email, "memory_optimizations_applied", default=False, section="preferences"
+                email, "memory_optimizations_applied", default=False, section="emulator_settings"
             )
             
             if memory_optimized:
@@ -374,10 +374,10 @@ class EmulatorManager:
             
             # Mark optimizations as applied for this AVD
             profile_manager.set_user_field(
-                email, "memory_optimizations_applied", True, section="preferences"
+                email, "memory_optimizations_applied", True, section="emulator_settings"
             )
             profile_manager.set_user_field(
-                email, "memory_optimization_timestamp", int(time.time()), section="preferences"
+                email, "memory_optimization_timestamp", int(time.time()), section="emulator_settings"
             )
             
             logger.info(f"Memory optimization settings applied successfully for {email}")
