@@ -266,6 +266,8 @@ class EmulatorManager:
 
                         # Check if emulator is ready through the launcher
                         if self.emulator_launcher.is_emulator_ready(email):
+                            # Apply memory optimizations if enabled
+                            self._apply_memory_optimizations(email, emulator_id)
                             return True
 
                 logger.error(
@@ -279,3 +281,107 @@ class EmulatorManager:
         except Exception as e:
             logger.error(f"Error starting emulator: {e}")
             return False
+
+    def _apply_memory_optimizations(self, email: str, emulator_id: str) -> None:
+        """
+        Apply memory optimization settings to prevent OOM kills.
+        Only applied once per AVD, tracked in user profile.
+        
+        Args:
+            email: User email to check preferences
+            emulator_id: The emulator ID (e.g. emulator-5554)
+        """
+        try:
+            # Check if we've already applied optimizations to this AVD
+            from views.core.avd_profile_manager import AVDProfileManager
+            profile_manager = AVDProfileManager.get_instance()
+            
+            # Check if memory optimizations have been applied to this AVD
+            memory_optimized = profile_manager.get_user_field(
+                email, "memory_optimizations_applied", default=False, section="preferences"
+            )
+            
+            if memory_optimized:
+                logger.debug(f"Memory optimizations already applied to AVD for {email}")
+                return
+                
+            logger.info(f"Applying memory optimization settings for {email}...")
+            
+            # Build adb command prefix
+            adb_prefix = [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell"]
+            
+            # List of commands to run
+            optimization_commands = [
+                # Disable Play Store (prevents auto-updates)
+                (["pm", "disable-user", "com.android.vending"], "Disabling Play Store"),
+                
+                # Disable YouTube (prevents background crashes)
+                (["pm", "disable-user", "com.google.android.youtube"], "Disabling YouTube"),
+                
+                # Disable auto app updates
+                (["settings", "put", "global", "auto_update_apps", "0"], "Disabling auto app updates"),
+                
+                # Deny background execution for Play Services
+                (["cmd", "appops", "set", "com.google.android.gms", "RUN_IN_BACKGROUND", "deny"], 
+                 "Denying background execution for Play Services"),
+                
+                # Deny background execution for Play Store
+                (["cmd", "appops", "set", "com.android.vending", "RUN_IN_BACKGROUND", "deny"],
+                 "Denying background execution for Play Store"),
+                
+                # Disable all animations (frees memory)
+                (["settings", "put", "global", "window_animation_scale", "0"], "Disabling window animations"),
+                (["settings", "put", "global", "transition_animation_scale", "0"], "Disabling transition animations"),
+                (["settings", "put", "global", "animator_duration_scale", "0"], "Disabling animator duration"),
+                
+                # Aggressive memory management settings
+                (["settings", "put", "global", "ram_expand_size", "0"], "Setting RAM expand size to 0"),
+                (["settings", "put", "global", "zram_enabled", "0"], "Disabling ZRAM"),
+                
+                # Force stop unnecessary services
+                (["am", "force-stop", "com.google.android.googlequicksearchbox"], "Force stopping Google Search"),
+                (["am", "force-stop", "com.google.android.apps.wellbeing"], "Force stopping Digital Wellbeing"),
+                (["am", "force-stop", "com.google.android.youtube"], "Force stopping YouTube"),
+                
+                # Trim memory from system processes
+                (["am", "send-trim-memory", "com.google.android.gms", "RUNNING_CRITICAL"], 
+                 "Trimming memory from Play Services"),
+                (["am", "send-trim-memory", "com.android.systemui", "RUNNING_CRITICAL"],
+                 "Trimming memory from System UI"),
+            ]
+            
+            # Run each command
+            for cmd, description in optimization_commands:
+                try:
+                    full_cmd = adb_prefix + cmd
+                    logger.debug(f"{description}...")
+                    result = subprocess.run(
+                        full_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False
+                    )
+                    
+                    # Only log errors, not successes
+                    if result.returncode != 0 and result.stderr:
+                        logger.warning(f"Command failed: {' '.join(cmd)} - {result.stderr}")
+                        
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Command timed out: {' '.join(cmd)}")
+                except Exception as cmd_e:
+                    logger.warning(f"Error running command {' '.join(cmd)}: {cmd_e}")
+            
+            # Mark optimizations as applied for this AVD
+            profile_manager.set_user_field(
+                email, "memory_optimizations_applied", True, section="preferences"
+            )
+            profile_manager.set_user_field(
+                email, "memory_optimization_timestamp", int(time.time()), section="preferences"
+            )
+            
+            logger.info(f"Memory optimization settings applied successfully for {email}")
+            
+        except Exception as e:
+            logger.error(f"Error applying memory optimizations for {email}: {e}")
+            # Continue even if optimizations fail - they're not critical
