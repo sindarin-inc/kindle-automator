@@ -391,8 +391,13 @@ class AVDCreator:
 
                 return True, f"Successfully deleted AVD: {avd_name}"
             else:
-                logger.error(f"Failed to delete AVD: {result.stderr}")
-                return False, f"Failed to delete AVD: {result.stderr}"
+                # Check if the error is because the AVD doesn't exist
+                if "There is no Android Virtual Device named" in result.stderr:
+                    logger.info(f"AVD {avd_name} does not exist, nothing to delete")
+                    return True, f"AVD {avd_name} does not exist, nothing to delete"
+                else:
+                    logger.error(f"Failed to delete AVD: {result.stderr}")
+                    return False, f"Failed to delete AVD: {result.stderr}"
 
         except Exception as e:
             logger.error(f"Error deleting AVD: {e}")

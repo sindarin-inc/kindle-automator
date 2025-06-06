@@ -1487,6 +1487,8 @@ class AVDProfileManager:
                 if not success:
                     logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}")
                     raise Exception(f"Failed to delete seed clone AVD: {msg}")
+                elif "does not exist" in msg:
+                    logger.info(f"Seed clone AVD did not exist, proceeding with recreation")
 
             # Clear any cached emulator data
             if recreate_user and avd_name:
