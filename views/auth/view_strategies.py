@@ -117,3 +117,20 @@ AUTH_RESTART_MESSAGES = [
         '//android.view.View[contains(@text, "We\'re unable to verify your mobile number")]',
     ),
 ]
+
+# Two-Step Verification (2FA) view identifiers
+TWO_FACTOR_VIEW_IDENTIFIERS = [
+    # Main WebView with title
+    (AppiumBy.XPATH, "//android.webkit.WebView[@text='Two-Step Verification']"),
+    # Header text
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Two-Step Verification']"),
+    # OTP input field
+    (AppiumBy.ID, "auth-mfa-otpcode"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@resource-id='auth-mfa-otpcode']"),
+    # Instruction text
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'One Time Password')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Authenticator App')]"),
+    # Form container
+    (AppiumBy.ID, "auth-mfa-form"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='auth-mfa-form']"),
+]

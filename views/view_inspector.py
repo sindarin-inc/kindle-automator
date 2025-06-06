@@ -567,11 +567,15 @@ class ViewInspector:
                 pass
 
             # Check for auth-related views first
-            if self._is_auth_view():
+            auth_view_result = self._is_auth_view()
+            if auth_view_result:
                 # Store auth page source for debugging
                 logger.info("   Found auth view - storing page source for debugging")
                 source = self.driver.page_source
                 store_page_source(source, "auth_view")
+                # If _is_auth_view returns AppView.TWO_FACTOR, use that
+                if auth_view_result == AppView.TWO_FACTOR:
+                    return AppView.TWO_FACTOR
                 return AppView.SIGN_IN
 
             # Check for notification permission dialog first
@@ -891,6 +895,21 @@ class ViewInspector:
     def _is_auth_view(self):
         """Check if we're on any authentication-related view."""
         try:
+            # Check for Two-Step Verification screen first
+            from views.auth.view_strategies import TWO_FACTOR_VIEW_IDENTIFIERS
+
+            two_factor_indicators = 0
+            for strategy, locator in TWO_FACTOR_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        two_factor_indicators += 1
+                        if two_factor_indicators >= 2:
+                            logger.info("   Found Two-Step Verification screen")
+                            return AppView.TWO_FACTOR
+                except NoSuchElementException:
+                    continue
+
             # Check for email input field
             for strategy in EMAIL_FIELD_STRATEGIES:
                 try:

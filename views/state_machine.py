@@ -195,11 +195,20 @@ class KindleStateMachine:
                 logger.info("In CAPTCHA state - manual intervention required")
                 # Return True to indicate we're in a valid state but can't proceed
                 return True
+            # Special handling for TWO_FACTOR state
+            elif self.current_state == AppState.TWO_FACTOR:
+                logger.info("In TWO_FACTOR state - manual intervention required")
+                # Return True to indicate we're in a valid state but can't proceed
+                return True
             # Check if sign-in is in sign-in state without credentials
             elif not result and self.current_state == AppState.SIGN_IN:
                 new_state = self._get_current_state()
                 if new_state == AppState.CAPTCHA:
                     logger.info("Sign-in resulted in CAPTCHA state - waiting for manual intervention")
+                    self.current_state = new_state
+                    return True
+                elif new_state == AppState.TWO_FACTOR:
+                    logger.info("Sign-in resulted in TWO_FACTOR state - waiting for manual intervention")
                     self.current_state = new_state
                     return True
                 elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
@@ -377,12 +386,13 @@ class KindleStateMachine:
             AppState: The current state of the app
         """
         try:
-            # If we're currently in an AUTH state (SIGN_IN, SIGN_IN_PASSWORD, CAPTCHA),
+            # If we're currently in an AUTH state (SIGN_IN, SIGN_IN_PASSWORD, CAPTCHA, TWO_FACTOR),
             # check if keyboard hiding is active and hide the keyboard if visible
             if hasattr(self, "current_state") and self.current_state in [
                 AppState.SIGN_IN,
                 AppState.SIGN_IN_PASSWORD,
                 AppState.CAPTCHA,
+                AppState.TWO_FACTOR,
             ]:
                 if (
                     hasattr(self.auth_handler, "is_keyboard_check_active")

@@ -290,6 +290,18 @@ class StateTransitions:
         # Return False to indicate we can't proceed automatically
         return False
 
+    def handle_two_factor(self):
+        """Handle TWO_FACTOR state - just acknowledge it exists, no automated handling."""
+        logger.info("Two-Step Verification detected - manual intervention required via VNC")
+        # Store page source for debugging
+        try:
+            filepath = store_page_source(self.driver.page_source, "two_factor_auth")
+            logger.info(f"Stored Two-Step Verification page source at: {filepath}")
+        except Exception as e:
+            logger.error(f"Error storing 2FA page source: {e}")
+        # Return False to indicate we can't proceed automatically
+        return False
+
     def get_handler_for_state(self, state):
         """Get the appropriate handler method for a given state.
 
@@ -310,6 +322,7 @@ class StateTransitions:
             AppState.SEARCH_RESULTS: self.handle_search_results,  # Add new SEARCH_RESULTS handler
             AppState.READING: self.handle_reading,
             AppState.CAPTCHA: self.handle_captcha,  # CAPTCHA handler for detection only
+            AppState.TWO_FACTOR: self.handle_two_factor,  # TWO_FACTOR handler for detection only
             AppState.APP_NOT_RESPONDING: self.handle_app_not_responding,  # Add app not responding handler
             AppState.MORE_SETTINGS: self.handle_more_settings,  # Add more settings handler
         }
