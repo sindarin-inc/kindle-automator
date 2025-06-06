@@ -257,9 +257,9 @@ class AVDProfileManager:
                     )
                     logger.info("This ensures the seed clone is fully prepared for copying")
                     # Log progress every minute
-                    for minute in range(1, 11):
-                        time.sleep(60)  # Wait 1 minute
-                        logger.info(f"Seed clone preparation wait: {minute}/10 minutes elapsed...")
+                    for minute in range(1, 4):
+                        time.sleep(60)  # Wait 3 minutes
+                        logger.info(f"Seed clone preparation wait: {minute}/3 minutes elapsed...")
                     logger.info("10-minute wait period complete, proceeding with shutdown")
 
         # Check if this is the seed clone
