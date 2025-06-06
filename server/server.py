@@ -360,6 +360,10 @@ class BooksResource(Resource):
             # Add cover URLs only for books with successfully extracted covers
             books = add_cover_urls_to_books(books, cover_info_dict, sindarin_email)
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error extracting book covers: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
 
@@ -574,6 +578,10 @@ class BooksStreamResource(Resource):
                         processed_books_queue.put(processed_batch_with_covers)
 
                     except Exception as e:
+                        from server.utils.appium_error_utils import is_appium_error
+
+                        if is_appium_error(e):
+                            raise
                         logger.error(f"Error processing book batch in callback: {e}")
                         logger.error(f"Traceback: {traceback.format_exc()}")
                         # This error is for a single batch; retrieval might continue for others.
@@ -596,6 +604,10 @@ class BooksStreamResource(Resource):
                     )
                     logger.info("Book retrieval process (get_book_titles) completed in its thread.")
                 except Exception as e:
+                    from server.utils.appium_error_utils import is_appium_error
+
+                    if is_appium_error(e):
+                        raise
                     logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
                     nonlocal error_message  # To set the shared error_message
                     error_message = str(e)
@@ -642,6 +654,10 @@ class BooksStreamResource(Resource):
                             break
                         # else: continue polling, the event wasn't set yet.
                     except Exception as e:
+                        from server.utils.appium_error_utils import is_appium_error
+
+                        if is_appium_error(e):
+                            raise
                         logger.error(f"Unexpected error in generate_stream while getting from queue: {e}")
                         yield encode_message({"error": f"Streaming error: {str(e)}"})  # Send error to client
                         break  # Terminate stream on unexpected errors
@@ -759,6 +775,10 @@ class ScreenshotResource(Resource):
                 # Use standard screenshot for non-auth screens
                 automator.driver.save_screenshot(screenshot_path)
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error taking screenshot: {e}")
             failed = "Failed to take screenshot"
 
@@ -1714,6 +1734,10 @@ class FixturesResource(Resource):
             return {"error": "Failed to create fixtures"}, 500
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error creating fixtures: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
@@ -1753,6 +1777,10 @@ class CoverImageResource(Resource):
             return response
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error serving cover image: {e}")
             traceback.print_exc()
             return {"error": str(e)}, 500
