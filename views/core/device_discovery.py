@@ -64,6 +64,25 @@ class DeviceDiscovery:
                                 timeout=3,
                             )
                             if stored_emulator_id in result.stdout and "device" in result.stdout:
+                                # Double-check that this emulator is running the correct AVD
+                                avd_check_result = subprocess.run(
+                                    [f"{self.android_home}/platform-tools/adb", "-s", stored_emulator_id, "emu", "avd", "name"],
+                                    check=False,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=3,
+                                )
+                                if avd_check_result.returncode == 0:
+                                    running_avd = avd_check_result.stdout.strip()
+                                    if running_avd != avd_name:
+                                        logger.error(
+                                            f"CROSS_USER_DEBUG: CRITICAL! VNC says {email} owns {stored_emulator_id}, "
+                                            f"but it's running AVD {running_avd} instead of expected {avd_name}"
+                                        )
+                                        # Clear the incorrect emulator_id
+                                        vnc_manager.clear_emulator_id_for_profile(email)
+                                        return False, None, avd_name
+                                
                                 logger.info(
                                     f"Found emulator {stored_emulator_id} from VNC instance for {email} and it's running"
                                 )
