@@ -112,6 +112,10 @@ class StateResource(Resource):
             current_state = automator.state_machine.update_current_state()
             return {"state": current_state.name}, 200
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error getting state: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
