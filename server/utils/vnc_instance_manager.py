@@ -204,10 +204,9 @@ class VNCInstanceManager:
         for instance in self.instances:
             assigned_profile = instance.get("assigned_profile")
             if assigned_profile == email:
-                logger.info(f"CROSS_USER_DEBUG: Found VNC instance for {email}: instance_id={instance.get('id')}, emulator_id={instance.get('emulator_id')}")
                 return instance
 
-        logger.info(f"CROSS_USER_DEBUG: No VNC instance found for email {email}")
+        # logger.info(f"No VNC instance found for email {email}")
         return None
 
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:
@@ -221,13 +220,6 @@ class VNCInstanceManager:
         Returns:
             Optional[Dict]: The assigned instance or None if assignment failed
         """
-        logger.info(f"CROSS_USER_DEBUG: assign_instance_to_profile called for email={email}, instance_id={instance_id}")
-        
-        # Log current state
-        logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map before assignment:")
-        for inst in self.instances:
-            logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
-        
         # First check if this profile already has an assigned instance
         existing = self.get_instance_for_profile(email)
         if existing:
@@ -243,11 +235,6 @@ class VNCInstanceManager:
                         instance["assigned_profile"] = email
                         self.save_instances()
                         logger.info(f"Assigned VNC instance {instance_id} to email {email}")
-                        
-                        # Log state after assignment
-                        logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map after assignment:")
-                        for inst in self.instances:
-                            logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
 
                         # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
 
@@ -268,12 +255,6 @@ class VNCInstanceManager:
                 instance["assigned_profile"] = email
                 self.save_instances()
                 logger.info(f"Assigned VNC instance {instance['id']} to email {email}")
-                
-                # Log state after assignment
-                logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map after assignment:")
-                for inst in self.instances:
-                    logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
-                    
                 return instance
 
         # No available instances, create a new one
@@ -282,11 +263,6 @@ class VNCInstanceManager:
         self.instances.append(new_instance)
         self.save_instances()
         logger.info(f"Created and assigned new VNC instance {new_instance['id']} to email {email}")
-        
-        # Log state after creation
-        logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map after new instance creation:")
-        for inst in self.instances:
-            logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
 
         # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
 
@@ -302,36 +278,17 @@ class VNCInstanceManager:
         Returns:
             bool: True if an instance was released, False otherwise
         """
-        logger.info(f"CROSS_USER_DEBUG: release_instance_from_profile called for {email}")
-        
-        # Log current state before release
-        logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map before release:")
-        for inst in self.instances:
-            logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
-        
         # Get the assigned instance for this profile
         instance = self.get_instance_for_profile(email)
         if instance:
             instance_id = instance.get("id")
             assigned_profile = instance.get("assigned_profile")
-            emulator_id_to_clear = instance.get("emulator_id")
 
             # Log if assigned_profile is not None and is not the same as the email
             if assigned_profile is not None and assigned_profile != email:
-                logger.error(
-                    f"CROSS_USER_DEBUG: CRITICAL! Assigned profile {assigned_profile} is not the same as the email {email}, this is a bug"
+                logger.info(
+                    f"Assigned profile {assigned_profile} is not the same as the email {email}, this is a bug"
                 )
-
-            # Check if any other instance has the same emulator_id (shouldn't happen but let's be defensive)
-            if emulator_id_to_clear:
-                for other_inst in self.instances:
-                    if other_inst != instance and other_inst.get("emulator_id") == emulator_id_to_clear:
-                        logger.error(
-                            f"CROSS_USER_DEBUG: CRITICAL! Found duplicate emulator_id {emulator_id_to_clear} "
-                            f"assigned to both {email} and {other_inst.get('assigned_profile')}"
-                        )
-                        # Clear the duplicate
-                        other_inst["emulator_id"] = None
 
             try:
                 # Stop WebSocket proxy if running
@@ -357,11 +314,6 @@ class VNCInstanceManager:
             instance["assigned_profile"] = None
             self.save_instances()
             logger.info(f"Released VNC instance {instance_id} from profile {email}")
-            
-            # Log state after release
-            logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map after release:")
-            for inst in self.instances:
-                logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
 
             # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
 
@@ -465,38 +417,11 @@ class VNCInstanceManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        logger.info(f"CROSS_USER_DEBUG: set_emulator_id called for email={email}, emulator_id={emulator_id}")
-        
-        # Log current state before change
-        logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map before update:")
-        for inst in self.instances:
-            logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
-        
-        # First check if this emulator_id is already assigned to someone else
-        for inst in self.instances:
-            if inst.get("emulator_id") == emulator_id and inst.get("assigned_profile") != email:
-                logger.error(
-                    f"CROSS_USER_DEBUG: CRITICAL! Attempting to assign {emulator_id} to {email}, "
-                    f"but it's already assigned to {inst.get('assigned_profile')}! Clearing the conflicting assignment."
-                )
-                # Clear the conflicting assignment
-                inst["emulator_id"] = None
-        
         instance = self.get_instance_for_profile(email)
         if instance:
-            old_emulator_id = instance.get("emulator_id")
             instance["emulator_id"] = emulator_id
             self.save_instances()
-            
-            # Log state after change
-            logger.info(f"CROSS_USER_DEBUG: Updated emulator_id for {email} from {old_emulator_id} to {emulator_id}")
-            logger.info(f"CROSS_USER_DEBUG: Current vnc_instance_map after update:")
-            for inst in self.instances:
-                logger.info(f"  Instance {inst['id']}: assigned_profile={inst.get('assigned_profile')}, emulator_id={inst.get('emulator_id')}")
-            
             return True
-        
-        logger.warning(f"CROSS_USER_DEBUG: No VNC instance found for {email}, cannot set emulator_id")
         return False
 
     def mark_running_for_deployment(self, email: str, should_restart: bool = True) -> bool:
@@ -662,72 +587,3 @@ class VNCInstanceManager:
                             self.release_instance_from_profile(email)
                     except Exception as e:
                         logger.error(f"Error checking emulator status for {email}: {e}")
-    
-    def validate_and_fix_consistency(self) -> None:
-        """
-        Validate VNC instance mappings and fix any inconsistencies.
-        This method checks for:
-        1. Duplicate emulator_id assignments
-        2. Emulators running wrong AVDs
-        3. Stale emulator references
-        """
-        logger.info("CROSS_USER_DEBUG: Starting VNC instance consistency validation")
-        
-        # Check for duplicate emulator_id assignments
-        emulator_id_map = {}
-        for instance in self.instances:
-            emulator_id = instance.get("emulator_id")
-            email = instance.get("assigned_profile")
-            if emulator_id and email:
-                if emulator_id in emulator_id_map:
-                    logger.error(
-                        f"CROSS_USER_DEBUG: Found duplicate emulator_id {emulator_id} assigned to "
-                        f"both {email} and {emulator_id_map[emulator_id]}"
-                    )
-                    # Clear the newer assignment
-                    instance["emulator_id"] = None
-                    logger.info(f"Cleared emulator_id from {email} to resolve conflict")
-                else:
-                    emulator_id_map[emulator_id] = email
-        
-        # Verify each emulator is running the correct AVD
-        try:
-            from views.core.avd_profile_manager import AVDProfileManager
-            avd_manager = AVDProfileManager.get_instance()
-            
-            for instance in self.instances:
-                email = instance.get("assigned_profile")
-                emulator_id = instance.get("emulator_id")
-                
-                if email and emulator_id:
-                    # Get expected AVD name
-                    profile = avd_manager.get_profile(email)
-                    if profile:
-                        expected_avd = profile.get("avd_name")
-                        if expected_avd:
-                            # Check what AVD is actually running
-                            try:
-                                result = subprocess.run(
-                                    [f"{ANDROID_HOME}/platform-tools/adb", "-s", emulator_id, "emu", "avd", "name"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=3,
-                                )
-                                if result.returncode == 0:
-                                    actual_avd = result.stdout.strip()
-                                    if actual_avd != expected_avd:
-                                        logger.error(
-                                            f"CROSS_USER_DEBUG: {email} has emulator {emulator_id} "
-                                            f"running AVD {actual_avd} instead of expected {expected_avd}"
-                                        )
-                                        # Clear the incorrect assignment
-                                        instance["emulator_id"] = None
-                                        logger.info(f"Cleared incorrect emulator_id for {email}")
-                            except Exception as e:
-                                logger.warning(f"Error checking AVD for {emulator_id}: {e}")
-        except Exception as e:
-            logger.error(f"Error during AVD validation: {e}")
-        
-        # Save any changes
-        self.save_instances()
-        logger.info("CROSS_USER_DEBUG: Completed VNC instance consistency validation")
