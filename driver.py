@@ -1068,8 +1068,8 @@ class Driver:
                     # Use the allocated ports
                     # Using proper UiAutomator2 capability names
                     options.set_capability("appium:systemPort", allocated_ports["systemPort"])
-                    options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
-                    options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
+                    # options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
+                    # options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     self.appium_port = allocated_ports["appiumPort"]
 
                     # Clean up any existing port forwards for this device to avoid conflicts
@@ -1078,7 +1078,7 @@ class Driver:
                     )
                     try:
                         subprocess.run(
-                            [f"adb -s {self.device_id} forward --remove-all"],
+                            f"adb -s {self.device_id} forward --remove-all",
                             shell=True,
                             check=False,
                             timeout=5,
@@ -1250,7 +1250,7 @@ class Driver:
             logger.info(f"Cleaning up port forwards for device {self.device_id}")
             try:
                 subprocess.run(
-                    [f"adb -s {self.device_id} forward --remove-all"],
+                    f"adb -s {self.device_id} forward --remove-all",
                     shell=True,
                     check=False,
                     capture_output=True,

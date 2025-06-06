@@ -387,12 +387,28 @@ class AppiumDriver:
             logger.error(f"Error saving PID file: {e}")
 
     def _kill_existing_process(self, name: str):
-        """Kill existing process by name."""
-        try:
-            subprocess.run(["pkill", "-f", name], check=False)
-            logger.info(f"Killed existing {name} processes")
-        except Exception as e:
-            logger.error(f"Error killing {name} process: {e}")
+        """Kill existing process by PID file."""
+        pid_dir = os.path.join(self.pid_dir, "appium_logs")
+        pid_file = os.path.join(pid_dir, f"{name}.pid")
+        
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, "r") as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.5)
+                # Force kill if still alive
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                # Remove the PID file
+                os.remove(pid_file)
+                logger.info(f"Killed existing {name} process using PID {pid}")
+            except Exception as e:
+                logger.error(f"Error killing {name} process by PID: {e}")
+        else:
+            logger.debug(f"No PID file found for {name}")
 
     def _kill_process_on_port(self, port: int):
         """Kill any process using the specified port."""
