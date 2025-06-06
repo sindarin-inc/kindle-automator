@@ -103,7 +103,7 @@ class BookOpenResource(Resource):
             current_state = automator.state_machine.current_state
 
             # Save the actively reading title
-            automator.profile_manager.save_style_setting(
+            automator.profile_manager.set_style_setting(
                 "actively_reading_title", book_title, email=sindarin_email
             )
             logger.info(f"Saved actively reading title: '{book_title}' for {sindarin_email}")
