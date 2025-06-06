@@ -27,15 +27,27 @@ class IdleCheckResource(Resource):
 
     def get(self):
         """Check for idle emulators and shut them down."""
-        # Get timeout from query parameter
-        timeout_minutes = request.args.get("minutes", type=int)
+        # Get timeout from query parameter only if we're in a request context
+        timeout_minutes = None
+        if request:
+            try:
+                timeout_minutes = request.args.get("minutes", type=int)
+            except RuntimeError:
+                # Outside request context, use default
+                pass
         return self._check_and_shutdown_idle(timeout_minutes)
 
     def post(self):
         """Check for idle emulators and shut them down (supports customizable timeout)."""
-        # Allow custom timeout from request body
-        data = request.get_json() or {}
-        custom_timeout = data.get("idle_timeout_minutes", self.idle_timeout_minutes)
+        # Allow custom timeout from request body only if we're in a request context
+        custom_timeout = self.idle_timeout_minutes
+        if request:
+            try:
+                data = request.get_json() or {}
+                custom_timeout = data.get("idle_timeout_minutes", self.idle_timeout_minutes)
+            except RuntimeError:
+                # Outside request context, use default
+                pass
         return self._check_and_shutdown_idle(custom_timeout)
 
     def _check_and_shutdown_idle(self, timeout_minutes=None):

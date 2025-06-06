@@ -1288,6 +1288,10 @@ class BookOpenResource(Resource):
             else:
                 # Return the error from the result
                 return result, 500
+        else:
+            # Failed to transition to library
+            logger.error(f"Failed to transition from {current_state} to library")
+            return {"success": False, "error": f"Failed to transition from {current_state} to library"}, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
