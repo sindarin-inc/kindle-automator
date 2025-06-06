@@ -182,6 +182,9 @@ class KindleAutomator:
 
     def ensure_driver_running(self):
         """Ensure the driver is healthy and running, reinitialize if needed."""
+        logger.info(
+            f"CROSS_USER_DEBUG: ensure_driver_running called - automator={id(self)}, device_id={getattr(self, 'device_id', 'unknown')}, driver={id(self.driver) if self.driver else 'None'}"
+        )
         try:
             if not self.driver:
                 logger.info("Driver not initialized - initializing now")
@@ -288,6 +291,9 @@ class KindleAutomator:
     def restart_kindle_app(self):
         """Restart the Kindle app to return to sign-in state"""
         logger.info("Restarting Kindle app to return to sign-in state")
+        logger.info(
+            f"CROSS_USER_DEBUG: restart_kindle_app called - automator={id(self)}, device_id={getattr(self, 'device_id', 'unknown')}, driver={id(self.driver) if self.driver else 'None'}"
+        )
         try:
             # Check if driver is active
             if not self.driver:
@@ -302,11 +308,15 @@ class KindleAutomator:
             try:
                 if self.device_id:
                     logger.info(f"Force stopping Kindle app with ADB on device {self.device_id}")
+                    logger.info(
+                        f"CROSS_USER_DEBUG: Running ADB force-stop command on device_id={self.device_id}"
+                    )
                     subprocess.run(
                         ["adb", "-s", self.device_id, "shell", "am", "force-stop", "com.amazon.kindle"],
                         check=False,
                         timeout=5,
                     )
+                    logger.info(f"CROSS_USER_DEBUG: ADB force-stop completed on device_id={self.device_id}")
                     time.sleep(1)
             except Exception as adb_error:
                 logger.warning(f"Error using ADB to stop app: {adb_error}. Falling back to driver method.")

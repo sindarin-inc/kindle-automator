@@ -19,11 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class Driver:
-    _initialized = False
-
     def __init__(self):
         if hasattr(self, "_initialized_attributes"):
-            logger.info(f"Driver already initialized, instance: {self}")
+            logger.error(f"Driver already initialized, instance: {self}")
             return
         self.driver = None
         self.device_id = None
@@ -1074,7 +1072,9 @@ class Driver:
                     self.appium_port = allocated_ports["appiumPort"]
 
                     # Clean up any existing port forwards for this device to avoid conflicts
-                    logger.info(f"Cleaning up port forwards for {self.device_id} before initialization")
+                    logger.info(
+                        f"Cleaning up port forwards for {self.device_id} before initialization, using ports {allocated_ports}"
+                    )
                     try:
                         subprocess.run(
                             [f"adb -s {self.device_id} forward --remove-all"],
@@ -1102,7 +1102,7 @@ class Driver:
             # First verify the Appium server is actually responding
             # This prevents attempting to connect to a non-responsive server
 
-            max_retries = 5
+            max_retries = 3
             retry_delay = 1
 
             for attempt in range(max_retries):
@@ -1124,7 +1124,6 @@ class Driver:
                 )
 
                 if status_response.status_code == 200 and (appium1_format or appium2_format):
-                    time.sleep(1)
                     break
                 else:
                     logger.warning(
@@ -1159,7 +1158,7 @@ class Driver:
                 future = executor.submit(self.check_connection)
                 try:
                     logger.debug("Checking connection to Appium server...")
-                    result = future.result(timeout=15)  # 15 second timeout - increased from 5
+                    result = future.result(timeout=5)
                     logger.debug(f"Connection check result: {result}")
                     return True
                 except concurrent.futures.TimeoutError:
@@ -1194,6 +1193,7 @@ class Driver:
                     "invalid session id",
                     "session not started",
                     "NoSuchDriverError",
+                    "ECONNREFUSED",
                 ]
             ):
                 logger.warning(f"Session no longer active: {error_message}")
@@ -1216,7 +1216,6 @@ class Driver:
             pass
 
         self.driver = None
-        Driver._initialized = False
 
         # Reinitialize through automator if available
         if self.automator:
@@ -1299,4 +1298,3 @@ class Driver:
                 finally:
                     self.driver = None
                     self.device_id = None
-                    Driver._initialized = False  # Allow reinitialization

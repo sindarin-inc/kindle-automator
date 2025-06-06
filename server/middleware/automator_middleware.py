@@ -29,6 +29,7 @@ def ensure_automator_healthy(f):
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
+        logger.info(f"CROSS_USER_DEBUG: automator_middleware - got email={sindarin_email} from request")
 
         # If we still don't have an email after checking current_email, try the current profile
         if not sindarin_email:
@@ -70,15 +71,27 @@ def ensure_automator_healthy(f):
             try:
                 # Get the automator for this email
                 automator = server.automators.get(sindarin_email)
+                logger.info(
+                    f"CROSS_USER_DEBUG: automator_middleware - attempt {attempt+1}, automator={id(automator) if automator else 'None'} for email={sindarin_email}"
+                )
 
                 # Initialize automator if needed
                 if not automator:
                     logger.info(f"No automator found for {sindarin_email}. Initializing automatically...")
+                    logger.info(
+                        f"CROSS_USER_DEBUG: automator_middleware - about to initialize_automator for email={sindarin_email}"
+                    )
                     automator = server.initialize_automator(sindarin_email)
+                    logger.info(
+                        f"CROSS_USER_DEBUG: automator_middleware - initialized automator={id(automator) if automator else 'None'} for email={sindarin_email}"
+                    )
                     if not automator:
                         logger.error(f"Failed to initialize automator for {sindarin_email}")
                         return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
 
+                    logger.info(
+                        f"CROSS_USER_DEBUG: automator_middleware - about to initialize_driver for email={sindarin_email}, automator={id(automator)}"
+                    )
                     if not automator.initialize_driver():
                         logger.error(f"Failed to initialize driver for {sindarin_email}")
                         return {
@@ -86,6 +99,9 @@ def ensure_automator_healthy(f):
                                 f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
                             )
                         }, 500
+                    logger.info(
+                        f"CROSS_USER_DEBUG: automator_middleware - driver initialized, driver={id(automator.driver) if automator.driver else 'None'}, device_id={getattr(automator, 'device_id', 'unknown')}"
+                    )
 
                 # Ensure driver is running
                 if not automator.ensure_driver_running():
