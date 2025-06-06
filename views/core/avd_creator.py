@@ -278,6 +278,10 @@ class AVDCreator:
                 "qemu.enable_keyboard_permission": "yes",  # Enable keyboard permission
                 "qemu.hardware_keyboard_button_type": "power",  # Set hardware keyboard button type
                 "qemu.settings.system.show_ime_with_hard_keyboard": "0",  # Disable IME with hardware keyboard
+                # Stylus settings - disable stylus features (Android 36)
+                "hw.stylus": "no",  # Disable stylus hardware
+                "hw.pen": "no",  # Disable pen hardware
+                "hw.stylus.button": "no",  # Disable stylus button
             }
 
             # For arm64 hosts, make sure we're not trying to use x86_64

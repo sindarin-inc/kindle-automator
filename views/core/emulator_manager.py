@@ -313,6 +313,20 @@ class EmulatorManager:
 
             # List of commands to run
             optimization_commands = [
+                # Disable stylus features (Android 36)
+                (
+                    ["settings", "put", "secure", "stylus_handwriting_enabled", "0"],
+                    "Disabling stylus handwriting",
+                ),
+                (
+                    ["settings", "put", "global", "stylus_handwriting", "0"],
+                    "Disabling global stylus handwriting",
+                ),
+                (["settings", "put", "secure", "stylus_buttons_enabled", "0"], "Disabling stylus buttons"),
+                (
+                    ["settings", "put", "global", "pen_detachment_alert", "0"],
+                    "Disabling pen detachment alert",
+                ),
                 # Disable Play Store (prevents auto-updates)
                 (["pm", "disable-user", "com.android.vending"], "Disabling Play Store"),
                 # Disable YouTube (prevents background crashes)
