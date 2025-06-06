@@ -10,7 +10,6 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from server.config import VNC_BASE_URL
 from server.logging_config import store_page_source
 from server.utils.request_utils import get_formatted_vnc_url
 from views.auth.interaction_strategies import (

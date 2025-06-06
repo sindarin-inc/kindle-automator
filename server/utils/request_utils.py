@@ -30,8 +30,6 @@ from typing import Optional, Tuple
 
 from flask import request
 
-from server.config import VNC_BASE_URL
-
 logger = logging.getLogger(__name__)
 
 # Thread-local storage for email override
@@ -265,8 +263,8 @@ def get_formatted_vnc_url(
 
     from server.utils.vnc_instance_manager import VNCInstanceManager
 
-    # Extract hostname from the base URL (removing any port number)
-    hostname = urlparse(VNC_BASE_URL).netloc.split(":")[0]
+    # Get VNC hostname from environment variable or use default
+    hostname = os.environ.get("VNC_HOST", "kindle.sindarin.com")
 
     # If no email provided, try to get from request
     # This ensures emails aren't mixed up across concurrent requests
