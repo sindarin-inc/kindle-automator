@@ -390,6 +390,10 @@ class ViewInspector:
                     self._current_view_cache = AppView.HOME
                     return AppView.HOME
             except Exception as e:
+                from server.utils.appium_error_utils import is_appium_error
+
+                if is_appium_error(e):
+                    raise
                 logger.warning(f"Error during early HOME tab check: {e}")
 
             # Check for app not responding dialog first
@@ -769,6 +773,10 @@ class ViewInspector:
             return AppView.UNKNOWN
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error determining current view: {e}")
             logger.warning("Dumping page source due to error")
             traceback.print_exc()

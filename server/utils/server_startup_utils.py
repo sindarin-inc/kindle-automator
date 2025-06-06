@@ -4,6 +4,7 @@ Utility functions for server startup and emulator restoration.
 
 import logging
 import platform
+import subprocess
 import threading
 import time
 import traceback
@@ -52,15 +53,37 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
             vnc_manager.clear_running_at_restart_flags()
             logger.info("Cleared restart flags to prevent infinite loops")
 
+            # Clean up any lingering port forwards and UiAutomator2 processes before starting
+            logger.info("Cleaning up lingering processes and port forwards before restart")
+            try:
+                # Get all connected devices
+                result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+                lines = result.stdout.strip().split("\n")[1:]  # Skip header
+                for line in lines:
+                    if "\tdevice" in line:
+                        device_id = line.split("\t")[0]
+                        logger.info(f"Cleaning up device {device_id}")
+                        # Remove all port forwards
+                        subprocess.run([f"adb -s {device_id} forward --remove-all"], shell=True, check=False)
+                        # Kill any UiAutomator2 processes
+                        subprocess.run(
+                            [f"adb -s {device_id} shell pkill -f uiautomator"], shell=True, check=False
+                        )
+            except Exception as e:
+                logger.warning(f"Error during pre-restart cleanup: {e}")
+
             # Restart each emulator one at a time to avoid resource contention
             successfully_restarted = []
             failed_restarts = []
 
+            # On local development, track which emulators are in use
+            import platform
+
+            emulators_in_use = {}  # emulator_id -> email mapping
+
             for email in emulators_to_restart:
                 try:
                     logger.info(f" ---> Auto-restarting emulator for {email}...")
-
-                    emulators_in_use = {}  # emulator_id -> email mapping
 
                     # Check if this profile's emulator is already in use (local development only)
                     if platform.system() == "Darwin":
@@ -90,6 +113,12 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                             if automator:
                                 logger.info(f"✓ Successfully restarted emulator for {email}")
                                 successfully_restarted.append(email)
+
+                                # Track which emulator this profile is using
+                                if platform.system() == "Darwin" and hasattr(automator, "device_id"):
+                                    emulators_in_use[automator.device_id] = email
+                                    logger.info(f"Marked emulator {automator.device_id} as in use by {email}")
+
                                 # Add a delay between restarts to avoid overwhelming the system
                                 time.sleep(5)
                             else:

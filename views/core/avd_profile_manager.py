@@ -1275,19 +1275,18 @@ class AVDProfileManager:
             Tuple[bool, str]: (success, message)
         """
         # If we're forcing a new emulator, reset device settings in the profile
-        if force_new_emulator and email in self.user_preferences:
-            # Reset all device-specific settings for this profile
-            settings_to_reset = ["hw_overlays_disabled", "animations_disabled", "sleep_disabled"]
+        if force_new_emulator:
+            # Reset all device-specific settings for this profile under emulator_settings
+            settings_to_reset = [
+                "hw_overlays_disabled",
+                "animations_disabled",
+                "sleep_disabled",
+                "status_bar_disabled",
+                "auto_updates_disabled",
+            ]
             for setting in settings_to_reset:
-                if setting in self.user_preferences[email]:
-                    self.user_preferences[email][setting] = False
-                    logger.info(f"Reset {setting} for {email} due to emulator recreation")
-
-            # Save the updated preferences
-            self._save_user_preferences()
-
-            # No need to update current profile anymore, as we're using the multi-user approach
-            # The user_preferences save above is sufficient
+                self.set_user_field(email, setting, False, section="emulator_settings")
+                logger.info(f"Reset emulator_settings.{setting} for {email} due to emulator recreation")
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:

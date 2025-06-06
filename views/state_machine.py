@@ -654,6 +654,10 @@ class KindleStateMachine:
             return self.current_state
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error updating current state: {e}")
             self.current_state = AppState.UNKNOWN
             return self.current_state

@@ -129,9 +129,11 @@ def ensure_automator_healthy(f):
                 )
                 # Check the specific exception type as well as the message
                 is_driver_error = (
-                    isinstance(e, selenium_exceptions.NoSuchDriverException)
+                    isinstance(
+                        e, (selenium_exceptions.NoSuchDriverException, selenium_exceptions.WebDriverException)
+                    )
                     if hasattr(selenium_exceptions, "NoSuchDriverException")
-                    else False
+                    else isinstance(e, selenium_exceptions.WebDriverException)
                 )
                 is_uiautomator_crash = (
                     is_driver_error
@@ -147,15 +149,21 @@ def ensure_automator_healthy(f):
                             "A session is either terminated or not started" in error_message,
                             "NoSuchDriverError" in error_message,
                             "InvalidSessionIdException" in error_message,
+                            "Could not proxy command to the remote server" in error_message,
+                            "socket hang up" in error_message,
+                            "NoSuchContextException" in error_message,
+                            "InvalidContextError" in error_message,
                         ]
                     )
                 )
 
                 if is_uiautomator_crash and attempt < max_retries - 1:
+                    logger.warning("\n" + "=" * 80)
                     logger.warning(
-                        f"UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
+                        f"🔄 RETRY: UiAutomator2 server crashed on attempt {attempt + 1}/{max_retries}. Restarting driver..."
                     )
                     logger.warning(f"Crash error: {error_message}")
+                    logger.warning("=" * 80 + "\n")
 
                     # Kill any leftover UiAutomator2 processes directly via ADB
                     try:
@@ -163,8 +171,23 @@ def ensure_automator_healthy(f):
                         if automator and automator.device_id:
                             device_id = automator.device_id
                             logger.info(f"Forcibly killing UiAutomator2 processes on device {device_id}")
+                            # Kill uiautomator processes
                             subprocess.run(
                                 [f"adb -s {device_id} shell pkill -f uiautomator"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            # Also kill any processes using the system port
+                            subprocess.run(
+                                [f"adb -s {device_id} shell pkill -f 'uiautomator2.*8201'"],
+                                shell=True,
+                                check=False,
+                                timeout=5,
+                            )
+                            # Forward --remove-all to clear port forwards
+                            subprocess.run(
+                                [f"adb -s {device_id} forward --remove-all"],
                                 shell=True,
                                 check=False,
                                 timeout=5,
@@ -230,7 +253,7 @@ def ensure_automator_healthy(f):
                                     logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
 
                         # Start a dedicated Appium server for this email
-                        if not server.start_appium(port=port, email=sindarin_email):
+                        if not appium_driver.start_appium_for_profile(sindarin_email, port):
                             logger.error(f"Failed to restart Appium server for {sindarin_email}")
                             return {"error": f"Failed to start Appium server for {sindarin_email}"}, 500
 
@@ -249,9 +272,11 @@ def ensure_automator_healthy(f):
                     server.clear_current_book(sindarin_email)
 
                     if automator and automator.initialize_driver():
+                        logger.info("\n" + "=" * 80)
                         logger.info(
-                            "Successfully restarted driver after UiAutomator2 crash, retrying operation..."
+                            "✅ RETRY: Successfully restarted driver after UiAutomator2 crash, retrying operation..."
                         )
+                        logger.info("=" * 80 + "\n")
                         continue  # Retry the operation with the next loop iteration
                     else:
                         logger.error("Failed to restart driver after UiAutomator2 crash")

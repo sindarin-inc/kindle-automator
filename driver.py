@@ -106,14 +106,11 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
             email = get_sindarin_email()
 
             # If this is the same device and we already set hw_overlays_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
+                profile
                 and email
                 and self.automator.profile_manager.get_user_field(
                     email, "hw_overlays_disabled", False, section="emulator_settings"
@@ -238,14 +235,11 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
             email = get_sindarin_email()
 
             # If this is the same device and we already set animations_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
+                profile
                 and email
                 and self.automator.profile_manager.get_user_field(
                     email, "animations_disabled", False, section="emulator_settings"
@@ -320,14 +314,11 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
             email = get_sindarin_email()
 
             # If this is the same device and we already set sleep_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
+                profile
                 and email
                 and self.automator.profile_manager.get_user_field(
                     email, "sleep_disabled", False, section="emulator_settings"
@@ -407,14 +398,11 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
             email = get_sindarin_email()
 
             # If this is the same device and we already set status_bar_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
+                profile
                 and email
                 and self.automator.profile_manager.get_user_field(
                     email, "status_bar_disabled", False, section="emulator_settings"
@@ -422,7 +410,7 @@ class Driver:
             ):
                 return True
 
-            logger.info(f"Hiding status bar for device {self.device_id}=={device_id} {profile} {email}")
+            logger.info(f"Hiding status bar for device {self.device_id}")
 
             # Run the ADB command to hide the status bar using immersive mode
             subprocess.run(
@@ -457,14 +445,11 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
             email = get_sindarin_email()
 
             # If this is the same device and we already set auto_updates_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
+                profile
                 and email
                 and self.automator.profile_manager.get_user_field(
                     email, "auto_updates_disabled", False, section="emulator_settings"
@@ -848,11 +833,7 @@ class Driver:
         # Check if we have a profile manager with a preferred device ID
         # Get the current profile for device ID info
         profile = self.automator.profile_manager.get_current_profile()
-        if profile and "emulator_id" in profile:
-            # Use the device ID from the profile
-            target_device_id = profile.get("emulator_id")
-            logger.info(f"Using target device ID from profile: {target_device_id}")
-        elif profile and "avd_name" in profile:
+        if profile and "avd_name" in profile:
             # Try to get device ID from AVD name mapping
             avd_name = profile.get("avd_name")
             device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
@@ -1294,6 +1275,9 @@ class Driver:
                         logger.info(
                             "Device already offline during driver.quit() - this is expected during shutdown"
                         )
+                    elif "a session is either terminated or not started" in error_msg:
+                        # This is expected when the session was already terminated
+                        logger.debug("Session already terminated during driver.quit() - this is expected")
                     else:
                         logger.error(f"Error during driver.quit(): {e}")
                 finally:

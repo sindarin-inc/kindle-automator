@@ -390,7 +390,7 @@ class AppiumDriver:
         """Kill existing process by PID file."""
         pid_dir = os.path.join(self.pid_dir, "appium_logs")
         pid_file = os.path.join(pid_dir, f"{name}.pid")
-        
+
         if os.path.exists(pid_file):
             try:
                 with open(pid_file, "r") as f:
