@@ -1048,6 +1048,7 @@ class Driver:
             )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
             # Leave this higher since we need time for ADB commands during actual operations
             options.set_capability("appium:adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
+            options.set_capability("appium:udid", self.device_id)
 
             # Add parallel execution capabilities
             instance_id = None
