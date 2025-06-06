@@ -422,9 +422,26 @@ class ReaderHandler:
 
         # Wait for the reading view to appear
         try:
+            # Track time and capture page source periodically
+            start_time = time.time()
+            last_capture_time = start_time
+            capture_count = 0
+
             # Custom wait condition to check for any of the reading view identifiers
             # or for the download limit dialog
             def reading_view_or_download_limit_present(driver):
+                nonlocal last_capture_time, capture_count
+
+                # Capture page source every second while waiting
+                current_time = time.time()
+                if current_time - last_capture_time >= 1.0:
+                    capture_count += 1
+                    elapsed = current_time - start_time
+                    logger.info(f"Waiting for reading view to appear... {elapsed:.1f}s elapsed")
+                    store_page_source(
+                        driver.page_source, f"waiting_for_reading_view_{capture_count}_{int(elapsed)}s"
+                    )
+                    last_capture_time = current_time
                 # First check for download limit dialog - try all detection methods
 
                 # Method 1: Check for download limit dialog headers
@@ -513,9 +530,9 @@ class ReaderHandler:
             # If we already found and handled the download limit dialog, skip the wait
             if not download_limit_found:
                 # Wait for either reading view element or download limit dialog to appear
-                result = WebDriverWait(self.driver, 5).until(
+                result = WebDriverWait(self.driver, 10).until(
                     reading_view_or_download_limit_present
-                )  # Shorter timeout
+                )  # Wait up to 10 seconds
             else:
                 # We already handled the download limit dialog, just wait for reading view
                 logger.info("Skipping wait since download limit dialog was already handled")
@@ -530,7 +547,28 @@ class ReaderHandler:
                     # Now wait for the reading view after handling the dialog
                     try:
 
+                        # Track time for second wait
+                        wait_start_time = time.time()
+                        wait_last_capture_time = wait_start_time
+                        wait_capture_count = 0
+
                         def reading_view_present(driver):
+                            nonlocal wait_last_capture_time, wait_capture_count
+
+                            # Capture page source every second while waiting
+                            current_time = time.time()
+                            if current_time - wait_last_capture_time >= 1.0:
+                                wait_capture_count += 1
+                                elapsed = current_time - wait_start_time
+                                logger.info(
+                                    f"Waiting for reading view after download limit... {elapsed:.1f}s elapsed"
+                                )
+                                store_page_source(
+                                    driver.page_source,
+                                    f"after_download_limit_wait_{wait_capture_count}_{int(elapsed)}s",
+                                )
+                                wait_last_capture_time = current_time
+
                             for strategy in READING_VIEW_IDENTIFIERS:
                                 try:
                                     element = driver.find_element(strategy[0], strategy[1])
@@ -634,6 +672,11 @@ class ReaderHandler:
                     return False
         except TimeoutException:
             logger.error("Failed to detect reading view or download limit dialog after 10 seconds")
+
+            # Capture final state for debugging
+            final_elapsed = time.time() - start_time
+            logger.info(f"Timeout occurred after {final_elapsed:.1f}s total wait time")
+            store_page_source(self.driver.page_source, f"timeout_final_state_{int(final_elapsed)}s")
 
             # Check if we're unexpectedly still in the library view
             try:
