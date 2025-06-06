@@ -449,6 +449,23 @@ class ViewInspector:
                 logger.info("   Treating download limit dialog as part of reading state")
                 return AppView.READING
 
+            # Check for "Viewing full screen" dialog early, especially if we're in StandAloneBookReaderActivity
+            try:
+                current_activity = self.driver.current_activity
+                if "StandAloneBookReaderActivity" in current_activity:
+                    # We're in the book reader activity, check for viewing full screen dialog
+                    for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element.is_displayed():
+                                logger.info(f"   Found viewing full screen dialog in {current_activity}")
+                                logger.info("   This is a reading view with full screen dialog overlay")
+                                return AppView.READING
+                        except NoSuchElementException:
+                            continue
+            except Exception as e:
+                logger.debug(f"   Error checking for viewing full screen dialog: {e}")
+
             # Check for Item Removed dialog which is a specific reading state dialog
             if is_item_removed_dialog_visible(self.driver):
                 logger.info("   Found Item Removed dialog - treating as reading view")

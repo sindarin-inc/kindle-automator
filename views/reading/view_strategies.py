@@ -74,8 +74,10 @@ PAGE_NAVIGATION_ZONES = {
 READING_VIEW_FULL_SCREEN_DIALOG = [
     (
         AppiumBy.XPATH,
-        "//android.widget.TextView[@resource-id='android:id/immersive_cling_title' and @text='Viewing full screen']",
+        "//android.widget.TextView[@resource-id='com.android.systemui:id/immersive_cling_title' and @text='Viewing full screen']",
     ),
+    (AppiumBy.ID, "com.android.systemui:id/immersive_cling_title"),
+    (AppiumBy.ID, "com.android.systemui:id/ok"),  # The "Got it" button
 ]
 
 # Add new identifiers for the "last read page" dialog
