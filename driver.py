@@ -977,9 +977,7 @@ class Driver:
 
         # Initialize driver with retry logic
         for attempt in range(1, 2):
-            logger.info(
-                f"Attempting to initialize driver for {email} to {self.device_id} (attempt {attempt}/2)..."
-            )
+            logger.info(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/2)...")
 
             options = UiAutomator2Options()
             options.platform_name = "Android"
