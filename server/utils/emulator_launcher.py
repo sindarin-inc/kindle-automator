@@ -826,6 +826,9 @@ class EmulatorLauncher:
                 # hw.* properties are set in the AVD config.ini file
                 "-prop",
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
+                # Load from default_boot snapshot if it exists
+                "-snapshot",
+                "default_boot",
             ]
 
             # No longer need to explicitly specify snapshot since references are now fixed
@@ -1384,6 +1387,7 @@ class EmulatorLauncher:
                         "avd",
                         "snapshot",
                         "save",
+                        "default_boot",
                     ],
                     capture_output=True,
                     text=True,
@@ -1425,7 +1429,7 @@ class EmulatorLauncher:
                 return False
 
             # Create the telnet command to save the snapshot
-            telnet_commands = f"avd snapshot save\nquit\n"
+            telnet_commands = f"avd snapshot save default_boot\nquit\n"
 
             # Execute the command
             result = subprocess.run(
