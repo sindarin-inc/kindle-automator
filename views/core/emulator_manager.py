@@ -83,38 +83,17 @@ class EmulatorManager:
         if success:
             # Clear cache for this emulator
             email_to_release = None
-            
-            # Log current cache state before clearing
-            logger.info(f"CROSS_USER_DEBUG: Current emulator cache before clearing {emulator_id}:")
-            for cached_email, (cached_id, cached_avd, _) in self._emulator_cache.items():
-                logger.info(f"  {cached_email}: {cached_id} ({cached_avd})")
-            
-            # Check VNC instance manager state
-            vnc_manager = VNCInstanceManager.get_instance()
-            vnc_email = None
-            for instance in vnc_manager.instances:
-                if instance.get("emulator_id") == emulator_id:
-                    vnc_email = instance.get("assigned_profile")
-                    logger.info(f"CROSS_USER_DEBUG: VNC instance says {emulator_id} belongs to {vnc_email}")
-                    break
-            
-            # Find in cache
-            cache_email = None
             for email, (cached_id, _, _) in list(self._emulator_cache.items()):
                 if cached_id == emulator_id:
-                    cache_email = email
                     del self._emulator_cache[email]
-                    logger.info(f"CROSS_USER_DEBUG: Cache says {emulator_id} belongs to {email}")
+                    logger.info(f"Cleared cache for emulator {emulator_id} (email: {email})")
                     email_to_release = email
                     break
-            
-            # Warn if there's a mismatch
-            if vnc_email and cache_email and vnc_email != cache_email:
-                logger.error(f"CROSS_USER_DEBUG: MISMATCH! VNC says {emulator_id} belongs to {vnc_email}, but cache says {cache_email}")
-                # Trust VNC instance manager as source of truth
-                email_to_release = vnc_email
 
-            # If we found an email in the cache or VNC, use it
+            # Release the VNC instance assignment
+            vnc_manager = VNCInstanceManager.get_instance()
+
+            # If we found an email in the cache, use it
             if email_to_release:
                 vnc_manager.release_instance_from_profile(email_to_release)
                 logger.info(f"Released VNC instance for {email_to_release}")
@@ -230,12 +209,7 @@ class EmulatorManager:
 
                 # Cache the emulator info to avoid repeated ADB queries
                 self._emulator_cache[email] = (emulator_id, avd_name, time.time())
-                logger.info(f"CROSS_USER_DEBUG: Cached emulator info for {email}: {emulator_id}, {avd_name}")
-                
-                # Log entire cache state after update
-                logger.info("CROSS_USER_DEBUG: Current emulator cache after update:")
-                for cached_email, (cached_id, cached_avd, _) in self._emulator_cache.items():
-                    logger.info(f"  {cached_email}: {cached_id} ({cached_avd})")
+                logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
 
                 # For macOS simplified mode, also ensure the profile has the proper AVD name
                 if self.use_simplified_mode and avd_name:
