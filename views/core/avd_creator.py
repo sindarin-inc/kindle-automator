@@ -61,7 +61,7 @@ class AVDCreator:
         # The emulator will use Rosetta 2 to translate x86_64 to ARM.
 
         for img in available_images:
-            if "system-images;android-34;default;x86_64" in img:
+            if "system-images;android-34;aosp_atd;x86_64" in img:
                 return img
 
         # First choice: Android 30 with Google Play Store (x86_64)
