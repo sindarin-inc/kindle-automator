@@ -27,7 +27,9 @@ class IdleCheckResource(Resource):
 
     def get(self):
         """Check for idle emulators and shut them down."""
-        return self._check_and_shutdown_idle()
+        # Get timeout from query parameter
+        timeout_minutes = request.args.get('minutes', type=int)
+        return self._check_and_shutdown_idle(timeout_minutes)
 
     def post(self):
         """Check for idle emulators and shut them down (supports customizable timeout)."""
