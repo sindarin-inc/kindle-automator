@@ -60,9 +60,9 @@ class AVDCreator:
         # because the ARM64 emulation in Android emulator is not fully supported yet.
         # The emulator will use Rosetta 2 to translate x86_64 to ARM.
 
-        # First choice: Android 34 Google ATD (x86_64)
+        # First choice: Android 34 AOSP ATD (x86_64)
         for img in available_images:
-            if "system-images;android-34;google_atd;x86_64" in img:
+            if "system-images;android-34;aosp_atd;x86_64" in img:
                 return img
 
         # Second choice: Android 30 with Google Play Store (x86_64)
@@ -135,8 +135,8 @@ class AVDCreator:
                 sys_img = self.get_compatible_system_image(available_images)
 
                 if not sys_img:
-                    # Always use android-34 google_atd x86_64 images for all platforms
-                    sys_img = "system-images;android-34;google_atd;x86_64"
+                    # Always use android-34 aosp_atd x86_64 images for all platforms
+                    sys_img = "system-images;android-34;aosp_atd;x86_64"
                     logger.info(f"No compatible system image found, will install {sys_img} for all hosts")
 
                 # Try to install the system image if we have one selected
@@ -168,9 +168,9 @@ class AVDCreator:
 
             except Exception as e:
                 logger.error(f"Error getting available system images: {e}")
-                # Fallback to android-34 google_atd x86_64 for all platforms
-                sys_img = "system-images;android-34;google_atd;x86_64"
-                logger.info("Using fallback android-34 google_atd x86_64 system image")
+                # Fallback to android-34 aosp_atd x86_64 for all platforms
+                sys_img = "system-images;android-34;aosp_atd;x86_64"
+                logger.info("Using fallback android-34 aosp_atd x86_64 system image")
 
             logger.info(f"Using system image: {sys_img}")
 
@@ -231,8 +231,8 @@ class AVDCreator:
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
 
-            # Always use Android 34 Google ATD
-            sysdir = "system-images/android-34/google_atd/x86_64/"
+            # Always use Android 34 AOSP ATD
+            sysdir = "system-images/android-34/aosp_atd/x86_64/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 
@@ -246,8 +246,8 @@ class AVDCreator:
             )
 
             # Define settings to update
-            # Check if this is an ATD image (AOSP or Google)
-            is_atd = "atd" in sysdir
+            # Check if this is an AOSP ATD image
+            is_aosp_atd = "aosp_atd" in sysdir
 
             settings = {
                 "hw.ramSize": "5120",
