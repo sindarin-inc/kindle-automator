@@ -218,6 +218,9 @@ def ensure_user_profile_loaded(f):
                     "error": f"Failed to create instance tracking for {sindarin_email}",
                     "message": "Could not initialize instance tracking",
                 }, 500
+        
+        # Validate VNC instance consistency to prevent cross-user issues
+        vnc_manager.validate_and_fix_consistency()
 
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
