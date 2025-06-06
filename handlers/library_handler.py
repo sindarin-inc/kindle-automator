@@ -1695,10 +1695,25 @@ class LibraryHandler:
                     logger.info("Still in library view, monitoring download status...")
                     pass
 
-                # Wait for download to complete (max 30 seconds)
+                # Wait for download to complete (max 30 seconds) with monitoring
                 max_attempts = 30
+                start_time = time.time()
+                last_capture_time = start_time
+                capture_count = 0
+
                 for attempt in range(max_attempts):
                     try:
+                        # Capture page source every second during download
+                        current_time = time.time()
+                        if current_time - last_capture_time >= 1.0:
+                            capture_count += 1
+                            elapsed = current_time - start_time
+                            logger.info(f"Book download in progress... {elapsed:.1f}s elapsed")
+                            store_page_source(
+                                self.driver.page_source, f"book_downloading_{capture_count}_{int(elapsed)}s"
+                            )
+                            last_capture_time = current_time
+
                         # Check again for "Unable to Download" dialog that might appear during download
                         if self._check_unable_to_download_dialog(
                             book_title, f"during download attempt {attempt}"
@@ -2090,7 +2105,24 @@ class LibraryHandler:
                     # Use WebDriverWait to check for either reading view or dialog
                     wait = WebDriverWait(self.driver, 5)
 
+                    # Track time and capture page source periodically for download monitoring
+                    start_time = time.time()
+                    last_capture_time = start_time
+                    capture_count = 0
+
                     def check_for_elements(driver):
+                        nonlocal last_capture_time, capture_count
+
+                        # Capture page source every second while waiting
+                        current_time = time.time()
+                        if current_time - last_capture_time >= 1.0:
+                            capture_count += 1
+                            elapsed = current_time - start_time
+                            logger.info(f"Waiting for book to load/download... {elapsed:.1f}s elapsed")
+                            store_page_source(
+                                driver.page_source, f"book_download_state_{capture_count}_{int(elapsed)}s"
+                            )
+                            last_capture_time = current_time
                         # Check for Last Read Page dialog first
                         try:
                             last_read = driver.find_element(
@@ -2173,8 +2205,27 @@ class LibraryHandler:
 
                             # Wait for state transition - check if we leave library view or enter reading view
                             try:
+                                # Track time and capture page source periodically for download monitoring
+                                start_time = time.time()
+                                last_capture_time = start_time
+                                capture_count = 0
 
                                 def check_transition(driver):
+                                    nonlocal last_capture_time, capture_count
+
+                                    # Capture page source every second while waiting
+                                    current_time = time.time()
+                                    if current_time - last_capture_time >= 1.0:
+                                        capture_count += 1
+                                        elapsed = current_time - start_time
+                                        logger.info(
+                                            f"Waiting for book transition after retry... {elapsed:.1f}s elapsed"
+                                        )
+                                        store_page_source(
+                                            driver.page_source,
+                                            f"book_transition_retry_{capture_count}_{int(elapsed)}s",
+                                        )
+                                        last_capture_time = current_time
                                     # Check if we're in reading view
                                     for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
                                         try:
@@ -2229,6 +2280,8 @@ class LibraryHandler:
 
                 except TimeoutException:
                     logger.error("Timeout while checking view state")
+                    # Capture final page source to see what state we're stuck in
+                    store_page_source(self.driver.page_source, "book_open_timeout_final_state")
                     return {"success": False, "error": "Timeout while checking view state"}
 
             # If book is not already visible, proceed with search and find methods
