@@ -198,7 +198,9 @@ class VNCInstanceManager:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
         # Look directly for the email in assigned_profile
-        # logger.info(f"Looking for VNC instance for profile {email} in {self.instances}")
+        logger.info(
+            f"Looking for VNC instance for profile {email} in {[(i['assigned_profile'], i['emulator_id']) for i in self.instances]}"
+        )
         for instance in self.instances:
             assigned_profile = instance.get("assigned_profile")
             if assigned_profile == email:
