@@ -60,11 +60,12 @@ class AVDCreator:
         # because the ARM64 emulation in Android emulator is not fully supported yet.
         # The emulator will use Rosetta 2 to translate x86_64 to ARM.
 
+        # First choice: Android 34 AOSP ATD (x86_64)
         for img in available_images:
             if "system-images;android-34;aosp_atd;x86_64" in img:
                 return img
-
-        # First choice: Android 30 with Google Play Store (x86_64)
+        
+        # Second choice: Android 30 with Google Play Store (x86_64)
         for img in available_images:
             if "system-images;android-30;google_apis_playstore;x86_64" in img:
                 return img
@@ -229,6 +230,8 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
+            
+            # Always use Android 34 AOSP ATD
             sysdir = "system-images/android-34/aosp_atd/x86_64/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
@@ -243,11 +246,14 @@ class AVDCreator:
             )
 
             # Define settings to update
+            # Check if this is an AOSP ATD image
+            is_aosp_atd = "aosp_atd" in sysdir
+            
             settings = {
                 "hw.ramSize": "5120",
                 "hw.cpu.ncore": "4",
                 "hw.gpu.enabled": "yes",
-                "hw.gpu.mode": "swiftshader",
+                "hw.gpu.mode": "host" if is_aosp_atd else "swiftshader",
                 "hw.audioInput": "no",
                 "hw.audioOutput": "no",
                 "hw.gps": "no",
@@ -256,8 +262,8 @@ class AVDCreator:
                 "hw.keyboard.lid": "yes",  # Disable soft keyboard, force hardware keyboard
                 "hw.keyboard.charmap": "qwerty2",  # Set keyboard layout
                 "hw.mainKeys": "yes",  # Enable hardware keys
-                "hw.statusBar": "no",  # Disable the status bar
-                "hw.navButtons": "no",  # Disable the navigation buttons
+                "hw.statusBar": "yes" if is_aosp_atd else "no",  # AOSP ATD needs status bar
+                "hw.navButtons": "yes" if is_aosp_atd else "no",  # AOSP ATD needs nav buttons
                 "hw.fastboot": "no",
                 "hw.arc": "false",
                 "hw.useext4": "yes",
@@ -280,7 +286,7 @@ class AVDCreator:
                 ),
                 "hw.cpu.arch": cpu_arch,
                 "ro.kernel.qemu.gles": "1",
-                "hw.gfxstream": "0",  # Disable gfxstream to maintain snapshot compatibility
+                "hw.gfxstream": "1" if is_aosp_atd else "0",  # AOSP ATD may need gfxstream enabled
                 "skin.dynamic": "yes",
                 "skin.name": "1080x1920",
                 "skin.path": "_no_skin",
