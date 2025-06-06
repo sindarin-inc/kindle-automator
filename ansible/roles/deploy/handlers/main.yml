@@ -4,14 +4,6 @@
     name: nginx
     state: reloaded
 
-- name: graceful shutdown
-  shell: |
-    cd /opt/kindle-automator
-    source venv/bin/activate
-    python scripts/graceful_shutdown.py || true
-  register: shutdown_result
-  ignore_errors: yes
-
 - name: restart kindle-automator
   systemd:
     name: kindle-automator
