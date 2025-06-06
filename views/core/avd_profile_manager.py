@@ -253,14 +253,14 @@ class AVDProfileManager:
 
                     # Give the app and system time to complete background processes
                     logger.info(
-                        "Waiting 10 minutes for background processes (Play Store updates, etc.) to complete..."
+                        "Waiting 1 minute for background processes (Play Store updates, etc.) to complete..."
                     )
                     logger.info("This ensures the seed clone is fully prepared for copying")
-                    # Log progress every minute
-                    for minute in range(1, 3):
-                        time.sleep(60)  # Wait 1 minute
-                        logger.info(f"Seed clone preparation wait: {minute}/2 minutes elapsed...")
-                    logger.info("10-minute wait period complete, proceeding with shutdown")
+                    # # Log progress every minute
+                    # for minute in range(1, 2):
+                    #     time.sleep(60)  # Wait 1 minute
+                    #     logger.info(f"Seed clone preparation wait: {minute}/1 minute elapsed...")
+                    logger.info("1-minute wait period complete, proceeding with shutdown")
 
         # Check if this is the seed clone
         if email == AVDCreator.SEED_CLONE_EMAIL:
