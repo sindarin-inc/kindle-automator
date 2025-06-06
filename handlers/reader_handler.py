@@ -424,17 +424,23 @@ class ReaderHandler:
         try:
             # Track time and capture page source periodically
             start_time = time.time()
-            last_capture_time = start_time
+            last_capture_time = start_time - 1.0  # Ensure first capture happens immediately
             capture_count = 0
+
+            # Capture initial state
+            logger.info("Capturing initial state before waiting for reading view")
+            store_page_source(self.driver.page_source, "before_reading_view_wait")
 
             # Custom wait condition to check for any of the reading view identifiers
             # or for the download limit dialog
             def reading_view_or_download_limit_present(driver):
                 nonlocal last_capture_time, capture_count
 
-                # Capture page source every second while waiting
+                # Always do time-based capture first, before any early returns
                 current_time = time.time()
-                if current_time - last_capture_time >= 1.0:
+                elapsed_since_last = current_time - last_capture_time
+
+                if elapsed_since_last >= 1.0:
                     capture_count += 1
                     elapsed = current_time - start_time
                     logger.info(f"Waiting for reading view to appear... {elapsed:.1f}s elapsed")
@@ -530,7 +536,7 @@ class ReaderHandler:
             # If we already found and handled the download limit dialog, skip the wait
             if not download_limit_found:
                 # Wait for either reading view element or download limit dialog to appear
-                result = WebDriverWait(self.driver, 10).until(
+                result = WebDriverWait(self.driver, 15).until(
                     reading_view_or_download_limit_present
                 )  # Wait up to 10 seconds
             else:

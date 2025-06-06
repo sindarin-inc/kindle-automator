@@ -64,6 +64,12 @@ class LibraryHandlerScroll:
         """
         book_info = {"title": None, "progress": None, "size": None, "author": None}
 
+        # Store page source once per session for debugging author extraction
+        if not hasattr(self, "_debug_page_source_stored"):
+            self._debug_page_source_stored = True
+            logger.info("Storing page source for author extraction debugging")
+            store_page_source(self.driver.page_source, "author_extraction_debug")
+
         # Handle synthetic wrappers
         if isinstance(container, dict) and container.get("is_synthetic"):
             book_info["title"] = container["title_text"]
@@ -95,6 +101,10 @@ class LibraryHandlerScroll:
 
                     if elements:
                         book_info[field] = elements[0].text
+                        if field == "author":
+                            logger.info(
+                                f"Found author '{book_info[field]}' using strategy {strategy_index}: {locator}"
+                            )
                         break
                     else:
                         # Try finding within title container
@@ -110,11 +120,17 @@ class LibraryHandlerScroll:
                                 book_info[field] = elements[0].text
                                 break
                         except NoSuchElementException:
+                            if field == "author":
+                                logger.debug(
+                                    f"No author element found in title container with strategy {strategy_index}"
+                                )
                             pass
                         except Exception as e:
                             logger.error(f"Unexpected error finding {field} in title container: {e}")
 
                 except NoSuchElementException:
+                    if field == "author":
+                        logger.debug(f"No author element found with strategy {strategy_index}: {locator}")
                     continue
                 except StaleElementReferenceException:
                     logger.debug(f"Stale element reference when finding {field}, will retry on next scroll")
@@ -125,14 +141,28 @@ class LibraryHandlerScroll:
 
         # Extract author from content-desc if still missing
         if not book_info["author"]:
+            logger.debug(
+                f"No author found via element search for '{book_info.get('title', 'Unknown')}', trying content-desc"
+            )
             try:
                 content_desc = container.get_attribute("content-desc")
                 if content_desc:
+                    logger.debug(f"Content-desc for book: {content_desc}")
                     self._extract_author_from_content_desc(book_info, content_desc)
+                    if book_info["author"]:
+                        logger.info(f"Extracted author '{book_info['author']}' from content-desc")
+                else:
+                    logger.debug("No content-desc attribute found")
             except StaleElementReferenceException:
                 logger.debug("Stale element reference when getting content-desc, skipping")
             except Exception as e:
                 logger.debug(f"Error getting content-desc: {e}")
+
+        # Log summary of extracted book info
+        if book_info["title"]:
+            logger.debug(
+                f"Extracted book info - Title: '{book_info['title']}', Author: '{book_info['author'] or 'None found'}', Progress: '{book_info['progress']}', Size: '{book_info['size']}'"
+            )
 
         return book_info
 
