@@ -88,16 +88,22 @@ class ScreenshotResource(Resource):
             response_data = {"success": True, "state": current_state.name}
 
             # Process screenshot based on parameters
-            response_data = process_screenshot_response(
-                response_data,
-                screenshot_path,
+            screenshot_result = process_screenshot_response(
                 screenshot_id,
-                image_path,
+                screenshot_path,
                 use_base64=use_base64,
                 perform_ocr=perform_ocr,
-                use_websockets=use_websockets,
-                sindarin_email=sindarin_email,
             )
+            
+            # Merge screenshot results into response data
+            response_data.update(screenshot_result)
+            
+            # Add websocket URL if requested
+            if use_websockets:
+                from server.utils.request_utils import get_vnc_and_websocket_urls
+                _, ws_url = get_vnc_and_websocket_urls(sindarin_email)
+                if ws_url:
+                    response_data["websocket_url"] = ws_url
 
             # Add reading progress if in reading state
             if current_state == AppState.READING:
