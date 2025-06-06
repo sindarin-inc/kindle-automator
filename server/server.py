@@ -121,41 +121,6 @@ class StateResource(Resource):
             return {"error": str(e)}, 500
 
 
-class CaptchaResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response
-    def get(self):
-        """Get current captcha status and image if present"""
-        # Return simple success response - the response handler will
-        # intercept if we're in CAPTCHA state
-        return {"status": "no_captcha"}, 200
-
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response
-    def post(self):
-        """Submit captcha solution"""
-        automator, _, error_response = get_automator_for_request(server)
-        if error_response:
-            return error_response
-
-        data = request.get_json()
-        solution = data.get("solution")
-
-        if not solution:
-            return {"error": "Captcha solution required"}, 400
-
-        # Update captcha solution using our update method
-        automator.update_captcha_solution(solution)
-
-        success = automator.transition_to_library()
-
-        if success:
-            return {"status": "success"}, 200
-        return {"error": "Failed to process captcha solution"}, 500
-
-
 class BooksResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1358,30 +1323,6 @@ class BookOpenResource(Resource):
         return result
 
 
-class TwoFactorResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response
-    def post(self):
-        """Submit 2FA code"""
-        automator, _, error_response = get_automator_for_request(server)
-        if error_response:
-            return error_response
-
-        data = request.get_json()
-        code = data.get("code")
-
-        logger.info(f"Submitting 2FA code: {code}")
-
-        if not code:
-            return {"error": "2FA code required"}, 400
-
-        success = automator.auth_handler.handle_2fa(code)
-        if success:
-            return {"success": True}, 200
-        return {"error": "Invalid 2FA code"}, 500
-
-
 class AuthResource(Resource):
     def _handle_recreate(self, sindarin_email, recreate_user=True, recreate_seed=False):
         """Handle deletion of AVDs when recreate is requested"""
@@ -2179,7 +2120,6 @@ from server.resources.user_activity_resource import UserActivityResource
 
 # Add resources to API
 api.add_resource(StateResource, "/state")
-api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
 api.add_resource(BooksStreamResource, "/books-stream")  # New streaming endpoint for books
 api.add_resource(StaffAuthResource, "/staff-auth")
@@ -2216,7 +2156,6 @@ api.add_resource(
 )
 
 api.add_resource(BookOpenResource, "/open-book")
-api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(
     LogoutResource,
     "/logout",

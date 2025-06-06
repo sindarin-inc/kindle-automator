@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 class KindleAutomator:
     def __init__(self):
-        self.captcha_solution = None
         self.driver = None
         self.state_machine = None
         self.device_id = None  # Will be set during initialization
@@ -267,23 +266,6 @@ class KindleAutomator:
             logger.error(f"Unexpected error in ensure_driver_running: {outer_e}")
             self.cleanup()
             return False
-
-    def update_captcha_solution(self, solution):
-        """Update captcha solution across all components if different.
-
-        Args:
-            solution: The new captcha solution to set
-
-        Returns:
-            bool: True if solution was updated (was different), False otherwise
-        """
-        if solution != self.captcha_solution:
-            logger.info("Updating captcha solution")
-            self.captcha_solution = solution
-            if self.state_machine:
-                self.state_machine.auth_handler.captcha_solution = solution
-            return True
-        return False
 
     # Removed update_credentials method - no longer needed
 

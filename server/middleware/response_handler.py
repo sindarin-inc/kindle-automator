@@ -227,13 +227,16 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                     # Also skip retry for other auth issues to avoid duplicate auth attempts
                     logger.info("Auth operation - avoiding retry for authentication stability")
                     return format_response(result)
-                # Special case: Don't retry captcha responses (403 with captcha_required)
+                # Special case: Don't retry captcha responses
                 elif (
                     status_code == 403
                     and isinstance(response, dict)
-                    and response.get("status") == "captcha_required"
+                    and (
+                        response.get("status") == "captcha_detected"
+                        or "captcha" in str(response.get("error", "")).lower()
+                    )
                 ):
-                    logger.info("Captcha required response - passing through without retry")
+                    logger.info("Captcha detected response - passing through without retry")
                     return format_response(result)
                 elif status_code >= 400:
                     # Client errors (4xx) should not be retried
@@ -572,43 +575,14 @@ def handle_automator_response(f):
                     if current_state == AppState.CAPTCHA:
                         time_taken = round(time.time() - start_time, 3)
 
-                        # Get the screenshot ID directly from the state machine
-                        # This comes from the auth handler's captured screenshot during captcha processing
-                        screenshot_id = automator.state_machine.get_captcha_screenshot_id()
-
-                        # Default fallback URL - use image endpoint for consistent access
-                        image_url = "/image/captcha"
-
-                        # Use the captured screenshot ID if available
-                        if screenshot_id:
-                            image_url = f"/image/{screenshot_id}"
-                            logger.info(f"Using captcha screenshot from auth handler: {image_url}")
-                        else:
-                            logger.info(f"No captcha screenshot ID found, using fallback URL: {image_url}")
-
-                        # Check if we have an interactive captcha
-                        interactive_captcha = False
-                        if hasattr(automator.state_machine.auth_handler, "interactive_captcha_detected"):
-                            interactive_captcha = (
-                                automator.state_machine.auth_handler.interactive_captcha_detected
-                            )
-
-                        # Create response body with appropriate message
+                        # Create response body for CAPTCHA detection
                         response_data = {
-                            "status": "captcha_required",
+                            "status": "captcha_detected",
                             "time_taken": time_taken,
-                            "image_url": image_url,
+                            "error": "CAPTCHA detected - manual intervention required via VNC",
+                            "requires_manual_intervention": True,
+                            "message": "Please complete the CAPTCHA manually via VNC",
                         }
-
-                        if interactive_captcha:
-                            response_data["message"] = (
-                                "Grid-based image captcha detected - app has been restarted automatically"
-                            )
-                            response_data["captcha_type"] = "grid"
-                            response_data["requires_restart"] = True
-                        else:
-                            response_data["message"] = "Authentication requires captcha solution"
-                            response_data["captcha_type"] = "text"
 
                         return response_data, 403
 

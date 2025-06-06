@@ -7,12 +7,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from handlers.auth_handler import LoginVerificationState
 from server.logging_config import store_page_source
-from views.auth.interaction_strategies import (
-    CAPTCHA_CONTINUE_BUTTON,
-    CAPTCHA_INPUT_FIELD,
-    LIBRARY_SIGN_IN_STRATEGIES,
-)
-from views.auth.view_strategies import CAPTCHA_ERROR_MESSAGES, EMAIL_VIEW_IDENTIFIERS
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from views.common.dialog_strategies import APP_NOT_RESPONDING_CLOSE_APP_BUTTON
 from views.core.app_state import AppState, AppView
 from views.library.view_strategies import LIBRARY_VIEW_DETECTION_STRATEGIES
@@ -32,7 +28,6 @@ class StateTransitions:
         self.library_handler = library_handler
         self.reader_handler = reader_handler
         self.driver = None
-        self.used_captcha_solutions = set()  # Track used solutions
 
     def set_driver(self, driver):
         """Sets the Appium driver instance"""
@@ -227,11 +222,6 @@ class StateTransitions:
         # If back button wasn't found or clicked, try a different approach
         return self.view_inspector.ensure_app_foreground()
 
-    def handle_captcha(self):
-        """Handle CAPTCHA state by attempting to solve captcha."""
-        logger.info("Handling CAPTCHA state...")
-        return self.auth_handler.sign_in()
-
     def handle_app_not_responding(self):
         """Handle APP_NOT_RESPONDING state by clicking 'Close app' button and waiting for app restart."""
         logger.info("Handling APP_NOT_RESPONDING state - closing and restarting app...")
@@ -294,6 +284,12 @@ class StateTransitions:
         logger.info("Handling MORE_SETTINGS state - navigating back to library...")
         return self.library_handler.navigate_to_library()
 
+    def handle_captcha(self):
+        """Handle CAPTCHA state - just acknowledge it exists, no automated handling."""
+        logger.info("CAPTCHA detected - manual intervention required via VNC")
+        # Return False to indicate we can't proceed automatically
+        return False
+
     def get_handler_for_state(self, state):
         """Get the appropriate handler method for a given state.
 
@@ -313,7 +309,7 @@ class StateTransitions:
             AppState.LIBRARY: self.handle_library,
             AppState.SEARCH_RESULTS: self.handle_search_results,  # Add new SEARCH_RESULTS handler
             AppState.READING: self.handle_reading,
-            AppState.CAPTCHA: self._handle_captcha,  # Add new CAPTCHA handler
+            AppState.CAPTCHA: self.handle_captcha,  # CAPTCHA handler for detection only
             AppState.APP_NOT_RESPONDING: self.handle_app_not_responding,  # Add app not responding handler
             AppState.MORE_SETTINGS: self.handle_more_settings,  # Add more settings handler
         }
@@ -322,39 +318,3 @@ class StateTransitions:
         if not handler:
             logger.error(f"No handler found for state {state}")
         return handler
-
-    def _handle_captcha(self):
-        """Handle CAPTCHA state by entering solution if available."""
-        try:
-            # If we have a captcha solution, enter it
-            if self.auth_handler.captcha_solution:
-                # Check if we've already tried this solution
-                if self.auth_handler.captcha_solution in self.used_captcha_solutions:
-                    logger.info("CAPTCHA solution already attempted - needs new solution")
-                    return False
-
-                logger.info("Entering CAPTCHA solution...")
-
-                # Find and enter the CAPTCHA solution
-                captcha_input = self.driver.find_element(*CAPTCHA_INPUT_FIELD)
-                captcha_input.clear()
-                captcha_input.send_keys(self.auth_handler.captcha_solution)
-
-                # Find and click submit button
-                submit_button = self.driver.find_element(*CAPTCHA_CONTINUE_BUTTON)
-                submit_button.click()
-
-                # Mark this solution as used
-                self.used_captcha_solutions.add(self.auth_handler.captcha_solution)
-
-                # Wait briefly for transition
-                time.sleep(2)
-                return True
-
-            # No solution available, need client interaction
-            logger.info("No CAPTCHA solution available")
-            return False
-
-        except Exception as e:
-            logger.error(f"Error handling CAPTCHA: {e}")
-            return False

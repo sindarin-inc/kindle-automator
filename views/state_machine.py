@@ -23,7 +23,6 @@ class KindleStateMachine:
         """Initialize the state machine with required handlers."""
         self.driver = driver
         self.view_inspector = ViewInspector(driver)
-        # Initialize auth handler without captcha solution - it'll be set later if needed
         self.auth_handler = AuthenticationHandler(driver)
         self.library_handler = LibraryHandler(driver)
         self.style_handler = StyleHandler(driver)
@@ -43,32 +42,8 @@ class KindleStateMachine:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
         self.current_state = AppState.UNKNOWN
-        # Track the last captcha screenshot for use in responses
-        self.last_captcha_screenshot_id = None
         # Flag to indicate we're preparing a seed clone (skip sign-in)
         self.preparing_seed_clone = False
-
-    def get_captcha_screenshot_id(self):
-        """Get the ID of the last captcha screenshot taken.
-
-        This is used by the response handler to include the correct image URL.
-        If auth_handler has a more recent screenshot, use that.
-
-        Returns:
-            str: The ID of the last captcha screenshot, or None if no screenshot available
-        """
-        # Check if auth handler has a more recent screenshot
-        if (
-            hasattr(self.auth_handler, "last_captcha_screenshot")
-            and self.auth_handler.last_captcha_screenshot
-        ):
-            logger.info(
-                f"Using auth handler's captcha screenshot ID: {self.auth_handler.last_captcha_screenshot}"
-            )
-            return self.auth_handler.last_captcha_screenshot
-
-        # Otherwise use our tracked screenshot ID
-        return self.last_captcha_screenshot_id
 
     def _get_current_state(self):
         """Get the current app state using the view inspector."""
@@ -217,21 +192,14 @@ class KindleStateMachine:
 
             # Special handling for CAPTCHA state
             if self.current_state == AppState.CAPTCHA:
-                logger.info(
-                    "In CAPTCHA state with solution: %s",
-                    self.auth_handler.captcha_solution,
-                )
-                if not result:
-                    # If handler returns False, we need client interaction
-                    logger.info("CAPTCHA handler needs client interaction")
-                    return True
-                # If handler succeeds, continue with transitions
-                continue
-            # Check if sign-in resulted in CAPTCHA or is in sign-in state without credentials
+                logger.info("In CAPTCHA state - manual intervention required")
+                # Return True to indicate we're in a valid state but can't proceed
+                return True
+            # Check if sign-in is in sign-in state without credentials
             elif not result and self.current_state == AppState.SIGN_IN:
                 new_state = self._get_current_state()
                 if new_state == AppState.CAPTCHA:
-                    logger.info("Sign-in resulted in CAPTCHA state - waiting for client interaction")
+                    logger.info("Sign-in resulted in CAPTCHA state - waiting for manual intervention")
                     self.current_state = new_state
                     return True
                 elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
