@@ -1505,6 +1505,16 @@ class AVDProfileManager:
             # Force the profile manager to reload
             self._load_profiles_index()
 
+            # If we deleted the seed clone, recreate it now
+            if recreate_seed:
+                logger.info("Recreating seed clone AVD after deletion")
+                success, msg = self.avd_creator.create_seed_clone_avd()
+                if success:
+                    logger.info(f"Successfully recreated seed clone AVD: {msg}")
+                else:
+                    logger.warning(f"Failed to recreate seed clone AVD: {msg}")
+                    # This is non-fatal - the seed clone will be created when needed
+
             logger.info(f"Successfully recreated {', '.join(actions)} for {email}")
             return True, f"Successfully recreated: {', '.join(actions)}"
 
