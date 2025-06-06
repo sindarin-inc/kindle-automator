@@ -62,7 +62,7 @@ class AVDCreator:
 
         # First choice: Android 34 with Google APIs (x86_64)
         for img in available_images:
-            if "system-images;android-34;google_apis;x86_64" in img:
+            if "system-images;android-36;google_apis;x86_64" in img:
                 return img
 
         # Second choice: Android 30 with Google APIs (x86_64)
@@ -225,7 +225,7 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
-            sysdir = "system-images/android-34/google_apis/x86_64/"
+            sysdir = "system-images/android-36/google_apis/x86_64/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 
