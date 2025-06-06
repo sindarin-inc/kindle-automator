@@ -705,49 +705,10 @@ class ReaderHandler:
             return False
 
         # Check for fullscreen dialog immediately without a long wait
-        try:
-            # Use the existing identifiers from view_strategies.py
-            dialog_present = False
-            for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
-                try:
-                    dialog = self.driver.find_element(strategy, locator)
-                    if dialog.is_displayed():
-                        dialog_present = True
-                        logger.info(f"Detected full screen dialog with {strategy}: {locator}")
-                        break
-                except NoSuchElementException:
-                    continue
-
-            if dialog_present:
-                # Try to find the "Got it" button using defined strategies
-                for strategy, locator in FULL_SCREEN_DIALOG_GOT_IT:
-                    try:
-                        got_it_button = self.driver.find_element(strategy, locator)
-                        if got_it_button.is_displayed():
-                            got_it_button.click()
-                            logger.info(f"Clicked 'Got it' button with {strategy}: {locator}")
-
-                            # Verify the dialog was dismissed
-                            try:
-                                WebDriverWait(self.driver, 2).until_not(
-                                    EC.presence_of_element_located(READING_VIEW_FULL_SCREEN_DIALOG[0])
-                                )
-                                logger.info("Full screen dialog successfully dismissed")
-                            except TimeoutException:
-                                logger.warning(
-                                    "Full screen dialog may not have closed properly after clicking 'Got it'"
-                                )
-
-                            break
-                    except NoSuchElementException:
-                        continue
-        except NoSuchElementException:
-            # Dialog not present, continue immediately
-            logger.info("No full screen dialog detected, continuing immediately")
-        except TimeoutException:
-            logger.warning("Full screen dialog may not have closed properly after clicking 'Got it'")
-        except Exception as e:
-            logger.warning(f"Error handling full screen dialog: {e}")
+        # DialogHandler is already imported above
+        if dialog_handler.check_for_viewing_full_screen_dialog():
+            logger.info("Successfully handled 'Viewing full screen' dialog after opening book")
+            time.sleep(0.5)  # Brief wait for dialog dismissal animation
 
         # We already confirmed the reading view is loaded above, so no need for additional waiting
         # Just check for page content container which should be available immediately
@@ -1746,19 +1707,14 @@ class ReaderHandler:
                 else:
                     logger.info("'About this book' slideover successfully dismissed")
 
-            # Check for and dismiss full screen dialog
-            dialog_visible, _ = self._check_element_visibility(
-                READING_VIEW_FULL_SCREEN_DIALOG, "full screen dialog"
-            )
-            if dialog_visible:
-                logger.info("Found full screen dialog - attempting to dismiss")
-                got_it_visible, got_it_button = self._check_element_visibility(
-                    FULL_SCREEN_DIALOG_GOT_IT, "'Got it' button"
-                )
-                if got_it_visible:
-                    got_it_button.click()
-                    logger.info("Clicked 'Got it' button to dismiss dialog")
-                    time.sleep(1)
+            # Check for and dismiss full screen dialog using DialogHandler
+            from views.common.dialog_handler import DialogHandler
+
+            dialog_handler = DialogHandler(self.driver)
+
+            if dialog_handler.check_for_viewing_full_screen_dialog():
+                logger.info("Successfully handled 'Viewing full screen' dialog")
+                time.sleep(0.5)  # Brief wait for dialog dismissal animation
 
             # Check for and handle "Go to that location/page?" dialog
             go_to_location_visible, message = self._check_element_visibility(

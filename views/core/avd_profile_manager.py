@@ -321,43 +321,44 @@ class AVDProfileManager:
         """
         Update the seed clone AVD's snapshot. This is useful after fixing snapshot
         functionality or making changes to the base configuration.
-        
+
         Returns:
             Tuple[bool, str]: (success, message)
         """
         try:
             seed_email = AVDCreator.SEED_CLONE_EMAIL
-            
+
             # Check if seed clone exists
             if not self.avd_creator.has_seed_clone():
                 return False, "Seed clone AVD does not exist"
-            
+
             # Check if emulator is running for seed clone
             is_running, emulator_id, avd_name = self.find_running_emulator_for_email(seed_email)
-            
+
             if not is_running:
                 logger.info("Starting seed clone emulator to create snapshot")
                 # Start the emulator
                 success, message = self.switch_profile_and_start_emulator(seed_email)
                 if not success:
                     return False, f"Failed to start seed clone emulator: {message}"
-                
+
                 # Wait for it to be ready
                 logger.info("Waiting for seed clone emulator to be ready...")
                 time.sleep(10)
-            
+
             # Save the snapshot
             logger.info("Saving snapshot for seed clone AVD")
             from server.utils.emulator_launcher import EmulatorLauncher
+
             launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
-            
+
             if launcher.save_snapshot(seed_email):
                 # Update the timestamp
                 self.set_user_field(seed_email, "last_snapshot_timestamp", int(time.time()))
                 return True, "Successfully updated seed clone snapshot"
             else:
                 return False, "Failed to save seed clone snapshot"
-                
+
         except Exception as e:
             logger.error(f"Error updating seed clone snapshot: {e}")
             return False, str(e)

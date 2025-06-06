@@ -6,6 +6,7 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import NoSuchElementException
 
 from server.logging_config import store_page_source
+from views.common.dialog_handler import DialogHandler
 from views.reading.view_strategies import (
     ABOUT_BOOK_CHECKBOX,
     FONT_SIZE_SLIDER_IDENTIFIERS,
@@ -84,6 +85,12 @@ class StyleHandler:
 
         # Backup the original update_reading_style code but make it reusable
         try:
+            # Check for and handle any dialogs first (like "Viewing full screen")
+            dialog_handler = DialogHandler(self.driver)
+            handled, dialog_type = dialog_handler.check_all_dialogs(context="before_style_update")
+            if handled:
+                logger.info(f"Handled {dialog_type} dialog before applying styles")
+
             # Store page source before starting
             store_page_source(self.driver.page_source, "style_update_before")
 
