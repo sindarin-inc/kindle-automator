@@ -134,8 +134,8 @@ class AVDCreator:
                 sys_img = self.get_compatible_system_image(available_images)
 
                 if not sys_img:
-                    # Always use android-34 aosp_atd x86_64 images for all platforms
-                    sys_img = "system-images;android-34;aosp_atd;x86_64"
+                    # Always use x86_64 images for all platforms
+                    sys_img = "system-images;android-30;google_apis_playstore;x86_64"
                     logger.info(f"No compatible system image found, will install {sys_img} for all hosts")
 
                 # Try to install the system image if we have one selected
@@ -167,9 +167,9 @@ class AVDCreator:
 
             except Exception as e:
                 logger.error(f"Error getting available system images: {e}")
-                # Fallback to android-34 aosp_atd x86_64 for all platforms
-                sys_img = "system-images;android-34;aosp_atd;x86_64"
-                logger.info("Using fallback android-34 aosp_atd x86_64 system image")
+                # Fallback to x86_64 for all platforms
+                sys_img = "system-images;android-30;google_apis;x86_64"
+                logger.info("Using fallback x86_64 system image")
 
             logger.info(f"Using system image: {sys_img}")
 
@@ -229,7 +229,7 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
-            sysdir = "system-images/android-34/aosp_atd/x86_64/"
+            sysdir = "system-images/android-30/google_apis_playstore/x86_64/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 
@@ -266,18 +266,10 @@ class AVDCreator:
                 "hw.arc.autologin": "no",
                 "snapshot.present": "no",
                 "disk.dataPartition.size": "6G",
-                "PlayStore.enabled": "true" if "playstore" in sysdir else "false",
+                "PlayStore.enabled": "true",
                 "image.sysdir.1": sysdir,
-                "tag.id": (
-                    "aosp_atd"
-                    if "aosp_atd" in sysdir
-                    else ("google_apis_playstore" if "playstore" in sysdir else "google_apis")
-                ),
-                "tag.display": (
-                    "AOSP ATD"
-                    if "aosp_atd" in sysdir
-                    else ("Google Play" if "playstore" in sysdir else "Google APIs")
-                ),
+                "tag.id": "google_apis_playstore" if "playstore" in sysdir else "google_apis",
+                "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
                 "hw.cpu.arch": cpu_arch,
                 "ro.kernel.qemu.gles": "1",
                 "hw.gfxstream": "0",  # Disable gfxstream to maintain snapshot compatibility
