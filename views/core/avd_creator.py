@@ -56,12 +56,22 @@ class AVDCreator:
         Returns:
             Optional[str]: Most compatible system image or None if not found
         """
-        for img in available_images:
-            if "system-images;android-30;default;x86_64" in img:
-                return img
-
+        # Prefer google_apis images for ARM translation support (libhoudini)
         for img in available_images:
             if "system-images;android-30;google_apis;x86_64" in img:
+                logger.info("Selecting google_apis image for ARM translation support")
+                return img
+
+        # If no google_apis, try google_apis_playstore
+        for img in available_images:
+            if "system-images;android-30;google_apis_playstore;x86_64" in img:
+                logger.info("Selecting google_apis_playstore image for ARM translation support")
+                return img
+
+        # Fallback to default (but this won't support ARM apps)
+        for img in available_images:
+            if "system-images;android-30;default;x86_64" in img:
+                logger.warning("Using default system image - ARM apps may not work!")
                 return img
 
         for img in available_images:

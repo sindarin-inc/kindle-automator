@@ -761,9 +761,60 @@ class Driver:
             apk_version_name, apk_version_code = self._get_apk_version(apk_path)
             if apk_version_name and apk_version_code:
                 logger.info(f"Installing Kindle version: {apk_version_name} (code: {apk_version_code})")
-
-            # Check available storage before install
+                
+            # Check APK supported ABIs using aapt
             try:
+                aapt_check = subprocess.run(
+                    ["/opt/android-sdk/build-tools/35.0.0/aapt", "dump", "badging", apk_path],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if aapt_check.returncode == 0:
+                    for line in aapt_check.stdout.splitlines():
+                        if "native-code:" in line:
+                            logger.info(f"APK {line}")
+                            break
+                else:
+                    logger.warning("Could not check APK ABIs with aapt")
+            except Exception as e:
+                logger.warning(f"Error checking APK ABIs: {e}")
+
+            # Check device architecture before install
+            try:
+                arch_check = subprocess.run(
+                    ["adb", "-s", self.device_id, "shell", "getprop", "ro.product.cpu.abi"],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if arch_check.returncode == 0:
+                    device_arch = arch_check.stdout.strip()
+                    logger.info(f"Device architecture: {device_arch}")
+                    
+                    # Check all supported ABIs
+                    all_abis = subprocess.run(
+                        ["adb", "-s", self.device_id, "shell", "getprop", "ro.product.cpu.abilist"],
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if all_abis.returncode == 0:
+                        logger.info(f"Device supports ABIs: {all_abis.stdout.strip()}")
+                        
+                    # Check if libhoudini is present
+                    houdini_check = subprocess.run(
+                        ["adb", "-s", self.device_id, "shell", "ls", "/system/lib/libhoudini.so", "2>/dev/null"],
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if houdini_check.returncode == 0:
+                        logger.info("ARM translation (libhoudini) is available")
+                    else:
+                        logger.warning("ARM translation (libhoudini) NOT found - ARM apps won't run!")
+                    
+                # Also check available storage
                 storage_check = subprocess.run(
                     ["adb", "-s", self.device_id, "shell", "df", "/data"],
                     capture_output=True,
@@ -773,7 +824,7 @@ class Driver:
                 if storage_check.returncode == 0:
                     logger.info(f"Device storage status:\n{storage_check.stdout}")
             except Exception as e:
-                logger.warning(f"Could not check storage: {e}")
+                logger.warning(f"Could not check device info: {e}")
 
             # Retry logic for APK installation
             max_retries = 3
