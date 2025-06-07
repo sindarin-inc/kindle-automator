@@ -147,20 +147,22 @@ class AVDProfileManager:
         if not self.emulator_manager.start_emulator_with_retries(email):
             return False, "Failed to start emulator"
 
-        # Wait for emulator to be ready
-        logger.info("Waiting for emulator to be ready...")
-
         # Use the existing launcher from emulator_manager to maintain cache consistency
         launcher = self.emulator_manager.emulator_launcher
 
-        # Wait up to 2 minutes for emulator to be ready
-        for i in range(24):  # 24 * 5 seconds = 2 minutes
-            if launcher.is_emulator_ready(email):
-                logger.info("Emulator is ready")
-                break
-            time.sleep(5)
-        else:
-            return False, "Emulator failed to become ready"
+        # Wrap everything after emulator start in try-finally to ensure shutdown
+        try:
+            # Wait for emulator to be ready
+            logger.info("Waiting for emulator to be ready...")
+
+            # Wait up to 2 minutes for emulator to be ready
+            for i in range(24):  # 24 * 5 seconds = 2 minutes
+                if launcher.is_emulator_ready(email):
+                    logger.info("Emulator is ready")
+                    break
+                time.sleep(5)
+            else:
+                return False, "Emulator failed to become ready"
 
         # If prepare_kindle is True, install Kindle and navigate to Library
         if prepare_kindle:
@@ -262,22 +264,26 @@ class AVDProfileManager:
                     #     logger.info(f"Seed clone preparation wait: {minute}/1 minute elapsed...")
                     logger.info("1-minute wait period complete, proceeding with shutdown")
 
-        # Check if this is the seed clone
-        if email == AVDCreator.SEED_CLONE_EMAIL:
-            # For seed clone, just stop the emulator normally without snapshot
-            logger.info(f"Stopping seed clone emulator normally (no snapshot)")
-            launcher.stop_emulator(email)
-            return True, "Seed clone prepared successfully"
-        else:
-            # Take snapshot (always saves to default)
-            logger.info(f"Creating snapshot for {email}")
-            if launcher.save_snapshot(email):
-                logger.info(f"Successfully created snapshot for {email}")
-                # Stop the emulator
-                launcher.stop_emulator(email)
-                return True, "Snapshot created successfully"
+            # Check if this is the seed clone
+            if email == AVDCreator.SEED_CLONE_EMAIL:
+                # For seed clone, just stop the emulator normally without snapshot
+                # Emulator will be stopped in finally block
+                return True, "Seed clone prepared successfully"
             else:
-                return False, "Failed to create snapshot"
+                # Take snapshot (always saves to default)
+                logger.info(f"Creating snapshot for {email}")
+                if launcher.save_snapshot(email):
+                    logger.info(f"Successfully created snapshot for {email}")
+                    return True, "Snapshot created successfully"
+                else:
+                    return False, "Failed to create snapshot"
+
+        finally:
+            # Always stop the emulator, regardless of success or failure
+            logger.info(f"Shutting down emulator for {email}")
+            if email == AVDCreator.SEED_CLONE_EMAIL:
+                logger.info(f"Stopping seed clone emulator normally (no snapshot)")
+            launcher.stop_emulator(email)
 
     def ensure_seed_clone_ready(self) -> Tuple[bool, str]:
         """
