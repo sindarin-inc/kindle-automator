@@ -757,13 +757,52 @@ class Driver:
             if apk_version_name and apk_version_code:
                 logger.info(f"Installing Kindle version: {apk_version_name} (code: {apk_version_code})")
 
-            subprocess.run(
-                ["adb", "-s", self.device_id, "install", "-r", apk_path],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            logger.info("Kindle app installed successfully")
+            # Retry logic for APK installation
+            max_retries = 3
+            retry_delay = 2  # seconds
+
+            for attempt in range(max_retries):
+                try:
+                    result = subprocess.run(
+                        ["adb", "-s", self.device_id, "install", "-r", apk_path],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if result.returncode == 0:
+                        logger.info("Kindle app installed successfully")
+                        break
+                    else:
+                        error_msg = result.stderr.strip() or result.stdout.strip()
+
+                        # Check if the error is related to device not ready
+                        if any(
+                            keyword in error_msg.lower()
+                            for keyword in ["offline", "unauthorized", "device not found", "error: closed"]
+                        ):
+                            if attempt < max_retries - 1:
+                                logger.warning(
+                                    f"Device not ready for install (attempt {attempt + 1}/{max_retries}): {error_msg}"
+                                )
+                                logger.info(f"Waiting {retry_delay} seconds before retry...")
+                                time.sleep(retry_delay)
+                                continue
+
+                        # For other errors, fail immediately
+                        raise subprocess.CalledProcessError(
+                            result.returncode, result.args, result.stdout, result.stderr
+                        )
+
+                except subprocess.CalledProcessError as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    else:
+                        logger.warning(f"Install attempt {attempt + 1} failed, retrying...")
+                        time.sleep(retry_delay)
+            else:
+                # All retries exhausted
+                raise Exception(f"Failed to install APK after {max_retries} attempts")
 
             # Store version information in profile
             if apk_version_name and apk_version_code:

@@ -552,7 +552,6 @@ class ReaderHandler:
                     logger.info("Successfully handled Download Limit dialog, waiting for reading view")
                     # Now wait for the reading view after handling the dialog
                     try:
-
                         # Track time for second wait
                         wait_start_time = time.time()
                         wait_last_capture_time = wait_start_time

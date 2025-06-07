@@ -5,6 +5,7 @@ import subprocess
 import time
 from typing import Dict, List, Optional, Tuple
 
+from server.utils.emulator_launcher import EmulatorLauncher
 from server.utils.request_utils import get_sindarin_email
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
@@ -25,9 +26,6 @@ class EmulatorManager:
         self.avd_dir = avd_dir
         self.host_arch = host_arch
         self.use_simplified_mode = use_simplified_mode
-
-        # Initialize the Python-based emulator launcher - this is now required
-        from server.utils.emulator_launcher import EmulatorLauncher
 
         self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
 
@@ -248,7 +246,7 @@ class EmulatorManager:
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
                 logger.info("Waiting for emulator to boot...")
-                deadline = time.time() + 30  # 30 seconds timeout
+                deadline = time.time() + 45  # 45 seconds timeout
 
                 # Active polling approach - check every second and log consistently
                 check_count = 0
@@ -271,7 +269,7 @@ class EmulatorManager:
                             return True
 
                 logger.error(
-                    f"Timeout waiting for emulator to boot for {email} after 50 seconds and {check_count} checks"
+                    f"Timeout waiting for emulator to boot for {email} after 45 seconds and {check_count} checks"
                 )
                 return False
             else:
