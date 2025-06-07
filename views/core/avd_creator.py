@@ -57,7 +57,7 @@ class AVDCreator:
             Optional[str]: Most compatible system image or None if not found
         """
         for img in available_images:
-            if "system-images;android-30;google_atd;x86_64" in img:
+            if "system-images;android-30;default;x86_64" in img:
                 return img
 
         for img in available_images:
@@ -217,7 +217,7 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
-            sysdir = "system-images/android-30/google_atd/x86_64/"
+            sysdir = "system-images/android-30/default/x86_64/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 
