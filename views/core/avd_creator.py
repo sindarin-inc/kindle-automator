@@ -15,6 +15,10 @@ class AVDCreator:
     # Seed clone constants
     SEED_CLONE_EMAIL = "seed@clone.local"
     SEED_CLONE_SNAPSHOT = "pre_kindle_install"
+    
+    # System image to use for all AVDs
+    # Must match sdkmanager --list format exactly
+    SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
@@ -48,43 +52,21 @@ class AVDCreator:
 
     def get_compatible_system_image(self, available_images: List[str]) -> Optional[str]:
         """
-        Get the most compatible system image based on host architecture.
+        Get the configured system image if available.
 
         Args:
             available_images: List of available system images
 
         Returns:
-            Optional[str]: Most compatible system image or None if not found
+            Optional[str]: System image if available, None otherwise
         """
-        # Important: Even on ARM Macs (M1/M2/M4), we need to use x86_64 images
-        # because the ARM64 emulation in Android emulator is not fully supported yet.
-        # The emulator will use Rosetta 2 to translate x86_64 to ARM.
-
-        # First choice: Android 34 with Google APIs (x86_64)
-        for img in available_images:
-            if "system-images;android-36;google_apis;x86_64" in img:
-                return img
-
-        # Second choice: Android 30 with Google APIs (x86_64)
-        for img in available_images:
-            if "system-images;android-30;google_apis;x86_64" in img:
-                return img
-
-        # Third choice: Any Android 30 x86_64 image
-        for img in available_images:
-            if "system-images;android-30;" in img and "x86_64" in img:
-                return img
-
-        # Fourth choice: Any modern Android x86_64 image
-        for img in available_images:
-            if "x86_64" in img:
-                return img
-
-        # Fallback to any image
-        if available_images:
-            return available_images[0]
-
-        return None
+        # Check if our configured system image is available
+        if self.SYSTEM_IMAGE in available_images:
+            logger.info(f"Using configured system image: {self.SYSTEM_IMAGE}")
+            return self.SYSTEM_IMAGE
+        else:
+            logger.error(f"Configured system image {self.SYSTEM_IMAGE} not found in available images")
+            return None
 
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
         """
@@ -126,15 +108,9 @@ class AVDCreator:
                             img_path = parts[0].strip()
                             available_images.append(img_path)
 
-                # Get a compatible system image based on host architecture
+                # Get the configured system image
                 sys_img = self.get_compatible_system_image(available_images)
 
-                if not sys_img:
-                    # Always use x86_64 images for all platforms
-                    sys_img = "system-images;android-30;google_apis_playstore;x86_64"
-                    logger.info(f"No compatible system image found, will install {sys_img} for all hosts")
-
-                # Try to install the system image if we have one selected
                 if sys_img:
                     # Try to install the system image
                     logger.info(f"Installing system image: {sys_img}")
@@ -158,14 +134,12 @@ class AVDCreator:
                         logger.error(f"Failed to install system image: {install_result.stderr}")
                         return False, f"Failed to install system image: {install_result.stderr}"
                 else:
-                    logger.error("No compatible system image found and failed to select a fallback")
-                    return False, "No compatible system image found for your architecture"
+                    logger.error(f"System image {self.SYSTEM_IMAGE} not available")
+                    return False, f"System image {self.SYSTEM_IMAGE} not found in available images"
 
             except Exception as e:
                 logger.error(f"Error getting available system images: {e}")
-                # Fallback to x86_64 for all platforms
-                sys_img = "system-images;android-30;google_apis;x86_64"
-                logger.info("Using fallback x86_64 system image")
+                return False, f"Error listing system images: {e}"
 
             logger.info(f"Using system image: {sys_img}")
 
@@ -225,7 +199,11 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
-            sysdir = "system-images/android-36/google_apis/x86_64/"
+            
+            # Derive sysdir from SYSTEM_IMAGE constant
+            # Convert from sdkmanager format to path format
+            # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"
+            sysdir = self.SYSTEM_IMAGE.replace(";", "/") + "/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 

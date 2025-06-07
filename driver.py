@@ -714,9 +714,14 @@ class Driver:
             logger.error("No Kindle APK files found")
             return None
 
+        # Log all found APK paths for debugging
+        logger.info(f"Found {len(apk_paths)} APK file(s):")
+        for apk in apk_paths:
+            logger.info(f"  - {apk}")
+        
         # If only one APK is found, return it
         if len(apk_paths) == 1:
-            logger.info(f"Only one APK found: {os.path.basename(apk_paths[0])}")
+            logger.info(f"Using APK: {apk_paths[0]}")
             return apk_paths[0]
 
         # Compare versions to find the newest
@@ -756,14 +761,121 @@ class Driver:
             apk_version_name, apk_version_code = self._get_apk_version(apk_path)
             if apk_version_name and apk_version_code:
                 logger.info(f"Installing Kindle version: {apk_version_name} (code: {apk_version_code})")
+                
+            # Check APK supported ABIs using aapt
+            try:
+                aapt_check = subprocess.run(
+                    ["/opt/android-sdk/build-tools/35.0.0/aapt", "dump", "badging", apk_path],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if aapt_check.returncode == 0:
+                    for line in aapt_check.stdout.splitlines():
+                        if "native-code:" in line:
+                            logger.info(f"APK {line}")
+                            break
+                else:
+                    logger.warning("Could not check APK ABIs with aapt")
+            except Exception as e:
+                logger.warning(f"Error checking APK ABIs: {e}")
 
-            subprocess.run(
-                ["adb", "-s", self.device_id, "install", "-r", apk_path],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            logger.info("Kindle app installed successfully")
+            # Check device architecture before install
+            try:
+                arch_check = subprocess.run(
+                    ["adb", "-s", self.device_id, "shell", "getprop", "ro.product.cpu.abi"],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if arch_check.returncode == 0:
+                    device_arch = arch_check.stdout.strip()
+                    logger.info(f"Device architecture: {device_arch}")
+                    
+                    # Check all supported ABIs
+                    all_abis = subprocess.run(
+                        ["adb", "-s", self.device_id, "shell", "getprop", "ro.product.cpu.abilist"],
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if all_abis.returncode == 0:
+                        logger.info(f"Device supports ABIs: {all_abis.stdout.strip()}")
+                        
+                    # Check if libhoudini is present
+                    houdini_check = subprocess.run(
+                        ["adb", "-s", self.device_id, "shell", "ls", "/system/lib/libhoudini.so", "2>/dev/null"],
+                        capture_output=True,
+                        text=True,
+                        check=False
+                    )
+                    if houdini_check.returncode == 0:
+                        logger.info("ARM translation (libhoudini) is available")
+                    else:
+                        logger.warning("ARM translation (libhoudini) NOT found - ARM apps won't run!")
+                    
+                # Also check available storage
+                storage_check = subprocess.run(
+                    ["adb", "-s", self.device_id, "shell", "df", "/data"],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                if storage_check.returncode == 0:
+                    logger.info(f"Device storage status:\n{storage_check.stdout}")
+            except Exception as e:
+                logger.warning(f"Could not check device info: {e}")
+
+            # Retry logic for APK installation
+            max_retries = 3
+            retry_delay = 2  # seconds
+
+            for attempt in range(max_retries):
+                try:
+                    result = subprocess.run(
+                        ["adb", "-s", self.device_id, "install", "-r", apk_path],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if result.returncode == 0:
+                        logger.info("Kindle app installed successfully")
+                        break
+                    else:
+                        error_msg = result.stderr.strip() or result.stdout.strip()
+                        
+                        # Log the full error for debugging
+                        logger.warning(f"Install failed (attempt {attempt + 1}/{max_retries}): {error_msg}")
+
+                        # Check if the error is related to device not ready
+                        if any(
+                            keyword in error_msg.lower()
+                            for keyword in ["offline", "unauthorized", "device not found", "error: closed", "cannot connect", "daemon not running"]
+                        ):
+                            if attempt < max_retries - 1:
+                                logger.info(f"Device connectivity issue, waiting {retry_delay} seconds before retry...")
+                                time.sleep(retry_delay)
+                                continue
+                        
+                        # For other errors or last attempt, log full details
+                        if attempt == max_retries - 1:
+                            logger.error(f"Final install attempt failed. Full error:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}")
+
+                        # Fail immediately for non-connectivity errors
+                        raise subprocess.CalledProcessError(
+                            result.returncode, result.args, result.stdout, result.stderr
+                        )
+
+                except subprocess.CalledProcessError as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    else:
+                        logger.warning(f"Install attempt {attempt + 1} failed, retrying...")
+                        time.sleep(retry_delay)
+            else:
+                # All retries exhausted
+                raise Exception(f"Failed to install APK after {max_retries} attempts")
 
             # Store version information in profile
             if apk_version_name and apk_version_code:

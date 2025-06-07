@@ -1214,6 +1214,45 @@ class EmulatorLauncher:
         Returns:
             True if an emulator is ready, False otherwise
         """
+        try:
+            # Step 1: Get emulator ID and verify AVD name matches early
+            emulator_id = self._get_emulator_id_for_readiness_check(email)
+            if not emulator_id:
+                return False
+
+            # Step 2: Verify this emulator is actually running the correct AVD
+            # Do this early to avoid wasting time on wrong emulator
+            if not self._verify_emulator_running(emulator_id, email):
+                logger.warning(f"Emulator {emulator_id} is not running the correct AVD for {email}")
+                return False
+
+            # Step 3: Check if emulator process is running
+            if not self._is_emulator_process_running():
+                logger.info("No emulator process found running")
+                return False
+
+            # Step 4: Check ADB device status
+            device_status = self._get_adb_device_status(emulator_id)
+            if not self._is_device_status_ready(device_status):
+                return False
+
+            # Step 5: Check if system boot is completed
+            if not self._is_boot_completed(emulator_id):
+                return False
+
+            # Step 6: Check if package manager is ready
+            if not self._is_package_manager_ready(emulator_id):
+                return False
+
+            logger.info(f"Emulator {emulator_id} is fully ready")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error checking if emulator is ready for {email}: {e}")
+            return False
+
+    def _get_emulator_id_for_readiness_check(self, email: str) -> Optional[str]:
+        """Get the emulator ID for readiness check with AVD verification."""
         # First check if we have the emulator in our cache to get its expected ID
         avd_name = self._extract_avd_name_from_email(email)
         expected_emulator_id = None
@@ -1222,94 +1261,123 @@ class EmulatorLauncher:
 
         # Get the emulator ID using get_running_emulator which handles AVD lookup
         emulator_id, _ = self.get_running_emulator(email)
-        if not emulator_id:
-            # Special handling: if we have an expected emulator ID in cache, check if it's actually running
-            if expected_emulator_id:
-                logger.info(
-                    f"No emulator found via get_running_emulator for {email}, but have cached ID {expected_emulator_id}"
-                )
-                # Verify the cached emulator is still running
-                if self._verify_emulator_running(expected_emulator_id, email):
-                    logger.info(f"Cached emulator {expected_emulator_id} is still running, using it")
-                    emulator_id = expected_emulator_id
-                else:
-                    logger.info(f"Cached emulator {expected_emulator_id} is not running anymore")
 
-            if not emulator_id:
-                logger.info(f"No running emulator found for {email}")
+        # If we found an emulator, it's already been verified by get_running_emulator
+        if emulator_id:
+            return emulator_id
 
-                # Additional debugging: directly check adb devices output
-                try:
-                    devices_result = subprocess.run(
-                        [f"{self.android_home}/platform-tools/adb", "devices"],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                    )
-                    logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
+        # No emulator found via normal lookup, check cached ID if available
+        if expected_emulator_id:
+            logger.info(
+                f"No emulator found via get_running_emulator for {email}, but have cached ID {expected_emulator_id}"
+            )
+            # Check if it's actually running AND has the correct AVD
+            # Note: We'll verify AVD again in the main method for consistency
+            if self._is_emulator_online(expected_emulator_id):
+                logger.info(f"Cached emulator {expected_emulator_id} is online, will verify AVD next")
+                return expected_emulator_id
+            else:
+                logger.info(f"Cached emulator {expected_emulator_id} is not online anymore")
 
-                    # If expected_emulator_id is in the output but not recognized, log this discrepancy
-                    if expected_emulator_id and expected_emulator_id in devices_result.stdout:
-                        logger.warning(
-                            f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
-                        )
-                except Exception as e:
-                    logger.error(f"Error during direct adb devices check: {e}")
+        # No valid emulator found
+        self._log_missing_emulator_debug_info(email, expected_emulator_id)
+        return None
 
-                return False
-
+    def _is_emulator_online(self, emulator_id: str) -> bool:
+        """Quick check if emulator is online in ADB devices."""
         try:
-            # Check process first - is the emulator still running?
+            result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            for line in result.stdout.strip().split("\n"):
+                if emulator_id in line and "\tdevice" in line:
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def _log_missing_emulator_debug_info(self, email: str, expected_emulator_id: Optional[str]) -> None:
+        """Log debug information when emulator is not found."""
+        logger.info(f"No running emulator found for {email}")
+
+        # Additional debugging: directly check adb devices output
+        try:
+            devices_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
+
+            # If expected_emulator_id is in the output but not recognized, log this discrepancy
+            if expected_emulator_id and expected_emulator_id in devices_result.stdout:
+                logger.warning(
+                    f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
+                )
+        except Exception as e:
+            logger.error(f"Error during direct adb devices check: {e}")
+
+    def _is_emulator_process_running(self) -> bool:
+        """Check if any emulator process is running."""
+        try:
             ps_check = subprocess.run(
                 ["pgrep", "-f", "qemu-system-x86_64"], check=False, capture_output=True, text=True
             )
+            return ps_check.returncode == 0
+        except Exception:
+            return False
 
-            if ps_check.returncode != 0:
-                logger.info(f"No emulator process found running")
-                return False
+    def _get_adb_device_status(self, emulator_id: str) -> Optional[str]:
+        """Get the ADB device status for the emulator."""
+        try:
+            device_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
 
-            # First check the device status - it might be in 'offline' state initially
-            try:
-                device_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
+            if emulator_id not in device_result.stdout:
+                logger.info(f"Emulator {emulator_id} not found in adb devices output")
+                return None
 
-                if emulator_id in device_result.stdout:
-                    # Get the device status
-                    devices_lines = device_result.stdout.strip().split("\n")
-                    device_status = "unknown"
+            # Parse device status
+            for line in device_result.stdout.strip().split("\n"):
+                if emulator_id in line:
+                    parts = line.split("\t")
+                    if len(parts) >= 2:
+                        return parts[1].strip()
 
-                    for line in devices_lines:
-                        if emulator_id in line:
-                            parts = line.split("\t")
-                            if len(parts) >= 2:
-                                device_status = parts[1].strip()
-                                break
+            return "unknown"
+        except Exception as e:
+            logger.error(f"Error checking device status: {e}")
+            return None
 
-                    if device_status == "offline":
-                        return False
-                    elif device_status != "device":
-                        logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
-                        return False
+    def _is_device_status_ready(self, device_status: Optional[str]) -> bool:
+        """Check if the device status indicates readiness."""
+        if not device_status:
+            return False
 
-                    # Only verify emulator AVD name after confirming it's online
-                    if not self._verify_emulator_running(emulator_id, email):
-                        return False
-                else:
-                    # Emulator not in adb devices at all
-                    logger.info(f"Emulator {emulator_id} not found in adb devices output")
-                    return False
-            except Exception as e:
-                logger.error(f"Error checking device status: {e}")
-                return False
+        if device_status == "offline":
+            return False
+        elif device_status == "device":
+            return True
+        else:
+            logger.info(f"Emulator is in unexpected state: {device_status}")
+            return False
 
-            # Now check if the system has fully booted
-            boot_completed = subprocess.run(
+    def _is_boot_completed(self, emulator_id: str) -> bool:
+        """Check if system boot is completed."""
+        try:
+            boot_check = subprocess.run(
                 [
                     f"{self.android_home}/platform-tools/adb",
                     "-s",
@@ -1324,22 +1392,85 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            # logger.info(
-            #     f"Boot completed check result: '{boot_completed.stdout.strip()}', return code: {boot_completed.returncode}"
-            # )
-
-            if boot_completed.returncode != 0:
-                logger.warning(f"Boot completed check failed with error: {boot_completed.stderr.strip()}")
+            if boot_check.returncode != 0:
+                logger.warning(f"Boot completed check failed: {boot_check.stderr.strip()}")
                 return False
 
-            result = boot_completed.stdout.strip() == "1"
-            if result:
-                logger.info(f"Emulator {emulator_id} is fully booted (sys.boot_completed=1)")
-
-            return result
-
+            return boot_check.stdout.strip() == "1"
         except Exception as e:
-            logger.error(f"Error checking if emulator is ready for {email}: {e}")
+            logger.error(f"Error checking boot status: {e}")
+            return False
+
+    def _is_package_manager_ready(self, emulator_id: str) -> bool:
+        """Check if package manager is ready to accept commands."""
+        logger.info(f"Emulator {emulator_id} boot completed, checking package manager...")
+
+        # First, try to list packages
+        if not self._can_list_packages(emulator_id):
+            return False
+
+        # Then verify we can query package paths
+        if not self._can_query_package_path(emulator_id):
+            return False
+
+        logger.info(f"Package manager is ready on {emulator_id}")
+        return True
+
+    def _can_list_packages(self, emulator_id: str) -> bool:
+        """Check if package manager can list packages."""
+        try:
+            pm_check = subprocess.run(
+                [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "shell",
+                    "pm",
+                    "list",
+                    "packages",
+                    "-3",  # List third-party packages only (faster)
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if pm_check.returncode != 0:
+                logger.debug(f"Package manager not ready yet: {pm_check.stderr.strip()}")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Error checking package list: {e}")
+            return False
+
+    def _can_query_package_path(self, emulator_id: str) -> bool:
+        """Check if package manager can query package paths."""
+        try:
+            pm_path_check = subprocess.run(
+                [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "shell",
+                    "pm",
+                    "path",
+                    "android",  # Check the core android package
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            if pm_path_check.returncode != 0 or not pm_path_check.stdout.strip():
+                logger.debug("Package manager service not fully ready")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Error checking package path: {e}")
             return False
 
     def save_snapshot(self, email: str) -> bool:

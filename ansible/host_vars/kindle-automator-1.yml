@@ -1,4 +1,3 @@
 ---
 # Production configuration for kindle-automator-1
 kindle_automator_url: "http://localhost:4098"
-idle_timeout_minutes: 30

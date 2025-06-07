@@ -1332,7 +1332,6 @@ class AVDProfileManager:
             ]
             for setting in settings_to_reset:
                 self.set_user_field(email, setting, False, section="emulator_settings")
-                logger.info(f"Reset emulator_settings.{setting} for {email} due to emulator recreation")
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:
