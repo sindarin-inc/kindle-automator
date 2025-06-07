@@ -384,7 +384,12 @@ class EmulatorManager:
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
-                        logger.warning(f"Command failed: {' '.join(cmd)} - {result.stderr}")
+                        illegal_arg_exception = None
+                        for line in result.stderr.splitlines():
+                            if "java.lang.IllegalArgumentException:" in line:
+                                illegal_arg_exception = line[line.find(":") + 1 :]
+                                break
+                        logger.warning(f"Command failed: {' '.join(cmd)} - {illegal_arg_exception}")
 
                 except subprocess.TimeoutExpired:
                     logger.warning(f"Command timed out: {' '.join(cmd)}")
