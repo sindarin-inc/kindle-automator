@@ -93,6 +93,36 @@ class NavigationResourceHandler:
                 current_state = self.automator.state_machine.update_current_state()
                 logger.info(f"Current state: {current_state}")
 
+                # Check if we're in an auth-required state
+                from views.core.app_state import AppState
+                auth_required_states = [
+                    AppState.SIGN_IN,
+                    AppState.SIGN_IN_PASSWORD,
+                    AppState.LIBRARY_SIGN_IN,
+                    AppState.CAPTCHA,
+                    AppState.TWO_FACTOR,
+                ]
+                
+                if current_state in auth_required_states:
+                    logger.error(f"Cannot navigate - authentication required. Current state: {current_state}")
+                    
+                    # Check if user was previously authenticated
+                    profile_manager = self.automator.profile_manager
+                    sindarin_email = profile_manager.get_current_profile().get("email")
+                    auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+                    
+                    if auth_date:
+                        # User was previously authenticated but lost auth - set auth_failed_date
+                        from datetime import datetime
+                        current_date = datetime.now().isoformat()
+                        
+                        logger.warning(
+                            f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
+                        )
+                        profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+                    
+                    return {"error": "Authentication required", "message": "Please authenticate before navigating"}, 401
+
                 # Try to transition to library first
                 if not self.automator.state_machine.transition_to_library():
                     logger.error("Failed to transition to library to reopen book")
