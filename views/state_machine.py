@@ -425,7 +425,7 @@ class KindleStateMachine:
             logger.info(f"Updated current state to: {self.current_state}")
 
             # Track authentication state changes
-            if self.current_state in [AppState.LIBRARY, AppState.LIBRARY_SIGN_IN]:
+            if self.current_state in [AppState.LIBRARY, AppState.LIBRARY_SIGN_IN, AppState.SEARCH_RESULTS]:
                 try:
                     from datetime import datetime
 
@@ -456,6 +456,16 @@ class KindleStateMachine:
                             f"Setting auth_failed_date for {email} as user is in LIBRARY_SIGN_IN state"
                         )
                         profile_manager.set_user_field(email, "auth_failed_date", current_date)
+
+                    elif self.current_state == AppState.SEARCH_RESULTS:
+                        # Check if user has auth_date when in search results
+                        auth_date = profile_manager.get_user_field(email, "auth_date")
+                        if not auth_date:
+                            logger.info(
+                                f"User {email} in SEARCH_RESULTS but no auth_date set - will verify auth status"
+                            )
+                            # Need to verify auth status by backing out to library
+                            self._verify_auth_from_search_results(email, profile_manager, current_date)
 
                 except Exception as e:
                     logger.warning(f"Error tracking auth state: {e}")
@@ -639,3 +649,71 @@ class KindleStateMachine:
             logger.error(f"Error updating current state: {e}")
             self.current_state = AppState.UNKNOWN
             return self.current_state
+
+    def _verify_auth_from_search_results(self, email: str, profile_manager, current_date: str) -> None:
+        """Verify authentication status when in search results without auth_date.
+
+        This backs out from search results to library, refreshes, and checks auth status.
+        """
+        try:
+            logger.info(f"Verifying auth status for {email} from search results")
+
+            # Back out from search results to library
+            from appium.webdriver.common.appiumby import AppiumBy
+            from selenium.common.exceptions import NoSuchElementException
+
+            # Try to find and click the back button
+            try:
+                back_button = self.driver.find_element(AppiumBy.ACCESSIBILITY_ID, "Navigate up")
+                back_button.click()
+                logger.info("Clicked back button to exit search results")
+                time.sleep(1)
+            except NoSuchElementException:
+                logger.warning("Back button not found, trying alternative methods")
+                # Try pressing device back button
+                self.driver.back()
+                time.sleep(1)
+
+            # Update state to see where we are now
+            self.update_current_state()
+
+            if self.current_state == AppState.LIBRARY:
+                # We're in library, now pull to refresh
+                logger.info("Successfully in library view, performing pull to refresh")
+
+                # Perform pull to refresh gesture
+                screen_size = self.driver.get_window_size()
+                start_x = screen_size["width"] // 2
+                start_y = screen_size["height"] // 4
+                end_y = screen_size["height"] // 2
+
+                self.driver.swipe(start_x, start_y, start_x, end_y, duration=800)
+                logger.info("Performed pull to refresh gesture")
+                time.sleep(2)  # Wait for refresh to complete
+
+                # Update state again after refresh
+                self.update_current_state()
+
+                if self.current_state == AppState.LIBRARY:
+                    # Still in library after refresh - user is authenticated
+                    logger.info(f"User {email} confirmed authenticated after refresh - setting auth_date")
+                    profile_manager.set_user_field(email, "auth_date", current_date)
+
+                    # Clear auth_failed_date if it exists
+                    auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                    if auth_failed_date:
+                        logger.info(f"Clearing auth_failed_date for {email}")
+                        profile_manager.set_user_field(email, "auth_failed_date", None)
+
+                elif self.current_state == AppState.LIBRARY_SIGN_IN:
+                    # After refresh, we're in sign-in state - user lost auth
+                    logger.warning(f"User {email} lost authentication - in LIBRARY_SIGN_IN after refresh")
+                    profile_manager.set_user_field(email, "auth_failed_date", current_date)
+
+            else:
+                logger.warning(
+                    f"Failed to navigate back to library from search results, current state: {self.current_state}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error verifying auth from search results: {e}")
