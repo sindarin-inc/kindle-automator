@@ -135,7 +135,7 @@ class AuthenticationHandler:
         Returns:
             dict: Status information containing:
                 - state: current AppState (LIBRARY, HOME, SIGN_IN, etc.)
-                - requires_auth: boolean indicating if manual login is needed (always True)
+                - authenticated: boolean indicating if user is authenticated
                 - already_authenticated: boolean indicating if already logged in
                 - vnc_url: URL to access VNC for manual login
         """
@@ -155,7 +155,7 @@ class AuthenticationHandler:
                 logger.error("Driver does not have automator reference. This should not happen.")
                 return {
                     "state": "UNKNOWN",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "error": "Driver is not properly initialized with automator reference",
                     "fatal_error": True,
@@ -178,7 +178,7 @@ class AuthenticationHandler:
                 logger.error("Automator does not have state machine. This should not happen.")
                 return {
                     "state": "UNKNOWN",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "error": "Automator is not properly initialized with state machine",
                     "fatal_error": True,
@@ -243,7 +243,7 @@ class AuthenticationHandler:
 
                 return {
                     "state": "LIBRARY_SIGN_IN",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -296,7 +296,7 @@ class AuthenticationHandler:
 
                             return {
                                 "state": "LIBRARY_SIGN_IN",
-                                "requires_auth": True,
+                                "authenticated": False,
                                 "already_authenticated": False,
                                 "vnc_url": get_formatted_vnc_url(email),
                             }
@@ -323,7 +323,7 @@ class AuthenticationHandler:
 
                             return {
                                 "state": "LIBRARY_SIGN_IN",
-                                "requires_auth": True,
+                                "authenticated": False,
                                 "already_authenticated": False,
                                 "vnc_url": get_formatted_vnc_url(email),
                             }
@@ -341,7 +341,7 @@ class AuthenticationHandler:
 
                 return {
                     "state": state_name,
-                    "requires_auth": False,
+                    "authenticated": True,
                     "already_authenticated": True,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -378,7 +378,7 @@ class AuthenticationHandler:
 
                 return {
                     "state": "SIGN_IN",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": formatted_vnc_url,
                 }
@@ -494,7 +494,7 @@ class AuthenticationHandler:
 
                 return {
                     "state": "SIGN_IN",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -504,7 +504,7 @@ class AuthenticationHandler:
                 logger.info(f"Already authenticated in {state_name}")
                 return {
                     "state": state_name,
-                    "requires_auth": False,
+                    "authenticated": True,
                     "already_authenticated": True,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -568,7 +568,7 @@ class AuthenticationHandler:
 
                     return {
                         "state": "SIGN_IN",
-                        "requires_auth": True,
+                        "authenticated": False,
                         "already_authenticated": False,
                         "vnc_url": formatted_vnc_url,
                     }
@@ -576,7 +576,7 @@ class AuthenticationHandler:
                     logger.info(f"Successfully navigated to {state_name} state")
                     return {
                         "state": state_name,
-                        "requires_auth": False,
+                        "authenticated": True,
                         "already_authenticated": True,
                         "vnc_url": formatted_vnc_url,
                     }
@@ -587,7 +587,7 @@ class AuthenticationHandler:
                     # Return with the unexpected state
                     return {
                         "state": state_name,
-                        "requires_auth": True,
+                        "authenticated": False,
                         "already_authenticated": False,
                         "vnc_url": formatted_vnc_url,
                         "message": f"In unexpected state after navigation attempt: {state_name}",
@@ -625,7 +625,7 @@ class AuthenticationHandler:
                 logger.info("Despite errors, we are in SIGN_IN state")
                 return {
                     "state": "SIGN_IN",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": formatted_vnc_url,
                 }
@@ -633,7 +633,7 @@ class AuthenticationHandler:
                 logger.info(f"Despite errors, we are in {state_name} state")
                 return {
                     "state": state_name,
-                    "requires_auth": False,
+                    "authenticated": True,
                     "already_authenticated": True,
                     "vnc_url": formatted_vnc_url,
                 }
@@ -641,7 +641,7 @@ class AuthenticationHandler:
             # Last resort - return error with as much info as possible
             return {
                 "state": state_name,
-                "requires_auth": True,
+                "authenticated": False,
                 "already_authenticated": False,
                 "vnc_url": formatted_vnc_url,
                 "error": f"Failed to navigate to sign-in screen or library from {state_name}",
@@ -664,7 +664,7 @@ class AuthenticationHandler:
 
             return {
                 "state": "ERROR",
-                "requires_auth": True,
+                "authenticated": False,
                 "already_authenticated": False,
                 "vnc_url": formatted_vnc_url,
                 "error": str(e),

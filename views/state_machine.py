@@ -74,12 +74,9 @@ class KindleStateMachine:
             # If we have a server reference and we're not in reading state but have a current book
             # Clear the current book to ensure state consistency
             if server and self.current_state != AppState.READING:
-                # Get the email from our driver instance if possible
-                email = None
-                if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
-                    profile = self.driver.automator.profile_manager.get_current_profile()
-                    if profile and "email" in profile:
-                        email = profile.get("email")
+                # Get the email from our driver instance
+                profile = self.driver.automator.profile_manager.get_current_profile()
+                email = profile.get("email") if profile else None
 
                 # Check if there's a current book for this email
                 if email and email in server.current_books:
@@ -89,6 +86,31 @@ class KindleStateMachine:
                     server.clear_current_book(email)
 
             if self.current_state == AppState.LIBRARY:
+                # Update auth tracking when we reach library
+                try:
+                    from datetime import datetime
+
+                    profile_manager = self.driver.automator.profile_manager
+                    profile = profile_manager.get_current_profile()
+                    email = profile.get("email")
+
+                    # User is authenticated - set auth_date if not already set
+                    auth_date = profile_manager.get_user_field(email, "auth_date")
+                    if not auth_date:
+                        current_date = datetime.now().isoformat()
+                        logger.info(
+                            f"Setting auth_date for {email} as user reached LIBRARY state via transition"
+                        )
+                        profile_manager.set_user_field(email, "auth_date", current_date)
+
+                    # Clear auth_failed_date if it exists
+                    auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                    if auth_failed_date:
+                        logger.info(f"Clearing auth_failed_date for {email} as user is back in LIBRARY state")
+                        profile_manager.set_user_field(email, "auth_failed_date", None)
+                except Exception as e:
+                    logger.warning(f"Error updating auth tracking during transition: {e}")
+
                 # Switch to list view if needed
                 if not self.library_handler.switch_to_list_view():
                     logger.warning("Failed to switch to list view, but we're still in library")
@@ -124,6 +146,32 @@ class KindleStateMachine:
                 logger.info(f"After bringing app to foreground, state is: {self.current_state}")
                 if self.current_state == AppState.LIBRARY:
                     logger.info("Successfully reached library state after bringing app to foreground")
+                    # Update auth tracking when we reach library
+                    try:
+                        from datetime import datetime
+
+                        profile_manager = self.driver.automator.profile_manager
+                        profile = profile_manager.get_current_profile()
+                        email = profile.get("email")
+
+                        # User is authenticated - set auth_date if not already set
+                        auth_date = profile_manager.get_user_field(email, "auth_date")
+                        if not auth_date:
+                            current_date = datetime.now().isoformat()
+                            logger.info(
+                                f"Setting auth_date for {email} as user reached LIBRARY state after app foreground"
+                            )
+                            profile_manager.set_user_field(email, "auth_date", current_date)
+
+                        # Clear auth_failed_date if it exists
+                        auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                        if auth_failed_date:
+                            logger.info(
+                                f"Clearing auth_failed_date for {email} as user is back in LIBRARY state"
+                            )
+                            profile_manager.set_user_field(email, "auth_failed_date", None)
+                    except Exception as e:
+                        logger.warning(f"Error updating auth tracking after app foreground: {e}")
                     return True
 
                 # If still unknown, try checking for library-specific elements

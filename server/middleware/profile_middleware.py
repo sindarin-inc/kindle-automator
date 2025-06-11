@@ -182,7 +182,7 @@ def ensure_user_profile_loaded(f):
             return {
                 "error": "No AVD profile found for this email",
                 "message": "You need to authenticate first using the /auth endpoint to create a profile",
-                "requires_auth": True,
+                "authenticated": False,
             }, 401
         elif not avd_exists and (is_mac_dev or is_auth_endpoint):
             if is_auth_endpoint:

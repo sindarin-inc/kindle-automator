@@ -1597,7 +1597,10 @@ class AuthResource(Resource):
         # Start with base response information
         response_data = {
             "success": True,
-            "requires_auth": auth_status.get("requires_auth", True),
+            "authenticated": not auth_status.get("requires_auth", True),  # Inverse logic
+            "manual_login_required": auth_status.get(
+                "requires_manual_login", True
+            ),  # Keep for backwards compatibility
             "message": auth_status.get("message", "Ready for manual authentication via VNC"),
             "state": auth_status.get("state", state_name),
             "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response

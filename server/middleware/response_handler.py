@@ -85,7 +85,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
     last_error = None
 
     def format_response(result):
-        """Format response with time taken"""
+        """Format response with time taken and authenticated status"""
         time_taken = round(time.time() - start_time, 3)
 
         # Handle Flask Response objects (e.g., from serve_image)
@@ -99,9 +99,17 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
             response, status_code = result
             if isinstance(response, dict):
                 response["time_taken"] = time_taken
+                # Add authenticated field if not present
+                if "authenticated" not in response:
+                    # Default to True unless it's a 401 error or has error field
+                    response["authenticated"] = status_code != 401 and "error" not in response
             return response, status_code
         elif isinstance(result, dict):
             result["time_taken"] = time_taken
+            # Add authenticated field if not present
+            if "authenticated" not in result:
+                # Default to True unless has error field
+                result["authenticated"] = "error" not in result
             return result, 200
         return result
 
@@ -202,7 +210,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                 elif (
                     status_code == 401
                     and isinstance(response, dict)
-                    and response.get("requires_auth") == True
+                    and response.get("authenticated") == False
                 ):
                     logger.info("Authentication required - returning directly without retry")
                     return format_response(result)
@@ -561,7 +569,7 @@ def handle_automator_response(f):
 
                             return {
                                 "error": "Authentication token lost",
-                                "requires_auth": True,
+                                "authenticated": False,
                                 "manual_login_required": True,  # Keep for backwards compatibility
                                 "current_state": current_state.name,
                                 "message": "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart.",
@@ -584,7 +592,7 @@ def handle_automator_response(f):
                             "status": "captcha_detected",
                             "time_taken": time_taken,
                             "error": "CAPTCHA detected - manual intervention required via VNC",
-                            "requires_auth": True,
+                            "authenticated": False,
                             "requires_manual_intervention": True,  # Keep for backwards compatibility
                             "message": "Please complete the CAPTCHA manually via VNC",
                         }
