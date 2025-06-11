@@ -586,6 +586,27 @@ class ViewInspector:
                 logger.info("   Found notification permission dialog")
                 return AppView.NOTIFICATION_PERMISSION
 
+            # Check for puzzle screen first (more specific than captcha)
+            puzzle_indicators_found = 0
+            has_unique_puzzle_element = False
+            
+            for strategy, locator in PUZZLE_REQUIRED_INDICATORS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    puzzle_indicators_found += 1
+                    
+                    # Check if we found one of the UNIQUE puzzle elements
+                    if any(text in locator for text in ["Choose all the", "Get a new puzzle", "Instructions", "Get an audio puzzle"]):
+                        has_unique_puzzle_element = True
+                        logger.info(f"   Found unique puzzle element: {locator}")
+                except:
+                    continue
+            
+            # Only identify as PUZZLE if we have at least one UNIQUE element AND 2+ total indicators
+            if has_unique_puzzle_element and puzzle_indicators_found >= 2:
+                logger.info(f"   Found puzzle authentication screen (indicators: {puzzle_indicators_found}, has unique element: {has_unique_puzzle_element})")
+                return AppView.PUZZLE
+
             # Check for captcha screen
             indicators_found = 0
             for strategy, locator in CAPTCHA_REQUIRED_INDICATORS:
@@ -618,18 +639,6 @@ class ViewInspector:
                     logger.warning(f"   Error tapping captcha input field: {tap_err}")
 
                 return AppView.CAPTCHA
-
-            # Check for puzzle screen
-            puzzle_indicators_found = 0
-            for strategy, locator in PUZZLE_REQUIRED_INDICATORS:
-                try:
-                    self.driver.find_element(strategy, locator)
-                    puzzle_indicators_found += 1
-                except:
-                    continue
-            if puzzle_indicators_found >= 3:
-                logger.info("   Found puzzle authentication screen")
-                return AppView.PUZZLE
 
             # Check for empty library with sign-in button first
             # Try the predefined identifiers

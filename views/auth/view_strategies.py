@@ -70,10 +70,8 @@ CAPTCHA_REQUIRED_INDICATORS = [
     (AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"),
     (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Enter the letters')]"),
     (AppiumBy.XPATH, "//android.widget.Button[@hint='verifyCaptcha']"),
-    # Grid-based captcha indicators
-    (AppiumBy.XPATH, "//android.view.View[@resource-id='captcha-container']"),
-    (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-captcha-header']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:')]"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@hint='Enter the characters you see']"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@hint='Type characters']"),
 ]
 
 CAPTCHA_ERROR_MESSAGES = [
@@ -81,15 +79,16 @@ CAPTCHA_ERROR_MESSAGES = [
 ]
 
 # Puzzle authentication indicators (choose items puzzle)
+# These are UNIQUE to puzzle screens and don't appear in regular CAPTCHA
 PUZZLE_REQUIRED_INDICATORS = [
-    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Choose all the')]"),
-    (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-captcha-header']"),
+    # Primary unique indicators - these ONLY appear in puzzle screens
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Choose all the')]"),  # "Choose all the hats"
     (AppiumBy.XPATH, "//android.widget.Button[@text='Get a new puzzle']"),
     (AppiumBy.XPATH, "//android.widget.Button[@text='Instructions']"),
     (AppiumBy.XPATH, "//android.widget.Button[@text='Get an audio puzzle']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:')]"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Required:')]"),
+    # Secondary indicators that may be shared but help confirm
+    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:') and contains(@text, 'Required:')]"),
 ]
 
 # Library view verification strategies - prioritized by specificity
