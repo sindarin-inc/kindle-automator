@@ -1526,7 +1526,7 @@ class AuthResource(Resource):
 
                     # Update the auth status with the new state
                     auth_status["state"] = state_name
-                    auth_status["requires_manual_login"] = True
+                    auth_status["requires_auth"] = True
                 else:
                     logger.error("Failed to click sign-in button")
             except Exception as e:
@@ -1597,7 +1597,7 @@ class AuthResource(Resource):
         # Start with base response information
         response_data = {
             "success": True,
-            "manual_login_required": auth_status.get("requires_manual_login", True),
+            "requires_auth": auth_status.get("requires_auth", True),
             "message": auth_status.get("message", "Ready for manual authentication via VNC"),
             "state": auth_status.get("state", state_name),
             "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response
