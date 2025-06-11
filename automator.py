@@ -49,22 +49,35 @@ class KindleAutomator:
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
-        # Create and initialize driver
-        driver = Driver()
-        # Set the automator reference in the driver
-        driver.automator = self
-        if not driver.initialize():
-            logger.error("Failed to initialize driver")
+        # Check if we're already in initialization to prevent infinite recursion
+        if hasattr(self, "_initializing_driver") and self._initializing_driver:
+            logger.error("Already initializing driver, avoiding infinite recursion")
             return False
 
-        self.driver = driver.get_appium_driver_instance()
-        # Store reference to the Driver instance for cleanup
-        self._driver_instance = driver
+        self._initializing_driver = True
+        try:
+            # Create and initialize driver
+            driver = Driver()
+            # Set the automator reference in the driver
+            driver.automator = self
+            if not driver.initialize():
+                logger.error("Failed to initialize driver")
+                return False
 
-        # Make sure the driver instance also has a reference to this automator
-        # This ensures auth_handler can access it
-        if self.driver and not hasattr(self.driver, "automator"):
-            self.driver.automator = self
+            self.driver = driver.get_appium_driver_instance()
+            if not self.driver:
+                logger.error("Failed to get Appium driver instance")
+                return False
+
+            # Store reference to the Driver instance for cleanup
+            self._driver_instance = driver
+
+            # Make sure the driver instance also has a reference to this automator
+            # This ensures auth_handler can access it
+            if self.driver and not hasattr(self.driver, "automator"):
+                self.driver.automator = self
+        finally:
+            self._initializing_driver = False
 
         # Get device ID from driver
         self.device_id = driver.get_device_id()

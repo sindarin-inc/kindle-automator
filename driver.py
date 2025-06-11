@@ -28,6 +28,7 @@ class Driver:
         self.automator = None  # Reference to the automator instance
         self.appium_port = None  # Must be set
         self._session_retries = 0
+        self._reconnecting = False  # Flag to prevent infinite recursion
         self._max_session_retries = 2
         self._initialized_attributes = True
 
@@ -1094,13 +1095,21 @@ class Driver:
         appium_info = appium_driver.get_appium_process_info(email)
         if not appium_info or not appium_info.get("running"):
             # Start the Appium server for this profile
-            appium_started = appium_driver.start_appium_for_profile(email)
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                appium_started = appium_driver.start_appium_for_profile(email)
+                if appium_started:
+                    break
+
+                if attempt < max_attempts - 1:
+                    logger.warning(
+                        f"Failed to start Appium server for {email}, attempt {attempt + 1}/{max_attempts}"
+                    )
+                    time.sleep(2)  # Wait before retry
+
             if not appium_started:
-                logger.error(f"Failed to start Appium server for {email}")
-                return {
-                    "error": f"Failed to start Appium server for {email}",
-                    "message": "Could not initialize Appium server",
-                }, 500
+                logger.error(f"Failed to start Appium server for {email} after {max_attempts} attempts")
+                return False
         elif self.driver:
             logger.info(f"Appium already running for {email} on port {appium_info['port']}")
             self.appium_port = appium_info["port"]
@@ -1330,14 +1339,23 @@ class Driver:
 
         self.driver = None
 
+        # Check if we're already in a reconnection attempt
+        if hasattr(self, "_reconnecting") and self._reconnecting:
+            logger.error("Already in reconnection attempt, avoiding infinite loop")
+            return False
+
         # Reinitialize through automator if available
         if self.automator:
-            if self.automator.initialize_driver():
-                logger.info("Successfully reconnected driver session")
-                self._session_retries = 0
-                return True
-            else:
-                logger.error("Failed to reinitialize driver through automator")
+            self._reconnecting = True
+            try:
+                if self.automator.initialize_driver():
+                    logger.info("Successfully reconnected driver session")
+                    self._session_retries = 0
+                    return True
+                else:
+                    logger.error("Failed to reinitialize driver through automator")
+            finally:
+                self._reconnecting = False
         else:
             logger.error("No automator reference available for reconnection")
 
@@ -1346,7 +1364,9 @@ class Driver:
 
     def get_appium_driver_instance(self):
         """Get the Appium driver instance, ensuring session is active"""
-        self._ensure_session_active()
+        if not self._ensure_session_active():
+            logger.error("Failed to ensure active session")
+            return None
         return self.driver
 
     def get_device_id(self):
