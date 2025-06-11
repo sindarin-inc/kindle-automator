@@ -585,20 +585,6 @@ def handle_automator_response(f):
                                 f"LIBRARY_SIGN_IN state detected but user {sindarin_email} has no auth_date - not treating as lost auth"
                             )
 
-                    # Handle CAPTCHA state
-                    if current_state == AppState.CAPTCHA:
-                        time_taken = round(time.time() - start_time, 3)
-
-                        # Create response body for CAPTCHA detection
-                        response_data = {
-                            "status": "captcha_detected",
-                            "time_taken": time_taken,
-                            "error": "CAPTCHA detected - manual intervention required via VNC",
-                            "authenticated": False,
-                            "message": "Please complete the CAPTCHA manually via VNC",
-                        }
-
-                        return response_data, 403
 
                 # Check if this is a known authentication error that shouldn't be retried
                 if isinstance(result, dict) and result.get("error_type") == "incorrect_password":

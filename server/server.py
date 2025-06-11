@@ -1307,7 +1307,13 @@ class BookOpenResource(Resource):
             logger.error(f"Failed to transition from {current_state} to library")
 
             # Check if we're in an authentication-required state
-            auth_required_states = [AppState.SIGN_IN, AppState.SIGN_IN_PASSWORD, AppState.LIBRARY_SIGN_IN]
+            auth_required_states = [
+                AppState.SIGN_IN, 
+                AppState.SIGN_IN_PASSWORD, 
+                AppState.LIBRARY_SIGN_IN,
+                AppState.CAPTCHA,
+                AppState.TWO_FACTOR,
+            ]
             if current_state in auth_required_states:
                 # Check if user was previously authenticated (has auth_date)
                 profile_manager = automator.profile_manager
