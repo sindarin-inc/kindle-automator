@@ -19,6 +19,7 @@ class AppState(Enum):
     READING = auto()  # Book reading view
     CAPTCHA = auto()  # Captcha verification screen
     TWO_FACTOR = auto()  # Two-Step Verification screen
+    PUZZLE = auto()  # Puzzle authentication screen (choose items)
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
     MORE_SETTINGS = auto()  # More tab is selected showing settings menu
 
@@ -37,5 +38,6 @@ class AppView(Enum):
     READING = auto()
     CAPTCHA = auto()  # Captcha verification screen
     TWO_FACTOR = auto()  # Two-Step Verification screen
+    PUZZLE = auto()  # Puzzle authentication screen (choose items)
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
     MORE_SETTINGS = auto()  # More tab is selected showing settings menu

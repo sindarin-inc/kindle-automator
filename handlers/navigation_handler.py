@@ -101,6 +101,7 @@ class NavigationResourceHandler:
                     AppState.LIBRARY_SIGN_IN,
                     AppState.CAPTCHA,
                     AppState.TWO_FACTOR,
+                    AppState.PUZZLE,
                 ]
                 
                 if current_state in auth_required_states:

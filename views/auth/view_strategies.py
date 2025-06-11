@@ -67,14 +67,9 @@ INTERACTIVE_CAPTCHA_IDENTIFIERS = [
 CAPTCHA_REQUIRED_INDICATORS = [
     # Text captcha indicators
     (AppiumBy.XPATH, "//android.webkit.WebView[@text='Authentication required']"),
-    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Solve this puzzle')]"),
     (AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"),
     (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Enter the letters')]"),
     (AppiumBy.XPATH, "//android.widget.Button[@hint='verifyCaptcha']"),
-    # Interactive captcha indicators - more generic
-    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solve this puzzle')]"),
-    (AppiumBy.XPATH, "//android.widget.Button[@text='Confirm']"),
     # Grid-based captcha indicators
     (AppiumBy.XPATH, "//android.view.View[@resource-id='captcha-container']"),
     (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-captcha-header']"),
@@ -83,6 +78,18 @@ CAPTCHA_REQUIRED_INDICATORS = [
 
 CAPTCHA_ERROR_MESSAGES = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Enter the characters as they are given')]"),
+]
+
+# Puzzle authentication indicators (choose items puzzle)
+PUZZLE_REQUIRED_INDICATORS = [
+    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Choose all the')]"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-captcha-header']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Get a new puzzle']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Instructions']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Get an audio puzzle']"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:')]"),
+    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Required:')]"),
 ]
 
 # Library view verification strategies - prioritized by specificity

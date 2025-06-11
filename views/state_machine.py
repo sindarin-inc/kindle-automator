@@ -248,6 +248,11 @@ class KindleStateMachine:
                 logger.info("In TWO_FACTOR state - manual intervention required")
                 # Return True to indicate we're in a valid state but can't proceed
                 return True
+            # Special handling for PUZZLE state
+            elif self.current_state == AppState.PUZZLE:
+                logger.info("In PUZZLE state - manual intervention required")
+                # Return True to indicate we're in a valid state but can't proceed
+                return True
             # Check if sign-in is in sign-in state without credentials
             elif not result and self.current_state == AppState.SIGN_IN:
                 new_state = self._get_current_state()
@@ -257,6 +262,10 @@ class KindleStateMachine:
                     return True
                 elif new_state == AppState.TWO_FACTOR:
                     logger.info("Sign-in resulted in TWO_FACTOR state - waiting for manual intervention")
+                    self.current_state = new_state
+                    return True
+                elif new_state == AppState.PUZZLE:
+                    logger.info("Sign-in resulted in PUZZLE state - waiting for manual intervention")
                     self.current_state = new_state
                     return True
                 elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
@@ -441,6 +450,7 @@ class KindleStateMachine:
                 AppState.SIGN_IN_PASSWORD,
                 AppState.CAPTCHA,
                 AppState.TWO_FACTOR,
+                AppState.PUZZLE,
             ]:
                 if (
                     hasattr(self.auth_handler, "is_keyboard_check_active")

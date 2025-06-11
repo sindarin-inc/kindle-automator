@@ -1313,6 +1313,7 @@ class BookOpenResource(Resource):
                 AppState.LIBRARY_SIGN_IN,
                 AppState.CAPTCHA,
                 AppState.TWO_FACTOR,
+                AppState.PUZZLE,
             ]
             if current_state in auth_required_states:
                 # Check if user was previously authenticated (has auth_date)

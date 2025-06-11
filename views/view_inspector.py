@@ -21,6 +21,7 @@ from views.auth.view_strategies import (
     CAPTCHA_REQUIRED_INDICATORS,
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
+    PUZZLE_REQUIRED_INDICATORS,
 )
 from views.common.dialog_strategies import (
     APP_NOT_RESPONDING_DIALOG_IDENTIFIERS,
@@ -617,6 +618,18 @@ class ViewInspector:
                     logger.warning(f"   Error tapping captcha input field: {tap_err}")
 
                 return AppView.CAPTCHA
+
+            # Check for puzzle screen
+            puzzle_indicators_found = 0
+            for strategy, locator in PUZZLE_REQUIRED_INDICATORS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    puzzle_indicators_found += 1
+                except:
+                    continue
+            if puzzle_indicators_found >= 3:
+                logger.info("   Found puzzle authentication screen")
+                return AppView.PUZZLE
 
             # Check for empty library with sign-in button first
             # Try the predefined identifiers

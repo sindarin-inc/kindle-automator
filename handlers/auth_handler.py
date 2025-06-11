@@ -41,6 +41,7 @@ class LoginVerificationState(Enum):
     SUCCESS = "success"
     CAPTCHA = "captcha"
     TWO_FACTOR = "two_factor"
+    PUZZLE = "puzzle"
     INCORRECT_PASSWORD = "incorrect_password"
     ERROR = "error"
     UNKNOWN = "unknown"
