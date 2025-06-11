@@ -369,6 +369,20 @@ class BooksStreamResource(Resource):
         if current_state != AppState.LIBRARY:
             # Check if we're on the sign-in screen
             if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
+                # Check if user was previously authenticated (has auth_date)
+                profile_manager = automator.profile_manager
+                auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+                
+                if auth_date:
+                    # User was previously authenticated but lost auth - set auth_failed_date
+                    from datetime import datetime
+                    current_date = datetime.now().isoformat()
+                    
+                    logger.warning(
+                        f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
+                    )
+                    profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+                
                 # Get current email to include in VNC URL
                 emulator_id = None
                 if (
