@@ -52,6 +52,7 @@ class EmulatorShutdownManager:
         email: str,
         preserve_reading_state: bool = False,
         mark_for_restart: Optional[bool] = None,
+        skip_snapshot: bool = False,
     ) -> Dict[str, bool]:
         """Gracefully shut down the emulator attached to *email*.
 
@@ -60,6 +61,7 @@ class EmulatorShutdownManager:
             preserve_reading_state: Skip navigation to Library before snapshot.
             mark_for_restart: Persist running flag for deployment restarts.  If *None*,
                 falls back to *preserve_reading_state* for backwards compatibility.
+            skip_snapshot: Skip taking a snapshot before shutdown (for cold boot).
 
         Returns
         -------
@@ -70,10 +72,11 @@ class EmulatorShutdownManager:
         summary["email"] = email
 
         logger.info(
-            "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s)",
+            "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s, skip_snapshot=%s)",
             email,
             preserve_reading_state,
             mark_for_restart,
+            skip_snapshot,
         )
 
         # ------------------------------------------------------------------
@@ -95,6 +98,7 @@ class EmulatorShutdownManager:
             automator,
             email,
             preserve_reading_state,
+            skip_snapshot,
             summary,
         )
 
@@ -188,6 +192,7 @@ class EmulatorShutdownManager:
         automator,
         email: str,
         preserve_reading_state: bool,
+        skip_snapshot: bool,
         summary: Dict[str, bool],
     ) -> bool:
         """Navigate to Library (if requested) and take emulator snapshot."""
@@ -206,7 +211,8 @@ class EmulatorShutdownManager:
 
         if not preserve_reading_state:
             self._park_in_library(sm, email)
-        self._take_snapshot(automator, email, summary)
+        if not skip_snapshot:
+            self._take_snapshot(automator, email, summary)
         return True
 
     def _park_in_library(self, state_machine: KindleStateMachine, email: str) -> None:

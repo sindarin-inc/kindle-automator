@@ -15,7 +15,7 @@ class AVDCreator:
     # Seed clone constants
     SEED_CLONE_EMAIL = "seed@clone.local"
     SEED_CLONE_SNAPSHOT = "pre_kindle_install"
-    
+
     # System image to use for all AVDs
     # Must match sdkmanager --list format exactly
     SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
@@ -199,7 +199,7 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
-            
+
             # Derive sysdir from SYSTEM_IMAGE constant
             # Convert from sdkmanager format to path format
             # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"

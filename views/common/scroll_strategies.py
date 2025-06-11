@@ -74,7 +74,12 @@ class SmartScroller:
             duration5_ms = int(round(effective_total_duration_ms * 0.25))
             # duration6_ms takes the remainder to ensure sum is correct
             duration6_ms = (
-                effective_total_duration_ms - duration1_ms - duration2_ms - duration3_ms - duration4_ms - duration5_ms
+                effective_total_duration_ms
+                - duration1_ms
+                - duration2_ms
+                - duration3_ms
+                - duration4_ms
+                - duration5_ms
             )
 
             # Ensure all durations are non-negative

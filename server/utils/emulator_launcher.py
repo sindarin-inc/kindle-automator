@@ -692,12 +692,15 @@ class EmulatorLauncher:
             logger.error(f"Error ensuring RAM upgrade for {avd_name}: {e}")
             return False
 
-    def launch_emulator(self, email: str) -> Tuple[bool, Optional[str], Optional[int]]:
+    def launch_emulator(
+        self, email: str, cold_boot: bool = False
+    ) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
 
         Args:
             email: The user's email address
+            cold_boot: If True, launch with cold boot (no snapshot loading)
 
         Returns:
             Tuple of (success, emulator_id, display_num)
@@ -826,13 +829,16 @@ class EmulatorLauncher:
                 # hw.* properties are set in the AVD config.ini file
                 "-prop",
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
-                # Load from default_boot snapshot if it exists
-                "-snapshot",
-                "default_boot",
             ]
 
-            # No longer need to explicitly specify snapshot since references are now fixed
-            logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
+            # Add snapshot or cold boot args
+            if cold_boot:
+                common_args.extend(["-no-snapshot-load"])
+                logger.info(f"Starting emulator for {email} with cold boot (no snapshot)")
+            else:
+                # Load from default_boot snapshot if it exists
+                common_args.extend(["-snapshot", "default_boot"])
+                logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":

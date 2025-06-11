@@ -548,8 +548,9 @@ def handle_automator_response(f):
                             logger.info(f"User {sindarin_email} was previously authenticated on {auth_date}")
                             time_taken = round(time.time() - start_time, 3)
 
-                            logger.info(
-                                "LIBRARY_SIGN_IN state detected - auth token lost, manual login required"
+                            logger.warning(
+                                f"LIBRARY_SIGN_IN state detected - auth token lost for {sindarin_email}, "
+                                f"was authenticated on {auth_date}, manual login required"
                             )
 
                             # Get the emulator ID for this email
@@ -559,12 +560,14 @@ def handle_automator_response(f):
                             logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
 
                             return {
-                                "error": "Authentication required",
+                                "error": "Authentication token lost",
                                 "manual_login_required": True,
                                 "current_state": current_state.name,
-                                "message": "Authentication is required via VNC",
+                                "message": "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart.",
                                 "emulator_id": emulator_id,
                                 "time_taken": time_taken,
+                                "previous_auth_date": auth_date,
+                                "auth_token_lost": True,
                             }, 401
                         else:
                             logger.info(
