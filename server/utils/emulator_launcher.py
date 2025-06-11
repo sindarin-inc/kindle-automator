@@ -142,6 +142,22 @@ class EmulatorLauncher:
                 return False
 
             if not emulator_avd:
+                # If we can't get the AVD name, check if the emulator is still booting
+                # by looking at device status
+                for line in devices_result.stdout.strip().split("\n"):
+                    if emulator_id in line:
+                        parts = line.split("\t")
+                        if len(parts) >= 2 and parts[1].strip() in ["offline", "device"]:
+                            # Emulator is present but still booting
+                            # Check if this emulator ID matches our expected one from cache
+                            avd_name = self._extract_avd_name_from_email(email)
+                            if avd_name and avd_name in self.running_emulators:
+                                cached_id, _ = self.running_emulators[avd_name]
+                                if cached_id == emulator_id:
+                                    logger.info(f"Emulator {emulator_id} is booting and matches cached ID for {email}")
+                                    return True
+                            logger.warning(f"Could not get AVD name from emulator {emulator_id}, possibly still booting")
+                        break
                 return False
 
             # Check if the AVD names match
@@ -193,6 +209,11 @@ class EmulatorLauncher:
                 if result.returncode == 0 and result.stdout.strip():
                     avd_name = result.stdout.strip()
                     return avd_name
+                else:
+                    logger.warning(
+                        f"Failed to get ro.kernel.qemu.avd_name from {emulator_id}: "
+                        f"returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
+                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting ro.kernel.qemu.avd_name via ADB: {adb_error}")
@@ -217,6 +238,11 @@ class EmulatorLauncher:
                 if result.returncode == 0 and result.stdout.strip():
                     avd_name = result.stdout.strip()
                     return avd_name
+                else:
+                    logger.warning(
+                        f"Failed to get qemu.avd_name from {emulator_id}: "
+                        f"returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
+                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting qemu.avd_name via ADB: {adb_error}")
@@ -249,10 +275,16 @@ class EmulatorLauncher:
                                 if value:
                                     logger.info(f"Using AVD name from property: {value}")
                                     return value
+                else:
+                    logger.warning(
+                        f"Failed to get all properties from {emulator_id}: "
+                        f"returncode={result.returncode}, stderr='{result.stderr}'"
+                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting all properties via ADB: {adb_error}")
 
+            logger.warning(f"Could not extract AVD name from emulator {emulator_id} after all attempts")
             return None
 
         except Exception as e:

@@ -572,7 +572,9 @@ def handle_automator_response(f):
                                 "authenticated": False,
                                 "manual_login_required": True,  # Keep for backwards compatibility
                                 "current_state": current_state.name,
-                                "message": "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart.",
+                                "message": (
+                                    "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart."
+                                ),
                                 "emulator_id": emulator_id,
                                 "time_taken": time_taken,
                                 "previous_auth_date": auth_date,
@@ -593,7 +595,6 @@ def handle_automator_response(f):
                             "time_taken": time_taken,
                             "error": "CAPTCHA detected - manual intervention required via VNC",
                             "authenticated": False,
-                            "requires_manual_intervention": True,  # Keep for backwards compatibility
                             "message": "Please complete the CAPTCHA manually via VNC",
                         }
 
