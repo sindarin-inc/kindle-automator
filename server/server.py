@@ -1305,6 +1305,10 @@ class BookOpenResource(Resource):
         else:
             # Failed to transition to library
             logger.error(f"Failed to transition from {current_state} to library")
+            
+            # The state machine already has the final state after transition_to_library fails
+            final_state = automator.state_machine.current_state
+            logger.info(f"Final state after failed transition: {final_state}")
 
             # Check if we're in an authentication-required state
             auth_required_states = [
@@ -1315,7 +1319,11 @@ class BookOpenResource(Resource):
                 AppState.TWO_FACTOR,
                 AppState.PUZZLE,
             ]
-            if current_state in auth_required_states:
+            
+            # Log the auth state check for debugging
+            logger.info(f"Checking if {final_state} is in auth_required_states: {final_state in auth_required_states}")
+            
+            if final_state in auth_required_states:
                 # Check if user was previously authenticated (has auth_date)
                 profile_manager = automator.profile_manager
                 auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
@@ -1327,7 +1335,7 @@ class BookOpenResource(Resource):
                     current_date = datetime.now().isoformat()
 
                     logger.warning(
-                        f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
+                        f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {final_state} - marking auth as failed"
                     )
                     profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
 
@@ -1341,7 +1349,7 @@ class BookOpenResource(Resource):
                         "success": False,
                         "error": "Authentication token lost",
                         "authenticated": False,
-                        "current_state": current_state.name,
+                        "current_state": final_state.name,
                         "message": "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart.",
                         "emulator_id": emulator_id,
                         "vnc_url": vnc_url,
@@ -1351,16 +1359,34 @@ class BookOpenResource(Resource):
                 else:
                     return {
                         "success": False,
-                        "error": f"Authentication required - cannot open book from {current_state}",
+                        "error": f"Authentication required - cannot open book from {final_state}",
                         "authenticated": False,
-                        "current_state": current_state.name,
+                        "current_state": final_state.name,
                         "message": "Please authenticate first via the /auth endpoint or VNC",
                     }, 401
             else:
-                return {
+                # Not in an auth state, but still failed - include authenticated status
+                # Check if we have any indication that authentication might be needed
+                is_authenticated = final_state not in [AppState.UNKNOWN, AppState.ERROR]
+                
+                response = {
                     "success": False,
-                    "error": f"Failed to transition from {current_state} to library",
-                }, 500
+                    "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
+                    "current_state": final_state.name,
+                    "authenticated": is_authenticated
+                }
+                
+                # If we ended in UNKNOWN or ERROR state, it might be an auth issue
+                if final_state in [AppState.UNKNOWN, AppState.ERROR]:
+                    # Check if user was previously authenticated
+                    profile_manager = automator.profile_manager
+                    auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+                    if auth_date:
+                        # They were authenticated before, might have lost auth
+                        response["message"] = "Failed to determine app state - authentication may be required"
+                        response["authenticated"] = False
+                
+                return response, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
