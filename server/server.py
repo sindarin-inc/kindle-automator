@@ -372,17 +372,18 @@ class BooksStreamResource(Resource):
                 # Check if user was previously authenticated (has auth_date)
                 profile_manager = automator.profile_manager
                 auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
-                
+
                 if auth_date:
                     # User was previously authenticated but lost auth - set auth_failed_date
                     from datetime import datetime
+
                     current_date = datetime.now().isoformat()
-                    
+
                     logger.warning(
                         f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
                     )
                     profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
-                
+
                 # Get current email to include in VNC URL
                 emulator_id = None
                 if (
@@ -1305,24 +1306,26 @@ class BookOpenResource(Resource):
         else:
             # Failed to transition to library
             logger.error(f"Failed to transition from {current_state} to library")
-            
+
             # The state machine already has the final state after transition_to_library fails
             final_state = automator.state_machine.current_state
             logger.info(f"Final state after failed transition: {final_state}")
 
             # Check if we're in an authentication-required state
             auth_required_states = [
-                AppState.SIGN_IN, 
-                AppState.SIGN_IN_PASSWORD, 
+                AppState.SIGN_IN,
+                AppState.SIGN_IN_PASSWORD,
                 AppState.LIBRARY_SIGN_IN,
                 AppState.CAPTCHA,
                 AppState.TWO_FACTOR,
                 AppState.PUZZLE,
             ]
-            
+
             # Log the auth state check for debugging
-            logger.info(f"Checking if {final_state} is in auth_required_states: {final_state in auth_required_states}")
-            
+            logger.info(
+                f"Checking if {final_state} is in auth_required_states: {final_state in auth_required_states}"
+            )
+
             if final_state in auth_required_states:
                 # Check if user was previously authenticated (has auth_date)
                 profile_manager = automator.profile_manager
@@ -1350,7 +1353,9 @@ class BookOpenResource(Resource):
                         "error": "Authentication token lost",
                         "authenticated": False,
                         "current_state": final_state.name,
-                        "message": "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart.",
+                        "message": (
+                            "Your Kindle authentication token was lost. Authentication is required via mobile app."
+                        ),
                         "emulator_id": emulator_id,
                         "vnc_url": vnc_url,
                         "previous_auth_date": auth_date,
@@ -1359,23 +1364,25 @@ class BookOpenResource(Resource):
                 else:
                     return {
                         "success": False,
-                        "error": f"Authentication required - cannot open book from {final_state}",
+                        "error": (
+                            f"Authentication required - cannot open book from {final_state}, needs /auth"
+                        ),
                         "authenticated": False,
                         "current_state": final_state.name,
-                        "message": "Please authenticate first via the /auth endpoint or VNC",
+                        "message": "Please authenticate Kindle first via the mobile app.",
                     }, 401
             else:
                 # Not in an auth state, but still failed - include authenticated status
                 # Check if we have any indication that authentication might be needed
                 is_authenticated = final_state not in [AppState.UNKNOWN, AppState.ERROR]
-                
+
                 response = {
                     "success": False,
                     "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
                     "current_state": final_state.name,
-                    "authenticated": is_authenticated
+                    "authenticated": is_authenticated,
                 }
-                
+
                 # If we ended in UNKNOWN or ERROR state, it might be an auth issue
                 if final_state in [AppState.UNKNOWN, AppState.ERROR]:
                     # Check if user was previously authenticated
@@ -1385,7 +1392,7 @@ class BookOpenResource(Resource):
                         # They were authenticated before, might have lost auth
                         response["message"] = "Failed to determine app state - authentication may be required"
                         response["authenticated"] = False
-                
+
                 return response, 500
 
     @ensure_user_profile_loaded
