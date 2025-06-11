@@ -1291,7 +1291,22 @@ class BookOpenResource(Resource):
         else:
             # Failed to transition to library
             logger.error(f"Failed to transition from {current_state} to library")
-            return {"success": False, "error": f"Failed to transition from {current_state} to library"}, 500
+
+            # Check if we're in an authentication-required state
+            auth_required_states = [AppState.SIGN_IN, AppState.SIGN_IN_PASSWORD, AppState.LIBRARY_SIGN_IN]
+            if current_state in auth_required_states:
+                return {
+                    "success": False,
+                    "error": f"Authentication required - cannot open book from {current_state}",
+                    "authenticated": False,
+                    "current_state": current_state.name,
+                    "message": "Please authenticate first via the /auth endpoint or VNC",
+                }, 401
+            else:
+                return {
+                    "success": False,
+                    "error": f"Failed to transition from {current_state} to library",
+                }, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
