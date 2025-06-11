@@ -167,7 +167,7 @@ class BooksResource(Resource):
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "current_state": current_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
@@ -203,7 +203,7 @@ class BooksResource(Resource):
                 logger.info("Authentication required after transition attempt - providing VNC URL")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "current_state": new_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
@@ -236,7 +236,7 @@ class BooksResource(Resource):
                     logger.info("Authentication required - providing VNC URL for manual authentication")
                     return {
                         "error": "Authentication required",
-                        "requires_auth": True,
+                        "authenticated": False,
                         "message": "Authentication is required via VNC",
                         "emulator_id": emulator_id,
                     }, 401
@@ -267,7 +267,7 @@ class BooksResource(Resource):
                     logger.info("Transition failed - authentication required - providing VNC URL")
                     return {
                         "error": "Authentication required",
-                        "requires_auth": True,
+                        "authenticated": False,
                         "current_state": updated_state.name,
                         "message": "Authentication is required via VNC",
                         "emulator_id": emulator_id,
@@ -301,7 +301,7 @@ class BooksResource(Resource):
             logger.info("Authentication required - providing VNC URL for manual authentication")
             return {
                 "error": "Authentication required",
-                "requires_auth": True,
+                "authenticated": False,
                 "message": "Authentication is required via VNC",
                 "emulator_id": emulator_id,
             }, 401
@@ -382,7 +382,7 @@ class BooksStreamResource(Resource):
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "current_state": current_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
@@ -411,7 +411,7 @@ class BooksStreamResource(Resource):
                 logger.info("Authentication required after transition attempt - providing VNC URL")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "current_state": new_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
@@ -437,7 +437,7 @@ class BooksStreamResource(Resource):
                     logger.info("Transition failed - authentication required - providing VNC URL")
                     return {
                         "error": "Authentication required",
-                        "requires_auth": True,
+                        "authenticated": False,
                         "current_state": updated_state.name,
                         "message": "Authentication is required via VNC",
                         "emulator_id": emulator_id,
@@ -1295,13 +1295,46 @@ class BookOpenResource(Resource):
             # Check if we're in an authentication-required state
             auth_required_states = [AppState.SIGN_IN, AppState.SIGN_IN_PASSWORD, AppState.LIBRARY_SIGN_IN]
             if current_state in auth_required_states:
-                return {
-                    "success": False,
-                    "error": f"Authentication required - cannot open book from {current_state}",
-                    "authenticated": False,
-                    "current_state": current_state.name,
-                    "message": "Please authenticate first via the /auth endpoint or VNC",
-                }, 401
+                # Check if user was previously authenticated (has auth_date)
+                profile_manager = automator.profile_manager
+                auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+
+                if auth_date:
+                    # User was previously authenticated but lost auth - set auth_failed_date
+                    from datetime import datetime
+
+                    current_date = datetime.now().isoformat()
+
+                    logger.warning(
+                        f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
+                    )
+                    profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+
+                    # Get the emulator ID and VNC URL for this email
+                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
+                    from server.utils.request_utils import get_formatted_vnc_url
+
+                    vnc_url = get_formatted_vnc_url(sindarin_email)
+
+                    return {
+                        "success": False,
+                        "error": "Authentication token lost",
+                        "authenticated": False,
+                        "current_state": current_state.name,
+                        "message": "Your Kindle authentication token was lost. Authentication is required via VNC. This may require a cold boot restart.",
+                        "emulator_id": emulator_id,
+                        "vnc_url": vnc_url,
+                        "previous_auth_date": auth_date,
+                        "auth_token_lost": True,
+                    }, 401
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Authentication required - cannot open book from {current_state}",
+                        "authenticated": False,
+                        "current_state": current_state.name,
+                        "message": "Please authenticate first via the /auth endpoint or VNC",
+                    }, 401
             else:
                 return {
                     "success": False,
@@ -1541,7 +1574,7 @@ class AuthResource(Resource):
 
                     # Update the auth status with the new state
                     auth_status["state"] = state_name
-                    auth_status["requires_auth"] = True
+                    auth_status["authenticated"] = False
                 else:
                     logger.error("Failed to click sign-in button")
             except Exception as e:
@@ -1612,7 +1645,7 @@ class AuthResource(Resource):
         # Start with base response information
         response_data = {
             "success": True,
-            "authenticated": not auth_status.get("requires_auth", True),  # Inverse logic
+            "authenticated": auth_status.get("authenticated", False),
             "manual_login_required": auth_status.get(
                 "requires_manual_login", True
             ),  # Keep for backwards compatibility
