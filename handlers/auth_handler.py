@@ -347,9 +347,10 @@ class AuthenticationHandler:
                     "vnc_url": get_formatted_vnc_url(email),
                 }
 
-            # Check if we're already on the sign-in screen
-            if state_name == "SIGN_IN":
-                logger.info("Already on sign-in screen")
+            # Check if we're already in a sign-in flow state
+            sign_in_states = ["SIGN_IN", "SIGN_IN_PASSWORD", "CAPTCHA", "TWO_FACTOR", "PUZZLE"]
+            if state_name in sign_in_states:
+                logger.info(f"Already in sign-in flow: {state_name}")
 
                 # Always require manual login
                 # Get email from automator's current profile if available
@@ -374,11 +375,12 @@ class AuthenticationHandler:
                     except Exception as e:
                         logger.error(f"Error checking emulator readiness: {e}")
 
-                # Focus the email field if needed
-                self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
+                # Focus the email field if needed (only for SIGN_IN state)
+                if state_name == "SIGN_IN":
+                    self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
 
                 return {
-                    "state": "SIGN_IN",
+                    "state": state_name,
                     "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": formatted_vnc_url,
