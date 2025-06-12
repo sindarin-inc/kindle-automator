@@ -74,6 +74,8 @@ class KindleOCR:
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
                     return page.markdown
+                else:
+                    logger.error(f"No OCR response or no pages found: {ocr_response}")
                 return None
 
             # Execute with timeout
