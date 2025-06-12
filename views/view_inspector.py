@@ -65,8 +65,12 @@ class ViewInspector:
         # Initialize device_id to None - will be set properly later
         self.automator = self.driver.automator
 
-    def ensure_app_foreground(self):
-        """Ensures the Kindle app is in the foreground"""
+    def ensure_app_foreground(self, force_restart=False):
+        """Ensures the Kindle app is in the foreground
+        
+        Args:
+            force_restart: If True, force stop the app before starting (used when in UNKNOWN state)
+        """
         try:
             # Get device ID through multiple methods to ensure we have one
             # Get the emulator ID for this email if possible
@@ -114,17 +118,18 @@ class ViewInspector:
                 logger.error("Still no device ID and multiple emulators may be running - cannot proceed")
                 return False
 
-            # First, force stop the app to ensure a clean restart
-            try:
-                stop_cmd = ["adb"]
-                if device_id:
-                    stop_cmd.extend(["-s", device_id])
-                stop_cmd.extend(["shell", "am", "force-stop", self.app_package])
-                subprocess.run(stop_cmd, check=False, capture_output=True, text=True)
-                logger.info(f"Force stopped {self.app_package}")
-                time.sleep(0.5)  # Brief pause after stopping
-            except Exception as e:
-                logger.warning(f"Error force stopping app: {e}")
+            # Force stop the app if requested (e.g., when in UNKNOWN state)
+            if force_restart:
+                try:
+                    stop_cmd = ["adb"]
+                    if device_id:
+                        stop_cmd.extend(["-s", device_id])
+                    stop_cmd.extend(["shell", "am", "force-stop", self.app_package])
+                    subprocess.run(stop_cmd, check=False, capture_output=True, text=True)
+                    logger.info(f"Force stopped {self.app_package}")
+                    time.sleep(0.5)  # Brief pause after stopping
+                except Exception as e:
+                    logger.warning(f"Error force stopping app: {e}")
 
             # Build the ADB command based on whether we have a device ID
             cmd = ["adb"]

@@ -652,8 +652,8 @@ class KindleStateMachine:
                     ):
                         logger.warning("App has quit or was not launched - current activity is not Kindle")
 
-                        # Try to relaunch the app
-                        if self.view_inspector.ensure_app_foreground():
+                        # Try to relaunch the app with force restart since we're in an unknown state
+                        if self.view_inspector.ensure_app_foreground(force_restart=True):
                             logger.info("Successfully relaunched Kindle app, waiting for it to initialize...")
                             time.sleep(2)  # Wait for app to fully initialize
 
