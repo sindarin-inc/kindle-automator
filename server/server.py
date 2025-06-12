@@ -1312,21 +1312,9 @@ class BookOpenResource(Resource):
             logger.info(f"Final state after failed transition: {final_state}")
 
             # Check if we're in an authentication-required state
-            auth_required_states = [
-                AppState.SIGN_IN,
-                AppState.SIGN_IN_PASSWORD,
-                AppState.LIBRARY_SIGN_IN,
-                AppState.CAPTCHA,
-                AppState.TWO_FACTOR,
-                AppState.PUZZLE,
-            ]
+            logger.info(f"Checking if {final_state} is in an auth state: {final_state.is_auth_state()}")
 
-            # Log the auth state check for debugging
-            logger.info(
-                f"Checking if {final_state} is in auth_required_states: {final_state in auth_required_states}"
-            )
-
-            if final_state in auth_required_states:
+            if final_state.is_auth_state():
                 # Check if user was previously authenticated (has auth_date)
                 profile_manager = automator.profile_manager
                 auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
@@ -1374,7 +1362,7 @@ class BookOpenResource(Resource):
             else:
                 # Not in an auth state, but still failed - include authenticated status
                 # Check if we have any indication that authentication might be needed
-                is_authenticated = final_state not in [AppState.UNKNOWN, AppState.ERROR]
+                is_authenticated = not final_state.is_auth_state()
 
                 response = {
                     "success": False,
@@ -1384,7 +1372,7 @@ class BookOpenResource(Resource):
                 }
 
                 # If we ended in UNKNOWN or ERROR state, it might be an auth issue
-                if final_state in [AppState.UNKNOWN, AppState.ERROR]:
+                if final_state.is_auth_state():
                     # Check if user was previously authenticated
                     profile_manager = automator.profile_manager
                     auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
