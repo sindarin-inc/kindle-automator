@@ -114,6 +114,18 @@ class ViewInspector:
                 logger.error("Still no device ID and multiple emulators may be running - cannot proceed")
                 return False
 
+            # First, force stop the app to ensure a clean restart
+            try:
+                stop_cmd = ["adb"]
+                if device_id:
+                    stop_cmd.extend(["-s", device_id])
+                stop_cmd.extend(["shell", "am", "force-stop", self.app_package])
+                subprocess.run(stop_cmd, check=False, capture_output=True, text=True)
+                logger.info(f"Force stopped {self.app_package}")
+                time.sleep(0.5)  # Brief pause after stopping
+            except Exception as e:
+                logger.warning(f"Error force stopping app: {e}")
+
             # Build the ADB command based on whether we have a device ID
             cmd = ["adb"]
             if device_id:
