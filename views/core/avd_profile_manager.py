@@ -713,6 +713,19 @@ class AVDProfileManager:
         logger.info(f"[CROSS_USER_DEBUG] map_running_emulators returned: {running_emulators}")
 
         emulator_id = running_emulators.get(avd_name)
+
+        # CRITICAL: Only return an emulator ID if it actually matches this AVD
+        # This prevents cross-user emulator access
+        if emulator_id and not cached_info:
+            # Verify this emulator is actually running the requested AVD
+            actual_avd = self.device_discovery._query_emulator_avd_name(emulator_id)
+            if actual_avd != avd_name:
+                logger.error(
+                    f"[CROSS_USER_DEBUG] CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
+                    f"not {avd_name}. Returning None to prevent cross-user access."
+                )
+                return None
+
         logger.info(
             f"[CROSS_USER_DEBUG] Found emulator id: {emulator_id} for AVD: {avd_name}. All running emulators: {running_emulators}"
         )

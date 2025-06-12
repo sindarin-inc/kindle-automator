@@ -363,7 +363,7 @@ class EmulatorShutdownManager:
         )
 
         try:
-            # Log what AVD this emulator is running
+            # CRITICAL: Verify this emulator belongs to this email before cleaning
             try:
                 avd_result = subprocess.run(
                     [f"adb -s {emulator_id} emu avd name"],
@@ -373,9 +373,23 @@ class EmulatorShutdownManager:
                     timeout=3,
                 )
                 if avd_result.returncode == 0:
-                    logger.info(
-                        f"[CROSS_USER_DEBUG] Emulator {emulator_id} is running AVD: {avd_result.stdout.strip()}"
-                    )
+                    device_avd = avd_result.stdout.strip()
+                    # Handle "AVD_NAME\nOK" format
+                    if "\n" in device_avd:
+                        device_avd = device_avd.split("\n")[0].strip()
+
+                    logger.info(f"[CROSS_USER_DEBUG] Emulator {emulator_id} is running AVD: {device_avd}")
+
+                    # Get expected AVD from VNC instance or profile
+                    vnc_mgr = VNCInstanceManager.get_instance()
+                    vnc_instance = vnc_mgr.get_instance_for_profile(email)
+                    if vnc_instance and vnc_instance.get("emulator_id") != emulator_id:
+                        logger.error(
+                            f"[CROSS_USER_DEBUG] CRITICAL: Attempted to clean ports for emulator {emulator_id} "
+                            f"but VNC instance shows {vnc_instance.get('emulator_id')} for {email}. "
+                            f"REFUSING to prevent cross-user interference!"
+                        )
+                        return
                 else:
                     logger.warning(f"[CROSS_USER_DEBUG] Could not determine AVD for emulator {emulator_id}")
             except Exception as e:

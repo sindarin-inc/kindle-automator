@@ -165,7 +165,10 @@ class DeviceDiscovery:
 
             if result.returncode == 0 and result.stdout:
                 avd_name = result.stdout.strip()
-                if avd_name:
+                # The emu avd name command sometimes returns "AVD_NAME\nOK", so we need to handle that
+                if "\n" in avd_name:
+                    avd_name = avd_name.split("\n")[0].strip()
+                if avd_name and avd_name != "OK":
                     logger.info(
                         f"[CROSS_USER_DEBUG] Queried emulator {emulator_id} directly, running AVD: {avd_name}"
                     )

@@ -87,40 +87,12 @@ class Driver:
                     )
                     return None
 
-            # Only proceed with regular device search if NO specific device was requested
-            logger.warning(
-                f"[CROSS_USER_DEBUG] No specific device requested for email={email}, searching for ANY available emulator"
+            # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
+            # This prevents cross-user emulator access
+            logger.error(
+                f"[CROSS_USER_DEBUG] No specific device requested for email={email}. "
+                f"Refusing to search for ANY available emulator to prevent cross-user access."
             )
-            result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
-            logger.info(f"[CROSS_USER_DEBUG] ADB devices output for general search:\n{result.stdout}")
-
-            for line in result.stdout.splitlines():
-                if "emulator-" in line and "device" in line:
-                    device_id = line.split()[0]
-                    logger.info(f"[CROSS_USER_DEBUG] Found potential emulator: {device_id} for email={email}")
-                    # Verify this is actually an emulator
-                    verify_result = subprocess.run(
-                        ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    if "sdk" in verify_result.stdout.lower() or "emulator" in verify_result.stdout.lower():
-                        logger.warning(
-                            f"[CROSS_USER_DEBUG] Returning FIRST available emulator {device_id} for email={email} - THIS MAY BE WRONG!"
-                        )
-                        return device_id
-                elif "127.0.0.1:" in line:
-                    device_id = line.split()[0]
-                    verify_result = subprocess.run(
-                        ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    logger.info(f"Verify result: {verify_result.stdout}")
-                    if "pixel" in verify_result.stdout.lower():
-                        return device_id
             return None
         except Exception as e:
             logger.error(f"Error getting emulator device ID: {e}")
@@ -556,7 +528,7 @@ class Driver:
         )
 
         try:
-            # Log what AVD this device is running
+            # CRITICAL: Verify this device belongs to the current user before cleaning
             try:
                 avd_result = subprocess.run(
                     ["adb", "-s", self.device_id, "emu", "avd", "name"],
@@ -565,9 +537,24 @@ class Driver:
                     timeout=3,
                 )
                 if avd_result.returncode == 0:
-                    logger.info(
-                        f"[CROSS_USER_DEBUG] Device {self.device_id} is running AVD: {avd_result.stdout.strip()}"
-                    )
+                    device_avd = avd_result.stdout.strip()
+                    # Handle "AVD_NAME\nOK" format
+                    if "\n" in device_avd:
+                        device_avd = device_avd.split("\n")[0].strip()
+
+                    logger.info(f"[CROSS_USER_DEBUG] Device {self.device_id} is running AVD: {device_avd}")
+
+                    # Get expected AVD name for this email
+                    profile = self.automator.profile_manager.get_current_profile()
+                    expected_avd = profile.get("avd_name") if profile else None
+
+                    if expected_avd and device_avd != expected_avd:
+                        logger.error(
+                            f"[CROSS_USER_DEBUG] CRITICAL: Device {self.device_id} is running AVD {device_avd} "
+                            f"but email {email} expects AVD {expected_avd}. REFUSING to clean sessions to prevent "
+                            f"cross-user interference!"
+                        )
+                        return False
                 else:
                     logger.warning(f"[CROSS_USER_DEBUG] Could not determine AVD for device {self.device_id}")
             except Exception as e:
@@ -1012,6 +999,23 @@ class Driver:
 
         email = get_sindarin_email()
         logger.info(f"[CROSS_USER_DEBUG] Driver.initialize() called for email={email}")
+
+        # CRITICAL: Check if this profile has a VNC instance before proceeding
+        # This prevents initializing drivers for profiles without running emulators
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_instance = vnc_manager.get_instance_for_profile(email)
+            if not vnc_instance:
+                logger.error(
+                    f"[CROSS_USER_DEBUG] No VNC instance found for {email}. "
+                    f"Cannot initialize driver without a running emulator."
+                )
+                return False
+            logger.info(f"[CROSS_USER_DEBUG] Found VNC instance for {email}: {vnc_instance}")
+        except Exception as e:
+            logger.warning(f"[CROSS_USER_DEBUG] Error checking VNC instance: {e}")
 
         # Get device ID first, using specific device ID from profile if available
         target_device_id = None
