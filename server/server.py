@@ -1512,14 +1512,9 @@ class AuthResource(Resource):
         logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
 
         # Debug logging for cross-user interference
-        logger.info(f"CROSS_USER_DEBUG: Auth endpoint called for email={sindarin_email}")
-        logger.info(f"CROSS_USER_DEBUG: Current automators in server: {list(server.automators.keys())}")
 
         # Get the automator (should have been created by the decorator)
         automator = server.automators.get(sindarin_email)
-        logger.info(
-            f"CROSS_USER_DEBUG: Retrieved automator={id(automator) if automator else 'None'} for email={sindarin_email}"
-        )
 
         # Use the prepare_for_authentication method - always using VNC
         # Make sure the driver has access to the automator for state transitions
@@ -1527,19 +1522,11 @@ class AuthResource(Resource):
         if automator and automator.driver and not hasattr(automator.driver, "automator"):
             logger.info("Setting automator on driver object for state transitions")
             automator.driver.automator = automator
-            logger.info(
-                f"CROSS_USER_DEBUG: Set driver.automator reference - driver={id(automator.driver)}, automator={id(automator)}"
-            )
 
         # Ensure the automator exists and driver is healthy and all components are initialized
         if not automator:
             logger.error("Failed to get automator for request")
             return {"error": "Failed to initialize automator"}, 500
-
-        if automator.driver:
-            logger.info(
-                f"CROSS_USER_DEBUG: Before ensure_driver_running - driver={id(automator.driver)}, automator={id(automator)}, device_id={getattr(automator, 'device_id', 'unknown')}"
-            )
 
         if not automator.ensure_driver_running():
             logger.error("Failed to ensure driver is running, cannot proceed with authentication")
@@ -1547,11 +1534,7 @@ class AuthResource(Resource):
 
         # This is the critical method that ensures we navigate to AUTH or LIBRARY
         logger.info("Calling prepare_for_authentication to navigate to sign-in screen or library")
-        logger.info(
-            f"CROSS_USER_DEBUG: About to call prepare_for_authentication - automator={id(automator)}, state_machine={id(automator.state_machine)}, auth_handler={id(automator.state_machine.auth_handler)}"
-        )
         auth_status = automator.state_machine.auth_handler.prepare_for_authentication()
-        logger.info(f"CROSS_USER_DEBUG: prepare_for_authentication returned for email={sindarin_email}")
 
         logger.info(f"Authentication preparation status: {auth_status}")
 

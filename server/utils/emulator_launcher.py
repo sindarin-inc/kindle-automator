@@ -1207,20 +1207,15 @@ class EmulatorLauncher:
         Returns:
             Tuple of (emulator_id, display_num) or (None, None) if not found
         """
-        logger.info(f"[CROSS_USER_DEBUG] get_running_emulator called for email={email}")
 
         try:
             # First try to get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
-            logger.info(f"[CROSS_USER_DEBUG] AVD name for {email} is: {avd_name}")
-            logger.info(f"[CROSS_USER_DEBUG] running_emulators cache: {self.running_emulators}")
 
             # If we have an AVD name and it's in running_emulators, use that
             if avd_name and avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
-                logger.info(
-                    f"[CROSS_USER_DEBUG] Found cached emulator for {avd_name}: {emulator_id}, display: {display_num}"
-                )
+                logger.info(f"Found cached emulator for {avd_name}: {emulator_id}, display: {display_num}")
 
                 # Get the direct ADB output (includes both 'device' and 'offline' status)
                 try:

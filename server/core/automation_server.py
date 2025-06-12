@@ -54,7 +54,6 @@ class AutomationServer:
         Returns:
             The automator instance or None if no email provided
         """
-        logger.info(f"CROSS_USER_DEBUG: initialize_automator called for email={email}")
         if not email:
             logger.error("Email parameter is required for initialize_automator")
             return None
@@ -62,9 +61,6 @@ class AutomationServer:
         # Check if we already have an automator for this profile
         if email in self.automators and self.automators[email]:
             logger.info(f"Using existing automator for profile {email}")
-            logger.info(
-                f"CROSS_USER_DEBUG: Returning existing automator={id(self.automators[email])} for email={email}"
-            )
             return self.automators[email]
 
         # Set email context for this thread so logs go to the right file
@@ -72,9 +68,9 @@ class AutomationServer:
 
         with EmailContext(email):
             # Initialize a new automator
-            logger.info(f"CROSS_USER_DEBUG: Creating new KindleAutomator for email={email}")
+            logger.info(f"Creating new KindleAutomator for email={email}")
             automator = KindleAutomator()
-            logger.info(f"CROSS_USER_DEBUG: Created automator={id(automator)} for email={email}")
+            logger.info(f"Created automator={id(automator)} for email={email}")
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
 
@@ -83,7 +79,6 @@ class AutomationServer:
 
             # Store the automator
             self.automators[email] = automator
-            logger.info(f"CROSS_USER_DEBUG: Stored automator={id(automator)} in self.automators['{email}']")
             # Set initial activity time
             self.update_activity(email)
 

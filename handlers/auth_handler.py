@@ -141,16 +141,9 @@ class AuthenticationHandler:
                 - vnc_url: URL to access VNC for manual login
         """
         try:
-            logger.info(
-                f"CROSS_USER_DEBUG: prepare_for_authentication called, driver={id(self.driver)}, auth_handler={id(self)}"
-            )
-
             # Access the automator directly from the driver
             # This ensures we're using the correct automator instance for this specific user
             automator = getattr(self.driver, "automator", None)
-            logger.info(
-                f"CROSS_USER_DEBUG: Got automator={id(automator) if automator else 'None'} from driver={id(self.driver)}"
-            )
 
             if not automator:
                 logger.error("Driver does not have automator reference. This should not happen.")
@@ -170,9 +163,6 @@ class AuthenticationHandler:
                     current_profile = automator.profile_manager.get_current_profile()
                     if current_profile and "email" in current_profile:
                         profile_email = current_profile["email"]
-                logger.info(
-                    f"CROSS_USER_DEBUG: Automator details - device_id={device_id}, profile_email={profile_email}, automator={id(automator)}"
-                )
 
             # Verify we have the state machine
             if not hasattr(automator, "state_machine") or not automator.state_machine:
@@ -408,13 +398,7 @@ class AuthenticationHandler:
                 if hasattr(automator, "restart_kindle_app"):
                     logger.info("Restarting Kindle app to get to sign-in screen")
                     device_id = getattr(automator, "device_id", "unknown")
-                    logger.info(
-                        f"CROSS_USER_DEBUG: About to restart_kindle_app on device_id={device_id}, automator={id(automator)}"
-                    )
                     success = automator.restart_kindle_app()
-                    logger.info(
-                        f"CROSS_USER_DEBUG: restart_kindle_app completed with success={success} on device_id={device_id}"
-                    )
                     if not success:
                         logger.warning("restart_kindle_app reported failure, will try alternative approaches")
                 else:
@@ -423,11 +407,7 @@ class AuthenticationHandler:
                     try:
                         logger.info("Attempting to launch Kindle app directly")
                         device_id = getattr(automator, "device_id", "unknown")
-                        logger.info(
-                            f"CROSS_USER_DEBUG: About to activate_app on device_id={device_id}, driver={id(automator.driver)}, automator={id(automator)}"
-                        )
                         automator.driver.activate_app("com.amazon.kindle")
-                        logger.info(f"CROSS_USER_DEBUG: activate_app completed on device_id={device_id}")
                         time.sleep(3)  # Give it time to launch
                         success = True
                     except Exception as launch_e:
@@ -438,11 +418,7 @@ class AuthenticationHandler:
                 try:
                     logger.info("Fallback - attempting to launch Kindle app via activate_app")
                     device_id = getattr(automator, "device_id", "unknown")
-                    logger.info(
-                        f"CROSS_USER_DEBUG: Fallback activate_app on device_id={device_id}, driver={id(automator.driver)}, automator={id(automator)}"
-                    )
                     automator.driver.activate_app("com.amazon.kindle")
-                    logger.info(f"CROSS_USER_DEBUG: Fallback activate_app completed on device_id={device_id}")
                     time.sleep(3)  # Give it time to launch
                     success = True
                 except Exception as activate_e:
@@ -523,13 +499,7 @@ class AuthenticationHandler:
                 try:
                     logger.info("Ensuring Kindle app is active via activate_app")
                     device_id = getattr(automator, "device_id", "unknown")
-                    logger.info(
-                        f"CROSS_USER_DEBUG: transition_to_library activate_app on device_id={device_id}, driver={id(automator.driver)}, automator={id(automator)}"
-                    )
                     automator.driver.activate_app("com.amazon.kindle")
-                    logger.info(
-                        f"CROSS_USER_DEBUG: transition_to_library activate_app completed on device_id={device_id}"
-                    )
                     time.sleep(3)  # Give it time to launch
                 except Exception as launch_e:
                     logger.warning(f"Error activating Kindle app: {launch_e}")
@@ -537,13 +507,7 @@ class AuthenticationHandler:
                 # Now attempt transition_to_library which will go through the auth flow if needed
                 logger.info("Executing transition_to_library to navigate through auth flow")
                 device_id = getattr(automator, "device_id", "unknown")
-                logger.info(
-                    f"CROSS_USER_DEBUG: About to call transition_to_library on device_id={device_id}, automator={id(automator)}"
-                )
                 transition_result = automator.transition_to_library()
-                logger.info(
-                    f"CROSS_USER_DEBUG: transition_to_library completed with result={transition_result} on device_id={device_id}"
-                )
                 logger.info(f"transition_to_library result: {transition_result}")
 
                 # Update our state to see where we are

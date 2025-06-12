@@ -110,15 +110,11 @@ class EmulatorShutdownManager:
             display_num = self._stop_emulator_processes(automator, email, summary)
         finally:
             # Always cleanup ports even when stop_emulator raised.
-            logger.info(f"[CROSS_USER_DEBUG] Getting emulator ID for cleanup of email={email}")
             emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]
-            logger.info(
-                f"[CROSS_USER_DEBUG] get_running_emulator returned emulator_id={emulator_id} for email={email}"
-            )
             if emulator_id:
                 self._cleanup_emulator_ports(emulator_id, email)
             else:
-                logger.info(f"[CROSS_USER_DEBUG] No emulator ID found for cleanup of email={email}")
+                logger.info(f"No emulator ID found for cleanup of email={email}")
 
         # ------------------------------------------------------------------
         # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
@@ -358,9 +354,6 @@ class EmulatorShutdownManager:
 
     def _cleanup_emulator_ports(self, emulator_id: str, email: str) -> None:  # noqa: D401, ANN001
         """Clean up all ports associated with *emulator_id* (unchanged signature)."""
-        logger.info(
-            f"[CROSS_USER_DEBUG] _cleanup_emulator_ports called for emulator_id={emulator_id}, email={email}"
-        )
 
         try:
             # CRITICAL: Verify this emulator belongs to this email before cleaning
@@ -378,24 +371,24 @@ class EmulatorShutdownManager:
                     if "\n" in device_avd:
                         device_avd = device_avd.split("\n")[0].strip()
 
-                    logger.info(f"[CROSS_USER_DEBUG] Emulator {emulator_id} is running AVD: {device_avd}")
+                    logger.info(f"Emulator {emulator_id} is running AVD: {device_avd}")
 
                     # Get expected AVD from VNC instance or profile
                     vnc_mgr = VNCInstanceManager.get_instance()
                     vnc_instance = vnc_mgr.get_instance_for_profile(email)
                     if vnc_instance and vnc_instance.get("emulator_id") != emulator_id:
                         logger.error(
-                            f"[CROSS_USER_DEBUG] CRITICAL: Attempted to clean ports for emulator {emulator_id} "
+                            f"CRITICAL: Attempted to clean ports for emulator {emulator_id} "
                             f"but VNC instance shows {vnc_instance.get('emulator_id')} for {email}. "
                             f"REFUSING to prevent cross-user interference!"
                         )
                         return
                 else:
-                    logger.warning(f"[CROSS_USER_DEBUG] Could not determine AVD for emulator {emulator_id}")
+                    logger.warning(f"Could not determine AVD for emulator {emulator_id}")
             except Exception as e:
-                logger.warning(f"[CROSS_USER_DEBUG] Error checking AVD: {e}")
+                logger.warning(f"Error checking AVD: {e}")
 
-            logger.info(f"[CROSS_USER_DEBUG] Removing all ADB port forwards for {emulator_id}")
+            logger.info(f"Removing all ADB port forwards for {emulator_id}")
             with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} forward --remove-all"],
@@ -404,9 +397,7 @@ class EmulatorShutdownManager:
                     timeout=5,
                 )
 
-            logger.info(
-                f"[CROSS_USER_DEBUG] Killing uiautomator processes on {emulator_id} for email={email}"
-            )
+            logger.info(f"Killing uiautomator processes on {emulator_id} for email={email}")
             with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} shell pkill -f uiautomator"],

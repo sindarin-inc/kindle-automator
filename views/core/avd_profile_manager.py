@@ -687,30 +687,24 @@ class AVDProfileManager:
         Returns:
             Optional[str]: The emulator ID if found, None otherwise
         """
-        logger.info(f"[CROSS_USER_DEBUG] get_emulator_id_for_avd called for AVD={avd_name}")
 
         # First check if emulator_manager has cached info
         cached_info = None
         if hasattr(self.emulator_manager, "_emulator_cache"):
-            logger.info(
-                f"[CROSS_USER_DEBUG] Checking emulator cache: {self.emulator_manager._emulator_cache}"
-            )
             for email, (emulator_id, cached_avd_name, _) in self.emulator_manager._emulator_cache.items():
                 if cached_avd_name == avd_name:
                     logger.info(
-                        f"[CROSS_USER_DEBUG] Found cached emulator {emulator_id} for AVD {avd_name} (cached for email={email})"
+                        f"Found cached emulator {emulator_id} for AVD {avd_name} (cached for email={email})"
                     )
                     cached_info = (avd_name, emulator_id)
                     break
         else:
-            logger.info(f"[CROSS_USER_DEBUG] No emulator cache found")
+            logger.info(f"No emulator cache found")
 
         # Look for running emulators with this AVD name
-        logger.info(f"[CROSS_USER_DEBUG] Calling map_running_emulators with cached_info={cached_info}")
         running_emulators = self.device_discovery.map_running_emulators(
             self.profiles_index, cached_info=cached_info
         )
-        logger.info(f"[CROSS_USER_DEBUG] map_running_emulators returned: {running_emulators}")
 
         emulator_id = running_emulators.get(avd_name)
 
@@ -721,13 +715,13 @@ class AVDProfileManager:
             actual_avd = self.device_discovery._query_emulator_avd_name(emulator_id)
             if actual_avd != avd_name:
                 logger.error(
-                    f"[CROSS_USER_DEBUG] CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
+                    f"CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
                     f"not {avd_name}. Returning None to prevent cross-user access."
                 )
                 return None
 
         logger.info(
-            f"[CROSS_USER_DEBUG] Found emulator id: {emulator_id} for AVD: {avd_name}. All running emulators: {running_emulators}"
+            f"Found emulator id: {emulator_id} for AVD: {avd_name}. All running emulators: {running_emulators}"
         )
         return emulator_id
 
