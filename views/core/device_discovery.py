@@ -151,6 +151,8 @@ class DeviceDiscovery:
         Returns:
             Optional[str]: The AVD name or None if not found
         """
+        logger.info(f"[CROSS_USER_DEBUG] _query_emulator_avd_name called for emulator_id={emulator_id}")
+
         try:
             # Query the emulator's AVD name directly via adb
             result = subprocess.run(
@@ -164,11 +166,17 @@ class DeviceDiscovery:
             if result.returncode == 0 and result.stdout:
                 avd_name = result.stdout.strip()
                 if avd_name:
-                    logger.info(f"Queried emulator {emulator_id} directly, running AVD: {avd_name}")
+                    logger.info(
+                        f"[CROSS_USER_DEBUG] Queried emulator {emulator_id} directly, running AVD: {avd_name}"
+                    )
                     return avd_name
+            else:
+                logger.warning(
+                    f"[CROSS_USER_DEBUG] Failed to query AVD name: returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
+                )
 
         except Exception as e:
-            logger.warning(f"Error querying emulator {emulator_id} for AVD name: {e}")
+            logger.warning(f"[CROSS_USER_DEBUG] Error querying emulator {emulator_id} for AVD name: {e}")
 
         return None
 
@@ -240,12 +248,16 @@ class DeviceDiscovery:
         Returns:
             Dict[str, str]: Mapping of emulator names to device IDs
         """
+        logger.info(f"[CROSS_USER_DEBUG] map_running_emulators called with cached_info={cached_info}")
+        logger.info(f"[CROSS_USER_DEBUG] profiles_index keys: {list(profiles_index.keys())}")
+
         running_emulators = {}
 
         # If we have cached info, add it to the result without ADB query
         if cached_info:
             avd_name, emulator_id = cached_info
             running_emulators[avd_name] = emulator_id
+            logger.info(f"[CROSS_USER_DEBUG] Added cached emulator to result: {avd_name} -> {emulator_id}")
             # Still check ADB for other emulators that might be running
 
         try:
@@ -339,11 +351,22 @@ class DeviceDiscovery:
                         # Only proceed if the emulator device is actually available (not 'offline')
                         if device_state != "offline":
                             # Query AVD name using AVD Profile Manager
+                            logger.info(
+                                f"[CROSS_USER_DEBUG] Querying AVD name for emulator {emulator_id} in state {device_state}"
+                            )
                             avd_name = self._get_avd_name_for_emulator(emulator_id, profiles_index)
+                            logger.info(
+                                f"[CROSS_USER_DEBUG] _get_avd_name_for_emulator({emulator_id}) returned: {avd_name}"
+                            )
                             if avd_name:
+                                logger.info(
+                                    f"[CROSS_USER_DEBUG] Adding to running_emulators: {avd_name} -> {emulator_id}"
+                                )
                                 running_emulators[avd_name] = emulator_id
                         else:
-                            logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
+                            logger.warning(
+                                f"[CROSS_USER_DEBUG] Emulator {emulator_id} is in 'offline' state - skipping"
+                            )
 
             return running_emulators
         except subprocess.TimeoutExpired:

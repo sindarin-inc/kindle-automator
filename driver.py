@@ -42,10 +42,17 @@ class Driver:
         Returns:
             Optional[str]: The device ID if found, None otherwise
         """
+        email = get_sindarin_email()
+        logger.info(
+            f"[CROSS_USER_DEBUG] _get_emulator_device_id called with specific_device_id={specific_device_id} for email={email}"
+        )
+
         try:
             # If we have a specific device ID to use, check if it's available first
             if specific_device_id:
                 result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+                logger.info(f"[CROSS_USER_DEBUG] ADB devices output:\n{result.stdout}")
+
                 if specific_device_id in result.stdout and "device" in result.stdout:
                     # Verify this is actually a working emulator
                     try:
@@ -56,27 +63,41 @@ class Driver:
                             check=True,
                             timeout=5,
                         )
-                        logger.info(f"Verified specific device {specific_device_id}")
+                        logger.info(
+                            f"[CROSS_USER_DEBUG] Verified specific device {specific_device_id} for email={email}"
+                        )
                         return specific_device_id
                     except Exception as e:
-                        logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
+                        logger.warning(
+                            f"[CROSS_USER_DEBUG] Could not verify specific device {specific_device_id}: {e}"
+                        )
                         # Failed to verify specific device - return None instead of falling back to any device
-                        logger.error(f"Requested specific device {specific_device_id} could not be verified")
+                        logger.error(
+                            f"[CROSS_USER_DEBUG] Requested specific device {specific_device_id} could not be verified for email={email}"
+                        )
                         return None
                 else:
-                    logger.warning(f"Specified device ID {specific_device_id} not found or not ready")
+                    logger.warning(
+                        f"[CROSS_USER_DEBUG] Specified device ID {specific_device_id} not found or not ready for email={email}"
+                    )
                     # Do not continue to regular device search if a specific device was requested
                     # but is not available. This prevents using the wrong device.
                     logger.error(
-                        f"Requested specific device {specific_device_id} was not found or is not ready"
+                        f"[CROSS_USER_DEBUG] Requested specific device {specific_device_id} was not found or is not ready for email={email}"
                     )
                     return None
 
             # Only proceed with regular device search if NO specific device was requested
+            logger.warning(
+                f"[CROSS_USER_DEBUG] No specific device requested for email={email}, searching for ANY available emulator"
+            )
             result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+            logger.info(f"[CROSS_USER_DEBUG] ADB devices output for general search:\n{result.stdout}")
+
             for line in result.stdout.splitlines():
                 if "emulator-" in line and "device" in line:
                     device_id = line.split()[0]
+                    logger.info(f"[CROSS_USER_DEBUG] Found potential emulator: {device_id} for email={email}")
                     # Verify this is actually an emulator
                     verify_result = subprocess.run(
                         ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
@@ -85,6 +106,9 @@ class Driver:
                         check=True,
                     )
                     if "sdk" in verify_result.stdout.lower() or "emulator" in verify_result.stdout.lower():
+                        logger.warning(
+                            f"[CROSS_USER_DEBUG] Returning FIRST available emulator {device_id} for email={email} - THIS MAY BE WRONG!"
+                        )
                         return device_id
                 elif "127.0.0.1:" in line:
                     device_id = line.split()[0]
@@ -526,22 +550,51 @@ class Driver:
 
     def _cleanup_old_sessions(self):
         """Clean up any existing UiAutomator2 sessions."""
+        email = get_sindarin_email()
+        logger.info(
+            f"[CROSS_USER_DEBUG] _cleanup_old_sessions called for email={email} with device_id={self.device_id}"
+        )
+
         try:
+            # Log what AVD this device is running
+            try:
+                avd_result = subprocess.run(
+                    ["adb", "-s", self.device_id, "emu", "avd", "name"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                if avd_result.returncode == 0:
+                    logger.info(
+                        f"[CROSS_USER_DEBUG] Device {self.device_id} is running AVD: {avd_result.stdout.strip()}"
+                    )
+                else:
+                    logger.warning(f"[CROSS_USER_DEBUG] Could not determine AVD for device {self.device_id}")
+            except Exception as e:
+                logger.warning(f"[CROSS_USER_DEBUG] Error checking AVD name: {e}")
+
+            logger.info(
+                f"[CROSS_USER_DEBUG] About to clear io.appium.uiautomator2.server on {self.device_id} for email={email}"
+            )
             subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
+            logger.info(f"[CROSS_USER_DEBUG] Cleared io.appium.uiautomator2.server successfully")
+
             subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server.test"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
+            logger.info(f"[CROSS_USER_DEBUG] Cleared io.appium.uiautomator2.server.test successfully")
+
             return True
         except Exception as e:
-            logger.error(f"Error cleaning up old sessions: {e}")
+            logger.error(f"[CROSS_USER_DEBUG] Error cleaning up old sessions for email={email}: {e}")
             return False
 
     def _is_kindle_installed(self) -> bool:
@@ -958,6 +1011,7 @@ class Driver:
             return True
 
         email = get_sindarin_email()
+        logger.info(f"[CROSS_USER_DEBUG] Driver.initialize() called for email={email}")
 
         # Get device ID first, using specific device ID from profile if available
         target_device_id = None
@@ -965,15 +1019,27 @@ class Driver:
         # Check if we have a profile manager with a preferred device ID
         # Get the current profile for device ID info
         profile = self.automator.profile_manager.get_current_profile()
+        logger.info(f"[CROSS_USER_DEBUG] Current profile for {email}: {profile}")
+
         if profile and "avd_name" in profile:
             # Try to get device ID from AVD name mapping
             avd_name = profile.get("avd_name")
+            logger.info(f"[CROSS_USER_DEBUG] Looking for emulator ID for AVD={avd_name} for email={email}")
             device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
+            logger.info(f"[CROSS_USER_DEBUG] get_emulator_id_for_avd({avd_name}) returned: {device_id}")
             if device_id:
                 target_device_id = device_id
 
+        logger.info(
+            f"[CROSS_USER_DEBUG] About to call _get_emulator_device_id with target_device_id={target_device_id} for email={email}"
+        )
+
         # Get device ID, preferring the specific one if provided
         self.device_id = self._get_emulator_device_id(target_device_id)
+        logger.info(
+            f"[CROSS_USER_DEBUG] _get_emulator_device_id returned: {self.device_id} for email={email}"
+        )
+
         if not self.device_id:
             logger.error("Failed to get device ID")
             return False

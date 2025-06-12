@@ -110,9 +110,15 @@ class EmulatorShutdownManager:
             display_num = self._stop_emulator_processes(automator, email, summary)
         finally:
             # Always cleanup ports even when stop_emulator raised.
+            logger.info(f"[CROSS_USER_DEBUG] Getting emulator ID for cleanup of email={email}")
             emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]
+            logger.info(
+                f"[CROSS_USER_DEBUG] get_running_emulator returned emulator_id={emulator_id} for email={email}"
+            )
             if emulator_id:
                 self._cleanup_emulator_ports(emulator_id, email)
+            else:
+                logger.info(f"[CROSS_USER_DEBUG] No emulator ID found for cleanup of email={email}")
 
         # ------------------------------------------------------------------
         # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
@@ -352,8 +358,30 @@ class EmulatorShutdownManager:
 
     def _cleanup_emulator_ports(self, emulator_id: str, email: str) -> None:  # noqa: D401, ANN001
         """Clean up all ports associated with *emulator_id* (unchanged signature)."""
+        logger.info(
+            f"[CROSS_USER_DEBUG] _cleanup_emulator_ports called for emulator_id={emulator_id}, email={email}"
+        )
+
         try:
-            logger.info("Removing all ADB port forwards for %s", emulator_id)
+            # Log what AVD this emulator is running
+            try:
+                avd_result = subprocess.run(
+                    [f"adb -s {emulator_id} emu avd name"],
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                if avd_result.returncode == 0:
+                    logger.info(
+                        f"[CROSS_USER_DEBUG] Emulator {emulator_id} is running AVD: {avd_result.stdout.strip()}"
+                    )
+                else:
+                    logger.warning(f"[CROSS_USER_DEBUG] Could not determine AVD for emulator {emulator_id}")
+            except Exception as e:
+                logger.warning(f"[CROSS_USER_DEBUG] Error checking AVD: {e}")
+
+            logger.info(f"[CROSS_USER_DEBUG] Removing all ADB port forwards for {emulator_id}")
             with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} forward --remove-all"],
@@ -361,6 +389,10 @@ class EmulatorShutdownManager:
                     capture_output=True,
                     timeout=5,
                 )
+
+            logger.info(
+                f"[CROSS_USER_DEBUG] Killing uiautomator processes on {emulator_id} for email={email}"
+            )
             with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} shell pkill -f uiautomator"],

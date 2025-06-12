@@ -585,7 +585,6 @@ def handle_automator_response(f):
                                 f"LIBRARY_SIGN_IN state detected but user {sindarin_email} has no auth_date - not treating as lost auth"
                             )
 
-
                 # Check if this is a known authentication error that shouldn't be retried
                 if isinstance(result, dict) and result.get("error_type") == "incorrect_password":
                     logger.info("Authentication failed with incorrect password - won't retry")
