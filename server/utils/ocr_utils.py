@@ -66,10 +66,14 @@ class KindleOCR:
 
             # Define the OCR function that will run in a separate thread
             def run_ocr():
-                ocr_response = client.ocr.process(
-                    model="mistral-ocr-latest",
-                    document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
-                )
+                try:
+                    ocr_response = client.ocr.process(
+                        model="mistral-ocr-latest",
+                        document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing OCR: {e}")
+                    return None
 
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
