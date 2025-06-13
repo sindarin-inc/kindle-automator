@@ -361,8 +361,8 @@ class BooksStreamResource(Resource):
             logger.error(f"No automator found for {sindarin_email}")
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        # Update current state since middleware no longer does it
-        current_state = automator.state_machine.update_current_state()
+        # Check initial state and restart if UNKNOWN
+        current_state = automator.state_machine.check_initial_state_with_restart()
         logger.info(f"Current state for books-stream: {current_state}")
 
         # Handle different states - similar to _get_books but with appropriate streaming responses
@@ -859,6 +859,9 @@ class NavigationResource(Resource):
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
+        # Check initial state and restart if UNKNOWN
+        automator.state_machine.check_initial_state_with_restart()
+
         # Create navigation handler
         nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
 
@@ -1039,9 +1042,8 @@ class BookOpenResource(Resource):
                 "error": "State machine not initialized. Please ensure the automator is properly initialized."
             }, 500
 
-        # Reload the current state to be sure
-        automator.state_machine.update_current_state()
-        current_state = automator.state_machine.current_state
+        # Check initial state and restart if UNKNOWN
+        current_state = automator.state_machine.check_initial_state_with_restart()
 
         # IMPORTANT: For new app installation or first run, current_book may be None
         # even though we're already in reading state - we need to check that too
