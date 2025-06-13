@@ -17,8 +17,8 @@ class AVDCreator:
     SEED_CLONE_SNAPSHOT = "pre_kindle_install"
 
     # System image to use for all AVDs
-    # Must match sdkmanager --list format exactly
-    SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
+    # Must match `sdkmanager --list` format exactly
+    SYSTEM_IMAGE = "system-images;android-31;google_apis;x86_64"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home

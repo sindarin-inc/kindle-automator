@@ -1310,7 +1310,6 @@ class EmulatorLauncher:
             # If we have an AVD name and it's in running_emulators, use that
             if avd_name and avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
-                logger.info(f"Found cached emulator for {avd_name}: {emulator_id}, display: {display_num}")
 
                 # Get the direct ADB output (includes both 'device' and 'offline' status)
                 try:
