@@ -481,12 +481,29 @@ class AVDCreator:
             logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
             self._configure_avd(new_avd_name)
 
+            # Step 6: Randomize device identifiers to prevent auth token ejection
+            logger.info(f"Randomizing device identifiers for {new_avd_name}")
+            randomized_identifiers = {}
+            try:
+                from server.utils.device_identifier_utils import randomize_avd_config_identifiers
+
+                config_path = os.path.join(new_avd_path, "config.ini")
+                randomized_identifiers = randomize_avd_config_identifiers(config_path)
+                logger.info(f"Randomized identifiers for {new_avd_name}: {randomized_identifiers}")
+            except Exception as e:
+                logger.error(f"Failed to randomize device identifiers: {e}")
+                # Continue anyway - better to have a working AVD with duplicate identifiers
+                # than to fail the cloning process
+
             # Mark this AVD as created from seed clone in the user profile
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
 
                 avd_manager = AVDProfileManager.get_instance()
                 avd_manager.set_user_field(email, "created_from_seed_clone", True)
+                # Store randomized identifiers in user profile for consistent use
+                if randomized_identifiers:
+                    avd_manager.set_user_field(email, "device_identifiers", randomized_identifiers)
                 logger.info(f"Marked {email} as created from seed clone")
             except Exception as e:
                 logger.warning(f"Could not mark AVD as created from seed clone: {e}")

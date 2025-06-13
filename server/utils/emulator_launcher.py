@@ -767,6 +767,9 @@ class EmulatorLauncher:
                     logger.info(
                         f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
                     )
+                    
+                    # Log device identifiers for the already running emulator
+                    self._log_device_identifiers(emulator_id, email)
 
                     # Store this emulator ID in the VNC instance
                     try:
@@ -866,6 +869,21 @@ class EmulatorLauncher:
                 "-prop",
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
+
+            # Add randomized device identifiers if available
+            try:
+                from views.core.avd_profile_manager import AVDProfileManager
+                from server.utils.device_identifier_utils import get_emulator_prop_args
+
+                avd_manager = AVDProfileManager.get_instance()
+                device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
+                if device_identifiers:
+                    prop_args = get_emulator_prop_args(device_identifiers)
+                    common_args.extend(prop_args)
+                    logger.info(f"Added randomized device identifier props: {prop_args}")
+            except Exception as e:
+                logger.warning(f"Could not add device identifier props: {e}")
+                # Continue without randomized identifiers
 
             # Add snapshot or cold boot args
             if cold_boot:
@@ -984,6 +1002,45 @@ class EmulatorLauncher:
                 except Exception as e:
                     logger.error(f"Failed to read emulator stderr log {stderr_log}: {e}")
                 return False, None, None
+
+            # Wait for emulator to be ready before applying post-boot randomization
+            logger.info(f"Waiting for emulator {emulator_id} to be ready...")
+            max_wait_time = 120  # 2 minutes max wait
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait_time:
+                if self.is_emulator_ready(email):
+                    logger.info(f"Emulator {emulator_id} is ready")
+                    # Log device identifiers once emulator is ready
+                    self._log_device_identifiers(emulator_id, email)
+                    break
+                time.sleep(2)
+            else:
+                logger.warning(f"Emulator {emulator_id} not ready after {max_wait_time}s, continuing anyway")
+
+            # Apply post-boot randomization for cloned AVDs
+            if created_from_seed:
+                try:
+                    from server.utils.post_boot_randomizer import PostBootRandomizer
+                    
+                    post_boot_randomizer = PostBootRandomizer(self.android_home)
+                    # Get stored Android ID if available
+                    android_id = None
+                    try:
+                        device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
+                        if device_identifiers and "android_id" in device_identifiers:
+                            android_id = device_identifiers["android_id"]
+                    except:
+                        pass
+                    
+                    logger.info(f"Applying post-boot randomization for {email} on {emulator_id}")
+                    if post_boot_randomizer.randomize_all_post_boot_identifiers(emulator_id, android_id):
+                        logger.info(f"Successfully applied post-boot randomization")
+                    else:
+                        logger.warning(f"Some post-boot randomizations may have failed")
+                except Exception as e:
+                    logger.error(f"Failed to apply post-boot randomization: {e}")
+                    # Continue anyway - better to have a working emulator with duplicate identifiers
 
             return True, emulator_id, display_num
 
@@ -1444,6 +1501,88 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error checking boot status: {e}")
             return False
+
+    def _log_device_identifiers(self, emulator_id: str, email: str) -> None:
+        """
+        Log device identifiers for the emulator once it's ready.
+        This helps verify that device randomization is working.
+        
+        Args:
+            emulator_id: The emulator ID (e.g., 'emulator-5554')
+            email: The user's email address
+        """
+        try:
+            logger.info(f"Device identifiers for {email} on {emulator_id}:")
+            
+            # Get various device properties
+            properties = {
+                "Android ID": "settings get secure android_id",
+                "Serial Number": "getprop ro.serialno",
+                "Build ID": "getprop ro.build.id",
+                "Product Name": "getprop ro.product.name",
+                "Device Name": "getprop ro.product.device",
+                "AVD Name": "getprop ro.kernel.qemu.avd_name",
+            }
+            
+            identifier_values = {}
+            for prop_name, cmd in properties.items():
+                try:
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", cmd],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        value = result.stdout.strip()
+                        identifier_values[prop_name] = value if value and value != "null" else "Not set"
+                except Exception:
+                    identifier_values[prop_name] = "Error retrieving"
+            
+            # Get MAC addresses from network interfaces
+            try:
+                result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", "ip link show"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    output = result.stdout
+                    # Extract MAC addresses
+                    mac_addresses = {}
+                    current_interface = None
+                    for line in output.split('\n'):
+                        # Check for interface names
+                        if ': ' in line and not line.startswith(' '):
+                            parts = line.split(': ')
+                            if len(parts) >= 2:
+                                current_interface = parts[1].split('@')[0]
+                        # Check for MAC addresses
+                        elif 'link/ether' in line and current_interface:
+                            parts = line.strip().split()
+                            for i, part in enumerate(parts):
+                                if part == 'link/ether' and i + 1 < len(parts):
+                                    mac_addresses[current_interface] = parts[i + 1]
+                                    break
+                    
+                    # Log commonly used interfaces
+                    if 'wlan0' in mac_addresses:
+                        identifier_values['WiFi MAC'] = mac_addresses['wlan0']
+                    if 'eth0' in mac_addresses:
+                        identifier_values['Ethernet MAC'] = mac_addresses['eth0']
+            except Exception:
+                pass
+            
+            # Format and log all identifiers in a single line for easy comparison
+            id_parts = []
+            for key, value in identifier_values.items():
+                id_parts.append(f"{key}: {value}")
+            
+            logger.info(f"  {' | '.join(id_parts)}")
+            
+        except Exception as e:
+            logger.error(f"Error logging device identifiers: {e}")
 
     def _is_package_manager_ready(self, emulator_id: str) -> bool:
         """Check if package manager is ready to accept commands."""
