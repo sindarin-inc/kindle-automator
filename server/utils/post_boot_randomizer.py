@@ -38,6 +38,31 @@ class PostBootRandomizer:
 
             logger.info(f"Randomizing Android ID to {new_android_id} on {emulator_id}")
 
+            # Wait for device to be fully online if needed
+            import time
+            max_wait = 10  # seconds
+            wait_interval = 0.5  # Check every 500ms
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait:
+                # Check if device is online
+                check_cmd = [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "get-state",
+                ]
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
+                
+                if check_result.returncode == 0 and "device" in check_result.stdout.strip():
+                    logger.debug(f"Device {emulator_id} is online after {time.time() - start_time:.1f}s")
+                    break
+                    
+                time.sleep(wait_interval)
+            else:
+                logger.error(f"Device {emulator_id} not online after {max_wait}s")
+                return False
+
             # First, ensure we have root access
             root_cmd = [
                 f"{self.android_home}/platform-tools/adb",
