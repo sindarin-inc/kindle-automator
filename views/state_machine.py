@@ -718,7 +718,7 @@ class KindleStateMachine:
             AppState: The current state after checking (and potentially restarting)
         """
         # First update the state to get current status
-        self.update_state()
+        self.update_current_state()
 
         # If we're in UNKNOWN state, force restart the app
         if self.current_state == AppState.UNKNOWN:
@@ -730,7 +730,7 @@ class KindleStateMachine:
                 time.sleep(2)  # Wait for app to fully initialize
 
                 # Update state again after restart
-                self.update_state()
+                self.update_current_state()
                 logger.info(f"After app restart, state is: {self.current_state}")
 
         return self.current_state
