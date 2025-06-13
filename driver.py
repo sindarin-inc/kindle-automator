@@ -1161,7 +1161,7 @@ class Driver:
                         logger.info("Kindle app is already at the latest version")
 
         # Clean up any existing sessions
-        self._cleanup_old_sessions()
+        # self._cleanup_old_sessions()
 
         # Check and disable hardware overlays
         self._disable_hw_overlays()
