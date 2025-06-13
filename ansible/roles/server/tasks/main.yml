@@ -109,6 +109,17 @@
     executable: /opt/kindle-automator/venv/bin/pip
     state: present
 
+- name: Pull latest changes
+  git:
+    repo: "{{ kindle_repo_url }}"
+    dest: /opt/kindle-automator
+    update: yes
+    version: "{{ kindle_repo_branch | default('main') }}"
+    key_file: /opt/keys/deploy_key
+    accept_hostkey: yes
+  register: git_pull
+  tags: deps, pull
+
 # Install dependencies
 - name: Install Python dependencies
   shell: |

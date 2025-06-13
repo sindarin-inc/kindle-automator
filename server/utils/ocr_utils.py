@@ -283,6 +283,10 @@ class KindleOCR:
             if re.match(r'^\s*(page\s+)?\d+\s*$', line, re.IGNORECASE):
                 continue
                 
+            # Skip lines that match time left patterns (e.g., "5 min left in chapter", "2 mins left in chapter")
+            if re.search(r'\d+\s*mins?\s*left\s*in\s*(chapter|book)', line, re.IGNORECASE):
+                continue
+                
             cleaned_lines.append(line)
         
         # Remove any trailing empty lines
