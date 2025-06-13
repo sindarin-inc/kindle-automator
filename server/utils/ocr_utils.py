@@ -9,11 +9,16 @@ This module provides functions to:
 
 import base64
 import concurrent.futures
+import json
 import logging
 import os
+import re
+import tempfile
 from typing import Optional, Tuple
 
 from flask import request
+from google.cloud import documentai
+from google.oauth2 import service_account
 from mistralai import Mistral
 
 logger = logging.getLogger(__name__)
@@ -22,8 +27,133 @@ logger = logging.getLogger(__name__)
 class KindleOCR:
     """Utility class for OCR processing of Kindle screenshots."""
 
+    GOOGLE_PROCESSOR_ID = "cfe27fea8a15b664"
+    GOOGLE_PROJECT_ID = "313170199812"
+    GOOGLE_LOCATION = "us"
+
     @staticmethod
-    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
+    def _setup_google_credentials():
+        """Setup Google credentials from environment, supporting both file path and base64-encoded JSON."""
+        # First check for base64-encoded JSON
+        base64_creds = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON_BASE64")
+        if base64_creds:
+            try:
+                # Decode the base64 string
+                json_str = base64.b64decode(base64_creds).decode("utf-8")
+                # Parse the JSON to validate it
+                json.loads(json_str)
+
+                # Create a temporary file for the credentials
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as temp_file:
+                    temp_file.write(json_str)
+                    temp_path = temp_file.name
+
+                # Set the environment variable to point to the temp file
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+                logger.info(f"Created temporary credentials file at {temp_path}")
+                return temp_path
+            except Exception as e:
+                logger.error(f"Failed to decode base64 Google credentials: {e}")
+                return None
+
+        # Check if GOOGLE_APPLICATION_CREDENTIALS is already set
+        if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            logger.info("Using existing GOOGLE_APPLICATION_CREDENTIALS")
+            return os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+        return None
+
+    @staticmethod
+    def _process_with_google_document_ai(image_content) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Process an image with Google Document AI.
+
+        Args:
+            image_content: Either binary content (bytes) or a base64-encoded string
+
+        Returns:
+            A tuple of (OCR text result or None if processing failed, error message if an error occurred)
+        """
+        temp_creds_path = None
+        try:
+            # Setup credentials
+            temp_creds_path = KindleOCR._setup_google_credentials()
+
+            if not temp_creds_path and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+                error_msg = "No Google credentials found. Please set GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 or GOOGLE_APPLICATION_CREDENTIALS"
+                logger.error(error_msg)
+                return None, error_msg
+
+            # Initialize the Document AI client
+            client = documentai.DocumentProcessorServiceClient()
+
+            # The full resource name of the processor
+            processor_name = client.processor_path(
+                KindleOCR.GOOGLE_PROJECT_ID, KindleOCR.GOOGLE_LOCATION, KindleOCR.GOOGLE_PROCESSOR_ID
+            )
+
+            # Convert image to bytes if it's a base64 string
+            if isinstance(image_content, str):
+                try:
+                    image_bytes = base64.b64decode(image_content)
+                except Exception:
+                    error_msg = "Invalid base64 string provided for Google Document AI"
+                    logger.error(error_msg)
+                    return None, error_msg
+            else:
+                image_bytes = image_content
+
+            # Create a raw document from the image
+            raw_document = documentai.RawDocument(
+                content=image_bytes, mime_type="image/jpeg"  # Assuming JPEG, adjust if needed
+            )
+
+            # Configure the process request
+            request = documentai.ProcessRequest(name=processor_name, raw_document=raw_document)
+
+            # Use ThreadPoolExecutor for timeout handling
+            TIMEOUT_SECONDS = 10
+
+            def run_google_ocr():
+                try:
+                    result = client.process_document(request=request)
+                    return result
+                except Exception as e:
+                    logger.error(f"Error processing Google Document AI OCR: {e}")
+                    return None
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_google_ocr)
+                try:
+                    result = future.result(timeout=TIMEOUT_SECONDS)
+                    if result and result.document and result.document.text:
+                        logger.info("Google Document AI OCR processing successful")
+                        return result.document.text.strip(), None
+                    else:
+                        error_msg = "No text found in Google Document AI response"
+                        logger.error(error_msg)
+                        return None, error_msg
+                except concurrent.futures.TimeoutError:
+                    future.cancel()
+                    error_msg = f"Google Document AI OCR request timed out after {TIMEOUT_SECONDS} seconds"
+                    logger.error(error_msg)
+                    return None, error_msg
+
+        except Exception as e:
+            error_msg = f"Error processing Google Document AI OCR: {e}"
+            logger.error(error_msg)
+            return None, error_msg
+        finally:
+            # Clean up temporary credentials file if created
+            if temp_creds_path and temp_creds_path.startswith(tempfile.gettempdir()):
+                try:
+                    os.remove(temp_creds_path)
+                    logger.info(f"Cleaned up temporary credentials file: {temp_creds_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp credentials file: {e}")
+
+    @staticmethod
+    def _process_with_mistral(image_content) -> Tuple[Optional[str], Optional[str]]:
         """
         Process an image with Mistral's OCR API.
 
@@ -42,7 +172,7 @@ class KindleOCR:
                 try:
                     base64.b64decode(base64_image[:20])
                 except:
-                    error_msg = "Invalid base64 string provided"
+                    error_msg = "Invalid base64 string provided for MistralAI"
                     logger.error(error_msg)
                     return None, error_msg
             else:
@@ -72,14 +202,14 @@ class KindleOCR:
                         document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
                     )
                 except Exception as e:
-                    logger.error(f"Error processing OCR: {e}")
+                    logger.error(f"Error processing MistralAI OCR: {e}")
                     return None
 
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
                     return page.markdown
                 else:
-                    logger.error(f"No OCR response or no pages found: {ocr_response}")
+                    logger.error(f"No MistralAI OCR response or no pages found: {ocr_response}")
                 return None
 
             # Execute with timeout
@@ -93,29 +223,104 @@ class KindleOCR:
                         ocr_text = future.result(timeout=TIMEOUT_SECONDS)
 
                         if ocr_text:
-                            logger.info("OCR processing successful")
+                            logger.info("MistralAI OCR processing successful")
                             return ocr_text, None
                         else:
-                            error_msg = "No OCR response or no pages found"
+                            error_msg = "No MistralAI OCR response or no pages found"
                             logger.error(error_msg)
                             return None, error_msg
 
                     except concurrent.futures.TimeoutError:
                         # Cancel the future if it times out
                         future.cancel()
-                        error_msg = f"OCR request timed out after {TIMEOUT_SECONDS} seconds"
+                        error_msg = f"MistralAI OCR request timed out after {TIMEOUT_SECONDS} seconds"
                         logger.error(error_msg)
                         return None, error_msg
 
             except Exception as e:
-                error_msg = f"Error during OCR processing with timeout: {e}"
+                error_msg = f"Error during MistralAI OCR processing with timeout: {e}"
                 logger.error(error_msg)
                 return None, error_msg
 
         except Exception as e:
-            error_msg = f"Error processing OCR: {e}"
+            error_msg = f"Error processing MistralAI OCR: {e}"
             logger.error(error_msg)
             return None, error_msg
+
+    @staticmethod
+    def _clean_ocr_text(text: str) -> str:
+        """
+        Clean OCR text by removing Kindle UI elements like reading speed and progress.
+        
+        Args:
+            text: Raw OCR text
+            
+        Returns:
+            Cleaned text without UI elements
+        """
+        if not text:
+            return text
+            
+        # Split text into lines
+        lines = text.strip().split('\n')
+        
+        # Filter out lines that match common Kindle UI patterns
+        cleaned_lines = []
+        for line in lines:
+            # Skip lines that match reading speed pattern (e.g., "Learning reading speed")
+            if re.search(r'learning\s+reading\s+speed', line, re.IGNORECASE):
+                continue
+                
+            # Skip lines that are just percentages (e.g., "87%")
+            if re.match(r'^\s*\d{1,3}%\s*$', line):
+                continue
+                
+            # Skip lines that match location/page patterns (e.g., "Location 123 of 456")
+            if re.search(r'location\s+\d+\s+of\s+\d+', line, re.IGNORECASE):
+                continue
+                
+            # Skip lines that are just page numbers or locations
+            if re.match(r'^\s*(page\s+)?\d+\s*$', line, re.IGNORECASE):
+                continue
+                
+            cleaned_lines.append(line)
+        
+        # Remove any trailing empty lines
+        while cleaned_lines and not cleaned_lines[-1].strip():
+            cleaned_lines.pop()
+            
+        return '\n'.join(cleaned_lines)
+
+    @staticmethod
+    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Process an image with OCR, trying Google Document AI first, then falling back to MistralAI.
+
+        Args:
+            image_content: Either binary content (bytes) or a base64-encoded string
+
+        Returns:
+            A tuple of (OCR text result or None if processing failed, error message if an error occurred)
+        """
+        # Try Google Document AI first
+        logger.info("Attempting OCR with Google Document AI...")
+        ocr_text, google_error = KindleOCR._process_with_google_document_ai(image_content)
+
+        if ocr_text:
+            cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
+            return cleaned_text, None
+
+        # If Google fails, try MistralAI as fallback
+        logger.warning(f"Google Document AI failed: {google_error}. Falling back to MistralAI...")
+        ocr_text, mistral_error = KindleOCR._process_with_mistral(image_content)
+
+        if ocr_text:
+            cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
+            return cleaned_text, None
+
+        # Both failed, return combined error message
+        combined_error = f"Both OCR services failed. Google: {google_error}; MistralAI: {mistral_error}"
+        return None, combined_error
 
 
 def is_base64_requested():
