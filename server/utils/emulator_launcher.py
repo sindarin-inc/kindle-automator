@@ -871,8 +871,16 @@ class EmulatorLauncher:
                 logger.warning(f"Could not add device identifier props: {e}")
                 # Continue without randomized identifiers
 
+            # Determine if we should force cold boot
+            # Force cold boot if this AVD needs first-time randomization
+            force_cold_boot_for_randomization = False
+            if created_from_seed or needs_device_randomization:
+                if not post_boot_randomized:
+                    force_cold_boot_for_randomization = True
+                    logger.info(f"Forcing cold boot for {email} to apply device randomization")
+            
             # Add snapshot or cold boot args
-            if cold_boot:
+            if cold_boot or force_cold_boot_for_randomization:
                 common_args.extend(["-no-snapshot-load"])
                 logger.info(f"Starting emulator for {email} with cold boot (no snapshot)")
             else:
@@ -1031,7 +1039,7 @@ class EmulatorLauncher:
                         pass
 
                     logger.info(f"Applying one-time post-boot randomization for {email} on {emulator_id}")
-                    if post_boot_randomizer.randomize_all_post_boot_identifiers(emulator_id, android_id):
+                    if post_boot_randomizer.randomize_all_post_boot_identifiers(emulator_id, android_id, device_identifiers):
                         logger.info(f"Successfully applied post-boot randomization")
                         # Mark that we've done post-boot randomization
                         avd_manager.set_user_field(email, "post_boot_randomized", True)

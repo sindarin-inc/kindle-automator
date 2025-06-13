@@ -153,9 +153,8 @@ def get_emulator_prop_args(identifiers: dict) -> list:
     prop_args = []
     
     # Map config keys to property names that can be set via -prop
+    # Note: Only qemu.* properties can be set via -prop flag
     prop_mappings = {
-        "hw.wifi.mac": "qemu.wifi.mac",
-        "hw.ethernet.mac": "qemu.ethernet.mac",
         "ro.serialno": "qemu.serialno",
         "ro.build.id": "qemu.build.id",
         "ro.product.name": "qemu.product.name",
