@@ -200,7 +200,12 @@ class EmulatorManager:
                 logger.error(f"Error checking ADB devices before launch: {e}")
 
             # Now use the Python-based launcher
-            success, emulator_id, display_num = self.emulator_launcher.launch_emulator(email)
+            # For seed clone, always use cold boot to ensure device randomization
+            from views.core.avd_creator import AVDCreator
+            cold_boot = email == AVDCreator.SEED_CLONE_EMAIL
+            if cold_boot:
+                logger.info(f"Launching seed clone with cold boot to allow device randomization")
+            success, emulator_id, display_num = self.emulator_launcher.launch_emulator(email, cold_boot=cold_boot)
 
             if success:
                 logger.info(f"Emulator {emulator_id} launched successfully on display :{display_num}")
