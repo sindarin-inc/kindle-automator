@@ -538,34 +538,17 @@ class KindleStateMachine:
                 except Exception as e:
                     logger.debug(f"Error checking for RemoteLicenseReleaseActivity: {e}")
 
-    def check_initial_state_with_restart(self):
-        """Check state at the beginning of specific requests and restart if UNKNOWN.
-        
-        This method should only be called at the start of /open-book, /navigate, and /books-stream requests.
-        It will force restart the app if we're in an UNKNOWN state to ensure clean operation.
-        
-        Returns:
-            AppState: The current state after checking (and potentially restarting)
-        """
-        # First update the state to get current status
-        self.update_state()
-        
-        # If we're in UNKNOWN state, force restart the app
-        if self.current_state == AppState.UNKNOWN:
-            logger.info("Initial state is UNKNOWN - force restarting app for clean operation")
-            
-            # Force restart the app
-            if self.view_inspector.ensure_app_foreground(force_restart=True):
-                logger.info("Successfully restarted Kindle app, waiting for it to initialize...")
-                time.sleep(2)  # Wait for app to fully initialize
-                
-                # Update state again after restart
-                self.update_state()
-                logger.info(f"After app restart, state is: {self.current_state}")
-        
-        return self.current_state
+            # Cache the state detection time and value
+            self._last_state_check_time = time.time()
+            self._last_state_value = self.current_state
 
-    def _get_current_state(self):
+            # For HOME, LIBRARY, and SEARCH_RESULTS states, trust the detection and return immediately
+            # These are the most common states and we're confident in our detection
+            if self.current_state in [AppState.HOME, AppState.LIBRARY, AppState.SEARCH_RESULTS]:
+                return self.current_state
+
+            # If we detect READING but we've just clicked close book, make a special check
+            if self.current_state == AppState.READING:
                 # Check for download limit dialog first, which is a special case within reading state
                 from views.common.dialog_strategies import (
                     DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
@@ -669,8 +652,8 @@ class KindleStateMachine:
                     ):
                         logger.warning("App has quit or was not launched - current activity is not Kindle")
 
-                        # Try to relaunch the app
-                        if self.view_inspector.ensure_app_foreground():
+                        # Try to relaunch the app with force restart since we're in an unknown state
+                        if self.view_inspector.ensure_app_foreground(force_restart=True):
                             logger.info("Successfully relaunched Kindle app, waiting for it to initialize...")
                             time.sleep(2)  # Wait for app to fully initialize
 
