@@ -815,6 +815,7 @@ class EmulatorLauncher:
             # No longer explicitly loading snapshots - the emulator will use default_boot automatically
             # Log when the default_boot snapshot was last updated
             created_from_seed = False
+            avd_manager = None
             try:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
@@ -840,6 +841,21 @@ class EmulatorLauncher:
                 logger.warning(f"Error accessing user profile for snapshot info: {e}")
                 created_from_seed = False
                 # Proceed normally - emulator will use default_boot if available
+
+            # Check if we've already randomized this AVD (needed for cold boot decision)
+            post_boot_randomized = False
+            needs_device_randomization = False
+            try:
+                if avd_manager is None:
+                    from views.core.avd_profile_manager import AVDProfileManager
+
+                    avd_manager = AVDProfileManager.get_instance()
+                post_boot_randomized = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization = avd_manager.get_user_field(
+                    email, "needs_device_randomization", False
+                )
+            except:
+                pass
 
             # Common emulator arguments for all platforms
             common_args = [
@@ -878,7 +894,7 @@ class EmulatorLauncher:
                 if not post_boot_randomized:
                     force_cold_boot_for_randomization = True
                     logger.info(f"Forcing cold boot for {email} to apply device randomization")
-            
+
             # Add snapshot or cold boot args
             if cold_boot or force_cold_boot_for_randomization:
                 common_args.extend(["-no-snapshot-load"])
@@ -1015,16 +1031,24 @@ class EmulatorLauncher:
 
             # Apply post-boot randomization ONLY if this is the first boot after cloning
             # Check if we've already randomized this AVD
-            post_boot_randomized = False
-            needs_device_randomization = False
+            post_boot_randomized_check = False
+            needs_device_randomization_check = False
             try:
-                post_boot_randomized = avd_manager.get_user_field(email, "post_boot_randomized", False)
-                needs_device_randomization = avd_manager.get_user_field(email, "needs_device_randomization", False)
+                if avd_manager is None:
+                    from views.core.avd_profile_manager import AVDProfileManager
+
+                    avd_manager = AVDProfileManager.get_instance()
+                post_boot_randomized_check = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization_check = avd_manager.get_user_field(
+                    email, "needs_device_randomization", False
+                )
             except:
                 pass
-                
+
             # Randomize if: (1) created from seed and not randomized, OR (2) explicitly needs randomization (seed clone)
-            if (created_from_seed and not post_boot_randomized) or (needs_device_randomization and not post_boot_randomized):
+            if (created_from_seed and not post_boot_randomized_check) or (
+                needs_device_randomization_check and not post_boot_randomized_check
+            ):
                 try:
                     from server.utils.post_boot_randomizer import PostBootRandomizer
 
@@ -1039,7 +1063,9 @@ class EmulatorLauncher:
                         pass
 
                     logger.info(f"Applying one-time post-boot randomization for {email} on {emulator_id}")
-                    if post_boot_randomizer.randomize_all_post_boot_identifiers(emulator_id, android_id, device_identifiers):
+                    if post_boot_randomizer.randomize_all_post_boot_identifiers(
+                        emulator_id, android_id, device_identifiers
+                    ):
                         logger.info(f"Successfully applied post-boot randomization")
                         # Mark that we've done post-boot randomization
                         avd_manager.set_user_field(email, "post_boot_randomized", True)
@@ -1051,7 +1077,7 @@ class EmulatorLauncher:
                 except Exception as e:
                     logger.error(f"Failed to apply post-boot randomization: {e}")
                     # Continue anyway - better to have a working emulator with duplicate identifiers
-            elif (created_from_seed or needs_device_randomization) and post_boot_randomized:
+            elif (created_from_seed or needs_device_randomization_check) and post_boot_randomized_check:
                 logger.info(f"Skipping post-boot randomization for {email} - already randomized")
 
             return True, emulator_id, display_num

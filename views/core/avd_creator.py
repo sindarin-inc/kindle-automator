@@ -391,18 +391,19 @@ class AVDCreator:
         """
         logger.info("Creating seed clone AVD for fast user initialization")
         success, avd_name = self.create_new_avd(self.SEED_CLONE_EMAIL)
-        
+
         if success:
             # Mark seed clone for device identifier randomization on first boot
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
+
                 avd_manager = AVDProfileManager.get_instance()
                 avd_manager.set_user_field(self.SEED_CLONE_EMAIL, "needs_device_randomization", True)
                 avd_manager.set_user_field(self.SEED_CLONE_EMAIL, "post_boot_randomized", False)
                 logger.info("Marked seed clone AVD for device randomization on first boot")
             except Exception as e:
                 logger.warning(f"Could not mark seed clone for randomization: {e}")
-        
+
         return success, avd_name
 
     def copy_avd_from_seed_clone(self, email: str) -> Tuple[bool, str]:
@@ -498,7 +499,9 @@ class AVDCreator:
             logger.info(f"Randomizing device identifiers for {new_avd_name}")
             randomized_identifiers = {}
             try:
-                from server.utils.device_identifier_utils import randomize_avd_config_identifiers
+                from server.utils.device_identifier_utils import (
+                    randomize_avd_config_identifiers,
+                )
 
                 config_path = os.path.join(new_avd_path, "config.ini")
                 randomized_identifiers = randomize_avd_config_identifiers(config_path)

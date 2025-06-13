@@ -11,7 +11,7 @@ import uuid
 def generate_random_mac_address() -> str:
     """
     Generate a random MAC address.
-    
+
     Returns:
         str: Random MAC address in format XX:XX:XX:XX:XX:XX
     """
@@ -25,7 +25,7 @@ def generate_random_mac_address() -> str:
 def generate_random_serial_number() -> str:
     """
     Generate a random Android serial number.
-    
+
     Returns:
         str: Random serial number (16 characters)
     """
@@ -36,7 +36,7 @@ def generate_random_serial_number() -> str:
 def generate_random_android_id() -> str:
     """
     Generate a random Android ID.
-    
+
     Returns:
         str: Random Android ID (16 hex characters)
     """
@@ -48,7 +48,7 @@ def generate_random_imei() -> str:
     """
     Generate a random IMEI number.
     Note: Emulators don't have real IMEI, but this can be used if needed.
-    
+
     Returns:
         str: Random IMEI (15 digits)
     """
@@ -63,7 +63,7 @@ def generate_random_imei() -> str:
 def generate_random_device_name() -> str:
     """
     Generate a random device name.
-    
+
     Returns:
         str: Random device name
     """
@@ -76,7 +76,7 @@ def generate_random_device_name() -> str:
 def generate_random_build_id() -> str:
     """
     Generate a random build ID.
-    
+
     Returns:
         str: Random build ID
     """
@@ -87,18 +87,18 @@ def generate_random_build_id() -> str:
 def randomize_avd_config_identifiers(config_path: str) -> dict:
     """
     Update AVD config.ini with randomized device identifiers.
-    
+
     Args:
         config_path: Path to the AVD config.ini file
-        
+
     Returns:
         dict: Dictionary of randomized identifiers that were set
     """
     import os
-    
+
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
-    
+
     # Generate random identifiers
     identifiers = {
         "hw.wifi.mac": generate_random_mac_address(),
@@ -108,15 +108,15 @@ def randomize_avd_config_identifiers(config_path: str) -> dict:
         "ro.product.name": generate_random_device_name(),
         "android_id": generate_random_android_id(),  # Store for post-boot randomization
     }
-    
+
     # Read existing config
     with open(config_path, "r") as f:
         lines = f.readlines()
-    
+
     # Update or add identifier settings
     new_lines = []
     found_keys = set()
-    
+
     for line in lines:
         if "=" in line:
             key = line.split("=")[0].strip()
@@ -127,31 +127,31 @@ def randomize_avd_config_identifiers(config_path: str) -> dict:
                 new_lines.append(line)
         else:
             new_lines.append(line)
-    
+
     # Add any missing identifiers
     for key, value in identifiers.items():
         if key not in found_keys:
             new_lines.append(f"{key}={value}\n")
-    
+
     # Write back to file
     with open(config_path, "w") as f:
         f.writelines(new_lines)
-    
+
     return identifiers
 
 
 def get_emulator_prop_args(identifiers: dict) -> list:
     """
     Convert identifiers to emulator -prop arguments.
-    
+
     Args:
         identifiers: Dictionary of identifiers
-        
+
     Returns:
         list: List of -prop arguments for emulator command
     """
     prop_args = []
-    
+
     # Map config keys to property names that can be set via -prop
     # Note: Only qemu.* properties can be set via -prop flag
     prop_mappings = {
@@ -159,9 +159,9 @@ def get_emulator_prop_args(identifiers: dict) -> list:
         "ro.build.id": "qemu.build.id",
         "ro.product.name": "qemu.product.name",
     }
-    
+
     for config_key, prop_name in prop_mappings.items():
         if config_key in identifiers:
             prop_args.extend(["-prop", f"{prop_name}={identifiers[config_key]}"])
-    
+
     return prop_args

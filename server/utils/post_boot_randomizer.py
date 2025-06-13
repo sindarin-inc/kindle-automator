@@ -21,14 +21,14 @@ class PostBootRandomizer:
     def randomize_android_id(self, emulator_id: str, new_android_id: Optional[str] = None) -> bool:
         """
         Randomize the Android ID on a running emulator.
-        
+
         The Android ID is stored in the secure settings database.
         This requires root access (which emulators have by default).
-        
+
         Args:
             emulator_id: The emulator ID (e.g., 'emulator-5554')
             new_android_id: Optional specific Android ID to use. If None, generates random.
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -40,10 +40,11 @@ class PostBootRandomizer:
 
             # Wait for device to be fully online if needed
             import time
+
             max_wait = 10  # seconds
             wait_interval = 0.5  # Check every 500ms
             start_time = time.time()
-            
+
             while time.time() - start_time < max_wait:
                 # Check if device is online
                 check_cmd = [
@@ -53,11 +54,11 @@ class PostBootRandomizer:
                     "get-state",
                 ]
                 check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
-                
+
                 if check_result.returncode == 0 and "device" in check_result.stdout.strip():
                     logger.debug(f"Device {emulator_id} is online after {time.time() - start_time:.1f}s")
                     break
-                    
+
                 time.sleep(wait_interval)
             else:
                 logger.error(f"Device {emulator_id} not online after {max_wait}s")
@@ -87,11 +88,11 @@ class PostBootRandomizer:
                 "android_id",
                 new_android_id,
             ]
-            
+
             settings_result = subprocess.run(settings_cmd, capture_output=True, text=True, timeout=5)
             if settings_result.returncode == 0:
                 logger.info(f"Successfully set Android ID via settings command")
-                
+
                 # Verify the change
                 verify_cmd = [
                     f"{self.android_home}/platform-tools/adb",
@@ -110,13 +111,15 @@ class PostBootRandomizer:
                         logger.info(f"Verified Android ID is now: {actual_id}")
                         return True
                     else:
-                        logger.warning(f"Android ID verification failed. Expected {new_android_id}, got {actual_id}")
+                        logger.warning(
+                            f"Android ID verification failed. Expected {new_android_id}, got {actual_id}"
+                        )
             else:
                 logger.warning(f"Settings command failed: {settings_result.stderr}")
 
             # Method 2: Direct database manipulation (fallback for older Android versions)
             logger.info("Trying direct database manipulation method")
-            
+
             # Update the settings database directly
             db_cmd = [
                 f"{self.android_home}/platform-tools/adb",
@@ -125,7 +128,7 @@ class PostBootRandomizer:
                 "shell",
                 f"sqlite3 /data/data/com.android.providers.settings/databases/settings.db \"UPDATE secure SET value='{new_android_id}' WHERE name='android_id';\"",
             ]
-            
+
             db_result = subprocess.run(db_cmd, capture_output=True, text=True, timeout=10)
             if db_result.returncode != 0:
                 logger.error(f"Failed to update database: {db_result.stderr}")
@@ -141,17 +144,17 @@ class PostBootRandomizer:
     def randomize_system_properties(self, emulator_id: str, properties: dict) -> bool:
         """
         Set system properties on a running emulator.
-        
+
         Args:
             emulator_id: The emulator ID (e.g., 'emulator-5554')
             properties: Dictionary of properties to set
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             logger.info(f"Setting system properties on {emulator_id}")
-            
+
             # Ensure device is rooted
             root_cmd = [
                 f"{self.android_home}/platform-tools/adb",
@@ -160,7 +163,7 @@ class PostBootRandomizer:
                 "root",
             ]
             subprocess.run(root_cmd, capture_output=True, text=True, timeout=5)
-            
+
             success = True
             for prop_name, prop_value in properties.items():
                 try:
@@ -175,7 +178,7 @@ class PostBootRandomizer:
                         str(prop_value),
                     ]
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                    
+
                     if result.returncode != 0:
                         logger.error(f"Failed to set property {prop_name}: {result.stderr}")
                         success = False
@@ -191,18 +194,20 @@ class PostBootRandomizer:
                         ]
                         verify_result = subprocess.run(verify_cmd, capture_output=True, text=True, timeout=5)
                         actual_value = verify_result.stdout.strip()
-                        
+
                         if actual_value == str(prop_value):
                             logger.debug(f"Successfully set {prop_name} = {prop_value}")
                         else:
-                            logger.warning(f"Property {prop_name} verification failed. Expected '{prop_value}', got '{actual_value}'")
-                            
+                            logger.warning(
+                                f"Property {prop_name} verification failed. Expected '{prop_value}', got '{actual_value}'"
+                            )
+
                 except Exception as e:
                     logger.error(f"Error setting property {prop_name}: {e}")
                     success = False
-                    
+
             return success
-            
+
         except Exception as e:
             logger.error(f"Error setting system properties: {e}")
             return False
@@ -210,10 +215,10 @@ class PostBootRandomizer:
     def clear_google_play_services_data(self, emulator_id: str) -> bool:
         """
         Clear Google Play Services data to reset advertising ID and other identifiers.
-        
+
         Args:
             emulator_id: The emulator ID (e.g., 'emulator-5554')
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -230,7 +235,7 @@ class PostBootRandomizer:
                 "clear",
                 "com.google.android.gms",
             ]
-            
+
             result = subprocess.run(clear_cmd, capture_output=True, text=True, timeout=10)
             if result.returncode != 0:
                 logger.error(f"Failed to clear Google Play Services data: {result.stderr}")
@@ -243,15 +248,17 @@ class PostBootRandomizer:
             logger.error(f"Error clearing Google Play Services data: {e}")
             return False
 
-    def randomize_all_post_boot_identifiers(self, emulator_id: str, android_id: Optional[str] = None, device_identifiers: Optional[dict] = None) -> bool:
+    def randomize_all_post_boot_identifiers(
+        self, emulator_id: str, android_id: Optional[str] = None, device_identifiers: Optional[dict] = None
+    ) -> bool:
         """
         Randomize all post-boot identifiers on a running emulator.
-        
+
         Args:
             emulator_id: The emulator ID (e.g., 'emulator-5554')
             android_id: Optional specific Android ID to use
             device_identifiers: Optional dict of device identifiers to set
-            
+
         Returns:
             bool: True if all randomizations were successful, False if any failed
         """
@@ -270,10 +277,10 @@ class PostBootRandomizer:
                 "ro.build.id": device_identifiers.get("ro.build.id"),
                 "ro.product.name": device_identifiers.get("ro.product.name"),
             }
-            
+
             # Filter out None values
             properties_to_set = {k: v for k, v in property_mappings.items() if v is not None}
-            
+
             if properties_to_set:
                 logger.info(f"Setting system properties: {properties_to_set}")
                 if not self.randomize_system_properties(emulator_id, properties_to_set):
