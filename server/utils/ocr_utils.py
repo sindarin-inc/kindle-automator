@@ -289,11 +289,28 @@ class KindleOCR:
                 
             cleaned_lines.append(line)
         
-        # Remove any trailing empty lines
-        while cleaned_lines and not cleaned_lines[-1].strip():
-            cleaned_lines.pop()
-            
-        return '\n'.join(cleaned_lines)
+        # Join the lines back together
+        cleaned_text = '\n'.join(cleaned_lines)
+        
+        # Handle hyphenated words at end of lines
+        # Replace hyphen+newline with just the word (removing the hyphen)
+        cleaned_text = re.sub(r'-\n([a-zA-Z])', r'\1', cleaned_text)
+        
+        # Replace single newlines with spaces, but preserve multiple newlines
+        # First, temporarily replace 2+ newlines with a placeholder
+        cleaned_text = re.sub(r'\n\n+', '\x00', cleaned_text)
+        # Replace remaining single newlines with spaces
+        cleaned_text = re.sub(r'\n', ' ', cleaned_text)
+        # Restore the multiple newlines
+        cleaned_text = cleaned_text.replace('\x00', '\n\n')
+        
+        # Clean up any multiple spaces that may have been created
+        cleaned_text = re.sub(r' +', ' ', cleaned_text)
+        
+        # Remove any trailing whitespace
+        cleaned_text = cleaned_text.strip()
+        
+        return cleaned_text
 
     @staticmethod
     def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
