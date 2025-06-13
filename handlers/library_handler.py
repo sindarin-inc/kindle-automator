@@ -2085,6 +2085,7 @@ class LibraryHandler:
             # Import dialog identifiers here to avoid circular imports
             from views.reading.interaction_strategies import (
                 TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
+                UNABLE_TO_DOWNLOAD_DIALOG_IDENTIFIERS,
             )
 
             # Store initial page source for diagnostics
@@ -2154,6 +2155,15 @@ class LibraryHandler:
                             except NoSuchElementException:
                                 continue
 
+                        # Check for Unable to Download dialog
+                        for strategy, locator in UNABLE_TO_DOWNLOAD_DIALOG_IDENTIFIERS:
+                            try:
+                                element = driver.find_element(strategy, locator)
+                                if element and element.is_displayed():
+                                    return "unable_to_download"
+                            except NoSuchElementException:
+                                continue
+
                         # Check if we're in the reading view
                         for identifier_type, identifier_value in [
                             (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
@@ -2184,6 +2194,9 @@ class LibraryHandler:
                     if result == "title_not_available":
                         logger.info("Title Not Available dialog detected after clicking book")
                         return self._handle_loading_timeout(book_title)
+                    elif result == "unable_to_download":
+                        logger.info("Unable to Download dialog detected after clicking book")
+                        return self._handle_unable_to_download(book_title)
                     elif result == "last_read_page_dialog":
                         logger.info("Last Read Page dialog detected, delegating to reader handler")
                         return self._delegate_to_reader_handler(book_title)
@@ -2672,3 +2685,59 @@ class LibraryHandler:
 
         # We didn't find any expected dialogs, so return failure
         return {"success": False, "error": "Timeout waiting for reading view or expected dialogs"}
+
+    def _handle_unable_to_download(self, book_title: str):
+        """Handle the Unable to Download dialog when opening a book.
+
+        Args:
+            book_title (str): The title of the book that failed to download
+
+        Returns:
+            dict: A result dictionary with 'success' boolean and error details
+        """
+        # Import dialog identifiers from the reading module
+        from views.reading.interaction_strategies import UNABLE_TO_DOWNLOAD_OK_BUTTON
+
+        # Store page source for diagnostics
+        filepath = store_page_source(self.driver.page_source, "unable_to_download_dialog")
+        logger.info(f"Stored unable to download dialog page source at: {filepath}")
+
+        # Save screenshot for visual debugging
+        screenshot_path = os.path.join(self.screenshots_dir, "unable_to_download_dialog.png")
+        self.driver.save_screenshot(screenshot_path)
+        logger.info(f"Saved screenshot to {screenshot_path}")
+
+        # Get the error message text
+        error_message = "Unable to download the book"
+        try:
+            message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
+            if message_element and message_element.is_displayed():
+                error_message = message_element.text
+                logger.info(f"Unable to Download dialog message: {error_message}")
+        except NoSuchElementException:
+            logger.debug("Could not get error message text from dialog")
+
+        # Click the OK button to dismiss the dialog
+        ok_clicked = False
+        for strategy, locator in UNABLE_TO_DOWNLOAD_OK_BUTTON:
+            try:
+                button = self.driver.find_element(strategy, locator)
+                if button.is_displayed():
+                    button.click()
+                    logger.info("Clicked OK button on Unable to Download dialog")
+                    ok_clicked = True
+                    time.sleep(1)  # Wait for dialog to dismiss
+                    break
+            except NoSuchElementException:
+                continue
+
+        if not ok_clicked:
+            logger.warning("Could not click OK button on Unable to Download dialog")
+
+        # Return error information
+        return {
+            "success": False,
+            "error": "unable_to_download",
+            "error_message": error_message,
+            "book_title": book_title,
+        }

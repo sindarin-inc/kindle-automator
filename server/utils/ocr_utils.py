@@ -251,65 +251,65 @@ class KindleOCR:
     def _clean_ocr_text(text: str) -> str:
         """
         Clean OCR text by removing Kindle UI elements like reading speed and progress.
-        
+
         Args:
             text: Raw OCR text
-            
+
         Returns:
             Cleaned text without UI elements
         """
         if not text:
             return text
-            
+
         # Split text into lines
-        lines = text.strip().split('\n')
-        
+        lines = text.strip().split("\n")
+
         # Filter out lines that match common Kindle UI patterns
         cleaned_lines = []
         for line in lines:
             # Skip lines that match reading speed pattern (e.g., "Learning reading speed")
-            if re.search(r'learning\s+reading\s+speed', line, re.IGNORECASE):
+            if re.search(r"learning\s+reading\s+speed", line, re.IGNORECASE):
                 continue
-                
+
             # Skip lines that are just percentages (e.g., "87%")
-            if re.match(r'^\s*\d{1,3}%\s*$', line):
+            if re.match(r"^\s*\d{1,3}%\s*$", line):
                 continue
-                
+
             # Skip lines that match location/page patterns (e.g., "Location 123 of 456")
-            if re.search(r'location\s+\d+\s+of\s+\d+', line, re.IGNORECASE):
+            if re.search(r"location\s+\d+\s+of\s+\d+", line, re.IGNORECASE):
                 continue
-                
+
             # Skip lines that are just page numbers or locations
-            if re.match(r'^\s*(page\s+)?\d+\s*$', line, re.IGNORECASE):
+            if re.match(r"^\s*(page\s+)?\d+\s*$", line, re.IGNORECASE):
                 continue
-                
+
             # Skip lines that match time left patterns (e.g., "5 min left in chapter", "2 mins left in chapter")
-            if re.search(r'\d+\s*mins?\s*left\s*in\s*(chapter|book)', line, re.IGNORECASE):
+            if re.search(r"\d+\s*mins?\s*left\s*in\s*(chapter|book)", line, re.IGNORECASE):
                 continue
-                
+
             cleaned_lines.append(line)
-        
+
         # Join the lines back together
-        cleaned_text = '\n'.join(cleaned_lines)
-        
+        cleaned_text = "\n".join(cleaned_lines)
+
         # Handle hyphenated words at end of lines
         # Replace hyphen+newline with just the word (removing the hyphen)
-        cleaned_text = re.sub(r'-\n([a-zA-Z])', r'\1', cleaned_text)
-        
+        cleaned_text = re.sub(r"-\n([a-zA-Z])", r"\1", cleaned_text)
+
         # Replace single newlines with spaces, but preserve multiple newlines
         # First, temporarily replace 2+ newlines with a placeholder
-        cleaned_text = re.sub(r'\n\n+', '\x00', cleaned_text)
+        cleaned_text = re.sub(r"\n\n+", "\x00", cleaned_text)
         # Replace remaining single newlines with spaces
-        cleaned_text = re.sub(r'\n', ' ', cleaned_text)
+        cleaned_text = re.sub(r"\n", " ", cleaned_text)
         # Restore the multiple newlines
-        cleaned_text = cleaned_text.replace('\x00', '\n\n')
-        
+        cleaned_text = cleaned_text.replace("\x00", "\n\n")
+
         # Clean up any multiple spaces that may have been created
-        cleaned_text = re.sub(r' +', ' ', cleaned_text)
-        
+        cleaned_text = re.sub(r" +", " ", cleaned_text)
+
         # Remove any trailing whitespace
         cleaned_text = cleaned_text.strip()
-        
+
         return cleaned_text
 
     @staticmethod
