@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import subprocess
 import tempfile
 import time
@@ -79,13 +80,56 @@ class Driver:
                     )
                     return None
 
-            # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
-            # This prevents cross-user emulator access
-            logger.error(
-                f"No specific device requested for email={email}. "
-                f"Refusing to search for ANY available emulator to prevent cross-user access."
-            )
-            return None
+            # Check if we're on macOS
+            is_mac = platform.system() == "Darwin"
+
+            if is_mac:
+                # On macOS, allow flexible matching for Android Studio emulators
+                logger.debug(
+                    f"macOS detected for email={email}. "
+                    f"Allowing flexible emulator matching for Android Studio compatibility."
+                )
+
+                # Find any available emulator
+                try:
+                    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+
+                    for line in result.stdout.split("\n"):
+                        if "\tdevice" in line and line.startswith("emulator"):
+                            device_id = line.split("\t")[0]
+
+                            # Verify this is actually a working emulator
+                            try:
+                                verify_result = subprocess.run(
+                                    ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
+                                    capture_output=True,
+                                    text=True,
+                                    check=True,
+                                    timeout=5,
+                                )
+                                logger.info(
+                                    f"macOS: Found available emulator {device_id} for email={email}. "
+                                    f"Model: {verify_result.stdout.strip()}"
+                                )
+                                return device_id
+                            except Exception as e:
+                                logger.warning(f"macOS: Could not verify emulator {device_id}: {e}")
+                                continue
+
+                    logger.warning(f"macOS: No available emulators found for email={email}")
+                    return None
+
+                except Exception as e:
+                    logger.error(f"macOS: Error finding available emulator: {e}")
+                    return None
+            else:
+                # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
+                # This prevents cross-user emulator access in production
+                logger.error(
+                    f"No specific device requested for email={email}. "
+                    f"Refusing to search for ANY available emulator to prevent cross-user access."
+                )
+                return None
         except Exception as e:
             logger.error(f"Error getting emulator device ID: {e}")
             return None

@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import subprocess
 import time
 from typing import Dict, Optional, Tuple
@@ -171,9 +172,17 @@ class DeviceDiscovery:
                     logger.info(f"Queried emulator {emulator_id} directly, running AVD: {avd_name}")
                     return avd_name
             else:
-                logger.warning(
-                    f"Failed to query AVD name: returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
-                )
+                # Check if we're on macOS
+                is_mac = platform.system() == "Darwin"
+                if is_mac:
+                    logger.debug(
+                        f"macOS: AVD name query failed for {emulator_id} (returncode={result.returncode}). "
+                        f"This is expected for Android Studio emulators."
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to query AVD name: returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
+                    )
 
         except Exception as e:
             logger.warning(f"Error querying emulator {emulator_id} for AVD name: {e}")
@@ -196,8 +205,11 @@ class DeviceDiscovery:
             if avd_name:
                 return avd_name
 
+            # Check if we're on macOS
+            is_mac = platform.system() == "Darwin"
+
             # In simplified mode, we may not have AVD names in profiles
-            if self.use_simplified_mode:
+            if self.use_simplified_mode and not is_mac:
                 # Don't assume any email, just return None
                 return None
 
@@ -226,8 +238,17 @@ class DeviceDiscovery:
                 logger.warning(f"Error checking VNC instances for emulator {emulator_id}: {e}")
 
             # If we got here, we can't reliably determine which AVD this emulator is running
-            # Instead of guessing, return None
-            return None
+            # Check if we're on macOS
+            is_mac = platform.system() == "Darwin"
+            if is_mac:
+                # On macOS, we can return a placeholder AVD name since we're allowing flexible matching
+                # This allows the system to work with Android Studio emulators
+                placeholder_avd = f"AndroidStudio_{emulator_id}"
+                logger.debug(f"macOS: Using placeholder AVD name '{placeholder_avd}' for {emulator_id}")
+                return placeholder_avd
+            else:
+                # In production, we must not guess
+                return None
 
         except Exception as e:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
@@ -349,13 +370,8 @@ class DeviceDiscovery:
                         # Only proceed if the emulator device is actually available (not 'offline')
                         if device_state != "offline":
                             # Query AVD name using AVD Profile Manager
-                            logger.info(
-                                f"Querying AVD name for emulator {emulator_id} in state {device_state}"
-                            )
                             avd_name = self._get_avd_name_for_emulator(emulator_id, profiles_index)
-                            logger.info(f"_get_avd_name_for_emulator({emulator_id}) returned: {avd_name}")
                             if avd_name:
-                                logger.info(f"Adding to running_emulators: {avd_name} -> {emulator_id}")
                                 running_emulators[avd_name] = emulator_id
                         else:
                             logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
