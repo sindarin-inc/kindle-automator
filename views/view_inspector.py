@@ -67,7 +67,7 @@ class ViewInspector:
 
     def ensure_app_foreground(self, force_restart=False):
         """Ensures the Kindle app is in the foreground
-        
+
         Args:
             force_restart: If True, force stop the app before starting (used when in UNKNOWN state)
         """
