@@ -768,8 +768,12 @@ class EmulatorLauncher:
                         f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
                     )
                     
-                    # Log device identifiers for the already running emulator
-                    self._log_device_identifiers(emulator_id, email)
+                    # Check if emulator is actually ready before logging identifiers
+                    if self.is_emulator_ready(email):
+                        # Log device identifiers for the already running emulator
+                        self._log_device_identifiers(emulator_id, email)
+                    else:
+                        logger.info(f"Emulator {emulator_id} is running but not fully ready yet")
 
                     # Store this emulator ID in the VNC instance
                     try:
@@ -1011,13 +1015,14 @@ class EmulatorLauncher:
             while time.time() - start_time < max_wait_time:
                 if self.is_emulator_ready(email):
                     logger.info(f"Emulator {emulator_id} is ready")
-                    # Log device identifiers once emulator is ready
-                    self._log_device_identifiers(emulator_id, email)
                     break
                 time.sleep(2)
             else:
                 logger.warning(f"Emulator {emulator_id} not ready after {max_wait_time}s, continuing anyway")
 
+            # Log device identifiers once emulator is confirmed ready
+            self._log_device_identifiers(emulator_id, email)
+            
             # Apply post-boot randomization for cloned AVDs
             if created_from_seed:
                 try:
@@ -1036,6 +1041,9 @@ class EmulatorLauncher:
                     logger.info(f"Applying post-boot randomization for {email} on {emulator_id}")
                     if post_boot_randomizer.randomize_all_post_boot_identifiers(emulator_id, android_id):
                         logger.info(f"Successfully applied post-boot randomization")
+                        # Log identifiers again after randomization to show the changes
+                        logger.info("Device identifiers after randomization:")
+                        self._log_device_identifiers(emulator_id, email)
                     else:
                         logger.warning(f"Some post-boot randomizations may have failed")
                 except Exception as e:
