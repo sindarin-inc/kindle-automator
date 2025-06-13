@@ -78,17 +78,10 @@ CAPTCHA_ERROR_MESSAGES = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Enter the characters as they are given')]"),
 ]
 
-# Puzzle authentication indicators (choose items puzzle)
-# These are UNIQUE to puzzle screens and don't appear in regular CAPTCHA
+# Puzzle authentication indicators
+# Simplified to only check for the universal puzzle text
 PUZZLE_REQUIRED_INDICATORS = [
-    # Primary unique indicators - these ONLY appear in puzzle screens
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Choose all the')]"),  # "Choose all the hats"
-    (AppiumBy.XPATH, "//android.widget.Button[@text='Get a new puzzle']"),
-    (AppiumBy.XPATH, "//android.widget.Button[@text='Instructions']"),
-    (AppiumBy.XPATH, "//android.widget.Button[@text='Get an audio puzzle']"),
-    # Secondary indicators that may be shared but help confirm
     (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:') and contains(@text, 'Required:')]"),
 ]
 
 # Library view verification strategies - prioritized by specificity
