@@ -1005,8 +1005,18 @@ class EmulatorLauncher:
             # Log device identifiers once emulator is confirmed ready
             self._log_device_identifiers(emulator_id, email)
 
-            # Apply post-boot randomization for cloned AVDs
-            if created_from_seed:
+            # Apply post-boot randomization ONLY if this is the first boot after cloning
+            # Check if we've already randomized this AVD
+            post_boot_randomized = False
+            needs_device_randomization = False
+            try:
+                post_boot_randomized = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization = avd_manager.get_user_field(email, "needs_device_randomization", False)
+            except:
+                pass
+                
+            # Randomize if: (1) created from seed and not randomized, OR (2) explicitly needs randomization (seed clone)
+            if (created_from_seed and not post_boot_randomized) or (needs_device_randomization and not post_boot_randomized):
                 try:
                     from server.utils.post_boot_randomizer import PostBootRandomizer
 
@@ -1020,9 +1030,11 @@ class EmulatorLauncher:
                     except:
                         pass
 
-                    logger.info(f"Applying post-boot randomization for {email} on {emulator_id}")
+                    logger.info(f"Applying one-time post-boot randomization for {email} on {emulator_id}")
                     if post_boot_randomizer.randomize_all_post_boot_identifiers(emulator_id, android_id):
                         logger.info(f"Successfully applied post-boot randomization")
+                        # Mark that we've done post-boot randomization
+                        avd_manager.set_user_field(email, "post_boot_randomized", True)
                         # Log identifiers again after randomization to show the changes
                         logger.info("Device identifiers after randomization:")
                         self._log_device_identifiers(emulator_id, email)
@@ -1031,6 +1043,8 @@ class EmulatorLauncher:
                 except Exception as e:
                     logger.error(f"Failed to apply post-boot randomization: {e}")
                     # Continue anyway - better to have a working emulator with duplicate identifiers
+            elif (created_from_seed or needs_device_randomization) and post_boot_randomized:
+                logger.info(f"Skipping post-boot randomization for {email} - already randomized")
 
             return True, emulator_id, display_num
 
