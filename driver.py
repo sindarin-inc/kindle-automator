@@ -593,21 +593,25 @@ class Driver:
             except Exception as e:
                 logger.warning(f"Error checking AVD name: {e}")
 
-            subprocess.run(
-                ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            logger.info(f"Cleared io.appium.uiautomator2.server successfully")
-
-            subprocess.run(
-                ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server.test"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            logger.info(f"Cleared io.appium.uiautomator2.server.test successfully")
+            # Instead of clearing data, just force-stop the Appium process
+            # This avoids triggering logout in the Kindle app
+            try:
+                subprocess.run(
+                    [
+                        "adb",
+                        "-s",
+                        self.device_id,
+                        "shell",
+                        "am",
+                        "force-stop",
+                        "io.appium.uiautomator2.server",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                logger.info(f"Force-stopped io.appium.uiautomator2.server successfully")
+            except Exception:
+                pass  # It's okay if the process wasn't running
 
             return True
         except Exception as e:
