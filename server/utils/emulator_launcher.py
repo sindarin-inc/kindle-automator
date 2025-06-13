@@ -213,11 +213,6 @@ class EmulatorLauncher:
                 if result.returncode == 0 and result.stdout.strip():
                     avd_name = result.stdout.strip()
                     return avd_name
-                else:
-                    logger.warning(
-                        f"Failed to get ro.kernel.qemu.avd_name from {emulator_id}: "
-                        f"returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
-                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting ro.kernel.qemu.avd_name via ADB: {adb_error}")
@@ -242,11 +237,6 @@ class EmulatorLauncher:
                 if result.returncode == 0 and result.stdout.strip():
                     avd_name = result.stdout.strip()
                     return avd_name
-                else:
-                    logger.warning(
-                        f"Failed to get qemu.avd_name from {emulator_id}: "
-                        f"returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
-                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting qemu.avd_name via ADB: {adb_error}")
@@ -272,23 +262,15 @@ class EmulatorLauncher:
                     properties = result.stdout.strip().split("\n")
                     for prop in properties:
                         if "avd" in prop.lower():
-                            logger.info(f"Found potential AVD-related property: {prop}")
                             # Extract property value if possible
                             if ": [" in prop and "]" in prop:
                                 value = prop.split(": [")[1].split("]")[0]
                                 if value:
-                                    logger.info(f"Using AVD name from property: {value}")
                                     return value
-                else:
-                    logger.warning(
-                        f"Failed to get all properties from {emulator_id}: "
-                        f"returncode={result.returncode}, stderr='{result.stderr}'"
-                    )
 
             except Exception as adb_error:
                 logger.warning(f"Error getting all properties via ADB: {adb_error}")
 
-            logger.warning(f"Could not extract AVD name from emulator {emulator_id} after all attempts")
             return None
 
         except Exception as e:
@@ -768,6 +750,13 @@ class EmulatorLauncher:
                         f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
                     )
 
+                    # Check if emulator is actually ready before logging identifiers
+                    if self.is_emulator_ready(email):
+                        # Log device identifiers for the already running emulator
+                        self._log_device_identifiers(emulator_id, email)
+                    else:
+                        logger.info(f"Emulator {emulator_id} is running but not fully ready yet")
+
                     # Store this emulator ID in the VNC instance
                     try:
                         from server.utils.vnc_instance_manager import VNCInstanceManager
@@ -826,6 +815,7 @@ class EmulatorLauncher:
             # No longer explicitly loading snapshots - the emulator will use default_boot automatically
             # Log when the default_boot snapshot was last updated
             created_from_seed = False
+            avd_manager = None
             try:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
@@ -852,6 +842,21 @@ class EmulatorLauncher:
                 created_from_seed = False
                 # Proceed normally - emulator will use default_boot if available
 
+            # Check if we've already randomized this AVD (needed for cold boot decision)
+            post_boot_randomized = False
+            needs_device_randomization = False
+            try:
+                if avd_manager is None:
+                    from views.core.avd_profile_manager import AVDProfileManager
+
+                    avd_manager = AVDProfileManager.get_instance()
+                post_boot_randomized = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization = avd_manager.get_user_field(
+                    email, "needs_device_randomization", False
+                )
+            except:
+                pass
+
             # Common emulator arguments for all platforms
             common_args = [
                 "-avd",
@@ -867,8 +872,31 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
+            # Add randomized device identifiers if available
+            try:
+                from server.utils.device_identifier_utils import get_emulator_prop_args
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                avd_manager = AVDProfileManager.get_instance()
+                device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
+                if device_identifiers:
+                    prop_args = get_emulator_prop_args(device_identifiers)
+                    common_args.extend(prop_args)
+                    logger.info(f"Added randomized device identifier props: {prop_args}")
+            except Exception as e:
+                logger.warning(f"Could not add device identifier props: {e}")
+                # Continue without randomized identifiers
+
+            # Determine if we should force cold boot
+            # Force cold boot if this AVD needs first-time randomization
+            force_cold_boot_for_randomization = False
+            if created_from_seed or needs_device_randomization:
+                if not post_boot_randomized:
+                    force_cold_boot_for_randomization = True
+                    logger.info(f"Forcing cold boot for {email} to apply device randomization")
+
             # Add snapshot or cold boot args
-            if cold_boot:
+            if cold_boot or force_cold_boot_for_randomization:
                 common_args.extend(["-no-snapshot-load"])
                 logger.info(f"Starting emulator for {email} with cold boot (no snapshot)")
             else:
@@ -984,6 +1012,73 @@ class EmulatorLauncher:
                 except Exception as e:
                     logger.error(f"Failed to read emulator stderr log {stderr_log}: {e}")
                 return False, None, None
+
+            # Wait for emulator to be ready before applying post-boot randomization
+            logger.info(f"Waiting for emulator {emulator_id} to be ready...")
+            max_wait_time = 120  # 2 minutes max wait
+            start_time = time.time()
+
+            while time.time() - start_time < max_wait_time:
+                if self.is_emulator_ready(email):
+                    logger.info(f"Emulator {emulator_id} is ready")
+                    break
+                time.sleep(2)
+            else:
+                logger.warning(f"Emulator {emulator_id} not ready after {max_wait_time}s, continuing anyway")
+
+            # Log device identifiers once emulator is confirmed ready
+            self._log_device_identifiers(emulator_id, email)
+
+            # Apply post-boot randomization ONLY if this is the first boot after cloning
+            # Check if we've already randomized this AVD
+            post_boot_randomized_check = False
+            needs_device_randomization_check = False
+            try:
+                if avd_manager is None:
+                    from views.core.avd_profile_manager import AVDProfileManager
+
+                    avd_manager = AVDProfileManager.get_instance()
+                post_boot_randomized_check = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization_check = avd_manager.get_user_field(
+                    email, "needs_device_randomization", False
+                )
+            except:
+                pass
+
+            # Randomize if: (1) created from seed and not randomized, OR (2) explicitly needs randomization (seed clone)
+            if (created_from_seed and not post_boot_randomized_check) or (
+                needs_device_randomization_check and not post_boot_randomized_check
+            ):
+                try:
+                    from server.utils.post_boot_randomizer import PostBootRandomizer
+
+                    post_boot_randomizer = PostBootRandomizer(self.android_home)
+                    # Get stored Android ID if available
+                    android_id = None
+                    try:
+                        device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
+                        if device_identifiers and "android_id" in device_identifiers:
+                            android_id = device_identifiers["android_id"]
+                    except:
+                        pass
+
+                    logger.info(f"Applying one-time post-boot randomization for {email} on {emulator_id}")
+                    if post_boot_randomizer.randomize_all_post_boot_identifiers(
+                        emulator_id, android_id, device_identifiers
+                    ):
+                        logger.info(f"Successfully applied post-boot randomization")
+                        # Mark that we've done post-boot randomization
+                        avd_manager.set_user_field(email, "post_boot_randomized", True)
+                        # Log identifiers again after randomization to show the changes
+                        logger.info("Device identifiers after randomization:")
+                        self._log_device_identifiers(emulator_id, email)
+                    else:
+                        logger.warning(f"Some post-boot randomizations may have failed")
+                except Exception as e:
+                    logger.error(f"Failed to apply post-boot randomization: {e}")
+                    # Continue anyway - better to have a working emulator with duplicate identifiers
+            elif (created_from_seed or needs_device_randomization_check) and post_boot_randomized_check:
+                logger.info(f"Skipping post-boot randomization for {email} - already randomized")
 
             return True, emulator_id, display_num
 
@@ -1215,7 +1310,6 @@ class EmulatorLauncher:
             # If we have an AVD name and it's in running_emulators, use that
             if avd_name and avd_name in self.running_emulators:
                 emulator_id, display_num = self.running_emulators[avd_name]
-                logger.info(f"Found cached emulator for {avd_name}: {emulator_id}, display: {display_num}")
 
                 # Get the direct ADB output (includes both 'device' and 'offline' status)
                 try:
@@ -1444,6 +1538,88 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error checking boot status: {e}")
             return False
+
+    def _log_device_identifiers(self, emulator_id: str, email: str) -> None:
+        """
+        Log device identifiers for the emulator once it's ready.
+        This helps verify that device randomization is working.
+
+        Args:
+            emulator_id: The emulator ID (e.g., 'emulator-5554')
+            email: The user's email address
+        """
+        try:
+            logger.info(f"Device identifiers for {email} on {emulator_id}:")
+
+            # Get various device properties
+            properties = {
+                "Android ID": "settings get secure android_id",
+                "Serial Number": "getprop ro.serialno",
+                "Build ID": "getprop ro.build.id",
+                "Product Name": "getprop ro.product.name",
+                "Device Name": "getprop ro.product.device",
+                "AVD Name": "getprop ro.kernel.qemu.avd_name",
+            }
+
+            identifier_values = {}
+            for prop_name, cmd in properties.items():
+                try:
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", cmd],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        value = result.stdout.strip()
+                        identifier_values[prop_name] = value if value and value != "null" else "Not set"
+                except Exception:
+                    identifier_values[prop_name] = "Error retrieving"
+
+            # Get MAC addresses from network interfaces
+            try:
+                result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", "ip link show"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    output = result.stdout
+                    # Extract MAC addresses
+                    mac_addresses = {}
+                    current_interface = None
+                    for line in output.split("\n"):
+                        # Check for interface names
+                        if ": " in line and not line.startswith(" "):
+                            parts = line.split(": ")
+                            if len(parts) >= 2:
+                                current_interface = parts[1].split("@")[0]
+                        # Check for MAC addresses
+                        elif "link/ether" in line and current_interface:
+                            parts = line.strip().split()
+                            for i, part in enumerate(parts):
+                                if part == "link/ether" and i + 1 < len(parts):
+                                    mac_addresses[current_interface] = parts[i + 1]
+                                    break
+
+                    # Log commonly used interfaces
+                    if "wlan0" in mac_addresses:
+                        identifier_values["WiFi MAC"] = mac_addresses["wlan0"]
+                    if "eth0" in mac_addresses:
+                        identifier_values["Ethernet MAC"] = mac_addresses["eth0"]
+            except Exception:
+                pass
+
+            # Format and log all identifiers in a single line for easy comparison
+            id_parts = []
+            for key, value in identifier_values.items():
+                id_parts.append(f"{key}: {value}")
+
+            logger.info(f"  {' | '.join(id_parts)}")
+
+        except Exception as e:
+            logger.error(f"Error logging device identifiers: {e}")
 
     def _is_package_manager_ready(self, emulator_id: str) -> bool:
         """Check if package manager is ready to accept commands."""

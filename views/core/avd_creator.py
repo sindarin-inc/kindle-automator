@@ -17,8 +17,8 @@ class AVDCreator:
     SEED_CLONE_SNAPSHOT = "pre_kindle_install"
 
     # System image to use for all AVDs
-    # Must match sdkmanager --list format exactly
-    SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
+    # Must match `sdkmanager --list` format exactly
+    SYSTEM_IMAGE = "system-images;android-32;google_apis;x86_64"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
@@ -390,7 +390,21 @@ class AVDCreator:
             Tuple[bool, str]: (success, avd_name or error message)
         """
         logger.info("Creating seed clone AVD for fast user initialization")
-        return self.create_new_avd(self.SEED_CLONE_EMAIL)
+        success, avd_name = self.create_new_avd(self.SEED_CLONE_EMAIL)
+
+        if success:
+            # Mark seed clone for device identifier randomization on first boot
+            try:
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                avd_manager = AVDProfileManager.get_instance()
+                avd_manager.set_user_field(self.SEED_CLONE_EMAIL, "needs_device_randomization", True)
+                avd_manager.set_user_field(self.SEED_CLONE_EMAIL, "post_boot_randomized", False)
+                logger.info("Marked seed clone AVD for device randomization on first boot")
+            except Exception as e:
+                logger.warning(f"Could not mark seed clone for randomization: {e}")
+
+        return success, avd_name
 
     def copy_avd_from_seed_clone(self, email: str) -> Tuple[bool, str]:
         """
@@ -481,12 +495,33 @@ class AVDCreator:
             logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
             self._configure_avd(new_avd_name)
 
+            # Step 6: Randomize device identifiers to prevent auth token ejection
+            logger.info(f"Randomizing device identifiers for {new_avd_name}")
+            randomized_identifiers = {}
+            try:
+                from server.utils.device_identifier_utils import (
+                    randomize_avd_config_identifiers,
+                )
+
+                config_path = os.path.join(new_avd_path, "config.ini")
+                randomized_identifiers = randomize_avd_config_identifiers(config_path)
+                logger.info(f"Randomized identifiers for {new_avd_name}: {randomized_identifiers}")
+            except Exception as e:
+                logger.error(f"Failed to randomize device identifiers: {e}")
+                # Continue anyway - better to have a working AVD with duplicate identifiers
+                # than to fail the cloning process
+
             # Mark this AVD as created from seed clone in the user profile
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
 
                 avd_manager = AVDProfileManager.get_instance()
                 avd_manager.set_user_field(email, "created_from_seed_clone", True)
+                # Store randomized identifiers in user profile for consistent use
+                if randomized_identifiers:
+                    avd_manager.set_user_field(email, "device_identifiers", randomized_identifiers)
+                # Clear post_boot_randomized flag to ensure randomization happens on first boot
+                avd_manager.set_user_field(email, "post_boot_randomized", False)
                 logger.info(f"Marked {email} as created from seed clone")
             except Exception as e:
                 logger.warning(f"Could not mark AVD as created from seed clone: {e}")

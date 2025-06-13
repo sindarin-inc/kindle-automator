@@ -1455,6 +1455,14 @@ class AuthResource(Resource):
     @handle_automator_response
     def _auth(self):
         """Set up a profile for manual authentication via VNC or WebSockets"""
+        # Use get_sindarin_email() to properly handle user_email overrides
+        sindarin_email = get_sindarin_email()
+
+        # Sindarin email is required for profile identification
+        if not sindarin_email:
+            logger.error("No sindarin_email provided for profile identification")
+            return {"error": "sindarin_email is required for profile identification"}, 400
+
         # Create a unified params dict that combines query params and JSON body
         params = {}
         for key, value in request.args.items():
@@ -1470,18 +1478,6 @@ class AuthResource(Resource):
             except:
                 # In case of JSON parsing error, just continue with query params
                 logger.warning("Failed to parse JSON data in request")
-
-        # Get sindarin_email from unified params
-        sindarin_email = params.get("sindarin_email")
-
-        # Fall back to form data if needed
-        if not sindarin_email and "sindarin_email" in request.form:
-            sindarin_email = request.form.get("sindarin_email")
-
-        # Sindarin email is required for profile identification
-        if not sindarin_email:
-            logger.error("No sindarin_email provided for profile identification")
-            return {"error": "sindarin_email is required for profile identification"}, 400
 
         # Process boolean parameters in a unified way
         # For query params, "1", "true", "yes" (case-insensitive) are considered true
@@ -1703,12 +1699,13 @@ class AuthResource(Resource):
 
     def get(self):
         """Get the auth status"""
+        # Use get_sindarin_email() to properly handle user_email overrides
+        sindarin_email = get_sindarin_email()
+
         # First check if recreate is requested BEFORE profile loading
         params = {}
         for key, value in request.args.items():
             params[key] = value
-
-        sindarin_email = params.get("sindarin_email")
         recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
         recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
 
@@ -1722,12 +1719,13 @@ class AuthResource(Resource):
 
     def post(self):
         """Set up a profile for manual authentication via VNC"""
+        # Use get_sindarin_email() to properly handle user_email overrides
+        sindarin_email = get_sindarin_email()
+
         # First check if recreate is requested BEFORE profile loading
         params = {}
         if request.is_json:
             params = request.get_json() or {}
-
-        sindarin_email = params.get("sindarin_email") or params.get("email")
         recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
         recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
 
