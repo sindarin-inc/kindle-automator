@@ -35,6 +35,7 @@ from views.library.view_strategies import (
     BOOK_METADATA_IDENTIFIERS,
     BOTTOM_NAV_IDENTIFIERS,
     CONTENT_DESC_STRATEGIES,
+    DOWNLOAD_PROGRESS_BAR_IDENTIFIERS,
     GRID_VIEW_IDENTIFIERS,
     LIBRARY_ELEMENT_DETECTION_STRATEGIES,
     LIBRARY_TAB_CHILD_SELECTION_STRATEGIES,
@@ -1665,6 +1666,9 @@ class LibraryHandler:
                 button.click()
                 logger.info("Clicked book to start download")
 
+                # Store page source immediately after click
+                store_page_source(self.driver.page_source, "after_book_click_download_start")
+
                 # Check for "Invalid Item" dialog first
                 if self._check_invalid_item_dialog(book_title, "after clicking non-downloaded book"):
                     # Try to find the book again after removing it
@@ -1675,6 +1679,12 @@ class LibraryHandler:
                 # Check for "Unable to Download" dialog
                 if self._check_unable_to_download_dialog(book_title, "after clicking non-downloaded book"):
                     return False
+
+                # Check for download progress bar
+                if self._check_for_download_progress_bar():
+                    logger.info("Download progress bar detected, waiting for download to complete...")
+                    if not self._wait_for_download_completion():
+                        return False
 
                 # After clicking the book, first check if we've already left the library view
                 # This happens when the book downloads very quickly or is already downloaded
@@ -1843,6 +1853,18 @@ class LibraryHandler:
             logger.info(f"Found downloaded book: {book_info.get('title', book_title)}")
             button.click()
             logger.info("Clicked book button")
+
+            # Store page source immediately after click
+            store_page_source(self.driver.page_source, "after_book_click_already_downloaded")
+
+            # Check for download progress bar even for "downloaded" books
+            # Sometimes the content-desc may show downloaded but it's still downloading
+            if self._check_for_download_progress_bar():
+                logger.info(
+                    "Download progress bar detected on already downloaded book, waiting for download to complete..."
+                )
+                if not self._wait_for_download_completion():
+                    return False
 
             # Check for "Invalid Item" dialog first
             if self._check_invalid_item_dialog(book_title, "after clicking already downloaded book"):
@@ -2027,6 +2049,57 @@ class LibraryHandler:
             traceback.print_exc()
             return False
 
+    def _check_for_download_progress_bar(self):
+        """Check if a download progress bar is visible.
+
+        Returns:
+            bool: True if download progress bar is found, False otherwise
+        """
+        for strategy, locator in DOWNLOAD_PROGRESS_BAR_IDENTIFIERS:
+            try:
+                element = self.driver.find_element(strategy, locator)
+                if element and element.is_displayed():
+                    logger.info(f"Download progress bar detected using {strategy} with locator: {locator}")
+                    return True
+            except NoSuchElementException:
+                continue
+        return False
+
+    def _wait_for_download_completion(self, timeout=120):
+        """Wait for download progress bar to disappear.
+
+        Args:
+            timeout: Maximum time to wait for download completion in seconds
+
+        Returns:
+            bool: True if download completed (progress bar disappeared), False if timeout
+        """
+        logger.info("Waiting for download to complete...")
+        start_time = time.time()
+        last_capture_time = start_time
+        capture_count = 0
+
+        while time.time() - start_time < timeout:
+            # Capture page source periodically
+            current_time = time.time()
+            if current_time - last_capture_time >= 2.0:
+                capture_count += 1
+                elapsed = current_time - start_time
+                store_page_source(
+                    self.driver.page_source, f"download_progress_{capture_count}_{int(elapsed)}s"
+                )
+                last_capture_time = current_time
+
+            # Check if progress bar is still visible
+            if not self._check_for_download_progress_bar():
+                logger.info(f"Download completed after {time.time() - start_time:.1f}s")
+                return True
+
+            time.sleep(0.5)
+
+        logger.error(f"Download did not complete within {timeout}s timeout")
+        return False
+
     def open_book(self, book_title: str) -> dict:
         """Open a book in the library.
 
@@ -2100,6 +2173,15 @@ class LibraryHandler:
                 # Handle clicking the book
                 button.click()
                 logger.info(f"Clicked book button for already visible book: {book_title}")
+
+                # Store page source immediately after click
+                store_page_source(self.driver.page_source, "after_book_click")
+
+                # Check for download progress bar
+                if self._check_for_download_progress_bar():
+                    logger.info("Download progress bar detected, waiting for download to complete...")
+                    if not self._wait_for_download_completion():
+                        return {"success": False, "error": "Download timed out"}
 
                 # Check if we entered the reading view or hit a dialog
                 try:
@@ -2215,6 +2297,17 @@ class LibraryHandler:
                             _, button, _ = visible_book_result
                             button.click()
                             logger.info("Clicked book button again")
+
+                            # Store page source immediately after second click
+                            store_page_source(self.driver.page_source, "after_book_click_retry")
+
+                            # Check for download progress bar on retry
+                            if self._check_for_download_progress_bar():
+                                logger.info(
+                                    "Download progress bar detected on retry, waiting for download to complete..."
+                                )
+                                if not self._wait_for_download_completion():
+                                    return {"success": False, "error": "Download timed out on retry"}
 
                             # Wait for state transition - check if we leave library view or enter reading view
                             try:
