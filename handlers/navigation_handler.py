@@ -566,7 +566,7 @@ class NavigationResourceHandler:
             "preview_count": 0,  # Default to no preview
             "show_placemark": False,
             "use_base64": False,
-            "perform_ocr": False,
+            "perform_ocr": True,  # Default to True - must be explicitly disabled with ocr=0
             "title": None,  # Book title for fallback if not in reading view
         }
 
@@ -610,10 +610,8 @@ class NavigationResourceHandler:
         # Check if base64 parameter is provided
         params["use_base64"] = is_base64_requested()
 
-        # Check if OCR is requested via query params
-        # Note: This will already be True if preview was requested
-        if not params["perform_ocr"]:
-            params["perform_ocr"] = is_ocr_requested()
+        # Check if OCR is requested via query params - this will respect ocr=0 overrides
+        params["perform_ocr"] = is_ocr_requested()
 
         # If OCR is requested, force base64 encoding
         if params["perform_ocr"] and not params["use_base64"]:

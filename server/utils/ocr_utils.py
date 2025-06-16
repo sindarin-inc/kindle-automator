@@ -374,34 +374,39 @@ def is_ocr_requested():
     """Check if OCR is requested in query parameters or JSON body.
 
     Returns:
-        Boolean indicating whether OCR was requested
+        Boolean indicating whether OCR was requested (defaults to True)
     """
-    # Check URL query parameters first - match exactly how other query params are checked
-    ocr_param = request.args.get("ocr", "0")
+    # Check URL query parameters first - default to "1" if not specified
+    ocr_param = request.args.get("ocr", "1")
     text_param = request.args.get("text", "0")
     preview_param = request.args.get("preview", "0")
 
-    perform_ocr = ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
+    # OCR is disabled only if explicitly set to "0" or "false"
+    perform_ocr = ocr_param not in ("0", "false") or text_param in ("1", "true") or preview_param in ("1", "true")
 
     logger.debug(
         f"is_ocr_requested check - query params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}"
     )
 
-    # If not in URL parameters, check JSON body
-    if not perform_ocr and request.is_json:
+    # Check JSON body for override if needed
+    if request.is_json:
         try:
             json_data = request.get_json(silent=True) or {}
-            ocr_param = json_data.get("ocr", False)
+            
+            # Only check JSON if 'ocr' key is present (don't use default here)
+            if "ocr" in json_data:
+                ocr_param = json_data["ocr"]
+                # Check OCR parameter
+                if isinstance(ocr_param, bool):
+                    perform_ocr = ocr_param
+                elif isinstance(ocr_param, str):
+                    perform_ocr = ocr_param not in ("0", "false")
+                elif isinstance(ocr_param, int):
+                    perform_ocr = ocr_param != 0
+            
+            # Always check text and preview params if present
             text_param = json_data.get("text", False)
             preview_param = json_data.get("preview", False)
-
-            # Check OCR parameter
-            if isinstance(ocr_param, bool):
-                perform_ocr = ocr_param
-            elif isinstance(ocr_param, str):
-                perform_ocr = ocr_param == "1" or ocr_param.lower() == "true"
-            elif isinstance(ocr_param, int):
-                perform_ocr = ocr_param == 1
 
             # Check text parameter if OCR is still False
             if not perform_ocr:
