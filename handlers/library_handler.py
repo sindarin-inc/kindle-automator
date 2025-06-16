@@ -1686,6 +1686,25 @@ class LibraryHandler:
                     if not self._wait_for_download_completion():
                         return False
 
+                    # After download completes, check if we're already in reading view
+                    # The download completion might have auto-opened the book
+                    try:
+                        for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
+                            try:
+                                element = self.driver.find_element(identifier_type, identifier_value)
+                                if element:
+                                    logger.info("Already in reading view after download completed")
+                                    return True
+                            except NoSuchElementException:
+                                continue
+                    except Exception:
+                        pass
+
+                    # If still in library view after download, we need to click the book again
+                    # But we should return here and let the caller retry to avoid stale element issues
+                    logger.info("Download completed but still in library view, need to retry book click")
+                    return True  # Return True to indicate download succeeded, caller will handle retry
+
                 # After clicking the book, first check if we've already left the library view
                 # This happens when the book downloads very quickly or is already downloaded
                 try:
@@ -2095,6 +2114,19 @@ class LibraryHandler:
                 logger.info(f"Download completed after {time.time() - start_time:.1f}s")
                 return True
 
+            # Also check if we've already transitioned to reading view
+            try:
+                for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
+                    try:
+                        element = self.driver.find_element(identifier_type, identifier_value)
+                        if element:
+                            logger.info("Already transitioned to reading view during download")
+                            return True
+                    except NoSuchElementException:
+                        continue
+            except Exception:
+                pass
+
             time.sleep(0.5)
 
         logger.error(f"Download did not complete within {timeout}s timeout")
@@ -2182,6 +2214,29 @@ class LibraryHandler:
                     logger.info("Download progress bar detected, waiting for download to complete...")
                     if not self._wait_for_download_completion():
                         return {"success": False, "error": "Download timed out"}
+
+                    # After download completes, check if we're already in reading view
+                    try:
+                        for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
+                            try:
+                                element = self.driver.find_element(identifier_type, identifier_value)
+                                if element:
+                                    logger.info("Already in reading view after download completed")
+                                    return self._delegate_to_reader_handler(book_title)
+                            except NoSuchElementException:
+                                continue
+                    except Exception:
+                        pass
+
+                    # After download completes, we need to click the book again
+                    # Re-find the book to avoid stale element reference
+                    time.sleep(1)  # Brief pause after download
+                    visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
+                    if visible_book_result:
+                        _, button, _ = visible_book_result
+                        button.click()
+                        logger.info("Clicked book again after download completed")
+                        store_page_source(self.driver.page_source, "after_book_click_post_download")
 
                 # Check if we entered the reading view or hit a dialog
                 try:
@@ -2308,6 +2363,36 @@ class LibraryHandler:
                                 )
                                 if not self._wait_for_download_completion():
                                     return {"success": False, "error": "Download timed out on retry"}
+
+                                # After download completes, check if we're already in reading view
+                                try:
+                                    for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
+                                        try:
+                                            element = self.driver.find_element(
+                                                identifier_type, identifier_value
+                                            )
+                                            if element:
+                                                logger.info(
+                                                    "Already in reading view after download completed on retry"
+                                                )
+                                                return self._delegate_to_reader_handler(book_title)
+                                        except NoSuchElementException:
+                                            continue
+                                except Exception:
+                                    pass
+
+                                # Re-find and click the book again after download
+                                time.sleep(1)
+                                visible_book_result = self.search_handler._check_book_visible_on_screen(
+                                    book_title
+                                )
+                                if visible_book_result:
+                                    _, button, _ = visible_book_result
+                                    button.click()
+                                    logger.info("Clicked book again after download completed on retry")
+                                    store_page_source(
+                                        self.driver.page_source, "after_book_click_post_download_retry"
+                                    )
 
                             # Wait for state transition - check if we leave library view or enter reading view
                             try:

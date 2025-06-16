@@ -381,9 +381,4 @@ READER_FOOTER_IDENTIFIERS = [
 # Download progress bar identifiers
 DOWNLOAD_PROGRESS_BAR_IDENTIFIERS = [
     (AppiumBy.XPATH, "//android.widget.ProgressBar"),
-    (AppiumBy.XPATH, "//android.widget.ProgressBar[@resource-id='com.amazon.kindle:id/download_progress']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@content-desc, 'Downloading')]"),
-    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Downloading')]"),
-    (AppiumBy.XPATH, "//*[contains(@content-desc, 'percent')]"),
-    (AppiumBy.XPATH, "//android.widget.ProgressBar[contains(@content-desc, 'progress')]"),
 ]
