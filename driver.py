@@ -60,7 +60,6 @@ class Driver:
                             check=True,
                             timeout=5,
                         )
-                        logger.info(f"Verified specific device {specific_device_id} for email={email}")
                         return specific_device_id
                     except Exception as e:
                         logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
@@ -639,7 +638,6 @@ class Driver:
             tuple: (version_name, version_code) or (None, None) if failed
         """
         try:
-            logger.info(f"Getting installed Kindle version on device {self.device_id}")
             result = subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "dumpsys", "package", "com.amazon.kindle"],
                 capture_output=True,
@@ -789,14 +787,8 @@ class Driver:
             logger.error("No Kindle APK files found")
             return None
 
-        # Log all found APK paths for debugging
-        logger.info(f"Found {len(apk_paths)} APK file(s):")
-        for apk in apk_paths:
-            logger.info(f"  - {apk}")
-
         # If only one APK is found, return it
         if len(apk_paths) == 1:
-            logger.info(f"Using APK: {apk_paths[0]}")
             return apk_paths[0]
 
         # Compare versions to find the newest
@@ -815,9 +807,6 @@ class Driver:
             # Sort filenames lexicographically (the last one alphabetically is typically newest with version in name)
             apk_paths.sort(key=lambda x: os.path.basename(x))
             newest_apk = apk_paths[-1]  # Get the last one lexicographically
-            logger.info(
-                f"Using {os.path.basename(newest_apk)} as newest APK based on filename lexicographical ordering"
-            )
 
         return newest_apk
 
@@ -1125,10 +1114,6 @@ class Driver:
                     self._update_kindle_version_in_profile(installed_version_name, installed_version_code)
 
             if installed_version_code:
-                logger.info(
-                    f"Current Kindle version: {installed_version_name} (code: {installed_version_code})"
-                )
-
                 # Find newest available APK
                 newest_apk = self._find_newest_kindle_apk()
                 if newest_apk:
@@ -1157,8 +1142,6 @@ class Driver:
                         )
                         # Clean up any version info that might be in preferences
                         self._clean_old_version_info(email)
-                    else:
-                        logger.info("Kindle app is already at the latest version")
 
         # Clean up any existing sessions
         # self._cleanup_old_sessions()

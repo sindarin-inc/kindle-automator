@@ -324,16 +324,16 @@ class KindleOCR:
             A tuple of (OCR text result or None if processing failed, error message if an error occurred)
         """
         # Try Google Document AI first
-        logger.info("Attempting OCR with Google Document AI...")
-        ocr_text, google_error = KindleOCR._process_with_google_document_ai(image_content)
+        logger.info("Attempting OCR with MistralAI...")
+        ocr_text, mistral_error = KindleOCR._process_with_mistral(image_content)
 
         if ocr_text:
             cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
             return cleaned_text, None
 
         # If Google fails, try MistralAI as fallback
-        logger.warning(f"Google Document AI failed: {google_error}. Falling back to MistralAI...")
-        ocr_text, mistral_error = KindleOCR._process_with_mistral(image_content)
+        logger.warning(f"MistralAI failed: {mistral_error}. Falling back to Google Document AI...")
+        ocr_text, google_error = KindleOCR._process_with_google_document_ai(image_content)
 
         if ocr_text:
             cleaned_text = KindleOCR._clean_ocr_text(ocr_text)

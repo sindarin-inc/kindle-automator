@@ -135,7 +135,6 @@ class DeviceDiscovery:
         # If we have a specific AVD for this user and it's not running, we should fail
         if avd_name and avd_name not in running_emulators:
             # Return failure to find the user's specific AVD
-            logger.info(f"User's AVD {avd_name} exists but is not running")
             return False, None, avd_name
 
         # No running emulator found for this email
@@ -169,7 +168,6 @@ class DeviceDiscovery:
                 if "\n" in avd_name:
                     avd_name = avd_name.split("\n")[0].strip()
                 if avd_name and avd_name != "OK":
-                    logger.info(f"Queried emulator {emulator_id} directly, running AVD: {avd_name}")
                     return avd_name
             else:
                 # Check if we're on macOS

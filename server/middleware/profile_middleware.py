@@ -210,7 +210,6 @@ def ensure_user_profile_loaded(f):
         # This is needed for port allocation and tracking
         vnc_instance = vnc_manager.get_instance_for_profile(sindarin_email)
         if not vnc_instance:
-            logger.info(f"Creating VNC instance for {sindarin_email} for port tracking")
             vnc_instance = vnc_manager.assign_instance_to_profile(sindarin_email)
             if not vnc_instance:
                 logger.error(f"Failed to assign VNC instance for {sindarin_email}")
@@ -266,7 +265,6 @@ def ensure_user_profile_loaded(f):
         if not is_running:
             if avd_exists:
                 # AVD exists but isn't running - we'll start it
-                logger.info(f"AVD {avd_name} for {sindarin_email} exists but is not running")
                 force_new_emulator = False
             elif is_mac_dev and find_device_id_by_android_id(sindarin_email):
                 # Special case for macOS: If a device is available by Android ID, use it
