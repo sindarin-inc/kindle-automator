@@ -1418,9 +1418,9 @@ class EmulatorLauncher:
                 if avd_name and avd_name not in self.running_emulators:
                     # Get display number from VNC instance if available
                     display_num = 2  # Default display
-                    vnc_instance = self.vnc_manager.get_instance(email)
-                    if vnc_instance and vnc_instance.display_num:
-                        display_num = vnc_instance.display_num
+                    vnc_instance = self.vnc_manager.get_instance_for_profile(email)
+                    if vnc_instance and vnc_instance.get("display"):
+                        display_num = vnc_instance["display"]
                     logger.info(f"Re-adding {expected_emulator_id} to cache for AVD {avd_name}")
                     self.running_emulators[avd_name] = (expected_emulator_id, display_num)
                 return expected_emulator_id
@@ -1436,9 +1436,9 @@ class EmulatorLauncher:
                     logger.info(f"Found running emulator {emulator_id} that matches AVD {avd_name}")
                     # Add to cache
                     display_num = 2  # Default display
-                    vnc_instance = self.vnc_manager.get_instance(email)
-                    if vnc_instance and vnc_instance.display_num:
-                        display_num = vnc_instance.display_num
+                    vnc_instance = self.vnc_manager.get_instance_for_profile(email)
+                    if vnc_instance and vnc_instance.get("display"):
+                        display_num = vnc_instance["display"]
                     self.running_emulators[avd_name] = (emulator_id, display_num)
                     return emulator_id
 
