@@ -1,0 +1,58 @@
+---
+- name: Install mdadm for RAID management
+  ansible.builtin.apt:
+    name: mdadm
+    state: present
+    update_cache: yes
+
+- name: Check if RAID array already exists
+  ansible.builtin.stat:
+    path: "{{ raid_device }}"
+  register: raid_exists
+
+- name: Create RAID 10 array
+  ansible.builtin.command: |
+    mdadm --create {{ raid_device }} --level={{ raid_level }} --raid-devices={{ raid_devices | length }} {{ raid_devices | join(' ') }} --chunk={{ raid_chunk_size }} --assume-clean
+  when: not raid_exists.stat.exists
+  register: raid_create
+
+- name: Wait for RAID array to be ready
+  ansible.builtin.wait_for:
+    path: "{{ raid_device }}"
+    state: present
+  when: raid_create is changed
+
+- name: Create filesystem on RAID array
+  ansible.builtin.filesystem:
+    fstype: "{{ filesystem_type }}"
+    dev: "{{ raid_device }}"
+  when: raid_create is changed
+
+- name: Create mount point directory
+  ansible.builtin.file:
+    path: "{{ mount_point }}"
+    state: directory
+    mode: '0755'
+
+- name: Get UUID of RAID device
+  ansible.builtin.command: blkid -s UUID -o value {{ raid_device }}
+  register: raid_uuid
+  changed_when: false
+
+- name: Mount RAID array
+  ansible.builtin.mount:
+    path: "{{ mount_point }}"
+    src: "UUID={{ raid_uuid.stdout }}"
+    fstype: "{{ filesystem_type }}"
+    opts: defaults,noatime
+    state: mounted
+
+- name: Create mdadm configuration file
+  ansible.builtin.command: mdadm --detail --scan >> /etc/mdadm/mdadm.conf
+  args:
+    creates: /etc/mdadm/mdadm.conf
+  when: raid_create is changed
+
+- name: Update initramfs to include RAID configuration
+  ansible.builtin.command: update-initramfs -u
+  when: raid_create is changed
