@@ -5,6 +5,7 @@
 
   roles:
     - { role: provision, tags: base }
+    - { role: storagebox, tags: storagebox }
     - { role: nginx, tags: nginx }
     - { role: mezmo, tags: mezmo }
     - { role: android_x86, tags: [android-x86, android] }
