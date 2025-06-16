@@ -67,10 +67,29 @@ def generate_random_device_name() -> str:
     Returns:
         str: Random device name
     """
-    adjectives = ["Swift", "Bright", "Quick", "Smart", "Cool", "Fast", "Zen", "Nova", "Echo", "Pixel"]
-    nouns = ["Fox", "Eagle", "Wolf", "Tiger", "Lion", "Hawk", "Bear", "Dragon", "Phoenix", "Falcon"]
-    number = random.randint(100, 999)
-    return f"{random.choice(adjectives)}{random.choice(nouns)}{number}"
+    # Use realistic Android device models
+    device_models = [
+        "Pixel 5",
+        "Pixel 6",
+        "Pixel 6a",
+        "Pixel 7",
+        "Pixel 7a",
+        "Pixel 8",
+        "Pixel 4a",
+        "Pixel 3a",
+        "Pixel 3",
+        "Pixel 2",
+        "Galaxy S21",
+        "Galaxy S22",
+        "Galaxy S23",
+        "Galaxy A52",
+        "Galaxy A53",
+        "OnePlus 9",
+        "OnePlus 10",
+        "Moto G Power",
+        "Moto G Play",
+    ]
+    return random.choice(device_models)
 
 
 def generate_random_build_id() -> str:
