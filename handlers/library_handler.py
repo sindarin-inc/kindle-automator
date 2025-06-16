@@ -1669,6 +1669,9 @@ class LibraryHandler:
                 # Store page source immediately after click
                 store_page_source(self.driver.page_source, "after_book_click_download_start")
 
+                # Wait a moment for any progress bar to appear
+                time.sleep(0.5)
+
                 # Check for "Invalid Item" dialog first
                 if self._check_invalid_item_dialog(book_title, "after clicking non-downloaded book"):
                     # Try to find the book again after removing it
@@ -1700,10 +1703,27 @@ class LibraryHandler:
                     except Exception:
                         pass
 
-                    # If still in library view after download, we need to click the book again
-                    # But we should return here and let the caller retry to avoid stale element issues
-                    logger.info("Download completed but still in library view, need to retry book click")
-                    return True  # Return True to indicate download succeeded, caller will handle retry
+                    # Check which view we're in after download
+                    try:
+                        # Check if we're in search results view
+                        self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_recycler_view")
+                        logger.info("Still in search results view after download")
+                        # In search results, the UI often changes after download, so we should let the caller retry
+                        return True
+                    except NoSuchElementException:
+                        pass
+                    
+                    try:
+                        # Check if we're in library view
+                        self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                        logger.info("Still in library view after download, need to retry book click")
+                        return True
+                    except NoSuchElementException:
+                        pass
+                    
+                    # Not in search or library view, we might be transitioning
+                    logger.info("Not in search or library view after download, likely transitioning")
+                    return True
 
                 # After clicking the book, first check if we've already left the library view
                 # This happens when the book downloads very quickly or is already downloaded
@@ -2077,10 +2097,11 @@ class LibraryHandler:
         for strategy, locator in DOWNLOAD_PROGRESS_BAR_IDENTIFIERS:
             try:
                 element = self.driver.find_element(strategy, locator)
-                if element and element.is_displayed():
-                    logger.info(f"Download progress bar detected using {strategy} with locator: {locator}")
-                    return True
-            except NoSuchElementException:
+                # Don't call is_displayed() as it can cause stale element exceptions
+                # The fact that we found the element is enough
+                logger.info(f"Download progress bar detected using {strategy} with locator: {locator}")
+                return True
+            except (NoSuchElementException, StaleElementReferenceException):
                 continue
         return False
 
@@ -2109,13 +2130,13 @@ class LibraryHandler:
                 )
                 last_capture_time = current_time
 
-            # Check if progress bar is still visible
-            if not self._check_for_download_progress_bar():
-                logger.info(f"Download completed after {time.time() - start_time:.1f}s")
-                return True
-
-            # Also check if we've already transitioned to reading view
             try:
+                # Check if progress bar is still visible
+                if not self._check_for_download_progress_bar():
+                    logger.info(f"Download completed after {time.time() - start_time:.1f}s")
+                    return True
+
+                # Also check if we've already transitioned to reading view
                 for identifier_type, identifier_value in READING_VIEW_IDENTIFIERS[:3]:
                     try:
                         element = self.driver.find_element(identifier_type, identifier_value)
@@ -2124,7 +2145,14 @@ class LibraryHandler:
                             return True
                     except NoSuchElementException:
                         continue
-            except Exception:
+            except StaleElementReferenceException:
+                # If we get a stale element exception, it likely means the view changed
+                # Wait a moment and continue checking
+                logger.info("Got stale element exception during download check, view likely changed")
+                time.sleep(1)
+                continue
+            except Exception as e:
+                logger.warning(f"Exception during download completion check: {e}")
                 pass
 
             time.sleep(0.5)
