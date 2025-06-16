@@ -171,6 +171,12 @@ class EmulatorLauncher:
                 logger.warning(
                     f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
                 )
+                # Clear the cache entry since this emulator is running the wrong AVD
+                if email_avd in self.running_emulators:
+                    cached_id, _ = self.running_emulators[email_avd]
+                    if cached_id == emulator_id:
+                        logger.info(f"Clearing cache entry for AVD {email_avd} due to AVD mismatch")
+                        del self.running_emulators[email_avd]
                 return False
 
         except Exception as e:
@@ -1362,6 +1368,14 @@ class EmulatorLauncher:
             # Do this early to avoid wasting time on wrong emulator
             if not self._verify_emulator_running(emulator_id, email):
                 logger.warning(f"Emulator {emulator_id} is not running the correct AVD for {email}")
+                # The cache should have been cleared by _verify_emulator_running if there was a mismatch
+                # Double-check and clear if needed to be extra safe
+                avd_name = self._extract_avd_name_from_email(email)
+                if avd_name and avd_name in self.running_emulators:
+                    cached_id, _ = self.running_emulators[avd_name]
+                    if cached_id == emulator_id:
+                        logger.info(f"Clearing stale cache entry for AVD {avd_name} in readiness check")
+                        del self.running_emulators[avd_name]
                 return False
 
             # Step 3: Check if emulator process is running

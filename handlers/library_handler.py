@@ -1712,7 +1712,7 @@ class LibraryHandler:
                         return True
                     except NoSuchElementException:
                         pass
-                    
+
                     try:
                         # Check if we're in library view
                         self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
@@ -1720,7 +1720,7 @@ class LibraryHandler:
                         return True
                     except NoSuchElementException:
                         pass
-                    
+
                     # Not in search or library view, we might be transitioning
                     logger.info("Not in search or library view after download, likely transitioning")
                     return True
