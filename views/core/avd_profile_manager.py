@@ -213,37 +213,20 @@ class AVDProfileManager:
                         automator.device_id = driver_instance.device_id
                         logger.info(f"Set device_id on automator: {automator.device_id}")
 
-                    # Set the WebDriver reference on automator
-                    automator.driver = driver_instance.driver
+                    # For seed clone, we don't want to launch the app
+                    logger.info("Kindle APK installed successfully. Skipping app launch for seed clone.")
 
-                    # Ensure the driver has reference to automator (needed by state machine)
-                    if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
-                        driver_instance.driver.automator = automator
-
-                    # Create state machine to navigate to Library
-                    state_machine = KindleStateMachine(driver_instance.driver)
-
-                    # Set the state machine on automator for completeness
-                    automator.state_machine = state_machine
-
-                    # Ensure view inspector has device_id and automator reference
-                    if hasattr(state_machine, "view_inspector"):
-                        if automator.device_id:
-                            state_machine.view_inspector.device_id = automator.device_id
-                            logger.info(f"Set device_id on view_inspector: {automator.device_id}")
-                        # Also set the automator reference so view_inspector can access it
-                        state_machine.view_inspector.automator = automator
-
-                    # Set the flag to indicate we're preparing for snapshot
-                    state_machine.preparing_seed_clone = True
-
-                    # Transition to library view (will stop at LIBRARY_SIGN_IN)
-                    logger.info("Navigating to Library view...")
-                    if not state_machine.transition_to_library(max_transitions=10):
-                        logger.error("Failed to navigate to Library view")
-                        return False, "Failed to navigate to Library view"
-
-                    logger.info("Successfully reached Library view with sign-in button")
+                    # Navigate to Android home screen instead
+                    logger.info("Navigating to Android home screen...")
+                    device_id = driver_instance.device_id
+                    if device_id:
+                        # Press home button to go to Android dashboard
+                        subprocess.run(
+                            ["adb", "-s", device_id, "shell", "input", "keyevent", "KEYCODE_HOME"],
+                            check=True,
+                            capture_output=True,
+                        )
+                        logger.info("Successfully navigated to Android home screen")
 
                 finally:
                     # Clean up driver and Appium but keep app running
