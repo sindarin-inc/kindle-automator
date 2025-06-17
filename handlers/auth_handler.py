@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
 from server.utils.request_utils import get_formatted_vnc_url
+from views.core.app_state import AppState
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -507,8 +508,35 @@ class AuthenticationHandler:
                 # Now attempt transition_to_library which will go through the auth flow if needed
                 logger.info("Executing transition_to_library to navigate through auth flow")
                 device_id = getattr(automator, "device_id", "unknown")
-                transition_result = automator.transition_to_library()
-                logger.info(f"transition_to_library result: {transition_result}")
+                final_state = automator.transition_to_library()
+                logger.info(f"transition_to_library result: {final_state}")
+
+                # Check if transition ended in an acceptable state
+                if final_state not in [AppState.LIBRARY, AppState.SIGN_IN, AppState.CAPTCHA, AppState.TWO_FACTOR, AppState.PUZZLE]:
+                    logger.error("transition_to_library failed - unable to navigate to library or auth state")
+                    # Get the formatted VNC URL for error response
+                    formatted_vnc_url = get_formatted_vnc_url(email)
+
+                    # Try to get current state for debugging
+                    try:
+                        automator.state_machine.update_current_state()
+                        current_state = automator.state_machine.current_state
+                        state_name = (
+                            current_state.name if hasattr(current_state, "name") else str(current_state)
+                        )
+                        logger.error(f"Current state after failed transition: {state_name}")
+                    except Exception as state_err:
+                        logger.error(f"Error getting state after failed transition: {state_err}")
+                        state_name = "UNKNOWN"
+
+                    return {
+                        "state": state_name,
+                        "authenticated": False,
+                        "already_authenticated": False,
+                        "vnc_url": formatted_vnc_url,
+                        "error": "Failed to navigate to library or authentication state",
+                        "message": f"transition_to_library failed while in {state_name} state",
+                    }
 
                 # Update our state to see where we are
                 automator.state_machine.update_current_state()

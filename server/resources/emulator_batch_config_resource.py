@@ -12,6 +12,7 @@ from flask_restful import Resource
 
 from server.utils.ansi_colors import CYAN, GREEN, RED, RESET, YELLOW
 from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
+from views.core.app_state import AppState
 from views.core.avd_profile_manager import AVDProfileManager
 from views.state_machine import KindleStateMachine
 
@@ -121,14 +122,14 @@ class EmulatorBatchConfigResource(Resource):
 
                     # Navigate to library
                     logger.info(f"Navigating to library for {email}")
-                    library_state = state_machine.transition_to_library(
+                    final_state = state_machine.transition_to_library(
                         max_transitions=10, server=self.server
                     )
 
-                    if not library_state:
-                        logger.error(f"{RED}Failed to navigate to library for {email}{RESET}")
+                    if final_state != AppState.LIBRARY:
+                        logger.error(f"{RED}Failed to navigate to library for {email}, ended in state: {final_state.name}{RESET}")
                         result["status"] = "failed"
-                        result["error"] = "Failed to navigate to library"
+                        result["error"] = f"Failed to navigate to library, ended in state: {final_state.name}"
                         failed_count += 1
                         results.append(result)
                         continue

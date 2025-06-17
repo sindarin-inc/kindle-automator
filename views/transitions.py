@@ -74,14 +74,20 @@ class StateTransitions:
         logger.info("Handling SIGN_IN state - attempting authentication...")
         result = self.auth_handler.sign_in()
 
-        # Check if result is a tuple with LoginVerificationState.ERROR and credentials missing error
+        # Check if result is a tuple with LoginVerificationState.ERROR
         if isinstance(result, tuple) and len(result) == 2:
             state, message = result
-            if state == LoginVerificationState.ERROR and "No credentials provided" in message:
-                logger.warning("Authentication requires credentials that haven't been set")
-                # Return False to stop the state transition loop
-                # This prevents infinite retries when no credentials are available
-                return False
+            if state == LoginVerificationState.ERROR:
+                if "No credentials provided" in message:
+                    logger.warning("Authentication requires credentials that haven't been set")
+                    # Return False to stop the state transition loop
+                    # This prevents infinite retries when no credentials are available
+                    return False
+                elif "Authentication must be done manually via VNC" in message:
+                    logger.info("Manual VNC authentication required - this is expected")
+                    # Return True to indicate we've reached a valid state (SIGN_IN requiring VNC)
+                    # This prevents the transition loop from treating manual auth as a failure
+                    return True
 
         return result
 
