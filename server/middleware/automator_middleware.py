@@ -237,7 +237,7 @@ def ensure_automator_healthy(f):
                                     logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
 
                         # Start a dedicated Appium server for this email
-                        if not appium_driver.start_appium_for_profile(sindarin_email, port):
+                        if not appium_driver.start_appium_for_profile(sindarin_email):
                             logger.error(f"Failed to restart Appium server for {sindarin_email}")
                             return {"error": f"Failed to start Appium server for {sindarin_email}"}, 500
 
