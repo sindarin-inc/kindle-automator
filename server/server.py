@@ -175,14 +175,13 @@ class BooksResource(Resource):
 
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
-            transition_success = automator.state_machine.transition_to_library(server=server)
+            final_state = automator.state_machine.transition_to_library(server=server)
 
-            # Get the updated state after transition attempt
-            new_state = automator.state_machine.current_state
-            logger.info(f"State after transition attempt: {new_state}")
+            # The transition_to_library now returns the final state
+            logger.info(f"State after transition attempt: {final_state}")
 
             # Check for auth requirement regardless of transition success
-            if new_state == AppState.SIGN_IN:
+            if final_state == AppState.SIGN_IN:
                 # Get current email to include in VNC URL
                 sindarin_email = get_sindarin_email()
 
@@ -204,12 +203,12 @@ class BooksResource(Resource):
                 return {
                     "error": "Authentication required",
                     "authenticated": False,
-                    "current_state": new_state.name,
+                    "current_state": final_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
                 }, 401
 
-            if transition_success:
+            if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to library state")
                 # Get books with metadata from state machine's library handler
                 books = automator.state_machine.library_handler.get_book_titles()
@@ -243,8 +242,8 @@ class BooksResource(Resource):
 
                 return {"books": books}, 200
             else:
-                # If transition failed, check for auth requirement
-                updated_state = automator.state_machine.current_state
+                # Transition didn't reach library, check what state we're in
+                updated_state = final_state
 
                 if updated_state == AppState.SIGN_IN:
                     # Get current email to include in VNC URL
@@ -405,14 +404,13 @@ class BooksStreamResource(Resource):
 
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
-            transition_success = automator.state_machine.transition_to_library(server=server)
+            final_state = automator.state_machine.transition_to_library(server=server)
 
-            # Get the updated state after transition attempt
-            new_state = automator.state_machine.current_state
-            logger.info(f"State after transition attempt: {new_state}")
+            # The transition_to_library now returns the final state
+            logger.info(f"State after transition attempt: {final_state}")
 
             # Check for auth requirement regardless of transition success
-            if new_state == AppState.SIGN_IN:
+            if final_state == AppState.SIGN_IN:
                 # Get the emulator ID for this email if possible
                 emulator_id = None
                 if (
@@ -427,7 +425,7 @@ class BooksStreamResource(Resource):
                 return {
                     "error": "Authentication required",
                     "authenticated": False,
-                    "current_state": new_state.name,
+                    "current_state": final_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
                 }, 401

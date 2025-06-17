@@ -51,7 +51,11 @@ class KindleStateMachine:
         return AppState[view.name]
 
     def transition_to_library(self, max_transitions=5, server=None):
-        """Attempt to transition to the library state."""
+        """Attempt to transition to the library state.
+        
+        Returns:
+            AppState: The final state after transition attempt
+        """
         transitions = 0
         unknown_retries = 0
         MAX_UNKNOWN_RETRIES = 2  # Maximum times to try recovering from UNKNOWN state
@@ -114,13 +118,14 @@ class KindleStateMachine:
                 # Switch to list view if needed
                 if not self.library_handler.switch_to_list_view():
                     logger.warning("Failed to switch to list view, but we're still in library")
-                return True
+                return self.current_state
 
             # Special handling for LIBRARY_SIGN_IN when preparing seed clone
             if self.current_state == AppState.LIBRARY_SIGN_IN and self.preparing_seed_clone:
                 logger.info("In LIBRARY_SIGN_IN state and preparing_seed_clone=True - stopping here")
                 # We've reached the library view with sign-in button, which is what we want for seed clone
-                return True
+                return self.current_state
+
 
             # If we're in UNKNOWN state, try to bring app to foreground
             if self.current_state == AppState.UNKNOWN:
@@ -131,14 +136,14 @@ class KindleStateMachine:
                         "Please check screenshots/unknown_view.png and fixtures/dumps/unknown_view.xml "
                         "to determine why the view cannot be recognized."
                     )
-                    return False
+                    return self.current_state
 
                 logger.info(
                     f"In UNKNOWN state (attempt {unknown_retries}/{MAX_UNKNOWN_RETRIES}) - bringing app to foreground..."
                 )
                 if not self.view_inspector.ensure_app_foreground():
                     logger.error("Failed to bring app to foreground")
-                    return False
+                    return self.current_state
                 time.sleep(1)  # Wait for app to come to foreground
 
                 # Try to get the current state again
@@ -172,7 +177,7 @@ class KindleStateMachine:
                             profile_manager.set_user_field(email, "auth_failed_date", None)
                     except Exception as e:
                         logger.warning(f"Error updating auth tracking after app foreground: {e}")
-                    return True
+                    return self.current_state
 
                 # If still unknown, try checking for library-specific elements
                 if self.current_state == AppState.UNKNOWN:
@@ -212,7 +217,7 @@ class KindleStateMachine:
                     logger.info("Checking for library-specific elements...")
                     if self.library_handler._is_library_tab_selected():
                         logger.info("Library handler detected library view")
-                        return True
+                        return self.current_state
                     # Check if we're in search interface (which is part of library)
                     if self.library_handler._is_in_search_interface():
                         logger.info("Library handler detected search interface - treating as library view")
@@ -220,7 +225,7 @@ class KindleStateMachine:
                         # Exit search mode to get to main library view
                         if self.library_handler.search_handler._exit_search_mode():
                             logger.info("Exited search mode, now in library view")
-                            return True
+                            return self.current_state
                         else:
                             logger.warning("Failed to exit search mode")
 
@@ -229,7 +234,8 @@ class KindleStateMachine:
             handler = self.transitions.get_handler_for_state(self.current_state)
             if not handler:
                 logger.error(f"No handler found for state {self.current_state}")
-                return False
+                return self.current_state
+
 
             # Handle current state
             # For reading state, pass the server instance
@@ -241,41 +247,47 @@ class KindleStateMachine:
             # Special handling for CAPTCHA state
             if self.current_state == AppState.CAPTCHA:
                 logger.info("In CAPTCHA state - manual intervention required")
-                # Return True to indicate we're in a valid state but can't proceed
-                return True
+                # Return current state to indicate we're in a valid state but can't proceed
+                return self.current_state
             # Special handling for TWO_FACTOR state
             elif self.current_state == AppState.TWO_FACTOR:
                 logger.info("In TWO_FACTOR state - manual intervention required")
-                # Return True to indicate we're in a valid state but can't proceed
-                return True
+                # Return current state to indicate we're in a valid state but can't proceed
+                return self.current_state
             # Special handling for PUZZLE state
             elif self.current_state == AppState.PUZZLE:
                 logger.info("In PUZZLE state - manual intervention required")
-                # Return True to indicate we're in a valid state but can't proceed
-                return True
-            # Check if sign-in is in sign-in state without credentials
-            elif not result and self.current_state == AppState.SIGN_IN:
-                new_state = self._get_current_state()
-                if new_state == AppState.CAPTCHA:
-                    logger.info("Sign-in resulted in CAPTCHA state - waiting for manual intervention")
-                    self.current_state = new_state
-                    return True
-                elif new_state == AppState.TWO_FACTOR:
-                    logger.info("Sign-in resulted in TWO_FACTOR state - waiting for manual intervention")
-                    self.current_state = new_state
-                    return True
-                elif new_state == AppState.PUZZLE:
-                    logger.info("Sign-in resulted in PUZZLE state - waiting for manual intervention")
-                    self.current_state = new_state
-                    return True
-                elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
-                    logger.info("Sign-in view detected but no credentials provided")
-                    self.current_state = AppState.SIGN_IN
-                    return True  # Return true for special handling in BooksResource
+                # Return current state to indicate we're in a valid state but can't proceed
+                return self.current_state
+            # Special handling for SIGN_IN state
+            elif self.current_state == AppState.SIGN_IN:
+                if result:
+                    # If handler returned True, we're in a valid SIGN_IN state requiring VNC
+                    logger.info("SIGN_IN state requires manual VNC authentication")
+                    return self.current_state
+                else:
+                    # Check what state we're in after failed sign-in attempt
+                    new_state = self._get_current_state()
+                    if new_state == AppState.CAPTCHA:
+                        logger.info("Sign-in resulted in CAPTCHA state - waiting for manual intervention")
+                        self.current_state = new_state
+                        return self.current_state
+                    elif new_state == AppState.TWO_FACTOR:
+                        logger.info("Sign-in resulted in TWO_FACTOR state - waiting for manual intervention")
+                        self.current_state = new_state
+                        return self.current_state
+                    elif new_state == AppState.PUZZLE:
+                        logger.info("Sign-in resulted in PUZZLE state - waiting for manual intervention")
+                        self.current_state = new_state
+                        return self.current_state
+                    elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
+                        logger.info("Sign-in view detected but no credentials provided")
+                        self.current_state = AppState.SIGN_IN
+                        return self.current_state
 
             if not result:
                 logger.error(f"Handler failed for state {self.current_state}")
-                return False
+                return self.current_state
 
             transitions += 1
 
@@ -300,7 +312,7 @@ class KindleStateMachine:
         except Exception as e:
             logger.error(f"Failed to get page source after failed transitions: {e}")
 
-        return False
+        return self.current_state
 
     def _handle_failed_transition(self, from_state, to_state, error):
         """Handle a failed state transition by logging details and saving screenshot"""

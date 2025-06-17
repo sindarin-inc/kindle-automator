@@ -222,13 +222,14 @@ class EmulatorShutdownManager:
         try:
             current_state = state_machine._get_current_state()
             was_reading = current_state == AppState.READING
-            if state_machine.transition_to_library(max_transitions=10, server=self.server):
+            final_state = state_machine.transition_to_library(max_transitions=10, server=self.server)
+            if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to Library view (%s)", email)
                 if was_reading and state_machine.library_handler:
                     self._sync_from_more_tab(state_machine)
                 time.sleep(5)  # Give Kindle a moment to flush state.
             else:
-                logger.warning("Failed to transition to Library before shutdown (%s)", email)
+                logger.warning("Failed to transition to Library before shutdown (%s), ended in state: %s", email, final_state.name)
         except Exception as exc:
             logger.warning("Error while parking emulator %s into Library: %s", email, exc)
 

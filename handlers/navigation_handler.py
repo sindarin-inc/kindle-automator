@@ -119,7 +119,7 @@ class NavigationResourceHandler:
                     }, 401
 
                 # Try to transition to library first
-                if not self.automator.state_machine.transition_to_library():
+                if self.automator.state_machine.transition_to_library() != AppState.LIBRARY:
                     logger.error("Failed to transition to library to reopen book")
                     return {"error": "Failed to reach library to reopen book"}, 500
 
