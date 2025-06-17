@@ -12,7 +12,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
 from server.utils.request_utils import get_formatted_vnc_url
-from views.core.app_state import AppState
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -34,6 +33,7 @@ from views.auth.view_strategies import (
     LIBRARY_VIEW_VERIFICATION_STRATEGIES,
     PASSWORD_VIEW_IDENTIFIERS,
 )
+from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
 
@@ -512,7 +512,7 @@ class AuthenticationHandler:
                 logger.info(f"transition_to_library result: {final_state}")
 
                 # Check if transition ended in an acceptable state
-                if final_state not in [AppState.LIBRARY, AppState.SIGN_IN, AppState.CAPTCHA, AppState.TWO_FACTOR, AppState.PUZZLE]:
+                if final_state != AppState.LIBRARY and not final_state.is_auth_state():
                     logger.error("transition_to_library failed - unable to navigate to library or auth state")
                     # Get the formatted VNC URL for error response
                     formatted_vnc_url = get_formatted_vnc_url(email)

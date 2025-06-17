@@ -52,7 +52,7 @@ class KindleStateMachine:
 
     def transition_to_library(self, max_transitions=5, server=None):
         """Attempt to transition to the library state.
-        
+
         Returns:
             AppState: The final state after transition attempt
         """
@@ -125,7 +125,6 @@ class KindleStateMachine:
                 logger.info("In LIBRARY_SIGN_IN state and preparing_seed_clone=True - stopping here")
                 # We've reached the library view with sign-in button, which is what we want for seed clone
                 return self.current_state
-
 
             # If we're in UNKNOWN state, try to bring app to foreground
             if self.current_state == AppState.UNKNOWN:
@@ -235,7 +234,6 @@ class KindleStateMachine:
             if not handler:
                 logger.error(f"No handler found for state {self.current_state}")
                 return self.current_state
-
 
             # Handle current state
             # For reading state, pass the server instance
@@ -814,3 +812,66 @@ class KindleStateMachine:
 
         except Exception as e:
             logger.error(f"Error verifying auth from search results: {e}")
+
+    def handle_auth_state_detection(self, current_state, sindarin_email=None):
+        """
+        Handle detection of auth states by updating profile and returning appropriate response data.
+
+        Args:
+            current_state: The current AppState
+            sindarin_email: Optional email, will be retrieved from profile if not provided
+
+        Returns:
+            dict: Response data with authentication info, or None if not an auth state
+        """
+        if not current_state.is_auth_state():
+            return None
+
+        # Get email if not provided
+        if not sindarin_email:
+            profile = self.driver.automator.profile_manager.get_current_profile()
+            sindarin_email = profile.get("email") if profile else None
+            if not sindarin_email:
+                logger.error("No email found for auth state detection")
+                return None
+
+        from datetime import datetime
+
+        profile_manager = self.driver.automator.profile_manager
+        auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+        current_date = datetime.now().isoformat()
+
+        # Update auth_failed_date if user was previously authenticated
+        if auth_date and current_state in [AppState.SIGN_IN, AppState.LIBRARY_SIGN_IN]:
+            logger.info(f"User {sindarin_email} lost authentication - was authenticated on {auth_date}")
+            profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+
+        # Get emulator ID
+        emulator_id = None
+        try:
+            if hasattr(self.driver.automator, "emulator_manager"):
+                emulator_id = self.driver.automator.emulator_manager.emulator_launcher.get_emulator_id(
+                    sindarin_email
+                )
+        except Exception as e:
+            logger.warning(f"Could not get emulator ID: {e}")
+
+        # Build response based on whether user was previously authenticated
+        if auth_date:
+            return {
+                "error": "Authentication token lost",
+                "authenticated": False,
+                "current_state": current_state.name,
+                "message": "Your Kindle authentication token was lost. Authentication is required via VNC.",
+                "emulator_id": emulator_id,
+                "previous_auth_date": auth_date,
+                "auth_token_lost": True,
+            }
+        else:
+            return {
+                "error": "Authentication required",
+                "authenticated": False,
+                "current_state": current_state.name,
+                "message": "Authentication is required via VNC",
+                "emulator_id": emulator_id,
+            }

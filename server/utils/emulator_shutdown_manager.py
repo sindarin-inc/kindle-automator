@@ -229,7 +229,11 @@ class EmulatorShutdownManager:
                     self._sync_from_more_tab(state_machine)
                 time.sleep(5)  # Give Kindle a moment to flush state.
             else:
-                logger.warning("Failed to transition to Library before shutdown (%s), ended in state: %s", email, final_state.name)
+                logger.warning(
+                    "Failed to transition to Library before shutdown (%s), ended in state: %s",
+                    email,
+                    final_state.name,
+                )
         except Exception as exc:
             logger.warning("Error while parking emulator %s into Library: %s", email, exc)
 

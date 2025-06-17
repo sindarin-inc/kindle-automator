@@ -122,12 +122,12 @@ class EmulatorBatchConfigResource(Resource):
 
                     # Navigate to library
                     logger.info(f"Navigating to library for {email}")
-                    final_state = state_machine.transition_to_library(
-                        max_transitions=10, server=self.server
-                    )
+                    final_state = state_machine.transition_to_library(max_transitions=10, server=self.server)
 
                     if final_state != AppState.LIBRARY:
-                        logger.error(f"{RED}Failed to navigate to library for {email}, ended in state: {final_state.name}{RESET}")
+                        logger.error(
+                            f"{RED}Failed to navigate to library for {email}, ended in state: {final_state.name}{RESET}"
+                        )
                         result["status"] = "failed"
                         result["error"] = f"Failed to navigate to library, ended in state: {final_state.name}"
                         failed_count += 1

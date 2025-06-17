@@ -23,9 +23,8 @@ class AppState(Enum):
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
     MORE_SETTINGS = auto()  # More tab is selected showing settings menu
 
-    @classmethod
-    def is_auth_state(cls) -> bool:
-        return cls in [
+    def is_auth_state(self) -> bool:
+        return self in [
             AppState.SIGN_IN,
             AppState.SIGN_IN_PASSWORD,
             AppState.LIBRARY_SIGN_IN,

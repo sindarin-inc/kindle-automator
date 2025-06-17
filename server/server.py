@@ -182,31 +182,13 @@ class BooksResource(Resource):
 
             # Check for auth requirement regardless of transition success
             if final_state == AppState.SIGN_IN:
-                # Get current email to include in VNC URL
-                sindarin_email = get_sindarin_email()
-
-                # Get the emulator ID for this email if possible
-                emulator_id = None
-                if sindarin_email and sindarin_email in server.automators:
-                    automator = server.automators.get(sindarin_email)
-                    if (
-                        automator
-                        and hasattr(automator, "emulator_manager")
-                        and hasattr(automator.emulator_manager, "emulator_launcher")
-                    ):
-                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                            sindarin_email
-                        )
-                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-                logger.info("Authentication required after transition attempt - providing VNC URL")
-                return {
-                    "error": "Authentication required",
-                    "authenticated": False,
-                    "current_state": final_state.name,
-                    "message": "Authentication is required via VNC",
-                    "emulator_id": emulator_id,
-                }, 401
+                # Use the state machine's auth handler
+                auth_response = automator.state_machine.handle_auth_state_detection(
+                    final_state, sindarin_email
+                )
+                if auth_response:
+                    logger.info("Authentication required after transition attempt - providing VNC URL")
+                    return auth_response, 401
 
             if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to library state")
@@ -246,31 +228,13 @@ class BooksResource(Resource):
                 updated_state = final_state
 
                 if updated_state == AppState.SIGN_IN:
-                    # Get current email to include in VNC URL
-                    sindarin_email = get_sindarin_email()
-
-                    # Get the emulator ID for this email if possible
-                    emulator_id = None
-                    if sindarin_email and sindarin_email in server.automators:
-                        automator = server.automators.get(sindarin_email)
-                        if (
-                            automator
-                            and hasattr(automator, "emulator_manager")
-                            and hasattr(automator.emulator_manager, "emulator_launcher")
-                        ):
-                            emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                                sindarin_email
-                            )
-                            logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-                    logger.info("Transition failed - authentication required - providing VNC URL")
-                    return {
-                        "error": "Authentication required",
-                        "authenticated": False,
-                        "current_state": updated_state.name,
-                        "message": "Authentication is required via VNC",
-                        "emulator_id": emulator_id,
-                    }, 401
+                    # Use the state machine's auth handler
+                    auth_response = automator.state_machine.handle_auth_state_detection(
+                        updated_state, sindarin_email
+                    )
+                    if auth_response:
+                        logger.info("Transition failed - authentication required - providing VNC URL")
+                        return auth_response, 401
                 else:
                     return {
                         "error": f"Cannot get books in current state: {updated_state.name}",
@@ -430,36 +394,21 @@ class BooksStreamResource(Resource):
                     "emulator_id": emulator_id,
                 }, 401
 
-            if not transition_success:
-                # If transition failed, check for auth requirement
-                updated_state = automator.state_machine.current_state
-
-                if updated_state == AppState.SIGN_IN:
-                    # Get the emulator ID for this email if possible
-                    emulator_id = None
-                    if (
-                        automator
-                        and hasattr(automator, "emulator_manager")
-                        and hasattr(automator.emulator_manager, "emulator_launcher")
-                    ):
-                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                            sindarin_email
-                        )
-                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
+            if final_state != AppState.LIBRARY:
+                # If transition failed to reach library, check for auth requirement
+                # Use the state machine's auth handler
+                auth_response = automator.state_machine.handle_auth_state_detection(
+                    final_state, sindarin_email
+                )
+                if auth_response:
                     logger.info("Transition failed - authentication required - providing VNC URL")
-                    return {
-                        "error": "Authentication required",
-                        "authenticated": False,
-                        "current_state": updated_state.name,
-                        "message": "Authentication is required via VNC",
-                        "emulator_id": emulator_id,
-                    }, 401
-                else:
-                    return {
-                        "error": f"Cannot stream books in current state: {updated_state.name}",
-                        "current_state": updated_state.name,
-                    }, 400
+                    return auth_response, 401
+
+                # Not an auth state, return error
+                return {
+                    "error": f"Cannot get books in current state: {final_state.name}",
+                    "current_state": final_state.name,
+                }, 400
 
         def generate_simple_stream():
             """Simple test generator that doesn't depend on book retrieval"""
@@ -1288,7 +1237,7 @@ class BookOpenResource(Resource):
         # For other states, transition to library and open the book
         logger.info(f"Transitioning from {current_state} to library")
         final_state = automator.state_machine.transition_to_library(server=server)
-        
+
         if final_state == AppState.LIBRARY:
             # Successfully transitioned to library
             # Use library_handler to open the book instead of reader_handler
@@ -1310,77 +1259,18 @@ class BookOpenResource(Resource):
             # Did not reach library state
             logger.info(f"Transition ended in state: {final_state} instead of LIBRARY")
 
-            # Check if we're in an authentication-required state
-            logger.info(f"Checking if {final_state} is in an auth state: {final_state.is_auth_state()}")
+            # Check if we ended up in an auth state
+            auth_response = automator.state_machine.handle_auth_state_detection(final_state, sindarin_email)
+            if auth_response:
+                return auth_response, 401
 
-            if final_state.is_auth_state():
-                # Check if user was previously authenticated (has auth_date)
-                profile_manager = automator.profile_manager
-                auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
-
-                if auth_date:
-                    # User was previously authenticated but lost auth - set auth_failed_date
-                    from datetime import datetime
-
-                    current_date = datetime.now().isoformat()
-
-                    logger.warning(
-                        f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {final_state} - marking auth as failed"
-                    )
-                    profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
-
-                    # Get the emulator ID and VNC URL for this email
-                    emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(sindarin_email)
-                    from server.utils.request_utils import get_formatted_vnc_url
-
-                    vnc_url = get_formatted_vnc_url(sindarin_email)
-
-                    return {
-                        "success": False,
-                        "error": "Authentication token lost",
-                        "authenticated": False,
-                        "current_state": final_state.name,
-                        "message": (
-                            "Your Kindle authentication token was lost. Authentication is required via mobile app."
-                        ),
-                        "emulator_id": emulator_id,
-                        "vnc_url": vnc_url,
-                        "previous_auth_date": auth_date,
-                        "auth_token_lost": True,
-                    }, 401
-                else:
-                    return {
-                        "success": False,
-                        "error": (
-                            f"Authentication required - cannot open book from {final_state}, needs /auth"
-                        ),
-                        "authenticated": False,
-                        "current_state": final_state.name,
-                        "message": "Please authenticate Kindle first via the mobile app.",
-                    }, 401
-            else:
-                # Not in an auth state, but still failed - include authenticated status
-                # Check if we have any indication that authentication might be needed
-                is_authenticated = not final_state.is_auth_state()
-
-                response = {
-                    "success": False,
-                    "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
-                    "current_state": final_state.name,
-                    "authenticated": is_authenticated,
-                }
-
-                # If we ended in UNKNOWN or ERROR state, it might be an auth issue
-                if final_state.is_auth_state():
-                    # Check if user was previously authenticated
-                    profile_manager = automator.profile_manager
-                    auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
-                    if auth_date:
-                        # They were authenticated before, might have lost auth
-                        response["message"] = "Failed to determine app state - authentication may be required"
-                        response["authenticated"] = False
-
-                return response, 500
+            # Not in an auth state, return generic error
+            return {
+                "success": False,
+                "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
+                "current_state": final_state.name,
+                "authenticated": True,  # User is authenticated but we couldn't reach library for other reasons
+            }, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
