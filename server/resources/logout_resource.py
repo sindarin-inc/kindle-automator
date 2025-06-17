@@ -228,6 +228,14 @@ class LogoutResource(Resource):
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
 
+                    # Clear emulator settings to force fresh initialization on next login
+                    if automator.profile_manager:
+                        cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
+                        if cleared:
+                            logger.info(f"Cleared emulator settings for {sindarin_email}")
+                        else:
+                            logger.warning(f"Failed to clear emulator settings for {sindarin_email}")
+
                 return {
                     "success": True,
                     "message": "Successfully signed out",
@@ -242,6 +250,14 @@ class LogoutResource(Resource):
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
 
+                    # Clear emulator settings to force fresh initialization on next login
+                    if automator.profile_manager:
+                        cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
+                        if cleared:
+                            logger.info(f"Cleared emulator settings for {sindarin_email}")
+                        else:
+                            logger.warning(f"Failed to clear emulator settings for {sindarin_email}")
+
                 return {
                     "success": True,
                     "message": "Successfully signed out",
@@ -255,6 +271,14 @@ class LogoutResource(Resource):
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
+
+                    # Clear emulator settings to force fresh initialization on next login
+                    if automator.profile_manager:
+                        cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
+                        if cleared:
+                            logger.info(f"Cleared emulator settings for {sindarin_email}")
+                        else:
+                            logger.warning(f"Failed to clear emulator settings for {sindarin_email}")
 
                 return {
                     "success": True,

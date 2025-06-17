@@ -1230,7 +1230,7 @@ class Driver:
             options.enable_multi_windows = True
             options.ignore_unimportant_views = False
             options.allow_invisible_elements = True
-            options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
+            options.new_command_timeout = 1800  # 30 minutes (1800 seconds)
 
             # Prevent app relaunch on Appium session start
             options.set_capability("appium:autoLaunch", False)  # Disable app relaunch on session start
@@ -1246,6 +1246,12 @@ class Driver:
             # Leave this higher since we need time for ADB commands during actual operations
             options.set_capability("appium:adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
             options.set_capability("appium:udid", self.device_id)
+
+            # Keep UiAutomator2 server alive for 30 minutes after last command
+            options.set_capability(
+                "appium:uiautomator2ServerReadTimeout", 1800000
+            )  # 30 minutes in milliseconds
+            options.set_capability("appium:uiautomator2ServerInstallTimeout", 90000)  # 90 seconds for install
 
             # Add parallel execution capabilities
             instance_id = None
@@ -1285,6 +1291,23 @@ class Driver:
                 else:
                     logger.error(f"No allocated ports found for {email}")
                     return False
+
+            # Check if Appium device has been initialized before for this user
+            profile = self.automator.profile_manager.get_current_profile()
+            email = get_sindarin_email()
+
+            if (
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "appium_device_initialized", False, section="emulator_settings"
+                )
+            ):
+                # Skip device initialization for faster startup on subsequent connections
+                options.set_capability("appium:skipDeviceInitialization", True)
+                logger.info(f"Skipping Appium device initialization for {email} (already initialized)")
+            else:
+                logger.info(f"Will perform full Appium device initialization for {email}")
 
             # Clean up system files to avoid conflicts
             options.set_capability("appium:clearSystemFiles", True)
@@ -1358,6 +1381,14 @@ class Driver:
                     logger.debug("Checking connection to Appium server...")
                     result = future.result(timeout=5)
                     logger.debug(f"Connection check result: {result}")
+
+                    # Mark Appium device as initialized for this user if not already done
+                    if email and not self.automator.profile_manager.get_user_field(
+                        email, "appium_device_initialized", False, section="emulator_settings"
+                    ):
+                        self._update_profile_setting("appium_device_initialized", True)
+                        logger.info(f"Marked Appium device as initialized for {email}")
+
                     return True
                 except concurrent.futures.TimeoutError:
                     logger.error("Connection check timed out after 15 seconds")

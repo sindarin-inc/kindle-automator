@@ -120,12 +120,15 @@ class AppiumDriver:
             # No need to pass additional ports via command line
             # These ports are configured via appium:capabilities in the client
 
+            # Configure Appium server to keep sessions alive for 30 minutes (1800 seconds)
             cmd = [
                 appium_cmd,
                 "--port",
                 str(port),
                 "--log-level",
                 "info",
+                "--session-override",  # Allow overriding stale sessions
+                "--relaxed-security",  # Allow more flexible session management
             ]
 
             with open(log_file, "w") as log:

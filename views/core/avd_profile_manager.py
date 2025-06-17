@@ -1558,3 +1558,45 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error recreating profile AVD for {email}: {e}")
             return False, f"Failed to recreate profile AVD: {str(e)}"
+
+    def clear_emulator_settings(self, email: str) -> bool:
+        """
+        Clear all emulator settings for a user.
+
+        This includes settings like:
+        - appium_device_initialized
+        - animations_disabled
+        - hw_overlays_disabled
+        - sleep_disabled
+        - status_bar_disabled
+        - auto_updates_disabled
+
+        Args:
+            email: Email address of the user
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Reload profiles to ensure we have the latest data
+            self._load_profiles_index()
+
+            # Check if user exists
+            if email not in self.profiles_index:
+                logger.warning(f"Cannot clear emulator settings: email {email} not found in profiles_index")
+                return False
+
+            # Clear the emulator_settings section if it exists
+            if "emulator_settings" in self.profiles_index[email]:
+                self.profiles_index[email]["emulator_settings"] = {}
+                logger.info(f"Cleared all emulator settings for {email}")
+            else:
+                logger.info(f"No emulator settings to clear for {email}")
+
+            # Save the updated profiles_index
+            self._save_profiles_index()
+            return True
+
+        except Exception as e:
+            logger.error(f"Error clearing emulator settings for {email}: {e}")
+            return False

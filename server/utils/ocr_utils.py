@@ -382,7 +382,9 @@ def is_ocr_requested():
     preview_param = request.args.get("preview", "0")
 
     # OCR is disabled only if explicitly set to "0" or "false"
-    perform_ocr = ocr_param not in ("0", "false") or text_param in ("1", "true") or preview_param in ("1", "true")
+    perform_ocr = (
+        ocr_param not in ("0", "false") or text_param in ("1", "true") or preview_param in ("1", "true")
+    )
 
     logger.debug(
         f"is_ocr_requested check - query params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}"
@@ -392,7 +394,7 @@ def is_ocr_requested():
     if request.is_json:
         try:
             json_data = request.get_json(silent=True) or {}
-            
+
             # Only check JSON if 'ocr' key is present (don't use default here)
             if "ocr" in json_data:
                 ocr_param = json_data["ocr"]
@@ -403,7 +405,7 @@ def is_ocr_requested():
                     perform_ocr = ocr_param not in ("0", "false")
                 elif isinstance(ocr_param, int):
                     perform_ocr = ocr_param != 0
-            
+
             # Always check text and preview params if present
             text_param = json_data.get("text", False)
             preview_param = json_data.get("preview", False)
