@@ -194,9 +194,12 @@ class KindleStateMachine:
                     except Exception as e:
                         logger.debug(f"Error getting current activity: {e}")
 
-                    # Check specifically for AlertActivity which often contains dialogs
-                    if current_activity and "AlertActivity" in current_activity:
-                        logger.info(f"Detected AlertActivity, checking for known dialogs...")
+                    # Check for dialogs in both AlertActivity and StandAloneBookReaderActivity
+                    if current_activity and (
+                        "AlertActivity" in current_activity
+                        or "StandAloneBookReaderActivity" in current_activity
+                    ):
+                        logger.info(f"Detected {current_activity}, checking for known dialogs...")
 
                         # Check for dialogs without requiring book title
                         handled, dialog_type = dialog_handler.check_all_dialogs(None, "in UNKNOWN state")
@@ -204,13 +207,19 @@ class KindleStateMachine:
                             logger.info(f"Successfully handled {dialog_type} dialog in UNKNOWN state")
                             # Try to update state after handling dialog
                             self.current_state = self._get_current_state()
+
+                            # If we're now in READING state after handling the dialog, we're done
+                            if self.current_state == AppState.READING:
+                                logger.info("Now in READING state after handling dialog")
+                                return self.current_state
+
                             # If still unknown, try to re-enter the app
                             if self.current_state == AppState.UNKNOWN:
                                 if self.view_inspector.ensure_app_foreground():
                                     logger.info("Brought app to foreground after handling dialog")
                                     time.sleep(1)
                                     self.current_state = self._get_current_state()
-                            return True
+                            continue  # Continue the loop to re-check state
 
                     # If dialog handling didn't work, try checking for library-specific elements
                     logger.info("Checking for library-specific elements...")

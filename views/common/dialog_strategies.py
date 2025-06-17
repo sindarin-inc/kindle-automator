@@ -83,17 +83,17 @@ VIEWING_FULL_SCREEN_DIALOG_IDENTIFIERS = [
     # Title that says "Viewing full screen"
     (
         AppiumBy.XPATH,
-        "//android.widget.TextView[@resource-id='com.android.systemui:id/immersive_cling_title' and @text='Viewing full screen']",
+        "//android.widget.TextView[@resource-id='android:id/immersive_cling_title' and @text='Viewing full screen']",
     ),
-    (AppiumBy.ID, "com.android.systemui:id/immersive_cling_title"),
+    (AppiumBy.ID, "android:id/immersive_cling_title"),
     # Description text
-    (AppiumBy.ID, "com.android.systemui:id/immersive_cling_description"),
+    (AppiumBy.ID, "android:id/immersive_cling_description"),
 ]
 
 # Viewing full screen dialog "Got it" button
 VIEWING_FULL_SCREEN_GOT_IT_BUTTON = [
-    (AppiumBy.ID, "com.android.systemui:id/ok"),
-    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='com.android.systemui:id/ok' and @text='Got it']"),
+    (AppiumBy.ID, "android:id/ok"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/ok' and @text='Got it']"),
 ]
 
 # Dialog interaction strategies

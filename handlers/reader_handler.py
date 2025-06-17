@@ -412,13 +412,38 @@ class ReaderHandler:
                 logger.error("Failed to handle Download Limit dialog detected immediately")
                 return False
 
-        # Check for Read and Listen dialog (audible dialog)
+        # Check for dialogs that might appear immediately after opening a book
         from views.common.dialog_handler import DialogHandler
 
         dialog_handler = DialogHandler(self.driver)
-        if dialog_handler.check_for_read_and_listen_dialog():
-            logger.info("Read and Listen dialog detected and handled - continuing with reading flow")
-            # Continue to reading view handling below
+
+        # Check for dialogs in a loop (up to 3 dialogs)
+        dialogs_handled = 0
+        max_dialogs = 3
+
+        for i in range(max_dialogs):
+            dialog_found = False
+
+            # Check for Read and Listen dialog
+            if dialog_handler.check_for_read_and_listen_dialog():
+                logger.info("Read and Listen dialog detected and handled")
+                dialog_found = True
+                dialogs_handled += 1
+                time.sleep(0.5)  # Brief wait for dialog dismissal
+
+            # Check for Viewing full screen dialog
+            if dialog_handler.check_for_viewing_full_screen_dialog():
+                logger.info("Viewing full screen dialog detected and handled")
+                dialog_found = True
+                dialogs_handled += 1
+                time.sleep(0.5)  # Brief wait for dialog dismissal
+
+            # If no dialog was found this iteration, break the loop
+            if not dialog_found:
+                break
+
+        if dialogs_handled > 0:
+            logger.info(f"Handled {dialogs_handled} dialog(s) before waiting for reading view")
 
         # Wait for the reading view to appear
         try:
@@ -703,11 +728,7 @@ class ReaderHandler:
             store_page_source(self.driver.page_source, "error_waiting_for_reading_view_or_download_limit")
             return False
 
-        # Check for fullscreen dialog immediately without a long wait
-        # DialogHandler is already imported above
-        if dialog_handler.check_for_viewing_full_screen_dialog():
-            logger.info("Successfully handled 'Viewing full screen' dialog after opening book")
-            time.sleep(0.5)  # Brief wait for dialog dismissal animation
+        # Viewing full screen dialog is now handled in the dialog loop above
 
         # We already confirmed the reading view is loaded above, so no need for additional waiting
         # Just check for page content container which should be available immediately
