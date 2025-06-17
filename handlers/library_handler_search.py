@@ -501,7 +501,7 @@ class LibraryHandlerSearch:
             return False
 
         except Exception as e:
-            logger.error(f"Error exiting search mode: {e}")
+            logger.error(f"Error exiting search mode: {str(e)[:100]}")
             return False
 
     def _check_store_results_for_book(self, book_title: str):

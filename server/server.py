@@ -1287,7 +1287,10 @@ class BookOpenResource(Resource):
 
         # For other states, transition to library and open the book
         logger.info(f"Transitioning from {current_state} to library")
-        if automator.state_machine.transition_to_library(server=server):
+        final_state = automator.state_machine.transition_to_library(server=server)
+        
+        if final_state == AppState.LIBRARY:
+            # Successfully transitioned to library
             # Use library_handler to open the book instead of reader_handler
             result = automator.state_machine.library_handler.open_book(book_title)
             logger.info(f"Book open result: {result}")
@@ -1304,12 +1307,8 @@ class BookOpenResource(Resource):
                 # Return the error from the result
                 return result, 500
         else:
-            # Failed to transition to library
-            logger.error(f"Failed to transition from {current_state} to library")
-
-            # The state machine already has the final state after transition_to_library fails
-            final_state = automator.state_machine.current_state
-            logger.info(f"Final state after failed transition: {final_state}")
+            # Did not reach library state
+            logger.info(f"Transition ended in state: {final_state} instead of LIBRARY")
 
             # Check if we're in an authentication-required state
             logger.info(f"Checking if {final_state} is in an auth state: {final_state.is_auth_state()}")
