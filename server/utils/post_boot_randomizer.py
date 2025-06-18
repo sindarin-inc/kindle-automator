@@ -292,4 +292,53 @@ class PostBootRandomizer:
             logger.warning("Failed to clear Google Play Services data (advertising ID may not be reset)")
             # Don't fail completely if this fails, as it's less critical
 
+        # Install proxy certificate if configured
+        self._install_proxy_certificate_if_needed(emulator_id)
+
         return success
+
+    def _install_proxy_certificate_if_needed(self, emulator_id: str) -> bool:
+        """Install BrightData certificate if proxy is configured."""
+        try:
+            import os
+
+            # Check if proxy is configured
+            proxy_url = os.getenv("HTTP_PROXY_URL")
+            if not proxy_url:
+                return True
+
+            # Path to BrightData certificate in ansible directory
+            cert_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                "ansible",
+                "roles",
+                "server",
+                "files",
+                "brightdata.crt",
+            )
+
+            if not os.path.exists(cert_path):
+                logger.warning(f"BrightData certificate not found at {cert_path}")
+                return False
+
+            # Install certificate
+            from server.utils.certificate_installer import CertificateInstaller
+
+            installer = CertificateInstaller(self.android_home)
+
+            # Check if already installed
+            if installer.is_certificate_installed(emulator_id, cert_path):
+                logger.info("BrightData certificate already installed")
+                return True
+
+            logger.info("Installing BrightData CA certificate")
+            if installer.install_ca_certificate(emulator_id, cert_path):
+                logger.info("Successfully installed BrightData CA certificate")
+                return True
+            else:
+                logger.error("Failed to install BrightData CA certificate")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error installing proxy certificate: {e}")
+            return False

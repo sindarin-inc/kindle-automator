@@ -878,6 +878,19 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
+            # Add DNS configuration for Apple Silicon Macs
+            if platform.system() == "Darwin" and self.host_arch == "arm64":
+                common_args.extend(
+                    ["-dns-server", "8.8.8.8,8.8.4.4", "-netdelay", "none", "-netspeed", "full"]
+                )
+                logger.info("Added DNS configuration for Apple Silicon Mac")
+
+            # Add HTTP proxy if configured
+            http_proxy_url = os.getenv("HTTP_PROXY_URL")
+            if http_proxy_url:
+                common_args.extend(["-http-proxy", http_proxy_url])
+                logger.info(f"Configured emulator with HTTP proxy: {http_proxy_url}")
+
             # Add no-window flag only for Linux
             if platform.system() != "Darwin":
                 common_args.append("-no-window")
