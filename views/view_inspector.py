@@ -153,8 +153,8 @@ class ViewInspector:
 
             # Wait for the app to initialize with polling instead of fixed sleep
             start_time = time.time()
-            max_wait_time = 10  # 10 seconds max wait time
-            poll_interval = 0.2  # 200ms between checks
+            max_wait_time = 3  # 3 seconds max wait time
+            poll_interval = 0.1  # 100ms between checks
             app_ready = False
 
             while time.time() - start_time < max_wait_time:
@@ -164,12 +164,23 @@ class ViewInspector:
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                     # Also handle the Google Play review dialog which can appear over the Kindle app
                     # Also recognize the RemoteLicenseReleaseActivity (Download Limit dialog) as a valid activity
+                    # Also recognize permission dialogs as valid (the app is technically running behind them)
                     if (
                         current_activity.startswith("com.amazon")
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                        or current_activity
+                        == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                     ):
                         app_ready = True
+
+                        # If we see a permission dialog, break immediately as the app is ready
+                        if (
+                            current_activity
+                            == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
+                        ):
+                            logger.info("Permission dialog detected - app is ready")
+                            break
 
                         # Try to dismiss the Google Play review dialog if it's showing
                         if (
@@ -212,7 +223,7 @@ class ViewInspector:
                 time.sleep(poll_interval)
 
             if not app_ready:
-                logger.warning(f"Timed out waiting for app to initialize after {max_wait_time}s")
+                logger.debug(f"App not ready after {max_wait_time}s polling, proceeding anyway")
 
             logger.info("App brought to foreground")
             return True
@@ -372,6 +383,14 @@ class ViewInspector:
             try:
                 current_activity = self.driver.current_activity
                 logger.info(f"Current activity: {current_activity}")
+
+                # Fast path: If we're in permission dialog activity, return immediately
+                if (
+                    current_activity
+                    == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
+                ):
+                    logger.info("Permission dialog activity detected - fast return NOTIFICATION_PERMISSION")
+                    return AppView.NOTIFICATION_PERMISSION
 
                 # Check if we're on the Android dashboard/launcher
                 if current_activity and (

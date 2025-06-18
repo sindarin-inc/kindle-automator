@@ -253,8 +253,12 @@ class AVDCreator:
                 "disk.dataPartition.size": "6G",
                 "PlayStore.enabled": "true",
                 "image.sysdir.1": sysdir,
-                "tag.id": "default" if "default" in sysdir else ("google_apis_playstore" if "playstore" in sysdir else "google_apis"),
-                "tag.display": "Default Android System Image" if "default" in sysdir else ("Google Play" if "playstore" in sysdir else "Google APIs"),
+                "tag.id": "default"
+                if "default" in sysdir
+                else ("google_apis_playstore" if "playstore" in sysdir else "google_apis"),
+                "tag.display": "Default Android System Image"
+                if "default" in sysdir
+                else ("Google Play" if "playstore" in sysdir else "Google APIs"),
                 "hw.cpu.arch": "arm64" if cpu_arch == "arm64-v8a" else cpu_arch,
                 "abi.type": cpu_arch,  # Keep abi.type as arm64-v8a for ARM64 emulation
                 "ro.kernel.qemu.gles": "1",

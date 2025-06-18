@@ -338,6 +338,73 @@ class AuthenticationHandler:
                     "vnc_url": get_formatted_vnc_url(email),
                 }
 
+            # Check if we're in NOTIFICATION_PERMISSION state - handle it first
+            if state_name == "NOTIFICATION_PERMISSION":
+                logger.info("In NOTIFICATION_PERMISSION state - handling permission dialog")
+                # Handle the notification permission directly here
+                try:
+                    from handlers.permissions_handler import PermissionsHandler
+
+                    permissions_handler = PermissionsHandler(self.driver)
+                    if permissions_handler.handle_notifications_permission(should_allow=True):
+                        logger.info("Successfully handled notification permission")
+                        # Update state after handling permission
+                        time.sleep(1)
+                        # Get state machine from driver's automator
+                        if hasattr(self.driver, "automator") and hasattr(
+                            self.driver.automator, "state_machine"
+                        ):
+                            state_name = self.driver.automator.state_machine.update_current_state().name
+                            logger.info(f"State after handling notification permission: {state_name}")
+
+                            # If we're now in HOME state (after first launch), continue with normal flow
+                            # to navigate to sign-in screen
+                            if state_name == "HOME":
+                                logger.info(
+                                    "Now in HOME state after handling notification - will continue to navigate to sign-in"
+                                )
+                                # Don't return early, let the normal flow handle navigation from HOME to SIGN_IN
+                            # If we're now in a sign-in state, return that we're ready for manual auth
+                            elif state_name in [
+                                "SIGN_IN",
+                                "SIGN_IN_PASSWORD",
+                                "CAPTCHA",
+                                "TWO_FACTOR",
+                                "PUZZLE",
+                            ]:
+                                email = ""
+                                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                                    current_profile = automator.profile_manager.get_current_profile()
+                                    if current_profile and "email" in current_profile:
+                                        email = current_profile["email"]
+
+                                return {
+                                    "state": state_name,
+                                    "authenticated": False,
+                                    "already_authenticated": False,
+                                    "vnc_url": get_formatted_vnc_url(email),
+                                }
+                            # If we're in LIBRARY or other authenticated state, return success
+                            elif state_name == "LIBRARY":
+                                email = ""
+                                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                                    current_profile = automator.profile_manager.get_current_profile()
+                                    if current_profile and "email" in current_profile:
+                                        email = current_profile["email"]
+
+                                return {
+                                    "state": state_name,
+                                    "authenticated": True,
+                                    "already_authenticated": True,
+                                    "vnc_url": get_formatted_vnc_url(email),
+                                }
+                    else:
+                        logger.warning("Failed to handle notification permission")
+                except Exception as e:
+                    logger.error(f"Error handling notification permission: {e}")
+
+                # If we couldn't handle the permission or determine state, continue with normal flow
+
             # Check if we're already in a sign-in flow state
             sign_in_states = ["SIGN_IN", "SIGN_IN_PASSWORD", "CAPTCHA", "TWO_FACTOR", "PUZZLE"]
             if state_name in sign_in_states:
@@ -393,28 +460,62 @@ class AuthenticationHandler:
                 except Exception as e:
                     logger.error(f"Error ensuring Kindle app is installed: {e}")
 
-            # Try restarting the app to get to the sign-in screen
+            # If we're in HOME state, try to use transition_to_library which handles navigation
+            # from HOME to sign-in states properly
             success = False
-            try:
-                if hasattr(automator, "restart_kindle_app"):
-                    logger.info("Restarting Kindle app to get to sign-in screen")
-                    device_id = getattr(automator, "device_id", "unknown")
-                    success = automator.restart_kindle_app()
-                    if not success:
-                        logger.warning("restart_kindle_app reported failure, will try alternative approaches")
-                else:
-                    logger.error("Automator doesn't have restart_kindle_app method")
-                    # Try to launch app directly as a fallback
-                    try:
-                        logger.info("Attempting to launch Kindle app directly")
-                        device_id = getattr(automator, "device_id", "unknown")
-                        automator.driver.activate_app("com.amazon.kindle")
-                        time.sleep(3)  # Give it time to launch
+            if state_name == "HOME":
+                logger.info("In HOME state - using transition_to_library to navigate to sign-in")
+                try:
+                    final_state = automator.state_machine.transition_to_library()
+                    state_name = final_state.name if hasattr(final_state, "name") else str(final_state)
+                    logger.info(f"After transition_to_library, state is: {state_name}")
+
+                    # Check if we reached a sign-in state
+                    if state_name in ["SIGN_IN", "SIGN_IN_PASSWORD", "LIBRARY_SIGN_IN"]:
                         success = True
-                    except Exception as launch_e:
-                        logger.error(f"Error launching Kindle app: {launch_e}")
-            except Exception as e:
-                logger.error(f"Error restarting app: {e}")
+                    elif state_name == "LIBRARY":
+                        # Already authenticated
+                        logger.info("Already authenticated - in LIBRARY state")
+                        email = ""
+                        if hasattr(automator, "profile_manager") and automator.profile_manager:
+                            current_profile = automator.profile_manager.get_current_profile()
+                            if current_profile and "email" in current_profile:
+                                email = current_profile["email"]
+
+                        return {
+                            "state": state_name,
+                            "authenticated": True,
+                            "already_authenticated": True,
+                            "vnc_url": get_formatted_vnc_url(email),
+                        }
+                except Exception as e:
+                    logger.error(f"Error using transition_to_library: {e}")
+                    success = False
+
+            # Only restart the app if we're not in HOME state or if transition failed
+            if not success and state_name != "HOME":
+                try:
+                    if hasattr(automator, "restart_kindle_app"):
+                        logger.info("Restarting Kindle app to get to sign-in screen")
+                        device_id = getattr(automator, "device_id", "unknown")
+                        success = automator.restart_kindle_app()
+                        if not success:
+                            logger.warning(
+                                "restart_kindle_app reported failure, will try alternative approaches"
+                            )
+                    else:
+                        logger.error("Automator doesn't have restart_kindle_app method")
+                        # Try to launch app directly as a fallback
+                        try:
+                            logger.info("Attempting to launch Kindle app directly")
+                            device_id = getattr(automator, "device_id", "unknown")
+                            automator.driver.activate_app("com.amazon.kindle")
+                            time.sleep(3)  # Give it time to launch
+                            success = True
+                        except Exception as launch_e:
+                            logger.error(f"Error launching Kindle app: {launch_e}")
+                except Exception as e:
+                    logger.error(f"Error restarting app: {e}")
                 # Try to at least launch the app
                 try:
                     logger.info("Fallback - attempting to launch Kindle app via activate_app")

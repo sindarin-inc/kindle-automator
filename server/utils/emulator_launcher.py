@@ -992,20 +992,21 @@ class EmulatorLauncher:
                     stderr=stderr_file,
                     cwd="/tmp",  # Run in /tmp to avoid permission issues
                 )
-                
+
             # Add immediate check after launch
             import time
+
             time.sleep(0.5)  # Brief pause to let process start
             poll_result = process.poll()
             if poll_result is not None:
                 logger.error(f"Emulator process exited immediately with code: {poll_result}")
                 # Read the error logs
                 try:
-                    with open(stderr_log, 'r') as f:
+                    with open(stderr_log, "r") as f:
                         stderr_content = f.read()
                         if stderr_content:
                             logger.error(f"Emulator stderr content: {stderr_content}")
-                    with open(stdout_log, 'r') as f:
+                    with open(stdout_log, "r") as f:
                         stdout_content = f.read()
                         if stdout_content:
                             logger.error(f"Emulator stdout content: {stdout_content}")
@@ -1039,11 +1040,11 @@ class EmulatorLauncher:
                 # Process already exited
                 logger.error(f"Emulator process exited immediately with code: {process.poll()}")
                 # Check the log files
-                with open(stdout_path, 'r') as f:
+                with open(stdout_log, "r") as f:
                     stdout_content = f.read()
                     if stdout_content:
                         logger.error(f"Emulator stdout: {stdout_content}")
-                with open(stderr_path, 'r') as f:
+                with open(stderr_log, "r") as f:
                     stderr_content = f.read()
                     if stderr_content:
                         logger.error(f"Emulator stderr: {stderr_content}")
