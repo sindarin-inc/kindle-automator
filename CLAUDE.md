@@ -2,7 +2,7 @@
 
 ## Commands
 
-- `make server`: Start the Flask server
+- `make server`: Start the Flask server (requires virtualenv to be activated first)
 - `make deps`: Install dependencies using uv
 - `make lint`: Run isort, black, and flake8
 - `make test-*`: Run various API endpoint tests (e.g. `make test-init`, `make test-books`)
@@ -12,8 +12,10 @@
 
 ## Virtualenv Management
 
-- `workon kindle-automator`: Source the virtualenv for the Kindle Automator project, activating the virtual environment located at ~/.virtualenvs/kindle-automator/bin/activate
-- You need to have already setup the kindle-automator virutalenv when running `make server`
+- To start the server: `source ~/.virtualenvs/kindle-automator/bin/activate && make server`
+- For background execution: `source ~/.virtualenvs/kindle-automator/bin/activate && nohup make server > server.out 2>&1 &`
+- The virtualenv must be activated before running `make server`
+- No need to kill the server when restarting, `make server` automatically kills old server instances
 
 ## Ansible Commands
 

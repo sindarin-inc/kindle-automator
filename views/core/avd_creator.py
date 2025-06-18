@@ -19,7 +19,7 @@ class AVDCreator:
     # System image to use for all AVDs
     # Must match `sdkmanager --list` format exactly
     # Use ARM64 for native performance on ARM Macs
-    SYSTEM_IMAGE = "system-images;android-30;google_apis;arm64-v8a"
+    SYSTEM_IMAGE = "system-images;android-35;default;arm64-v8a"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
@@ -171,8 +171,16 @@ class AVDCreator:
             # Execute AVD creation command
             process = subprocess.run(create_cmd, env=env, check=False, text=True, capture_output=True)
 
+            # Log both stdout and stderr for debugging
+            if process.stdout:
+                logger.info(f"AVD creation stdout: {process.stdout}")
+            if process.stderr:
+                logger.warning(f"AVD creation stderr: {process.stderr}")
+
             if process.returncode != 0:
-                logger.error(f"Failed to create AVD: {process.stderr}")
+                logger.error(f"Failed to create AVD with return code {process.returncode}")
+                logger.error(f"stdout: {process.stdout}")
+                logger.error(f"stderr: {process.stderr}")
                 return False, f"Failed to create AVD: {process.stderr}"
 
             # Configure AVD settings for better performance
@@ -245,9 +253,10 @@ class AVDCreator:
                 "disk.dataPartition.size": "6G",
                 "PlayStore.enabled": "true",
                 "image.sysdir.1": sysdir,
-                "tag.id": "google_apis_playstore" if "playstore" in sysdir else "google_apis",
-                "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
-                "hw.cpu.arch": cpu_arch,
+                "tag.id": "default" if "default" in sysdir else ("google_apis_playstore" if "playstore" in sysdir else "google_apis"),
+                "tag.display": "Default Android System Image" if "default" in sysdir else ("Google Play" if "playstore" in sysdir else "Google APIs"),
+                "hw.cpu.arch": "arm64" if cpu_arch == "arm64-v8a" else cpu_arch,
+                "abi.type": cpu_arch,  # Keep abi.type as arm64-v8a for ARM64 emulation
                 "ro.kernel.qemu.gles": "1",
                 "hw.gfxstream": "0",  # Disable gfxstream to maintain snapshot compatibility
                 "skin.dynamic": "yes",
