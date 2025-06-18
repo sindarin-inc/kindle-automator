@@ -878,6 +878,10 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
+            # Add no-window flag only for Linux
+            if platform.system() != "Darwin":
+                common_args.append("-no-window")
+
             # Add randomized device identifiers if available
             try:
                 from server.utils.device_identifier_utils import get_emulator_prop_args
@@ -923,21 +927,20 @@ class EmulatorLauncher:
                     "-gpu",
                     "swiftshader",
                 ] + common_args
-            elif self.host_arch == "arm64":
-                # For ARM Macs, use Rosetta to run x86_64 emulator
+            elif self.host_arch == "arm64" and platform.system() == "Darwin":
+                # For ARM Macs, use QEMU directly for native ARM64 emulation
+                # The Android emulator binary should automatically use qemu-system-aarch64
                 emulator_cmd = [
-                    "arch",
-                    "-x86_64",
                     f"{self.android_home}/emulator/emulator",
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
                     "-feature",
-                    "-HVF",  # Disable hardware virtualization
-                    "-feature",
                     "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
-                    "off",
+                    "hvf",  # Use Hypervisor.framework for native ARM64 acceleration
+                    "-qemu",
+                    "-machine", "virt",  # Use ARM virt machine type
                 ] + common_args
             else:
                 # For Intel Macs
@@ -955,7 +958,14 @@ class EmulatorLauncher:
                 ] + common_args
 
             # Create log files for debugging
-            log_dir = "/var/log/emulator"
+            if platform.system() == "Darwin":
+                # Use local logs directory on macOS
+                log_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "emulator"
+                )
+            else:
+                # Use system log directory on Linux
+                log_dir = "/var/log/emulator"
             os.makedirs(log_dir, exist_ok=True)
             stdout_log = os.path.join(log_dir, f"emulator_{avd_name}_stdout.log")
             stderr_log = os.path.join(log_dir, f"emulator_{avd_name}_stderr.log")
@@ -966,6 +976,17 @@ class EmulatorLauncher:
             )
             logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
+
+            # Wrap with xvfb-run on Linux
+            if platform.system() != "Darwin":
+                emulator_cmd = [
+                    "xvfb-run",
+                    "-n",
+                    str(display_num),
+                    "-s",
+                    f"-screen 0 1080x1920x24",
+                    "--",
+                ] + emulator_cmd
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
                 process = subprocess.Popen(
@@ -1505,7 +1526,7 @@ class EmulatorLauncher:
         """Check if any emulator process is running."""
         try:
             ps_check = subprocess.run(
-                ["pgrep", "-f", "qemu-system-x86_64"], check=False, capture_output=True, text=True
+                ["pgrep", "-f", "qemu-system-aarch64"], check=False, capture_output=True, text=True
             )
             return ps_check.returncode == 0
         except Exception:

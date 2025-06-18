@@ -18,7 +18,8 @@ class AVDCreator:
 
     # System image to use for all AVDs
     # Must match `sdkmanager --list` format exactly
-    SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
+    # Use ARM64 for native performance on ARM Macs
+    SYSTEM_IMAGE = "system-images;android-30;google_apis;arm64-v8a"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
@@ -195,17 +196,18 @@ class AVDCreator:
             with open(config_path, "r") as f:
                 config_lines = f.readlines()
 
-            # Always use x86_64 for all host types
-            # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
-            # as the Android emulator doesn't properly support ARM64 emulation yet
-            cpu_arch = "x86_64"
+            # Use native architecture for best performance
+            if self.host_arch == "arm64":
+                cpu_arch = "arm64-v8a"
+            else:
+                cpu_arch = "x86_64"
 
             # Derive sysdir from SYSTEM_IMAGE constant
             # Convert from sdkmanager format to path format
             # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"
             sysdir = self.SYSTEM_IMAGE.replace(";", "/") + "/"
 
-            logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
+            logger.info(f"Using {cpu_arch} architecture for {self.host_arch} host")
 
             # Special handling for cloud linux servers
             if self.host_arch == "x86_64" and os.path.exists("/etc/os-release"):
@@ -314,7 +316,9 @@ class AVDCreator:
         """Check if the seed clone AVD exists."""
         seed_clone_name = self.get_seed_clone_avd_name()
         avd_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
-        return os.path.exists(avd_path)
+        exists = os.path.exists(avd_path)
+        logger.info(f"Checking seed clone at {avd_path}: exists={exists}")
+        return exists
 
     def has_seed_clone_snapshot(self) -> bool:
         """Check if the seed clone has a snapshot (now always checks for default_boot)."""

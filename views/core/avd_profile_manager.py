@@ -60,20 +60,19 @@ class AVDProfileManager:
         self.is_macos = platform.system() == "Darwin"
         self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
 
-        # Detect if we should use simplified mode (Mac dev environment)
-        self.use_simplified_mode = self.is_macos and self.is_dev_mode
+        # No longer use simplified mode - we want full emulator management on all platforms
+        self.use_simplified_mode = False
 
         # Get Android home from environment or fallback to default
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
 
         # Use a different base directory for Mac development environments
-        if self.use_simplified_mode:
-            # Use project's user_data directory instead of home folder
+        if self.is_macos:
+            # Use project's user_data directory instead of Android SDK directory
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             base_dir = os.path.join(project_root, "user_data")
-            logger.info("Mac development environment detected - using simplified emulator mode")
-            logger.info(f"Using {base_dir} for profile storage instead of /opt/android-sdk")
-            logger.info("Will use any available emulator instead of managing profiles")
+            logger.info("Mac development environment detected")
+            logger.info(f"Using {base_dir} for profile storage")
 
             # Profiles now stored in project's user_data directory
 
@@ -94,21 +93,19 @@ class AVDProfileManager:
         self.base_dir = base_dir
 
         # In the new structure, we store everything directly in user_data/
-        if self.use_simplified_mode:
+        if self.is_macos:
             self.profiles_dir = base_dir
             self.users_file = os.path.join(self.profiles_dir, "users.json")
         else:
-            # For non-Mac or non-dev environments, keep the old directory structure
+            # For non-Mac environments, keep the old directory structure
             self.profiles_dir = os.path.join(base_dir, "profiles")
             self.users_file = os.path.join(self.profiles_dir, "users.json")
 
         # Ensure directories exist
         os.makedirs(self.profiles_dir, exist_ok=True)
         # Initialize component managers
-        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir, self.use_simplified_mode)
-        self.emulator_manager = EmulatorManager(
-            self.android_home, self.avd_dir, self.host_arch, self.use_simplified_mode
-        )
+        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir, False)
+        self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch, False)
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
 
         # Load profile index if it exists, otherwise create empty one
@@ -1335,9 +1332,7 @@ class AVDProfileManager:
             for setting in settings_to_reset:
                 self.set_user_field(email, setting, False, section="emulator_settings")
 
-        # Special case: Simplified mode for Mac development environment
-        if self.use_simplified_mode:
-            return True, f"Tracking profile for {email} in simplified mode"
+        # No more simplified mode - always manage emulators properly
 
         #
         # Normal profile management mode below (for non-Mac or non-dev environments)
@@ -1410,26 +1405,17 @@ class AVDProfileManager:
             logger.info(f"Using existing running emulator for profile {email}")
             return True, f"Switched to profile {email} with existing running emulator"
 
-        # For Mac M1/M2/M4 users where direct emulator launch might fail,
-        # we'll just track the profile without trying to start the emulator
-        if self.host_arch == "arm64" and platform.system() == "Darwin":
-            logger.info(f"Running on ARM Mac - skipping emulator start, just tracking profile change")
-            # Update profile status
-            self._save_profile_status(email, avd_name)
-
-            if not avd_exists:
-                logger.warning(
-                    f"AVD {avd_name} doesn't exist at {avd_path}. If using Android Studio AVDs, "
-                    f"please run 'make register-avd' to update the AVD name for this profile."
-                )
-            return True, f"Switched profile tracking to {email} (AVD: {avd_name})"
+        # No more ARM Mac workarounds - we can launch emulators properly now
 
         # Check if AVD exists before trying to start it
         if not avd_exists:
             logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
 
             # Check if we can use the seed clone for faster AVD creation
-            if self.avd_creator.is_seed_clone_ready():
+            logger.info(f"Checking if seed clone is ready. avd_dir={self.avd_creator.avd_dir}")
+            seed_clone_ready = self.avd_creator.is_seed_clone_ready()
+            logger.info(f"Seed clone ready: {seed_clone_ready}")
+            if seed_clone_ready:
                 logger.info("Seed clone is ready - using fast AVD copy method")
                 success, result = self.avd_creator.copy_avd_from_seed_clone(email)
                 if success:

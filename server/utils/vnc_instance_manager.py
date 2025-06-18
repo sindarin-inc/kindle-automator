@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 import os
 
 DEFAULT_ANDROID_SDK = "/opt/android-sdk"
+if platform.system() == "Darwin":
+    DEFAULT_ANDROID_SDK = os.path.expanduser("~/Library/Android/sdk")
+
 if os.environ.get("ANDROID_HOME"):
     ANDROID_HOME = os.environ.get("ANDROID_HOME")
 else:

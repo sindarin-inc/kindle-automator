@@ -314,6 +314,9 @@ class EmulatorShutdownManager:
     @staticmethod
     def _stop_vnc_xvfb(display_num: int, summary: Dict[str, bool]):
         """Terminate *x11vnc* and *Xvfb* processes tied to *display_num*."""
+        if platform.system() == "Darwin":
+            return  # Skip VNC/Xvfb cleanup on macOS
+
         from server.utils.port_utils import calculate_vnc_port
 
         vnc_port = calculate_vnc_port(display_num)
