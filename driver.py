@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import subprocess
 import tempfile
 import time
@@ -19,20 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class Driver:
-    _initialized = False
-
     def __init__(self):
         if hasattr(self, "_initialized_attributes"):
-            logger.info(f"Driver already initialized, instance: {self}")
+            logger.error(f"Driver already initialized, instance: {self}")
             return
         self.driver = None
         self.device_id = None
         self.automator = None  # Reference to the automator instance
         self.appium_port = None  # Must be set
         self._session_retries = 0
+        self._reconnecting = False  # Flag to prevent infinite recursion
         self._max_session_retries = 2
         self._initialized_attributes = True
-        logger.info(f"Driver initialized, instance: {self}")
 
     def _get_emulator_device_id(self, specific_device_id: Optional[str] = None) -> Optional[str]:
         """
@@ -44,10 +43,13 @@ class Driver:
         Returns:
             Optional[str]: The device ID if found, None otherwise
         """
+        email = get_sindarin_email()
+
         try:
             # If we have a specific device ID to use, check if it's available first
             if specific_device_id:
                 result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+
                 if specific_device_id in result.stdout and "device" in result.stdout:
                     # Verify this is actually a working emulator
                     try:
@@ -58,48 +60,75 @@ class Driver:
                             check=True,
                             timeout=5,
                         )
-                        logger.info(f"Verified specific device {specific_device_id}")
                         return specific_device_id
                     except Exception as e:
                         logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
                         # Failed to verify specific device - return None instead of falling back to any device
-                        logger.error(f"Requested specific device {specific_device_id} could not be verified")
+                        logger.error(
+                            f"Requested specific device {specific_device_id} could not be verified for email={email}"
+                        )
                         return None
                 else:
-                    logger.warning(f"Specified device ID {specific_device_id} not found or not ready")
+                    logger.warning(
+                        f"Specified device ID {specific_device_id} not found or not ready for email={email}"
+                    )
                     # Do not continue to regular device search if a specific device was requested
                     # but is not available. This prevents using the wrong device.
                     logger.error(
-                        f"Requested specific device {specific_device_id} was not found or is not ready"
+                        f"Requested specific device {specific_device_id} was not found or is not ready for email={email}"
                     )
                     return None
 
-            # Only proceed with regular device search if NO specific device was requested
-            result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
-            for line in result.stdout.splitlines():
-                if "emulator-" in line and "device" in line:
-                    device_id = line.split()[0]
-                    # Verify this is actually an emulator
-                    verify_result = subprocess.run(
-                        ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    if "sdk" in verify_result.stdout.lower() or "emulator" in verify_result.stdout.lower():
-                        return device_id
-                elif "127.0.0.1:" in line:
-                    device_id = line.split()[0]
-                    verify_result = subprocess.run(
-                        ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
-                    logger.info(f"Verify result: {verify_result.stdout}")
-                    if "pixel" in verify_result.stdout.lower():
-                        return device_id
-            return None
+            # Check if we're on macOS
+            is_mac = platform.system() == "Darwin"
+
+            if is_mac:
+                # On macOS, allow flexible matching for Android Studio emulators
+                logger.debug(
+                    f"macOS detected for email={email}. "
+                    f"Allowing flexible emulator matching for Android Studio compatibility."
+                )
+
+                # Find any available emulator
+                try:
+                    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+
+                    for line in result.stdout.split("\n"):
+                        if "\tdevice" in line and line.startswith("emulator"):
+                            device_id = line.split("\t")[0]
+
+                            # Verify this is actually a working emulator
+                            try:
+                                verify_result = subprocess.run(
+                                    ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
+                                    capture_output=True,
+                                    text=True,
+                                    check=True,
+                                    timeout=5,
+                                )
+                                logger.info(
+                                    f"macOS: Found available emulator {device_id} for email={email}. "
+                                    f"Model: {verify_result.stdout.strip()}"
+                                )
+                                return device_id
+                            except Exception as e:
+                                logger.warning(f"macOS: Could not verify emulator {device_id}: {e}")
+                                continue
+
+                    logger.warning(f"macOS: No available emulators found for email={email}")
+                    return None
+
+                except Exception as e:
+                    logger.error(f"macOS: Error finding available emulator: {e}")
+                    return None
+            else:
+                # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
+                # This prevents cross-user emulator access in production
+                logger.error(
+                    f"No specific device requested for email={email}. "
+                    f"Refusing to search for ANY available emulator to prevent cross-user access."
+                )
+                return None
         except Exception as e:
             logger.error(f"Error getting emulator device ID: {e}")
             return None
@@ -109,14 +138,15 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set hw_overlays_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
-                and profile.get("hw_overlays_disabled", False)
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "hw_overlays_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -153,7 +183,7 @@ class Driver:
             return False
 
     def _update_profile_setting(self, setting_name: str, value: bool) -> None:
-        """Update a setting in the current profile.
+        """Update a setting in the current profile under emulator_settings.
 
         Args:
             setting_name: The name of the setting to update
@@ -169,23 +199,12 @@ class Driver:
             avd_name = profile.get("avd_name")
 
             if email and avd_name:
-                # Update the setting in the current profile
-                profile[setting_name] = value
+                # Use the profile manager's set_user_field method to properly store under emulator_settings
+                self.automator.profile_manager.set_user_field(
+                    email, setting_name, value, section="emulator_settings"
+                )
 
-                # Update the profile in the profile manager
-                emulator_id = profile.get("emulator_id")
-
-                # Check which method is available in profile_manager
-                self.automator.profile_manager._save_profile_status(email, avd_name, emulator_id)
-
-                # Also update user preferences for persistence
-                if email not in self.automator.profile_manager.user_preferences:
-                    self.automator.profile_manager.user_preferences[email] = {}
-
-                self.automator.profile_manager.user_preferences[email][setting_name] = value
-                self.automator.profile_manager._save_user_preferences()
-
-                logger.info(f"Updated profile setting {setting_name}={value} for {email}")
+                logger.info(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
             else:
                 logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
         except Exception as e:
@@ -248,14 +267,15 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set animations_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
-                and profile.get("animations_disabled", False)
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "animations_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -326,10 +346,16 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set sleep_disabled, skip
-            if device_id and device_id == self.device_id and profile and profile.get("sleep_disabled", False):
+            if (
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "sleep_disabled", False, section="emulator_settings"
+                )
+            ):
                 return True
 
             logger.info(f"Disabling sleep and app standby for device {self.device_id}")
@@ -404,14 +430,15 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set status_bar_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
-                and profile.get("status_bar_disabled", False)
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "status_bar_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -450,14 +477,15 @@ class Driver:
         try:
             # Check if we already applied this setting to the current emulator
             profile = self.automator.profile_manager.get_current_profile()
-            device_id = profile.get("emulator_id") if profile else None
+            email = get_sindarin_email()
 
             # If this is the same device and we already set auto_updates_disabled, skip
             if (
-                device_id
-                and device_id == self.device_id
-                and profile
-                and profile.get("auto_updates_disabled", False)
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "auto_updates_disabled", False, section="emulator_settings"
+                )
             ):
                 return True
 
@@ -529,22 +557,64 @@ class Driver:
 
     def _cleanup_old_sessions(self):
         """Clean up any existing UiAutomator2 sessions."""
+        email = get_sindarin_email()
+
         try:
-            subprocess.run(
-                ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["adb", "-s", self.device_id, "shell", "pm", "clear", "io.appium.uiautomator2.server.test"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            # CRITICAL: Verify this device belongs to the current user before cleaning
+            try:
+                avd_result = subprocess.run(
+                    ["adb", "-s", self.device_id, "emu", "avd", "name"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                if avd_result.returncode == 0:
+                    device_avd = avd_result.stdout.strip()
+                    # Handle "AVD_NAME\nOK" format
+                    if "\n" in device_avd:
+                        device_avd = device_avd.split("\n")[0].strip()
+
+                    logger.info(f"Device {self.device_id} is running AVD: {device_avd}")
+
+                    # Get expected AVD name for this email
+                    profile = self.automator.profile_manager.get_current_profile()
+                    expected_avd = profile.get("avd_name") if profile else None
+
+                    if expected_avd and device_avd != expected_avd:
+                        logger.error(
+                            f"CRITICAL: Device {self.device_id} is running AVD {device_avd} "
+                            f"but email {email} expects AVD {expected_avd}. REFUSING to clean sessions to prevent "
+                            f"cross-user interference!"
+                        )
+                        return False
+                else:
+                    logger.warning(f"Could not determine AVD for device {self.device_id}")
+            except Exception as e:
+                logger.warning(f"Error checking AVD name: {e}")
+
+            # Instead of clearing data, just force-stop the Appium process
+            # This avoids triggering logout in the Kindle app
+            try:
+                subprocess.run(
+                    [
+                        "adb",
+                        "-s",
+                        self.device_id,
+                        "shell",
+                        "am",
+                        "force-stop",
+                        "io.appium.uiautomator2.server",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                logger.info(f"Force-stopped io.appium.uiautomator2.server successfully")
+            except Exception:
+                pass  # It's okay if the process wasn't running
+
             return True
         except Exception as e:
-            logger.error(f"Error cleaning up old sessions: {e}")
+            logger.error(f"Error cleaning up old sessions for email={email}: {e}")
             return False
 
     def _is_kindle_installed(self) -> bool:
@@ -568,7 +638,6 @@ class Driver:
             tuple: (version_name, version_code) or (None, None) if failed
         """
         try:
-            logger.info(f"Getting installed Kindle version on device {self.device_id}")
             result = subprocess.run(
                 ["adb", "-s", self.device_id, "shell", "dumpsys", "package", "com.amazon.kindle"],
                 capture_output=True,
@@ -720,7 +789,6 @@ class Driver:
 
         # If only one APK is found, return it
         if len(apk_paths) == 1:
-            logger.info(f"Only one APK found: {os.path.basename(apk_paths[0])}")
             return apk_paths[0]
 
         # Compare versions to find the newest
@@ -739,9 +807,6 @@ class Driver:
             # Sort filenames lexicographically (the last one alphabetically is typically newest with version in name)
             apk_paths.sort(key=lambda x: os.path.basename(x))
             newest_apk = apk_paths[-1]  # Get the last one lexicographically
-            logger.info(
-                f"Using {os.path.basename(newest_apk)} as newest APK based on filename lexicographical ordering"
-            )
 
         return newest_apk
 
@@ -761,13 +826,139 @@ class Driver:
             if apk_version_name and apk_version_code:
                 logger.info(f"Installing Kindle version: {apk_version_name} (code: {apk_version_code})")
 
-            subprocess.run(
-                ["adb", "-s", self.device_id, "install", "-r", apk_path],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            logger.info("Kindle app installed successfully")
+            # Check APK supported ABIs using aapt
+            try:
+                aapt_check = subprocess.run(
+                    ["/opt/android-sdk/build-tools/35.0.0/aapt", "dump", "badging", apk_path],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if aapt_check.returncode == 0:
+                    for line in aapt_check.stdout.splitlines():
+                        if "native-code:" in line:
+                            logger.info(f"APK {line}")
+                            break
+                else:
+                    logger.warning("Could not check APK ABIs with aapt")
+            except Exception as e:
+                logger.warning(f"Error checking APK ABIs: {e}")
+
+            # Check device architecture before install
+            try:
+                arch_check = subprocess.run(
+                    ["adb", "-s", self.device_id, "shell", "getprop", "ro.product.cpu.abi"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if arch_check.returncode == 0:
+                    device_arch = arch_check.stdout.strip()
+                    logger.info(f"Device architecture: {device_arch}")
+
+                    # Check all supported ABIs
+                    all_abis = subprocess.run(
+                        ["adb", "-s", self.device_id, "shell", "getprop", "ro.product.cpu.abilist"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if all_abis.returncode == 0:
+                        logger.info(f"Device supports ABIs: {all_abis.stdout.strip()}")
+
+                    # Check if libhoudini is present
+                    houdini_check = subprocess.run(
+                        [
+                            "adb",
+                            "-s",
+                            self.device_id,
+                            "shell",
+                            "ls",
+                            "/system/lib/libhoudini.so",
+                            "2>/dev/null",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if houdini_check.returncode == 0:
+                        logger.info("ARM translation (libhoudini) is available")
+                    else:
+                        logger.warning("ARM translation (libhoudini) NOT found - ARM apps won't run!")
+
+                # Also check available storage
+                storage_check = subprocess.run(
+                    ["adb", "-s", self.device_id, "shell", "df", "/data"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if storage_check.returncode == 0:
+                    logger.info(f"Device storage status:\n{storage_check.stdout}")
+            except Exception as e:
+                logger.warning(f"Could not check device info: {e}")
+
+            # Retry logic for APK installation
+            max_retries = 3
+            retry_delay = 2  # seconds
+
+            for attempt in range(max_retries):
+                try:
+                    result = subprocess.run(
+                        ["adb", "-s", self.device_id, "install", "-r", apk_path],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if result.returncode == 0:
+                        logger.info("Kindle app installed successfully")
+                        break
+                    else:
+                        error_msg = result.stderr.strip() or result.stdout.strip()
+
+                        # Log the full error for debugging
+                        logger.warning(f"Install failed (attempt {attempt + 1}/{max_retries}): {error_msg}")
+
+                        # Check if the error is related to device not ready
+                        if any(
+                            keyword in error_msg.lower()
+                            for keyword in [
+                                "offline",
+                                "unauthorized",
+                                "device not found",
+                                "error: closed",
+                                "cannot connect",
+                                "daemon not running",
+                            ]
+                        ):
+                            if attempt < max_retries - 1:
+                                logger.info(
+                                    f"Device connectivity issue, waiting {retry_delay} seconds before retry..."
+                                )
+                                time.sleep(retry_delay)
+                                continue
+
+                        # For other errors or last attempt, log full details
+                        if attempt == max_retries - 1:
+                            logger.error(
+                                f"Final install attempt failed. Full error:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+                            )
+
+                        # Fail immediately for non-connectivity errors
+                        raise subprocess.CalledProcessError(
+                            result.returncode, result.args, result.stdout, result.stderr
+                        )
+
+                except subprocess.CalledProcessError as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    else:
+                        logger.warning(f"Install attempt {attempt + 1} failed, retrying...")
+                        time.sleep(retry_delay)
+            else:
+                # All retries exhausted
+                raise Exception(f"Failed to install APK after {max_retries} attempts")
 
             # Store version information in profile
             if apk_version_name and apk_version_code:
@@ -831,17 +1022,31 @@ class Driver:
 
         email = get_sindarin_email()
 
+        # CRITICAL: Check if this profile has a VNC instance before proceeding
+        # This prevents initializing drivers for profiles without running emulators
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_instance = vnc_manager.get_instance_for_profile(email)
+            if not vnc_instance:
+                logger.error(
+                    f"No VNC instance found for {email}. "
+                    f"Cannot initialize driver without a running emulator."
+                )
+                return False
+            logger.info(f"Found VNC instance for {email}: {vnc_instance}")
+        except Exception as e:
+            logger.warning(f"Error checking VNC instance: {e}")
+
         # Get device ID first, using specific device ID from profile if available
         target_device_id = None
 
         # Check if we have a profile manager with a preferred device ID
         # Get the current profile for device ID info
         profile = self.automator.profile_manager.get_current_profile()
-        if profile and "emulator_id" in profile:
-            # Use the device ID from the profile
-            target_device_id = profile.get("emulator_id")
-            logger.info(f"Using target device ID from profile: {target_device_id}")
-        elif profile and "avd_name" in profile:
+
+        if profile and "avd_name" in profile:
             # Try to get device ID from AVD name mapping
             avd_name = profile.get("avd_name")
             device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
@@ -850,6 +1055,7 @@ class Driver:
 
         # Get device ID, preferring the specific one if provided
         self.device_id = self._get_emulator_device_id(target_device_id)
+
         if not self.device_id:
             logger.error("Failed to get device ID")
             return False
@@ -908,10 +1114,6 @@ class Driver:
                     self._update_kindle_version_in_profile(installed_version_name, installed_version_code)
 
             if installed_version_code:
-                logger.info(
-                    f"Current Kindle version: {installed_version_name} (code: {installed_version_code})"
-                )
-
                 # Find newest available APK
                 newest_apk = self._find_newest_kindle_apk()
                 if newest_apk:
@@ -940,11 +1142,9 @@ class Driver:
                         )
                         # Clean up any version info that might be in preferences
                         self._clean_old_version_info(email)
-                    else:
-                        logger.info("Kindle app is already at the latest version")
 
         # Clean up any existing sessions
-        self._cleanup_old_sessions()
+        # self._cleanup_old_sessions()
 
         # Check and disable hardware overlays
         self._disable_hw_overlays()
@@ -971,13 +1171,21 @@ class Driver:
         appium_info = appium_driver.get_appium_process_info(email)
         if not appium_info or not appium_info.get("running"):
             # Start the Appium server for this profile
-            appium_started = appium_driver.start_appium_for_profile(email)
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                appium_started = appium_driver.start_appium_for_profile(email)
+                if appium_started:
+                    break
+
+                if attempt < max_attempts - 1:
+                    logger.warning(
+                        f"Failed to start Appium server for {email}, attempt {attempt + 1}/{max_attempts}"
+                    )
+                    time.sleep(2)  # Wait before retry
+
             if not appium_started:
-                logger.error(f"Failed to start Appium server for {email}")
-                return {
-                    "error": f"Failed to start Appium server for {email}",
-                    "message": "Could not initialize Appium server",
-                }, 500
+                logger.error(f"Failed to start Appium server for {email} after {max_attempts} attempts")
+                return False
         elif self.driver:
             logger.info(f"Appium already running for {email} on port {appium_info['port']}")
             self.appium_port = appium_info["port"]
@@ -1022,7 +1230,7 @@ class Driver:
             options.enable_multi_windows = True
             options.ignore_unimportant_views = False
             options.allow_invisible_elements = True
-            options.new_command_timeout = 60 * 60 * 24 * 7  # 7 days
+            options.new_command_timeout = 1800  # 30 minutes (1800 seconds)
 
             # Prevent app relaunch on Appium session start
             options.set_capability("appium:autoLaunch", False)  # Disable app relaunch on session start
@@ -1037,6 +1245,13 @@ class Driver:
             )  # 60 seconds timeout for UiAutomator2 server launch - increased for parallel
             # Leave this higher since we need time for ADB commands during actual operations
             options.set_capability("appium:adbExecTimeout", 180000)  # 180 seconds timeout for ADB commands
+            options.set_capability("appium:udid", self.device_id)
+
+            # Keep UiAutomator2 server alive for 30 minutes after last command
+            options.set_capability(
+                "appium:uiautomator2ServerReadTimeout", 1800000
+            )  # 30 minutes in milliseconds
+            options.set_capability("appium:uiautomator2ServerInstallTimeout", 90000)  # 90 seconds for install
 
             # Add parallel execution capabilities
             instance_id = None
@@ -1056,12 +1271,43 @@ class Driver:
                     # Use the allocated ports
                     # Using proper UiAutomator2 capability names
                     options.set_capability("appium:systemPort", allocated_ports["systemPort"])
-                    options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
-                    options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
+                    # options.set_capability("appium:chromedriverPort", allocated_ports["chromedriverPort"])
+                    # options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     self.appium_port = allocated_ports["appiumPort"]
+
+                    # Clean up any existing port forwards for this device to avoid conflicts
+                    logger.info(
+                        f"Cleaning up port forwards for {self.device_id} before initialization, using ports {allocated_ports}"
+                    )
+                    try:
+                        subprocess.run(
+                            f"adb -s {self.device_id} forward --remove-all",
+                            shell=True,
+                            check=False,
+                            timeout=5,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Error cleaning port forwards: {e}")
                 else:
                     logger.error(f"No allocated ports found for {email}")
                     return False
+
+            # Check if Appium device has been initialized before for this user
+            profile = self.automator.profile_manager.get_current_profile()
+            email = get_sindarin_email()
+
+            if (
+                profile
+                and email
+                and self.automator.profile_manager.get_user_field(
+                    email, "appium_device_initialized", False, section="emulator_settings"
+                )
+            ):
+                # Skip device initialization for faster startup on subsequent connections
+                options.set_capability("appium:skipDeviceInitialization", True)
+                logger.info(f"Skipping Appium device initialization for {email} (already initialized)")
+            else:
+                logger.info(f"Will perform full Appium device initialization for {email}")
 
             # Clean up system files to avoid conflicts
             options.set_capability("appium:clearSystemFiles", True)
@@ -1077,7 +1323,7 @@ class Driver:
             # First verify the Appium server is actually responding
             # This prevents attempting to connect to a non-responsive server
 
-            max_retries = 5
+            max_retries = 3
             retry_delay = 1
 
             for attempt in range(max_retries):
@@ -1099,7 +1345,6 @@ class Driver:
                 )
 
                 if status_response.status_code == 200 and (appium1_format or appium2_format):
-                    time.sleep(1)
                     break
                 else:
                     logger.warning(
@@ -1134,8 +1379,16 @@ class Driver:
                 future = executor.submit(self.check_connection)
                 try:
                     logger.debug("Checking connection to Appium server...")
-                    result = future.result(timeout=15)  # 15 second timeout - increased from 5
+                    result = future.result(timeout=5)
                     logger.debug(f"Connection check result: {result}")
+
+                    # Mark Appium device as initialized for this user if not already done
+                    if email and not self.automator.profile_manager.get_user_field(
+                        email, "appium_device_initialized", False, section="emulator_settings"
+                    ):
+                        self._update_profile_setting("appium_device_initialized", True)
+                        logger.info(f"Marked Appium device as initialized for {email}")
+
                     return True
                 except concurrent.futures.TimeoutError:
                     logger.error("Connection check timed out after 15 seconds")
@@ -1169,6 +1422,7 @@ class Driver:
                     "invalid session id",
                     "session not started",
                     "NoSuchDriverError",
+                    "ECONNREFUSED",
                 ]
             ):
                 logger.warning(f"Session no longer active: {error_message}")
@@ -1191,16 +1445,24 @@ class Driver:
             pass
 
         self.driver = None
-        Driver._initialized = False
+
+        # Check if we're already in a reconnection attempt
+        if hasattr(self, "_reconnecting") and self._reconnecting:
+            logger.error("Already in reconnection attempt, avoiding infinite loop")
+            return False
 
         # Reinitialize through automator if available
         if self.automator:
-            if self.automator.initialize_driver():
-                logger.info("Successfully reconnected driver session")
-                self._session_retries = 0
-                return True
-            else:
-                logger.error("Failed to reinitialize driver through automator")
+            self._reconnecting = True
+            try:
+                if self.automator.initialize_driver():
+                    logger.info("Successfully reconnected driver session")
+                    self._session_retries = 0
+                    return True
+                else:
+                    logger.error("Failed to reinitialize driver through automator")
+            finally:
+                self._reconnecting = False
         else:
             logger.error("No automator reference available for reconnection")
 
@@ -1209,7 +1471,9 @@ class Driver:
 
     def get_appium_driver_instance(self):
         """Get the Appium driver instance, ensuring session is active"""
-        self._ensure_session_active()
+        if not self._ensure_session_active():
+            logger.error("Failed to ensure active session")
+            return None
         return self.driver
 
     def get_device_id(self):
@@ -1219,6 +1483,34 @@ class Driver:
     def quit(self):
         """Quit the Appium driver"""
         logger.info(f"Quitting driver: {self.driver}")
+
+        # Clean up port forwards before quitting driver
+        if self.device_id:
+            logger.info(f"Cleaning up port forwards for device {self.device_id}")
+            try:
+                subprocess.run(
+                    f"adb -s {self.device_id} forward --remove-all",
+                    shell=True,
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+                logger.info(f"Successfully removed all port forwards for {self.device_id}")
+            except Exception as e:
+                logger.warning(f"Error removing port forwards during driver quit: {e}")
+
+            # Also kill any UiAutomator2 processes
+            try:
+                subprocess.run(
+                    [f"adb -s {self.device_id} shell pkill -f uiautomator"],
+                    shell=True,
+                    check=False,
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception as e:
+                logger.warning(f"Error killing UiAutomator2 processes during driver quit: {e}")
+
         if self.driver:
             import concurrent.futures
 
@@ -1241,9 +1533,11 @@ class Driver:
                         logger.info(
                             "Device already offline during driver.quit() - this is expected during shutdown"
                         )
+                    elif "a session is either terminated or not started" in error_msg:
+                        # This is expected when the session was already terminated
+                        logger.debug("Session already terminated during driver.quit() - this is expected")
                     else:
                         logger.error(f"Error during driver.quit(): {e}")
                 finally:
                     self.driver = None
                     self.device_id = None
-                    Driver._initialized = False  # Allow reinitialization

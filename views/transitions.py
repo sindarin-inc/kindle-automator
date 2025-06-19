@@ -7,12 +7,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from handlers.auth_handler import LoginVerificationState
 from server.logging_config import store_page_source
-from views.auth.interaction_strategies import (
-    CAPTCHA_CONTINUE_BUTTON,
-    CAPTCHA_INPUT_FIELD,
-    LIBRARY_SIGN_IN_STRATEGIES,
-)
-from views.auth.view_strategies import CAPTCHA_ERROR_MESSAGES, EMAIL_VIEW_IDENTIFIERS
+from views.auth.interaction_strategies import LIBRARY_SIGN_IN_STRATEGIES
+from views.auth.view_strategies import EMAIL_VIEW_IDENTIFIERS
 from views.common.dialog_strategies import APP_NOT_RESPONDING_CLOSE_APP_BUTTON
 from views.core.app_state import AppState, AppView
 from views.library.view_strategies import LIBRARY_VIEW_DETECTION_STRATEGIES
@@ -32,7 +28,6 @@ class StateTransitions:
         self.library_handler = library_handler
         self.reader_handler = reader_handler
         self.driver = None
-        self.used_captcha_solutions = set()  # Track used solutions
 
     def set_driver(self, driver):
         """Sets the Appium driver instance"""
@@ -79,14 +74,20 @@ class StateTransitions:
         logger.info("Handling SIGN_IN state - attempting authentication...")
         result = self.auth_handler.sign_in()
 
-        # Check if result is a tuple with LoginVerificationState.ERROR and credentials missing error
+        # Check if result is a tuple with LoginVerificationState.ERROR
         if isinstance(result, tuple) and len(result) == 2:
             state, message = result
-            if state == LoginVerificationState.ERROR and "No credentials provided" in message:
-                logger.warning("Authentication requires credentials that haven't been set")
-                # Return False to stop the state transition loop
-                # This prevents infinite retries when no credentials are available
-                return False
+            if state == LoginVerificationState.ERROR:
+                if "No credentials provided" in message:
+                    logger.warning("Authentication requires credentials that haven't been set")
+                    # Return False to stop the state transition loop
+                    # This prevents infinite retries when no credentials are available
+                    return False
+                elif "Authentication must be done manually via VNC" in message:
+                    logger.info("Manual VNC authentication required - this is expected")
+                    # Return True to indicate we've reached a valid state (SIGN_IN requiring VNC)
+                    # This prevents the transition loop from treating manual auth as a failure
+                    return True
 
         return result
 
@@ -227,11 +228,6 @@ class StateTransitions:
         # If back button wasn't found or clicked, try a different approach
         return self.view_inspector.ensure_app_foreground()
 
-    def handle_captcha(self):
-        """Handle CAPTCHA state by attempting to solve captcha."""
-        logger.info("Handling CAPTCHA state...")
-        return self.auth_handler.sign_in()
-
     def handle_app_not_responding(self):
         """Handle APP_NOT_RESPONDING state by clicking 'Close app' button and waiting for app restart."""
         logger.info("Handling APP_NOT_RESPONDING state - closing and restarting app...")
@@ -294,6 +290,36 @@ class StateTransitions:
         logger.info("Handling MORE_SETTINGS state - navigating back to library...")
         return self.library_handler.navigate_to_library()
 
+    def handle_captcha(self):
+        """Handle CAPTCHA state - just acknowledge it exists, no automated handling."""
+        logger.info("CAPTCHA detected - manual intervention required via VNC")
+        # Return False to indicate we can't proceed automatically
+        return False
+
+    def handle_two_factor(self):
+        """Handle TWO_FACTOR state - just acknowledge it exists, no automated handling."""
+        logger.info("Two-Step Verification detected - manual intervention required via VNC")
+        # Store page source for debugging
+        try:
+            filepath = store_page_source(self.driver.page_source, "two_factor_auth")
+            logger.info(f"Stored Two-Step Verification page source at: {filepath}")
+        except Exception as e:
+            logger.error(f"Error storing 2FA page source: {e}")
+        # Return False to indicate we can't proceed automatically
+        return False
+
+    def handle_puzzle(self):
+        """Handle PUZZLE state - just acknowledge it exists, no automated handling."""
+        logger.info("Puzzle authentication detected - manual intervention required via VNC")
+        # Store page source for debugging
+        try:
+            filepath = store_page_source(self.driver.page_source, "puzzle_auth")
+            logger.info(f"Stored puzzle authentication page source at: {filepath}")
+        except Exception as e:
+            logger.error(f"Error storing puzzle page source: {e}")
+        # Return False to indicate we can't proceed automatically
+        return False
+
     def get_handler_for_state(self, state):
         """Get the appropriate handler method for a given state.
 
@@ -313,7 +339,9 @@ class StateTransitions:
             AppState.LIBRARY: self.handle_library,
             AppState.SEARCH_RESULTS: self.handle_search_results,  # Add new SEARCH_RESULTS handler
             AppState.READING: self.handle_reading,
-            AppState.CAPTCHA: self._handle_captcha,  # Add new CAPTCHA handler
+            AppState.CAPTCHA: self.handle_captcha,  # CAPTCHA handler for detection only
+            AppState.TWO_FACTOR: self.handle_two_factor,  # TWO_FACTOR handler for detection only
+            AppState.PUZZLE: self.handle_puzzle,  # PUZZLE handler for detection only
             AppState.APP_NOT_RESPONDING: self.handle_app_not_responding,  # Add app not responding handler
             AppState.MORE_SETTINGS: self.handle_more_settings,  # Add more settings handler
         }
@@ -322,39 +350,3 @@ class StateTransitions:
         if not handler:
             logger.error(f"No handler found for state {state}")
         return handler
-
-    def _handle_captcha(self):
-        """Handle CAPTCHA state by entering solution if available."""
-        try:
-            # If we have a captcha solution, enter it
-            if self.auth_handler.captcha_solution:
-                # Check if we've already tried this solution
-                if self.auth_handler.captcha_solution in self.used_captcha_solutions:
-                    logger.info("CAPTCHA solution already attempted - needs new solution")
-                    return False
-
-                logger.info("Entering CAPTCHA solution...")
-
-                # Find and enter the CAPTCHA solution
-                captcha_input = self.driver.find_element(*CAPTCHA_INPUT_FIELD)
-                captcha_input.clear()
-                captcha_input.send_keys(self.auth_handler.captcha_solution)
-
-                # Find and click submit button
-                submit_button = self.driver.find_element(*CAPTCHA_CONTINUE_BUTTON)
-                submit_button.click()
-
-                # Mark this solution as used
-                self.used_captcha_solutions.add(self.auth_handler.captcha_solution)
-
-                # Wait briefly for transition
-                time.sleep(2)
-                return True
-
-            # No solution available, need client interaction
-            logger.info("No CAPTCHA solution available")
-            return False
-
-        except Exception as e:
-            logger.error(f"Error handling CAPTCHA: {e}")
-            return False

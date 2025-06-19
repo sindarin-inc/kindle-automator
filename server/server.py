@@ -112,50 +112,19 @@ class StateResource(Resource):
             current_state = automator.state_machine.update_current_state()
             return {"state": current_state.name}, 200
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error getting state: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
 
-class CaptchaResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def get(self):
-        """Get current captcha status and image if present"""
-        # Return simple success response - the response handler will
-        # intercept if we're in CAPTCHA state
-        return {"status": "no_captcha"}, 200
-
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def post(self):
-        """Submit captcha solution"""
-        automator, _, error_response = get_automator_for_request(server)
-        if error_response:
-            return error_response
-
-        data = request.get_json()
-        solution = data.get("solution")
-
-        if not solution:
-            return {"error": "Captcha solution required"}, 400
-
-        # Update captcha solution using our update method
-        automator.update_captcha_solution(solution)
-
-        success = automator.transition_to_library()
-
-        if success:
-            return {"status": "success"}, 200
-        return {"error": "Failed to process captcha solution"}, 500
-
-
 class BooksResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def _get_books(self):
         """Get list of available books with metadata"""
         # Get sindarin_email from request to determine which automator to use
@@ -198,7 +167,7 @@ class BooksResource(Resource):
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "current_state": current_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
@@ -206,41 +175,22 @@ class BooksResource(Resource):
 
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
-            transition_success = automator.state_machine.transition_to_library(server=server)
+            final_state = automator.state_machine.transition_to_library(server=server)
 
-            # Get the updated state after transition attempt
-            new_state = automator.state_machine.current_state
-            logger.info(f"State after transition attempt: {new_state}")
+            # The transition_to_library now returns the final state
+            logger.info(f"State after transition attempt: {final_state}")
 
             # Check for auth requirement regardless of transition success
-            if new_state == AppState.SIGN_IN:
-                # Get current email to include in VNC URL
-                sindarin_email = get_sindarin_email()
+            if final_state == AppState.SIGN_IN:
+                # Use the state machine's auth handler
+                auth_response = automator.state_machine.handle_auth_state_detection(
+                    final_state, sindarin_email
+                )
+                if auth_response:
+                    logger.info("Authentication required after transition attempt - providing VNC URL")
+                    return auth_response, 401
 
-                # Get the emulator ID for this email if possible
-                emulator_id = None
-                if sindarin_email and sindarin_email in server.automators:
-                    automator = server.automators.get(sindarin_email)
-                    if (
-                        automator
-                        and hasattr(automator, "emulator_manager")
-                        and hasattr(automator.emulator_manager, "emulator_launcher")
-                    ):
-                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                            sindarin_email
-                        )
-                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-                logger.info("Authentication required after transition attempt - providing VNC URL")
-                return {
-                    "error": "Authentication required",
-                    "requires_auth": True,
-                    "current_state": new_state.name,
-                    "message": "Authentication is required via VNC",
-                    "emulator_id": emulator_id,
-                }, 401
-
-            if transition_success:
+            if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to library state")
                 # Get books with metadata from state machine's library handler
                 books = automator.state_machine.library_handler.get_book_titles()
@@ -267,42 +217,24 @@ class BooksResource(Resource):
                     logger.info("Authentication required - providing VNC URL for manual authentication")
                     return {
                         "error": "Authentication required",
-                        "requires_auth": True,
+                        "authenticated": False,
                         "message": "Authentication is required via VNC",
                         "emulator_id": emulator_id,
                     }, 401
 
                 return {"books": books}, 200
             else:
-                # If transition failed, check for auth requirement
-                updated_state = automator.state_machine.current_state
+                # Transition didn't reach library, check what state we're in
+                updated_state = final_state
 
                 if updated_state == AppState.SIGN_IN:
-                    # Get current email to include in VNC URL
-                    sindarin_email = get_sindarin_email()
-
-                    # Get the emulator ID for this email if possible
-                    emulator_id = None
-                    if sindarin_email and sindarin_email in server.automators:
-                        automator = server.automators.get(sindarin_email)
-                        if (
-                            automator
-                            and hasattr(automator, "emulator_manager")
-                            and hasattr(automator.emulator_manager, "emulator_launcher")
-                        ):
-                            emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                                sindarin_email
-                            )
-                            logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
-                    logger.info("Transition failed - authentication required - providing VNC URL")
-                    return {
-                        "error": "Authentication required",
-                        "requires_auth": True,
-                        "current_state": updated_state.name,
-                        "message": "Authentication is required via VNC",
-                        "emulator_id": emulator_id,
-                    }, 401
+                    # Use the state machine's auth handler
+                    auth_response = automator.state_machine.handle_auth_state_detection(
+                        updated_state, sindarin_email
+                    )
+                    if auth_response:
+                        logger.info("Transition failed - authentication required - providing VNC URL")
+                        return auth_response, 401
                 else:
                     return {
                         "error": f"Cannot get books in current state: {updated_state.name}",
@@ -332,7 +264,7 @@ class BooksResource(Resource):
             logger.info("Authentication required - providing VNC URL for manual authentication")
             return {
                 "error": "Authentication required",
-                "requires_auth": True,
+                "authenticated": False,
                 "message": "Authentication is required via VNC",
                 "emulator_id": emulator_id,
             }, 401
@@ -356,6 +288,10 @@ class BooksResource(Resource):
             # Add cover URLs only for books with successfully extracted covers
             books = add_cover_urls_to_books(books, cover_info_dict, sindarin_email)
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error extracting book covers: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
 
@@ -388,14 +324,29 @@ class BooksStreamResource(Resource):
             logger.error(f"No automator found for {sindarin_email}")
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
-        # Update current state since middleware no longer does it
-        current_state = automator.state_machine.update_current_state()
+        # Check initial state and restart if UNKNOWN
+        current_state = automator.state_machine.check_initial_state_with_restart()
         logger.info(f"Current state for books-stream: {current_state}")
 
         # Handle different states - similar to _get_books but with appropriate streaming responses
         if current_state != AppState.LIBRARY:
             # Check if we're on the sign-in screen
             if current_state == AppState.SIGN_IN or current_state == AppState.LIBRARY_SIGN_IN:
+                # Check if user was previously authenticated (has auth_date)
+                profile_manager = automator.profile_manager
+                auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+
+                if auth_date:
+                    # User was previously authenticated but lost auth - set auth_failed_date
+                    from datetime import datetime
+
+                    current_date = datetime.now().isoformat()
+
+                    logger.warning(
+                        f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
+                    )
+                    profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+
                 # Get current email to include in VNC URL
                 emulator_id = None
                 if (
@@ -409,7 +360,7 @@ class BooksStreamResource(Resource):
                 logger.info("Authentication required - providing VNC URL for manual authentication")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
+                    "authenticated": False,
                     "current_state": current_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
@@ -417,14 +368,13 @@ class BooksStreamResource(Resource):
 
             # Try to transition to library state
             logger.info("Not in library state, attempting to transition...")
-            transition_success = automator.state_machine.transition_to_library(server=server)
+            final_state = automator.state_machine.transition_to_library(server=server)
 
-            # Get the updated state after transition attempt
-            new_state = automator.state_machine.current_state
-            logger.info(f"State after transition attempt: {new_state}")
+            # The transition_to_library now returns the final state
+            logger.info(f"State after transition attempt: {final_state}")
 
             # Check for auth requirement regardless of transition success
-            if new_state == AppState.SIGN_IN:
+            if final_state == AppState.SIGN_IN:
                 # Get the emulator ID for this email if possible
                 emulator_id = None
                 if (
@@ -438,42 +388,27 @@ class BooksStreamResource(Resource):
                 logger.info("Authentication required after transition attempt - providing VNC URL")
                 return {
                     "error": "Authentication required",
-                    "requires_auth": True,
-                    "current_state": new_state.name,
+                    "authenticated": False,
+                    "current_state": final_state.name,
                     "message": "Authentication is required via VNC",
                     "emulator_id": emulator_id,
                 }, 401
 
-            if not transition_success:
-                # If transition failed, check for auth requirement
-                updated_state = automator.state_machine.current_state
-
-                if updated_state == AppState.SIGN_IN:
-                    # Get the emulator ID for this email if possible
-                    emulator_id = None
-                    if (
-                        automator
-                        and hasattr(automator, "emulator_manager")
-                        and hasattr(automator.emulator_manager, "emulator_launcher")
-                    ):
-                        emulator_id = automator.emulator_manager.emulator_launcher.get_emulator_id(
-                            sindarin_email
-                        )
-                        logger.info(f"Using emulator ID {emulator_id} for {sindarin_email}")
-
+            if final_state != AppState.LIBRARY:
+                # If transition failed to reach library, check for auth requirement
+                # Use the state machine's auth handler
+                auth_response = automator.state_machine.handle_auth_state_detection(
+                    final_state, sindarin_email
+                )
+                if auth_response:
                     logger.info("Transition failed - authentication required - providing VNC URL")
-                    return {
-                        "error": "Authentication required",
-                        "requires_auth": True,
-                        "current_state": updated_state.name,
-                        "message": "Authentication is required via VNC",
-                        "emulator_id": emulator_id,
-                    }, 401
-                else:
-                    return {
-                        "error": f"Cannot stream books in current state: {updated_state.name}",
-                        "current_state": updated_state.name,
-                    }, 400
+                    return auth_response, 401
+
+                # Not an auth state, return error
+                return {
+                    "error": f"Cannot get books in current state: {final_state.name}",
+                    "current_state": final_state.name,
+                }, 400
 
         def generate_simple_stream():
             """Simple test generator that doesn't depend on book retrieval"""
@@ -570,6 +505,10 @@ class BooksStreamResource(Resource):
                         processed_books_queue.put(processed_batch_with_covers)
 
                     except Exception as e:
+                        from server.utils.appium_error_utils import is_appium_error
+
+                        if is_appium_error(e):
+                            raise
                         logger.error(f"Error processing book batch in callback: {e}")
                         logger.error(f"Traceback: {traceback.format_exc()}")
                         # This error is for a single batch; retrieval might continue for others.
@@ -592,6 +531,10 @@ class BooksStreamResource(Resource):
                     )
                     logger.info("Book retrieval process (get_book_titles) completed in its thread.")
                 except Exception as e:
+                    from server.utils.appium_error_utils import is_appium_error
+
+                    if is_appium_error(e):
+                        raise
                     logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
                     nonlocal error_message  # To set the shared error_message
                     error_message = str(e)
@@ -638,6 +581,10 @@ class BooksStreamResource(Resource):
                             break
                         # else: continue polling, the event wasn't set yet.
                     except Exception as e:
+                        from server.utils.appium_error_utils import is_appium_error
+
+                        if is_appium_error(e):
+                            raise
                         logger.error(f"Unexpected error in generate_stream while getting from queue: {e}")
                         yield encode_message({"error": f"Streaming error: {str(e)}"})  # Send error to client
                         break  # Terminate stream on unexpected errors
@@ -755,6 +702,10 @@ class ScreenshotResource(Resource):
                 # Use standard screenshot for non-auth screens
                 automator.driver.save_screenshot(screenshot_path)
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error taking screenshot: {e}")
             failed = "Failed to take screenshot"
 
@@ -777,7 +728,7 @@ class ScreenshotResource(Resource):
             return serve_image(image_id, delete_after=False)
 
         # For JSON responses, we can wrap with the automator response handler
-        @handle_automator_response(server)
+        @handle_automator_response
         def get_screenshot_json():
             # Prepare the response data
             response_data = {}
@@ -855,6 +806,9 @@ class NavigationResource(Resource):
         if not automator:
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
+        # Check initial state and restart if UNKNOWN
+        automator.state_machine.check_initial_state_with_restart()
+
         # Create navigation handler
         nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
 
@@ -884,14 +838,14 @@ class NavigationResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self, direction=None):
         """Handle page navigation via POST."""
         return self._navigate_impl(direction)
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Handle navigation via GET requests, using query parameters"""
         # For preview endpoints, add preview parameter if not present
@@ -1028,9 +982,15 @@ class BookOpenResource(Resource):
 
             return response_data, 200
 
-        # Reload the current state to be sure
-        automator.state_machine.update_current_state()
-        current_state = automator.state_machine.current_state
+        # Ensure state_machine is initialized
+        if not automator.state_machine:
+            logger.error("State machine not initialized for automator")
+            return {
+                "error": "State machine not initialized. Please ensure the automator is properly initialized."
+            }, 500
+
+        # Check initial state and restart if UNKNOWN
+        current_state = automator.state_machine.check_initial_state_with_restart()
 
         # IMPORTANT: For new app installation or first run, current_book may be None
         # even though we're already in reading state - we need to check that too
@@ -1276,7 +1236,10 @@ class BookOpenResource(Resource):
 
         # For other states, transition to library and open the book
         logger.info(f"Transitioning from {current_state} to library")
-        if automator.state_machine.transition_to_library(server=server):
+        final_state = automator.state_machine.transition_to_library(server=server)
+
+        if final_state == AppState.LIBRARY:
+            # Successfully transitioned to library
             # Use library_handler to open the book instead of reader_handler
             result = automator.state_machine.library_handler.open_book(book_title)
             logger.info(f"Book open result: {result}")
@@ -1292,6 +1255,22 @@ class BookOpenResource(Resource):
             else:
                 # Return the error from the result
                 return result, 500
+        else:
+            # Did not reach library state
+            logger.info(f"Transition ended in state: {final_state} instead of LIBRARY")
+
+            # Check if we ended up in an auth state
+            auth_response = automator.state_machine.handle_auth_state_detection(final_state, sindarin_email)
+            if auth_response:
+                return auth_response, 401
+
+            # Not in an auth state, return generic error
+            return {
+                "success": False,
+                "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
+                "current_state": final_state.name,
+                "authenticated": True,  # User is authenticated but we couldn't reach library for other reasons
+            }, 500
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
@@ -1327,30 +1306,6 @@ class BookOpenResource(Resource):
         return result
 
 
-class TwoFactorResource(Resource):
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @handle_automator_response(server)
-    def post(self):
-        """Submit 2FA code"""
-        automator, _, error_response = get_automator_for_request(server)
-        if error_response:
-            return error_response
-
-        data = request.get_json()
-        code = data.get("code")
-
-        logger.info(f"Submitting 2FA code: {code}")
-
-        if not code:
-            return {"error": "2FA code required"}, 400
-
-        success = automator.auth_handler.handle_2fa(code)
-        if success:
-            return {"success": True}, 200
-        return {"error": "Invalid 2FA code"}, 500
-
-
 class AuthResource(Resource):
     def _handle_recreate(self, sindarin_email, recreate_user=True, recreate_seed=False):
         """Handle deletion of AVDs when recreate is requested"""
@@ -1384,9 +1339,17 @@ class AuthResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def _auth(self):
         """Set up a profile for manual authentication via VNC or WebSockets"""
+        # Use get_sindarin_email() to properly handle user_email overrides
+        sindarin_email = get_sindarin_email()
+
+        # Sindarin email is required for profile identification
+        if not sindarin_email:
+            logger.error("No sindarin_email provided for profile identification")
+            return {"error": "sindarin_email is required for profile identification"}, 400
+
         # Create a unified params dict that combines query params and JSON body
         params = {}
         for key, value in request.args.items():
@@ -1402,18 +1365,6 @@ class AuthResource(Resource):
             except:
                 # In case of JSON parsing error, just continue with query params
                 logger.warning("Failed to parse JSON data in request")
-
-        # Get sindarin_email from unified params
-        sindarin_email = params.get("sindarin_email")
-
-        # Fall back to form data if needed
-        if not sindarin_email and "sindarin_email" in request.form:
-            sindarin_email = request.form.get("sindarin_email")
-
-        # Sindarin email is required for profile identification
-        if not sindarin_email:
-            logger.error("No sindarin_email provided for profile identification")
-            return {"error": "sindarin_email is required for profile identification"}, 400
 
         # Process boolean parameters in a unified way
         # For query params, "1", "true", "yes" (case-insensitive) are considered true
@@ -1444,6 +1395,8 @@ class AuthResource(Resource):
 
         # Log authentication attempt details
         logger.info(f"Setting up profile: {sindarin_email} for manual VNC authentication")
+
+        # Debug logging for cross-user interference
 
         # Get the automator (should have been created by the decorator)
         automator = server.automators.get(sindarin_email)
@@ -1531,7 +1484,7 @@ class AuthResource(Resource):
 
                     # Update the auth status with the new state
                     auth_status["state"] = state_name
-                    auth_status["requires_manual_login"] = True
+                    auth_status["authenticated"] = False
                 else:
                     logger.error("Failed to click sign-in button")
             except Exception as e:
@@ -1602,7 +1555,10 @@ class AuthResource(Resource):
         # Start with base response information
         response_data = {
             "success": True,
-            "manual_login_required": auth_status.get("requires_manual_login", True),
+            "authenticated": auth_status.get("authenticated", False),
+            "manual_login_required": auth_status.get(
+                "requires_manual_login", True
+            ),  # Keep for backwards compatibility
             "message": auth_status.get("message", "Ready for manual authentication via VNC"),
             "state": auth_status.get("state", state_name),
             "vnc_url": formatted_vnc_url,  # Include the VNC URL in the response
@@ -1630,12 +1586,13 @@ class AuthResource(Resource):
 
     def get(self):
         """Get the auth status"""
+        # Use get_sindarin_email() to properly handle user_email overrides
+        sindarin_email = get_sindarin_email()
+
         # First check if recreate is requested BEFORE profile loading
         params = {}
         for key, value in request.args.items():
             params[key] = value
-
-        sindarin_email = params.get("sindarin_email")
         recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
         recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
 
@@ -1649,12 +1606,13 @@ class AuthResource(Resource):
 
     def post(self):
         """Set up a profile for manual authentication via VNC"""
+        # Use get_sindarin_email() to properly handle user_email overrides
+        sindarin_email = get_sindarin_email()
+
         # First check if recreate is requested BEFORE profile loading
         params = {}
         if request.is_json:
             params = request.get_json() or {}
-
-        sindarin_email = params.get("sindarin_email") or params.get("email")
         recreate_user = params.get("recreate") == 1 or params.get("recreate") == "1"
         recreate_seed = params.get("recreate_seed") == 1 or params.get("recreate_seed") == "1"
 
@@ -1670,7 +1628,7 @@ class AuthResource(Resource):
 class FixturesResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """Create fixtures for major views"""
         try:
@@ -1684,6 +1642,10 @@ class FixturesResource(Resource):
             return {"error": "Failed to create fixtures"}, 500
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error creating fixtures: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
@@ -1723,6 +1685,10 @@ class CoverImageResource(Resource):
             return response
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error serving cover image: {e}")
             traceback.print_exc()
             return {"error": str(e)}, 500
@@ -1731,7 +1697,7 @@ class CoverImageResource(Resource):
 class TextResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def _extract_text(self):
         """Shared implementation for extracting text from the current reading page."""
         try:
@@ -1891,13 +1857,13 @@ class TextResource(Resource):
             return {"error": str(e)}, 500
 
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Get OCR text of the current reading page without turning the page."""
         return self._extract_text()
 
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """POST endpoint for OCR text extraction (identical to GET but allows for future parameters)."""
         return self._extract_text()
@@ -1912,7 +1878,7 @@ class LastReadPageDialogResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def get(self):
         """Handle Last read page dialog choice from the client via GET request."""
         # Call the implementation method that handles both GET and POST requests
@@ -1920,7 +1886,7 @@ class LastReadPageDialogResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(server)
+    @handle_automator_response
     def post(self):
         """Handle Last read page dialog choice from the client via POST request."""
         # Call the implementation method that handles both GET and POST requests
@@ -2106,6 +2072,7 @@ class LastReadPageDialogResource(Resource):
 
 
 # Import resource modules
+from server.resources.auth_check_resource import AuthCheckResource
 from server.resources.cold_storage_resources import (
     ColdStorageArchiveResource,
     ColdStorageRestoreResource,
@@ -2120,7 +2087,6 @@ from server.resources.user_activity_resource import UserActivityResource
 
 # Add resources to API
 api.add_resource(StateResource, "/state")
-api.add_resource(CaptchaResource, "/captcha")
 api.add_resource(BooksResource, "/books")
 api.add_resource(BooksStreamResource, "/books-stream")  # New streaming endpoint for books
 api.add_resource(StaffAuthResource, "/staff-auth")
@@ -2157,13 +2123,13 @@ api.add_resource(
 )
 
 api.add_resource(BookOpenResource, "/open-book")
-api.add_resource(TwoFactorResource, "/2fa")
 api.add_resource(
     LogoutResource,
     "/logout",
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(AuthResource, "/auth")
+api.add_resource(AuthCheckResource, "/auth-check")
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
@@ -2349,6 +2315,20 @@ def cleanup_resources():
         server.kill_existing_process("appium")
     except Exception as e:
         logger.error(f"Error killing remaining Appium processes: {e}")
+
+    # Clean up ADB port forwards to prevent port conflicts on restart
+    logger.info("Cleaning up ADB port forwards")
+    try:
+        # Get all connected devices
+        result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+        lines = result.stdout.strip().split("\n")[1:]  # Skip header
+        for line in lines:
+            if "\tdevice" in line:
+                device_id = line.split("\t")[0]
+                logger.info(f"Removing port forwards for device {device_id}")
+                subprocess.run([f"adb -s {device_id} forward --remove-all"], shell=True, check=False)
+    except Exception as e:
+        logger.warning(f"Error cleaning up ADB port forwards: {e}")
 
     logger.info(f"=== Graceful shutdown complete ===")
     logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")

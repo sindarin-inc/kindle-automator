@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import subprocess
 import time
 from typing import Dict, Optional, Tuple
@@ -134,7 +135,6 @@ class DeviceDiscovery:
         # If we have a specific AVD for this user and it's not running, we should fail
         if avd_name and avd_name not in running_emulators:
             # Return failure to find the user's specific AVD
-            logger.info(f"User's AVD {avd_name} exists but is not running")
             return False, None, avd_name
 
         # No running emulator found for this email
@@ -151,6 +151,7 @@ class DeviceDiscovery:
         Returns:
             Optional[str]: The AVD name or None if not found
         """
+
         try:
             # Query the emulator's AVD name directly via adb
             result = subprocess.run(
@@ -163,9 +164,23 @@ class DeviceDiscovery:
 
             if result.returncode == 0 and result.stdout:
                 avd_name = result.stdout.strip()
-                if avd_name:
-                    logger.info(f"Queried emulator {emulator_id} directly, running AVD: {avd_name}")
+                # The emu avd name command sometimes returns "AVD_NAME\nOK", so we need to handle that
+                if "\n" in avd_name:
+                    avd_name = avd_name.split("\n")[0].strip()
+                if avd_name and avd_name != "OK":
                     return avd_name
+            else:
+                # Check if we're on macOS
+                is_mac = platform.system() == "Darwin"
+                if is_mac:
+                    logger.debug(
+                        f"macOS: AVD name query failed for {emulator_id} (returncode={result.returncode}). "
+                        f"This is expected for Android Studio emulators."
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to query AVD name: returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
+                    )
 
         except Exception as e:
             logger.warning(f"Error querying emulator {emulator_id} for AVD name: {e}")
@@ -188,8 +203,11 @@ class DeviceDiscovery:
             if avd_name:
                 return avd_name
 
+            # Check if we're on macOS
+            is_mac = platform.system() == "Darwin"
+
             # In simplified mode, we may not have AVD names in profiles
-            if self.use_simplified_mode:
+            if self.use_simplified_mode and not is_mac:
                 # Don't assume any email, just return None
                 return None
 
@@ -218,8 +236,17 @@ class DeviceDiscovery:
                 logger.warning(f"Error checking VNC instances for emulator {emulator_id}: {e}")
 
             # If we got here, we can't reliably determine which AVD this emulator is running
-            # Instead of guessing, return None
-            return None
+            # Check if we're on macOS
+            is_mac = platform.system() == "Darwin"
+            if is_mac:
+                # On macOS, we can return a placeholder AVD name since we're allowing flexible matching
+                # This allows the system to work with Android Studio emulators
+                placeholder_avd = f"AndroidStudio_{emulator_id}"
+                logger.debug(f"macOS: Using placeholder AVD name '{placeholder_avd}' for {emulator_id}")
+                return placeholder_avd
+            else:
+                # In production, we must not guess
+                return None
 
         except Exception as e:
             logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
@@ -240,12 +267,14 @@ class DeviceDiscovery:
         Returns:
             Dict[str, str]: Mapping of emulator names to device IDs
         """
+
         running_emulators = {}
 
         # If we have cached info, add it to the result without ADB query
         if cached_info:
             avd_name, emulator_id = cached_info
             running_emulators[avd_name] = emulator_id
+            logger.info(f"Added cached emulator to result: {avd_name} -> {emulator_id}")
             # Still check ADB for other emulators that might be running
 
         try:

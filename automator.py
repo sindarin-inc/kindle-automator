@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 class KindleAutomator:
     def __init__(self):
-        self.captcha_solution = None
         self.driver = None
         self.state_machine = None
         self.device_id = None  # Will be set during initialization
@@ -50,23 +49,35 @@ class KindleAutomator:
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
-        logger.info(f"Initializing driver in KindleAutomator {self}")
-        # Create and initialize driver
-        driver = Driver()
-        # Set the automator reference in the driver
-        driver.automator = self
-        if not driver.initialize():
-            logger.error("Failed to initialize driver")
+        # Check if we're already in initialization to prevent infinite recursion
+        if hasattr(self, "_initializing_driver") and self._initializing_driver:
+            logger.error("Already initializing driver, avoiding infinite recursion")
             return False
 
-        self.driver = driver.get_appium_driver_instance()
-        # Store reference to the Driver instance for cleanup
-        self._driver_instance = driver
+        self._initializing_driver = True
+        try:
+            # Create and initialize driver
+            driver = Driver()
+            # Set the automator reference in the driver
+            driver.automator = self
+            if not driver.initialize():
+                logger.error("Failed to initialize driver")
+                return False
 
-        # Make sure the driver instance also has a reference to this automator
-        # This ensures auth_handler can access it
-        if self.driver and not hasattr(self.driver, "automator"):
-            self.driver.automator = self
+            self.driver = driver.get_appium_driver_instance()
+            if not self.driver:
+                logger.error("Failed to get Appium driver instance")
+                return False
+
+            # Store reference to the Driver instance for cleanup
+            self._driver_instance = driver
+
+            # Make sure the driver instance also has a reference to this automator
+            # This ensures auth_handler can access it
+            if self.driver and not hasattr(self.driver, "automator"):
+                self.driver.automator = self
+        finally:
+            self._initializing_driver = False
 
         # Get device ID from driver
         self.device_id = driver.get_device_id()
@@ -265,23 +276,6 @@ class KindleAutomator:
             logger.error(f"Unexpected error in ensure_driver_running: {outer_e}")
             self.cleanup()
             return False
-
-    def update_captcha_solution(self, solution):
-        """Update captcha solution across all components if different.
-
-        Args:
-            solution: The new captcha solution to set
-
-        Returns:
-            bool: True if solution was updated (was different), False otherwise
-        """
-        if solution != self.captcha_solution:
-            logger.info("Updating captcha solution")
-            self.captcha_solution = solution
-            if self.state_machine:
-                self.state_machine.auth_handler.captcha_solution = solution
-            return True
-        return False
 
     # Removed update_credentials method - no longer needed
 

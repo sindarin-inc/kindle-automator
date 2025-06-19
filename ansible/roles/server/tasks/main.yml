@@ -109,6 +109,17 @@
     executable: /opt/kindle-automator/venv/bin/pip
     state: present
 
+- name: Pull latest changes
+  git:
+    repo: "{{ kindle_repo_url }}"
+    dest: /opt/kindle-automator
+    update: yes
+    version: "{{ kindle_repo_branch | default('main') }}"
+    key_file: /opt/keys/deploy_key
+    accept_hostkey: yes
+  register: git_pull
+  tags: deps, pull
+
 # Install dependencies
 - name: Install Python dependencies
   shell: |
@@ -117,6 +128,7 @@
     uv pip install -r requirements.txt
   args:
     executable: /bin/bash
+  tags: deps
 
 # Create logs directories
 - name: Create logs directories
@@ -175,7 +187,6 @@
     path: /opt/kindle-automator/scripts
     state: directory
     mode: "0755"
-
 
 # Configure logrotate for all Kindle Automator logs
 - name: Configure logrotate for Kindle Automator logs

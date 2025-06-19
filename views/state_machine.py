@@ -23,7 +23,6 @@ class KindleStateMachine:
         """Initialize the state machine with required handlers."""
         self.driver = driver
         self.view_inspector = ViewInspector(driver)
-        # Initialize auth handler without captcha solution - it'll be set later if needed
         self.auth_handler = AuthenticationHandler(driver)
         self.library_handler = LibraryHandler(driver)
         self.style_handler = StyleHandler(driver)
@@ -43,32 +42,8 @@ class KindleStateMachine:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
         self.current_state = AppState.UNKNOWN
-        # Track the last captcha screenshot for use in responses
-        self.last_captcha_screenshot_id = None
         # Flag to indicate we're preparing a seed clone (skip sign-in)
         self.preparing_seed_clone = False
-
-    def get_captcha_screenshot_id(self):
-        """Get the ID of the last captcha screenshot taken.
-
-        This is used by the response handler to include the correct image URL.
-        If auth_handler has a more recent screenshot, use that.
-
-        Returns:
-            str: The ID of the last captcha screenshot, or None if no screenshot available
-        """
-        # Check if auth handler has a more recent screenshot
-        if (
-            hasattr(self.auth_handler, "last_captcha_screenshot")
-            and self.auth_handler.last_captcha_screenshot
-        ):
-            logger.info(
-                f"Using auth handler's captcha screenshot ID: {self.auth_handler.last_captcha_screenshot}"
-            )
-            return self.auth_handler.last_captcha_screenshot
-
-        # Otherwise use our tracked screenshot ID
-        return self.last_captcha_screenshot_id
 
     def _get_current_state(self):
         """Get the current app state using the view inspector."""
@@ -76,7 +51,11 @@ class KindleStateMachine:
         return AppState[view.name]
 
     def transition_to_library(self, max_transitions=5, server=None):
-        """Attempt to transition to the library state."""
+        """Attempt to transition to the library state.
+
+        Returns:
+            AppState: The final state after transition attempt
+        """
         transitions = 0
         unknown_retries = 0
         MAX_UNKNOWN_RETRIES = 2  # Maximum times to try recovering from UNKNOWN state
@@ -99,12 +78,9 @@ class KindleStateMachine:
             # If we have a server reference and we're not in reading state but have a current book
             # Clear the current book to ensure state consistency
             if server and self.current_state != AppState.READING:
-                # Get the email from our driver instance if possible
-                email = None
-                if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
-                    profile = self.driver.automator.profile_manager.get_current_profile()
-                    if profile and "email" in profile:
-                        email = profile.get("email")
+                # Get the email from our driver instance
+                profile = self.driver.automator.profile_manager.get_current_profile()
+                email = profile.get("email") if profile else None
 
                 # Check if there's a current book for this email
                 if email and email in server.current_books:
@@ -114,16 +90,41 @@ class KindleStateMachine:
                     server.clear_current_book(email)
 
             if self.current_state == AppState.LIBRARY:
+                # Update auth tracking when we reach library
+                try:
+                    from datetime import datetime
+
+                    profile_manager = self.driver.automator.profile_manager
+                    profile = profile_manager.get_current_profile()
+                    email = profile.get("email")
+
+                    # User is authenticated - set auth_date if not already set
+                    auth_date = profile_manager.get_user_field(email, "auth_date")
+                    if not auth_date:
+                        current_date = datetime.now().isoformat()
+                        logger.info(
+                            f"Setting auth_date for {email} as user reached LIBRARY state via transition"
+                        )
+                        profile_manager.set_user_field(email, "auth_date", current_date)
+
+                    # Clear auth_failed_date if it exists
+                    auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                    if auth_failed_date:
+                        logger.info(f"Clearing auth_failed_date for {email} as user is back in LIBRARY state")
+                        profile_manager.set_user_field(email, "auth_failed_date", None)
+                except Exception as e:
+                    logger.warning(f"Error updating auth tracking during transition: {e}")
+
                 # Switch to list view if needed
                 if not self.library_handler.switch_to_list_view():
                     logger.warning("Failed to switch to list view, but we're still in library")
-                return True
+                return self.current_state
 
             # Special handling for LIBRARY_SIGN_IN when preparing seed clone
             if self.current_state == AppState.LIBRARY_SIGN_IN and self.preparing_seed_clone:
                 logger.info("In LIBRARY_SIGN_IN state and preparing_seed_clone=True - stopping here")
                 # We've reached the library view with sign-in button, which is what we want for seed clone
-                return True
+                return self.current_state
 
             # If we're in UNKNOWN state, try to bring app to foreground
             if self.current_state == AppState.UNKNOWN:
@@ -134,14 +135,14 @@ class KindleStateMachine:
                         "Please check screenshots/unknown_view.png and fixtures/dumps/unknown_view.xml "
                         "to determine why the view cannot be recognized."
                     )
-                    return False
+                    return self.current_state
 
                 logger.info(
                     f"In UNKNOWN state (attempt {unknown_retries}/{MAX_UNKNOWN_RETRIES}) - bringing app to foreground..."
                 )
                 if not self.view_inspector.ensure_app_foreground():
                     logger.error("Failed to bring app to foreground")
-                    return False
+                    return self.current_state
                 time.sleep(1)  # Wait for app to come to foreground
 
                 # Try to get the current state again
@@ -149,7 +150,33 @@ class KindleStateMachine:
                 logger.info(f"After bringing app to foreground, state is: {self.current_state}")
                 if self.current_state == AppState.LIBRARY:
                     logger.info("Successfully reached library state after bringing app to foreground")
-                    return True
+                    # Update auth tracking when we reach library
+                    try:
+                        from datetime import datetime
+
+                        profile_manager = self.driver.automator.profile_manager
+                        profile = profile_manager.get_current_profile()
+                        email = profile.get("email")
+
+                        # User is authenticated - set auth_date if not already set
+                        auth_date = profile_manager.get_user_field(email, "auth_date")
+                        if not auth_date:
+                            current_date = datetime.now().isoformat()
+                            logger.info(
+                                f"Setting auth_date for {email} as user reached LIBRARY state after app foreground"
+                            )
+                            profile_manager.set_user_field(email, "auth_date", current_date)
+
+                        # Clear auth_failed_date if it exists
+                        auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                        if auth_failed_date:
+                            logger.info(
+                                f"Clearing auth_failed_date for {email} as user is back in LIBRARY state"
+                            )
+                            profile_manager.set_user_field(email, "auth_failed_date", None)
+                    except Exception as e:
+                        logger.warning(f"Error updating auth tracking after app foreground: {e}")
+                    return self.current_state
 
                 # If still unknown, try checking for library-specific elements
                 if self.current_state == AppState.UNKNOWN:
@@ -167,9 +194,12 @@ class KindleStateMachine:
                     except Exception as e:
                         logger.debug(f"Error getting current activity: {e}")
 
-                    # Check specifically for AlertActivity which often contains dialogs
-                    if current_activity and "AlertActivity" in current_activity:
-                        logger.info(f"Detected AlertActivity, checking for known dialogs...")
+                    # Check for dialogs in both AlertActivity and StandAloneBookReaderActivity
+                    if current_activity and (
+                        "AlertActivity" in current_activity
+                        or "StandAloneBookReaderActivity" in current_activity
+                    ):
+                        logger.info(f"Detected {current_activity}, checking for known dialogs...")
 
                         # Check for dialogs without requiring book title
                         handled, dialog_type = dialog_handler.check_all_dialogs(None, "in UNKNOWN state")
@@ -177,19 +207,25 @@ class KindleStateMachine:
                             logger.info(f"Successfully handled {dialog_type} dialog in UNKNOWN state")
                             # Try to update state after handling dialog
                             self.current_state = self._get_current_state()
+
+                            # If we're now in READING state after handling the dialog, we're done
+                            if self.current_state == AppState.READING:
+                                logger.info("Now in READING state after handling dialog")
+                                return self.current_state
+
                             # If still unknown, try to re-enter the app
                             if self.current_state == AppState.UNKNOWN:
                                 if self.view_inspector.ensure_app_foreground():
                                     logger.info("Brought app to foreground after handling dialog")
                                     time.sleep(1)
                                     self.current_state = self._get_current_state()
-                            return True
+                            continue  # Continue the loop to re-check state
 
                     # If dialog handling didn't work, try checking for library-specific elements
                     logger.info("Checking for library-specific elements...")
                     if self.library_handler._is_library_tab_selected():
                         logger.info("Library handler detected library view")
-                        return True
+                        return self.current_state
                     # Check if we're in search interface (which is part of library)
                     if self.library_handler._is_in_search_interface():
                         logger.info("Library handler detected search interface - treating as library view")
@@ -197,7 +233,7 @@ class KindleStateMachine:
                         # Exit search mode to get to main library view
                         if self.library_handler.search_handler._exit_search_mode():
                             logger.info("Exited search mode, now in library view")
-                            return True
+                            return self.current_state
                         else:
                             logger.warning("Failed to exit search mode")
 
@@ -206,7 +242,7 @@ class KindleStateMachine:
             handler = self.transitions.get_handler_for_state(self.current_state)
             if not handler:
                 logger.error(f"No handler found for state {self.current_state}")
-                return False
+                return self.current_state
 
             # Handle current state
             # For reading state, pass the server instance
@@ -217,31 +253,48 @@ class KindleStateMachine:
 
             # Special handling for CAPTCHA state
             if self.current_state == AppState.CAPTCHA:
-                logger.info(
-                    "In CAPTCHA state with solution: %s",
-                    self.auth_handler.captcha_solution,
-                )
-                if not result:
-                    # If handler returns False, we need client interaction
-                    logger.info("CAPTCHA handler needs client interaction")
-                    return True
-                # If handler succeeds, continue with transitions
-                continue
-            # Check if sign-in resulted in CAPTCHA or is in sign-in state without credentials
-            elif not result and self.current_state == AppState.SIGN_IN:
-                new_state = self._get_current_state()
-                if new_state == AppState.CAPTCHA:
-                    logger.info("Sign-in resulted in CAPTCHA state - waiting for client interaction")
-                    self.current_state = new_state
-                    return True
-                elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
-                    logger.info("Sign-in view detected but no credentials provided")
-                    self.current_state = AppState.SIGN_IN
-                    return True  # Return true for special handling in BooksResource
+                logger.info("In CAPTCHA state - manual intervention required")
+                # Return current state to indicate we're in a valid state but can't proceed
+                return self.current_state
+            # Special handling for TWO_FACTOR state
+            elif self.current_state == AppState.TWO_FACTOR:
+                logger.info("In TWO_FACTOR state - manual intervention required")
+                # Return current state to indicate we're in a valid state but can't proceed
+                return self.current_state
+            # Special handling for PUZZLE state
+            elif self.current_state == AppState.PUZZLE:
+                logger.info("In PUZZLE state - manual intervention required")
+                # Return current state to indicate we're in a valid state but can't proceed
+                return self.current_state
+            # Special handling for SIGN_IN state
+            elif self.current_state == AppState.SIGN_IN:
+                if result:
+                    # If handler returned True, we're in a valid SIGN_IN state requiring VNC
+                    logger.info("SIGN_IN state requires manual VNC authentication")
+                    return self.current_state
+                else:
+                    # Check what state we're in after failed sign-in attempt
+                    new_state = self._get_current_state()
+                    if new_state == AppState.CAPTCHA:
+                        logger.info("Sign-in resulted in CAPTCHA state - waiting for manual intervention")
+                        self.current_state = new_state
+                        return self.current_state
+                    elif new_state == AppState.TWO_FACTOR:
+                        logger.info("Sign-in resulted in TWO_FACTOR state - waiting for manual intervention")
+                        self.current_state = new_state
+                        return self.current_state
+                    elif new_state == AppState.PUZZLE:
+                        logger.info("Sign-in resulted in PUZZLE state - waiting for manual intervention")
+                        self.current_state = new_state
+                        return self.current_state
+                    elif new_state == AppState.SIGN_IN and not self.auth_handler.email:
+                        logger.info("Sign-in view detected but no credentials provided")
+                        self.current_state = AppState.SIGN_IN
+                        return self.current_state
 
             if not result:
                 logger.error(f"Handler failed for state {self.current_state}")
-                return False
+                return self.current_state
 
             transitions += 1
 
@@ -266,7 +319,7 @@ class KindleStateMachine:
         except Exception as e:
             logger.error(f"Failed to get page source after failed transitions: {e}")
 
-        return False
+        return self.current_state
 
     def _handle_failed_transition(self, from_state, to_state, error):
         """Handle a failed state transition by logging details and saving screenshot"""
@@ -409,12 +462,14 @@ class KindleStateMachine:
             AppState: The current state of the app
         """
         try:
-            # If we're currently in an AUTH state (SIGN_IN, SIGN_IN_PASSWORD, CAPTCHA),
+            # If we're currently in an AUTH state (SIGN_IN, SIGN_IN_PASSWORD, CAPTCHA, TWO_FACTOR),
             # check if keyboard hiding is active and hide the keyboard if visible
             if hasattr(self, "current_state") and self.current_state in [
                 AppState.SIGN_IN,
                 AppState.SIGN_IN_PASSWORD,
                 AppState.CAPTCHA,
+                AppState.TWO_FACTOR,
+                AppState.PUZZLE,
             ]:
                 if (
                     hasattr(self.auth_handler, "is_keyboard_check_active")
@@ -445,6 +500,52 @@ class KindleStateMachine:
             # Only store page source for unknown or ambiguous states
             self.current_state = self._get_current_state()
             logger.info(f"Updated current state to: {self.current_state}")
+
+            # Track authentication state changes
+            if self.current_state in [AppState.LIBRARY, AppState.LIBRARY_SIGN_IN, AppState.SEARCH_RESULTS]:
+                try:
+                    from datetime import datetime
+
+                    profile_manager = self.driver.automator.profile_manager
+                    profile = profile_manager.get_current_profile()
+                    email = profile.get("email")
+
+                    current_date = datetime.now().isoformat()
+
+                    if self.current_state == AppState.LIBRARY:
+                        # User is authenticated - set auth_date if not already set
+                        auth_date = profile_manager.get_user_field(email, "auth_date")
+                        if not auth_date:
+                            logger.info(f"Setting auth_date for {email} as user is in LIBRARY state")
+                            profile_manager.set_user_field(email, "auth_date", current_date)
+
+                        # Clear auth_failed_date if it exists
+                        auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                        if auth_failed_date:
+                            logger.info(
+                                f"Clearing auth_failed_date for {email} as user is back in LIBRARY state"
+                            )
+                            profile_manager.set_user_field(email, "auth_failed_date", None)
+
+                    elif self.current_state == AppState.LIBRARY_SIGN_IN:
+                        # User lost authentication - set auth_failed_date
+                        logger.info(
+                            f"Setting auth_failed_date for {email} as user is in LIBRARY_SIGN_IN state"
+                        )
+                        profile_manager.set_user_field(email, "auth_failed_date", current_date)
+
+                    elif self.current_state == AppState.SEARCH_RESULTS:
+                        # Check if user has auth_date when in search results
+                        auth_date = profile_manager.get_user_field(email, "auth_date")
+                        if not auth_date:
+                            logger.info(
+                                f"User {email} in SEARCH_RESULTS but no auth_date set - will verify auth status"
+                            )
+                            # Need to verify auth status by backing out to library
+                            self._verify_auth_from_search_results(email, profile_manager, current_date)
+
+                except Exception as e:
+                    logger.warning(f"Error tracking auth state: {e}")
 
             # Simple check for RemoteLicenseReleaseActivity if state is UNKNOWN
             if self.current_state == AppState.UNKNOWN:
@@ -618,6 +719,168 @@ class KindleStateMachine:
             return self.current_state
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error updating current state: {e}")
             self.current_state = AppState.UNKNOWN
             return self.current_state
+
+    def check_initial_state_with_restart(self):
+        """Check state at the beginning of specific requests and restart if UNKNOWN.
+
+        This method should only be called at the start of /open-book, /navigate, and /books-stream requests.
+        It will force restart the app if we're in an UNKNOWN state to ensure clean operation.
+
+        Returns:
+            AppState: The current state after checking (and potentially restarting)
+        """
+        # First update the state to get current status
+        self.update_current_state()
+
+        # If we're in UNKNOWN state, force restart the app
+        if self.current_state == AppState.UNKNOWN:
+            logger.info("Initial state is UNKNOWN - force restarting app for clean operation")
+
+            # Force restart the app
+            if self.view_inspector.ensure_app_foreground(force_restart=True):
+                logger.info("Successfully restarted Kindle app, waiting for it to initialize...")
+                time.sleep(2)  # Wait for app to fully initialize
+
+                # Update state again after restart
+                self.update_current_state()
+                logger.info(f"After app restart, state is: {self.current_state}")
+
+        return self.current_state
+
+    def _verify_auth_from_search_results(self, email: str, profile_manager, current_date: str) -> None:
+        """Verify authentication status when in search results without auth_date.
+
+        This backs out from search results to library, refreshes, and checks auth status.
+        """
+        try:
+            logger.info(f"Verifying auth status for {email} from search results")
+
+            # Back out from search results to library
+            from appium.webdriver.common.appiumby import AppiumBy
+            from selenium.common.exceptions import NoSuchElementException
+
+            # Try to find and click the back button
+            try:
+                back_button = self.driver.find_element(AppiumBy.ACCESSIBILITY_ID, "Navigate up")
+                back_button.click()
+                logger.info("Clicked back button to exit search results")
+                time.sleep(1)
+            except NoSuchElementException:
+                logger.warning("Back button not found, trying alternative methods")
+                # Try pressing device back button
+                self.driver.back()
+                time.sleep(1)
+
+            # Update state to see where we are now
+            self.update_current_state()
+
+            if self.current_state == AppState.LIBRARY:
+                # We're in library, now pull to refresh
+                logger.info("Successfully in library view, performing pull to refresh")
+
+                # Perform pull to refresh gesture
+                screen_size = self.driver.get_window_size()
+                start_x = screen_size["width"] // 2
+                start_y = screen_size["height"] // 4
+                end_y = screen_size["height"] // 2
+
+                self.driver.swipe(start_x, start_y, start_x, end_y, duration=800)
+                logger.info("Performed pull to refresh gesture")
+                time.sleep(2)  # Wait for refresh to complete
+
+                # Update state again after refresh
+                self.update_current_state()
+
+                if self.current_state == AppState.LIBRARY:
+                    # Still in library after refresh - user is authenticated
+                    logger.info(f"User {email} confirmed authenticated after refresh - setting auth_date")
+                    profile_manager.set_user_field(email, "auth_date", current_date)
+
+                    # Clear auth_failed_date if it exists
+                    auth_failed_date = profile_manager.get_user_field(email, "auth_failed_date")
+                    if auth_failed_date:
+                        logger.info(f"Clearing auth_failed_date for {email}")
+                        profile_manager.set_user_field(email, "auth_failed_date", None)
+
+                elif self.current_state == AppState.LIBRARY_SIGN_IN:
+                    # After refresh, we're in sign-in state - user lost auth
+                    logger.warning(f"User {email} lost authentication - in LIBRARY_SIGN_IN after refresh")
+                    profile_manager.set_user_field(email, "auth_failed_date", current_date)
+
+            else:
+                logger.warning(
+                    f"Failed to navigate back to library from search results, current state: {self.current_state}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error verifying auth from search results: {e}")
+
+    def handle_auth_state_detection(self, current_state, sindarin_email=None):
+        """
+        Handle detection of auth states by updating profile and returning appropriate response data.
+
+        Args:
+            current_state: The current AppState
+            sindarin_email: Optional email, will be retrieved from profile if not provided
+
+        Returns:
+            dict: Response data with authentication info, or None if not an auth state
+        """
+        if not current_state.is_auth_state():
+            return None
+
+        # Get email if not provided
+        if not sindarin_email:
+            profile = self.driver.automator.profile_manager.get_current_profile()
+            sindarin_email = profile.get("email") if profile else None
+            if not sindarin_email:
+                logger.error("No email found for auth state detection")
+                return None
+
+        from datetime import datetime
+
+        profile_manager = self.driver.automator.profile_manager
+        auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+        current_date = datetime.now().isoformat()
+
+        # Update auth_failed_date if user was previously authenticated
+        if auth_date and current_state in [AppState.SIGN_IN, AppState.LIBRARY_SIGN_IN]:
+            logger.info(f"User {sindarin_email} lost authentication - was authenticated on {auth_date}")
+            profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+
+        # Get emulator ID
+        emulator_id = None
+        try:
+            if hasattr(self.driver.automator, "emulator_manager"):
+                emulator_id = self.driver.automator.emulator_manager.emulator_launcher.get_emulator_id(
+                    sindarin_email
+                )
+        except Exception as e:
+            logger.warning(f"Could not get emulator ID: {e}")
+
+        # Build response based on whether user was previously authenticated
+        if auth_date:
+            return {
+                "error": "Authentication token lost",
+                "authenticated": False,
+                "current_state": current_state.name,
+                "message": "Your Kindle authentication token was lost. Authentication is required via VNC.",
+                "emulator_id": emulator_id,
+                "previous_auth_date": auth_date,
+                "auth_token_lost": True,
+            }
+        else:
+            return {
+                "error": "Authentication required",
+                "authenticated": False,
+                "current_state": current_state.name,
+                "message": "Authentication is required via VNC",
+                "emulator_id": emulator_id,
+            }

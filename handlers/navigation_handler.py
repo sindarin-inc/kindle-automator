@@ -93,8 +93,33 @@ class NavigationResourceHandler:
                 current_state = self.automator.state_machine.update_current_state()
                 logger.info(f"Current state: {current_state}")
 
+                # Check if we're in an auth-required state
+                if current_state.is_auth_state():
+                    logger.error(f"Cannot navigate - authentication required. Current state: {current_state}")
+
+                    # Check if user was previously authenticated
+                    profile_manager = self.automator.profile_manager
+                    sindarin_email = profile_manager.get_current_profile().get("email")
+                    auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
+
+                    if auth_date:
+                        # User was previously authenticated but lost auth - set auth_failed_date
+                        from datetime import datetime
+
+                        current_date = datetime.now().isoformat()
+
+                        logger.warning(
+                            f"User {sindarin_email} was previously authenticated on {auth_date} but is now in {current_state} - marking auth as failed"
+                        )
+                        profile_manager.set_user_field(sindarin_email, "auth_failed_date", current_date)
+
+                    return {
+                        "error": "Authentication required",
+                        "message": "Please authenticate before navigating",
+                    }, 401
+
                 # Try to transition to library first
-                if not self.automator.state_machine.transition_to_library():
+                if self.automator.state_machine.transition_to_library() != AppState.LIBRARY:
                     logger.error("Failed to transition to library to reopen book")
                     return {"error": "Failed to reach library to reopen book"}, 500
 
@@ -541,7 +566,7 @@ class NavigationResourceHandler:
             "preview_count": 0,  # Default to no preview
             "show_placemark": False,
             "use_base64": False,
-            "perform_ocr": False,
+            "perform_ocr": True,  # Default to True - must be explicitly disabled with ocr=0
             "title": None,  # Book title for fallback if not in reading view
         }
 
@@ -585,10 +610,8 @@ class NavigationResourceHandler:
         # Check if base64 parameter is provided
         params["use_base64"] = is_base64_requested()
 
-        # Check if OCR is requested via query params
-        # Note: This will already be True if preview was requested
-        if not params["perform_ocr"]:
-            params["perform_ocr"] = is_ocr_requested()
+        # Check if OCR is requested via query params - this will respect ocr=0 overrides
+        params["perform_ocr"] = is_ocr_requested()
 
         # If OCR is requested, force base64 encoding
         if params["perform_ocr"] and not params["use_base64"]:

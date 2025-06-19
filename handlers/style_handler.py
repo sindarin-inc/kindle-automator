@@ -6,6 +6,7 @@ from appium.webdriver.common.appiumby import AppiumBy
 from selenium.common.exceptions import NoSuchElementException
 
 from server.logging_config import store_page_source
+from views.common.dialog_handler import DialogHandler
 from views.reading.view_strategies import (
     ABOUT_BOOK_CHECKBOX,
     FONT_SIZE_SLIDER_IDENTIFIERS,
@@ -84,6 +85,12 @@ class StyleHandler:
 
         # Backup the original update_reading_style code but make it reusable
         try:
+            # Check for and handle any dialogs first (like "Viewing full screen")
+            dialog_handler = DialogHandler(self.driver)
+            handled, dialog_type = dialog_handler.check_all_dialogs(context="before_style_update")
+            if handled:
+                logger.info(f"Handled {dialog_type} dialog before applying styles")
+
             # Store page source before starting
             store_page_source(self.driver.page_source, "style_update_before")
 
@@ -569,44 +576,7 @@ class StyleHandler:
                         if self.profile_manager.update_style_preference(True, email):
                             logger.info(f"Successfully updated style preference in profile for {email}")
                         else:
-                            # If the update failed using the normal method, try a direct approach
-                            logger.warning(
-                                f"Standard update_style_preference failed for {email}, trying direct approach"
-                            )
-
-                            # Try direct manipulation of profiles_index if available
-                            if hasattr(self.profile_manager, "profiles_index"):
-                                # Make sure user exists in profiles_index
-                                if email not in self.profile_manager.profiles_index:
-                                    self.profile_manager.profiles_index[email] = {}
-
-                                # Set style_updated directly at top level
-                                self.profile_manager.profiles_index[email]["styles_updated"] = True
-
-                                # Initialize reading_settings at top level if needed
-                                if "reading_settings" not in self.profile_manager.profiles_index[email]:
-                                    self.profile_manager.profiles_index[email]["reading_settings"] = {}
-
-                                # Set reading settings at top level
-                                reading_settings = self.profile_manager.profiles_index[email][
-                                    "reading_settings"
-                                ]
-                                reading_settings["theme"] = "dark"
-                                reading_settings["font_size"] = font_size
-                                reading_settings["real_time_highlighting"] = real_time_highlighting
-                                reading_settings["about_book"] = about_book
-                                reading_settings["page_turn_animation"] = page_turn_animation
-                                reading_settings["popular_highlights"] = popular_highlights
-                                reading_settings["highlight_menu"] = highlight_menu
-
-                                # Try to save preferences
-                                if hasattr(self.profile_manager, "_save_profiles_index"):
-                                    self.profile_manager._save_profiles_index()
-                                    logger.info(f"Successfully saved style preferences directly for {email}")
-                                else:
-                                    logger.warning("Could not find _save_profiles_index method")
-                            else:
-                                logger.warning("Could not access profiles_index directly")
+                            logger.warning(f"Standard update_style_preference failed for {email}")
                     except Exception as update_e:
                         logger.error(f"Error during style preference update: {update_e}")
                 else:

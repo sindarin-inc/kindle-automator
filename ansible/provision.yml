@@ -5,9 +5,11 @@
 
   roles:
     - { role: provision, tags: base }
+    # - { role: mount_drives, tags: storage }
+    # - { role: storagebox, tags: storage }
     - { role: nginx, tags: nginx }
     - { role: mezmo, tags: mezmo }
-    - { role: android_x86, tags: android-x86 }
+    - { role: android_x86, tags: [android-x86, android] }
     - { role: scrcpy, tags: scrcpy }
     - { role: rfbproxy, tags: rfbproxy }
     - { role: vnc_server, tags: vnc }

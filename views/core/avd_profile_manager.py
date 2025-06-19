@@ -213,37 +213,20 @@ class AVDProfileManager:
                         automator.device_id = driver_instance.device_id
                         logger.info(f"Set device_id on automator: {automator.device_id}")
 
-                    # Set the WebDriver reference on automator
-                    automator.driver = driver_instance.driver
+                    # For seed clone, we don't want to launch the app
+                    logger.info("Kindle APK installed successfully. Skipping app launch for seed clone.")
 
-                    # Ensure the driver has reference to automator (needed by state machine)
-                    if driver_instance.driver and not hasattr(driver_instance.driver, "automator"):
-                        driver_instance.driver.automator = automator
-
-                    # Create state machine to navigate to Library
-                    state_machine = KindleStateMachine(driver_instance.driver)
-
-                    # Set the state machine on automator for completeness
-                    automator.state_machine = state_machine
-
-                    # Ensure view inspector has device_id and automator reference
-                    if hasattr(state_machine, "view_inspector"):
-                        if automator.device_id:
-                            state_machine.view_inspector.device_id = automator.device_id
-                            logger.info(f"Set device_id on view_inspector: {automator.device_id}")
-                        # Also set the automator reference so view_inspector can access it
-                        state_machine.view_inspector.automator = automator
-
-                    # Set the flag to indicate we're preparing for snapshot
-                    state_machine.preparing_seed_clone = True
-
-                    # Transition to library view (will stop at LIBRARY_SIGN_IN)
-                    logger.info("Navigating to Library view...")
-                    if not state_machine.transition_to_library(max_transitions=10):
-                        logger.error("Failed to navigate to Library view")
-                        return False, "Failed to navigate to Library view"
-
-                    logger.info("Successfully reached Library view with sign-in button")
+                    # Navigate to Android home screen instead
+                    logger.info("Navigating to Android home screen...")
+                    device_id = driver_instance.device_id
+                    if device_id:
+                        # Press home button to go to Android dashboard
+                        subprocess.run(
+                            ["adb", "-s", device_id, "shell", "input", "keyevent", "KEYCODE_HOME"],
+                            check=True,
+                            capture_output=True,
+                        )
+                        logger.info("Successfully navigated to Android home screen")
 
                 finally:
                     # Clean up driver and Appium but keep app running
@@ -251,53 +234,51 @@ class AVDProfileManager:
                         driver_instance.driver.quit()
                     appium_driver.stop_appium_for_profile(email)
 
-                    # Give the app a moment to settle
-                    time.sleep(2)
+                    # Give the app and system time to complete background processes
+                    logger.info(
+                        "Waiting 1 minute for background processes (Play Store updates, etc.) to complete..."
+                    )
+                    logger.info("This ensures the seed clone is fully prepared for copying")
+                    # # Log progress every minute
+                    # for minute in range(1, 2):
+                    #     time.sleep(60)  # Wait 1 minute
+                    #     logger.info(f"Seed clone preparation wait: {minute}/1 minute elapsed...")
+                    logger.info("1-minute wait period complete, proceeding with shutdown")
 
-        # Take snapshot (always saves to default)
-        logger.info(f"Creating snapshot for {email}")
-        if launcher.save_snapshot(email):
-            logger.info(f"Successfully created snapshot for {email}")
-            # Stop the emulator
+        # Check if this is the seed clone
+        if email == AVDCreator.SEED_CLONE_EMAIL:
+            # For seed clone, just stop the emulator normally without snapshot
+            logger.info(f"Stopping seed clone emulator normally (no snapshot)")
             launcher.stop_emulator(email)
-            return True, "Snapshot created successfully"
+            return True, "Seed clone prepared successfully"
         else:
-            return False, "Failed to create snapshot"
+            # Take snapshot (always saves to default)
+            logger.info(f"Creating snapshot for {email}")
+            if launcher.save_snapshot(email):
+                logger.info(f"Successfully created snapshot for {email}")
+                # Stop the emulator
+                launcher.stop_emulator(email)
+                return True, "Snapshot created successfully"
+            else:
+                return False, "Failed to create snapshot"
 
     def ensure_seed_clone_ready(self) -> Tuple[bool, str]:
         """
         Ensure the seed clone AVD is ready for use. This includes:
         1. Creating the seed clone AVD if it doesn't exist
         2. Starting it and waiting for it to be ready
-        3. Taking a snapshot before Kindle installation
+        3. Installing Kindle and letting it settle for 10 minutes
 
         Returns:
             Tuple[bool, str]: (success, message)
         """
         try:
-            # Check if seed clone already exists and has snapshot
-            if self.avd_creator.is_seed_clone_ready():
-                logger.info("Seed clone AVD is already ready")
-                return True, "Seed clone is ready"
-
             seed_email = AVDCreator.SEED_CLONE_EMAIL
 
-            # Check if seed clone AVD exists but needs snapshot
-            if self.avd_creator.has_seed_clone() and not self.avd_creator.has_seed_clone_snapshot():
-                logger.info("Seed clone AVD exists but needs snapshot")
-
-                # Check if emulator is already running
-                if self.emulator_manager.is_emulator_running(seed_email):
-                    logger.info("Seed clone emulator is already running")
-                else:
-                    # Start emulator and create snapshot
-                    success, message = self._start_emulator_and_create_snapshot(
-                        seed_email, prepare_kindle=True
-                    )
-                    if success:
-                        return True, "Seed clone is now ready"
-                    else:
-                        return False, f"Failed to prepare seed clone: {message}"
+            # Check if seed clone already exists
+            if self.avd_creator.has_seed_clone():
+                logger.info("Seed clone AVD already exists")
+                return True, "Seed clone is ready"
 
             # Seed clone doesn't exist at all, create it
             logger.info("Creating seed clone AVD for fast user initialization")
@@ -317,6 +298,52 @@ class AVDProfileManager:
 
         except Exception as e:
             logger.error(f"Error ensuring seed clone ready: {e}")
+            return False, str(e)
+
+    def update_seed_clone_snapshot(self) -> Tuple[bool, str]:
+        """
+        Update the seed clone AVD's snapshot. This is useful after fixing snapshot
+        functionality or making changes to the base configuration.
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            seed_email = AVDCreator.SEED_CLONE_EMAIL
+
+            # Check if seed clone exists
+            if not self.avd_creator.has_seed_clone():
+                return False, "Seed clone AVD does not exist"
+
+            # Check if emulator is running for seed clone
+            is_running, emulator_id, avd_name = self.find_running_emulator_for_email(seed_email)
+
+            if not is_running:
+                logger.info("Starting seed clone emulator to create snapshot")
+                # Start the emulator
+                success, message = self.switch_profile_and_start_emulator(seed_email)
+                if not success:
+                    return False, f"Failed to start seed clone emulator: {message}"
+
+                # Wait for it to be ready
+                logger.info("Waiting for seed clone emulator to be ready...")
+                time.sleep(10)
+
+            # Save the snapshot
+            logger.info("Saving snapshot for seed clone AVD")
+            from server.utils.emulator_launcher import EmulatorLauncher
+
+            launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+
+            if launcher.save_snapshot(seed_email):
+                # Update the timestamp
+                self.set_user_field(seed_email, "last_snapshot_timestamp", int(time.time()))
+                return True, "Successfully updated seed clone snapshot"
+            else:
+                return False, "Failed to save seed clone snapshot"
+
+        except Exception as e:
+            logger.error(f"Error updating seed clone snapshot: {e}")
             return False, str(e)
 
     def _detect_host_architecture(self) -> str:
@@ -643,22 +670,41 @@ class AVDProfileManager:
         Returns:
             Optional[str]: The emulator ID if found, None otherwise
         """
+
         # First check if emulator_manager has cached info
         cached_info = None
         if hasattr(self.emulator_manager, "_emulator_cache"):
             for email, (emulator_id, cached_avd_name, _) in self.emulator_manager._emulator_cache.items():
                 if cached_avd_name == avd_name:
-                    logger.info(f"Found cached emulator {emulator_id} for AVD {avd_name}")
+                    logger.info(
+                        f"Found cached emulator {emulator_id} for AVD {avd_name} (cached for email={email})"
+                    )
                     cached_info = (avd_name, emulator_id)
                     break
+        else:
+            logger.info(f"No emulator cache found")
 
         # Look for running emulators with this AVD name
         running_emulators = self.device_discovery.map_running_emulators(
             self.profiles_index, cached_info=cached_info
         )
+
         emulator_id = running_emulators.get(avd_name)
+
+        # CRITICAL: Only return an emulator ID if it actually matches this AVD
+        # This prevents cross-user emulator access
+        if emulator_id and not cached_info:
+            # Verify this emulator is actually running the requested AVD
+            actual_avd = self.device_discovery._query_emulator_avd_name(emulator_id)
+            if actual_avd != avd_name:
+                logger.error(
+                    f"CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
+                    f"not {avd_name}. Returning None to prevent cross-user access."
+                )
+                return None
+
         logger.info(
-            f"Found emulator id: {emulator_id} for AVD: {avd_name}. {running_emulators} {cached_info}"
+            f"Found emulator id: {emulator_id} for AVD: {avd_name}. All running emulators: {running_emulators}"
         )
         return emulator_id
 
@@ -1093,6 +1139,7 @@ class AVDProfileManager:
         """
         email = get_sindarin_email()
         if not email:
+            logger.warning("No email available to check styles_updated")
             return False
 
         # Get the styles_updated from the top level
@@ -1276,19 +1323,17 @@ class AVDProfileManager:
             Tuple[bool, str]: (success, message)
         """
         # If we're forcing a new emulator, reset device settings in the profile
-        if force_new_emulator and email in self.user_preferences:
-            # Reset all device-specific settings for this profile
-            settings_to_reset = ["hw_overlays_disabled", "animations_disabled", "sleep_disabled"]
+        if force_new_emulator:
+            # Reset all device-specific settings for this profile under emulator_settings
+            settings_to_reset = [
+                "hw_overlays_disabled",
+                "animations_disabled",
+                "sleep_disabled",
+                "status_bar_disabled",
+                "auto_updates_disabled",
+            ]
             for setting in settings_to_reset:
-                if setting in self.user_preferences[email]:
-                    self.user_preferences[email][setting] = False
-                    logger.info(f"Reset {setting} for {email} due to emulator recreation")
-
-            # Save the updated preferences
-            self._save_user_preferences()
-
-            # No need to update current profile anymore, as we're using the multi-user approach
-            # The user_preferences save above is sufficient
+                self.set_user_field(email, setting, False, section="emulator_settings")
 
         # Special case: Simplified mode for Mac development environment
         if self.use_simplified_mode:
@@ -1489,6 +1534,8 @@ class AVDProfileManager:
                 if not success:
                     logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}")
                     raise Exception(f"Failed to delete seed clone AVD: {msg}")
+                elif "does not exist" in msg:
+                    logger.info(f"Seed clone AVD did not exist, proceeding with recreation")
 
             # Clear any cached emulator data
             if recreate_user and avd_name:
@@ -1511,3 +1558,45 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error recreating profile AVD for {email}: {e}")
             return False, f"Failed to recreate profile AVD: {str(e)}"
+
+    def clear_emulator_settings(self, email: str) -> bool:
+        """
+        Clear all emulator settings for a user.
+
+        This includes settings like:
+        - appium_device_initialized
+        - animations_disabled
+        - hw_overlays_disabled
+        - sleep_disabled
+        - status_bar_disabled
+        - auto_updates_disabled
+
+        Args:
+            email: Email address of the user
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Reload profiles to ensure we have the latest data
+            self._load_profiles_index()
+
+            # Check if user exists
+            if email not in self.profiles_index:
+                logger.warning(f"Cannot clear emulator settings: email {email} not found in profiles_index")
+                return False
+
+            # Clear the emulator_settings section if it exists
+            if "emulator_settings" in self.profiles_index[email]:
+                self.profiles_index[email]["emulator_settings"] = {}
+                logger.info(f"Cleared all emulator settings for {email}")
+            else:
+                logger.info(f"No emulator settings to clear for {email}")
+
+            # Save the updated profiles_index
+            self._save_profiles_index()
+            return True
+
+        except Exception as e:
+            logger.error(f"Error clearing emulator settings for {email}: {e}")
+            return False

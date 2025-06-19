@@ -21,6 +21,7 @@ from views.auth.view_strategies import (
     CAPTCHA_REQUIRED_INDICATORS,
     EMAIL_VIEW_IDENTIFIERS,
     PASSWORD_VIEW_IDENTIFIERS,
+    PUZZLE_REQUIRED_INDICATORS,
 )
 from views.common.dialog_strategies import (
     APP_NOT_RESPONDING_DIALOG_IDENTIFIERS,
@@ -64,8 +65,12 @@ class ViewInspector:
         # Initialize device_id to None - will be set properly later
         self.automator = self.driver.automator
 
-    def ensure_app_foreground(self):
-        """Ensures the Kindle app is in the foreground"""
+    def ensure_app_foreground(self, force_restart=False):
+        """Ensures the Kindle app is in the foreground
+
+        Args:
+            force_restart: If True, force stop the app before starting (used when in UNKNOWN state)
+        """
         try:
             # Get device ID through multiple methods to ensure we have one
             # Get the emulator ID for this email if possible
@@ -112,6 +117,19 @@ class ViewInspector:
             if not device_id:
                 logger.error("Still no device ID and multiple emulators may be running - cannot proceed")
                 return False
+
+            # Force stop the app if requested (e.g., when in UNKNOWN state)
+            if force_restart:
+                try:
+                    stop_cmd = ["adb"]
+                    if device_id:
+                        stop_cmd.extend(["-s", device_id])
+                    stop_cmd.extend(["shell", "am", "force-stop", self.app_package])
+                    subprocess.run(stop_cmd, check=False, capture_output=True, text=True)
+                    logger.info(f"Force stopped {self.app_package}")
+                    time.sleep(0.5)  # Brief pause after stopping
+                except Exception as e:
+                    logger.warning(f"Error force stopping app: {e}")
 
             # Build the ADB command based on whether we have a device ID
             cmd = ["adb"]
@@ -390,6 +408,10 @@ class ViewInspector:
                     self._current_view_cache = AppView.HOME
                     return AppView.HOME
             except Exception as e:
+                from server.utils.appium_error_utils import is_appium_error
+
+                if is_appium_error(e):
+                    raise
                 logger.warning(f"Error during early HOME tab check: {e}")
 
             # Check for app not responding dialog first
@@ -444,6 +466,23 @@ class ViewInspector:
                 # Set this as reading state with a dialog, since it's related to book opening
                 logger.info("   Treating download limit dialog as part of reading state")
                 return AppView.READING
+
+            # Check for "Viewing full screen" dialog early, especially if we're in StandAloneBookReaderActivity
+            try:
+                current_activity = self.driver.current_activity
+                if "StandAloneBookReaderActivity" in current_activity:
+                    # We're in the book reader activity, check for viewing full screen dialog
+                    for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element.is_displayed():
+                                logger.info(f"   Found viewing full screen dialog in {current_activity}")
+                                logger.info("   This is a reading view with full screen dialog overlay")
+                                return AppView.READING
+                        except NoSuchElementException:
+                            continue
+            except Exception as e:
+                logger.debug(f"   Error checking for viewing full screen dialog: {e}")
 
             # Check for Item Removed dialog which is a specific reading state dialog
             if is_item_removed_dialog_visible(self.driver):
@@ -546,11 +585,15 @@ class ViewInspector:
                 pass
 
             # Check for auth-related views first
-            if self._is_auth_view():
+            auth_view_result = self._is_auth_view()
+            if auth_view_result:
                 # Store auth page source for debugging
                 logger.info("   Found auth view - storing page source for debugging")
                 source = self.driver.page_source
                 store_page_source(source, "auth_view")
+                # If _is_auth_view returns AppView.TWO_FACTOR, use that
+                if auth_view_result == AppView.TWO_FACTOR:
+                    return AppView.TWO_FACTOR
                 return AppView.SIGN_IN
 
             # Check for notification permission dialog first
@@ -559,6 +602,16 @@ class ViewInspector:
             ):
                 logger.info("   Found notification permission dialog")
                 return AppView.NOTIFICATION_PERMISSION
+
+            # Check for puzzle screen first (more specific than captcha)
+            # Simplified to only check for "Solve this puzzle to protect your account"
+            for strategy, locator in PUZZLE_REQUIRED_INDICATORS:
+                try:
+                    self.driver.find_element(strategy, locator)
+                    logger.info("   Found puzzle authentication screen")
+                    return AppView.PUZZLE
+                except:
+                    continue
 
             # Check for captcha screen
             indicators_found = 0
@@ -745,29 +798,6 @@ class ViewInspector:
             logger.warning("Could not determine current view - dumping page source for debugging")
             self._dump_page_source()
 
-            # Also save a screenshot for visual debugging
-            try:
-                screenshot_path = os.path.join(self.screenshots_dir, "unknown_view.png")
-
-                # For unknown views, use regular ADB screenshot for speed
-                success = False
-                if hasattr(self, "automator") and self.automator and hasattr(self.automator, "device_id"):
-                    device_id = self.automator.device_id
-                    logger.info("Taking ADB screenshot for unknown view...")
-                    adb_path = take_adb_screenshot(device_id=device_id, output_path=screenshot_path)
-                    if adb_path:
-                        logger.info(f"Saved ADB screenshot of unknown view to {adb_path}")
-                        success = True
-                    else:
-                        logger.warning("ADB screenshot failed, falling back to standard method")
-
-                # Fall back to standard method if ADB screenshot failed or not available
-                if not success:
-                    self.driver.save_screenshot(screenshot_path)
-                    logger.info(f"Saved screenshot of unknown view to {screenshot_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save screenshot: {str(e)[:100]}")
-
             logger.debug("Not in main app view")
 
             # Check if we're in an AlertActivity which could contain a dialog
@@ -792,6 +822,10 @@ class ViewInspector:
             return AppView.UNKNOWN
 
         except Exception as e:
+            from server.utils.appium_error_utils import is_appium_error
+
+            if is_appium_error(e):
+                raise
             logger.error(f"Error determining current view: {e}")
             logger.warning("Dumping page source due to error")
             traceback.print_exc()
@@ -889,6 +923,21 @@ class ViewInspector:
     def _is_auth_view(self):
         """Check if we're on any authentication-related view."""
         try:
+            # Check for Two-Step Verification screen first
+            from views.auth.view_strategies import TWO_FACTOR_VIEW_IDENTIFIERS
+
+            two_factor_indicators = 0
+            for strategy, locator in TWO_FACTOR_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        two_factor_indicators += 1
+                        if two_factor_indicators >= 2:
+                            logger.info("   Found Two-Step Verification screen")
+                            return AppView.TWO_FACTOR
+                except NoSuchElementException:
+                    continue
+
             # Check for email input field
             for strategy in EMAIL_FIELD_STRATEGIES:
                 try:

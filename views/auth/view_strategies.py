@@ -67,22 +67,21 @@ INTERACTIVE_CAPTCHA_IDENTIFIERS = [
 CAPTCHA_REQUIRED_INDICATORS = [
     # Text captcha indicators
     (AppiumBy.XPATH, "//android.webkit.WebView[@text='Authentication required']"),
-    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Solve this puzzle')]"),
     (AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"),
     (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Enter the letters')]"),
     (AppiumBy.XPATH, "//android.widget.Button[@hint='verifyCaptcha']"),
-    # Interactive captcha indicators - more generic
-    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solve this puzzle')]"),
-    (AppiumBy.XPATH, "//android.widget.Button[@text='Confirm']"),
-    # Grid-based captcha indicators
-    (AppiumBy.XPATH, "//android.view.View[@resource-id='captcha-container']"),
-    (AppiumBy.XPATH, "//android.view.View[@resource-id='aacb-captcha-header']"),
-    (AppiumBy.XPATH, "//android.view.View[contains(@text, 'Solved:')]"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@hint='Enter the characters you see']"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@hint='Type characters']"),
 ]
 
 CAPTCHA_ERROR_MESSAGES = [
     (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Enter the characters as they are given')]"),
+]
+
+# Puzzle authentication indicators
+# Simplified to only check for the universal puzzle text
+PUZZLE_REQUIRED_INDICATORS = [
+    (AppiumBy.XPATH, "//android.view.View[@text='Solve this puzzle to protect your account']"),
 ]
 
 # Library view verification strategies - prioritized by specificity
@@ -116,4 +115,21 @@ AUTH_RESTART_MESSAGES = [
         AppiumBy.XPATH,
         '//android.view.View[contains(@text, "We\'re unable to verify your mobile number")]',
     ),
+]
+
+# Two-Step Verification (2FA) view identifiers
+TWO_FACTOR_VIEW_IDENTIFIERS = [
+    # Main WebView with title
+    (AppiumBy.XPATH, "//android.webkit.WebView[@text='Two-Step Verification']"),
+    # Header text
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Two-Step Verification']"),
+    # OTP input field
+    (AppiumBy.ID, "auth-mfa-otpcode"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@resource-id='auth-mfa-otpcode']"),
+    # Instruction text
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'One Time Password')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Authenticator App')]"),
+    # Form container
+    (AppiumBy.ID, "auth-mfa-form"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='auth-mfa-form']"),
 ]

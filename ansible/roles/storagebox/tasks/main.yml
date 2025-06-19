@@ -1,0 +1,34 @@
+---
+- name: Install CIFS utilities
+  package:
+    name: cifs-utils
+    state: present
+
+- name: Create mount point directory
+  file:
+    path: "{{ storagebox_mount_point }}"
+    state: directory
+    mode: '0755'
+
+- name: Create credentials directory
+  file:
+    path: /etc/samba
+    state: directory
+    mode: '0700'
+
+- name: Create credentials file
+  template:
+    src: storagebox.credentials.j2
+    dest: "{{ storagebox_credentials_file }}"
+    mode: '0600'
+    owner: root
+    group: root
+
+- name: Add storage box mount to fstab
+  mount:
+    path: "{{ storagebox_mount_point }}"
+    src: "//{{ storagebox_server }}/{{ storagebox_share_name }}"
+    fstype: cifs
+    opts: "credentials={{ storagebox_credentials_file }},uid={{ storagebox_uid }},gid={{ storagebox_gid }},file_mode=0664,dir_mode=0775,cache=none,nobrl,vers=3.0,_netdev,nofail"
+    state: mounted
+  notify: mount storagebox

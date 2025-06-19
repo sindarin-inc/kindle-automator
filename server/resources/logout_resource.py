@@ -10,6 +10,7 @@ from flask import request
 from flask_restful import Resource
 from selenium.common import exceptions as selenium_exceptions
 
+from server.logging_config import store_page_source
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
@@ -26,7 +27,7 @@ class LogoutResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response(None)
+    @handle_automator_response
     def _logout(self):
         """Sign out of the Kindle app"""
         # Get server instance from the request context if not provided
@@ -138,7 +139,11 @@ class LogoutResource(Resource):
             if not sign_out_clicked:
                 logger.error("Failed to find or click Sign Out button")
                 # Store diagnostics
-                automator.store_page_source()
+                try:
+                    page_source = automator.driver.page_source
+                    store_page_source(page_source, "logout_failed")
+                except Exception as ps_error:
+                    logger.error(f"Failed to store page source: {ps_error}")
                 automator.driver.save_screenshot(os.path.join(automator.screenshots_dir, "logout_failed.png"))
                 return {"error": "Failed to find Sign Out button"}, 500
 
@@ -195,7 +200,11 @@ class LogoutResource(Resource):
 
                 if not sign_out_confirm_clicked:
                     logger.error("Failed to click SIGN OUT button in confirmation dialog")
-                    automator.store_page_source()
+                    try:
+                        page_source = automator.driver.page_source
+                        store_page_source(page_source, "logout_confirm_failed")
+                    except Exception as ps_error:
+                        logger.error(f"Failed to store page source: {ps_error}")
                     automator.driver.save_screenshot(
                         os.path.join(automator.screenshots_dir, "logout_confirm_failed.png")
                     )
@@ -219,6 +228,14 @@ class LogoutResource(Resource):
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
 
+                    # Clear emulator settings to force fresh initialization on next login
+                    if automator.profile_manager:
+                        cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
+                        if cleared:
+                            logger.info(f"Cleared emulator settings for {sindarin_email}")
+                        else:
+                            logger.warning(f"Failed to clear emulator settings for {sindarin_email}")
+
                 return {
                     "success": True,
                     "message": "Successfully signed out",
@@ -232,6 +249,14 @@ class LogoutResource(Resource):
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
+
+                    # Clear emulator settings to force fresh initialization on next login
+                    if automator.profile_manager:
+                        cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
+                        if cleared:
+                            logger.info(f"Cleared emulator settings for {sindarin_email}")
+                        else:
+                            logger.warning(f"Failed to clear emulator settings for {sindarin_email}")
 
                 return {
                     "success": True,
@@ -247,6 +272,14 @@ class LogoutResource(Resource):
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
 
+                    # Clear emulator settings to force fresh initialization on next login
+                    if automator.profile_manager:
+                        cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
+                        if cleared:
+                            logger.info(f"Cleared emulator settings for {sindarin_email}")
+                        else:
+                            logger.warning(f"Failed to clear emulator settings for {sindarin_email}")
+
                 return {
                     "success": True,
                     "message": "Sign out button clicked",
@@ -258,7 +291,11 @@ class LogoutResource(Resource):
             logger.error(f"Error during logout: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             # Store diagnostics
-            automator.store_page_source()
+            try:
+                page_source = automator.driver.page_source
+                store_page_source(page_source, "logout_error")
+            except Exception as ps_error:
+                logger.error(f"Failed to store page source: {ps_error}")
             automator.driver.save_screenshot(os.path.join(automator.screenshots_dir, "logout_error.png"))
             return {"error": f"Failed to logout: {str(e)}"}, 500
 

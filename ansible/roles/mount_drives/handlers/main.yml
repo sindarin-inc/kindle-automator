@@ -1,0 +1,6 @@
+---
+- name: restart mdadm
+  ansible.builtin.systemd:
+    name: mdadm
+    state: restarted
+    daemon_reload: yes

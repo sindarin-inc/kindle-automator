@@ -1,5 +1,4 @@
 import logging
-import time
 from typing import Dict, Optional, Tuple, Union
 
 from appium.webdriver.common.appiumby import AppiumBy
@@ -11,6 +10,8 @@ from views.common.dialog_strategies import (
     DOWNLOAD_LIMIT_DIALOG_IDENTIFIERS,
     READ_AND_LISTEN_CLOSE_BUTTON,
     READ_AND_LISTEN_DIALOG_IDENTIFIERS,
+    VIEWING_FULL_SCREEN_DIALOG_IDENTIFIERS,
+    VIEWING_FULL_SCREEN_GOT_IT_BUTTON,
 )
 from views.library.interaction_strategies import INVALID_ITEM_DIALOG_BUTTONS
 from views.library.view_strategies import INVALID_ITEM_DIALOG_IDENTIFIERS
@@ -73,7 +74,6 @@ class DialogHandler:
                                     btn.click()
                                     logger.info(f"Clicked REMOVE button on 'Invalid Item' dialog")
                                     remove_clicked = True
-                                    time.sleep(1)  # Wait for dialog to dismiss
                                     break
                             except:
                                 continue
@@ -124,7 +124,6 @@ class DialogHandler:
                             )
                             wait_btn.click()
                             logger.info("Clicked 'Wait' button on App Not Responding dialog")
-                            time.sleep(2)  # Wait for app to resume
                             return True
                         except Exception as btn_error:
                             logger.error(f"Failed to click 'Wait' button: {btn_error}")
@@ -169,7 +168,6 @@ class DialogHandler:
                                     x_btn.click()
                                     logger.info("Clicked X button on 'Read and Listen' dialog")
                                     x_clicked = True
-                                    time.sleep(1)  # Wait for dialog to dismiss
                                     break
                             except:
                                 continue
@@ -188,6 +186,55 @@ class DialogHandler:
             return False
         except Exception as e:
             logger.error(f"Error in check_for_read_and_listen_dialog: {e}")
+            return False
+
+    def check_for_viewing_full_screen_dialog(self):
+        """Check for and handle the 'Viewing full screen' dialog.
+
+        Returns:
+            bool: True if dialog was found and handled (by clicking 'Got it'),
+                False otherwise
+        """
+        try:
+            for strategy, locator in VIEWING_FULL_SCREEN_DIALOG_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        logger.info("Found 'Viewing full screen' dialog")
+
+                        # Store page source for diagnostics
+                        store_page_source(
+                            self.driver.page_source,
+                            "viewing_full_screen_dialog_detected",
+                        )
+
+                        # Click the "Got it" button
+                        got_it_clicked = False
+                        for btn_strategy, btn_locator in VIEWING_FULL_SCREEN_GOT_IT_BUTTON:
+                            try:
+                                got_it_btn = self.driver.find_element(btn_strategy, btn_locator)
+                                if got_it_btn.is_displayed():
+                                    got_it_btn.click()
+                                    logger.info("Clicked 'Got it' button on 'Viewing full screen' dialog")
+                                    got_it_clicked = True
+                                    break
+                            except:
+                                continue
+
+                        if not got_it_clicked:
+                            logger.warning("Could not click 'Got it' button on 'Viewing full screen' dialog")
+
+                        # Return True to indicate dialog was found and handled
+                        return True
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error checking for 'Viewing full screen' dialog: {e}")
+
+            # Dialog not found
+            return False
+        except Exception as e:
+            logger.error(f"Error in check_for_viewing_full_screen_dialog: {e}")
             return False
 
     def check_all_dialogs(self, book_title=None, context=""):
@@ -214,6 +261,10 @@ class DialogHandler:
         # Check for Read and Listen dialog
         if self.check_for_read_and_listen_dialog():
             return True, "read_and_listen"
+
+        # Check for Viewing full screen dialog
+        if self.check_for_viewing_full_screen_dialog():
+            return True, "viewing_full_screen"
 
         # Add checks for other dialogs as needed
 

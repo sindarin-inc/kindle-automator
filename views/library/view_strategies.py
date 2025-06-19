@@ -377,3 +377,8 @@ READER_CONTENT_IDENTIFIERS = [
 READER_FOOTER_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_container"),
 ]
+
+# Download progress bar identifiers
+DOWNLOAD_PROGRESS_BAR_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.ProgressBar"),
+]

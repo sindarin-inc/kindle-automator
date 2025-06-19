@@ -3,6 +3,7 @@ import logging
 import os
 import platform
 import random
+import subprocess
 from typing import Dict, List, Optional, Tuple
 
 from server.utils.request_utils import get_sindarin_email
@@ -559,3 +560,28 @@ class VNCInstanceManager:
             self.save_instances()
             return True
         return False
+
+    def audit_and_cleanup_stale_instances(self) -> None:
+        """Audit assigned VNC instances and clean up any that aren't actually running."""
+        assigned_instances = self.get_assigned_instances()
+        if assigned_instances:
+            logger.info(f"Auditing {len(assigned_instances)} assigned VNC instances")
+            for instance in assigned_instances:
+                email = instance.get("assigned_profile")
+                emulator_id = instance.get("emulator_id")
+                if email and emulator_id:
+                    # Check if emulator is still running via adb devices
+                    try:
+                        result = subprocess.run(
+                            [f"{ANDROID_HOME}/platform-tools/adb", "devices"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if result.returncode == 0 and emulator_id not in result.stdout:
+                            logger.info(
+                                f"VNC instance for {email} has stale emulator_id {emulator_id}, releasing"
+                            )
+                            self.release_instance_from_profile(email)
+                    except Exception as e:
+                        logger.error(f"Error checking emulator status for {email}: {e}")

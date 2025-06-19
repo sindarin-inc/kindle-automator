@@ -205,3 +205,18 @@ TITLE_NOT_AVAILABLE_DIALOG_BUTTONS = [
     (AppiumBy.ID, "android:id/button2"),  # Cancel button
     (AppiumBy.XPATH, "//android.widget.Button[@text='Cancel']"),  # Fallback using text
 ]
+
+# Unable to Download dialog identifiers
+UNABLE_TO_DOWNLOAD_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Unable to Download']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/alertTitle' and @text='Unable to Download']",
+    ),
+]
+
+# Unable to Download OK button
+UNABLE_TO_DOWNLOAD_OK_BUTTON = [
+    (AppiumBy.ID, "android:id/button1"),  # OK button by ID
+    (AppiumBy.XPATH, "//android.widget.Button[@text='OK']"),  # Fallback using text
+]

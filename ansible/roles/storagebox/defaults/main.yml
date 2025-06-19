@@ -1,0 +1,8 @@
+---
+storagebox_mount_point: /mnt/storage
+storagebox_server: u466521.your-storagebox.de
+storagebox_username: u466521
+storagebox_share_name: backup
+storagebox_credentials_file: /etc/samba/storagebox.credentials
+storagebox_uid: 1000
+storagebox_gid: 1000

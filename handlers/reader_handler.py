@@ -109,7 +109,7 @@ class ReaderHandler:
                         device_list = self.driver.find_element(dl_strat, dl_loc)
                         if device_list.is_displayed():
                             break
-                    except:
+                    except NoSuchElementException:
                         device_list = None
 
                 button = None
@@ -118,7 +118,7 @@ class ReaderHandler:
                         button = self.driver.find_element(btn_strat, btn_loc)
                         if button.is_displayed():
                             break
-                    except:
+                    except NoSuchElementException:
                         button = None
 
                 if device_list and button:
@@ -126,6 +126,10 @@ class ReaderHandler:
                     store_page_source(self.driver.page_source, "download_limit_combo_detected")
                     return True
             except Exception as e:
+                from server.utils.appium_error_utils import is_appium_error
+
+                if is_appium_error(e):
+                    raise
                 logger.debug(f"Error in device list + button check: {e}")
 
             # Method 4: Check current activity directly
@@ -333,7 +337,7 @@ class ReaderHandler:
                     logger.warning("Download Limit dialog still visible after attempts")
                 else:
                     logger.info("Dialog no longer visible - successfully handled")
-            except:
+            except NoSuchElementException:
                 logger.info("Dialog title element not found - dialog may have closed")
 
             if dialog_still_visible and not remove_button_tapped:
@@ -408,19 +412,67 @@ class ReaderHandler:
                 logger.error("Failed to handle Download Limit dialog detected immediately")
                 return False
 
-        # Check for Read and Listen dialog (audible dialog)
+        # Check for dialogs that might appear immediately after opening a book
         from views.common.dialog_handler import DialogHandler
 
         dialog_handler = DialogHandler(self.driver)
-        if dialog_handler.check_for_read_and_listen_dialog():
-            logger.info("Read and Listen dialog detected and handled - continuing with reading flow")
-            # Continue to reading view handling below
+
+        # Check for dialogs in a loop (up to 3 dialogs)
+        dialogs_handled = 0
+        max_dialogs = 3
+
+        for i in range(max_dialogs):
+            dialog_found = False
+
+            # Check for Read and Listen dialog
+            if dialog_handler.check_for_read_and_listen_dialog():
+                logger.info("Read and Listen dialog detected and handled")
+                dialog_found = True
+                dialogs_handled += 1
+                time.sleep(0.5)  # Brief wait for dialog dismissal
+
+            # Check for Viewing full screen dialog
+            if dialog_handler.check_for_viewing_full_screen_dialog():
+                logger.info("Viewing full screen dialog detected and handled")
+                dialog_found = True
+                dialogs_handled += 1
+                time.sleep(0.5)  # Brief wait for dialog dismissal
+
+            # If no dialog was found this iteration, break the loop
+            if not dialog_found:
+                break
+
+        if dialogs_handled > 0:
+            logger.info(f"Handled {dialogs_handled} dialog(s) before waiting for reading view")
 
         # Wait for the reading view to appear
         try:
+            # Track time and capture page source periodically
+            start_time = time.time()
+            last_capture_time = start_time - 1.0  # Ensure first capture happens immediately
+            capture_count = 0
+
+            # Capture initial state
+            logger.info("Capturing initial state before waiting for reading view")
+            store_page_source(self.driver.page_source, "before_reading_view_wait")
+
             # Custom wait condition to check for any of the reading view identifiers
             # or for the download limit dialog
             def reading_view_or_download_limit_present(driver):
+                nonlocal last_capture_time, capture_count
+
+                # Always do time-based capture first, before any early returns
+                current_time = time.time()
+                elapsed_since_last = current_time - last_capture_time
+
+                if elapsed_since_last >= 1.0:
+                    capture_count += 1
+                    elapsed = current_time - start_time
+                    logger.info(f"Waiting for reading view to appear... {elapsed:.1f}s elapsed")
+                    store_page_source(
+                        driver.page_source, f"waiting_for_reading_view_{capture_count}_{int(elapsed)}s"
+                    )
+                    last_capture_time = current_time
                 # First check for download limit dialog - try all detection methods
 
                 # Method 1: Check for download limit dialog headers
@@ -462,7 +514,7 @@ class ReaderHandler:
                             if el.is_displayed():
                                 device_list = True
                                 break
-                        except:
+                        except NoSuchElementException:
                             pass
 
                     remove_button = None
@@ -472,7 +524,7 @@ class ReaderHandler:
                             if el.is_displayed():
                                 remove_button = True
                                 break
-                        except:
+                        except NoSuchElementException:
                             pass
 
                     if device_list and remove_button:
@@ -501,7 +553,7 @@ class ReaderHandler:
                         logger.info(f"Last Read dialog detected during open_book: {last_read.text}")
                         # We'll treat this as a reading_view since we have handling for it later
                         return "reading_view"
-                except:
+                except NoSuchElementException:
                     pass
 
                 return False
@@ -509,9 +561,9 @@ class ReaderHandler:
             # If we already found and handled the download limit dialog, skip the wait
             if not download_limit_found:
                 # Wait for either reading view element or download limit dialog to appear
-                result = WebDriverWait(self.driver, 5).until(
+                result = WebDriverWait(self.driver, 15).until(
                     reading_view_or_download_limit_present
-                )  # Shorter timeout
+                )  # Wait up to 10 seconds
             else:
                 # We already handled the download limit dialog, just wait for reading view
                 logger.info("Skipping wait since download limit dialog was already handled")
@@ -525,8 +577,28 @@ class ReaderHandler:
                     logger.info("Successfully handled Download Limit dialog, waiting for reading view")
                     # Now wait for the reading view after handling the dialog
                     try:
+                        # Track time for second wait
+                        wait_start_time = time.time()
+                        wait_last_capture_time = wait_start_time
+                        wait_capture_count = 0
 
                         def reading_view_present(driver):
+                            nonlocal wait_last_capture_time, wait_capture_count
+
+                            # Capture page source every second while waiting
+                            current_time = time.time()
+                            if current_time - wait_last_capture_time >= 1.0:
+                                wait_capture_count += 1
+                                elapsed = current_time - wait_start_time
+                                logger.info(
+                                    f"Waiting for reading view after download limit... {elapsed:.1f}s elapsed"
+                                )
+                                store_page_source(
+                                    driver.page_source,
+                                    f"after_download_limit_wait_{wait_capture_count}_{int(elapsed)}s",
+                                )
+                                wait_last_capture_time = current_time
+
                             for strategy in READING_VIEW_IDENTIFIERS:
                                 try:
                                     element = driver.find_element(strategy[0], strategy[1])
@@ -560,7 +632,7 @@ class ReaderHandler:
                                     )
                                     if library_element.is_displayed():
                                         library_view = True
-                                except:
+                                except NoSuchElementException:
                                     # Try another library indicator
                                     try:
                                         library_tab = self.driver.find_element(
@@ -631,6 +703,11 @@ class ReaderHandler:
         except TimeoutException:
             logger.error("Failed to detect reading view or download limit dialog after 10 seconds")
 
+            # Capture final state for debugging
+            final_elapsed = time.time() - start_time
+            logger.info(f"Timeout occurred after {final_elapsed:.1f}s total wait time")
+            store_page_source(self.driver.page_source, f"timeout_final_state_{int(final_elapsed)}s")
+
             # Check if we're unexpectedly still in the library view
             try:
                 library_element = self.driver.find_element(
@@ -651,50 +728,7 @@ class ReaderHandler:
             store_page_source(self.driver.page_source, "error_waiting_for_reading_view_or_download_limit")
             return False
 
-        # Check for fullscreen dialog immediately without a long wait
-        try:
-            # Use the existing identifiers from view_strategies.py
-            dialog_present = False
-            for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
-                try:
-                    dialog = self.driver.find_element(strategy, locator)
-                    if dialog.is_displayed():
-                        dialog_present = True
-                        logger.info(f"Detected full screen dialog with {strategy}: {locator}")
-                        break
-                except NoSuchElementException:
-                    continue
-
-            if dialog_present:
-                # Try to find the "Got it" button using defined strategies
-                for strategy, locator in FULL_SCREEN_DIALOG_GOT_IT:
-                    try:
-                        got_it_button = self.driver.find_element(strategy, locator)
-                        if got_it_button.is_displayed():
-                            got_it_button.click()
-                            logger.info(f"Clicked 'Got it' button with {strategy}: {locator}")
-
-                            # Verify the dialog was dismissed
-                            try:
-                                WebDriverWait(self.driver, 2).until_not(
-                                    EC.presence_of_element_located(READING_VIEW_FULL_SCREEN_DIALOG[0])
-                                )
-                                logger.info("Full screen dialog successfully dismissed")
-                            except TimeoutException:
-                                logger.warning(
-                                    "Full screen dialog may not have closed properly after clicking 'Got it'"
-                                )
-
-                            break
-                    except NoSuchElementException:
-                        continue
-        except NoSuchElementException:
-            # Dialog not present, continue immediately
-            logger.info("No full screen dialog detected, continuing immediately")
-        except TimeoutException:
-            logger.warning("Full screen dialog may not have closed properly after clicking 'Got it'")
-        except Exception as e:
-            logger.warning(f"Error handling full screen dialog: {e}")
+        # Viewing full screen dialog is now handled in the dialog loop above
 
         # We already confirmed the reading view is loaded above, so no need for additional waiting
         # Just check for page content container which should be available immediately
@@ -1154,7 +1188,7 @@ class ReaderHandler:
                         self.driver.tap([(center_x, center_y)])
                         time.sleep(0.5)  # Wait for toolbar to hide
                         break
-                except:
+                except NoSuchElementException:
                     continue  # Try the next strategy
 
             # Get screen dimensions and calculate tap coordinates
@@ -1693,19 +1727,14 @@ class ReaderHandler:
                 else:
                     logger.info("'About this book' slideover successfully dismissed")
 
-            # Check for and dismiss full screen dialog
-            dialog_visible, _ = self._check_element_visibility(
-                READING_VIEW_FULL_SCREEN_DIALOG, "full screen dialog"
-            )
-            if dialog_visible:
-                logger.info("Found full screen dialog - attempting to dismiss")
-                got_it_visible, got_it_button = self._check_element_visibility(
-                    FULL_SCREEN_DIALOG_GOT_IT, "'Got it' button"
-                )
-                if got_it_visible:
-                    got_it_button.click()
-                    logger.info("Clicked 'Got it' button to dismiss dialog")
-                    time.sleep(1)
+            # Check for and dismiss full screen dialog using DialogHandler
+            from views.common.dialog_handler import DialogHandler
+
+            dialog_handler = DialogHandler(self.driver)
+
+            if dialog_handler.check_for_viewing_full_screen_dialog():
+                logger.info("Successfully handled 'Viewing full screen' dialog")
+                time.sleep(0.5)  # Brief wait for dialog dismissal animation
 
             # Check for and handle "Go to that location/page?" dialog
             go_to_location_visible, message = self._check_element_visibility(

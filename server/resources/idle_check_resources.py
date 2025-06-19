@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from flask import request
 from flask_restful import Resource
 
+from server.utils.vnc_instance_manager import VNCInstanceManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,13 +27,27 @@ class IdleCheckResource(Resource):
 
     def get(self):
         """Check for idle emulators and shut them down."""
-        return self._check_and_shutdown_idle()
+        # Get timeout from query parameter only if we're in a request context
+        timeout_minutes = None
+        if request:
+            try:
+                timeout_minutes = request.args.get("minutes", type=int)
+            except RuntimeError:
+                # Outside request context, use default
+                pass
+        return self._check_and_shutdown_idle(timeout_minutes)
 
     def post(self):
         """Check for idle emulators and shut them down (supports customizable timeout)."""
-        # Allow custom timeout from request body
-        data = request.get_json() or {}
-        custom_timeout = data.get("idle_timeout_minutes", self.idle_timeout_minutes)
+        # Allow custom timeout from request body only if we're in a request context
+        custom_timeout = self.idle_timeout_minutes
+        if request:
+            try:
+                data = request.get_json() or {}
+                custom_timeout = data.get("idle_timeout_minutes", self.idle_timeout_minutes)
+            except RuntimeError:
+                # Outside request context, use default
+                pass
         return self._check_and_shutdown_idle(custom_timeout)
 
     def _check_and_shutdown_idle(self, timeout_minutes=None):
@@ -139,5 +155,9 @@ class IdleCheckResource(Resource):
         }
 
         logger.info(f"Idle check complete: {summary['shut_down']} shut down, {summary['active']} active")
+
+        # Audit VNC instances to clean up any that aren't actually running
+        vnc_manager = VNCInstanceManager.get_instance()
+        vnc_manager.audit_and_cleanup_stale_instances()
 
         return summary, 200

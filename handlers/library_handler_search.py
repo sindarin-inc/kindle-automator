@@ -501,7 +501,7 @@ class LibraryHandlerSearch:
             return False
 
         except Exception as e:
-            logger.error(f"Error exiting search mode: {e}")
+            logger.error(f"Error exiting search mode: {str(e)[:100]}")
             return False
 
     def _check_store_results_for_book(self, book_title: str):
@@ -634,7 +634,7 @@ class LibraryHandlerSearch:
         # Check for search results within 1 second
         search_results_found = self._wait_until(
             lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
-            timeout=1,
+            timeout=3,
         )
 
         if not search_results_found:
@@ -713,10 +713,10 @@ class LibraryHandlerSearch:
         self.driver.press_keycode(66)
         logger.info("Pressed Enter key to submit search")
 
-        # Check for search results within 1 second
+        # Check for search results within 3 seconds because sometimes the results pop in
         search_results_found = self._wait_until(
             lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
-            timeout=2,
+            timeout=3,
         )
 
         if not search_results_found:

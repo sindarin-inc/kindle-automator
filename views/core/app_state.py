@@ -18,8 +18,20 @@ class AppState(Enum):
     SEARCH_RESULTS = auto()  # Search results view with "In your library" and "Results from Kindle" sections
     READING = auto()  # Book reading view
     CAPTCHA = auto()  # Captcha verification screen
+    TWO_FACTOR = auto()  # Two-Step Verification screen
+    PUZZLE = auto()  # Puzzle authentication screen (choose items)
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
     MORE_SETTINGS = auto()  # More tab is selected showing settings menu
+
+    def is_auth_state(self) -> bool:
+        return self in [
+            AppState.SIGN_IN,
+            AppState.SIGN_IN_PASSWORD,
+            AppState.LIBRARY_SIGN_IN,
+            AppState.CAPTCHA,
+            AppState.TWO_FACTOR,
+            AppState.PUZZLE,
+        ]
 
 
 class AppView(Enum):
@@ -35,5 +47,7 @@ class AppView(Enum):
     SEARCH_RESULTS = auto()  # Search results view with "In your library" and "Results from Kindle" sections
     READING = auto()
     CAPTCHA = auto()  # Captcha verification screen
+    TWO_FACTOR = auto()  # Two-Step Verification screen
+    PUZZLE = auto()  # Puzzle authentication screen (choose items)
     APP_NOT_RESPONDING = auto()  # App not responding dialog is showing
     MORE_SETTINGS = auto()  # More tab is selected showing settings menu

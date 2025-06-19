@@ -16,6 +16,10 @@ class AVDCreator:
     SEED_CLONE_EMAIL = "seed@clone.local"
     SEED_CLONE_SNAPSHOT = "pre_kindle_install"
 
+    # System image to use for all AVDs
+    # Must match `sdkmanager --list` format exactly
+    SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
+
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
         self.avd_dir = avd_dir
@@ -48,43 +52,21 @@ class AVDCreator:
 
     def get_compatible_system_image(self, available_images: List[str]) -> Optional[str]:
         """
-        Get the most compatible system image based on host architecture.
+        Get the configured system image if available.
 
         Args:
             available_images: List of available system images
 
         Returns:
-            Optional[str]: Most compatible system image or None if not found
+            Optional[str]: System image if available, None otherwise
         """
-        # Important: Even on ARM Macs (M1/M2/M4), we need to use x86_64 images
-        # because the ARM64 emulation in Android emulator is not fully supported yet.
-        # The emulator will use Rosetta 2 to translate x86_64 to ARM.
-
-        # First choice: Android 30 with Google Play Store (x86_64)
-        for img in available_images:
-            if "system-images;android-30;google_apis_playstore;x86_64" in img:
-                return img
-
-        # Second choice: Android 30 with Google APIs (x86_64)
-        for img in available_images:
-            if "system-images;android-30;google_apis;x86_64" in img:
-                return img
-
-        # Third choice: Any Android 30 x86_64 image
-        for img in available_images:
-            if "system-images;android-30;" in img and "x86_64" in img:
-                return img
-
-        # Fourth choice: Any modern Android x86_64 image
-        for img in available_images:
-            if "x86_64" in img:
-                return img
-
-        # Fallback to any image
-        if available_images:
-            return available_images[0]
-
-        return None
+        # Check if our configured system image is available
+        if self.SYSTEM_IMAGE in available_images:
+            logger.info(f"Using configured system image: {self.SYSTEM_IMAGE}")
+            return self.SYSTEM_IMAGE
+        else:
+            logger.error(f"Configured system image {self.SYSTEM_IMAGE} not found in available images")
+            return None
 
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
         """
@@ -126,15 +108,9 @@ class AVDCreator:
                             img_path = parts[0].strip()
                             available_images.append(img_path)
 
-                # Get a compatible system image based on host architecture
+                # Get the configured system image
                 sys_img = self.get_compatible_system_image(available_images)
 
-                if not sys_img:
-                    # Always use x86_64 images for all platforms
-                    sys_img = "system-images;android-30;google_apis_playstore;x86_64"
-                    logger.info(f"No compatible system image found, will install {sys_img} for all hosts")
-
-                # Try to install the system image if we have one selected
                 if sys_img:
                     # Try to install the system image
                     logger.info(f"Installing system image: {sys_img}")
@@ -158,14 +134,12 @@ class AVDCreator:
                         logger.error(f"Failed to install system image: {install_result.stderr}")
                         return False, f"Failed to install system image: {install_result.stderr}"
                 else:
-                    logger.error("No compatible system image found and failed to select a fallback")
-                    return False, "No compatible system image found for your architecture"
+                    logger.error(f"System image {self.SYSTEM_IMAGE} not available")
+                    return False, f"System image {self.SYSTEM_IMAGE} not found in available images"
 
             except Exception as e:
                 logger.error(f"Error getting available system images: {e}")
-                # Fallback to x86_64 for all platforms
-                sys_img = "system-images;android-30;google_apis;x86_64"
-                logger.info("Using fallback x86_64 system image")
+                return False, f"Error listing system images: {e}"
 
             logger.info(f"Using system image: {sys_img}")
 
@@ -225,7 +199,11 @@ class AVDCreator:
             # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
-            sysdir = "system-images/android-30/google_apis_playstore/x86_64/"
+
+            # Derive sysdir from SYSTEM_IMAGE constant
+            # Convert from sdkmanager format to path format
+            # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"
+            sysdir = self.SYSTEM_IMAGE.replace(";", "/") + "/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 
@@ -260,7 +238,8 @@ class AVDCreator:
                 "kvm.enabled": "no",
                 "showWindow": "no",
                 "hw.arc.autologin": "no",
-                "snapshot.present": "no",
+                "snapshot.present": "yes",
+                "quickbootChoice": "2",
                 "disk.dataPartition.size": "6G",
                 "PlayStore.enabled": "true",
                 "image.sysdir.1": sysdir,
@@ -278,6 +257,10 @@ class AVDCreator:
                 "qemu.enable_keyboard_permission": "yes",  # Enable keyboard permission
                 "qemu.hardware_keyboard_button_type": "power",  # Set hardware keyboard button type
                 "qemu.settings.system.show_ime_with_hard_keyboard": "0",  # Disable IME with hardware keyboard
+                # Stylus settings - disable stylus features (Android 36)
+                "hw.stylus": "no",  # Disable stylus hardware
+                "hw.pen": "no",  # Disable pen hardware
+                "hw.stylus.button": "no",  # Disable stylus button
             }
 
             # For arm64 hosts, make sure we're not trying to use x86_64
@@ -387,8 +370,13 @@ class AVDCreator:
 
                 return True, f"Successfully deleted AVD: {avd_name}"
             else:
-                logger.error(f"Failed to delete AVD: {result.stderr}")
-                return False, f"Failed to delete AVD: {result.stderr}"
+                # Check if the error is because the AVD doesn't exist
+                if "There is no Android Virtual Device named" in result.stderr:
+                    logger.info(f"AVD {avd_name} does not exist, nothing to delete")
+                    return True, f"AVD {avd_name} does not exist, nothing to delete"
+                else:
+                    logger.error(f"Failed to delete AVD: {result.stderr}")
+                    return False, f"Failed to delete AVD: {result.stderr}"
 
         except Exception as e:
             logger.error(f"Error deleting AVD: {e}")
@@ -402,7 +390,21 @@ class AVDCreator:
             Tuple[bool, str]: (success, avd_name or error message)
         """
         logger.info("Creating seed clone AVD for fast user initialization")
-        return self.create_new_avd(self.SEED_CLONE_EMAIL)
+        success, avd_name = self.create_new_avd(self.SEED_CLONE_EMAIL)
+
+        if success:
+            # Mark seed clone for device identifier randomization on first boot
+            try:
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                avd_manager = AVDProfileManager.get_instance()
+                avd_manager.set_user_field(self.SEED_CLONE_EMAIL, "needs_device_randomization", True)
+                avd_manager.set_user_field(self.SEED_CLONE_EMAIL, "post_boot_randomized", False)
+                logger.info("Marked seed clone AVD for device randomization on first boot")
+            except Exception as e:
+                logger.warning(f"Could not mark seed clone for randomization: {e}")
+
+        return success, avd_name
 
     def copy_avd_from_seed_clone(self, email: str) -> Tuple[bool, str]:
         """
@@ -417,10 +419,6 @@ class AVDCreator:
         if not self.has_seed_clone():
             logger.error("Seed clone AVD does not exist")
             return False, "Seed clone AVD does not exist"
-
-        if not self.has_seed_clone_snapshot():
-            logger.error("Seed clone snapshot does not exist")
-            return False, "Seed clone snapshot does not exist"
 
         try:
             # Get AVD names
@@ -493,12 +491,37 @@ class AVDCreator:
             # Step 4: Update snapshot references in the new AVD
             self._update_snapshot_references(seed_clone_name, new_avd_name)
 
+            # Step 5: Configure the new AVD with proper settings (including RAM)
+            logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
+            self._configure_avd(new_avd_name)
+
+            # Step 6: Randomize device identifiers to prevent auth token ejection
+            logger.info(f"Randomizing device identifiers for {new_avd_name}")
+            randomized_identifiers = {}
+            try:
+                from server.utils.device_identifier_utils import (
+                    randomize_avd_config_identifiers,
+                )
+
+                config_path = os.path.join(new_avd_path, "config.ini")
+                randomized_identifiers = randomize_avd_config_identifiers(config_path)
+                logger.info(f"Randomized identifiers for {new_avd_name}: {randomized_identifiers}")
+            except Exception as e:
+                logger.error(f"Failed to randomize device identifiers: {e}")
+                # Continue anyway - better to have a working AVD with duplicate identifiers
+                # than to fail the cloning process
+
             # Mark this AVD as created from seed clone in the user profile
             try:
                 from views.core.avd_profile_manager import AVDProfileManager
 
                 avd_manager = AVDProfileManager.get_instance()
                 avd_manager.set_user_field(email, "created_from_seed_clone", True)
+                # Store randomized identifiers in user profile for consistent use
+                if randomized_identifiers:
+                    avd_manager.set_user_field(email, "device_identifiers", randomized_identifiers)
+                # Clear post_boot_randomized flag to ensure randomization happens on first boot
+                avd_manager.set_user_field(email, "post_boot_randomized", False)
                 logger.info(f"Marked {email} as created from seed clone")
             except Exception as e:
                 logger.warning(f"Could not mark AVD as created from seed clone: {e}")
@@ -632,9 +655,9 @@ class AVDCreator:
 
     def is_seed_clone_ready(self) -> bool:
         """
-        Check if the seed clone is ready to be used (has AVD and snapshot).
+        Check if the seed clone is ready to be used (has AVD).
 
         Returns:
             bool: True if seed clone is ready, False otherwise
         """
-        return self.has_seed_clone() and self.has_seed_clone_snapshot()
+        return self.has_seed_clone()

@@ -154,13 +154,13 @@ class UserActivityResource(Resource):
             "book_download": r"Book is not downloaded yet, initiating download",
             "search_book": r"Proceeding to search for \'(.+?)\'",
             "book_found": r"Successfully found book \'(.+?)\' using search",
-            "response_time": r"RESPONSE \[GET /([^\]]+)\].*?User:\s*([^|]+)",
+            "response_time": r"RESPONSE \[GET /([^\]]+?)(?:\s+[\d.]+s)?\].*?User:\s*([^|]+)",
             "launch_time_start": r"Launching emulator for (.+?)$",
             "launch_time_end": r"Emulator (emulator-\d+) launched successfully",
             "appium_start": r"Starting Appium server for",
             "appium_fail": r"Failed to start Appium server",
             "request": r"REQUEST \[(\w+) ([^\]]+)\].*?: (.+)$",
-            "response": r"RESPONSE \[(\w+) ([^\]]+)\].*?: (.+)$",
+            "response": r"RESPONSE \[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
         }
 
         current_activity = None
@@ -272,16 +272,25 @@ class UserActivityResource(Resource):
                     elif event_type == "response":
                         activity["method"] = match.group(1)
                         activity["endpoint"] = match.group(2)
-                        activity["body"] = self._strip_ansi_codes(match.group(3))
+                        # Check if elapsed time was captured (group 3)
+                        if match.group(3) is not None:  # This is the elapsed time
+                            activity["duration"] = float(match.group(3))
+                            activity["body"] = self._strip_ansi_codes(match.group(4))
+                        else:
+                            # No elapsed time in the log, use the last group as body
+                            # When no elapsed time, group 4 is the body
+                            activity["body"] = self._strip_ansi_codes(match.group(4))
+                            # Fall back to calculating duration
+                            if (
+                                current_activity
+                                and current_activity.get("action") == "api_request"
+                                and current_activity.get("endpoint") == activity["endpoint"]
+                            ):
+                                duration = (timestamp - current_activity["timestamp_obj"]).total_seconds()
+                                activity["duration"] = duration
                         activity["action"] = "api_response"
-                        # Calculate duration if we have a matching request
-                        if (
-                            current_activity
-                            and current_activity.get("action") == "api_request"
-                            and current_activity.get("endpoint") == activity["endpoint"]
-                        ):
-                            duration = (timestamp - current_activity["timestamp_obj"]).total_seconds()
-                            activity["duration"] = duration
+                        # Always get request params if available
+                        if current_activity and current_activity.get("endpoint") == activity["endpoint"]:
                             activity["request_params"] = current_activity.get("params", "")
                     elif event_type == "response_time" and "RESPONSE" in line:
                         # Calculate request duration

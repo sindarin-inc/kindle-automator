@@ -10,7 +10,6 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from server.config import VNC_BASE_URL
 from server.logging_config import store_page_source
 from server.utils.request_utils import get_formatted_vnc_url
 from views.auth.interaction_strategies import (
@@ -34,6 +33,7 @@ from views.auth.view_strategies import (
     LIBRARY_VIEW_VERIFICATION_STRATEGIES,
     PASSWORD_VIEW_IDENTIFIERS,
 )
+from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +42,16 @@ class LoginVerificationState(Enum):
     SUCCESS = "success"
     CAPTCHA = "captcha"
     TWO_FACTOR = "two_factor"
+    PUZZLE = "puzzle"
     INCORRECT_PASSWORD = "incorrect_password"
     ERROR = "error"
     UNKNOWN = "unknown"
 
 
 class AuthenticationHandler:
-    def __init__(self, driver, captcha_solution=None):
+    def __init__(self, driver):
         self.driver = driver
-        self.captcha_solution = captcha_solution
         self.screenshots_dir = "screenshots"
-        self.last_captcha_screenshot = None  # Track the last captcha screenshot path
-        self.interactive_captcha_detected = False  # Flag for the special interactive captcha case
         self.keyboard_check_active = False  # Flag to track if keyboard hide check is active
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
@@ -139,65 +137,42 @@ class AuthenticationHandler:
         Returns:
             dict: Status information containing:
                 - state: current AppState (LIBRARY, HOME, SIGN_IN, etc.)
-                - requires_manual_login: boolean indicating if manual login is needed (always True)
+                - authenticated: boolean indicating if user is authenticated
                 - already_authenticated: boolean indicating if already logged in
                 - vnc_url: URL to access VNC for manual login
         """
         try:
-            # Try multiple ways to access the automator
-            automator = None
+            # Access the automator directly from the driver
+            # This ensures we're using the correct automator instance for this specific user
+            automator = getattr(self.driver, "automator", None)
 
-            # Option 1: Check if the driver has an automator attribute directly
-            if hasattr(self.driver, "automator"):
-                automator = self.driver.automator
-
-            # Option 2: Check for _driver.automator attribute (old structure)
-            elif hasattr(self.driver, "_driver"):
-                driver_instance = self.driver._driver
-                if driver_instance and hasattr(driver_instance, "automator"):
-                    automator = driver_instance.automator
-                    logger.info("Found automator through _driver attribute")
-
-            # Option 3: Look for automator in the session object
-            elif hasattr(self.driver, "session"):
-                if hasattr(self.driver.session, "automator"):
-                    automator = self.driver.session.automator
-                    logger.info("Found automator in session object")
-
-            # If we couldn't find the automator, try to get it from Flask's global context
             if not automator:
-                # Try to get from flask app context if available
-                try:
-                    from flask import current_app
-
-                    server = current_app.config.get("server_instance")
-                    if server and hasattr(server, "automator") and server.automator:
-                        automator = server.automator
-                        logger.info("Using automator from server instance in Flask context")
-                except (ImportError, RuntimeError):
-                    logger.warning("Could not access Flask context to get automator")
-
-            # If we still don't have an automator, we can't continue
-            if not automator:
-                logger.error("Could not access automator from driver session. This should not happen.")
-                # Since we can't continue without an automator, return an error
+                logger.error("Driver does not have automator reference. This should not happen.")
                 return {
                     "state": "UNKNOWN",
-                    "requires_manual_login": True,
+                    "authenticated": False,
                     "already_authenticated": False,
-                    "error": "Could not access automator from driver session",
+                    "error": "Driver is not properly initialized with automator reference",
                     "fatal_error": True,
                 }
 
-            # Make sure we have state information
-            if not automator.state_machine:
-                logger.error("No state machine available in automator. This should not happen.")
-                # Since we can't continue without a state machine, return an error
+            # Log automator details for debugging
+            if automator:
+                device_id = getattr(automator, "device_id", "unknown")
+                profile_email = "unknown"
+                if hasattr(automator, "profile_manager") and automator.profile_manager:
+                    current_profile = automator.profile_manager.get_current_profile()
+                    if current_profile and "email" in current_profile:
+                        profile_email = current_profile["email"]
+
+            # Verify we have the state machine
+            if not hasattr(automator, "state_machine") or not automator.state_machine:
+                logger.error("Automator does not have state machine. This should not happen.")
                 return {
                     "state": "UNKNOWN",
-                    "requires_manual_login": True,
+                    "authenticated": False,
                     "already_authenticated": False,
-                    "error": "No state machine available",
+                    "error": "Automator is not properly initialized with state machine",
                     "fatal_error": True,
                 }
 
@@ -260,7 +235,7 @@ class AuthenticationHandler:
 
                 return {
                     "state": "LIBRARY_SIGN_IN",
-                    "requires_manual_login": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -313,7 +288,7 @@ class AuthenticationHandler:
 
                             return {
                                 "state": "LIBRARY_SIGN_IN",
-                                "requires_manual_login": True,
+                                "authenticated": False,
                                 "already_authenticated": False,
                                 "vnc_url": get_formatted_vnc_url(email),
                             }
@@ -340,7 +315,7 @@ class AuthenticationHandler:
 
                             return {
                                 "state": "LIBRARY_SIGN_IN",
-                                "requires_manual_login": True,
+                                "authenticated": False,
                                 "already_authenticated": False,
                                 "vnc_url": get_formatted_vnc_url(email),
                             }
@@ -358,14 +333,15 @@ class AuthenticationHandler:
 
                 return {
                     "state": state_name,
-                    "requires_manual_login": False,
+                    "authenticated": True,
                     "already_authenticated": True,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
 
-            # Check if we're already on the sign-in screen
-            if state_name == "SIGN_IN":
-                logger.info("Already on sign-in screen")
+            # Check if we're already in a sign-in flow state
+            sign_in_states = ["SIGN_IN", "SIGN_IN_PASSWORD", "CAPTCHA", "TWO_FACTOR", "PUZZLE"]
+            if state_name in sign_in_states:
+                logger.info(f"Already in sign-in flow: {state_name}")
 
                 # Always require manual login
                 # Get email from automator's current profile if available
@@ -390,12 +366,13 @@ class AuthenticationHandler:
                     except Exception as e:
                         logger.error(f"Error checking emulator readiness: {e}")
 
-                # Focus the email field if needed
-                self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
+                # Focus the email field if needed (only for SIGN_IN state)
+                if state_name == "SIGN_IN":
+                    self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
 
                 return {
-                    "state": "SIGN_IN",
-                    "requires_manual_login": True,
+                    "state": state_name,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": formatted_vnc_url,
                 }
@@ -421,6 +398,7 @@ class AuthenticationHandler:
             try:
                 if hasattr(automator, "restart_kindle_app"):
                     logger.info("Restarting Kindle app to get to sign-in screen")
+                    device_id = getattr(automator, "device_id", "unknown")
                     success = automator.restart_kindle_app()
                     if not success:
                         logger.warning("restart_kindle_app reported failure, will try alternative approaches")
@@ -429,6 +407,7 @@ class AuthenticationHandler:
                     # Try to launch app directly as a fallback
                     try:
                         logger.info("Attempting to launch Kindle app directly")
+                        device_id = getattr(automator, "device_id", "unknown")
                         automator.driver.activate_app("com.amazon.kindle")
                         time.sleep(3)  # Give it time to launch
                         success = True
@@ -439,6 +418,7 @@ class AuthenticationHandler:
                 # Try to at least launch the app
                 try:
                     logger.info("Fallback - attempting to launch Kindle app via activate_app")
+                    device_id = getattr(automator, "device_id", "unknown")
                     automator.driver.activate_app("com.amazon.kindle")
                     time.sleep(3)  # Give it time to launch
                     success = True
@@ -494,7 +474,7 @@ class AuthenticationHandler:
 
                 return {
                     "state": "SIGN_IN",
-                    "requires_manual_login": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -504,7 +484,7 @@ class AuthenticationHandler:
                 logger.info(f"Already authenticated in {state_name}")
                 return {
                     "state": state_name,
-                    "requires_manual_login": False,
+                    "authenticated": True,
                     "already_authenticated": True,
                     "vnc_url": get_formatted_vnc_url(email),
                 }
@@ -519,6 +499,7 @@ class AuthenticationHandler:
                 # First, let's make sure the app is active
                 try:
                     logger.info("Ensuring Kindle app is active via activate_app")
+                    device_id = getattr(automator, "device_id", "unknown")
                     automator.driver.activate_app("com.amazon.kindle")
                     time.sleep(3)  # Give it time to launch
                 except Exception as launch_e:
@@ -526,8 +507,36 @@ class AuthenticationHandler:
 
                 # Now attempt transition_to_library which will go through the auth flow if needed
                 logger.info("Executing transition_to_library to navigate through auth flow")
-                transition_result = automator.transition_to_library()
-                logger.info(f"transition_to_library result: {transition_result}")
+                device_id = getattr(automator, "device_id", "unknown")
+                final_state = automator.transition_to_library()
+                logger.info(f"transition_to_library result: {final_state}")
+
+                # Check if transition ended in an acceptable state
+                if final_state != AppState.LIBRARY and not final_state.is_auth_state():
+                    logger.error("transition_to_library failed - unable to navigate to library or auth state")
+                    # Get the formatted VNC URL for error response
+                    formatted_vnc_url = get_formatted_vnc_url(email)
+
+                    # Try to get current state for debugging
+                    try:
+                        automator.state_machine.update_current_state()
+                        current_state = automator.state_machine.current_state
+                        state_name = (
+                            current_state.name if hasattr(current_state, "name") else str(current_state)
+                        )
+                        logger.error(f"Current state after failed transition: {state_name}")
+                    except Exception as state_err:
+                        logger.error(f"Error getting state after failed transition: {state_err}")
+                        state_name = "UNKNOWN"
+
+                    return {
+                        "state": state_name,
+                        "authenticated": False,
+                        "already_authenticated": False,
+                        "vnc_url": formatted_vnc_url,
+                        "error": "Failed to navigate to library or authentication state",
+                        "message": f"transition_to_library failed while in {state_name} state",
+                    }
 
                 # Update our state to see where we are
                 automator.state_machine.update_current_state()
@@ -554,7 +563,7 @@ class AuthenticationHandler:
 
                     return {
                         "state": "SIGN_IN",
-                        "requires_manual_login": True,
+                        "authenticated": False,
                         "already_authenticated": False,
                         "vnc_url": formatted_vnc_url,
                     }
@@ -562,7 +571,7 @@ class AuthenticationHandler:
                     logger.info(f"Successfully navigated to {state_name} state")
                     return {
                         "state": state_name,
-                        "requires_manual_login": False,
+                        "authenticated": True,
                         "already_authenticated": True,
                         "vnc_url": formatted_vnc_url,
                     }
@@ -573,7 +582,7 @@ class AuthenticationHandler:
                     # Return with the unexpected state
                     return {
                         "state": state_name,
-                        "requires_manual_login": True,
+                        "authenticated": False,
                         "already_authenticated": False,
                         "vnc_url": formatted_vnc_url,
                         "message": f"In unexpected state after navigation attempt: {state_name}",
@@ -611,7 +620,7 @@ class AuthenticationHandler:
                 logger.info("Despite errors, we are in SIGN_IN state")
                 return {
                     "state": "SIGN_IN",
-                    "requires_manual_login": True,
+                    "authenticated": False,
                     "already_authenticated": False,
                     "vnc_url": formatted_vnc_url,
                 }
@@ -619,7 +628,7 @@ class AuthenticationHandler:
                 logger.info(f"Despite errors, we are in {state_name} state")
                 return {
                     "state": state_name,
-                    "requires_manual_login": False,
+                    "authenticated": True,
                     "already_authenticated": True,
                     "vnc_url": formatted_vnc_url,
                 }
@@ -627,7 +636,7 @@ class AuthenticationHandler:
             # Last resort - return error with as much info as possible
             return {
                 "state": state_name,
-                "requires_manual_login": True,
+                "authenticated": False,
                 "already_authenticated": False,
                 "vnc_url": formatted_vnc_url,
                 "error": f"Failed to navigate to sign-in screen or library from {state_name}",
@@ -650,69 +659,11 @@ class AuthenticationHandler:
 
             return {
                 "state": "ERROR",
-                "requires_manual_login": True,
+                "authenticated": False,
                 "already_authenticated": False,
                 "vnc_url": formatted_vnc_url,
                 "error": str(e),
             }
-
-    def update_captcha_solution(self, solution):
-        """Update the captcha solution."""
-        self.captcha_solution = solution
-
-    def handle_2fa(self, code):
-        """Handle 2FA verification.
-
-        Args:
-            code: The 2FA code provided by the user
-
-        Returns:
-            bool: True if 2FA verification was successful, False otherwise
-        """
-        try:
-            logger.info(f"Handling 2FA with code: {code}")
-
-            # Find the 2FA input field
-            try:
-                # Look for input field that might contain a 2FA code
-                input_field = self.driver.find_element(
-                    AppiumBy.XPATH,
-                    "//android.widget.EditText[contains(@hint, 'code') or contains(@text, 'code')]",
-                )
-
-                # Clear and enter the 2FA code
-                input_field.clear()
-                input_field.send_keys(code)
-
-                # Find and click the submit button
-                submit_button = self.driver.find_element(
-                    AppiumBy.XPATH,
-                    "//android.widget.Button[contains(@text, 'Submit') or contains(@text, 'Verify') or contains(@text, 'Continue')]",
-                )
-                submit_button.click()
-
-                # Wait for transition to complete
-                time.sleep(2)
-
-                # Check if we've moved to the library state
-                for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
-                    try:
-                        self.driver.find_element(by, locator)
-                        logger.info("2FA verification successful")
-                        return True
-                    except:
-                        continue
-
-                logger.error("2FA verification failed - could not detect library view")
-                return False
-
-            except NoSuchElementException:
-                logger.error("2FA input field or submit button not found")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error handling 2FA: {e}")
-            return False
 
     def sign_in(self):
         """
@@ -724,12 +675,9 @@ class AuthenticationHandler:
         try:
             logger.info("Authentication must be done manually via VNC")
 
-            # Check for captcha as the only automated support we still provide
+            # Check for captcha and log it
             if self._is_captcha_screen():
-                logger.info("Captcha detected!")
-                if not self._handle_captcha():
-                    logger.error("Failed to handle captcha")
-                    return False
+                logger.info("Captcha detected - manual intervention required")
 
             # Return error to indicate VNC is required
             return (
@@ -1196,13 +1144,11 @@ class AuthenticationHandler:
                 except:
                     continue
 
-            # Special handling for interactive captcha - it's a stronger signal
+            # Log interactive captcha detection
             if interactive_indicators_found >= 3:
                 logger.info(
                     f"Interactive captcha detected! Found {interactive_indicators_found} interactive indicators"
                 )
-                self.interactive_captcha_detected = True
-                return True
 
             # If we're confident it's a captcha screen, tap the input field
             is_captcha = indicators_found >= 3
@@ -1222,150 +1168,6 @@ class AuthenticationHandler:
             return is_captcha
         except Exception as e:
             logger.error(f"Error checking for captcha screen: {e}")
-            return False
-
-    def _handle_captcha(self):
-        """Handle captcha screen by saving the image using scrcpy and returning."""
-        try:
-            logger.info("Handling CAPTCHA state...")
-
-            # Special handling for grid-based image captcha
-            if self.interactive_captcha_detected:
-                logger.error("Grid-based image captcha detected - this requires human interaction")
-                logger.error(
-                    "This type of grid-based captcha cannot be solved automatically - need to restart app"
-                )
-
-                # We need to restart the app to try and get around this captcha
-                try:
-                    # First try to take a screenshot for diagnostic purposes
-                    timestamp = int(time.time())
-                    screenshot_id = f"interactive_captcha_{timestamp}"
-                    screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
-
-                    # Try to get the driver instance
-                    driver_instance = getattr(self.driver, "_driver", None)
-                    if driver_instance and hasattr(driver_instance, "automator"):
-                        automator = driver_instance.automator
-                        if automator:
-                            # Use secure screenshot
-                            secure_path = automator.take_secure_screenshot(screenshot_path, force_secure=True)
-                            if secure_path:
-                                logger.info(f"Saved interactive captcha screenshot to {secure_path}")
-                                self.last_captcha_screenshot = screenshot_id
-
-                    # Force close the app
-                    if hasattr(self.driver, "close_app"):
-                        logger.info("Force closing the Kindle app to recover from interactive captcha")
-                        self.driver.close_app()
-                        time.sleep(2)
-
-                    # Try to launch it again (this would be handled by the restart logic elsewhere)
-                    if hasattr(self.driver, "launch_app"):
-                        logger.info("Relaunching the Kindle app")
-                        self.driver.launch_app()
-                        time.sleep(3)
-
-                    # Reset the interactive captcha flag
-                    self.interactive_captcha_detected = False
-
-                    # Return False to indicate we need client interaction
-                    return False
-                except Exception as restart_e:
-                    logger.error(f"Error while trying to restart app after interactive captcha: {restart_e}")
-                    # Still return False to indicate we need client interaction
-                    return False
-
-            # Standard text captcha handling
-            # Find the captcha image element
-            try:
-                captcha_image = self.driver.find_element(
-                    AppiumBy.XPATH, "//android.widget.Image[@text='captcha']"
-                )
-            except Exception:
-                logger.error("Could not find captcha image element")
-                return False
-
-            # Access the automator through the driver
-            driver_instance = getattr(self.driver, "_driver", None)
-            if driver_instance and hasattr(driver_instance, "automator"):
-                automator = driver_instance.automator
-            else:
-                automator = None
-
-            if not automator:
-                logger.error("Could not access automator from driver session")
-                # Fall back to regular screenshot method, though it will likely fail with FLAG_SECURE
-                screenshot_path = os.path.join("screenshots", "temp_full.png")
-                try:
-                    self.driver.save_screenshot(screenshot_path)
-                except Exception as e:
-                    logger.error(f"Screenshot failed due to FLAG_SECURE: {e}")
-                    return False
-            else:
-                # Use secure screenshot method with scrcpy to bypass FLAG_SECURE
-                # Generate a unique timestamped filename for this captcha screenshot
-                timestamp = int(time.time())
-                secure_screenshot_id = f"auth_screen_{timestamp}"
-                final_path = os.path.join("screenshots", f"{secure_screenshot_id}.png")
-
-                # Always force scrcpy mode for captcha screenshots to bypass FLAG_SECURE
-                secure_path = automator.take_secure_screenshot(
-                    final_path,
-                    force_secure=True,  # Force scrcpy usage even if the automator would normally use ADB
-                )
-
-                if not secure_path:
-                    logger.error("Secure screenshot failed even with scrcpy")
-                    return False
-
-                logger.info(f"Used scrcpy for secure screenshot at {secure_path}")
-
-                # Store the screenshot ID for use in the response
-                self.last_captcha_screenshot = secure_screenshot_id
-                logger.info(f"Stored captcha screenshot ID: {secure_screenshot_id}")
-
-                # No need to crop - we'll return the full screenshot for easier captcha viewing
-                # We'll just save a copy as captcha.png for backward compatibility
-                captcha_path = os.path.join("screenshots", "captcha.png")
-                import shutil
-
-                try:
-                    shutil.copy(final_path, captcha_path)
-                    logger.info(f"Copied full screenshot to {captcha_path} for backward compatibility")
-                except Exception as e:
-                    logger.warning(f"Error copying to captcha.png: {e}")
-
-            # If we have a solution, use it
-            if self.captcha_solution:
-                logger.info("Using provided captcha solution...")
-                captcha_input = self.driver.find_element(AppiumBy.CLASS_NAME, "android.widget.EditText")
-                captcha_input.clear()
-                captcha_input.send_keys(self.captcha_solution)
-
-                # Hide the keyboard after entering captcha
-                try:
-                    self.driver.hide_keyboard()
-                    logger.info("Successfully hid the keyboard after entering captcha")
-                except Exception as hide_err:
-                    logger.warning(f"Could not hide keyboard after captcha entry: {hide_err}")
-
-                # Find and click submit button
-                submit_button = self.driver.find_element(
-                    AppiumBy.XPATH, "//android.widget.Button[@text='Submit']"
-                )
-                submit_button.click()
-
-                # Wait briefly to see if it worked
-                time.sleep(2)
-                return True
-
-            # No solution provided, let server handle it
-            logger.info("No captcha solution provided - server will handle interaction")
-            return False
-
-        except Exception as e:
-            logger.error(f"Error handling captcha: {e}")
             return False
 
     def _try_find_element(self, by, locator):

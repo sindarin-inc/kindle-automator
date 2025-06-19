@@ -142,6 +142,26 @@ class EmulatorLauncher:
                 return False
 
             if not emulator_avd:
+                # If we can't get the AVD name, check if the emulator is still booting
+                # by looking at device status
+                for line in devices_result.stdout.strip().split("\n"):
+                    if emulator_id in line:
+                        parts = line.split("\t")
+                        if len(parts) >= 2 and parts[1].strip() in ["offline", "device"]:
+                            # Emulator is present but still booting
+                            # Check if this emulator ID matches our expected one from cache
+                            avd_name = self._extract_avd_name_from_email(email)
+                            if avd_name and avd_name in self.running_emulators:
+                                cached_id, _ = self.running_emulators[avd_name]
+                                if cached_id == emulator_id:
+                                    logger.info(
+                                        f"Emulator {emulator_id} is booting and matches cached ID for {email}"
+                                    )
+                                    return True
+                            logger.warning(
+                                f"Could not get AVD name from emulator {emulator_id}, possibly still booting"
+                            )
+                        break
                 return False
 
             # Check if the AVD names match
@@ -151,6 +171,12 @@ class EmulatorLauncher:
                 logger.warning(
                     f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
                 )
+                # Clear the cache entry since this emulator is running the wrong AVD
+                if email_avd in self.running_emulators:
+                    cached_id, _ = self.running_emulators[email_avd]
+                    if cached_id == emulator_id:
+                        logger.info(f"Clearing cache entry for AVD {email_avd} due to AVD mismatch")
+                        del self.running_emulators[email_avd]
                 return False
 
         except Exception as e:
@@ -242,12 +268,10 @@ class EmulatorLauncher:
                     properties = result.stdout.strip().split("\n")
                     for prop in properties:
                         if "avd" in prop.lower():
-                            logger.info(f"Found potential AVD-related property: {prop}")
                             # Extract property value if possible
                             if ": [" in prop and "]" in prop:
                                 value = prop.split(": [")[1].split("]")[0]
                                 if value:
-                                    logger.info(f"Using AVD name from property: {value}")
                                     return value
 
             except Exception as adb_error:
@@ -639,12 +663,68 @@ class EmulatorLauncher:
             logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
             return False
 
-    def launch_emulator(self, email: str) -> Tuple[bool, Optional[str], Optional[int]]:
+    def _ensure_avd_ram_upgraded(self, avd_name: str) -> bool:
+        """
+        Ensure the AVD has at least 8GB of RAM configured.
+        Updates the config.ini file if RAM is less than 8192 MB.
+
+        Args:
+            avd_name: Name of the AVD to check/upgrade
+
+        Returns:
+            True if RAM was already sufficient or successfully upgraded, False on error
+        """
+        try:
+            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+            config_path = os.path.join(avd_path, "config.ini")
+
+            if not os.path.exists(config_path):
+                logger.error(f"Config file not found: {config_path}")
+                return False
+
+            # Read current config
+            with open(config_path, "r") as f:
+                lines = f.readlines()
+
+            # Check current RAM setting
+            ram_updated = False
+            for i, line in enumerate(lines):
+                if line.startswith("hw.ramSize="):
+                    current_ram = int(line.split("=")[1].strip())
+                    if current_ram < 8192:
+                        logger.info(f"Upgrading RAM for {avd_name} from {current_ram}MB to 8192MB")
+                        lines[i] = "hw.ramSize=8192\n"
+                        ram_updated = True
+                    else:
+                        logger.debug(f"AVD {avd_name} already has sufficient RAM: {current_ram}MB")
+                    break
+            else:
+                # hw.ramSize not found, add it
+                logger.info(f"Adding RAM setting to {avd_name} config")
+                lines.append("hw.ramSize=8192\n")
+                ram_updated = True
+
+            # Write updated config if needed
+            if ram_updated:
+                with open(config_path, "w") as f:
+                    f.writelines(lines)
+                logger.info(f"Successfully upgraded RAM for {avd_name}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error ensuring RAM upgrade for {avd_name}: {e}")
+            return False
+
+    def launch_emulator(
+        self, email: str, cold_boot: bool = False
+    ) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
 
         Args:
             email: The user's email address
+            cold_boot: If True, launch with cold boot (no snapshot loading)
 
         Returns:
             Tuple of (success, emulator_id, display_num)
@@ -659,6 +739,11 @@ class EmulatorLauncher:
                 logger.error(f"AVD {avd_name} does not exist at {avd_path}")
                 return False, None, None
 
+            # Ensure AVD has sufficient RAM before launching
+            # DISABLED: Auto-upgrading to 8GB breaks auth token in Kindle app
+            # if not self._ensure_avd_ram_upgraded(avd_name):
+            #     logger.warning(f"Failed to ensure RAM upgrade for {avd_name}, continuing anyway")
+
             # IMPORTANT: Use AVD name as key for running_emulators, not email
             # Check if emulator already running for this AVD
             # If this AVD is in our running_emulators cache
@@ -670,6 +755,13 @@ class EmulatorLauncher:
                     logger.info(
                         f"Emulator already running for AVD {avd_name} (email {email}): {emulator_id} on display :{display_num}"
                     )
+
+                    # Check if emulator is actually ready before logging identifiers
+                    if self.is_emulator_ready(email):
+                        # Log device identifiers for the already running emulator
+                        self._log_device_identifiers(emulator_id, email)
+                    else:
+                        logger.info(f"Emulator {emulator_id} is running but not fully ready yet")
 
                     # Store this emulator ID in the VNC instance
                     try:
@@ -729,6 +821,7 @@ class EmulatorLauncher:
             # No longer explicitly loading snapshots - the emulator will use default_boot automatically
             # Log when the default_boot snapshot was last updated
             created_from_seed = False
+            avd_manager = None
             try:
                 from views.core.avd_creator import AVDCreator
                 from views.core.avd_profile_manager import AVDProfileManager
@@ -755,6 +848,21 @@ class EmulatorLauncher:
                 created_from_seed = False
                 # Proceed normally - emulator will use default_boot if available
 
+            # Check if we've already randomized this AVD (needed for cold boot decision)
+            post_boot_randomized = False
+            needs_device_randomization = False
+            try:
+                if avd_manager is None:
+                    from views.core.avd_profile_manager import AVDProfileManager
+
+                    avd_manager = AVDProfileManager.get_instance()
+                post_boot_randomized = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization = avd_manager.get_user_field(
+                    email, "needs_device_randomization", False
+                )
+            except:
+                pass
+
             # Common emulator arguments for all platforms
             common_args = [
                 "-avd",
@@ -770,8 +878,37 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
-            # No longer need to explicitly specify snapshot since references are now fixed
-            logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
+            # Add randomized device identifiers if available
+            try:
+                from server.utils.device_identifier_utils import get_emulator_prop_args
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                avd_manager = AVDProfileManager.get_instance()
+                device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
+                if device_identifiers:
+                    prop_args = get_emulator_prop_args(device_identifiers)
+                    common_args.extend(prop_args)
+                    logger.info(f"Added randomized device identifier props: {prop_args}")
+            except Exception as e:
+                logger.warning(f"Could not add device identifier props: {e}")
+                # Continue without randomized identifiers
+
+            # Determine if we should force cold boot
+            # Force cold boot if this AVD needs first-time randomization
+            force_cold_boot_for_randomization = False
+            if created_from_seed or needs_device_randomization:
+                if not post_boot_randomized:
+                    force_cold_boot_for_randomization = True
+                    logger.info(f"Forcing cold boot for {email} to apply device randomization")
+
+            # Add snapshot or cold boot args
+            if cold_boot or force_cold_boot_for_randomization:
+                common_args.extend(["-no-snapshot-load"])
+                logger.info(f"Starting emulator for {email} with cold boot (no snapshot)")
+            else:
+                # Load from default_boot snapshot if it exists
+                common_args.extend(["-snapshot", "default_boot"])
+                logger.info(f"Starting emulator for {email} - will use default_boot snapshot if available")
 
             # Build platform-specific emulator command
             if platform.system() != "Darwin":
@@ -882,6 +1019,73 @@ class EmulatorLauncher:
                     logger.error(f"Failed to read emulator stderr log {stderr_log}: {e}")
                 return False, None, None
 
+            # Wait for emulator to be ready before applying post-boot randomization
+            logger.info(f"Waiting for emulator {emulator_id} to be ready...")
+            max_wait_time = 120  # 2 minutes max wait
+            start_time = time.time()
+
+            while time.time() - start_time < max_wait_time:
+                if self.is_emulator_ready(email):
+                    logger.info(f"Emulator {emulator_id} is ready")
+                    break
+                time.sleep(2)
+            else:
+                logger.warning(f"Emulator {emulator_id} not ready after {max_wait_time}s, continuing anyway")
+
+            # Log device identifiers once emulator is confirmed ready
+            self._log_device_identifiers(emulator_id, email)
+
+            # Apply post-boot randomization ONLY if this is the first boot after cloning
+            # Check if we've already randomized this AVD
+            post_boot_randomized_check = False
+            needs_device_randomization_check = False
+            try:
+                if avd_manager is None:
+                    from views.core.avd_profile_manager import AVDProfileManager
+
+                    avd_manager = AVDProfileManager.get_instance()
+                post_boot_randomized_check = avd_manager.get_user_field(email, "post_boot_randomized", False)
+                needs_device_randomization_check = avd_manager.get_user_field(
+                    email, "needs_device_randomization", False
+                )
+            except:
+                pass
+
+            # Randomize if: (1) created from seed and not randomized, OR (2) explicitly needs randomization (seed clone)
+            if (created_from_seed and not post_boot_randomized_check) or (
+                needs_device_randomization_check and not post_boot_randomized_check
+            ):
+                try:
+                    from server.utils.post_boot_randomizer import PostBootRandomizer
+
+                    post_boot_randomizer = PostBootRandomizer(self.android_home)
+                    # Get stored Android ID if available
+                    android_id = None
+                    try:
+                        device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
+                        if device_identifiers and "android_id" in device_identifiers:
+                            android_id = device_identifiers["android_id"]
+                    except:
+                        pass
+
+                    logger.info(f"Applying one-time post-boot randomization for {email} on {emulator_id}")
+                    if post_boot_randomizer.randomize_all_post_boot_identifiers(
+                        emulator_id, android_id, device_identifiers
+                    ):
+                        logger.info(f"Successfully applied post-boot randomization")
+                        # Mark that we've done post-boot randomization
+                        avd_manager.set_user_field(email, "post_boot_randomized", True)
+                        # Log identifiers again after randomization to show the changes
+                        logger.info("Device identifiers after randomization:")
+                        self._log_device_identifiers(emulator_id, email)
+                    else:
+                        logger.warning(f"Some post-boot randomizations may have failed")
+                except Exception as e:
+                    logger.error(f"Failed to apply post-boot randomization: {e}")
+                    # Continue anyway - better to have a working emulator with duplicate identifiers
+            elif (created_from_seed or needs_device_randomization_check) and post_boot_randomized_check:
+                logger.info(f"Skipping post-boot randomization for {email} - already randomized")
+
             return True, emulator_id, display_num
 
         except Exception as e:
@@ -941,6 +1145,28 @@ class EmulatorLauncher:
                     del self.running_emulators[avd_name]
                     return False
 
+                # Clean up all ports before killing emulator
+                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                try:
+                    # Remove all ADB port forwards
+                    subprocess.run(
+                        [f"adb -s {emulator_id} forward --remove-all"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    # Kill any UiAutomator2 processes
+                    subprocess.run(
+                        [f"adb -s {emulator_id} shell pkill -f uiautomator"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"Error cleaning up ports before stopping emulator: {e}")
+
                 # Use adb to send kill command to emulator
                 subprocess.run(
                     [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "emu", "kill"],
@@ -999,6 +1225,28 @@ class EmulatorLauncher:
                     )
                     del self.running_emulators[email]
                     return False
+
+                # Clean up all ports before killing emulator
+                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                try:
+                    # Remove all ADB port forwards
+                    subprocess.run(
+                        [f"adb -s {emulator_id} forward --remove-all"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    # Kill any UiAutomator2 processes
+                    subprocess.run(
+                        [f"adb -s {emulator_id} shell pkill -f uiautomator"],
+                        shell=True,
+                        check=False,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"Error cleaning up ports before stopping emulator: {e}")
 
                 # Use adb to send kill command to emulator
                 subprocess.run(
@@ -1060,6 +1308,7 @@ class EmulatorLauncher:
         Returns:
             Tuple of (emulator_id, display_num) or (None, None) if not found
         """
+
         try:
             # First try to get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
@@ -1109,101 +1358,203 @@ class EmulatorLauncher:
         Returns:
             True if an emulator is ready, False otherwise
         """
+        try:
+            # Step 1: Get emulator ID and verify AVD name matches early
+            emulator_id = self._get_emulator_id_for_readiness_check(email)
+            if not emulator_id:
+                return False
+
+            # Step 2: Verify this emulator is actually running the correct AVD
+            # Do this early to avoid wasting time on wrong emulator
+            if not self._verify_emulator_running(emulator_id, email):
+                logger.warning(f"Emulator {emulator_id} is not running the correct AVD for {email}")
+                # The cache should have been cleared by _verify_emulator_running if there was a mismatch
+                # Double-check and clear if needed to be extra safe
+                avd_name = self._extract_avd_name_from_email(email)
+                if avd_name and avd_name in self.running_emulators:
+                    cached_id, _ = self.running_emulators[avd_name]
+                    if cached_id == emulator_id:
+                        logger.info(f"Clearing stale cache entry for AVD {avd_name} in readiness check")
+                        del self.running_emulators[avd_name]
+                return False
+
+            # Step 3: Check if emulator process is running
+            if not self._is_emulator_process_running():
+                logger.info("No emulator process found running")
+                return False
+
+            # Step 4: Check ADB device status
+            device_status = self._get_adb_device_status(emulator_id)
+            if not self._is_device_status_ready(device_status):
+                return False
+
+            # Step 5: Check if system boot is completed
+            if not self._is_boot_completed(emulator_id):
+                return False
+
+            # Step 6: Check if package manager is ready
+            if not self._is_package_manager_ready(emulator_id):
+                return False
+
+            logger.info(f"Emulator {emulator_id} is fully ready")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error checking if emulator is ready for {email}: {e}")
+            return False
+
+    def _get_emulator_id_for_readiness_check(self, email: str) -> Optional[str]:
+        """Get the emulator ID for readiness check with AVD verification."""
         # First check if we have the emulator in our cache to get its expected ID
         avd_name = self._extract_avd_name_from_email(email)
         expected_emulator_id = None
         if avd_name and avd_name in self.running_emulators:
             expected_emulator_id, _ = self.running_emulators[avd_name]
+            logger.info(f"Found cached emulator {expected_emulator_id} for AVD {avd_name}")
 
         # Get the emulator ID using get_running_emulator which handles AVD lookup
         emulator_id, _ = self.get_running_emulator(email)
-        if not emulator_id:
-            # Special handling: if we have an expected emulator ID in cache, check if it's actually running
-            if expected_emulator_id:
-                logger.info(
-                    f"No emulator found via get_running_emulator for {email}, but have cached ID {expected_emulator_id}"
-                )
-                # Verify the cached emulator is still running
-                if self._verify_emulator_running(expected_emulator_id, email):
-                    logger.info(f"Cached emulator {expected_emulator_id} is still running, using it")
-                    emulator_id = expected_emulator_id
-                else:
-                    logger.info(f"Cached emulator {expected_emulator_id} is not running anymore")
 
-            if not emulator_id:
-                logger.info(f"No running emulator found for {email}")
+        # If we found an emulator, it's already been verified by get_running_emulator
+        if emulator_id:
+            return emulator_id
 
-                # Additional debugging: directly check adb devices output
-                try:
-                    devices_result = subprocess.run(
-                        [f"{self.android_home}/platform-tools/adb", "devices"],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                    )
-                    logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
+        # No emulator found via normal lookup, check cached ID if available
+        if expected_emulator_id:
+            logger.info(
+                f"No emulator found via get_running_emulator for {email}, but have cached ID {expected_emulator_id}"
+            )
+            # Check if it's actually running AND has the correct AVD
+            # Note: We'll verify AVD again in the main method for consistency
+            if self._is_emulator_online(expected_emulator_id):
+                logger.info(f"Cached emulator {expected_emulator_id} is online, will verify AVD next")
+                # Re-add to cache since it was prematurely removed
+                if avd_name and avd_name not in self.running_emulators:
+                    # Get display number from VNC instance if available
+                    display_num = 2  # Default display
+                    vnc_instance = self.vnc_manager.get_instance_for_profile(email)
+                    if vnc_instance and vnc_instance.get("display"):
+                        display_num = vnc_instance["display"]
+                    logger.info(f"Re-adding {expected_emulator_id} to cache for AVD {avd_name}")
+                    self.running_emulators[avd_name] = (expected_emulator_id, display_num)
+                return expected_emulator_id
+            else:
+                logger.info(f"Cached emulator {expected_emulator_id} is not online anymore")
 
-                    # If expected_emulator_id is in the output but not recognized, log this discrepancy
-                    if expected_emulator_id and expected_emulator_id in devices_result.stdout:
-                        logger.warning(
-                            f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
-                        )
-                except Exception as e:
-                    logger.error(f"Error during direct adb devices check: {e}")
+        # No emulator found in cache, check if any running emulator matches our AVD
+        # This handles cases where the emulator is running but not in cache
+        if avd_name:
+            running_ids = self._get_running_emulator_ids()
+            for emulator_id in running_ids:
+                if self._verify_emulator_running(emulator_id, email):
+                    logger.info(f"Found running emulator {emulator_id} that matches AVD {avd_name}")
+                    # Add to cache
+                    display_num = 2  # Default display
+                    vnc_instance = self.vnc_manager.get_instance_for_profile(email)
+                    if vnc_instance and vnc_instance.get("display"):
+                        display_num = vnc_instance["display"]
+                    self.running_emulators[avd_name] = (emulator_id, display_num)
+                    return emulator_id
 
-                return False
+        # No valid emulator found
+        self._log_missing_emulator_debug_info(email, expected_emulator_id)
+        return None
 
+    def _is_emulator_online(self, emulator_id: str) -> bool:
+        """Quick check if emulator is online in ADB devices."""
         try:
-            # Check process first - is the emulator still running?
+            result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            for line in result.stdout.strip().split("\n"):
+                if emulator_id in line and "\tdevice" in line:
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def _log_missing_emulator_debug_info(self, email: str, expected_emulator_id: Optional[str]) -> None:
+        """Log debug information when emulator is not found."""
+        logger.info(f"No running emulator found for {email}")
+
+        # Additional debugging: directly check adb devices output
+        try:
+            devices_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
+
+            # If expected_emulator_id is in the output but not recognized, log this discrepancy
+            if expected_emulator_id and expected_emulator_id in devices_result.stdout:
+                logger.warning(
+                    f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
+                )
+        except Exception as e:
+            logger.error(f"Error during direct adb devices check: {e}")
+
+    def _is_emulator_process_running(self) -> bool:
+        """Check if any emulator process is running."""
+        try:
             ps_check = subprocess.run(
                 ["pgrep", "-f", "qemu-system-x86_64"], check=False, capture_output=True, text=True
             )
+            return ps_check.returncode == 0
+        except Exception:
+            return False
 
-            if ps_check.returncode != 0:
-                logger.info(f"No emulator process found running")
-                return False
+    def _get_adb_device_status(self, emulator_id: str) -> Optional[str]:
+        """Get the ADB device status for the emulator."""
+        try:
+            device_result = subprocess.run(
+                [f"{self.android_home}/platform-tools/adb", "devices"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
 
-            # First check if device is connected using our helper
-            if not self._verify_emulator_running(emulator_id, email):
-                return False
+            if emulator_id not in device_result.stdout:
+                logger.info(f"Emulator {emulator_id} not found in adb devices output")
+                return None
 
-            # First check the device status - it might be in 'offline' state initially
-            try:
-                device_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
+            # Parse device status
+            for line in device_result.stdout.strip().split("\n"):
+                if emulator_id in line:
+                    parts = line.split("\t")
+                    if len(parts) >= 2:
+                        return parts[1].strip()
 
-                if emulator_id in device_result.stdout:
-                    # Get the device status
-                    devices_lines = device_result.stdout.strip().split("\n")
-                    device_status = "unknown"
+            return "unknown"
+        except Exception as e:
+            logger.error(f"Error checking device status: {e}")
+            return None
 
-                    for line in devices_lines:
-                        if emulator_id in line:
-                            parts = line.split("\t")
-                            if len(parts) >= 2:
-                                device_status = parts[1].strip()
-                                break
+    def _is_device_status_ready(self, device_status: Optional[str]) -> bool:
+        """Check if the device status indicates readiness."""
+        if not device_status:
+            return False
 
-                    if device_status == "offline":
-                        return False
-                    elif device_status != "device":
-                        logger.info(f"Emulator {emulator_id} is in unexpected state: {device_status}")
-                        return False
-                else:
-                    logger.info(f"Emulator {emulator_id} not found in adb devices output")
-                    return False
-            except Exception as e:
-                logger.error(f"Error checking device status: {e}")
-                return False
+        if device_status == "offline":
+            return False
+        elif device_status == "device":
+            return True
+        else:
+            logger.info(f"Emulator is in unexpected state: {device_status}")
+            return False
 
-            # Now check if the system has fully booted
-            boot_completed = subprocess.run(
+    def _is_boot_completed(self, emulator_id: str) -> bool:
+        """Check if system boot is completed."""
+        try:
+            boot_check = subprocess.run(
                 [
                     f"{self.android_home}/platform-tools/adb",
                     "-s",
@@ -1218,22 +1569,167 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            # logger.info(
-            #     f"Boot completed check result: '{boot_completed.stdout.strip()}', return code: {boot_completed.returncode}"
-            # )
-
-            if boot_completed.returncode != 0:
-                logger.warning(f"Boot completed check failed with error: {boot_completed.stderr.strip()}")
+            if boot_check.returncode != 0:
+                logger.warning(f"Boot completed check failed: {boot_check.stderr.strip()}")
                 return False
 
-            result = boot_completed.stdout.strip() == "1"
-            if result:
-                logger.info(f"Emulator {emulator_id} is fully booted (sys.boot_completed=1)")
+            return boot_check.stdout.strip() == "1"
+        except Exception as e:
+            logger.error(f"Error checking boot status: {e}")
+            return False
 
-            return result
+    def _log_device_identifiers(self, emulator_id: str, email: str) -> None:
+        """
+        Log device identifiers for the emulator once it's ready.
+        This helps verify that device randomization is working.
+
+        Args:
+            emulator_id: The emulator ID (e.g., 'emulator-5554')
+            email: The user's email address
+        """
+        try:
+            logger.info(f"Device identifiers for {email} on {emulator_id}:")
+
+            # Get various device properties
+            properties = {
+                "Android ID": "settings get secure android_id",
+                "Serial Number": "getprop ro.serialno",
+                "Build ID": "getprop ro.build.id",
+                "Product Name": "getprop ro.product.name",
+                "Device Name": "getprop ro.product.device",
+                "AVD Name": "getprop ro.kernel.qemu.avd_name",
+            }
+
+            identifier_values = {}
+            for prop_name, cmd in properties.items():
+                try:
+                    result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", cmd],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        value = result.stdout.strip()
+                        identifier_values[prop_name] = value if value and value != "null" else "Not set"
+                except Exception:
+                    identifier_values[prop_name] = "Error retrieving"
+
+            # Get MAC addresses from network interfaces
+            try:
+                result = subprocess.run(
+                    [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell", "ip link show"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    output = result.stdout
+                    # Extract MAC addresses
+                    mac_addresses = {}
+                    current_interface = None
+                    for line in output.split("\n"):
+                        # Check for interface names
+                        if ": " in line and not line.startswith(" "):
+                            parts = line.split(": ")
+                            if len(parts) >= 2:
+                                current_interface = parts[1].split("@")[0]
+                        # Check for MAC addresses
+                        elif "link/ether" in line and current_interface:
+                            parts = line.strip().split()
+                            for i, part in enumerate(parts):
+                                if part == "link/ether" and i + 1 < len(parts):
+                                    mac_addresses[current_interface] = parts[i + 1]
+                                    break
+
+                    # Log commonly used interfaces
+                    if "wlan0" in mac_addresses:
+                        identifier_values["WiFi MAC"] = mac_addresses["wlan0"]
+                    if "eth0" in mac_addresses:
+                        identifier_values["Ethernet MAC"] = mac_addresses["eth0"]
+            except Exception:
+                pass
+
+            # Format and log all identifiers in a single line for easy comparison
+            id_parts = []
+            for key, value in identifier_values.items():
+                id_parts.append(f"{key}: {value}")
+
+            logger.info(f"  {' | '.join(id_parts)}")
 
         except Exception as e:
-            logger.error(f"Error checking if emulator is ready for {email}: {e}")
+            logger.error(f"Error logging device identifiers: {e}")
+
+    def _is_package_manager_ready(self, emulator_id: str) -> bool:
+        """Check if package manager is ready to accept commands."""
+        logger.info(f"Emulator {emulator_id} boot completed, checking package manager...")
+
+        # First, try to list packages
+        if not self._can_list_packages(emulator_id):
+            return False
+
+        # Then verify we can query package paths
+        if not self._can_query_package_path(emulator_id):
+            return False
+
+        logger.info(f"Package manager is ready on {emulator_id}")
+        return True
+
+    def _can_list_packages(self, emulator_id: str) -> bool:
+        """Check if package manager can list packages."""
+        try:
+            pm_check = subprocess.run(
+                [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "shell",
+                    "pm",
+                    "list",
+                    "packages",
+                    "-3",  # List third-party packages only (faster)
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if pm_check.returncode != 0:
+                logger.debug(f"Package manager not ready yet: {pm_check.stderr.strip()}")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Error checking package list: {e}")
+            return False
+
+    def _can_query_package_path(self, emulator_id: str) -> bool:
+        """Check if package manager can query package paths."""
+        try:
+            pm_path_check = subprocess.run(
+                [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "shell",
+                    "pm",
+                    "path",
+                    "android",  # Check the core android package
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+
+            if pm_path_check.returncode != 0 or not pm_path_check.stdout.strip():
+                logger.debug("Package manager service not fully ready")
+                return False
+
+            return True
+        except Exception as e:
+            logger.error(f"Error checking package path: {e}")
             return False
 
     def save_snapshot(self, email: str) -> bool:
@@ -1281,6 +1777,7 @@ class EmulatorLauncher:
                         "avd",
                         "snapshot",
                         "save",
+                        "default_boot",
                     ],
                     capture_output=True,
                     text=True,
@@ -1322,7 +1819,7 @@ class EmulatorLauncher:
                 return False
 
             # Create the telnet command to save the snapshot
-            telnet_commands = f"avd snapshot save\nquit\n"
+            telnet_commands = f"avd snapshot save default_boot\nquit\n"
 
             # Execute the command
             result = subprocess.run(

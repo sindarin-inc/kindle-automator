@@ -78,6 +78,24 @@ READ_AND_LISTEN_CLOSE_BUTTON = [
     ),
 ]
 
+# Viewing full screen dialog identifiers
+VIEWING_FULL_SCREEN_DIALOG_IDENTIFIERS = [
+    # Title that says "Viewing full screen"
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='android:id/immersive_cling_title' and @text='Viewing full screen']",
+    ),
+    (AppiumBy.ID, "android:id/immersive_cling_title"),
+    # Description text
+    (AppiumBy.ID, "android:id/immersive_cling_description"),
+]
+
+# Viewing full screen dialog "Got it" button
+VIEWING_FULL_SCREEN_GOT_IT_BUTTON = [
+    (AppiumBy.ID, "android:id/ok"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/ok' and @text='Got it']"),
+]
+
 # Dialog interaction strategies
 APP_NOT_RESPONDING_CLOSE_APP_BUTTON = (
     AppiumBy.XPATH,

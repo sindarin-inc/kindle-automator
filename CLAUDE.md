@@ -33,7 +33,7 @@
 - **Exception handling**: Use decorators like `ensure_automator_healthy` for cross-cutting concerns
 - **XPATHs**: All XPATHs should be defined in view_strategies.py or interaction_strategies.py files within the corresponding view directory
 - **Diagnostics**: Add page source XML dump and screenshot capture to error paths using `store_page_source()` and `driver.save_screenshot()`
-- **Git commits**: Keep commit messages short and focused on a single change
+- **Git commits**: Keep commit messages short and focused on a single change. Don't use git add or git commit commands - instead, include a one-line commit message in your summary when you want to commit changes
 - **Backwards compatibility**: Don't ever write logic to handle backwards compatibility unless asked
 - **DRY**: Keep it DRY, so do extra thinking to ensure we don't repeat code
 - **Comments**: Only include comments if they add context that's not readily apparent in the next line of code or if the code block has some complexity

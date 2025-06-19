@@ -1,0 +1,11 @@
+---
+raid_device: /dev/md3  # Using md3 since md0-md2 are already in use
+raid_level: 10
+raid_chunk_size: 512
+raid_devices:
+  - /dev/sda
+  - /dev/sdb
+  - /dev/sdc
+  - /dev/sdd
+mount_point: /mnt/storage
+filesystem_type: ext4  # Using ext4 instead of ext3 for better performance

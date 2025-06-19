@@ -85,6 +85,8 @@ def take_secure_screenshot(
             auth_states = [
                 AppState.SIGN_IN,
                 AppState.CAPTCHA,
+                AppState.TWO_FACTOR,
+                AppState.PUZZLE,
                 AppState.SIGN_IN_PASSWORD,
             ]
             needs_secure = current_state in auth_states

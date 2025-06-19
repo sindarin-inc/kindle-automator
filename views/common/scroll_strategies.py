@@ -59,20 +59,27 @@ class SmartScroller:
             if press_duration_s > 0:
                 finger.create_pause(press_duration_s)
         else:
-            # Multi-segment scroll for deceleration using 5 segments
-            # Ratios: distance [0.30, 0.25, 0.20, 0.15, 0.10]
-            # Ratios: time     [0.10, 0.15, 0.20, 0.25, 0.30]
+            # Multi-segment scroll for deceleration using 6 segments
+            # Modified to have much stronger deceleration at the end to eliminate momentum
+            # Ratios: distance [0.35, 0.25, 0.20, 0.12, 0.06, 0.02]
+            # Ratios: time     [0.08, 0.12, 0.15, 0.20, 0.25, 0.20]
 
             # Calculate durations for each segment (ensure they sum to total_duration_ms - 10ms pause)
             effective_total_duration_ms = total_duration_ms - 10  # Account for the initial 10ms pause
 
-            duration1_ms = int(round(effective_total_duration_ms * 0.10))
-            duration2_ms = int(round(effective_total_duration_ms * 0.15))
-            duration3_ms = int(round(effective_total_duration_ms * 0.20))
-            duration4_ms = int(round(effective_total_duration_ms * 0.25))
-            # duration5_ms takes the remainder to ensure sum is correct
-            duration5_ms = (
-                effective_total_duration_ms - duration1_ms - duration2_ms - duration3_ms - duration4_ms
+            duration1_ms = int(round(effective_total_duration_ms * 0.08))
+            duration2_ms = int(round(effective_total_duration_ms * 0.12))
+            duration3_ms = int(round(effective_total_duration_ms * 0.15))
+            duration4_ms = int(round(effective_total_duration_ms * 0.20))
+            duration5_ms = int(round(effective_total_duration_ms * 0.25))
+            # duration6_ms takes the remainder to ensure sum is correct
+            duration6_ms = (
+                effective_total_duration_ms
+                - duration1_ms
+                - duration2_ms
+                - duration3_ms
+                - duration4_ms
+                - duration5_ms
             )
 
             # Ensure all durations are non-negative
@@ -81,27 +88,31 @@ class SmartScroller:
             duration3_ms = max(0, duration3_ms)
             duration4_ms = max(0, duration4_ms)
             duration5_ms = max(0, duration5_ms)
+            duration6_ms = max(0, duration6_ms)
 
             delta_y = scroll_end_y - scroll_start_y
 
             # Calculate target y-coordinates for each segment
-            y1_target = scroll_start_y + 0.30 * delta_y
-            y2_target = scroll_start_y + (0.30 + 0.25) * delta_y  # Cumulative distance
-            y3_target = scroll_start_y + (0.30 + 0.25 + 0.20) * delta_y
-            y4_target = scroll_start_y + (0.30 + 0.25 + 0.20 + 0.15) * delta_y
-            # y5_target is scroll_end_y
+            y1_target = scroll_start_y + 0.35 * delta_y
+            y2_target = scroll_start_y + (0.35 + 0.25) * delta_y  # Cumulative distance
+            y3_target = scroll_start_y + (0.35 + 0.25 + 0.20) * delta_y
+            y4_target = scroll_start_y + (0.35 + 0.25 + 0.20 + 0.12) * delta_y
+            y5_target = scroll_start_y + (0.35 + 0.25 + 0.20 + 0.12 + 0.06) * delta_y
+            # y6_target is scroll_end_y
 
             # Perform the scroll segments
-            # Segment 1
+            # Segment 1 - fast initial movement
             finger.create_pointer_move(duration=duration1_ms, x=center_x, y=int(round(y1_target)))
             # Segment 2
             finger.create_pointer_move(duration=duration2_ms, x=center_x, y=int(round(y2_target)))
             # Segment 3
             finger.create_pointer_move(duration=duration3_ms, x=center_x, y=int(round(y3_target)))
-            # Segment 4
+            # Segment 4 - starting to slow down significantly
             finger.create_pointer_move(duration=duration4_ms, x=center_x, y=int(round(y4_target)))
-            # Segment 5
-            finger.create_pointer_move(duration=duration5_ms, x=center_x, y=scroll_end_y)
+            # Segment 5 - very slow movement
+            finger.create_pointer_move(duration=duration5_ms, x=center_x, y=int(round(y5_target)))
+            # Segment 6 - final tiny crawl to eliminate momentum
+            finger.create_pointer_move(duration=duration6_ms, x=center_x, y=scroll_end_y)
 
         # Release the pointer
         finger.create_pointer_up(button=0)
@@ -122,7 +133,7 @@ class SmartScroller:
             screen_size["width"] // 2,
             start_y,
             end_y,
-            1001,
+            1200,  # Increased from 1001ms to allow more time for deceleration
         )
 
         # Allow time for scroll to complete
@@ -138,7 +149,7 @@ class SmartScroller:
             screen_size["width"] // 2,
             start_y,
             end_y,
-            1001,
+            1200,  # Increased from 1001ms to allow more time for deceleration
         )
 
         # Allow time for scroll to complete
@@ -197,7 +208,7 @@ class SmartScroller:
                     screen_size["width"] // 2,
                     start_y,
                     end_y,
-                    1001,
+                    1200,  # Increased from 1001ms to allow more time for deceleration
                 )
         except (NoSuchElementException, StaleElementReferenceException):
             logger.warning("Element reference lost during scroll_to_position, using default scroll")
