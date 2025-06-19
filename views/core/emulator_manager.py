@@ -274,6 +274,10 @@ class EmulatorManager:
                         if self.emulator_launcher.is_emulator_ready(email):
                             # Apply memory optimizations if enabled
                             self._apply_memory_optimizations(email, emulator_id)
+
+                            # Set up WireGuard VPN if configured
+                            self._setup_wireguard_vpn(email, emulator_id)
+
                             return True
 
                 logger.error(
@@ -417,3 +421,67 @@ class EmulatorManager:
         except Exception as e:
             logger.error(f"Error applying memory optimizations for {email}: {e}")
             # Continue even if optimizations fail - they're not critical
+
+    def _setup_wireguard_vpn(self, email: str, emulator_id: str) -> None:
+        """
+        Set up WireGuard VPN on the emulator if configured.
+
+        Args:
+            email: User email
+            emulator_id: The emulator ID (e.g. emulator-5554)
+        """
+        try:
+            # Check if Mullvad account is configured
+            mullvad_account = os.getenv("MULLVAD_ACCOUNT_NUMBER")
+            if not mullvad_account:
+                return
+
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            profile_manager = AVDProfileManager.get_instance()
+
+            # Check if WireGuard is already set up for this AVD
+            wireguard_configured = profile_manager.get_user_field(
+                email, "wireguard_vpn_configured", False, section="emulator_settings"
+            )
+
+            if wireguard_configured:
+                logger.info(f"WireGuard VPN already configured for {email}")
+                return
+
+            logger.info(f"Setting up WireGuard VPN for {email} on {emulator_id}")
+
+            # Get Android SDK path
+            android_home = os.getenv("ANDROID_HOME", os.path.expanduser("~/Library/Android/sdk"))
+
+            # Import the WireGuard manager
+            from server.utils.mullvad_wireguard_manager import get_mullvad_manager
+
+            wireguard_manager = get_mullvad_manager(android_home)
+
+            # Get server location from env or default to US
+            server_location = os.getenv("MULLVAD_LOCATION", "us")
+
+            # Set up WireGuard
+            if wireguard_manager.setup_wireguard_on_emulator(emulator_id, server_location):
+                logger.info(f"WireGuard configured for location: {server_location}")
+
+                # Wait a moment for the config to be imported
+                time.sleep(2)
+
+                # Connect to VPN
+                if wireguard_manager.connect_vpn(emulator_id):
+                    logger.info("Successfully connected to Mullvad VPN via WireGuard")
+
+                    # Mark as configured for this AVD
+                    profile_manager.set_user_field(
+                        email, "wireguard_vpn_configured", True, section="emulator_settings"
+                    )
+                else:
+                    logger.error("Failed to connect to VPN")
+            else:
+                logger.error("Failed to set up WireGuard")
+
+        except Exception as e:
+            logger.error(f"Error setting up WireGuard VPN: {e}")
+            # Don't fail the emulator start, just log the error

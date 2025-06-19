@@ -292,4 +292,51 @@ class PostBootRandomizer:
             logger.warning("Failed to clear Google Play Services data (advertising ID may not be reset)")
             # Don't fail completely if this fails, as it's less critical
 
+        # Set up WireGuard VPN if configured
+        self._setup_wireguard_if_needed(emulator_id)
+
         return success
+
+    def _setup_wireguard_if_needed(self, emulator_id: str) -> bool:
+        """Set up WireGuard VPN if MULLVAD_ACCOUNT is configured."""
+        try:
+            import os
+
+            # Check if Mullvad account is configured
+            mullvad_account = os.getenv("MULLVAD_ACCOUNT_NUMBER")
+            if not mullvad_account:
+                return True
+
+            logger.info("Setting up WireGuard VPN with Mullvad")
+
+            # Import the WireGuard manager
+            from server.utils.mullvad_wireguard_manager import get_mullvad_manager
+
+            wireguard_manager = get_mullvad_manager(self.android_home)
+
+            # Get server location from env or default to US
+            server_location = os.getenv("MULLVAD_LOCATION", "us")
+
+            # Set up WireGuard
+            if wireguard_manager.setup_wireguard_on_emulator(emulator_id, server_location):
+                logger.info(f"WireGuard configured for location: {server_location}")
+
+                # Wait a moment for the config to be imported
+                import time
+
+                time.sleep(2)
+
+                # Connect to VPN
+                if wireguard_manager.connect_vpn(emulator_id):
+                    logger.info("Successfully connected to Mullvad VPN via WireGuard")
+                    return True
+                else:
+                    logger.error("Failed to connect to VPN")
+                    return False
+            else:
+                logger.error("Failed to set up WireGuard")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error setting up WireGuard: {e}")
+            return False
