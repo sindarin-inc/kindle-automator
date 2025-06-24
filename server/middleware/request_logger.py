@@ -39,7 +39,6 @@ class RequestBodyLogger:
             "token",
             "secret",
             "key",
-            "auth",
             "credential",
             "access_token",
             "refresh_token",
