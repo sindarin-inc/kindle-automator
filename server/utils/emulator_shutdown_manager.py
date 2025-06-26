@@ -317,13 +317,30 @@ class EmulatorShutdownManager:
         from server.utils.port_utils import calculate_vnc_port
 
         vnc_port = calculate_vnc_port(display_num)
+        # Use more specific patterns that match the actual command line format
+        # The VNC process has "-rfbport 5901" (with dash), and we need to match the exact port
         for cmd, key in (
-            (["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], "vnc_stopped"),
+            (["pkill", "-f", f"x11vnc.*-rfbport {vnc_port}"], "vnc_stopped"),
             (["pkill", "-f", f"Xvfb :{display_num}"], "xvfb_stopped"),
         ):
             with contextlib.suppress(Exception):
                 subprocess.run(cmd, check=False, timeout=3)
                 summary[key] = True
+
+        # Double-check VNC is actually killed - sometimes pkill doesn't work
+        time.sleep(0.5)
+        vnc_check = subprocess.run(
+            ["pgrep", "-f", f"x11vnc.*-rfbport {vnc_port}"], capture_output=True, text=True
+        )
+        if vnc_check.returncode == 0 and vnc_check.stdout.strip():
+            # VNC still running, force kill
+            logger.warning(f"VNC process still running on port {vnc_port} after pkill, force killing")
+            pids = vnc_check.stdout.strip().split("\n")
+            for pid in pids:
+                with contextlib.suppress(Exception):
+                    subprocess.run(["kill", "-9", pid], check=False)
+                    summary["vnc_stopped"] = True
+
         # Remove potential lock files left by Xvfb.
         with contextlib.suppress(Exception):
             subprocess.run(
