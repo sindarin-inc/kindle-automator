@@ -160,9 +160,11 @@ class AutomationServer:
                         text=True,
                         timeout=3,
                     )
-                    device_available = result.returncode == 0 and "device" in result.stdout
+                    # Check if device is available - "device" means fully booted, "offline" means still booting
+                    device_state = result.stdout.strip() if result.returncode == 0 else "error"
+                    device_available = result.returncode == 0 and device_state in ["device", "offline"]
                     logger.info(
-                        f"Device {device_id} verification: available={device_available}, result={result.stdout.strip()}"
+                        f"Device {device_id} verification: available={device_available}, state={device_state}"
                     )
                 except Exception as e:
                     logger.warning(f"Error checking device {device_id} availability: {e}")

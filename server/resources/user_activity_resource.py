@@ -160,7 +160,7 @@ class UserActivityResource(Resource):
             "appium_start": r"Starting Appium server for",
             "appium_fail": r"Failed to start Appium server",
             "request": r"REQUEST \[(\w+) ([^\]]+)\].*?: (.+)$",
-            "response": r"RESPONSE \[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
+            "response": r"RESPONSE \[(\w+) ([^\s\]]+)(?:\s+([\d.]+)s)?\].*?: (.+)$",
         }
 
         current_activity = None
