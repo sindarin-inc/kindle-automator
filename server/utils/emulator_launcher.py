@@ -548,7 +548,23 @@ class EmulatorLauncher:
             from server.utils.port_utils import calculate_vnc_port
 
             vnc_port = calculate_vnc_port(display_num)
-            subprocess.run(["pkill", "-f", f"x11vnc.*rfbport {vnc_port}"], check=False)
+            # Use more specific pattern that matches the actual command line format with -rfbport
+            subprocess.run(["pkill", "-f", f"x11vnc.*-rfbport {vnc_port}"], check=False)
+
+            # Double-check and force kill if still running
+            time.sleep(0.5)  # Give process time to exit
+            vnc_check2 = subprocess.run(
+                ["pgrep", "-f", f"x11vnc.*-rfbport {vnc_port}"], capture_output=True, text=True
+            )
+            if vnc_check2.returncode == 0 and vnc_check2.stdout.strip():
+                # Process still exists, force kill it
+                pids = vnc_check2.stdout.strip().split("\n")
+                for pid in pids:
+                    try:
+                        subprocess.run(["kill", "-9", pid], check=False)
+                        logger.warning(f"Force killed stubborn VNC process PID {pid} on port {vnc_port}")
+                    except Exception:
+                        pass
 
             # Set up environment
             env = os.environ.copy()
