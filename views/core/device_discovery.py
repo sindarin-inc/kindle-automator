@@ -173,10 +173,11 @@ class DeviceDiscovery:
                 # Check if we're on macOS
                 is_mac = platform.system() == "Darwin"
                 if is_mac:
-                    logger.debug(
-                        f"macOS: AVD name query failed for {emulator_id} (returncode={result.returncode}). "
-                        f"This is expected for Android Studio emulators."
-                    )
+                    pass
+                    # logger.debug(
+                    #     f"macOS: AVD name query failed for {emulator_id} (returncode={result.returncode}). "
+                    #     f"This is expected for Android Studio emulators."
+                    # )
                 else:
                     logger.warning(
                         f"Failed to query AVD name: returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
@@ -242,7 +243,7 @@ class DeviceDiscovery:
                 # On macOS, we can return a placeholder AVD name since we're allowing flexible matching
                 # This allows the system to work with Android Studio emulators
                 placeholder_avd = f"AndroidStudio_{emulator_id}"
-                logger.debug(f"macOS: Using placeholder AVD name '{placeholder_avd}' for {emulator_id}")
+                # logger.debug(f"macOS: Using placeholder AVD name '{placeholder_avd}' for {emulator_id}")
                 return placeholder_avd
             else:
                 # In production, we must not guess
