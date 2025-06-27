@@ -117,9 +117,7 @@ class TestKindleAPIIntegration:
         """Test the full sequence of endpoints."""
         # Open book
         open_response = self._make_request("open-random-book")
-
         assert open_response.status_code == 200
-        time.sleep(3)  # Wait for book to load
 
         # Navigate with preview
         nav_response = self._make_request("navigate", {"action": "preview", "preview": "true"})
