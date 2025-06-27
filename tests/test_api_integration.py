@@ -45,7 +45,7 @@ class TestKindleAPIIntegration:
         if method == "GET":
             response = self.session.get(url, params=request_params, timeout=60)
         elif method == "POST":
-            response = self.session.post(url, json=request_params, timeout=60)
+            response = self.session.post(url, params=request_params, timeout=60)
 
         return response
 
