@@ -77,11 +77,13 @@ class UserActivityResource(Resource):
 
     def _strip_ansi_codes(self, text):
         """Remove ANSI color codes from text."""
-        # Remove literal color codes like [35m, [0m, [33;2m etc.
-        text = re.sub(r"\[\d+(?:;\d+)*m", "", text)
-        # Also remove escape sequences if any
-        ansi_escape = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
-        return ansi_escape.sub("", text)
+        # Remove ANSI escape sequences (ESC[...m format)
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        text = ansi_escape.sub("", text)
+        # Remove escaped ANSI codes (when stored as \u001b in logs)
+        text = re.sub(r"\\u001b\[[0-9;]*m", "", text)
+        text = re.sub(r"\u001b\[[0-9;]*m", "", text)
+        return text
 
     def _parse_user_activities(self, user_email):
         """Parse log files to extract user activities."""
@@ -173,17 +175,20 @@ class UserActivityResource(Resource):
             if user_email not in line:
                 continue
 
+            # Strip ANSI codes from the line for pattern matching
+            clean_line = self._strip_ansi_codes(line)
+
             # Extract timestamp - try multiple formats
             timestamp = None
 
             # Try full date format: [5-29-25 22:41:49 PDT]
-            timestamp_match = re.search(r"\[(\d+-\d+-\d+ \d+:\d+:\d+)", line)
+            timestamp_match = re.search(r"\[(\d+-\d+-\d+ \d+:\d+:\d+)", clean_line)
             if timestamp_match:
                 timestamp_str = timestamp_match.group(1)
                 timestamp = datetime.strptime(timestamp_str, "%m-%d-%y %H:%M:%S")
             else:
                 # Try time-only format: [11:38:58]
-                timestamp_match = re.search(r"\[(\d+:\d+:\d+)\]", line)
+                timestamp_match = re.search(r"\[(\d+:\d+:\d+)\]", clean_line)
                 if timestamp_match:
                     time_str = timestamp_match.group(1)
                     # Use today's date with the time
@@ -194,18 +199,18 @@ class UserActivityResource(Resource):
                 continue
 
             # Track emulator launch time
-            if "launch_time_start" in patterns and re.search(patterns["launch_time_start"], line):
+            if "launch_time_start" in patterns and re.search(patterns["launch_time_start"], clean_line):
                 launch_start_time = timestamp
 
             # Check each pattern
             for event_type, pattern in patterns.items():
-                match = re.search(pattern, line)
+                match = re.search(pattern, clean_line)
                 if match:
                     activity = {
                         "timestamp": timestamp.isoformat(),  # Convert to string for JSON serialization
                         "timestamp_obj": timestamp,  # Keep datetime object for sorting
                         "type": event_type,
-                        "raw_line": self._strip_ansi_codes(line.strip()),
+                        "raw_line": clean_line.strip(),
                     }
 
                     if event_type == "open_book":
@@ -409,12 +414,59 @@ class UserActivityResource(Resource):
                         desc = "navigation request"
                 elif "/books-stream" in endpoint:
                     desc = "requested book library"
-                elif "/auth" in endpoint:
-                    desc = "authenticated"
+                elif endpoint.endswith("/auth-check"):
+                    # Check authentication status from response
+                    import json
+                    try:
+                        if body:
+                            # Extract JSON part from body (remove email prefix)
+                            json_start = body.find('{')
+                            if json_start != -1:
+                                json_body = body[json_start:]
+                                body_dict = json.loads(json_body)
+                                auth_status = body_dict.get("authenticated", False)
+                            else:
+                                body_dict = json.loads(body)
+                                auth_status = body_dict.get("authenticated", False)
+                            if auth_status:
+                                desc = "checked auth status (authenticated)"
+                            else:
+                                desc = "checked auth status (not authenticated)"
+                        else:
+                            desc = "checked auth status"
+                    except:
+                        desc = "checked auth status"
+                elif endpoint.endswith("/auth"):
+                    # This is POST /auth - actual sign-in
+                    # Check if authentication was successful from response body
+                    import json
+                    try:
+                        if body:
+                            # Extract JSON part from body (remove email prefix)
+                            json_start = body.find('{')
+                            if json_start != -1:
+                                json_body = body[json_start:]
+                                body_dict = json.loads(json_body)
+                                auth_status = body_dict.get("authenticated", False)
+                            else:
+                                body_dict = json.loads(body)
+                                auth_status = body_dict.get("authenticated", False)
+                            if auth_status:
+                                desc = "signed into Kindle (authenticated)"
+                            else:
+                                desc = "signed into Kindle (not authenticated)"
+                        else:
+                            desc = "signed into Kindle"
+                    except:
+                        desc = "signed into Kindle"
                 elif "/screenshot" in endpoint:
                     desc = "captured screenshot"
                 elif "/state" in endpoint:
                     desc = "checked app state"
+                elif "/last-read-page-dialog" in endpoint:
+                    desc = "handled continue reading dialog"
+                elif "/logs/timeline" in endpoint:
+                    desc = "retrieved activity timeline"
                 else:
                     desc = f"{activity.get('method', 'GET')} {self._strip_ansi_codes(endpoint)}"
 

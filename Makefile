@@ -5,6 +5,9 @@ EMAIL ?= kindle@solreader.com
 
 run: server
 
+claude-run: 
+	@bash -c 'source ~/.virtualenvs/kindle-automator/bin/activate && nohup make server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid'
+
 profile-help:
 	@echo "Profile Management Commands:"
 	@echo "  make profiles                         List all profiles"
