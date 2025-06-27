@@ -2,20 +2,25 @@
 
 ## Commands
 
-- `make server`: Start the Flask server (requires virtualenv to be activated first)
+- `make claude-run`: Start the Flask server in the background. It will auto-kill other running servers.
 - `make deps`: Install dependencies using uv
 - `make lint`: Run isort, black, and flake8
 - `make test-*`: Run various API endpoint tests (e.g. `make test-init`, `make test-books`)
 - `make reinstall`: Reinstall the application
-- `make kill-server`: Kill server and appium processes
 - `make ssh`: Use the Makefile to SSH into prod or staging with the appropriate non-interactive command prefix
 
-## Virtualenv Management
+## Running the server
 
-- To start the server: `source ~/.virtualenvs/kindle-automator/bin/activate && make server`
-- For background execution: `source ~/.virtualenvs/kindle-automator/bin/activate && nohup make server > server.out 2>&1 &`
-- The virtualenv must be activated before running `make server`
-- No need to kill the server when restarting, `make server` automatically kills old server instances
+```bash
+# Start server in background (kills existing server)
+make claude-run
+
+# Monitor server startup (first 20 lines)
+tail -n 20 logs/server_output.log
+
+# Check server is running
+curl -s http://localhost:4098/emulators/active
+```
 
 ## Ansible Commands
 

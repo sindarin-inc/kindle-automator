@@ -525,6 +525,50 @@ class AVDProfileManager:
             logger.error(f"Error getting user field {field} for {email}: {e}")
             return default
 
+    def update_auth_state(self, email: str, authenticated: bool) -> bool:
+        """
+        Update authentication state for a user profile.
+
+        When authenticated=True:
+        - Sets auth_date to current timestamp
+        - Clears auth_failed_date
+
+        When authenticated=False:
+        - Sets auth_failed_date to current timestamp
+        - Does not modify auth_date
+
+        Args:
+            email: Email address of the profile
+            authenticated: Whether the user is authenticated
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            from datetime import datetime
+
+            current_date = datetime.now().isoformat()
+
+            if authenticated:
+                # User is authenticated - set auth_date and clear auth_failed_date
+                logger.info(f"Setting auth_date for {email} as user is authenticated")
+                self.set_user_field(email, "auth_date", current_date)
+
+                # Clear auth_failed_date if it exists
+                auth_failed_date = self.get_user_field(email, "auth_failed_date")
+                if auth_failed_date:
+                    logger.info(f"Clearing auth_failed_date for {email}")
+                    self.set_user_field(email, "auth_failed_date", None)
+            else:
+                # User lost authentication - set auth_failed_date
+                logger.info(f"Setting auth_failed_date for {email} as user lost authentication")
+                self.set_user_field(email, "auth_failed_date", current_date)
+
+            return True
+        except Exception as e:
+            logger.error(f"Error updating auth state for {email}: {e}")
+            return False
+
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
         """
         Save profile status to the profiles_index directly.
