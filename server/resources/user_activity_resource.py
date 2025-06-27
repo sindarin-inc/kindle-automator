@@ -78,7 +78,7 @@ class UserActivityResource(Resource):
     def _strip_ansi_codes(self, text):
         """Remove ANSI color codes from text."""
         # Remove ANSI escape sequences (ESC[...m format)
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         text = ansi_escape.sub("", text)
         # Remove escaped ANSI codes (when stored as \u001b in logs)
         text = re.sub(r"\\u001b\[[0-9;]*m", "", text)
@@ -417,10 +417,11 @@ class UserActivityResource(Resource):
                 elif endpoint.endswith("/auth-check"):
                     # Check authentication status from response
                     import json
+
                     try:
                         if body:
                             # Extract JSON part from body (remove email prefix)
-                            json_start = body.find('{')
+                            json_start = body.find("{")
                             if json_start != -1:
                                 json_body = body[json_start:]
                                 body_dict = json.loads(json_body)
@@ -440,10 +441,11 @@ class UserActivityResource(Resource):
                     # This is POST /auth - actual sign-in
                     # Check if authentication was successful from response body
                     import json
+
                     try:
                         if body:
                             # Extract JSON part from body (remove email prefix)
-                            json_start = body.find('{')
+                            json_start = body.find("{")
                             if json_start != -1:
                                 json_body = body[json_start:]
                                 body_dict = json.loads(json_body)
