@@ -21,8 +21,7 @@ class UserActivityResource(Resource):
         current_file = os.path.abspath(__file__)
         server_dir = os.path.dirname(os.path.dirname(current_file))
         project_root = os.path.dirname(server_dir)
-        self.log_dir = os.path.join(project_root, "logs")
-        logger.info(f"UserActivityResource initialized with log_dir: {self.log_dir}")
+        self.log_dir = os.path.join(project_root, "logs", "email_logs")
         super().__init__()
 
     def get(self):
@@ -78,15 +77,15 @@ class UserActivityResource(Resource):
 
     def _strip_ansi_codes(self, text):
         """Remove ANSI color codes from text."""
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        # Remove literal color codes like [35m, [0m, [33;2m etc.
+        text = re.sub(r"\[\d+(?:;\d+)*m", "", text)
+        # Also remove escape sequences if any
+        ansi_escape = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
         return ansi_escape.sub("", text)
 
     def _parse_user_activities(self, user_email):
         """Parse log files to extract user activities."""
         activities = []
-
-        # Check main server log and its rotated versions
-        self._process_log_with_rotations(activities, "server.log", user_email)
 
         # Check user-specific log file and its rotated versions
         user_log_name = f"{user_email}.log"
@@ -108,6 +107,8 @@ class UserActivityResource(Resource):
         # Process current log file
         if os.path.exists(log_base_path):
             activities.extend(self._parse_log_file(log_base_path, user_email))
+        else:
+            logger.warning(f"Log file {log_base_path} does not exist for user {user_email}")
 
         # Process rotated log files (uncompressed)
         rotation_num = 1
@@ -129,6 +130,7 @@ class UserActivityResource(Resource):
     def _parse_log_file(self, log_file, user_email):
         """Parse a single log file for user activities."""
         try:
+            logger.info(f"Parsing log file: {log_file} for user: {user_email}")
             with open(log_file, "r") as f:
                 return self._parse_log_lines(f, user_email)
         except Exception as e:
