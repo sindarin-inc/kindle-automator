@@ -236,7 +236,7 @@ class AppiumDriver:
         try:
             # Check if anything is listening on the port first
             port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True, check=False
             )
             if not port_check.stdout.strip():
                 return False
@@ -417,7 +417,7 @@ class AppiumDriver:
         """Kill any process using the specified port."""
         try:
             port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True, check=False
             )
             if port_check.stdout.strip():
                 pids = port_check.stdout.strip().split("\n")

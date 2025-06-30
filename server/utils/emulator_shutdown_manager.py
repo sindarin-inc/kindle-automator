@@ -454,7 +454,9 @@ class EmulatorShutdownManager:
         if not port:
             return
         try:
-            result = subprocess.run(["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True
+            )
             for pid in filter(None, result.stdout.split()):
                 with contextlib.suppress(Exception):
                     os.kill(int(pid), signal.SIGTERM)
