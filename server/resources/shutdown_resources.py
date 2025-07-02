@@ -65,10 +65,25 @@ class ShutdownResource(Resource):
             elif cold:
                 message_parts.append("snapshot skipped for cold boot")
 
+            # Add sync status if attempted
+            if shutdown_summary.get("placemark_sync_attempted"):
+                if shutdown_summary.get("placemark_sync_success"):
+                    message_parts.append("placemarks synced")
+                else:
+                    message_parts.append("PLACEMARK SYNC FAILED")
+
             if message_parts:
                 message = f"Successfully shut down for {sindarin_email}: {', '.join(message_parts)}"
             else:
                 message = f"No active resources found to shut down for {sindarin_email}"
+
+            # Log critical warning if sync failed
+            if shutdown_summary.get("placemark_sync_attempted") and not shutdown_summary.get(
+                "placemark_sync_success"
+            ):
+                logger.critical(
+                    f"PLACEMARK SYNC FAILED during shutdown for {sindarin_email} - user's reading position may be lost!"
+                )
 
             return {
                 "success": True,
