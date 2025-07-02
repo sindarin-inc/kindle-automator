@@ -225,7 +225,9 @@ class AVDCreator:
             self._configure_avd(avd_name, sys_img)
 
             # Update profile with system image information
-            avd_manager = self.avd_manager_module()
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            avd_manager = AVDProfileManager.get_instance()
             # Extract Android version from system image string
             # "system-images;android-36;google_apis;x86_64" -> "36"
             android_version = sys_img.split(";")[1].replace("android-", "")

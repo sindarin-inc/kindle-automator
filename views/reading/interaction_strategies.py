@@ -123,6 +123,8 @@ CLOSE_BOOK_STRATEGIES = [
 FULL_SCREEN_DIALOG_GOT_IT = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='Got it']"),
     (AppiumBy.ID, "android:id/ok"),  # Specific ID for the Got it button
+    (AppiumBy.ID, "com.android.systemui:id/ok"),  # Android 36 version
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='com.android.systemui:id/ok' and @text='Got it']"),  # Android 36 specific
     (AppiumBy.ID, "android:id/button1"),  # Fallback using button ID
 ]
 
