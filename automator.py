@@ -27,36 +27,45 @@ class KindleAutomator:
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
 
-    def cleanup(self):
-        """Cleanup resources."""
+    def cleanup(self, skip_driver_quit=False):
+        """Cleanup resources.
+
+        Args:
+            skip_driver_quit: If True, skip calling driver.quit() (used during shutdown when emulator is already gone)
+        """
         import time as _time
 
         cleanup_start = _time.time()
 
         if self.driver:
-            try:
-                # Get the Driver instance from the driver attribute (which is the Appium driver)
-                # We need to find the Driver instance that contains this Appium driver
-                if hasattr(self, "_driver_instance"):
-                    # If we stored a reference to the Driver instance
-                    logger.info("Calling quit on Driver instance")
-                    quit_start = _time.time()
-                    self._driver_instance.quit()
-                    logger.info(f"Driver quit took {_time.time() - quit_start:.1f}s")
-                else:
-                    # Otherwise, try to quit the Appium driver directly
-                    logger.info("Calling quit on Appium driver directly")
-                    quit_start = _time.time()
-                    self.driver.quit()
-                    logger.info(f"Appium driver quit took {_time.time() - quit_start:.1f}s")
-            except Exception as e:
-                logger.error(f"Error during driver cleanup: {e}")
-                logger.info(f"Driver cleanup error after {_time.time() - cleanup_start:.1f}s")
-            finally:
-                finally_start = _time.time()
+            if skip_driver_quit:
+                logger.info("Skipping driver.quit() as requested (emulator already stopped)")
                 self.driver = None
                 self.device_id = None
-                logger.info(f"Finally block took {_time.time() - finally_start:.1f}s")
+            else:
+                try:
+                    # Get the Driver instance from the driver attribute (which is the Appium driver)
+                    # We need to find the Driver instance that contains this Appium driver
+                    if hasattr(self, "_driver_instance"):
+                        # If we stored a reference to the Driver instance
+                        logger.info("Calling quit on Driver instance")
+                        quit_start = _time.time()
+                        self._driver_instance.quit()
+                        logger.info(f"Driver quit took {_time.time() - quit_start:.1f}s")
+                    else:
+                        # Otherwise, try to quit the Appium driver directly
+                        logger.info("Calling quit on Appium driver directly")
+                        quit_start = _time.time()
+                        self.driver.quit()
+                        logger.info(f"Appium driver quit took {_time.time() - quit_start:.1f}s")
+                except Exception as e:
+                    logger.error(f"Error during driver cleanup: {e}")
+                    logger.info(f"Driver cleanup error after {_time.time() - cleanup_start:.1f}s")
+                finally:
+                    finally_start = _time.time()
+                    self.driver = None
+                    self.device_id = None
+                    logger.info(f"Finally block took {_time.time() - finally_start:.1f}s")
 
         logger.info(f"Total automator.cleanup() took {_time.time() - cleanup_start:.1f}s")
 

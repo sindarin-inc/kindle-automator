@@ -431,7 +431,8 @@ class EmulatorShutdownManager:
                 ad.stop_appium_for_profile(email)
         with contextlib.suppress(Exception):
             cleanup_start = _time.time()
-            automator.cleanup()
+            # Skip driver.quit() during shutdown since emulator is already stopped
+            automator.cleanup(skip_driver_quit=True)
             logger.info(f"automator.cleanup() took {_time.time() - cleanup_start:.1f}s for {email}")
             summary["automator_cleaned"] = True
         # Clear reference even if cleanup errored.

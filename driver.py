@@ -1513,22 +1513,12 @@ class Driver:
 
         if self.driver:
             import concurrent.futures
-            import threading
-
-            # Store the driver reference and clear it immediately to prevent re-use
-            driver_to_quit = self.driver
-            self.driver = None
-            self.device_id = None
 
             def _quit_driver():
-                try:
-                    driver_to_quit.quit()
-                except Exception as e:
-                    # Log but don't raise - we're in a background thread
-                    logger.debug(f"Background driver.quit() error: {e}")
+                self.driver.quit()
 
             # Use ThreadPoolExecutor to add a timeout to driver.quit()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(_quit_driver)
                 try:
                     # Give it 3 seconds to quit gracefully
@@ -1536,10 +1526,6 @@ class Driver:
                     logger.info("Successfully quit Appium driver session")
                 except concurrent.futures.TimeoutError:
                     logger.warning("Driver.quit() timed out after 3 seconds - likely device already offline")
-                    # Cancel the future to signal we're no longer interested
-                    future.cancel()
-                    # Don't wait for the executor - let it clean up in the background
-                    executor.shutdown(wait=False)
                 except Exception as e:
                     error_msg = str(e).lower()
                     # Check if this is an expected error during shutdown
@@ -1552,3 +1538,6 @@ class Driver:
                         logger.debug("Session already terminated during driver.quit() - this is expected")
                     else:
                         logger.error(f"Error during driver.quit(): {e}")
+                finally:
+                    self.driver = None
+                    self.device_id = None
