@@ -29,6 +29,10 @@ class KindleAutomator:
 
     def cleanup(self):
         """Cleanup resources."""
+        import time as _time
+
+        cleanup_start = _time.time()
+
         if self.driver:
             try:
                 # Get the Driver instance from the driver attribute (which is the Appium driver)
@@ -36,16 +40,25 @@ class KindleAutomator:
                 if hasattr(self, "_driver_instance"):
                     # If we stored a reference to the Driver instance
                     logger.info("Calling quit on Driver instance")
+                    quit_start = _time.time()
                     self._driver_instance.quit()
+                    logger.info(f"Driver quit took {_time.time() - quit_start:.1f}s")
                 else:
                     # Otherwise, try to quit the Appium driver directly
                     logger.info("Calling quit on Appium driver directly")
+                    quit_start = _time.time()
                     self.driver.quit()
+                    logger.info(f"Appium driver quit took {_time.time() - quit_start:.1f}s")
             except Exception as e:
                 logger.error(f"Error during driver cleanup: {e}")
+                logger.info(f"Driver cleanup error after {_time.time() - cleanup_start:.1f}s")
             finally:
+                finally_start = _time.time()
                 self.driver = None
                 self.device_id = None
+                logger.info(f"Finally block took {_time.time() - finally_start:.1f}s")
+
+        logger.info(f"Total automator.cleanup() took {_time.time() - cleanup_start:.1f}s")
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
