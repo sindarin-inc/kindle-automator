@@ -21,6 +21,14 @@ class AVDCreator:
     SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
     ALT_SYSTEM_IMAGE = "system-images;android-36;google_apis;x86_64"
 
+    # List of email addresses that should use ALT_SYSTEM_IMAGE for testing
+    ALT_IMAGE_TEST_EMAILS = [
+        "kindle@solreader.com",
+        "sam@solreader.com",
+        "samuel@ofbrooklyn.com",
+        "craigcreative@me.com",
+    ]
+
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
         self.avd_dir = avd_dir
@@ -69,6 +77,44 @@ class AVDCreator:
             logger.error(f"Configured system image {self.SYSTEM_IMAGE} not found in available images")
             return None
 
+    def _get_system_image_for_email(self, email: str, available_images: List[str]) -> Optional[str]:
+        """
+        Determine which system image to use based on the user's email.
+
+        Users in ALT_IMAGE_TEST_EMAILS list will use Android 36, others use Android 30.
+
+        Args:
+            email: User's email address
+            available_images: List of available system images
+
+        Returns:
+            Optional[str]: System image to use, or None if no compatible image found
+        """
+        # Check if this email is in the test list
+        if email in self.ALT_IMAGE_TEST_EMAILS:
+            logger.info(f"User {email} is in ALT_IMAGE_TEST_EMAILS, attempting to use Android 36")
+            if self.ALT_SYSTEM_IMAGE in available_images:
+                logger.info(f"Using Android 36 system image: {self.ALT_SYSTEM_IMAGE}")
+                return self.ALT_SYSTEM_IMAGE
+            else:
+                logger.warning(
+                    f"Android 36 image {self.ALT_SYSTEM_IMAGE} not available, falling back to Android 30"
+                )
+                # Fall back to Android 30
+                if self.SYSTEM_IMAGE in available_images:
+                    logger.info(f"Using fallback Android 30 system image: {self.SYSTEM_IMAGE}")
+                    return self.SYSTEM_IMAGE
+        else:
+            # Regular users use Android 30
+            logger.info(f"User {email} is a regular user, using Android 30")
+            if self.SYSTEM_IMAGE in available_images:
+                logger.info(f"Using Android 30 system image: {self.SYSTEM_IMAGE}")
+                return self.SYSTEM_IMAGE
+
+        # No compatible image found
+        logger.error(f"No compatible system image found for {email}")
+        return None
+
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
         """
         Create a new AVD for the given email.
@@ -109,8 +155,8 @@ class AVDCreator:
                             img_path = parts[0].strip()
                             available_images.append(img_path)
 
-                # Get the configured system image
-                sys_img = self.get_compatible_system_image(available_images)
+                # Determine which system image to use based on email
+                sys_img = self._get_system_image_for_email(email, available_images)
 
                 if sys_img:
                     # Try to install the system image
@@ -135,8 +181,8 @@ class AVDCreator:
                         logger.error(f"Failed to install system image: {install_result.stderr}")
                         return False, f"Failed to install system image: {install_result.stderr}"
                 else:
-                    logger.error(f"System image {self.SYSTEM_IMAGE} not available")
-                    return False, f"System image {self.SYSTEM_IMAGE} not found in available images"
+                    logger.error(f"No compatible system image found for {email}")
+                    return False, f"No compatible system image found in available images"
 
             except Exception as e:
                 logger.error(f"Error getting available system images: {e}")
@@ -176,7 +222,16 @@ class AVDCreator:
                 return False, f"Failed to create AVD: {process.stderr}"
 
             # Configure AVD settings for better performance
-            self._configure_avd(avd_name)
+            self._configure_avd(avd_name, sys_img)
+
+            # Update profile with system image information
+            avd_manager = self.avd_manager_module()
+            # Extract Android version from system image string
+            # "system-images;android-36;google_apis;x86_64" -> "36"
+            android_version = sys_img.split(";")[1].replace("android-", "")
+            avd_manager.set_user_field(email, "android_version", android_version)
+            avd_manager.set_user_field(email, "system_image", sys_img)
+            logger.info(f"Updated profile for {email} with Android {android_version} ({sys_img})")
 
             return True, avd_name
 
@@ -184,7 +239,7 @@ class AVDCreator:
             logger.error(f"Error creating new AVD: {e}")
             return False, str(e)
 
-    def _configure_avd(self, avd_name: str) -> None:
+    def _configure_avd(self, avd_name: str, system_image: str) -> None:
         """Configure AVD settings for better performance."""
         config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
         if not os.path.exists(config_path):
@@ -201,10 +256,10 @@ class AVDCreator:
             # as the Android emulator doesn't properly support ARM64 emulation yet
             cpu_arch = "x86_64"
 
-            # Derive sysdir from SYSTEM_IMAGE constant
+            # Derive sysdir from system_image parameter
             # Convert from sdkmanager format to path format
             # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"
-            sysdir = self.SYSTEM_IMAGE.replace(";", "/") + "/"
+            sysdir = system_image.replace(";", "/") + "/"
 
             logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
 
@@ -391,6 +446,8 @@ class AVDCreator:
             Tuple[bool, str]: (success, avd_name or error message)
         """
         logger.info("Creating seed clone AVD for fast user initialization")
+        # Seed clone always uses main SYSTEM_IMAGE for compatibility with all users
+        logger.info(f"Creating seed clone with main system image (Android 30)")
         success, avd_name = self.create_new_avd(self.SEED_CLONE_EMAIL)
 
         if success:
@@ -410,6 +467,10 @@ class AVDCreator:
     def copy_avd_from_seed_clone(self, email: str) -> Tuple[bool, str]:
         """
         Copy the seed clone AVD to create a new AVD for the given email.
+
+        Note: The seed clone always uses the main SYSTEM_IMAGE (Android 30) for compatibility
+        with all users. Users in ALT_IMAGE_TEST_EMAILS who need Android 36 will get it
+        when their AVD is created directly (not from seed clone).
 
         Args:
             email: The user's email address
@@ -523,7 +584,11 @@ class AVDCreator:
                     avd_manager.set_user_field(email, "device_identifiers", randomized_identifiers)
                 # Clear post_boot_randomized flag to ensure randomization happens on first boot
                 avd_manager.set_user_field(email, "post_boot_randomized", False)
-                logger.info(f"Marked {email} as created from seed clone")
+                # Set Android version - seed clone uses main SYSTEM_IMAGE (Android 30)
+                android_version = self.SYSTEM_IMAGE.split(";")[1].replace("android-", "")
+                avd_manager.set_user_field(email, "android_version", android_version)
+                avd_manager.set_user_field(email, "system_image", self.SYSTEM_IMAGE)
+                logger.info(f"Marked {email} as created from seed clone with Android {android_version}")
             except Exception as e:
                 logger.warning(f"Could not mark AVD as created from seed clone: {e}")
 

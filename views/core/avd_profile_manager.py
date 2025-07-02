@@ -837,6 +837,16 @@ class AVDProfileManager:
             if vnc_instance:
                 profile_info["vnc_instance"] = vnc_instance
 
+            # Add Android version information if available
+            android_version = profile_entry.get("android_version")
+            if android_version:
+                profile_info["android_version"] = android_version
+
+            # Add system image information if available
+            system_image = profile_entry.get("system_image")
+            if system_image:
+                profile_info["system_image"] = system_image
+
             result.append(profile_info)
         return result
 
