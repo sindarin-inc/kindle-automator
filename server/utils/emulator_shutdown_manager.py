@@ -71,6 +71,9 @@ class EmulatorShutdownManager:
         summary = {key: False for key in self._SUMMARY_KEYS}
         summary["email"] = email
 
+        import time as _time
+
+        start_time = _time.time()
         logger.info(
             "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s, skip_snapshot=%s)",
             email,
@@ -94,6 +97,7 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         # 3. UI preparation (navigate + snapshot)                      ──────
         # ------------------------------------------------------------------
+        ui_prep_start = _time.time()
         ui_crashed = not self._prepare_emulator_ui(
             automator,
             email,
@@ -101,13 +105,16 @@ class EmulatorShutdownManager:
             skip_snapshot,
             summary,
         )
+        logger.info(f"UI preparation took {_time.time() - ui_prep_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
         # 4. Stop emulator + auxiliary processes                       ──────
         # ------------------------------------------------------------------
+        stop_emulator_start = _time.time()
         display_num: Optional[int] = None
         try:
             display_num = self._stop_emulator_processes(automator, email, summary)
+            logger.info(f"Stop emulator processes took {_time.time() - stop_emulator_start:.1f}s for {email}")
         finally:
             # Always cleanup ports even when stop_emulator raised.
             emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]
@@ -119,14 +126,19 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
         # ------------------------------------------------------------------
+        cleanup_display_start = _time.time()
         self._cleanup_display_resources(email, display_num, summary)
+        logger.info(f"Display resource cleanup took {_time.time() - cleanup_display_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
         # 6. Final in‑memory cleanups                                   ──────
         # ------------------------------------------------------------------
+        cleanup_automator_start = _time.time()
         self._cleanup_automator(email, automator, summary)
         self.server.clear_current_book(email)
+        logger.info(f"Automator cleanup took {_time.time() - cleanup_automator_start:.1f}s for {email}")
 
+        logger.info(f"Total shutdown took {_time.time() - start_time:.1f}s for {email}")
         return summary
 
     def shutdown_all_emulators(self, preserve_reading_state: bool = False):  # noqa: D401, ANN001
@@ -227,7 +239,7 @@ class EmulatorShutdownManager:
                 logger.info("Successfully transitioned to Library view (%s)", email)
                 if was_reading and state_machine.library_handler:
                     self._sync_from_more_tab(state_machine)
-                time.sleep(5)  # Give Kindle a moment to flush state.
+                time.sleep(1)  # Give Kindle a moment to flush state.
             else:
                 logger.warning(
                     "Failed to transition to Library before shutdown (%s), ended in state: %s",
@@ -350,6 +362,8 @@ class EmulatorShutdownManager:
 
     def _cleanup_automator(self, email: str, automator, summary: Dict[str, bool]):
         """Stop Appium (if still running) and cleanup automator instance."""
+        import time as _time
+
         with contextlib.suppress(Exception):
             from server.utils.appium_driver import AppiumDriver
 
@@ -357,7 +371,9 @@ class EmulatorShutdownManager:
             if (info := ad.get_appium_process_info(email)) and info.get("running"):
                 ad.stop_appium_for_profile(email)
         with contextlib.suppress(Exception):
+            cleanup_start = _time.time()
             automator.cleanup()
+            logger.info(f"automator.cleanup() took {_time.time() - cleanup_start:.1f}s for {email}")
             summary["automator_cleaned"] = True
         # Clear reference even if cleanup errored.
         self.server.automators[email] = None
