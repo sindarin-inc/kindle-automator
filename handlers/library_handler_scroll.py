@@ -757,6 +757,8 @@ class LibraryHandlerScroll:
             # No normalization needed for exact matching
             page_count = 0
             use_hook_for_current_scroll = True
+            consecutive_identical_screen_iterations = 0
+            IDENTICAL_SCREEN_THRESHOLD = 10
 
             while True:
                 page_count += 1
@@ -829,6 +831,18 @@ class LibraryHandlerScroll:
                 # Decision for the UPCOMING scroll's hook is based on whether THIS page's MAIN pass found anything.
                 use_hook_for_current_scroll = books_added_in_current_page_processing
 
+                # Check if all titles processed on this page are identical
+                if new_titles_on_page and len(set(new_titles_on_page)) == 1:
+                    consecutive_identical_screen_iterations += 1
+                    logger.info(
+                        f"All {len(new_titles_on_page)} titles on page are identical: '{new_titles_on_page[0]}' "
+                        f"(iteration {consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD})"
+                    )
+                else:
+                    if consecutive_identical_screen_iterations > 0:
+                        logger.info("Page titles are no longer all identical, resetting counter")
+                    consecutive_identical_screen_iterations = 0
+
                 # If we've found no new books on this screen (via main processing), we need to double-check
                 # Also, determine if any new books overall were found in this iteration (main pass + double_check)
                 any_new_books_this_iteration = books_added_in_current_page_processing
@@ -840,15 +854,25 @@ class LibraryHandlerScroll:
                     if found_new_titles:
                         any_new_books_this_iteration = True
                     else:
-                        break  # No new books found, stop scrolling
+                        if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
+                            break  # No new books found, stop scrolling
+                        else:
+                            logger.info(
+                                f"All titles identical but haven't reached threshold ({consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD}), continuing scroll"
+                            )
 
                 # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
                 if not any_new_books_this_iteration or seen_titles == previous_titles:
-                    logger.info("No progress in finding new books, stopping scroll")
-                    # Send completion notification via callback if available
-                    if callback:
-                        callback(None, done=True, total_books=len(books))
-                    break
+                    if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
+                        logger.info("No progress in finding new books, stopping scroll")
+                        # Send completion notification via callback if available
+                        if callback:
+                            callback(None, done=True, total_books=len(books))
+                        break
+                    else:
+                        logger.info(
+                            f"No progress but all titles identical ({consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD}), continuing scroll"
+                        )
 
                 # Find scroll reference and perform scrolling
                 book_containers = self.driver.find_elements(
