@@ -156,14 +156,16 @@ class ViewInspector:
             max_wait_time = 10  # 10 seconds max wait time
             poll_interval = 0.2  # 200ms between checks
             app_ready = False
+            notification_dialog_handled = False  # Track if we've already tried to handle notification dialog
 
             while time.time() - start_time < max_wait_time:
                 try:
                     current_activity = self.driver.current_activity
 
                     # Check for permission controller activity (notification dialog)
-                    if "com.android.permissioncontroller" in current_activity:
+                    if "com.android.permissioncontroller" in current_activity and not notification_dialog_handled:
                         logger.info("Detected permission dialog during app initialization")
+                        notification_dialog_handled = True  # Mark as handled to avoid infinite loops
                         # Try to handle notification permission dialog
                         try:
                             from views.common.dialog_strategies import (
@@ -191,13 +193,23 @@ class ViewInspector:
                                         AppiumBy.ID,
                                         "com.android.permissioncontroller:id/permission_deny_button",
                                     ),
+                                    (
+                                        AppiumBy.ID,
+                                        "com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button",
+                                    ),
                                     (AppiumBy.ID, "android:id/button2"),  # Usually the deny button
                                     (AppiumBy.XPATH, "//android.widget.Button[@text='Deny']"),
                                     (AppiumBy.XPATH, '//android.widget.Button[@text="Don\'t allow"]'),
                                     (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'Deny')]"),
                                     (AppiumBy.XPATH, '//android.widget.Button[contains(@text, "Don\'t")]'),
+                                    # Android 36 specific
+                                    (AppiumBy.XPATH, "//android.widget.Button[@text='No thanks']"),
+                                    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'No')]"),
+                                    # Generic button search - look for the second button (usually deny)
+                                    (AppiumBy.XPATH, "(//android.widget.Button)[2]"),
                                 ]
 
+                                button_clicked = False
                                 for strategy, locator in deny_buttons:
                                     try:
                                         button = self.driver.find_element(strategy, locator)
@@ -207,9 +219,28 @@ class ViewInspector:
                                                 f"Clicked deny button for notification permission: {strategy}={locator}"
                                             )
                                             time.sleep(0.5)  # Brief pause after dismissing
+                                            button_clicked = True
                                             break
-                                    except:
+                                    except Exception as btn_e:
+                                        logger.debug(f"Failed to click deny button {strategy}={locator}: {btn_e}")
                                         continue
+                                
+                                if not button_clicked:
+                                    logger.warning("Could not find or click any deny button for notification dialog")
+                                    # Try using the permissions handler as fallback
+                                    try:
+                                        from handlers.permissions_handler import PermissionsHandler
+                                        permissions_handler = PermissionsHandler(self.driver)
+                                        permissions_handler.handle_notifications_permission(should_allow=False)
+                                        logger.info("Used PermissionsHandler to dismiss notification dialog")
+                                    except Exception as ph_e:
+                                        logger.error(f"PermissionsHandler also failed: {ph_e}")
+                                        # As last resort, try pressing back button
+                                        try:
+                                            self.driver.press_keycode(4)  # Android back key
+                                            logger.info("Pressed back button to dismiss notification dialog")
+                                        except:
+                                            pass
                         except Exception as perm_e:
                             logger.warning(f"Failed to handle permission dialog: {perm_e}")
 

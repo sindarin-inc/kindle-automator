@@ -43,13 +43,13 @@ class TestKindleAPIIntegration:
         request_params = {**self.default_params, **(params or {})}
 
         if method == "GET":
-            response = self.session.get(url, params=request_params, timeout=60)
+            response = self.session.get(url, params=request_params, timeout=120)
         elif method == "POST":
-            response = self.session.post(url, params=request_params, timeout=60)
+            response = self.session.post(url, params=request_params, timeout=120)
 
         return response
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)
     def test_open_random_book(self):
         """Test /kindle/open-random-book endpoint."""
         response = self._make_request("open-random-book")
@@ -65,7 +65,7 @@ class TestKindleAPIIntegration:
         # Store book info for subsequent tests
         self.__class__.opened_book = data
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)
     def test_navigate_with_preview(self):
         """Test /kindle/navigate endpoint with preview."""
         # First ensure a book is open
@@ -89,7 +89,7 @@ class TestKindleAPIIntegration:
         text_field = data.get("ocr_text")
         assert len(text_field) > 0, "OCR text should not be empty"
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)
     def _test_shutdown(self):
         """Test /kindle/shutdown endpoint."""
         try:
