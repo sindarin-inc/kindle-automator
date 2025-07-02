@@ -557,7 +557,8 @@ class AVDCreator:
 
             # Step 5: Configure the new AVD with proper settings (including RAM)
             logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
-            self._configure_avd(new_avd_name)
+            # Seed clone always uses the default SYSTEM_IMAGE (Android 30)
+            self._configure_avd(new_avd_name, self.SYSTEM_IMAGE)
 
             # Step 6: Randomize device identifiers to prevent auth token ejection
             logger.info(f"Randomizing device identifiers for {new_avd_name}")
@@ -586,7 +587,7 @@ class AVDCreator:
                     avd_manager.set_user_field(email, "device_identifiers", randomized_identifiers)
                 # Clear post_boot_randomized flag to ensure randomization happens on first boot
                 avd_manager.set_user_field(email, "post_boot_randomized", False)
-                # Set Android version - seed clone uses main SYSTEM_IMAGE (Android 30)
+                # Set Android version - seed clone always uses main SYSTEM_IMAGE (Android 30)
                 android_version = self.SYSTEM_IMAGE.split(";")[1].replace("android-", "")
                 avd_manager.set_user_field(email, "android_version", android_version)
                 avd_manager.set_user_field(email, "system_image", self.SYSTEM_IMAGE)

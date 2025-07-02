@@ -1482,8 +1482,12 @@ class AVDProfileManager:
         if not avd_exists:
             logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
 
+            # Check if this user requires ALT_SYSTEM_IMAGE
+            requires_alt_image = email in self.avd_creator.ALT_IMAGE_TEST_EMAILS
+
             # Check if we can use the seed clone for faster AVD creation
-            if self.avd_creator.is_seed_clone_ready():
+            # Skip seed clone for ALT_IMAGE users since seed clone uses Android 30
+            if self.avd_creator.is_seed_clone_ready() and not requires_alt_image:
                 logger.info("Seed clone is ready - using fast AVD copy method")
                 success, result = self.avd_creator.copy_avd_from_seed_clone(email)
                 if success:
@@ -1498,8 +1502,13 @@ class AVDProfileManager:
                         return False, f"Failed to create AVD for {email}: {result}"
                     avd_name = result
             else:
-                # Seed clone not ready, use normal AVD creation
-                logger.info("Seed clone not ready, using normal AVD creation")
+                # Either seed clone not ready or user requires ALT_SYSTEM_IMAGE
+                if requires_alt_image:
+                    logger.info(
+                        f"User {email} requires ALT_SYSTEM_IMAGE (Android 36), using normal AVD creation"
+                    )
+                else:
+                    logger.info("Seed clone not ready, using normal AVD creation")
                 success, result = self.create_new_avd(email)
                 if not success:
                     logger.error(f"Failed to create AVD: {result}")
