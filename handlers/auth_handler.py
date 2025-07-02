@@ -343,20 +343,21 @@ class AuthenticationHandler:
                 logger.info("Found notification permission dialog, dismissing it")
                 try:
                     from handlers.permissions_handler import PermissionsHandler
+
                     permissions_handler = PermissionsHandler(self.driver)
                     # Deny notifications as per user preference
                     permissions_handler.handle_notifications_permission(should_allow=False)
                     logger.info("Dismissed notification permission dialog")
-                    
+
                     # Wait a moment for dialog to disappear
                     time.sleep(1)
-                    
+
                     # Update state after dismissing dialog
                     automator.state_machine.update_current_state()
                     current_state = automator.state_machine.current_state
                     state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
                     logger.info(f"State after dismissing notification dialog: {state_name}")
-                    
+
                     # Continue with the flow - don't return here, let it check the new state
                 except Exception as e:
                     logger.error(f"Failed to handle notification permission dialog: {e}")

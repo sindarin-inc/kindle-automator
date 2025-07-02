@@ -166,44 +166,53 @@ class ViewInspector:
                         logger.info("Detected permission dialog during app initialization")
                         # Try to handle notification permission dialog
                         try:
-                            from views.common.dialog_strategies import NOTIFICATION_DIALOG_IDENTIFIERS
-                            
+                            from views.common.dialog_strategies import (
+                                NOTIFICATION_DIALOG_IDENTIFIERS,
+                            )
+
                             # Check if this is a notification dialog
                             is_notification_dialog = False
                             for strategy, locator in NOTIFICATION_DIALOG_IDENTIFIERS:
                                 try:
                                     element = self.driver.find_element(strategy, locator)
                                     if element.is_displayed():
-                                        logger.info(f"Found notification dialog element: {strategy}={locator}")
+                                        logger.info(
+                                            f"Found notification dialog element: {strategy}={locator}"
+                                        )
                                         is_notification_dialog = True
                                         break
                                 except:
                                     continue
-                            
+
                             if is_notification_dialog:
                                 # Look for deny/don't allow button
                                 deny_buttons = [
-                                    (AppiumBy.ID, "com.android.permissioncontroller:id/permission_deny_button"),
+                                    (
+                                        AppiumBy.ID,
+                                        "com.android.permissioncontroller:id/permission_deny_button",
+                                    ),
                                     (AppiumBy.ID, "android:id/button2"),  # Usually the deny button
                                     (AppiumBy.XPATH, "//android.widget.Button[@text='Deny']"),
-                                    (AppiumBy.XPATH, "//android.widget.Button[@text=\"Don't allow\"]"),
+                                    (AppiumBy.XPATH, '//android.widget.Button[@text="Don\'t allow"]'),
                                     (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'Deny')]"),
-                                    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, \"Don't\")]"),
+                                    (AppiumBy.XPATH, '//android.widget.Button[contains(@text, "Don\'t")]'),
                                 ]
-                                
+
                                 for strategy, locator in deny_buttons:
                                     try:
                                         button = self.driver.find_element(strategy, locator)
                                         if button.is_displayed():
                                             button.click()
-                                            logger.info(f"Clicked deny button for notification permission: {strategy}={locator}")
+                                            logger.info(
+                                                f"Clicked deny button for notification permission: {strategy}={locator}"
+                                            )
                                             time.sleep(0.5)  # Brief pause after dismissing
                                             break
                                     except:
                                         continue
                         except Exception as perm_e:
                             logger.warning(f"Failed to handle permission dialog: {perm_e}")
-                        
+
                         # Continue the loop to check if app is ready after dismissing dialog
                         continue
 
