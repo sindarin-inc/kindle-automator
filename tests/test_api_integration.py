@@ -57,7 +57,7 @@ class TestKindleAPIIntegration:
 
         data = response.json()
         assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-        
+
         # Handle last read dialog response
         if data.get("last_read_dialog") and data.get("dialog_text"):
             # Verify dialog-specific fields

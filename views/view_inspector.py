@@ -163,7 +163,10 @@ class ViewInspector:
                     current_activity = self.driver.current_activity
 
                     # Check for permission controller activity (notification dialog)
-                    if "com.android.permissioncontroller" in current_activity and not notification_dialog_handled:
+                    if (
+                        "com.android.permissioncontroller" in current_activity
+                        and not notification_dialog_handled
+                    ):
                         logger.info("Detected permission dialog during app initialization")
                         notification_dialog_handled = True  # Mark as handled to avoid infinite loops
                         # Try to handle notification permission dialog
@@ -222,16 +225,25 @@ class ViewInspector:
                                             button_clicked = True
                                             break
                                     except Exception as btn_e:
-                                        logger.debug(f"Failed to click deny button {strategy}={locator}: {btn_e}")
+                                        logger.debug(
+                                            f"Failed to click deny button {strategy}={locator}: {btn_e}"
+                                        )
                                         continue
-                                
+
                                 if not button_clicked:
-                                    logger.warning("Could not find or click any deny button for notification dialog")
+                                    logger.warning(
+                                        "Could not find or click any deny button for notification dialog"
+                                    )
                                     # Try using the permissions handler as fallback
                                     try:
-                                        from handlers.permissions_handler import PermissionsHandler
+                                        from handlers.permissions_handler import (
+                                            PermissionsHandler,
+                                        )
+
                                         permissions_handler = PermissionsHandler(self.driver)
-                                        permissions_handler.handle_notifications_permission(should_allow=False)
+                                        permissions_handler.handle_notifications_permission(
+                                            should_allow=False
+                                        )
                                         logger.info("Used PermissionsHandler to dismiss notification dialog")
                                     except Exception as ph_e:
                                         logger.error(f"PermissionsHandler also failed: {ph_e}")
