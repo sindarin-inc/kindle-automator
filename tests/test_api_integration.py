@@ -57,10 +57,17 @@ class TestKindleAPIIntegration:
 
         data = response.json()
         assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-        assert "ocr_text" in data, f"Response missing OCR text: {data}"
-
-        # Verify we got actual text back
-        assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
+        
+        # Handle last read dialog response
+        if data.get("last_read_dialog") and data.get("dialog_text"):
+            # Verify dialog-specific fields
+            assert "message" in data, f"Response missing message field: {data}"
+            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
+        else:
+            # Normal book open response
+            assert "ocr_text" in data, f"Response missing OCR text: {data}"
+            # Verify we got actual text back
+            assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
 
         # Store book info for subsequent tests
         self.__class__.opened_book = data
