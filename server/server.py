@@ -2069,7 +2069,6 @@ class LastReadPageDialogResource(Resource):
 
 # Import resource modules
 from server.resources.auth_check_resource import AuthCheckResource
-from server.resources.snapshot_check_resource import SnapshotCheckResource
 from server.resources.cold_storage_resources import (
     ColdStorageArchiveResource,
     ColdStorageRestoreResource,
@@ -2079,6 +2078,7 @@ from server.resources.idle_check_resources import IdleCheckResource
 from server.resources.log_timeline_resource import LogTimelineResource
 from server.resources.logout_resource import LogoutResource
 from server.resources.shutdown_resources import ShutdownResource
+from server.resources.snapshot_check_resource import SnapshotCheckResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 from server.resources.user_activity_resource import UserActivityResource
 

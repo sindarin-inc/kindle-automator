@@ -113,9 +113,7 @@ class SnapshotCheckResource(Resource):
             logger.error(f"Error extracting AVD name from email {email}: {e}")
             return None
 
-    def _check_snapshot_existence(
-        self, avd_name: str, emulator_launcher=None
-    ) -> Dict[str, any]:
+    def _check_snapshot_existence(self, avd_name: str, emulator_launcher=None) -> Dict[str, any]:
         """Check if snapshots exist for the AVD."""
         snapshot_info = {
             "default_boot_exists": False,
@@ -159,23 +157,17 @@ class SnapshotCheckResource(Resource):
 
         return snapshot_info
 
-    def _get_profile_snapshot_data(
-        self, email: str, profile_manager: AVDProfileManager
-    ) -> Dict[str, any]:
+    def _get_profile_snapshot_data(self, email: str, profile_manager: AVDProfileManager) -> Dict[str, any]:
         """Get snapshot-related data from user profile."""
         return {
-            "last_snapshot_timestamp": profile_manager.get_user_field(
-                email, "last_snapshot_timestamp"
-            ),
+            "last_snapshot_timestamp": profile_manager.get_user_field(email, "last_snapshot_timestamp"),
             "created_from_seed_clone": profile_manager.get_user_field(
                 email, "created_from_seed_clone", False
             ),
             "needs_device_randomization": profile_manager.get_user_field(
                 email, "needs_device_randomization", False
             ),
-            "post_boot_randomized": profile_manager.get_user_field(
-                email, "post_boot_randomized", False
-            ),
+            "post_boot_randomized": profile_manager.get_user_field(email, "post_boot_randomized", False),
             "auth_date": profile_manager.get_user_field(email, "auth_date"),
             "auth_failed_date": profile_manager.get_user_field(email, "auth_failed_date"),
         }
@@ -234,9 +226,7 @@ class SnapshotCheckResource(Resource):
             next_boot_type = "cold"
 
         # Check if device randomization is needed
-        if profile_data.get("created_from_seed_clone") or profile_data.get(
-            "needs_device_randomization"
-        ):
+        if profile_data.get("created_from_seed_clone") or profile_data.get("needs_device_randomization"):
             if not profile_data.get("post_boot_randomized"):
                 cold_boot_reasons.append(
                     "Device randomization needed (created from seed or needs randomization)"
@@ -254,9 +244,7 @@ class SnapshotCheckResource(Resource):
 
         # Check if gfxstream is enabled (can affect snapshots)
         if avd_config.get("hw_gfxstream") == 1:
-            cold_boot_reasons.append(
-                "hw.gfxstream=1 may cause snapshot compatibility issues"
-            )
+            cold_boot_reasons.append("hw.gfxstream=1 may cause snapshot compatibility issues")
             # This doesn't force cold boot but can cause issues
 
         # If user lost authentication, they might need a cold boot
@@ -267,8 +255,7 @@ class SnapshotCheckResource(Resource):
         return {
             "next_boot_type": next_boot_type,
             "cold_boot_reasons": cold_boot_reasons,
-            "snapshot_will_be_used": next_boot_type == "warm"
-            and snapshot_info.get("default_boot_exists"),
+            "snapshot_will_be_used": next_boot_type == "warm" and snapshot_info.get("default_boot_exists"),
         }
 
     def _check_if_running(self, email: str) -> bool:
@@ -277,9 +264,7 @@ class SnapshotCheckResource(Resource):
             if self.server and hasattr(self.server, "automators"):
                 automator = self.server.automators.get(email)
                 if automator and hasattr(automator, "emulator_manager"):
-                    emulator_id, _ = automator.emulator_manager.emulator_launcher.get_running_emulator(
-                        email
-                    )
+                    emulator_id, _ = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                     return emulator_id is not None
         except Exception as e:
             logger.error(f"Error checking if emulator is running: {e}")
