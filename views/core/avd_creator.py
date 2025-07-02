@@ -19,6 +19,7 @@ class AVDCreator:
     # System image to use for all AVDs
     # Must match `sdkmanager --list` format exactly
     SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
+    ALT_SYSTEM_IMAGE = "system-images;android-36;google_apis;x86_64"
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home

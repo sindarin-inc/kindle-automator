@@ -1190,19 +1190,22 @@ class EmulatorLauncher:
                     timeout=5,
                 )
 
-                # Wait briefly for emulator to shut down
-                time.sleep(3)
+                # Poll for emulator shutdown with shorter intervals
+                shutdown_successful = False
+                for i in range(6):  # Check up to 6 times over 3 seconds
+                    time.sleep(0.5)
+                    check_result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    if emulator_id not in check_result.stdout:
+                        shutdown_successful = True
+                        break
 
-                # Check if emulator is still running
-                check_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-
-                if emulator_id not in check_result.stdout:
+                if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for AVD {avd_name}")
                     del self.running_emulators[avd_name]
                     return True
@@ -1271,19 +1274,22 @@ class EmulatorLauncher:
                     timeout=5,
                 )
 
-                # Wait briefly for emulator to shut down
-                time.sleep(3)
+                # Poll for emulator shutdown with shorter intervals
+                shutdown_successful = False
+                for i in range(6):  # Check up to 6 times over 3 seconds
+                    time.sleep(0.5)
+                    check_result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    if emulator_id not in check_result.stdout:
+                        shutdown_successful = True
+                        break
 
-                # Check if emulator is still running
-                check_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-
-                if emulator_id not in check_result.stdout:
+                if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for {email}")
                     del self.running_emulators[email]
                     return True

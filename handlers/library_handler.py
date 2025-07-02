@@ -765,6 +765,14 @@ class LibraryHandler:
                 logger.warning(
                     f"Sync may not have completed within timeout period (waited {final_elapsed:.1f}s)"
                 )
+                # Store diagnostic information for sync timeout
+                try:
+                    from views.core.ui_helpers import store_page_source
+
+                    store_page_source(self.driver.page_source, "sync_timeout_failure")
+                    logger.warning("Stored page source for sync timeout analysis")
+                except Exception as e:
+                    logger.error(f"Failed to store diagnostic info for sync timeout: {e}")
             else:
                 logger.info(f"Sync completed after {final_elapsed:.1f}s")
 
@@ -772,7 +780,15 @@ class LibraryHandler:
             return sync_complete
 
         except Exception as e:
-            logger.error(f"Error during sync: {e}")
+            logger.error(f"Error during sync: {e}", exc_info=True)
+            # Store diagnostic information for sync exception
+            try:
+                from views.core.ui_helpers import store_page_source
+
+                store_page_source(self.driver.page_source, "sync_exception_failure")
+                logger.error("Stored page source for sync exception analysis")
+            except Exception as diag_error:
+                logger.error(f"Failed to store diagnostic info for sync exception: {diag_error}")
             logger.info("sync_in_more_tab() caught exception, returning False")
             return False
 
