@@ -61,17 +61,18 @@ class SmartScroller:
         else:
             # Multi-segment scroll for deceleration using 6 segments
             # Modified to have much stronger deceleration at the end to eliminate momentum
-            # Ratios: distance [0.35, 0.25, 0.20, 0.12, 0.06, 0.02]
-            # Ratios: time     [0.08, 0.12, 0.15, 0.20, 0.25, 0.20]
+            # New ratios for more aggressive deceleration:
+            # Ratios: distance [0.40, 0.30, 0.15, 0.10, 0.04, 0.01]  # Even less movement at end
+            # Ratios: time     [0.10, 0.15, 0.20, 0.25, 0.20, 0.10]  # More time for precise positioning
 
             # Calculate durations for each segment (ensure they sum to total_duration_ms - 10ms pause)
             effective_total_duration_ms = total_duration_ms - 10  # Account for the initial 10ms pause
 
-            duration1_ms = int(round(effective_total_duration_ms * 0.08))
-            duration2_ms = int(round(effective_total_duration_ms * 0.12))
-            duration3_ms = int(round(effective_total_duration_ms * 0.15))
-            duration4_ms = int(round(effective_total_duration_ms * 0.20))
-            duration5_ms = int(round(effective_total_duration_ms * 0.25))
+            duration1_ms = int(round(effective_total_duration_ms * 0.10))
+            duration2_ms = int(round(effective_total_duration_ms * 0.15))
+            duration3_ms = int(round(effective_total_duration_ms * 0.20))
+            duration4_ms = int(round(effective_total_duration_ms * 0.25))
+            duration5_ms = int(round(effective_total_duration_ms * 0.20))
             # duration6_ms takes the remainder to ensure sum is correct
             duration6_ms = (
                 effective_total_duration_ms
@@ -92,13 +93,13 @@ class SmartScroller:
 
             delta_y = scroll_end_y - scroll_start_y
 
-            # Calculate target y-coordinates for each segment
-            y1_target = scroll_start_y + 0.35 * delta_y
-            y2_target = scroll_start_y + (0.35 + 0.25) * delta_y  # Cumulative distance
-            y3_target = scroll_start_y + (0.35 + 0.25 + 0.20) * delta_y
-            y4_target = scroll_start_y + (0.35 + 0.25 + 0.20 + 0.12) * delta_y
-            y5_target = scroll_start_y + (0.35 + 0.25 + 0.20 + 0.12 + 0.06) * delta_y
-            # y6_target is scroll_end_y
+            # Calculate target y-coordinates for each segment with new ratios
+            y1_target = scroll_start_y + 0.40 * delta_y
+            y2_target = scroll_start_y + (0.40 + 0.30) * delta_y  # Cumulative distance
+            y3_target = scroll_start_y + (0.40 + 0.30 + 0.15) * delta_y
+            y4_target = scroll_start_y + (0.40 + 0.30 + 0.15 + 0.10) * delta_y
+            y5_target = scroll_start_y + (0.40 + 0.30 + 0.15 + 0.10 + 0.04) * delta_y
+            # y6_target is scroll_end_y (remaining 0.01)
 
             # Perform the scroll segments
             # Segment 1 - fast initial movement
@@ -133,11 +134,11 @@ class SmartScroller:
             screen_size["width"] // 2,
             start_y,
             end_y,
-            1200,  # Increased from 1001ms to allow more time for deceleration
+            1000,  # Reduced from 1200ms for faster scrolling
         )
 
         # Allow time for scroll to complete
-        time.sleep(0.5)
+        time.sleep(0.3)  # Reduced from 0.5 for faster operation
 
     def scroll_up(self):
         """Scroll up in the view using the smart scrolling technique."""
@@ -204,11 +205,21 @@ class SmartScroller:
                 logger.warning("Scroll distance too small, using default scroll")
                 self.scroll_down()  # Use default scroll instead
             else:
+                # Adjust duration based on scroll distance for faster scrolling
+                # Shorter distances need less time
+                scroll_distance = abs(start_y - end_y)
+                if scroll_distance < 500:
+                    duration = 800  # Faster for short scrolls
+                elif scroll_distance < 1000:
+                    duration = 1000  # Medium speed
+                else:
+                    duration = 1200  # Original speed for long scrolls
+                    
                 self._perform_hook_scroll(
                     screen_size["width"] // 2,
                     start_y,
                     end_y,
-                    1200,  # Increased from 1001ms to allow more time for deceleration
+                    duration,
                 )
         except (NoSuchElementException, StaleElementReferenceException):
             logger.warning("Element reference lost during scroll_to_position, using default scroll")

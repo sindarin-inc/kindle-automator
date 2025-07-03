@@ -154,12 +154,6 @@ class LibraryHandlerScroll:
             except Exception as e:
                 logger.debug(f"Error getting content-desc: {e}")
 
-        # Log summary of extracted book info
-        if book_info["title"]:
-            logger.debug(
-                f"Extracted book info - Title: '{book_info['title']}', Author: '{book_info['author'] or 'None found'}', Progress: '{book_info['progress']}', Size: '{book_info['size']}'"
-            )
-
         return book_info
 
     def _find_scroll_reference(self, containers, screen_size):
@@ -228,14 +222,25 @@ class LibraryHandlerScroll:
         return None
 
     def _perform_smart_scroll(self, ref_container, screen_size):
-        """Perform smart scroll to position reference container at 10% from top.
+        """Perform smart scroll to position reference container properly.
 
         Args:
             ref_container: Dict with element and position info
             screen_size: Dict with screen dimensions
         """
-        # Use the common SmartScroller to scroll the reference container to 10% from top
-        self.scroller.scroll_to_position(ref_container["element"], 0.1)
+        # Determine target position based on whether this is a partially visible book
+        # For partially visible books at bottom, scroll them to just below the top toolbar
+        # The top toolbar appears to end around 20% of screen height based on the logs
+        if "bottom" in ref_container and ref_container["bottom"] > screen_size["height"] * 0.85:
+            # This is a partially visible book at the bottom
+            # Position it at 22% from top to ensure it's fully visible below the toolbar
+            target_position = 0.22
+        else:
+            # For other books, use a safer 20% position to avoid cutting off at top
+            target_position = 0.20
+        
+        # Use the common SmartScroller to scroll the reference container to target position
+        self.scroller.scroll_to_position(ref_container["element"], target_position)
 
     def _default_page_scroll(self, start_y, end_y):
         """Wrapper for default page scroll operation.
@@ -607,19 +612,12 @@ class LibraryHandlerScroll:
         containers = []
 
         try:
-            # Find the book containers directly - they contain all the book info including title and author
-            # First try Button elements (some views use Button)
+            # Find ALL direct children of RecyclerView that have content-desc (both Button and RelativeLayout)
+            # This handles mixed layouts where some books are buttons and some are relative layouts
             book_containers = self.driver.find_elements(
                 AppiumBy.XPATH,
-                "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.Button",
+                "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/*[@content-desc]",
             )
-
-            # If no buttons found, try RelativeLayout elements (other views use RelativeLayout)
-            if not book_containers:
-                book_containers = self.driver.find_elements(
-                    AppiumBy.XPATH,
-                    "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.RelativeLayout[@content-desc]",
-                )
 
             if book_containers:
                 containers = book_containers
@@ -628,7 +626,7 @@ class LibraryHandlerScroll:
                 title_elements = self.driver.find_elements(
                     AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                 )
-                
+
                 # Convert these title elements to containers
                 containers = self._convert_title_elements(title_elements)
 
