@@ -442,7 +442,6 @@ class BooksStreamResource(Resource):
 
         # Extract sync parameter
         sync = request.args.get("sync", "false").lower() in ("true", "1")
-        logger.info(f"Sync parameter: {sync}")
 
         # Standard implementation with book retrieval
         def generate_stream():
@@ -484,11 +483,9 @@ class BooksStreamResource(Resource):
                         timestamp = int(time.time())
                         screenshot_filename = f"library_view_stream_{timestamp}.png"
                         screenshot_path = os.path.join(automator.screenshots_dir, screenshot_filename)
-                        logger.info(f"Taking screenshot for batch: {screenshot_path}")
                         automator.driver.save_screenshot(screenshot_path)
 
                         # Extract covers from the current screen for this batch
-                        logger.info("Extracting covers for the current batch.")
                         cover_info_for_batch = extract_book_covers_from_screen(
                             automator.driver, raw_books_batch, sindarin_email, screenshot_path
                         )
@@ -525,7 +522,6 @@ class BooksStreamResource(Resource):
                     automator.state_machine.library_handler.get_book_titles(
                         callback=book_processing_callback, sync=sync
                     )
-                    logger.info("Book retrieval process (get_book_titles) completed in its thread.")
                 except Exception as e:
                     from server.utils.appium_error_utils import is_appium_error
 
@@ -543,7 +539,6 @@ class BooksStreamResource(Resource):
 
             retrieval_thread = threading.Thread(target=start_book_retrieval_thread_fn, daemon=True)
             retrieval_thread.start()
-            logger.info("Book retrieval and processing thread started.")
 
             # Generator part for SSE (runs in Flask worker thread)
             try:
@@ -588,12 +583,12 @@ class BooksStreamResource(Resource):
                 # After the loop, if no error was yielded from inside the loop
                 if not error_message:
                     logger.info(
-                        f"Stream finished. Total books expected from handler: {total_books_from_handler}."
+                        f'Stream finished: {{"done": true, "total_books": {total_books_from_handler}}}'
                     )
                     yield encode_message({"done": True, "total_books": total_books_from_handler})
 
                 yield encode_message({"complete": True})
-                logger.info("SSE stream complete message sent.")
+                logger.info("SSE stream complete message sent")
 
             except Exception as e:
                 error_trace = traceback.format_exc()
@@ -603,7 +598,6 @@ class BooksStreamResource(Resource):
                 yield encode_message({"error": str(e), "trace": error_trace})
 
         # Return the streaming response with proper configuration
-        logger.info("Setting up streaming response")
         return Response(
             generate_stream(),
             mimetype="text/plain",
@@ -1265,7 +1259,9 @@ class BookOpenResource(Resource):
                 "success": False,
                 "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
                 "current_state": final_state.name,
-                "authenticated": True,  # User is authenticated but we couldn't reach library for other reasons
+                "authenticated": (
+                    True
+                ),  # User is authenticated but we couldn't reach library for other reasons
             }, 500
 
     @ensure_user_profile_loaded

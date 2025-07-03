@@ -255,9 +255,9 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
             # Check aspect ratio - but be more lenient as some covers may be different
             # Most Kindle covers have a ratio of about 1:1.5 or 2:3, but we'll accept more variations
             aspect_ratio = height / width
-            if aspect_ratio < 0.9:  # If definitely horizontal, log warning but still accept
-                logger.warning(f"Unusual aspect ratio: {aspect_ratio:0.2f} - width={width}, height={height}")
-                # Don't outright reject, but log the warning
+            # if aspect_ratio < 0.9:  # If definitely horizontal, log warning but still accept
+            #     logger.warning(f"Unusual aspect ratio: {aspect_ratio:0.2f} - width={width}, height={height}")
+            # Don't outright reject, but log the warning
 
             # Verify the screenshot exists
             if not os.path.exists(screenshot_path):
@@ -296,11 +296,11 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
 
                     # Check for reasonable aspect ratio
                     aspect_ratio = cover_img.height / cover_img.width
-                    if aspect_ratio < 1.0:
-                        logger.warning(
-                            f"Suspicious aspect ratio: {aspect_ratio:0.2f} - width={cover_img.width}, height={cover_img.height}"
-                        )
-                        # Continue processing despite unusual aspect ratio
+                    # if aspect_ratio < 1.0:
+                    #     logger.warning(
+                    #         f"Suspicious aspect ratio: {aspect_ratio:0.2f} - width={cover_img.width}, height={cover_img.height}"
+                    #     )
+                    # Continue processing despite unusual aspect ratio
 
                     return {
                         "image": cover_img,
@@ -565,7 +565,7 @@ def extract_book_covers_from_screen(
                     raise
                 logger.debug(f"Error processing cover container {i}: {container_err}")
 
-        logger.info(f"Found {len(title_element_map)} visible books with titles and cover elements")
+        # logger.info(f"Found {len(title_element_map)} visible books with titles and cover elements")
 
         # Extract covers for visible books and return successful extractions
         cover_results = {}  # Store detailed results for debugging
@@ -573,7 +573,6 @@ def extract_book_covers_from_screen(
         # Save one more full screenshot right before extraction
         pre_extract_screenshot = f"screenshots/pre_extract_covers_{int(time.time())}.png"
         driver.save_screenshot(pre_extract_screenshot)
-        logger.info(f"Saved pre-extraction screenshot to {pre_extract_screenshot}")
 
         for title, element in title_element_map.items():
             try:
@@ -592,11 +591,6 @@ def extract_book_covers_from_screen(
                         "width": cover_data.get("width"),
                         "height": cover_data.get("height"),
                     }
-
-                    if success:
-                        logger.info(f"  ✓ '{title}': {cover_data['width']}x{cover_data['height']}")
-                    else:
-                        logger.warning(f"  ✗ '{title}': No valid cover data")
                 else:
                     cover_results[title] = {"success": False, "reason": "No valid cover data"}
                     logger.error(f"Failed to extract cover for '{title}': no valid cover data returned")
@@ -608,16 +602,6 @@ def extract_book_covers_from_screen(
                     raise
                 cover_results[title] = {"success": False, "reason": str(e)}
                 logger.error(f"Error extracting cover for book '{title}': {e}")
-
-        # Log summary of cover extraction results
-        logger.info(
-            f"Cover extraction summary: {len(cover_results) - sum(1 for result in cover_results.values() if not result['success'])}/{len(cover_results)} successful"
-        )
-        for title, result in cover_results.items():
-            if result.get("success"):
-                logger.info(f"  ✓ '{title}': {result.get('width')}x{result.get('height')}")
-            else:
-                logger.warning(f"  ✗ '{title}': {result.get('reason')}")
 
         return cover_results
 

@@ -115,9 +115,6 @@ class LibraryHandler:
             end_x = screen_width // 2  # Stay centered horizontally
             end_y = (screen_height * 2) // 3  # Bottom 1/3 (2/3 down from top)
 
-            logger.info(f"Performing pull-to-refresh swipe: ({start_x}, {start_y}) -> ({end_x}, {end_y})")
-            logger.info(f"Screen size: {screen_width}x{screen_height}")
-
             # Start the swipe gesture
             self.driver.swipe(start_x, start_y, end_x, end_y, duration=800)
 
@@ -131,13 +128,11 @@ class LibraryHandler:
                 page_source = self.driver.page_source
                 with open(page_source_path, "w", encoding="utf-8") as f:
                     f.write(page_source)
-                logger.info(f"Captured page source during refresh: {page_source_path}")
 
                 # Also take a screenshot to see the visual state
                 screenshot_filename = f"pull_refresh_indicator_{timestamp}.png"
                 screenshot_path = os.path.join(self.screenshots_dir, screenshot_filename)
                 self.driver.save_screenshot(screenshot_path)
-                logger.info(f"Captured screenshot during refresh: {screenshot_path}")
 
             except Exception as e:
                 logger.warning(f"Could not capture page source during refresh: {e}")
@@ -145,7 +140,6 @@ class LibraryHandler:
             # Wait for refresh to complete (give it a moment to settle)
             time.sleep(1.5)
 
-            logger.info("Pull-to-refresh gesture completed")
             return True
 
         except Exception as e:
@@ -1484,8 +1478,6 @@ class LibraryHandler:
                 logger.info("Sync requested, performing pull-to-refresh to get latest book list")
                 if not self.pull_to_refresh():
                     logger.warning("Pull-to-refresh failed, continuing anyway...")
-                else:
-                    logger.info("Pull-to-refresh completed successfully")
 
             # Use the scroll handler's method to get all books
             # If callback is provided, pass it to the scroll handler for streaming
@@ -2495,7 +2487,9 @@ class LibraryHandler:
                                 )
                                 return {
                                     "success": False,
-                                    "error": "Unable to transition from library to reading view after multiple attempts",
+                                    "error": (
+                                        "Unable to transition from library to reading view after multiple attempts"
+                                    ),
                                 }
 
                             # Now check if we're in reading view or have a dialog

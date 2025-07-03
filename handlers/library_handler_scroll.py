@@ -101,10 +101,6 @@ class LibraryHandlerScroll:
 
                     if elements:
                         book_info[field] = elements[0].text
-                        if field == "author":
-                            logger.info(
-                                f"Found author '{book_info[field]}' using strategy {strategy_index}: {locator}"
-                            )
                         break
                     else:
                         # Try finding within title container
@@ -514,7 +510,7 @@ class LibraryHandlerScroll:
             return True
         else:
             if book_info["title"]:
-                logger.info(f"Already seen book ({len(seen_titles)} found): {book_info['title']}")
+                logger.info(f"Already seen book ({len(seen_titles)} found): {book_info['title'][:15]}...")
             return False
 
     def get_partial_matches(self):
@@ -611,16 +607,35 @@ class LibraryHandlerScroll:
         containers = []
 
         try:
-            # Look specifically for title elements
-            title_elements = self.driver.find_elements(AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title")
+            # Find the book containers directly - they contain all the book info including title and author
+            # First try Button elements (some views use Button)
+            book_containers = self.driver.find_elements(
+                AppiumBy.XPATH,
+                "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.Button",
+            )
 
-            # Convert these title elements to containers
-            containers = self._convert_title_elements(title_elements)
+            # If no buttons found, try RelativeLayout elements (other views use RelativeLayout)
+            if not book_containers:
+                book_containers = self.driver.find_elements(
+                    AppiumBy.XPATH,
+                    "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.RelativeLayout[@content-desc]",
+                )
+
+            if book_containers:
+                containers = book_containers
+            else:
+                # Look specifically for title elements as fallback
+                title_elements = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                )
+                
+                # Convert these title elements to containers
+                containers = self._convert_title_elements(title_elements)
 
         except Exception as e:
-            logger.error(f"Error finding direct title elements: {e}")
+            logger.error(f"Error finding book containers: {e}")
 
-        # FALLBACK: If we couldn't find titles directly, try the old button approach
+        # FALLBACK: If we couldn't find containers, try the old approach
         if not containers:
             containers = self._fallback_container_discovery()
 
@@ -832,15 +847,13 @@ class LibraryHandlerScroll:
                 use_hook_for_current_scroll = books_added_in_current_page_processing
 
                 # Check if all titles processed on this page are identical
-                if new_titles_on_page and len(set(new_titles_on_page)) == 1:
+                if new_titles_on_page and len(new_titles_on_page) > 1 and len(set(new_titles_on_page)) == 1:
                     consecutive_identical_screen_iterations += 1
                     logger.info(
                         f"All {len(new_titles_on_page)} titles on page are identical: '{new_titles_on_page[0]}' "
                         f"(iteration {consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD})"
                     )
                 else:
-                    if consecutive_identical_screen_iterations > 0:
-                        logger.info("Page titles are no longer all identical, resetting counter")
                     consecutive_identical_screen_iterations = 0
 
                 # If we've found no new books on this screen (via main processing), we need to double-check
