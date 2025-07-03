@@ -20,9 +20,9 @@
   blockinfile:
     path: ~/.zshrc
     block: |
-      export ANDROID_HOME={{ android_home }}
-      export ANDROID_SDK_ROOT={{ android_home }}
-      export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator
+      export ANDROID_HOME={{ android_x86_android_home }}
+      export ANDROID_SDK_ROOT={{ android_x86_android_home }}
+      export PATH=$PATH:{{ android_x86_android_home }}/cmdline-tools/latest/bin:{{ android_x86_android_home }}/platform-tools:{{ android_x86_android_home }}/emulator
     create: yes
   become: yes
 
@@ -30,15 +30,15 @@
   blockinfile:
     path: /etc/profile
     block: |
-      export ANDROID_HOME={{ android_home }}
-      export ANDROID_SDK_ROOT={{ android_home }}
-      export PATH=$PATH:{{ android_home }}/cmdline-tools/latest/bin:{{ android_home }}/platform-tools:{{ android_home }}/emulator
+      export ANDROID_HOME={{ android_x86_android_home }}
+      export ANDROID_SDK_ROOT={{ android_x86_android_home }}
+      export PATH=$PATH:{{ android_x86_android_home }}/cmdline-tools/latest/bin:{{ android_x86_android_home }}/platform-tools:{{ android_x86_android_home }}/emulator
     create: yes
   become: yes
 
 - name: Create Android SDK directory
   file:
-    path: "{{ android_home }}"
+    path: "{{ android_x86_android_home }}"
     state: directory
     mode: "0755"
   become: yes
@@ -60,7 +60,7 @@
 - name: Create symlink from SDK avd directory to big drives storage
   file:
     src: /mnt/storage/avd
-    dest: "{{ android_home }}/avd"
+    dest: "{{ android_x86_android_home }}/avd"
     state: link
     force: yes
   become: yes
@@ -68,7 +68,7 @@
 
 - name: Create normal AVD directory when no big drives storage
   file:
-    path: "{{ android_home }}/avd"
+    path: "{{ android_x86_android_home }}/avd"
     state: directory
     mode: "0755"
   become: yes
@@ -76,53 +76,53 @@
 
 - name: Download command line tools
   get_url:
-    url: "{{ sdk_tools_url }}"
+    url: "{{ android_x86_sdk_tools_url }}"
     dest: "/tmp/cmdline-tools.zip"
   become: yes
 
 - name: Unzip command line tools into SDK folder
   unarchive:
     src: "/tmp/cmdline-tools.zip"
-    dest: "{{ android_home }}"
+    dest: "{{ android_x86_android_home }}"
     remote_src: yes
   become: yes
 
 - name: Move and rename command line tools folder
-  command: mv "{{ android_home }}/cmdline-tools" "{{ android_home }}/cmdline-tools-latest"
+  command: mv "{{ android_x86_android_home }}/cmdline-tools" "{{ android_x86_android_home }}/cmdline-tools-latest"
   become: yes
   args:
-    creates: "{{ android_home }}/cmdline-tools-latest"
+    creates: "{{ android_x86_android_home }}/cmdline-tools-latest"
 
 - name: Create cmdline-tools folder structure
   file:
-    path: "{{ android_home }}/cmdline-tools/latest"
+    path: "{{ android_x86_android_home }}/cmdline-tools/latest"
     state: directory
     mode: "0755"
   become: yes
 
 - name: Move all content under cmdline-tools-latest to 'latest' folder
-  shell: "cp -r {{ android_home }}/cmdline-tools-latest/. {{ android_home }}/cmdline-tools/latest/ && rm -rf {{ android_home }}/cmdline-tools-latest"
+  shell: "cp -r {{ android_x86_android_home }}/cmdline-tools-latest/. {{ android_x86_android_home }}/cmdline-tools/latest/ && rm -rf {{ android_x86_android_home }}/cmdline-tools-latest"
   become: yes
 
 - name: Accept all Android SDK licenses
   shell: |
-    yes | {{ android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
+    yes | {{ android_x86_android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
   become: yes
   environment:
-    ANDROID_HOME: "{{ android_home }}"
+    ANDROID_HOME: "{{ android_x86_android_home }}"
 
 - name: Install required Android SDK components
   shell: |
-    {{ android_home }}/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "emulator" "{{ sys_img }}" "extras;google;m2repository" "extras;android;m2repository"
+    {{ android_x86_android_home }}/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "emulator" "{{ android_x86_sys_img }}" "extras;google;m2repository" "extras;android;m2repository"
   become: yes
   environment:
-    ANDROID_HOME: "{{ android_home }}"
+    ANDROID_HOME: "{{ android_x86_android_home }}"
 
 # AVD creation and configuration is handled by the Python code in views/core/avd_creator.py
 # Ansible only manages SDK installation and dependencies
 
 - name: Restart ADB Server
-  shell: "{{ android_home }}/platform-tools/adb kill-server && {{ android_home }}/platform-tools/adb start-server"
+  shell: "{{ android_x86_android_home }}/platform-tools/adb kill-server && {{ android_x86_android_home }}/platform-tools/adb start-server"
   become: yes
 
 - name: Note about AVD and emulator management
@@ -131,45 +131,45 @@
 
 - name: Ensure libhoudini directory exists
   file:
-    path: "{{ android_home }}/libhoudini"
+    path: "{{ android_x86_android_home }}/libhoudini"
     state: directory
     mode: "0755"
   become: yes
 
 - name: Check if libhoudini is already downloaded
   stat:
-    path: "{{ android_home }}/libhoudini/libhoudini.so"
+    path: "{{ android_x86_android_home }}/libhoudini/libhoudini.so"
   register: libhoudini_check
 
 - name: Download libhoudini for ARM translation
   shell: |
-    wget -O {{ android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
+    wget -O {{ android_x86_android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
     echo "Downloaded libhoudini.so for ARM translation"
     echo "The Flask server will handle installation when the emulator is started"
   become: yes
   environment:
-    ANDROID_HOME: "{{ android_home }}"
+    ANDROID_HOME: "{{ android_x86_android_home }}"
   tags:
     - libhoudini
 
 - name: Ensure permanent directory for APKs exists
   file:
-    path: "{{ android_home }}/apk"
+    path: "{{ android_x86_android_home }}/apk"
     state: directory
     mode: "0755"
   become: yes
 
 - name: Ensure directory for user app data exists
   file:
-    path: "{{ android_home }}/app_data"
+    path: "{{ android_x86_android_home }}/app_data"
     state: directory
     mode: "0755"
   become: yes
 
 - name: Ensure Kindle APK is uploaded to the server
   copy:
-    src: "files/{{ kindle_package_path }}"
-    dest: "{{ android_home }}/apk/kindle.apk"
+    src: "files/{{ android_x86_kindle_package_path }}"
+    dest: "{{ android_x86_android_home }}/apk/kindle.apk"
     mode: "0644"
   become: yes
   tags: apk
@@ -177,15 +177,15 @@
 - name: Check emulator capabilities (offline check)
   shell: |
     # Display emulator version and capabilities
-    {{ android_home }}/emulator/emulator -version
+    {{ android_x86_android_home }}/emulator/emulator -version
 
     # Check if the emulator supports acceleration
-    {{ android_home }}/emulator/emulator -accel-check
+    {{ android_x86_android_home }}/emulator/emulator -accel-check
     
     echo "NOTE: Full capability checks will be performed by the Flask server when the emulator is actually running"
   become: yes
   environment:
-    ANDROID_HOME: "{{ android_home }}"
+    ANDROID_HOME: "{{ android_x86_android_home }}"
   ignore_errors: yes
   tags: apk
 
@@ -204,16 +204,16 @@
 - name: Verify Kindle APK is ready for installation
   shell: |
     # Verify APK exists
-    if [ ! -f "{{ android_home }}/apk/kindle.apk" ]; then
-      echo "Kindle APK not found at {{ android_home }}/apk/kindle.apk"
+    if [ ! -f "{{ android_x86_android_home }}/apk/kindle.apk" ]; then
+      echo "Kindle APK not found at {{ android_x86_android_home }}/apk/kindle.apk"
       exit 1
     else
-      echo "Kindle APK is ready at {{ android_home }}/apk/kindle.apk"
+      echo "Kindle APK is ready at {{ android_x86_android_home }}/apk/kindle.apk"
       echo "The Flask server will handle APK installation when the emulator is started"
     fi
   become: yes
   environment:
-    ANDROID_HOME: "{{ android_home }}"
+    ANDROID_HOME: "{{ android_x86_android_home }}"
   ignore_errors: yes
   tags: apk
 
