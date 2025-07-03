@@ -32,8 +32,8 @@ jobs:
 
       - name: Run ansible-lint
         run: |
-          ansible-lint ansible/provision.yml || true
-          ansible-lint ansible/deploy.yml || true
+          cd ansible && ansible-lint provision.yml || true
+          cd ansible && ansible-lint deploy.yml || true
         # Note: Using || true to prevent failures on warnings
 
       - name: Validate inventory
