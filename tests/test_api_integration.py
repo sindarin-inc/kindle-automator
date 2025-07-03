@@ -54,7 +54,9 @@ class TestKindleAPIIntegration:
 
                 # If we get a 503 and haven't exhausted retries, wait and retry
                 if response.status_code == 503 and attempt < max_retries - 1:
-                    print(f"Got 503 error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                    print(
+                        f"Got 503 error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(retry_delay)
                     continue
 
@@ -64,7 +66,9 @@ class TestKindleAPIIntegration:
                 # If this is our last attempt, re-raise the exception
                 if attempt == max_retries - 1:
                     raise
-                print(f"Request failed with error: {e}, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                print(
+                    f"Request failed with error: {e}, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
+                )
                 time.sleep(retry_delay)
 
         # This should never be reached, but just in case
