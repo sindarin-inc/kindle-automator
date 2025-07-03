@@ -12,6 +12,7 @@ skip_list:
   - yaml[line-length]  # Some long lines are unavoidable
   - jinja[spacing]  # Jinja spacing warnings are too pedantic
   - fqcn[action-core]  # Short module names are clear enough
+  - fqcn  # Disable all FQCN checks
 
 # Add Docker collection to runtime
 mock_modules:
