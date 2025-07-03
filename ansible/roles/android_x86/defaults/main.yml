@@ -1,31 +1,31 @@
 ---
 # You may change these as needed.
 
-sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-android_home: "/opt/android-sdk"
+android_x86_sdk_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+android_x86_android_home: "/opt/android-sdk"
 # Note: AVD creation is handled by Python code, not Ansible
 # avd_name: "KindleAVD"  # No longer used
-sdk_api_level: "30"
+android_x86_sdk_api_level: "30"
 # Use Google Play system image which includes ARM translation libraries
-sys_img: "system-images;android-30;google_apis_playstore;x86_64"
+android_x86_sys_img: "system-images;android-30;google_apis_playstore;x86_64"
 # emulator_package: "emulator-arm64"
-emulator_package: "emulator"
-platform_tools_package: "platform-tools"
-build_tools_version: "30.0.3"
+android_x86_emulator_package: "emulator"
+android_x86_platform_tools_package: "platform-tools"
+android_x86_build_tools_version: "30.0.3"
 # Example build-tools path: build-tools;35.0.0
-build_tools_package: "build-tools;{{ build_tools_version }}"
-kindle_package_path: "com.amazon.kindle_8.113.0.100(2.0.29451.0)-1285953011_minAPI28(arm64-v8a)(nodpi).com.apk"
+android_x86_build_tools_package: "build-tools;{{ android_x86_build_tools_version }}"
+android_x86_kindle_package_path: "com.amazon.kindle_8.113.0.100(2.0.29451.0)-1285953011_minAPI28(arm64-v8a)(nodpi).com.apk"
 
 # If you want a custom skin or density:
-device_skin: "pixel_5"
-sdcard_size: "2G"
-avd_heap_size: "512"
+android_x86_device_skin: "pixel_5"
+android_x86_sdcard_size: "2G"
+android_x86_avd_heap_size: "512"
 
 # Headless emulator options:
-emulator_extra_opts: "-no-audio -no-window -gpu swiftshader_indirect"
+android_x86_emulator_extra_opts: "-no-audio -no-window -gpu swiftshader_indirect"
 
 # If you need to accept multiple licenses, you can add them here:
-sdk_licenses:
+android_x86_sdk_licenses:
   - "android-sdk-license"
   - "android-sdk-preview-license"
   - "intel-android-extra-license"

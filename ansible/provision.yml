@@ -1,7 +1,7 @@
 ---
 - name: Provision Sol Kindle Automator server
   hosts: all
-  become: yes
+  become: true
 
   roles:
     - { role: provision, tags: base }

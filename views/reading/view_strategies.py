@@ -78,6 +78,11 @@ READING_VIEW_FULL_SCREEN_DIALOG = [
     ),
     (AppiumBy.ID, "com.android.systemui:id/immersive_cling_title"),
     (AppiumBy.ID, "com.android.systemui:id/ok"),  # The "Got it" button
+    (AppiumBy.ID, "android:id/ok"),  # Android 36 uses android:id instead of com.android.systemui:id
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[@resource-id='android:id/ok' and @text='Got it']",
+    ),  # More specific for Android 36
 ]
 
 # Add new identifiers for the "last read page" dialog
