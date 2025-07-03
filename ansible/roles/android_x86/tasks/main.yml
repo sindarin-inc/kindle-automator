@@ -1,7 +1,7 @@
 ---
 
 - name: Ensure required dependencies are installed (Ubuntu x86_64)
-  apt:
+  ansible.builtin.apt:
     name:
       - unzip
       - qemu-kvm
@@ -13,196 +13,209 @@
       - openjdk-17-jdk
       - ffmpeg        # Required for extracting frames from scrcpy video captures
     state: present
-    update_cache: yes
-  become: yes
+    update_cache: true
+  become: true
 
 - name: Add Android SDK environment variables to /etc/profile
-  blockinfile:
+  ansible.builtin.blockinfile:
     path: ~/.zshrc
     block: |
       export ANDROID_HOME={{ android_x86_android_home }}
       export ANDROID_SDK_ROOT={{ android_x86_android_home }}
-      export PATH=$PATH:{{ android_x86_android_home }}/cmdline-tools/latest/bin:{{ android_x86_android_home }}/platform-tools:{{ android_x86_android_home }}/emulator
-    create: yes
-  become: yes
+      export ANDROID_SDK={{ android_x86_android_home }}
+      export PATH=$PATH:$ANDROID_SDK/cmdline-tools/latest/bin:$ANDROID_SDK/platform-tools:$ANDROID_SDK/emulator
+    create: true
+    mode: '0644'
+  become: true
 
 - name: Set Android SDK environment variables
-  blockinfile:
+  ansible.builtin.blockinfile:
     path: /etc/profile
     block: |
       export ANDROID_HOME={{ android_x86_android_home }}
       export ANDROID_SDK_ROOT={{ android_x86_android_home }}
-      export PATH=$PATH:{{ android_x86_android_home }}/cmdline-tools/latest/bin:{{ android_x86_android_home }}/platform-tools:{{ android_x86_android_home }}/emulator
-    create: yes
-  become: yes
+      export ANDROID_SDK={{ android_x86_android_home }}
+      export PATH=$PATH:$ANDROID_SDK/cmdline-tools/latest/bin:$ANDROID_SDK/platform-tools:$ANDROID_SDK/emulator
+    create: true
+    mode: '0644'
+  become: true
 
 - name: Create Android SDK directory
-  file:
+  ansible.builtin.file:
     path: "{{ android_x86_android_home }}"
     state: directory
     mode: "0755"
-  become: yes
+  become: true
 
 - name: Check if /mnt/storage exists
-  stat:
+  ansible.builtin.stat:
     path: /mnt/storage
   register: mnt_storage_exists
-  become: yes
+  become: true
 
 - name: Create AVD directory on big drives storage
-  file:
+  ansible.builtin.file:
     path: /mnt/storage/avd
     state: directory
     mode: "0755"
-  become: yes
+  become: true
   when: mnt_storage_exists.stat.exists
 
 - name: Create symlink from SDK avd directory to big drives storage
-  file:
+  ansible.builtin.file:
     src: /mnt/storage/avd
     dest: "{{ android_x86_android_home }}/avd"
     state: link
-    force: yes
-  become: yes
+    force: true
+  become: true
   when: mnt_storage_exists.stat.exists
 
 - name: Create normal AVD directory when no big drives storage
-  file:
+  ansible.builtin.file:
     path: "{{ android_x86_android_home }}/avd"
     state: directory
     mode: "0755"
-  become: yes
+  become: true
   when: not mnt_storage_exists.stat.exists
 
 - name: Download command line tools
-  get_url:
+  ansible.builtin.get_url:
     url: "{{ android_x86_sdk_tools_url }}"
     dest: "/tmp/cmdline-tools.zip"
-  become: yes
+    mode: '0644'
+  become: true
 
 - name: Unzip command line tools into SDK folder
-  unarchive:
+  ansible.builtin.unarchive:
     src: "/tmp/cmdline-tools.zip"
     dest: "{{ android_x86_android_home }}"
-    remote_src: yes
-  become: yes
+    remote_src: true
+  become: true
 
 - name: Move and rename command line tools folder
-  command: mv "{{ android_x86_android_home }}/cmdline-tools" "{{ android_x86_android_home }}/cmdline-tools-latest"
-  become: yes
+  ansible.builtin.command: mv "{{ android_x86_android_home }}/cmdline-tools" "{{ android_x86_android_home }}/cmdline-tools-latest"
+  become: true
   args:
     creates: "{{ android_x86_android_home }}/cmdline-tools-latest"
 
 - name: Create cmdline-tools folder structure
-  file:
+  ansible.builtin.file:
     path: "{{ android_x86_android_home }}/cmdline-tools/latest"
     state: directory
     mode: "0755"
-  become: yes
+  become: true
 
 - name: Move all content under cmdline-tools-latest to 'latest' folder
-  shell: "cp -r {{ android_x86_android_home }}/cmdline-tools-latest/. {{ android_x86_android_home }}/cmdline-tools/latest/ && rm -rf {{ android_x86_android_home }}/cmdline-tools-latest"
-  become: yes
+  ansible.builtin.shell: |
+    cp -r {{ android_x86_android_home }}/cmdline-tools-latest/. {{ android_x86_android_home }}/cmdline-tools/latest/
+    rm -rf {{ android_x86_android_home }}/cmdline-tools-latest
+  become: true
+  changed_when: true
 
 - name: Accept all Android SDK licenses
-  shell: |
+  ansible.builtin.shell: |
+    set -o pipefail
     yes | {{ android_x86_android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
-  become: yes
+  become: true
   environment:
     ANDROID_HOME: "{{ android_x86_android_home }}"
+  changed_when: true
 
 - name: Install required Android SDK components
-  shell: |
-    {{ android_x86_android_home }}/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "emulator" "{{ android_x86_sys_img }}" "extras;google;m2repository" "extras;android;m2repository"
-  become: yes
+  ansible.builtin.shell: |
+    {{ android_x86_android_home }}/cmdline-tools/latest/bin/sdkmanager --install \
+      "platform-tools" "emulator" "{{ android_x86_sys_img }}" \
+      "extras;google;m2repository" "extras;android;m2repository"
+  become: true
   environment:
     ANDROID_HOME: "{{ android_x86_android_home }}"
+  changed_when: true
 
 # AVD creation and configuration is handled by the Python code in views/core/avd_creator.py
 # Ansible only manages SDK installation and dependencies
 
 - name: Restart ADB Server
-  shell: "{{ android_x86_android_home }}/platform-tools/adb kill-server && {{ android_x86_android_home }}/platform-tools/adb start-server"
-  become: yes
+  ansible.builtin.shell: "{{ android_x86_android_home }}/platform-tools/adb kill-server && {{ android_x86_android_home }}/platform-tools/adb start-server"
+  become: true
+  changed_when: true
 
 - name: Note about AVD and emulator management
-  debug:
+  ansible.builtin.debug:
     msg: "AVD creation and emulator management is handled by the Flask server, not during provisioning."
 
 - name: Ensure libhoudini directory exists
-  file:
+  ansible.builtin.file:
     path: "{{ android_x86_android_home }}/libhoudini"
     state: directory
     mode: "0755"
-  become: yes
+  become: true
 
 - name: Check if libhoudini is already downloaded
-  stat:
+  ansible.builtin.stat:
     path: "{{ android_x86_android_home }}/libhoudini/libhoudini.so"
   register: libhoudini_check
 
 - name: Download libhoudini for ARM translation
-  shell: |
-    wget -O {{ android_x86_android_home }}/libhoudini/libhoudini.so https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
-    echo "Downloaded libhoudini.so for ARM translation"
-    echo "The Flask server will handle installation when the emulator is started"
-  become: yes
-  environment:
-    ANDROID_HOME: "{{ android_x86_android_home }}"
+  ansible.builtin.get_url:
+    url: https://github.com/Rprop/libhoudini/raw/refs/heads/master/4.0.8.45720/system/lib/libhoudini.so
+    dest: "{{ android_x86_android_home }}/libhoudini/libhoudini.so"
+    mode: '0644'
+  become: true
   tags:
     - libhoudini
 
 - name: Ensure permanent directory for APKs exists
-  file:
+  ansible.builtin.file:
     path: "{{ android_x86_android_home }}/apk"
     state: directory
     mode: "0755"
-  become: yes
+  become: true
 
 - name: Ensure directory for user app data exists
-  file:
+  ansible.builtin.file:
     path: "{{ android_x86_android_home }}/app_data"
     state: directory
     mode: "0755"
-  become: yes
+  become: true
 
 - name: Ensure Kindle APK is uploaded to the server
-  copy:
+  ansible.builtin.copy:
     src: "files/{{ android_x86_kindle_package_path }}"
     dest: "{{ android_x86_android_home }}/apk/kindle.apk"
     mode: "0644"
-  become: yes
+  become: true
   tags: apk
 
 - name: Check emulator capabilities (offline check)
-  shell: |
+  ansible.builtin.shell: |
     # Display emulator version and capabilities
     {{ android_x86_android_home }}/emulator/emulator -version
 
     # Check if the emulator supports acceleration
     {{ android_x86_android_home }}/emulator/emulator -accel-check
-    
+
     echo "NOTE: Full capability checks will be performed by the Flask server when the emulator is actually running"
-  become: yes
+  become: true
   environment:
     ANDROID_HOME: "{{ android_x86_android_home }}"
-  ignore_errors: yes
+  failed_when: false
   tags: apk
+  changed_when: false
 
 - name: Note about emulator boot
-  debug:
+  ansible.builtin.debug:
     msg: "The Android emulator will be started by the Flask server for each user session."
   tags: apk
 
 - name: Note about ARM translation status
-  debug:
+  ansible.builtin.debug:
     msg: "ARM translation status will be checked when the emulator is started by the Flask server."
   tags: apk
 
 # ARM compatibility settings are handled by the Python code during AVD creation
 
 - name: Verify Kindle APK is ready for installation
-  shell: |
+  ansible.builtin.shell: |
     # Verify APK exists
     if [ ! -f "{{ android_x86_android_home }}/apk/kindle.apk" ]; then
       echo "Kindle APK not found at {{ android_x86_android_home }}/apk/kindle.apk"
@@ -211,13 +224,14 @@
       echo "Kindle APK is ready at {{ android_x86_android_home }}/apk/kindle.apk"
       echo "The Flask server will handle APK installation when the emulator is started"
     fi
-  become: yes
+  become: true
   environment:
     ANDROID_HOME: "{{ android_x86_android_home }}"
-  ignore_errors: yes
+  failed_when: false
   tags: apk
+  changed_when: false
 
 - name: Note about Kindle app launching
-  debug:
+  ansible.builtin.debug:
     msg: "The Flask server will handle launching the Kindle app when the emulator is started."
   tags: apk
