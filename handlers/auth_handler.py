@@ -240,8 +240,8 @@ class AuthenticationHandler:
                     "vnc_url": get_formatted_vnc_url(email),
                 }
 
-            # Check if we're already in a logged-in state (LIBRARY or HOME)
-            if state_name in ["LIBRARY", "HOME"]:
+            # Check if we're already in a logged-in state (LIBRARY, HOME, or READING)
+            if state_name in ["LIBRARY", "HOME", "READING"]:
                 logger.info(f"Already authenticated in {state_name} state")
 
                 # If we're in HOME state, try to navigate to LIBRARY for consistency
@@ -505,7 +505,7 @@ class AuthenticationHandler:
                 }
 
             # If we reached a library state after restart, we're already logged in
-            if state_name in ["LIBRARY", "HOME"]:
+            if state_name in ["LIBRARY", "HOME", "READING"]:
                 logger.info(f"Already authenticated in {state_name}")
                 return {
                     "state": state_name,
