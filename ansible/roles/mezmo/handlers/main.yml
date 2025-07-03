@@ -1,6 +1,6 @@
 ---
 - name: Restart logdna-agent
-  ansible.builtin.systemd:
+  systemd:
     name: logdna-agent
     state: restarted
     daemon_reload: true

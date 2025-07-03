@@ -10,6 +10,8 @@ warn_list:
 # Skip specific rules for files that use external collections
 skip_list:
   - yaml[line-length]  # Some long lines are unavoidable
+  - jinja[spacing]  # Jinja spacing warnings are too pedantic
+  - fqcn[action-core]  # Short module names are clear enough
 
 # Add Docker collection to runtime
 mock_modules:

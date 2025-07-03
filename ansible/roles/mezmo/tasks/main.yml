@@ -4,7 +4,7 @@
   become: true
   block:
     - name: Add Mezmo repository
-      ansible.builtin.shell: |
+      shell: |
         set -o pipefail
         echo "deb https://assets.logdna.com stable main" | tee /etc/apt/sources.list.d/logdna.list
       args:
@@ -12,13 +12,13 @@
       changed_when: true
 
     - name: Download Mezmo GPG key
-      ansible.builtin.get_url:
+      get_url:
         url: https://assets.logdna.com/logdna.gpg
         dest: /tmp/logdna.gpg
         mode: "0644"
 
     - name: Add Mezmo GPG key
-      ansible.builtin.apt_key:
+      apt_key:
         file: /tmp/logdna.gpg
         state: present
         id: C1BF174AEF506BE8
@@ -26,24 +26,24 @@
       failed_when: false
 
     - name: Add Mezmo GPG key (alternative method)
-      ansible.builtin.command: apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C1BF174AEF506BE8
+      command: apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C1BF174AEF506BE8
       when: apt_key_result is failed
       changed_when: true
 
     - name: Update apt cache
-      ansible.builtin.apt:
+      apt:
         update_cache: true
 
 # Install Mezmo agent
 - name: Install Mezmo agent
-  ansible.builtin.apt:
+  apt:
     name: logdna-agent
     state: present
     update_cache: true
 
 # Create Mezmo agent configuration
 - name: Create Mezmo agent configuration
-  ansible.builtin.template:
+  template:
     src: mezmo-agent.conf.j2
     dest: /etc/logdna.env
     mode: "0644"
@@ -51,7 +51,7 @@
 
 # Enable and start Mezmo agent service
 - name: Enable and start Mezmo agent service
-  ansible.builtin.systemd:
+  systemd:
     name: logdna-agent
     enabled: true
     state: started
