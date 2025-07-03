@@ -38,15 +38,36 @@ class TestKindleAPIIntegration:
     def _make_request(
         self, endpoint: str, params: Dict[str, Any] = None, method: str = "GET"
     ) -> requests.Response:
-        """Helper to make API requests."""
+        """Helper to make API requests with retry logic for 503 errors."""
         url = f"{self.base_url}/{endpoint}"
         request_params = {**self.default_params, **(params or {})}
 
-        if method == "GET":
-            response = self.session.get(url, params=request_params, timeout=120)
-        elif method == "POST":
-            response = self.session.post(url, params=request_params, timeout=120)
+        max_retries = 3
+        retry_delay = 10  # seconds
 
+        for attempt in range(max_retries):
+            try:
+                if method == "GET":
+                    response = self.session.get(url, params=request_params, timeout=120)
+                elif method == "POST":
+                    response = self.session.post(url, params=request_params, timeout=120)
+
+                # If we get a 503 and haven't exhausted retries, wait and retry
+                if response.status_code == 503 and attempt < max_retries - 1:
+                    print(f"Got 503 error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    continue
+
+                return response
+
+            except requests.exceptions.RequestException as e:
+                # If this is our last attempt, re-raise the exception
+                if attempt == max_retries - 1:
+                    raise
+                print(f"Request failed with error: {e}, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
+
+        # This should never be reached, but just in case
         return response
 
     @pytest.mark.timeout(120)
