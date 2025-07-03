@@ -1,45 +1,41 @@
 name: Ansible Check
 
 on:
-  push:
-    paths:
-      - 'ansible/**'
-      - '.github/workflows/ansible-check.yml'
   pull_request:
     paths:
-      - 'ansible/**'
+      - "ansible/**"
 
 jobs:
   ansible-lint:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    
-    - name: Install Ansible and ansible-lint
-      run: |
-        python -m pip install --upgrade pip
-        pip install ansible ansible-lint
-    
-    - name: Display Ansible version
-      run: ansible --version
-    
-    - name: Syntax check playbooks
-      run: |
-        ansible-playbook ansible/provision.yml --syntax-check
-        ansible-playbook ansible/deploy.yml --syntax-check
-    
-    - name: Run ansible-lint
-      run: |
-        ansible-lint ansible/provision.yml || true
-        ansible-lint ansible/deploy.yml || true
-      # Note: Using || true to prevent failures on warnings
-    
-    - name: Validate inventory
-      run: |
-        ansible-inventory -i ansible/inventory.ini --list
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible and ansible-lint
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible ansible-lint
+
+      - name: Display Ansible version
+        run: ansible --version
+
+      - name: Syntax check playbooks
+        run: |
+          ansible-playbook ansible/provision.yml --syntax-check
+          ansible-playbook ansible/deploy.yml --syntax-check
+
+      - name: Run ansible-lint
+        run: |
+          ansible-lint ansible/provision.yml || true
+          ansible-lint ansible/deploy.yml || true
+        # Note: Using || true to prevent failures on warnings
+
+      - name: Validate inventory
+        run: |
+          ansible-inventory -i ansible/inventory.ini --list

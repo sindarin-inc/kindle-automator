@@ -1,63 +1,65 @@
 ---
 # Add Mezmo repository and GPG key using the exact commands from documentation
 - name: Add Mezmo repository and GPG key
-  become: yes
+  become: true
   block:
     - name: Add Mezmo repository
-      shell: echo "deb https://assets.logdna.com stable main" | tee /etc/apt/sources.list.d/logdna.list
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo "deb https://assets.logdna.com stable main" | tee /etc/apt/sources.list.d/logdna.list
       args:
         creates: /etc/apt/sources.list.d/logdna.list
+      changed_when: true
 
     - name: Download Mezmo GPG key
-      get_url:
+      ansible.builtin.get_url:
         url: https://assets.logdna.com/logdna.gpg
         dest: /tmp/logdna.gpg
         mode: "0644"
 
     - name: Add Mezmo GPG key
-      apt_key:
+      ansible.builtin.apt_key:
         file: /tmp/logdna.gpg
         state: present
         id: C1BF174AEF506BE8
       register: apt_key_result
-      ignore_errors: yes
+      failed_when: false
 
     - name: Add Mezmo GPG key (alternative method)
-      shell: apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C1BF174AEF506BE8
-      args:
-        warn: false
+      ansible.builtin.command: apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C1BF174AEF506BE8
       when: apt_key_result is failed
+      changed_when: true
 
     - name: Update apt cache
-      apt:
-        update_cache: yes
+      ansible.builtin.apt:
+        update_cache: true
 
 # Install Mezmo agent
 - name: Install Mezmo agent
-  apt:
+  ansible.builtin.apt:
     name: logdna-agent
     state: present
-    update_cache: yes
+    update_cache: true
 
 # Create Mezmo agent configuration
 - name: Create Mezmo agent configuration
-  template:
+  ansible.builtin.template:
     src: mezmo-agent.conf.j2
     dest: /etc/logdna.env
     mode: "0644"
-  notify: restart logdna-agent
+  notify: Restart logdna-agent
 
 # Enable and start Mezmo agent service
 - name: Enable and start Mezmo agent service
-  systemd:
+  ansible.builtin.systemd:
     name: logdna-agent
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
+    daemon_reload: true
 
 # Keep the existing logspout container for Docker logs
 - name: Start mezmo logspout docker container
-  docker_container:
+  community.docker.docker_container:
     name: kindle-automator-logspout
     image: logdna/logspout:latest
     state: started
