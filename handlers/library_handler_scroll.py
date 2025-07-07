@@ -47,7 +47,6 @@ class LibraryHandlerScroll:
             new_books: List of new book info dicts or titles found on this page
             total_found: Total number of unique books found so far
         """
-        logger.info(f"Page {page_number}: Found {len(new_books)} new books, total {total_found}")
         if new_books:
             separator = "\n\t\t\t"
             # Handle both book info dicts and plain title strings
@@ -64,7 +63,11 @@ class LibraryHandlerScroll:
                     # Fallback for plain string titles
                     book_entries.append(str(book))
             joined_entries = f"{separator}".join(book_entries)
-            logger.info(f"New titles: {separator}{joined_entries}")
+            logger.info(
+                f"Page {page_number}: Found {len(new_books)} new books, total {total_found}:{separator}{joined_entries}"
+            )
+        else:
+            logger.info(f"Page {page_number}: Found {len(new_books)} new books, total {total_found}")
 
     def _extract_book_info(self, container):
         """Extract book metadata from a container element.
