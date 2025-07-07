@@ -39,19 +39,32 @@ class LibraryHandlerScroll:
         # Store partial matches for later retrieval
         self.partial_matches = []
 
-    def _log_page_summary(self, page_number, new_titles, total_found):
+    def _log_page_summary(self, page_number, new_books, total_found):
         """Log a concise summary of books found on current page.
 
         Args:
             page_number: Current page number
-            new_titles: List of new book titles found on this page
+            new_books: List of new book info dicts or titles found on this page
             total_found: Total number of unique books found so far
         """
-        logger.info(f"Page {page_number}: Found {len(new_titles)} new books, total {total_found}")
-        if new_titles:
+        logger.info(f"Page {page_number}: Found {len(new_books)} new books, total {total_found}")
+        if new_books:
             separator = "\n\t\t\t"
-            joined_titles = f"{separator}".join(new_titles)
-            logger.info(f"New titles: {separator}{joined_titles}")
+            # Handle both book info dicts and plain title strings
+            book_entries = []
+            for book in new_books:
+                if isinstance(book, dict):
+                    title = book.get("title", "Unknown")
+                    author = book.get("author")
+                    if author:
+                        book_entries.append(f"{title} / {author}")
+                    else:
+                        book_entries.append(title)
+                else:
+                    # Fallback for plain string titles
+                    book_entries.append(str(book))
+            joined_entries = f"{separator}".join(book_entries)
+            logger.info(f"New titles: {separator}{joined_entries}")
 
     def _extract_book_info(self, container):
         """Extract book metadata from a container element.
@@ -116,17 +129,11 @@ class LibraryHandlerScroll:
                                 book_info[field] = elements[0].text
                                 break
                         except NoSuchElementException:
-                            if field == "author":
-                                logger.debug(
-                                    f"No author element found in title container with strategy {strategy_index}"
-                                )
                             pass
                         except Exception as e:
                             logger.error(f"Unexpected error finding {field} in title container: {e}")
 
                 except NoSuchElementException:
-                    if field == "author":
-                        logger.debug(f"No author element found with strategy {strategy_index}: {locator}")
                     continue
                 except StaleElementReferenceException:
                     logger.debug(f"Stale element reference when finding {field}, will retry on next scroll")
@@ -137,16 +144,10 @@ class LibraryHandlerScroll:
 
         # Extract author from content-desc if still missing
         if not book_info["author"]:
-            logger.debug(
-                f"No author found via element search for '{book_info.get('title', 'Unknown')}', trying content-desc"
-            )
             try:
                 content_desc = container.get_attribute("content-desc")
                 if content_desc:
-                    logger.debug(f"Content-desc for book: {content_desc}")
                     self._extract_author_from_content_desc(book_info, content_desc)
-                    if book_info["author"]:
-                        logger.info(f"Extracted author '{book_info['author']}' from content-desc")
                 else:
                     logger.debug("No content-desc attribute found")
             except StaleElementReferenceException:
@@ -186,7 +187,6 @@ class LibraryHandlerScroll:
                     partially_visible_books.append(
                         {"element": container, "title": title_text, "top": top, "bottom": bottom}
                     )
-                    logger.info(f"Book partially obscured: '{title_text}' at y={top}-{bottom}")
 
             except Exception as e:
                 logger.debug(f"Error processing container {i}: {e}")
@@ -238,7 +238,7 @@ class LibraryHandlerScroll:
         else:
             # For other books, use a safer 20% position to avoid cutting off at top
             target_position = 0.20
-        
+
         # Use the common SmartScroller to scroll the reference container to target position
         self.scroller.scroll_to_position(ref_container["element"], target_position)
 
@@ -379,9 +379,7 @@ class LibraryHandlerScroll:
                     new_titles_on_page.append(new_title)
 
                 # Log summary for double-check findings
-                self._log_page_summary(
-                    page_count, [b["title"] for b in current_double_check_batch], len(books_list)
-                )
+                self._log_page_summary(page_count, current_double_check_batch, len(books_list))
 
                 # Send additional books via callback if available
                 if callback and current_double_check_batch:
@@ -798,7 +796,6 @@ class LibraryHandlerScroll:
                                     potential_title = container.text
                             except Exception:
                                 pass
-                            logger.info(f"Skipping partially obscured book: '{potential_title}'")
                             continue
 
                         # Extract book info
@@ -824,8 +821,6 @@ class LibraryHandlerScroll:
                             )
                             if was_new:
                                 books_added_in_current_page_processing = True
-                        else:
-                            logger.debug(f"Container has no book info, skipping: {book_info}")
 
                     except StaleElementReferenceException:
                         logger.debug("Stale element reference, skipping container")
@@ -835,7 +830,7 @@ class LibraryHandlerScroll:
                         continue
 
                 # Log a summary of this page's findings
-                self._log_page_summary(page_count, new_titles_on_page, len(books))
+                self._log_page_summary(page_count, new_books_batch, len(books))
 
                 # Send new books via callback if available
                 if callback and new_books_batch:

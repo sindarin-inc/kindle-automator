@@ -277,9 +277,10 @@ class AutomationServer:
                 if pid:
                     os.kill(int(pid), signal.SIGTERM)
                     logger.info(f"Killed existing flask process with PID {pid}")
-                    
+
                     # Wait for port to be released (up to 5 seconds)
                     import time
+
                     for i in range(50):  # 50 * 0.1s = 5s max
                         try:
                             # Check if port is still in use

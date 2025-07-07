@@ -214,7 +214,7 @@ class SmartScroller:
                     duration = 1000  # Medium speed
                 else:
                     duration = 1200  # Original speed for long scrolls
-                    
+
                 self._perform_hook_scroll(
                     screen_size["width"] // 2,
                     start_y,

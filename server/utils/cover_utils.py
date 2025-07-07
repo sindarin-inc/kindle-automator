@@ -486,7 +486,6 @@ def extract_book_covers_from_screen(
 
                 # Skip if container height is too small (partial visibility at screen edge)
                 if rect["height"] < 100:  # Skip tiny containers (partially visible)
-                    logger.debug(f"Skipping container {i} due to small height: {rect['height']}")
                     continue
 
                 # Get the image element
