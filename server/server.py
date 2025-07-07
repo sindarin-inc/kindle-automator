@@ -479,6 +479,9 @@ class BooksStreamResource(Resource):
 
                 if raw_books_batch:
                     try:
+                        # Update activity to prevent idle timeout during long scrolls
+                        server.update_activity(sindarin_email)
+
                         # At this point, the UI should be stable for raw_books_batch
                         timestamp = int(time.time())
                         screenshot_filename = f"library_view_stream_{timestamp}.png"
@@ -546,6 +549,10 @@ class BooksStreamResource(Resource):
                 def encode_message(msg_dict):
                     return (json.dumps(msg_dict) + "\n").encode("utf-8")
 
+                # Update activity at the start of streaming
+                logger.info(f"Starting book stream for {sindarin_email}, updating activity")
+                server.update_activity(sindarin_email)
+
                 yield encode_message(
                     {"status": "started", "message": "Book retrieval and processing initiated"}
                 )
@@ -582,6 +589,10 @@ class BooksStreamResource(Resource):
 
                 # After the loop, if no error was yielded from inside the loop
                 if not error_message:
+                    # Update activity at the end of successful streaming
+                    logger.info(f"Book stream completed for {sindarin_email}, updating activity")
+                    server.update_activity(sindarin_email)
+
                     logger.info(
                         f'Stream finished: {{"done": true, "total_books": {total_books_from_handler}}}'
                     )
