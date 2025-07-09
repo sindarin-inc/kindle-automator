@@ -516,29 +516,31 @@ class BooksStreamResource(Resource):
             def start_book_retrieval_thread_fn():
                 # Set email context for this background thread
                 from server.logging_config import clear_email_context, set_email_context
+                from server.utils.request_utils import email_override
 
                 set_email_context(sindarin_email)
-                try:
-                    logger.info(
-                        f"Starting book retrieval with processing callback in a new thread (sync={sync})."
-                    )
-                    automator.state_machine.library_handler.get_book_titles(
-                        callback=book_processing_callback, sync=sync
-                    )
-                except Exception as e:
-                    from server.utils.appium_error_utils import is_appium_error
+                with email_override(sindarin_email):
+                    try:
+                        logger.info(
+                            f"Starting book retrieval with processing callback in a new thread (sync={sync})."
+                        )
+                        automator.state_machine.library_handler.get_book_titles(
+                            callback=book_processing_callback, sync=sync
+                        )
+                    except Exception as e:
+                        from server.utils.appium_error_utils import is_appium_error
 
-                    if is_appium_error(e):
-                        raise
-                    logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
-                    nonlocal error_message  # To set the shared error_message
-                    error_message = str(e)
-                    # Ensure the main loop knows about this fatal error and can terminate
-                    if not all_books_retrieved_event.is_set():
-                        all_books_retrieved_event.set()
-                finally:
-                    # Clear email context when thread completes
-                    clear_email_context()
+                        if is_appium_error(e):
+                            raise
+                        logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
+                        nonlocal error_message  # To set the shared error_message
+                        error_message = str(e)
+                        # Ensure the main loop knows about this fatal error and can terminate
+                        if not all_books_retrieved_event.is_set():
+                            all_books_retrieved_event.set()
+                    finally:
+                        # Clear email context when thread completes
+                        clear_email_context()
 
             retrieval_thread = threading.Thread(target=start_book_retrieval_thread_fn, daemon=True)
             retrieval_thread.start()
