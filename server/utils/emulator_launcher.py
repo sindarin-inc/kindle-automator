@@ -73,9 +73,6 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            # Always log the full adb devices output for debugging
-            logger.info(f"ADB devices output: {devices_result.stdout.strip()}")
-
             if devices_result.returncode == 0:
                 # Parse output to get emulator IDs
                 lines = devices_result.stdout.strip().split("\n")
@@ -99,7 +96,6 @@ class EmulatorLauncher:
         except Exception as e:
             logger.error(f"Error checking running emulators via adb: {e}")
 
-        logger.info(f"Running emulator IDs: {running_ids}")
         return running_ids
 
     def _verify_emulator_running(self, emulator_id: str, email: str) -> bool:
@@ -733,7 +729,7 @@ class EmulatorLauncher:
             return False
 
     def launch_emulator(
-        self, email: str, cold_boot: bool = False
+        self, email: str, cold_boot: bool = False, zombie_cleanup_attempted: bool = False
     ) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
@@ -1020,6 +1016,7 @@ class EmulatorLauncher:
                 logger.error(f"Emulator process exited immediately with code {exit_code}")
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}")
                 # Read and log stdout
+                stdout_content = ""
                 try:
                     with open(stdout_log, "r") as f:
                         stdout_content = f.read()
@@ -1033,6 +1030,56 @@ class EmulatorLauncher:
                     logger.error(f"Emulator stderr ({stderr_log}):\n{stderr_content}")
                 except Exception as e:
                     logger.error(f"Failed to read emulator stderr log {stderr_log}: {e}")
+
+                # Check if this is a "multiple emulators with same AVD" error
+                if (
+                    "Running multiple emulators with the same AVD" in stdout_content
+                    and not zombie_cleanup_attempted
+                ):
+                    logger.warning(f"Detected zombie emulator for AVD {avd_name}, attempting cleanup...")
+                    try:
+                        from server.utils.zombie_emulator_cleanup import (
+                            cleanup_zombie_emulator_for_avd,
+                            cleanup_zombies_on_port,
+                            cleanup_zombies_on_display,
+                        )
+
+                        # First try to clean up just this AVD
+                        if cleanup_zombie_emulator_for_avd(avd_name):
+                            logger.info(
+                                f"Successfully cleaned up zombie emulator for AVD {avd_name}"
+                            )
+                        
+                        # Also clean up any other zombies on this port since we're having port conflicts
+                        zombies_on_port = cleanup_zombies_on_port(emulator_port)
+                        if zombies_on_port > 0:
+                            logger.info(f"Cleaned up {zombies_on_port} additional zombie(s) on port {emulator_port}")
+                        
+                        # Clean up all zombies on this display to ensure no crash dialogs remain
+                        zombies_on_display = cleanup_zombies_on_display(display_num)
+                        if zombies_on_display > 0:
+                            logger.info(f"Cleaned up {zombies_on_display} zombie(s) on display :{display_num}")
+                        
+                        # Clean up this failed process
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except:
+                            pass
+
+                        # Remove from running_emulators cache if it was added
+                        if avd_name in self.running_emulators:
+                            del self.running_emulators[avd_name]
+
+                        # Retry the launch with zombie_cleanup_attempted=True to prevent infinite recursion
+                        time.sleep(3)  # Brief pause before retry
+                        logger.info("Retrying emulator launch after zombie cleanup...")
+                        return self.launch_emulator(
+                            email, cold_boot=cold_boot, zombie_cleanup_attempted=True
+                        )
+                    except Exception as cleanup_error:
+                        logger.error(f"Error during zombie cleanup: {cleanup_error}")
+
                 return False, None, None
 
             # Wait for emulator to be ready before applying post-boot randomization
