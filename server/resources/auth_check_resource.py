@@ -64,7 +64,6 @@ class AuthCheckResource(Resource):
                     "authenticated": True,
                     "status": "authenticated",
                     "auth_date": auth_date,
-                    "message": "User is authenticated",
                     "email": sindarin_email,
                 }, 200
             else:

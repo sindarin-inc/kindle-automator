@@ -1473,11 +1473,10 @@ class LibraryHandler:
             if not self.scroll_handler.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")
 
-            # Perform pull-to-refresh if sync=True to ensure latest book list (after we're at the top)
-            if sync:
-                logger.info("Sync requested, performing pull-to-refresh to get latest book list")
-                if not self.pull_to_refresh():
-                    logger.warning("Pull-to-refresh failed, continuing anyway...")
+            # Always perform pull-to-refresh to ensure latest book list (after we're at the top)
+            logger.info("Performing pull-to-refresh to get latest book list")
+            if not self.pull_to_refresh():
+                logger.warning("Pull-to-refresh failed, continuing anyway...")
 
             # Use the scroll handler's method to get all books
             # If callback is provided, pass it to the scroll handler for streaming
