@@ -456,9 +456,9 @@ class ReaderHandler:
             logger.info("Capturing initial state before waiting for reading view")
             store_page_source(self.driver.page_source, "before_reading_view_wait")
 
-            # Custom wait condition to check for any of the reading view identifiers
-            # or for the download limit dialog
-            def reading_view_or_download_limit_present(driver):
+            # Custom wait condition to check for any of the reading view identifiers,
+            # download limit dialog, or Word Wise dialog
+            def reading_view_or_dialog_present(driver):
                 nonlocal last_capture_time, capture_count
 
                 # Always do time-based capture first, before any early returns
@@ -556,14 +556,42 @@ class ReaderHandler:
                 except NoSuchElementException:
                     pass
 
+                # Check for Word Wise dialog
+                for idx, (strategy, locator) in enumerate(WORD_WISE_DIALOG_IDENTIFIERS):
+                    try:
+                        element = driver.find_element(strategy, locator)
+                        if element and element.is_displayed():
+                            logger.info(
+                                f"Word Wise dialog detected with identifier #{idx}: {strategy}={locator}"
+                            )
+                            return "word_wise"
+                    except NoSuchElementException:
+                        pass
+                    except Exception as e:
+                        logger.debug(f"Error checking Word Wise identifier #{idx}: {e}")
+
+                # Check for Goodreads auto-update dialog
+                for idx, (strategy, locator) in enumerate(GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS):
+                    try:
+                        element = driver.find_element(strategy, locator)
+                        if element and element.is_displayed():
+                            logger.info(
+                                f"Goodreads auto-update dialog detected with identifier #{idx}: {strategy}={locator}"
+                            )
+                            return "goodreads"
+                    except NoSuchElementException:
+                        pass
+                    except Exception as e:
+                        logger.debug(f"Error checking Goodreads identifier #{idx}: {e}")
+
                 return False
 
             # If we already found and handled the download limit dialog, skip the wait
             if not download_limit_found:
-                # Wait for either reading view element or download limit dialog to appear
-                result = WebDriverWait(self.driver, 15).until(
-                    reading_view_or_download_limit_present
-                )  # Wait up to 10 seconds
+                # Wait for either reading view element or blocking dialogs to appear
+                result = WebDriverWait(self.driver, 6).until(
+                    reading_view_or_dialog_present
+                )  # Wait up to 6 seconds
             else:
                 # We already handled the download limit dialog, just wait for reading view
                 logger.info("Skipping wait since download limit dialog was already handled")
@@ -700,8 +728,92 @@ class ReaderHandler:
                 else:
                     logger.error("Failed to handle Download Limit dialog")
                     return False
+
+            # Handle Word Wise dialog if it appeared
+            elif result == "word_wise":
+                logger.info("Word Wise dialog detected - handling it")
+                store_page_source(self.driver.page_source, "word_wise_dialog_detected")
+
+                # Find and click the "NO THANKS" button
+                for strategy, locator in WORD_WISE_NO_THANKS_BUTTON:
+                    try:
+                        no_thanks_button = self.driver.find_element(strategy, locator)
+                        if no_thanks_button.is_displayed():
+                            logger.info("Clicking 'NO THANKS' button on Word Wise dialog")
+                            no_thanks_button.click()
+
+                            # Verify dialog is gone and wait for reading view
+                            try:
+                                time.sleep(0.5)  # Brief pause for dialog dismissal
+
+                                # Now wait for the reading view after handling the dialog
+                                def reading_view_present_after_word_wise(driver):
+                                    for strategy in READING_VIEW_IDENTIFIERS:
+                                        try:
+                                            element = driver.find_element(strategy[0], strategy[1])
+                                            if element:
+                                                return True
+                                        except NoSuchElementException:
+                                            pass
+                                    return False
+
+                                WebDriverWait(self.driver, 10).until(reading_view_present_after_word_wise)
+                                logger.info("Reading view detected after dismissing Word Wise dialog")
+                                store_page_source(self.driver.page_source, "word_wise_dialog_dismissed")
+                                break
+                            except TimeoutException:
+                                logger.error(
+                                    "Failed to detect reading view after dismissing Word Wise dialog"
+                                )
+                                store_page_source(
+                                    self.driver.page_source, "failed_reading_view_after_word_wise"
+                                )
+                                return False
+                    except NoSuchElementException:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error clicking Word Wise NO THANKS button: {e}")
+
+            # Handle Goodreads dialog if it appeared
+            elif result == "goodreads":
+                logger.info("Goodreads auto-update dialog detected - handling it")
+                store_page_source(self.driver.page_source, "goodreads_dialog_detected")
+
+                try:
+                    # Find and click the "NOT NOW" button
+                    not_now_button = self.driver.find_element(
+                        *GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS[1]  # Index 1 is the "NOT NOW" button
+                    )
+                    if not_now_button.is_displayed():
+                        logger.info("Clicking 'NOT NOW' button on Goodreads auto-update dialog")
+                        not_now_button.click()
+
+                        # Wait for reading view
+                        try:
+                            time.sleep(0.5)  # Brief pause for dialog dismissal
+
+                            def reading_view_present_after_goodreads(driver):
+                                for strategy in READING_VIEW_IDENTIFIERS:
+                                    try:
+                                        element = driver.find_element(strategy[0], strategy[1])
+                                        if element:
+                                            return True
+                                    except NoSuchElementException:
+                                        pass
+                                return False
+
+                            WebDriverWait(self.driver, 10).until(reading_view_present_after_goodreads)
+                            logger.info("Reading view detected after dismissing Goodreads dialog")
+                            store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
+                        except TimeoutException:
+                            logger.error("Failed to detect reading view after dismissing Goodreads dialog")
+                            store_page_source(self.driver.page_source, "failed_reading_view_after_goodreads")
+                            return False
+                except Exception as e:
+                    logger.error(f"Error handling Goodreads dialog: {e}")
+                    return False
         except TimeoutException:
-            logger.error("Failed to detect reading view or download limit dialog after 10 seconds")
+            logger.error("Failed to detect reading view or blocking dialogs after 6 seconds")
 
             # Capture final state for debugging
             final_elapsed = time.time() - start_time
@@ -826,100 +938,8 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Error checking for 'Go to that location/page?' dialog: {e}")
 
-        # Check for and dismiss Goodreads auto-update dialog
-        try:
-            # Check if the Goodreads dialog is present
-            dialog_present = False
-            for strategy, locator in GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS:
-                try:
-                    dialog = self.driver.find_element(strategy, locator)
-                    if dialog.is_displayed():
-                        dialog_present = True
-                        logger.info("Found Goodreads auto-update dialog")
-                        break
-                except NoSuchElementException:
-                    continue
-
-            if dialog_present:
-                # Find and click the "NOT NOW" button
-                not_now_button = self.driver.find_element(
-                    *GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS[1]  # Index 1 is the "NOT NOW" button
-                )
-                if not_now_button.is_displayed():
-                    logger.info("Clicking 'NOT NOW' button on Goodreads auto-update dialog")
-                    not_now_button.click()
-
-                    # Verify dialog is gone
-                    try:
-                        not_now_button = self.driver.find_element(*GOODREADS_AUTO_UPDATE_DIALOG_BUTTONS[1])
-                        if not_now_button.is_displayed():
-                            logger.error("Goodreads dialog still visible after clicking Not Now")
-                            return False
-                    except NoSuchElementException:
-                        logger.info("Successfully dismissed Goodreads dialog")
-
-                    filepath = store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
-                    logger.info(f"Stored Goodreads dialog dismissed page source at: {filepath}")
-        except NoSuchElementException:
-            logger.info("No Goodreads auto-update dialog found - continuing")
-        except Exception as e:
-            logger.error(f"Error handling Goodreads dialog: {e}")
-
-        # Check for and dismiss Word Wise dialog
-        try:
-            # Check if the Word Wise dialog is present
-            dialog_present = False
-            for strategy, locator in WORD_WISE_DIALOG_IDENTIFIERS:
-                try:
-                    dialog = self.driver.find_element(strategy, locator)
-                    if dialog.is_displayed():
-                        dialog_present = True
-                        logger.info("Found Word Wise dialog")
-                        break
-                except NoSuchElementException:
-                    continue
-
-            if dialog_present:
-                # Find and click the "NO THANKS" button
-                for strategy, locator in WORD_WISE_NO_THANKS_BUTTON:
-                    try:
-                        no_thanks_button = self.driver.find_element(strategy, locator)
-                        if no_thanks_button.is_displayed():
-                            logger.info("Clicking 'NO THANKS' button on Word Wise dialog")
-                            no_thanks_button.click()
-
-                            # Verify dialog is gone
-                            try:
-                                # Check if the Word Wise dialog is still present
-                                still_visible = False
-                                for dialog_strategy, dialog_locator in WORD_WISE_DIALOG_IDENTIFIERS:
-                                    try:
-                                        dialog = self.driver.find_element(dialog_strategy, dialog_locator)
-                                        if dialog.is_displayed():
-                                            still_visible = True
-                                            break
-                                    except NoSuchElementException:
-                                        continue
-
-                                if still_visible:
-                                    logger.error("Word Wise dialog still visible after clicking No Thanks")
-                                    return False
-                                else:
-                                    logger.info("Successfully dismissed Word Wise dialog")
-                            except Exception as verify_e:
-                                logger.error(f"Error verifying Word Wise dialog dismissal: {verify_e}")
-
-                            filepath = store_page_source(
-                                self.driver.page_source, "word_wise_dialog_dismissed"
-                            )
-                            logger.info(f"Stored Word Wise dialog dismissed page source at: {filepath}")
-                            break
-                    except NoSuchElementException:
-                        continue
-        except NoSuchElementException:
-            logger.info("No Word Wise dialog found - continuing")
-        except Exception as e:
-            logger.error(f"Error handling Word Wise dialog: {e}")
+        # Note: Goodreads and Word Wise dialogs are now handled during the wait condition above
+        # to prevent them from blocking the reading view detection
 
         # Check for and dismiss the comic book view
         try:

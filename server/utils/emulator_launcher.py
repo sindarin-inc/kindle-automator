@@ -1040,26 +1040,28 @@ class EmulatorLauncher:
                     try:
                         from server.utils.zombie_emulator_cleanup import (
                             cleanup_zombie_emulator_for_avd,
-                            cleanup_zombies_on_port,
                             cleanup_zombies_on_display,
+                            cleanup_zombies_on_port,
                         )
 
                         # First try to clean up just this AVD
                         if cleanup_zombie_emulator_for_avd(avd_name):
-                            logger.info(
-                                f"Successfully cleaned up zombie emulator for AVD {avd_name}"
-                            )
-                        
+                            logger.info(f"Successfully cleaned up zombie emulator for AVD {avd_name}")
+
                         # Also clean up any other zombies on this port since we're having port conflicts
                         zombies_on_port = cleanup_zombies_on_port(emulator_port)
                         if zombies_on_port > 0:
-                            logger.info(f"Cleaned up {zombies_on_port} additional zombie(s) on port {emulator_port}")
-                        
+                            logger.info(
+                                f"Cleaned up {zombies_on_port} additional zombie(s) on port {emulator_port}"
+                            )
+
                         # Clean up all zombies on this display to ensure no crash dialogs remain
                         zombies_on_display = cleanup_zombies_on_display(display_num)
                         if zombies_on_display > 0:
-                            logger.info(f"Cleaned up {zombies_on_display} zombie(s) on display :{display_num}")
-                        
+                            logger.info(
+                                f"Cleaned up {zombies_on_display} zombie(s) on display :{display_num}"
+                            )
+
                         # Clean up this failed process
                         try:
                             process.terminate()
@@ -1074,9 +1076,7 @@ class EmulatorLauncher:
                         # Retry the launch with zombie_cleanup_attempted=True to prevent infinite recursion
                         time.sleep(3)  # Brief pause before retry
                         logger.info("Retrying emulator launch after zombie cleanup...")
-                        return self.launch_emulator(
-                            email, cold_boot=cold_boot, zombie_cleanup_attempted=True
-                        )
+                        return self.launch_emulator(email, cold_boot=cold_boot, zombie_cleanup_attempted=True)
                     except Exception as cleanup_error:
                         logger.error(f"Error during zombie cleanup: {cleanup_error}")
 
