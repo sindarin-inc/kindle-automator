@@ -1,6 +1,7 @@
 """User activity timeline resource for displaying readable activity logs."""
 
 import gzip
+import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -223,8 +224,6 @@ class UserActivityResource(Resource):
                         activity["title"] = match.group(1)
                         activity["action"] = "book_already_open"
                     elif event_type == "navigate":
-                        import json
-
                         try:
                             params_dict = json.loads(match.group(1))
                             preview = params_dict.get("preview", "0")
@@ -376,8 +375,6 @@ class UserActivityResource(Resource):
 
                 # Create compressed description based on endpoint
                 if "/open-book" in endpoint:
-                    import json
-
                     try:
                         params_dict = json.loads(params)
                         title = params_dict.get("title", "Unknown")
@@ -385,8 +382,6 @@ class UserActivityResource(Resource):
                     except:
                         desc = "opened book"
                 elif "/navigate" in endpoint:
-                    import json
-
                     try:
                         params_dict = json.loads(params)
                         preview = params_dict.get("preview", "0")
@@ -416,8 +411,6 @@ class UserActivityResource(Resource):
                     desc = "requested book library"
                 elif endpoint.endswith("/auth-check"):
                     # Check authentication status from response
-                    import json
-
                     try:
                         if body:
                             # Extract JSON part from body (remove email prefix)
@@ -440,8 +433,6 @@ class UserActivityResource(Resource):
                 elif endpoint.endswith("/auth"):
                     # This is POST /auth - actual sign-in
                     # Check if authentication was successful from response body
-                    import json
-
                     try:
                         if body:
                             # Extract JSON part from body (remove email prefix)
@@ -464,7 +455,22 @@ class UserActivityResource(Resource):
                 elif "/screenshot" in endpoint:
                     desc = "captured screenshot"
                 elif "/state" in endpoint:
-                    desc = "checked app state"
+                    # Extract the state from the response body
+                    try:
+                        if body:
+                            # Extract JSON part from body (remove email prefix if present)
+                            json_start = body.find("{")
+                            if json_start != -1:
+                                json_body = body[json_start:]
+                                body_dict = json.loads(json_body)
+                            else:
+                                body_dict = json.loads(body)
+                            state = body_dict.get("state", "unknown")
+                            desc = f"checked app state ({state})"
+                        else:
+                            desc = "checked app state (no response body)"
+                    except Exception as e:
+                        desc = f"checked app state (parse error: {str(e)[:50]})"
                 elif "/last-read-page-dialog" in endpoint:
                     desc = "handled continue reading dialog"
                 elif "/logs/timeline" in endpoint:
