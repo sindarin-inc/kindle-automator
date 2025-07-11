@@ -276,9 +276,11 @@ class UserActivityResource(Resource):
                         activity["params"] = self._strip_ansi_codes(match.group(3))
                         activity["action"] = "api_request"
                         # Skip if this is a navigate request (handled by specific pattern)
-                        if "/navigate" in activity["endpoint"] and any(a.get("type") == "navigate" and 
-                                                                      abs((timestamp - a["timestamp_obj"]).total_seconds()) < 0.1 
-                                                                      for a in activities):
+                        if "/navigate" in activity["endpoint"] and any(
+                            a.get("type") == "navigate"
+                            and abs((timestamp - a["timestamp_obj"]).total_seconds()) < 0.1
+                            for a in activities
+                        ):
                             continue
                     elif event_type == "response":
                         activity["method"] = match.group(1)
@@ -380,14 +382,22 @@ class UserActivityResource(Resource):
                 duration = activity.get("duration", 0)
                 params = activity.get("request_params", "")
                 body = activity.get("body", "")
-                
+
                 # Check if we have a matching navigate activity with parsed values
                 navigate_count = None
                 preview_count = None
                 for act in activities:
-                    if (act.get("action") == "navigation_request" and 
-                        act.get("type") == "navigate" and
-                        abs((datetime.fromisoformat(act["timestamp"]) - datetime.fromisoformat(activity["timestamp"])).total_seconds()) < 1):
+                    if (
+                        act.get("action") == "navigation_request"
+                        and act.get("type") == "navigate"
+                        and abs(
+                            (
+                                datetime.fromisoformat(act["timestamp"])
+                                - datetime.fromisoformat(activity["timestamp"])
+                            ).total_seconds()
+                        )
+                        < 1
+                    ):
                         navigate_count = act.get("navigate_count", None)
                         preview_count = act.get("preview_count", None)
                         break
@@ -414,13 +424,13 @@ class UserActivityResource(Resource):
                         # Fall back to parsing from params
                         try:
                             # Extract JSON from params (might have email prefix)
-                            json_start = params.find('{')
+                            json_start = params.find("{")
                             if json_start != -1:
                                 json_str = params[json_start:]
                                 params_dict = json.loads(json_str)
                             else:
                                 params_dict = json.loads(params)
-                            
+
                             preview = params_dict.get("preview", "0")
                             navigate = params_dict.get("navigate", "0")
                             # Handle both string and int values
