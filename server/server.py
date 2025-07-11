@@ -10,6 +10,7 @@ import traceback
 import urllib.parse
 from pathlib import Path
 
+import sentry_sdk
 from appium.webdriver.common.appiumby import AppiumBy
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -17,6 +18,8 @@ from dotenv import load_dotenv
 from flask import Flask, Response, make_response, request, send_file
 from flask_restful import Api, Resource
 from selenium.common import exceptions as selenium_exceptions
+from sentry_sdk.integrations.flask import FlaskIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 from handlers.navigation_handler import NavigationResourceHandler
 from handlers.test_fixtures_handler import TestFixturesHandler
@@ -75,6 +78,46 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
 app = Flask(__name__)
 api = Api(app)
+
+# Initialize Sentry
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+
+    def before_send(event, hint):
+        """Filter out expected Appium/WebDriver errors from Sentry."""
+        # Filter out duplicate "Error on request" messages from Flask-RESTful
+        if "logentry" in event and "message" in event["logentry"]:
+            message = event["logentry"]["message"]
+            if message.startswith("Error on request:"):
+                return None
+        
+        if "exc_info" in hint:
+            exc_type, exc_value, tb = hint["exc_info"]
+            from server.utils.appium_error_utils import is_appium_error
+
+            # Don't send Appium errors to Sentry as they're expected and handled
+            if is_appium_error(exc_value):
+                return None
+
+        return event
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            FlaskIntegration(transaction_style="endpoint"),
+            LoggingIntegration(
+                level=logging.INFO,  # Capture info and above as breadcrumbs
+                event_level=logging.ERROR,  # Send errors as events
+            ),
+        ],
+        environment=ENVIRONMENT.lower(),
+        traces_sample_rate=0.1 if ENVIRONMENT.lower() == "prod" else 1.0,
+        before_send=before_send,
+        send_default_pii=False,  # Don't send PII by default
+    )
+    logger.info(f"Sentry initialized for {ENVIRONMENT} environment")
+else:
+    logger.warning("SENTRY_DSN not found in environment variables - Sentry not initialized")
 
 # Set up request and response logging middleware
 setup_request_logger(app)
@@ -2076,6 +2119,43 @@ class LastReadPageDialogResource(Resource):
             return {"error": f"Failed to handle dialog choice: {str(e)}"}, 500
 
 
+class SentryDebugResource(Resource):
+    """Debug endpoint for testing Sentry integration."""
+
+    def get(self):
+        """Trigger a test error for Sentry."""
+        sindarin_email = get_sindarin_email()
+
+        # Set user context for Sentry
+        if sindarin_email:
+            sentry_sdk.set_user({"email": sindarin_email})
+
+        # Add custom context
+        sentry_sdk.set_context(
+            "environment",
+            {
+                "flask_env": os.getenv("FLASK_ENV", "production"),
+                "environment": ENVIRONMENT,
+                "has_sentry": bool(SENTRY_DSN),
+            },
+        )
+
+        # Check if we should actually trigger an error
+        trigger_error = request.args.get("trigger", "false").lower() == "true"
+
+        if trigger_error:
+            # This will be caught by Sentry
+            raise Exception("Test error from /sentry-debug endpoint")
+        else:
+            return {
+                "message": "Sentry debug endpoint is working",
+                "sentry_enabled": bool(SENTRY_DSN),
+                "environment": ENVIRONMENT,
+                "user_email": sindarin_email,
+                "hint": "Add ?trigger=true to actually trigger a test error",
+            }, 200
+
+
 # Import resource modules
 from server.resources.auth_check_resource import AuthCheckResource
 from server.resources.cold_storage_resources import (
@@ -2187,6 +2267,7 @@ api.add_resource(
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(UserActivityResource, "/log")
+api.add_resource(SentryDebugResource, "/sentry-debug")
 
 
 def check_and_restart_adb_server():

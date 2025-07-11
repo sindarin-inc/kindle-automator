@@ -5,6 +5,7 @@ import time
 from functools import wraps
 from io import BytesIO
 
+import sentry_sdk
 from flask import Response, current_app, g, request
 
 # Removed set_current_request_email import as it's no longer needed
@@ -222,6 +223,21 @@ def setup_request_logger(app):
 
         # Store the email in flask.g for this request
         g.request_email = email
+
+        # Set Sentry user context if email is available
+        if email:
+            sentry_sdk.set_user({"email": email})
+
+        # Set request context for Sentry
+        sentry_sdk.set_context(
+            "request",
+            {
+                "method": request.method,
+                "path": request.path,
+                "endpoint": request.endpoint,
+                "remote_addr": request.remote_addr,
+            },
+        )
 
         # Log the request details
         RequestBodyLogger.log_request()
