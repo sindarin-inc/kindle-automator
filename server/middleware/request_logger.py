@@ -109,17 +109,17 @@ class RequestBodyLogger:
         if request_data:
             if isinstance(request_data, (dict, list)):
                 json_str = json.dumps(request_data, default=str)
-                if len(json_str) > 500:
+                if len(json_str) > 5000:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                     )
                 else:
                     logger.info(
                         f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                     )
-            elif isinstance(request_data, str) and len(request_data) > 500:
+            elif isinstance(request_data, str) and len(request_data) > 5000:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:500]}{RESET}... (truncated, total {len(request_data)} bytes)"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:5000]}{RESET}... (truncated, total {len(request_data)} bytes)"
                 )
             else:
                 logger.info(
@@ -170,9 +170,9 @@ class RequestBodyLogger:
                 if isinstance(response_data, dict):
                     sanitized_data = RequestBodyLogger.sanitize_sensitive_data(response_data)
                     json_str = json.dumps(sanitized_data, default=str)
-                    if len(json_str) > 500:
+                    if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
@@ -180,18 +180,18 @@ class RequestBodyLogger:
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
-                    if len(json_str) > 500:
+                    if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
                             f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
-                if len(response_text) > 500:
+                if len(response_text) > 5000:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
+                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
                     logger.info(
