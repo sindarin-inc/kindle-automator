@@ -87,7 +87,7 @@ class RequestBodyLogger:
                 # Sanitize sensitive data
                 request_data = RequestBodyLogger.sanitize_sensitive_data(request_data)
             except Exception as e:
-                logger.error(f"Error parsing JSON request: {e}")
+                logger.error(f"Error parsing JSON request: {e}", exc_info=True)
                 request_data = "Invalid JSON"
         elif request.form:
             request_data = RequestBodyLogger.sanitize_sensitive_data(request.form.to_dict())

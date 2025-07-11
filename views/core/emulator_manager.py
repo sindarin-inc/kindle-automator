@@ -64,7 +64,7 @@ class EmulatorManager:
             logger.warning("Timeout expired while checking if emulator is running, assuming it's not running")
             return False
         except Exception as e:
-            logger.error(f"Error checking if emulator is running: {e}")
+            logger.error(f"Error checking if emulator is running: {e}", exc_info=True)
             return False
 
     def stop_specific_emulator(self, emulator_id: str) -> bool:
@@ -148,7 +148,7 @@ class EmulatorManager:
             return False
 
         except Exception as e:
-            logger.error(f"Error stopping emulator {emulator_id}: {e}")
+            logger.error(f"Error stopping emulator {emulator_id}: {e}", exc_info=True)
             return False
 
     def start_emulator_with_retries(self, email: str) -> bool:
@@ -197,7 +197,7 @@ class EmulatorManager:
                 )
                 logger.info(f"ADB devices before launch: {devices_before.stdout.strip()}")
             except Exception as e:
-                logger.error(f"Error checking ADB devices before launch: {e}")
+                logger.error(f"Error checking ADB devices before launch: {e}", exc_info=True)
 
             # Now use the Python-based launcher
             # For seed clone, always use cold boot to ensure device randomization
@@ -250,7 +250,7 @@ class EmulatorManager:
                             f"Emulator {emulator_id} is NOT visible to ADB immediately after launch"
                         )
                 except Exception as e:
-                    logger.error(f"Error checking ADB devices after launch: {e}")
+                    logger.error(f"Error checking ADB devices after launch: {e}", exc_info=True)
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
                 logger.info("Waiting for emulator to boot...")
@@ -285,7 +285,7 @@ class EmulatorManager:
                 return False
 
         except Exception as e:
-            logger.error(f"Error starting emulator: {e}")
+            logger.error(f"Error starting emulator: {e}", exc_info=True)
             return False
 
     def _apply_memory_optimizations(self, email: str, emulator_id: str) -> None:
@@ -415,5 +415,5 @@ class EmulatorManager:
             logger.info(f"Memory optimization settings applied successfully for {email}")
 
         except Exception as e:
-            logger.error(f"Error applying memory optimizations for {email}: {e}")
+            logger.error(f"Error applying memory optimizations for {email}: {e}", exc_info=True)
             # Continue even if optimizations fail - they're not critical

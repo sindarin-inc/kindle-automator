@@ -140,7 +140,7 @@ class WebSocketProxyManager:
             return ws_port
 
         except Exception as e:
-            logger.error(f"Error starting WebSocket proxy for {email}: {e}")
+            logger.error(f"Error starting WebSocket proxy for {email}: {e}", exc_info=True)
             return None
 
     def stop_proxy(self, email: str) -> bool:
@@ -186,7 +186,7 @@ class WebSocketProxyManager:
             return True
 
         except Exception as e:
-            logger.error(f"Error stopping WebSocket proxy for {email}: {e}")
+            logger.error(f"Error stopping WebSocket proxy for {email}: {e}", exc_info=True)
             return False
 
     def get_ws_port(self, email: str) -> Optional[int]:

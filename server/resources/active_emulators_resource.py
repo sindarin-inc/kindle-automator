@@ -51,5 +51,5 @@ class ActiveEmulatorsResource(Resource):
             return {"success": True, "emulators": active_emails, "count": len(active_emails)}, 200
 
         except Exception as e:
-            logger.error(f"Error getting active emulators: {e}")
+            logger.error(f"Error getting active emulators: {e}", exc_info=True)
             return {"success": False, "error": str(e)}, 500

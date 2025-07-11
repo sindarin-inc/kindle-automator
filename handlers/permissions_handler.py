@@ -34,5 +34,5 @@ class PermissionsHandler:
                 return True  # Return True since absence of dialog is not an error
 
         except Exception as e:
-            logger.error(f"Error handling notifications permission: {e}")
+            logger.error(f"Error handling notifications permission: {e}", exc_info=True)
             return False

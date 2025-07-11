@@ -340,7 +340,7 @@ class NavigationResourceHandler:
                 return False
 
         except Exception as e:
-            logger.error(f"Error handling 'last read page/location' dialog: {e}")
+            logger.error(f"Error handling 'last read page/location' dialog: {e}", exc_info=True)
             return False
 
     def _navigate_pages(self, forward: bool, count: int) -> bool:
@@ -534,16 +534,16 @@ class NavigationResourceHandler:
                     os.remove(screenshot_path)
                     logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
             except Exception as e:
-                logger.error(f"Error processing OCR: {e}")
+                logger.error(f"Error processing OCR: {e}", exc_info=True)
                 error_msg = str(e)
 
             return ocr_text, error_msg
 
         except Exception as e:
-            logger.error(f"Error taking screenshot for OCR: {e}")
+            logger.error(f"Error taking screenshot for OCR: {e}", exc_info=True)
             return None, str(e)
 
     @staticmethod

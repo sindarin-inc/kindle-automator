@@ -134,7 +134,9 @@ class LibraryHandlerScroll:
                         except NoSuchElementException:
                             pass
                         except Exception as e:
-                            logger.error(f"Unexpected error finding {field} in title container: {e}")
+                            logger.error(
+                                f"Unexpected error finding {field} in title container: {e}", exc_info=True
+                            )
 
                 except NoSuchElementException:
                     continue
@@ -142,7 +144,7 @@ class LibraryHandlerScroll:
                     logger.debug(f"Stale element reference when finding {field}, will retry on next scroll")
                     continue
                 except Exception as e:
-                    logger.error(f"Unexpected error finding {field}: {e}")
+                    logger.error(f"Unexpected error finding {field}: {e}", exc_info=True)
                     continue
 
         # Extract author from content-desc if still missing
@@ -292,7 +294,7 @@ class LibraryHandlerScroll:
                 except StaleElementReferenceException:
                     logger.debug(f"Stale element reference when finding book button for '{book['title']}'")
                 except Exception as e:
-                    logger.error(f"Error finding book button by content-desc: {e}")
+                    logger.error(f"Error finding book button by content-desc: {e}", exc_info=True)
 
         # Try alternative approaches if we found a match but couldn't get the button
         if found_matching_title and matched_book:
@@ -317,7 +319,7 @@ class LibraryHandlerScroll:
                         parent = title_elements[0].find_element(AppiumBy.XPATH, "./../../..")
                         return parent, title_elements[0], matched_book
             except Exception as e:
-                logger.error(f"Error trying alternative methods to find button: {e}")
+                logger.error(f"Error trying alternative methods to find button: {e}", exc_info=True)
 
         if not found_matching_title:
             logger.warning(f"Book not found after searching entire library: {target_title}")
@@ -396,7 +398,7 @@ class LibraryHandlerScroll:
                     callback(None, done=True, total_books=len(books_list))
                 return False
         except Exception as e:
-            logger.error(f"Error during double-check for titles: {e}")
+            logger.error(f"Error during double-check for titles: {e}", exc_info=True)
             return False
 
     def _try_match_target(self, book_info, container, target_title, title_match_func):
@@ -477,7 +479,7 @@ class LibraryHandlerScroll:
                 logger.debug(f"Stale element reference when finding button for {book_info['title']}")
                 continue
             except Exception as e:
-                logger.error(f"Unexpected error finding button for {book_info['title']}: {e}")
+                logger.error(f"Unexpected error finding button for {book_info['title']}: {e}", exc_info=True)
                 continue
 
         return False, None, None
@@ -632,7 +634,7 @@ class LibraryHandlerScroll:
                 containers = self._convert_title_elements(title_elements)
 
         except Exception as e:
-            logger.error(f"Error finding book containers: {e}")
+            logger.error(f"Error finding book containers: {e}", exc_info=True)
 
         # FALLBACK: If we couldn't find containers, try the old approach
         if not containers:
@@ -716,7 +718,7 @@ class LibraryHandlerScroll:
                     # If can't find actual container, use our synthetic wrapper
                     containers.append(book_wrapper)
             except Exception as e:
-                logger.error(f"Error processing title '{title.text}': {e}")
+                logger.error(f"Error processing title '{title.text}': {e}", exc_info=True)
 
         return containers
 
@@ -829,7 +831,7 @@ class LibraryHandlerScroll:
                         logger.debug("Stale element reference, skipping container")
                         continue
                     except Exception as e:
-                        logger.error(f"Error processing container: {e}")
+                        logger.error(f"Error processing container: {e}", exc_info=True)
                         continue
 
                 # Log a summary of this page's findings
@@ -920,7 +922,7 @@ class LibraryHandlerScroll:
             if is_appium_error(e):
                 raise
 
-            logger.error(f"Error scrolling through library: {e}")
+            logger.error(f"Error scrolling through library: {e}", exc_info=True)
 
             # Send error via callback if available
             if callback:
@@ -985,7 +987,7 @@ class LibraryHandlerScroll:
                 logger.warning("Still in book selection mode after clicking DONE")
                 return False
         except Exception as e:
-            logger.error(f"Error exiting book selection mode: {e}")
+            logger.error(f"Error exiting book selection mode: {e}", exc_info=True)
             return False
 
     def scroll_to_list_top(self):
@@ -1019,9 +1021,9 @@ class LibraryHandlerScroll:
                 return True
 
             except NoSuchElementException:
-                logger.error("Could not find Downloaded or All toggle buttons")
+                logger.error("Could not find Downloaded or All toggle buttons", exc_info=True)
                 return False
 
         except Exception as e:
-            logger.error(f"Error scrolling to top of list: {e}")
+            logger.error(f"Error scrolling to top of list: {e}", exc_info=True)
             return False

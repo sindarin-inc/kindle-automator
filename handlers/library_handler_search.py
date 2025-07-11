@@ -138,7 +138,7 @@ class LibraryHandlerSearch:
             return None
 
         except Exception as e:
-            logger.error(f"Error checking if book is visible on screen: {e}")
+            logger.error(f"Error checking if book is visible on screen: {e}", exc_info=True)
             traceback.print_exc()
             return None
 
@@ -278,7 +278,7 @@ class LibraryHandlerSearch:
             return None, None, None
 
         except Exception as e:
-            logger.error(f"Error in partial book matching: {e}")
+            logger.error(f"Error in partial book matching: {e}", exc_info=True)
             traceback.print_exc()
             return None, None, None
 
@@ -408,7 +408,7 @@ class LibraryHandlerSearch:
             return None
 
         except Exception as e:
-            logger.error(f"Error processing search results: {e}")
+            logger.error(f"Error processing search results: {e}", exc_info=True)
             traceback.print_exc()
             self._exit_search_mode()
             return None
@@ -450,7 +450,7 @@ class LibraryHandlerSearch:
                 return None
 
         except Exception as e:
-            logger.error(f"Error searching for book: {e}")
+            logger.error(f"Error searching for book: {e}", exc_info=True)
             traceback.print_exc()
             self._exit_search_mode()
             return None
@@ -501,7 +501,7 @@ class LibraryHandlerSearch:
             return False
 
         except Exception as e:
-            logger.error(f"Error exiting search mode: {str(e)[:100]}")
+            logger.error(f"Error exiting search mode: {str(e)[:100]}", exc_info=True)
             return False
 
     def _check_store_results_for_book(self, book_title: str):
@@ -537,7 +537,7 @@ class LibraryHandlerSearch:
             return False
 
         except Exception as e:
-            logger.error(f"Error checking store results: {e}")
+            logger.error(f"Error checking store results: {e}", exc_info=True)
             return False
 
     # === Helper Methods Shared by Both Flows ===
@@ -670,7 +670,7 @@ class LibraryHandlerSearch:
             except:
                 continue
 
-        logger.error("Could not find search box")
+        logger.error("Could not find search box", exc_info=True)
         return False
 
     def _get_search_field(self):
@@ -702,7 +702,7 @@ class LibraryHandlerSearch:
 
         search_field = self._get_search_field()
         if not search_field:
-            logger.error("Could not find search input field")
+            logger.error("Could not find search input field", exc_info=True)
             return False
 
         search_field.clear()

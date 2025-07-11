@@ -297,7 +297,7 @@ class AVDProfileManager:
                 return False, f"Failed to prepare seed clone: {message}"
 
         except Exception as e:
-            logger.error(f"Error ensuring seed clone ready: {e}")
+            logger.error(f"Error ensuring seed clone ready: {e}", exc_info=True)
             return False, str(e)
 
     def update_seed_clone_snapshot(self) -> Tuple[bool, str]:
@@ -343,7 +343,7 @@ class AVDProfileManager:
                 return False, "Failed to save seed clone snapshot"
 
         except Exception as e:
-            logger.error(f"Error updating seed clone snapshot: {e}")
+            logger.error(f"Error updating seed clone snapshot: {e}", exc_info=True)
             return False, str(e)
 
     def _detect_host_architecture(self) -> str:
@@ -373,7 +373,7 @@ class AVDProfileManager:
                     self.profiles_index = data
                     return data
             except Exception as e:
-                logger.error(f"Error loading profiles index: {e}")
+                logger.error(f"Error loading profiles index: {e}", exc_info=True)
                 return {}
         else:
             logger.info(f"Profiles index not found at {self.users_file}, creating empty index")
@@ -391,7 +391,7 @@ class AVDProfileManager:
             with open(self.users_file, "w") as f:
                 json.dump(self.profiles_index, f, indent=2)
         except Exception as e:
-            logger.error(f"Error saving profiles index: {e}")
+            logger.error(f"Error saving profiles index: {e}", exc_info=True)
 
     # Removed _load_current_profile method as we're managing multiple users simultaneously
 
@@ -438,7 +438,7 @@ class AVDProfileManager:
             # Reload user preferences from profiles_index to ensure our cache is up-to-date
             self.user_preferences = self._load_user_preferences()
         except Exception as e:
-            logger.error(f"Error saving user preferences: {e}")
+            logger.error(f"Error saving user preferences: {e}", exc_info=True)
 
     def find_running_emulator_for_email(self, email: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
@@ -493,7 +493,7 @@ class AVDProfileManager:
             logger.info(f"Updated {section + '.' if section else ''}field {field} for {email} to {value}")
             return True
         except Exception as e:
-            logger.error(f"Error setting user field {field} for {email}: {e}")
+            logger.error(f"Error setting user field {field} for {email}: {e}", exc_info=True)
             return False
 
     def get_user_field(self, email: str, field: str, default=None, section: str = None):
@@ -525,7 +525,7 @@ class AVDProfileManager:
                 # Get value from top level
                 return self.profiles_index[email].get(field, default)
         except Exception as e:
-            logger.error(f"Error getting user field {field} for {email}: {e}")
+            logger.error(f"Error getting user field {field} for {email}: {e}", exc_info=True)
             return default
 
     def update_auth_state(self, email: str, authenticated: bool) -> bool:
@@ -569,7 +569,7 @@ class AVDProfileManager:
 
             return True
         except Exception as e:
-            logger.error(f"Error updating auth state for {email}: {e}")
+            logger.error(f"Error updating auth state for {email}: {e}", exc_info=True)
             return False
 
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
@@ -743,7 +743,8 @@ class AVDProfileManager:
             if actual_avd != avd_name:
                 logger.error(
                     f"CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
-                    f"not {avd_name}. Returning None to prevent cross-user access."
+                    f"not {avd_name}. Returning None to prevent cross-user access.",
+                    exc_info=True,
                 )
                 return None
 
@@ -787,7 +788,7 @@ class AVDProfileManager:
             logger.info(f"Updated AVD name for {email} to {avd_name}")
             return True
         except Exception as e:
-            logger.error(f"Error updating AVD name for {email}: {e}")
+            logger.error(f"Error updating AVD name for {email}: {e}", exc_info=True)
             return False
 
     def list_profiles(self) -> List[Dict]:
@@ -1066,7 +1067,7 @@ class AVDProfileManager:
         try:
             self._save_profiles_index()
         except Exception as save_e:
-            logger.error(f"Error saving profiles_index: {save_e}")
+            logger.error(f"Error saving profiles_index: {save_e}", exc_info=True)
 
         # Build and log the registration message
         log_message = f"Registered profile for {email} with AVD {avd_name}"
@@ -1248,7 +1249,7 @@ class AVDProfileManager:
 
             return default
         except Exception as e:
-            logger.error(f"Error getting style setting {setting_name}: {e}")
+            logger.error(f"Error getting style setting {setting_name}: {e}", exc_info=True)
             return default
 
     def save_style_setting(self, setting_name: str, setting_value, email: str = None) -> bool:
@@ -1288,7 +1289,7 @@ class AVDProfileManager:
             logger.info(f"Saved library style setting {setting_name}={setting_value} for {email}")
             return True
         except Exception as e:
-            logger.error(f"Error saving style setting {setting_name}: {e}")
+            logger.error(f"Error saving style setting {setting_name}: {e}", exc_info=True)
             return False
 
     def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
@@ -1355,7 +1356,7 @@ class AVDProfileManager:
             logger.info(f"Successfully updated style preferences for {email} to {is_updated}")
             return True
         except Exception as e:
-            logger.error(f"Error updating style preference: {e}")
+            logger.error(f"Error updating style preference: {e}", exc_info=True)
             return False
 
     def switch_profile_and_start_emulator(
@@ -1619,7 +1620,7 @@ class AVDProfileManager:
             return True, f"Successfully recreated: {', '.join(actions)}"
 
         except Exception as e:
-            logger.error(f"Error recreating profile AVD for {email}: {e}")
+            logger.error(f"Error recreating profile AVD for {email}: {e}", exc_info=True)
             return False, f"Failed to recreate profile AVD: {str(e)}"
 
     def clear_emulator_settings(self, email: str) -> bool:
@@ -1661,5 +1662,5 @@ class AVDProfileManager:
             return True
 
         except Exception as e:
-            logger.error(f"Error clearing emulator settings for {email}: {e}")
+            logger.error(f"Error clearing emulator settings for {email}: {e}", exc_info=True)
             return False

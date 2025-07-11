@@ -90,7 +90,7 @@ if SENTRY_DSN:
             message = event["logentry"]["message"]
             if message.startswith("Error on request:"):
                 return None
-        
+
         if "exc_info" in hint:
             exc_type, exc_value, tb = hint["exc_info"]
             from server.utils.appium_error_utils import is_appium_error
@@ -159,7 +159,7 @@ class StateResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error getting state: {e}")
+            logger.error(f"Error getting state: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -335,7 +335,7 @@ class BooksResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error extracting book covers: {e}")
+            logger.error(f"Error extracting book covers: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
 
         return {"books": books}, 200
@@ -548,7 +548,7 @@ class BooksStreamResource(Resource):
 
                         if is_appium_error(e):
                             raise
-                        logger.error(f"Error processing book batch in callback: {e}")
+                        logger.error(f"Error processing book batch in callback: {e}", exc_info=True)
                         logger.error(f"Traceback: {traceback.format_exc()}")
                         # This error is for a single batch; retrieval might continue for others.
                         # The main error_message is for fatal errors in the retrieval thread itself.
@@ -575,7 +575,9 @@ class BooksStreamResource(Resource):
 
                         if is_appium_error(e):
                             raise
-                        logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
+                        logger.error(
+                            f"Error in book retrieval thread (start_book_retrieval_thread_fn, exc_info=True): {e}"
+                        )
                         nonlocal error_message  # To set the shared error_message
                         error_message = str(e)
                         # Ensure the main loop knows about this fatal error and can terminate
@@ -628,7 +630,10 @@ class BooksStreamResource(Resource):
 
                         if is_appium_error(e):
                             raise
-                        logger.error(f"Unexpected error in generate_stream while getting from queue: {e}")
+                        logger.error(
+                            f"Unexpected error in generate_stream while getting from queue: {e}",
+                            exc_info=True,
+                        )
                         yield encode_message({"error": f"Streaming error: {str(e)}"})  # Send error to client
                         break  # Terminate stream on unexpected errors
 
@@ -648,7 +653,7 @@ class BooksStreamResource(Resource):
 
             except Exception as e:
                 error_trace = traceback.format_exc()
-                logger.error(f"Error in generate_stream generator: {e}")
+                logger.error(f"Error in generate_stream generator: {e}", exc_info=True)
                 logger.error(f"Traceback: {error_trace}")
                 # Ensure this also yields an error if the generator itself has an issue
                 yield encode_message({"error": str(e), "trace": error_trace})
@@ -742,7 +747,7 @@ class ScreenshotResource(Resource):
                     except Exception as inner_e:
                         # If this fails too, we'll log the error but continue with response processing
                         # so the error is properly reported to the client
-                        logger.error(f"Standard screenshot also failed: {inner_e}")
+                        logger.error(f"Standard screenshot also failed: {inner_e}", exc_info=True)
                         failed = "Failed to take screenshot - FLAG_SECURE may be set"
             else:
                 # Use standard screenshot for non-auth screens
@@ -752,7 +757,7 @@ class ScreenshotResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error taking screenshot: {e}")
+            logger.error(f"Error taking screenshot: {e}", exc_info=True)
             failed = "Failed to take screenshot"
 
         # Get the image ID for URLs
@@ -810,7 +815,7 @@ class ScreenshotResource(Resource):
                     xml_url = f"/fixtures/dumps/{xml_filename}"
                     response_data["xml_url"] = xml_url
                 except Exception as xml_error:
-                    logger.error(f"Error getting page source XML: {xml_error}")
+                    logger.error(f"Error getting page source XML: {xml_error}", exc_info=True)
                     response_data["xml_error"] = str(xml_error)
 
             # OCR is now handled by process_screenshot_response
@@ -1024,7 +1029,7 @@ class BookOpenResource(Resource):
                 try:
                     os.remove(screenshot_path)
                 except Exception as e:
-                    logger.error(f"Error removing temporary OCR screenshot: {e}")
+                    logger.error(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
 
             return response_data, 200
 
@@ -1059,7 +1064,7 @@ class BookOpenResource(Resource):
                         logger.error("Failed to handle Download Limit dialog")
                         return {"error": "Failed to handle Download Limit dialog"}, 500
             except Exception as e:
-                logger.error(f"Error checking for Download Limit dialog: {e}")
+                logger.error(f"Error checking for Download Limit dialog: {e}", exc_info=True)
 
             # Then, check if we have current_book set
             if current_book:
@@ -1380,7 +1385,7 @@ class AuthResource(Resource):
         # Use the new recreate_profile_avd method with parameters
         success, message = profile_manager.recreate_profile_avd(sindarin_email, recreate_user, recreate_seed)
         if not success:
-            logger.error(f"Failed to recreate profile AVD: {message}")
+            logger.error(f"Failed to recreate profile AVD: {message}", exc_info=True)
             return False, message
 
         return True, f"Successfully recreated: {', '.join(actions)}"
@@ -1458,7 +1463,7 @@ class AuthResource(Resource):
 
         # Ensure the automator exists and driver is healthy and all components are initialized
         if not automator:
-            logger.error("Failed to get automator for request")
+            logger.error("Failed to get automator for request", exc_info=True)
             return {"error": "Failed to initialize automator"}, 500
 
         if not automator.ensure_driver_running():
@@ -1504,7 +1509,7 @@ class AuthResource(Resource):
                             "authorized_kindle_account": True,
                         }, 200
                 except Exception as e:
-                    logger.error(f"Error clicking on LIBRARY tab: {e}")
+                    logger.error(f"Error clicking on LIBRARY tab: {e}", exc_info=True)
                     # Continue with normal authentication process
             else:
                 # We're already in LIBRARY state
@@ -1536,7 +1541,7 @@ class AuthResource(Resource):
                 else:
                     logger.error("Failed to click sign-in button")
             except Exception as e:
-                logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}")
+                logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}", exc_info=True)
                 # Continue with normal authentication process
 
         # Always use manual login via VNC (no automation of Amazon credentials)
@@ -1582,7 +1587,7 @@ class AuthResource(Resource):
                     else:
                         logger.warning(f"Could not find display number for {sindarin_email}")
                 except Exception as e:
-                    logger.error(f"Error restarting VNC server: {e}")
+                    logger.error(f"Error restarting VNC server: {e}", exc_info=True)
 
         # Get the formatted VNC URL with the profile email
         # This will also start the VNC server if it's not running
@@ -1694,7 +1699,7 @@ class FixturesResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error creating fixtures: {e}")
+            logger.error(f"Error creating fixtures: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -1737,7 +1742,7 @@ class CoverImageResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error serving cover image: {e}")
+            logger.error(f"Error serving cover image: {e}", exc_info=True)
             traceback.print_exc()
             return {"error": str(e)}, 500
 
@@ -1840,7 +1845,9 @@ class TextResource(Resource):
                     if not still_visible:
                         logger.info("Successfully dismissed the 'About this book' slideover")
             except Exception as e:
-                logger.error(f"Error while attempting to dismiss 'About this book' slideover: {e}")
+                logger.error(
+                    f"Error while attempting to dismiss 'About this book' slideover: {e}", exc_info=True
+                )
 
             # Save screenshot with unique ID
             screenshot_id = f"text_extract_{int(time.time())}"
@@ -1880,7 +1887,7 @@ class TextResource(Resource):
                     os.remove(screenshot_path)
                     logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
                 if ocr_text:
                     return {"success": True, "progress": progress, "text": ocr_text}, 200
@@ -1892,7 +1899,7 @@ class TextResource(Resource):
                     }, 500
 
             except Exception as e:
-                logger.error(f"Error processing OCR: {e}")
+                logger.error(f"Error processing OCR: {e}", exc_info=True)
                 return {
                     "success": False,
                     "progress": progress,
@@ -1900,7 +1907,7 @@ class TextResource(Resource):
                 }, 500
 
         except Exception as e:
-            logger.error(f"Error extracting text: {e}")
+            logger.error(f"Error extracting text: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -2072,7 +2079,9 @@ class LastReadPageDialogResource(Resource):
                         logger.warning("NO button not found by text")
 
             if not button_clicked:
-                logger.error(f"Failed to click {'YES' if goto_last_read_page else 'NO'} button")
+                logger.error(
+                    f"Failed to click {'YES' if goto_last_read_page else 'NO'} button", exc_info=True
+                )
                 return {"error": f"Failed to click {'YES' if goto_last_read_page else 'NO'} button"}, 500
 
             # Get reading progress
@@ -2109,12 +2118,12 @@ class LastReadPageDialogResource(Resource):
                 try:
                     os.remove(screenshot_path)
                 except Exception as e:
-                    logger.error(f"Error removing temporary OCR screenshot: {e}")
+                    logger.error(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
 
             return response_data, 200
 
         except Exception as e:
-            logger.error(f"Error handling Last read page dialog choice: {e}")
+            logger.error(f"Error handling Last read page dialog choice: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": f"Failed to handle dialog choice: {str(e)}"}, 500
 
@@ -2297,7 +2306,7 @@ def check_and_restart_adb_server():
             )
             logger.info("ADB server restarted")
         except Exception as adb_e:
-            logger.error(f"Error restarting ADB server: {adb_e}")
+            logger.error(f"Error restarting ADB server: {adb_e}", exc_info=True)
 
 
 def run_idle_check():
@@ -2312,7 +2321,7 @@ def run_idle_check():
         else:
             logger.error(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
-        logger.error(f"Error during scheduled idle check: {e}")
+        logger.error(f"Error during scheduled idle check: {e}", exc_info=True)
 
 
 def run_cold_storage_check():
@@ -2330,7 +2339,7 @@ def run_cold_storage_check():
         if storage_info and storage_info.get("total_space_saved", 0) > 0:
             logger.info(f"Total space saved: {storage_info['total_space_saved_human']}")
     except Exception as e:
-        logger.error(f"Error during scheduled cold storage check: {e}")
+        logger.error(f"Error during scheduled cold storage check: {e}", exc_info=True)
 
 
 def cleanup_resources():
@@ -2344,7 +2353,7 @@ def cleanup_resources():
             logger.info("Shutting down APScheduler...")
             app.scheduler.shutdown(wait=False)
         except Exception as e:
-            logger.error(f"Error shutting down scheduler: {e}")
+            logger.error(f"Error shutting down scheduler: {e}", exc_info=True)
 
     # Clean up any active WebSocket proxies
     try:
@@ -2354,7 +2363,7 @@ def cleanup_resources():
         ws_manager.cleanup()
         logger.info("Successfully cleaned up WebSocket proxies")
     except Exception as e:
-        logger.error(f"Error cleaning up WebSocket proxies: {e}")
+        logger.error(f"Error cleaning up WebSocket proxies: {e}", exc_info=True)
 
     # Mark all running emulators for restart and shutdown gracefully with preserved state
     from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
@@ -2375,7 +2384,7 @@ def cleanup_resources():
                 vnc_manager.mark_running_for_deployment(email)
                 running_emails.append(email)
             except Exception as e:
-                logger.error(f"✗ Error marking {email} for restart: {e}")
+                logger.error(f"✗ Error marking {email} for restart: {e}", exc_info=True)
 
     logger.info(f"Found {len(running_emails)} running emulators to preserve across restart")
 
@@ -2387,7 +2396,7 @@ def cleanup_resources():
             )
             shutdown_manager.shutdown_emulator(email, preserve_reading_state=True, mark_for_restart=True)
         except KeyError as e:
-            logger.error(f"✗ Error shutting down {email}: {e}")
+            logger.error(f"✗ Error shutting down {email}: {e}", exc_info=True)
 
     # Stop Appium servers for all running emulators
     from server.utils.appium_driver import AppiumDriver
@@ -2399,14 +2408,14 @@ def cleanup_resources():
             logger.info(f"Stopping Appium server for {email}")
             appium_driver.stop_appium_for_profile(email)
         except Exception as e:
-            logger.error(f"Error stopping Appium for {email} during shutdown: {e}")
+            logger.error(f"Error stopping Appium for {email} during shutdown: {e}", exc_info=True)
 
     # Kill any remaining Appium processes (legacy cleanup)
     try:
         logger.info("Cleaning up any remaining Appium processes")
         server.kill_existing_process("appium")
     except Exception as e:
-        logger.error(f"Error killing remaining Appium processes: {e}")
+        logger.error(f"Error killing remaining Appium processes: {e}", exc_info=True)
 
     # Clean up ADB port forwards to prevent port conflicts on restart
     logger.info("Cleaning up ADB port forwards")

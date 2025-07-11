@@ -37,7 +37,7 @@ def take_adb_screenshot(device_id: str, output_path: str) -> Optional[str]:
         else:
             logger.warning("Fast ADB screenshot failed or produced empty file")
     except Exception as e:
-        logger.error(f"Error with fast ADB screenshot: {e}")
+        logger.error(f"Error with fast ADB screenshot: {e}", exc_info=True)
 
     return None
 
@@ -233,12 +233,13 @@ def take_secure_screenshot(
                                     return output_path
                                 else:
                                     logger.error(
-                                        f"Output file too small: {os.path.getsize(output_path)} bytes"
+                                        f"Output file too small: {os.path.getsize(output_path)} bytes",
+                                        exc_info=True,
                                     )
                             else:
                                 logger.error(f"Output file was not created: {output_path}")
                         except Exception as e:
-                            logger.error(f"ffmpeg frame extraction failed: {e}")
+                            logger.error(f"ffmpeg frame extraction failed: {e}", exc_info=True)
                     else:
                         logger.error(f"Video file too small: {os.path.getsize(video_path)} bytes")
                 else:
@@ -248,7 +249,7 @@ def take_secure_screenshot(
                 if os.path.exists(video_path):
                     os.unlink(video_path)
         except Exception as e:
-            logger.error(f"scrcpy video method failed: {e}")
+            logger.error(f"scrcpy video method failed: {e}", exc_info=True)
 
         # Method 2: Alternative scrcpy parameters
         try:
@@ -315,13 +316,13 @@ def take_secure_screenshot(
                         os.unlink(alt_video_path)
                         return output_path
                 except Exception as inner_e:
-                    logger.error(f"Alternative ffmpeg extraction failed: {inner_e}")
+                    logger.error(f"Alternative ffmpeg extraction failed: {inner_e}", exc_info=True)
 
             # Clean up temp file if it exists
             if os.path.exists(alt_video_path):
                 os.unlink(alt_video_path)
         except Exception as e:
-            logger.error(f"Alternative scrcpy method failed: {e}")
+            logger.error(f"Alternative scrcpy method failed: {e}", exc_info=True)
 
         # Method 3: Direct ADB exec-out method (fallback, likely won't work with FLAG_SECURE)
         try:
@@ -333,7 +334,7 @@ def take_secure_screenshot(
                 logger.info(f"Screenshot saved to {output_path} using adb exec-out")
                 return output_path
         except Exception as e:
-            logger.error(f"Direct ADB method failed: {e}")
+            logger.error(f"Direct ADB method failed: {e}", exc_info=True)
 
         # Method 4: ADB temp file method (fallback, likely won't work with FLAG_SECURE)
         try:
@@ -356,11 +357,11 @@ def take_secure_screenshot(
                 logger.info(f"Screenshot saved to {output_path} using adb temp file")
                 return output_path
         except Exception as e:
-            logger.error(f"ADB temp file method failed: {e}")
+            logger.error(f"ADB temp file method failed: {e}", exc_info=True)
 
         logger.error("All screenshot methods failed")
         return None
 
     except Exception as e:
-        logger.error(f"Error taking secure screenshot: {e}")
+        logger.error(f"Error taking secure screenshot: {e}", exc_info=True)
         return None

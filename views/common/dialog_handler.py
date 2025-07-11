@@ -99,7 +99,7 @@ class DialogHandler:
             # Dialog not found
             return False
         except Exception as e:
-            logger.error(f"Error in check_for_invalid_item_dialog: {e}")
+            logger.error(f"Error in check_for_invalid_item_dialog: {e}", exc_info=True)
             return False
 
     def check_for_app_not_responding_dialog(self):
@@ -126,7 +126,7 @@ class DialogHandler:
                             logger.info("Clicked 'Wait' button on App Not Responding dialog")
                             return True
                         except Exception as btn_error:
-                            logger.error(f"Failed to click 'Wait' button: {btn_error}")
+                            logger.error(f"Failed to click 'Wait' button: {btn_error}", exc_info=True)
 
                         return True  # Dialog was detected, even if handling failed
                 except NoSuchElementException:
@@ -136,7 +136,7 @@ class DialogHandler:
 
             return False
         except Exception as e:
-            logger.error(f"Error in check_for_app_not_responding_dialog: {e}")
+            logger.error(f"Error in check_for_app_not_responding_dialog: {e}", exc_info=True)
             return False
 
     def check_for_read_and_listen_dialog(self):
@@ -185,7 +185,7 @@ class DialogHandler:
             # Dialog not found
             return False
         except Exception as e:
-            logger.error(f"Error in check_for_read_and_listen_dialog: {e}")
+            logger.error(f"Error in check_for_read_and_listen_dialog: {e}", exc_info=True)
             return False
 
     def check_for_viewing_full_screen_dialog(self):
@@ -234,7 +234,7 @@ class DialogHandler:
             # Dialog not found
             return False
         except Exception as e:
-            logger.error(f"Error in check_for_viewing_full_screen_dialog: {e}")
+            logger.error(f"Error in check_for_viewing_full_screen_dialog: {e}", exc_info=True)
             return False
 
     def check_all_dialogs(self, book_title=None, context=""):

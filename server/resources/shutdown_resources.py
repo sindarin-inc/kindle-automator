@@ -93,7 +93,7 @@ class ShutdownResource(Resource):
             }, 200
 
         except Exception as e:
-            logger.error(f"Error during shutdown for {sindarin_email}: {e}")
+            logger.error(f"Error during shutdown for {sindarin_email}: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),

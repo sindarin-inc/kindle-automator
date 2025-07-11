@@ -76,13 +76,15 @@ def ensure_covers_directory(sindarin_email: str) -> str:
     try:
         covers_dir.mkdir(exist_ok=True)
     except Exception as mkdir_err:
-        logger.error(f"Error creating main covers directory with Path.mkdir: {mkdir_err}")
+        logger.error(f"Error creating main covers directory with Path.mkdir: {mkdir_err}", exc_info=True)
         # Try os.makedirs as a fallback
         try:
             os.makedirs(str(covers_dir), exist_ok=True)
             logger.info(f"Created main covers directory using os.makedirs: {covers_dir}")
         except Exception as makedirs_err:
-            logger.error(f"Error creating main covers directory with os.makedirs: {makedirs_err}")
+            logger.error(
+                f"Error creating main covers directory with os.makedirs: {makedirs_err}", exc_info=True
+            )
             # Critical error, return empty string to indicate failure
             return ""
 
@@ -94,13 +96,15 @@ def ensure_covers_directory(sindarin_email: str) -> str:
     try:
         user_covers_dir.mkdir(exist_ok=True)
     except Exception as user_mkdir_err:
-        logger.error(f"Error creating user covers directory with Path.mkdir: {user_mkdir_err}")
+        logger.error(f"Error creating user covers directory with Path.mkdir: {user_mkdir_err}", exc_info=True)
         # Try os.makedirs as a fallback
         try:
             os.makedirs(str(user_covers_dir), exist_ok=True)
             logger.info(f"Created user covers directory using os.makedirs: {user_covers_dir}")
         except Exception as user_makedirs_err:
-            logger.error(f"Error creating user covers directory with os.makedirs: {user_makedirs_err}")
+            logger.error(
+                f"Error creating user covers directory with os.makedirs: {user_makedirs_err}", exc_info=True
+            )
             # Critical error, return empty string to indicate failure
             return ""
 
@@ -120,7 +124,7 @@ def ensure_covers_directory(sindarin_email: str) -> str:
             os.chmod(str(user_covers_dir), 0o755)
             logger.info(f"Fixed permissions on user covers directory: {user_covers_dir}")
         except Exception as chmod_err:
-            logger.error(f"Failed to fix permissions: {chmod_err}")
+            logger.error(f"Failed to fix permissions: {chmod_err}", exc_info=True)
             return ""
 
     return str(user_covers_dir)
@@ -145,7 +149,7 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
         try:
             # If book_element is None, we can't extract a cover
             if book_element is None:
-                logger.error("Cannot extract cover: book_element is None")
+                logger.error("Cannot extract cover: book_element is None", exc_info=True)
                 return None
 
             # Try to find the cover image element
@@ -163,7 +167,8 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                         continue
                     else:
                         logger.error(
-                            f"Element is stale during attribute check after {max_retries+1} attempts"
+                            f"Element is stale during attribute check after {max_retries+1} attempts",
+                            exc_info=True,
                         )
                         return None
 
@@ -187,7 +192,8 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                                 continue
                             else:
                                 logger.error(
-                                    f"Element is stale during find_element after {max_retries+1} attempts"
+                                    f"Element is stale during find_element after {max_retries+1} attempts",
+                                    exc_info=True,
                                 )
                                 return None
 
@@ -209,14 +215,15 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                                 continue
                             else:
                                 logger.error(
-                                    f"Element is stale during fallback find_element after {max_retries+1} attempts"
+                                    f"Element is stale during fallback find_element after {max_retries+1} attempts",
+                                    exc_info=True,
                                 )
                                 return None
 
                         logger.info("Found cover image with ID 'lib_book_row_image'")
 
             except NoSuchElementException:
-                logger.error("Could not find cover image element")
+                logger.error("Could not find cover image element", exc_info=True)
                 return None
 
             # Get the location and size of the cover element
@@ -232,7 +239,9 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                     time.sleep(0.5)
                     continue
                 else:
-                    logger.error(f"Element is stale when getting rect after {max_retries+1} attempts")
+                    logger.error(
+                        f"Element is stale when getting rect after {max_retries+1} attempts", exc_info=True
+                    )
                     return None
 
             # Extract the coordinates
@@ -309,7 +318,7 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
                         "coordinates": (left, top, right, bottom),
                     }
                 except Exception as crop_err:
-                    logger.error(f"Error cropping image: {crop_err}")
+                    logger.error(f"Error cropping image: {crop_err}", exc_info=True)
                     return None
 
             # If we reached this point, the current retry attempt failed
@@ -317,7 +326,7 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
             continue
 
         except Exception as e:
-            logger.error(f"Error extracting book cover: {e}")
+            logger.error(f"Error extracting book cover: {e}", exc_info=True)
             if isinstance(e, StaleElementReferenceException) and retries < max_retries:
                 logger.warning(f"Stale element exception (attempt {retries+1}/{max_retries+1}), retrying...")
                 retries += 1
@@ -362,7 +371,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
                 os.makedirs(covers_dir, exist_ok=True)
                 logger.info(f"Created covers directory: {covers_dir}")
             except Exception as dir_err:
-                logger.error(f"Failed to create covers directory: {dir_err}")
+                logger.error(f"Failed to create covers directory: {dir_err}", exc_info=True)
                 return False, ""
 
         # Check if directory is writable
@@ -392,7 +401,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
         try:
             cover_img.save(image_path, format="PNG")
         except Exception as save_err:
-            logger.error(f"Error saving image with PIL: {save_err}")
+            logger.error(f"Error saving image with PIL: {save_err}", exc_info=True)
 
             # Try an alternative approach
             try:
@@ -401,7 +410,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
                 cover_img_rgb.save(image_path, format="PNG")
                 logger.info("Alternative save method successful")
             except Exception as alt_save_err:
-                logger.error(f"Alternative save method also failed: {alt_save_err}")
+                logger.error(f"Alternative save method also failed: {alt_save_err}", exc_info=True)
                 return False, ""
 
         # Verify the file was created
@@ -419,7 +428,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
             return False, ""
 
     except Exception as e:
-        logger.error(f"Error saving book cover: {e}")
+        logger.error(f"Error saving book cover: {e}", exc_info=True)
         return False, ""
 
 
@@ -592,7 +601,9 @@ def extract_book_covers_from_screen(
                     }
                 else:
                     cover_results[title] = {"success": False, "reason": "No valid cover data"}
-                    logger.error(f"Failed to extract cover for '{title}': no valid cover data returned")
+                    logger.error(
+                        f"Failed to extract cover for '{title}': no valid cover data returned", exc_info=True
+                    )
             except Exception as e:
                 # Import and check if this is an Appium error
                 from server.utils.appium_error_utils import is_appium_error
@@ -600,7 +611,7 @@ def extract_book_covers_from_screen(
                 if is_appium_error(e):
                     raise
                 cover_results[title] = {"success": False, "reason": str(e)}
-                logger.error(f"Error extracting cover for book '{title}': {e}")
+                logger.error(f"Error extracting cover for book '{title}': {e}", exc_info=True)
 
         return cover_results
 
@@ -610,7 +621,7 @@ def extract_book_covers_from_screen(
 
         if is_appium_error(e):
             raise
-        logger.error(f"Error finding book elements for cover extraction: {e}")
+        logger.error(f"Error finding book elements for cover extraction: {e}", exc_info=True)
         return {}
 
 

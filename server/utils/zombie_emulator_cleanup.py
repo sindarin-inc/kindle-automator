@@ -29,7 +29,7 @@ class ZombieEmulatorCleaner:
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
             if check:
-                logger.error(f"Command failed: {cmd}, error: {e.stderr}")
+                logger.error(f"Command failed: {cmd}, error: {e.stderr}", exc_info=True)
                 raise
             return e.stdout.strip() if e.stdout else ""
 
@@ -119,7 +119,7 @@ class ZombieEmulatorCleaner:
 
             return True
         except Exception as e:
-            logger.error(f"Error killing process {pid}: {e}")
+            logger.error(f"Error killing process {pid}: {e}", exc_info=True)
             return False
 
     def is_avd_zombie(self, avd_name: str) -> bool:

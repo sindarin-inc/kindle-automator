@@ -238,7 +238,7 @@ class EmulatorBatchConfigResource(Resource):
                         successful_count += 1  # Still count as success if we got the snapshot
 
                 except Exception as e:
-                    logger.error(f"{RED}Error processing {email}: {e}{RESET}")
+                    logger.error(f"{RED}Error processing {email}: {e}{RESET}", exc_info=True)
                     result["status"] = "failed"
                     result["error"] = str(e)
                     failed_count += 1
@@ -270,7 +270,7 @@ class EmulatorBatchConfigResource(Resource):
             )
 
         except Exception as e:
-            logger.error(f"{RED}Error in batch configuration: {e}{RESET}")
+            logger.error(f"{RED}Error in batch configuration: {e}{RESET}", exc_info=True)
             return jsonify({"status": "error", "error": str(e)}), 500
 
     def _is_emulator_running(self, emulator_id):
@@ -301,5 +301,5 @@ class EmulatorBatchConfigResource(Resource):
             )
             return emulator_id in result.stdout
         except Exception as e:
-            logger.error(f"Error checking if emulator is running: {e}")
+            logger.error(f"Error checking if emulator is running: {e}", exc_info=True)
             return False

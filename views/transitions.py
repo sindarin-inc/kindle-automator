@@ -223,7 +223,7 @@ class StateTransitions:
                 time.sleep(1)  # Give time for transition
                 return True
         except Exception as e:
-            logger.error(f"Error clicking back button: {e}")
+            logger.error(f"Error clicking back button: {e}", exc_info=True)
 
         # If back button wasn't found or clicked, try a different approach
         return self.view_inspector.ensure_app_foreground()
@@ -275,14 +275,14 @@ class StateTransitions:
                     return False
 
         except Exception as e:
-            logger.error(f"Error handling app not responding: {e}")
+            logger.error(f"Error handling app not responding: {e}", exc_info=True)
             # Try restarting the app anyway as a last resort
             try:
                 if self.view_inspector.ensure_app_foreground():
                     logger.info("Recovered from error by bringing app to foreground")
                     return True
             except Exception as e2:
-                logger.error(f"Failed to recover: {e2}")
+                logger.error(f"Failed to recover: {e2}", exc_info=True)
             return False
 
     def handle_more_settings(self):
@@ -304,7 +304,7 @@ class StateTransitions:
             filepath = store_page_source(self.driver.page_source, "two_factor_auth")
             logger.info(f"Stored Two-Step Verification page source at: {filepath}")
         except Exception as e:
-            logger.error(f"Error storing 2FA page source: {e}")
+            logger.error(f"Error storing 2FA page source: {e}", exc_info=True)
         # Return False to indicate we can't proceed automatically
         return False
 
@@ -316,7 +316,7 @@ class StateTransitions:
             filepath = store_page_source(self.driver.page_source, "puzzle_auth")
             logger.info(f"Stored puzzle authentication page source at: {filepath}")
         except Exception as e:
-            logger.error(f"Error storing puzzle page source: {e}")
+            logger.error(f"Error storing puzzle page source: {e}", exc_info=True)
         # Return False to indicate we can't proceed automatically
         return False
 

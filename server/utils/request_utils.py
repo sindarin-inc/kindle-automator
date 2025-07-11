@@ -305,7 +305,7 @@ def get_formatted_vnc_url(
                     logger.info(f"WebSocket URL for {sindarin_email}: {ws_url}")
                     return ws_url
                 else:
-                    logger.error(f"Failed to start WebSocket proxy for {sindarin_email}")
+                    logger.error(f"Failed to start WebSocket proxy for {sindarin_email}", exc_info=True)
                     # Fall back to regular VNC URL
 
             # Return the regular VNC URL
@@ -352,5 +352,5 @@ def get_formatted_vnc_url(
             return None
 
     except Exception as e:
-        logger.error(f"Error getting VNC port for {sindarin_email}: {e}")
+        logger.error(f"Error getting VNC port for {sindarin_email}: {e}", exc_info=True)
         return None

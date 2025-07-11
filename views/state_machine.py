@@ -121,7 +121,8 @@ class KindleStateMachine:
                     logger.error(
                         f"Failed to recover from UNKNOWN state after {MAX_UNKNOWN_RETRIES} attempts. "
                         "Please check screenshots/unknown_view.png and fixtures/dumps/unknown_view.xml "
-                        "to determine why the view cannot be recognized."
+                        "to determine why the view cannot be recognized.",
+                        exc_info=True,
                     )
                     return self.current_state
 
@@ -215,7 +216,7 @@ class KindleStateMachine:
 
             handler = self.transitions.get_handler_for_state(self.current_state)
             if not handler:
-                logger.error(f"No handler found for state {self.current_state}")
+                logger.error(f"No handler found for state {self.current_state}", exc_info=True)
                 return self.current_state
 
             # Handle current state
@@ -289,9 +290,9 @@ class KindleStateMachine:
                 self.view_inspector.driver.save_screenshot(screenshot_path)
                 logger.info(f"Saved failed transition screenshot to {screenshot_path}")
             except Exception as e:
-                logger.error(f"Failed to save transition error screenshot: {e}")
+                logger.error(f"Failed to save transition error screenshot: {e}", exc_info=True)
         except Exception as e:
-            logger.error(f"Failed to get page source after failed transitions: {e}")
+            logger.error(f"Failed to get page source after failed transitions: {e}", exc_info=True)
 
         return self.current_state
 
@@ -309,7 +310,7 @@ class KindleStateMachine:
             self.view_inspector.driver.save_screenshot(screenshot_path)
             logger.info(f"Saved failed transition screenshot to {screenshot_path}")
         except Exception as e:
-            logger.error(f"Failed to save transition error data: {e}")
+            logger.error(f"Failed to save transition error data: {e}", exc_info=True)
 
     def handle_state(self) -> bool:
         """Handle the current state using the appropriate state handler.
@@ -426,7 +427,7 @@ class KindleStateMachine:
             return False
 
         except Exception as e:
-            logger.error(f"Error in is_reading_view check: {e}")
+            logger.error(f"Error in is_reading_view check: {e}", exc_info=True)
             return False
 
     def update_current_state(self) -> AppState:
@@ -643,7 +644,7 @@ class KindleStateMachine:
                                 return self.current_state
 
                 except Exception as e:
-                    logger.error(f"Error checking current activity: {e}")
+                    logger.error(f"Error checking current activity: {e}", exc_info=True)
 
                 # Store page source for debugging if still unknown
                 source = self.driver.page_source
@@ -686,7 +687,7 @@ class KindleStateMachine:
                         except:
                             continue
                 except Exception as e:
-                    logger.error(f"Error checking for reading state: {e}")
+                    logger.error(f"Error checking for reading state: {e}", exc_info=True)
 
             return self.current_state
 
@@ -695,7 +696,7 @@ class KindleStateMachine:
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error updating current state: {e}")
+            logger.error(f"Error updating current state: {e}", exc_info=True)
             self.current_state = AppState.UNKNOWN
             return self.current_state
 
@@ -786,7 +787,7 @@ class KindleStateMachine:
                 )
 
         except Exception as e:
-            logger.error(f"Error verifying auth from search results: {e}")
+            logger.error(f"Error verifying auth from search results: {e}", exc_info=True)
 
     def handle_auth_state_detection(self, current_state, sindarin_email=None):
         """

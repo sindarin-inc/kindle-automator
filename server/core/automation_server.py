@@ -202,7 +202,7 @@ class AutomationServer:
             email, force_new_emulator=force_new_emulator
         )
         if not success:
-            logger.error(f"Failed to switch profile: {message}")
+            logger.error(f"Failed to switch profile: {message}", exc_info=True)
             return False, message
 
         # Clear current book since we're switching profiles
@@ -266,7 +266,7 @@ class AutomationServer:
                 f.write(str(pid))
             os.chmod(pid_file, 0o644)
         except Exception as e:
-            logger.error(f"Error saving PID file: {e}")
+            logger.error(f"Error saving PID file: {e}", exc_info=True)
 
     def kill_existing_process(self, name: str):
         """Kill existing Flask process if running on port 4098."""
@@ -295,7 +295,7 @@ class AutomationServer:
             except subprocess.CalledProcessError:
                 logger.info("No existing flask process found")
             except Exception as e:
-                logger.error(f"Error killing flask process: {e}")
+                logger.error(f"Error killing flask process: {e}", exc_info=True)
 
     def update_activity(self, email):
         """Update the last activity timestamp for an email.
@@ -338,5 +338,5 @@ class AutomationServer:
             return success
 
         except Exception as e:
-            logger.error(f"Error preparing seed clone AVD: {e}")
+            logger.error(f"Error preparing seed clone AVD: {e}", exc_info=True)
             return False

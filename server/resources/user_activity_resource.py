@@ -68,7 +68,7 @@ class UserActivityResource(Resource):
                 return response
 
         except Exception as e:
-            logger.error(f"Error generating user activity timeline: {str(e)}")
+            logger.error(f"Error generating user activity timeline: {str(e)}", exc_info=True)
             if request.args.get("json", "0") == "1":
                 return {"success": False, "error": str(e)}, 500
             else:
@@ -137,7 +137,7 @@ class UserActivityResource(Resource):
             with open(log_file, "r") as f:
                 return self._parse_log_lines(f, user_email)
         except Exception as e:
-            logger.error(f"Error parsing log file {log_file}: {str(e)}")
+            logger.error(f"Error parsing log file {log_file}: {str(e)}", exc_info=True)
             return []
 
     def _parse_log_lines(self, file_obj, user_email):
@@ -325,7 +325,7 @@ class UserActivityResource(Resource):
                 # Use the same parsing logic by passing the file object
                 return self._parse_log_lines(f, user_email)
         except Exception as e:
-            logger.error(f"Error parsing compressed log file {log_file}: {str(e)}")
+            logger.error(f"Error parsing compressed log file {log_file}: {str(e)}", exc_info=True)
             return []
 
     def _format_timeline(self, activities, user_email):

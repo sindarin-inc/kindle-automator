@@ -222,7 +222,7 @@ class EmulatorShutdownManager:
             return False
         except Exception as exc:
             # If UiAutomator crashed, instruct caller to skip UI‑dependent steps.
-            logger.error("UiAutomator2 crashed for %s: %s", email, exc)
+            logger.error("UiAutomator2 crashed for %s: %s", email, exc, exc_info=True)
             return False
 
         if not preserve_reading_state:
@@ -271,7 +271,7 @@ class EmulatorShutdownManager:
                     )
                     summary["placemark_sync_success"] = False
         except Exception as exc:
-            logger.error(f"Error while parking emulator {email} into Library: {exc}")
+            logger.error(f"Error while parking emulator {email} into Library: {exc}", exc_info=True)
             logger.error(
                 f"CRITICAL: Shutdown navigation failed for {email} - placemarks may not be synced!",
                 exc_info=True,
@@ -311,7 +311,7 @@ class EmulatorShutdownManager:
                 store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
                 logger.error("Diagnostic page source saved for sync failure")
             except Exception as e:
-                logger.error(f"Failed to save diagnostic information: {e}")
+                logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
 
         # Always try to navigate back to library
         if not lh.navigate_from_more_to_library():
@@ -354,7 +354,7 @@ class EmulatorShutdownManager:
         try:
             emulator_id, display_num = launcher.get_running_emulator(email)
         except Exception as exc:
-            logger.error("Error getting running emulator info for %s: %s", email, exc)
+            logger.error("Error getting running emulator info for %s: %s", email, exc, exc_info=True)
         finally:
             stopped = launcher.stop_emulator(email)
             summary["emulator_stopped"] = stopped
@@ -523,7 +523,7 @@ class EmulatorShutdownManager:
                         if ws_mgr.is_proxy_running(email):
                             ws_mgr.stop_proxy(email)
         except Exception as exc:
-            logger.error("Error in _cleanup_emulator_ports: %s", exc)
+            logger.error("Error in _cleanup_emulator_ports: %s", exc, exc_info=True)
 
     def _kill_process_on_port(self, port: int) -> None:  # noqa: ANN001, D401
         """Kill any process listening on *port* (signature unchanged)."""

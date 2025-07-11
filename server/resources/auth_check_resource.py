@@ -77,5 +77,5 @@ class AuthCheckResource(Resource):
                 }, 200
 
         except Exception as e:
-            logger.error(f"Error checking authentication status: {e}")
+            logger.error(f"Error checking authentication status: {e}", exc_info=True)
             return {"error": "Failed to check authentication status", "message": str(e)}, 500

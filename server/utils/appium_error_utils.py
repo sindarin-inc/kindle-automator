@@ -67,5 +67,5 @@ def handle_driver_operation(operation_name, func, *args, **kwargs):
             raise
         else:
             # Handle non-Appium errors normally
-            logger.error(f"Non-Appium error in {operation_name}: {str(e)}")
+            logger.error(f"Non-Appium error in {operation_name}: {str(e)}", exc_info=True)
             raise

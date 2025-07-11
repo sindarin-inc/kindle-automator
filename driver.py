@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class Driver:
     def __init__(self):
         if hasattr(self, "_initialized_attributes"):
-            logger.error(f"Driver already initialized, instance: {self}")
+            logger.error(f"Driver already initialized, instance: {self}", exc_info=True)
             return
         self.driver = None
         self.device_id = None
@@ -65,7 +65,8 @@ class Driver:
                         logger.warning(f"Could not verify specific device {specific_device_id}: {e}")
                         # Failed to verify specific device - return None instead of falling back to any device
                         logger.error(
-                            f"Requested specific device {specific_device_id} could not be verified for email={email}"
+                            f"Requested specific device {specific_device_id} could not be verified for email={email}",
+                            exc_info=True,
                         )
                         return None
                 else:
@@ -119,7 +120,7 @@ class Driver:
                     return None
 
                 except Exception as e:
-                    logger.error(f"macOS: Error finding available emulator: {e}")
+                    logger.error(f"macOS: Error finding available emulator: {e}", exc_info=True)
                     return None
             else:
                 # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
@@ -130,7 +131,7 @@ class Driver:
                 )
                 return None
         except Exception as e:
-            logger.error(f"Error getting emulator device ID: {e}")
+            logger.error(f"Error getting emulator device ID: {e}", exc_info=True)
             return None
 
     def _disable_hw_overlays(self) -> bool:
@@ -176,10 +177,10 @@ class Driver:
             self._update_profile_setting("hw_overlays_disabled", True)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to handle HW overlays: {e.stderr}")
+            logger.error(f"Failed to handle HW overlays: {e.stderr}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Error handling HW overlays: {e}")
+            logger.error(f"Error handling HW overlays: {e}", exc_info=True)
             return False
 
     def _update_profile_setting(self, setting_name: str, value: bool) -> None:
@@ -208,7 +209,7 @@ class Driver:
             else:
                 logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
         except Exception as e:
-            logger.error(f"Error updating profile setting {setting_name}: {e}")
+            logger.error(f"Error updating profile setting {setting_name}: {e}", exc_info=True)
             # Continue execution even if we can't update the profile
 
     def _clean_old_version_info(self, email: str) -> None:
@@ -236,7 +237,7 @@ class Driver:
                 if cleaned:
                     self.automator.profile_manager._save_profiles_index()
         except Exception as e:
-            logger.error(f"Error cleaning old version info for {email}: {e}")
+            logger.error(f"Error cleaning old version info for {email}: {e}", exc_info=True)
 
     def _update_kindle_version_in_profile(self, version_name: str, version_code: int) -> None:
         """Update Kindle version information in the current profile.
@@ -335,10 +336,10 @@ class Driver:
             self._update_profile_setting("animations_disabled", True)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to disable animations: {e.stderr}")
+            logger.error(f"Failed to disable animations: {e.stderr}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Error disabling animations: {e}")
+            logger.error(f"Error disabling animations: {e}", exc_info=True)
             return False
 
     def _disable_sleep(self) -> bool:
@@ -419,10 +420,10 @@ class Driver:
             self._update_profile_setting("sleep_disabled", True)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to disable sleep: {e.stderr}")
+            logger.error(f"Failed to disable sleep: {e.stderr}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Error disabling sleep: {e}")
+            logger.error(f"Error disabling sleep: {e}", exc_info=True)
             return False
 
     def _disable_status_bar(self) -> bool:
@@ -466,10 +467,10 @@ class Driver:
             self._update_profile_setting("status_bar_disabled", True)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to hide status bar: {e.stderr}")
+            logger.error(f"Failed to hide status bar: {e.stderr}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Error hiding status bar: {e}")
+            logger.error(f"Error hiding status bar: {e}", exc_info=True)
             return False
 
     def _disable_auto_updates(self) -> bool:
@@ -549,10 +550,10 @@ class Driver:
             self._update_profile_setting("auto_updates_disabled", True)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to disable auto updates: {e.stderr}")
+            logger.error(f"Failed to disable auto updates: {e.stderr}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Error disabling auto updates: {e}")
+            logger.error(f"Error disabling auto updates: {e}", exc_info=True)
             return False
 
     def _cleanup_old_sessions(self):
@@ -614,7 +615,7 @@ class Driver:
 
             return True
         except Exception as e:
-            logger.error(f"Error cleaning up old sessions for email={email}: {e}")
+            logger.error(f"Error cleaning up old sessions for email={email}: {e}", exc_info=True)
             return False
 
     def _is_kindle_installed(self) -> bool:
@@ -628,7 +629,7 @@ class Driver:
             )
             return "com.amazon.kindle" in result.stdout
         except Exception as e:
-            logger.error(f"Error checking Kindle installation: {e}")
+            logger.error(f"Error checking Kindle installation: {e}", exc_info=True)
             return False
 
     def _get_installed_kindle_version(self) -> tuple:
@@ -657,11 +658,11 @@ class Driver:
                     try:
                         version_code = int(version_code_str)
                     except ValueError:
-                        logger.error(f"Could not parse version code: {version_code_str}")
+                        logger.error(f"Could not parse version code: {version_code_str}", exc_info=True)
 
             return (version_name, version_code)
         except Exception as e:
-            logger.error(f"Error getting installed Kindle version: {e}")
+            logger.error(f"Error getting installed Kindle version: {e}", exc_info=True)
             return (None, None)
 
     def _get_apk_version(self, apk_path) -> tuple:
@@ -735,7 +736,7 @@ class Driver:
 
             return (version_name_match, version_code)
         except Exception as e:
-            logger.error(f"Error getting APK version: {e}")
+            logger.error(f"Error getting APK version: {e}", exc_info=True)
             return (None, None)
 
     def _find_newest_kindle_apk(self) -> str:
@@ -942,7 +943,8 @@ class Driver:
                         # For other errors or last attempt, log full details
                         if attempt == max_retries - 1:
                             logger.error(
-                                f"Final install attempt failed. Full error:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+                                f"Final install attempt failed. Full error:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}",
+                                exc_info=True,
                             )
 
                         # Fail immediately for non-connectivity errors
@@ -971,7 +973,7 @@ class Driver:
 
             return True
         except Exception as e:
-            logger.error(f"Error installing Kindle: {e}")
+            logger.error(f"Error installing Kindle: {e}", exc_info=True)
             return False
 
     def _get_kindle_launch_activity(self) -> Optional[str]:
@@ -999,7 +1001,7 @@ class Driver:
             logger.error("Could not find Kindle launch activity")
             return None
         except Exception as e:
-            logger.error(f"Error getting Kindle launch activity: {e}")
+            logger.error(f"Error getting Kindle launch activity: {e}", exc_info=True)
             return None
 
     def check_connection(self):
@@ -1032,7 +1034,8 @@ class Driver:
             if not vnc_instance:
                 logger.error(
                     f"No VNC instance found for {email}. "
-                    f"Cannot initialize driver without a running emulator."
+                    f"Cannot initialize driver without a running emulator.",
+                    exc_info=True,
                 )
                 return False
             logger.info(f"Found VNC instance for {email}: {vnc_instance}")
@@ -1057,7 +1060,7 @@ class Driver:
         self.device_id = self._get_emulator_device_id(target_device_id)
 
         if not self.device_id:
-            logger.error("Failed to get device ID")
+            logger.error("Failed to get device ID", exc_info=True)
             return False
 
         # Update profile with device ID
@@ -1184,7 +1187,9 @@ class Driver:
                     time.sleep(2)  # Wait before retry
 
             if not appium_started:
-                logger.error(f"Failed to start Appium server for {email} after {max_attempts} attempts")
+                logger.error(
+                    f"Failed to start Appium server for {email} after {max_attempts} attempts", exc_info=True
+                )
                 return False
         elif self.driver:
             logger.info(f"Appium already running for {email} on port {appium_info['port']}")
@@ -1289,7 +1294,7 @@ class Driver:
                     except Exception as e:
                         logger.warning(f"Error cleaning port forwards: {e}")
                 else:
-                    logger.error(f"No allocated ports found for {email}")
+                    logger.error(f"No allocated ports found for {email}", exc_info=True)
                     return False
 
             # Check if Appium device has been initialized before for this user
@@ -1368,7 +1373,9 @@ class Driver:
             try:
                 self.driver = webdriver.Remote(f"http://127.0.0.1:{self.appium_port}", options=options)
             except MaxRetryError as e:
-                logger.error(f"Failed to connect to Appium server on port {self.appium_port}: {e}")
+                logger.error(
+                    f"Failed to connect to Appium server on port {self.appium_port}: {e}", exc_info=True
+                )
                 return False
 
             # Force a state check after driver initialization with a timeout
@@ -1391,7 +1398,7 @@ class Driver:
 
                     return True
                 except concurrent.futures.TimeoutError:
-                    logger.error("Connection check timed out after 15 seconds")
+                    logger.error("Connection check timed out after 15 seconds", exc_info=True)
 
                     try:
                         # Try to quit the driver that may be in a bad state
@@ -1448,7 +1455,7 @@ class Driver:
 
         # Check if we're already in a reconnection attempt
         if hasattr(self, "_reconnecting") and self._reconnecting:
-            logger.error("Already in reconnection attempt, avoiding infinite loop")
+            logger.error("Already in reconnection attempt, avoiding infinite loop", exc_info=True)
             return False
 
         # Reinitialize through automator if available
@@ -1537,7 +1544,7 @@ class Driver:
                         # This is expected when the session was already terminated
                         logger.debug("Session already terminated during driver.quit() - this is expected")
                     else:
-                        logger.error(f"Error during driver.quit(): {e}")
+                        logger.error(f"Error during driver.quit(, exc_info=True): {e}")
                 finally:
                     self.driver = None
                     self.device_id = None

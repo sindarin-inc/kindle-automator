@@ -146,7 +146,7 @@ class ReaderHandler:
             return False
 
         except Exception as e:
-            logger.error(f"Error checking for Download Limit dialog: {e}")
+            logger.error(f"Error checking for Download Limit dialog: {e}", exc_info=True)
             return False
 
     def handle_download_limit_dialog(self) -> bool:
@@ -341,7 +341,7 @@ class ReaderHandler:
                 logger.info("Dialog title element not found - dialog may have closed")
 
             if dialog_still_visible and not remove_button_tapped:
-                logger.error("Could not handle the Download Limit dialog")
+                logger.error("Could not handle the Download Limit dialog", exc_info=True)
                 return False
 
             # Wait a short time for the UI transition
@@ -350,7 +350,7 @@ class ReaderHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error handling download limit dialog: {e}")
+            logger.error(f"Error handling download limit dialog: {e}", exc_info=True)
             store_page_source(self.driver.page_source, "download_limit_error")
             return False
 
@@ -693,7 +693,8 @@ class ReaderHandler:
                                             )
                                         else:
                                             logger.error(
-                                                f"Failed to click on book: {book_title} after download limit handling"
+                                                f"Failed to click on book: {book_title} after download limit handling",
+                                                exc_info=True,
                                             )
                                             return False
                                     else:
@@ -708,12 +709,17 @@ class ReaderHandler:
                                         logger.info("Reading view detected after reopening book")
                                         return True
                                     except TimeoutException:
-                                        logger.error("Failed to detect reading view after reopening book")
+                                        logger.error(
+                                            "Failed to detect reading view after reopening book",
+                                            exc_info=True,
+                                        )
                                         store_page_source(
                                             self.driver.page_source, "failed_reopen_after_download_limit"
                                         )
                             except Exception as back_to_lib_e:
-                                logger.error(f"Error checking if back at library: {back_to_lib_e}")
+                                logger.error(
+                                    f"Error checking if back at library: {back_to_lib_e}", exc_info=True
+                                )
 
                             # If we're still here, we failed
                             logger.error("Failed to detect reading view after handling download limit")
@@ -722,7 +728,9 @@ class ReaderHandler:
                             )
                             return False
                     except Exception as e:
-                        logger.error(f"Error while waiting for reading view after download limit: {e}")
+                        logger.error(
+                            f"Error while waiting for reading view after download limit: {e}", exc_info=True
+                        )
                         store_page_source(self.driver.page_source, "error_waiting_after_download_limit")
                         return False
                 else:
@@ -763,7 +771,8 @@ class ReaderHandler:
                                 break
                             except TimeoutException:
                                 logger.error(
-                                    "Failed to detect reading view after dismissing Word Wise dialog"
+                                    "Failed to detect reading view after dismissing Word Wise dialog",
+                                    exc_info=True,
                                 )
                                 store_page_source(
                                     self.driver.page_source, "failed_reading_view_after_word_wise"
@@ -772,7 +781,7 @@ class ReaderHandler:
                     except NoSuchElementException:
                         continue
                     except Exception as e:
-                        logger.error(f"Error clicking Word Wise NO THANKS button: {e}")
+                        logger.error(f"Error clicking Word Wise NO THANKS button: {e}", exc_info=True)
 
             # Handle Goodreads dialog if it appeared
             elif result == "goodreads":
@@ -806,14 +815,17 @@ class ReaderHandler:
                             logger.info("Reading view detected after dismissing Goodreads dialog")
                             store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
                         except TimeoutException:
-                            logger.error("Failed to detect reading view after dismissing Goodreads dialog")
+                            logger.error(
+                                "Failed to detect reading view after dismissing Goodreads dialog",
+                                exc_info=True,
+                            )
                             store_page_source(self.driver.page_source, "failed_reading_view_after_goodreads")
                             return False
                 except Exception as e:
-                    logger.error(f"Error handling Goodreads dialog: {e}")
+                    logger.error(f"Error handling Goodreads dialog: {e}", exc_info=True)
                     return False
         except TimeoutException:
-            logger.error("Failed to detect reading view or blocking dialogs after 6 seconds")
+            logger.error("Failed to detect reading view or blocking dialogs after 6 seconds", exc_info=True)
 
             # Capture final state for debugging
             final_elapsed = time.time() - start_time
@@ -831,12 +843,12 @@ class ReaderHandler:
                     return False
             except NoSuchElementException:
                 # Not in library view, but also not in reading view - unknown state
-                logger.error("Not in library or reading view - unknown state")
+                logger.error("Not in library or reading view - unknown state", exc_info=True)
 
             store_page_source(self.driver.page_source, "failed_to_detect_reading_view_or_download_limit")
             return False
         except Exception as e:
-            logger.error(f"Error while waiting for reading view or download limit: {e}")
+            logger.error(f"Error while waiting for reading view or download limit: {e}", exc_info=True)
             store_page_source(self.driver.page_source, "error_waiting_for_reading_view_or_download_limit")
             return False
 
@@ -851,7 +863,7 @@ class ReaderHandler:
         except NoSuchElementException:
             logger.warning("Page content container not immediately found - app may still be loading content")
         except Exception as e:
-            logger.error(f"Error checking for page content: {e}")
+            logger.error(f"Error checking for page content: {e}", exc_info=True)
             # Continue anyway as we already confirmed we're in reading view
 
         # Check for and dismiss bottom sheet dialog
@@ -885,16 +897,16 @@ class ReaderHandler:
                     except NoSuchElementException:
                         logger.info("Bottom sheet found but dismiss pill not found")
                     except Exception as e:
-                        logger.error(f"Error clicking bottom sheet pill: {e}")
+                        logger.error(f"Error clicking bottom sheet pill: {e}", exc_info=True)
                 else:
                     logger.info("Bottom sheet dialog found but not visible")
             except NoSuchElementException:
                 pass
             except Exception as e:
-                logger.error(f"Error checking for bottom sheet dialog: {e}")
+                logger.error(f"Error checking for bottom sheet dialog: {e}", exc_info=True)
 
         except Exception as e:
-            logger.error(f"Unexpected error handling bottom sheet: {e}")
+            logger.error(f"Unexpected error handling bottom sheet: {e}", exc_info=True)
 
         # We'll use the NavigationResourceHandler to handle the last read page dialog
         # so we can return it to the client for decision instead of automatically clicking YES
@@ -911,7 +923,7 @@ class ReaderHandler:
                 logger.info("Found 'last read page' dialog - leaving it for client to decide")
                 # We don't click anything - the client will decide using the /last-read-page-dialog endpoint
         except Exception as e:
-            logger.error(f"Error checking for 'last read page/location' dialog: {e}")
+            logger.error(f"Error checking for 'last read page/location' dialog: {e}", exc_info=True)
 
         # The "Go to that location/page?" dialog is essentially the same as "Last read page" dialog,
         # so we handle both identically - either could be shown when opening a book
@@ -936,7 +948,7 @@ class ReaderHandler:
                 except NoSuchElementException:
                     continue
         except Exception as e:
-            logger.error(f"Error checking for 'Go to that location/page?' dialog: {e}")
+            logger.error(f"Error checking for 'Go to that location/page?' dialog: {e}", exc_info=True)
 
         # Note: Goodreads and Word Wise dialogs are now handled during the wait condition above
         # to prevent them from blocking the reading view detection
@@ -946,7 +958,7 @@ class ReaderHandler:
             # Try to handle the comic book view if present
             self.handle_comic_book_view()
         except Exception as e:
-            logger.error(f"Error during comic book view handling: {e}")
+            logger.error(f"Error during comic book view handling: {e}", exc_info=True)
 
         # Check for and dismiss "About this book" slideover
         try:
@@ -1028,7 +1040,7 @@ class ReaderHandler:
                 filepath = store_page_source(self.driver.page_source, "after_about_book_dismissal")
                 logger.info(f"Stored page source after dismissal at: {filepath}")
         except Exception as e:
-            logger.error(f"Error handling 'About this book' slideover: {e}")
+            logger.error(f"Error handling 'About this book' slideover: {e}", exc_info=True)
 
         # Get current page
         current_page = self.get_current_page()
@@ -1075,7 +1087,7 @@ class ReaderHandler:
                 else:
                     logger.warning("Placemark ribbon not visible after tapping")
             except Exception as e:
-                logger.error(f"Error showing placemark: {e}")
+                logger.error(f"Error showing placemark: {e}", exc_info=True)
         else:
             logger.info("Placemark mode disabled - skipping center tap")
 
@@ -1090,7 +1102,7 @@ class ReaderHandler:
             else:
                 logger.warning("No sindarin_email available to save actively reading title")
         except Exception as e:
-            logger.error(f"Error saving actively reading title: {e}")
+            logger.error(f"Error saving actively reading title: {e}", exc_info=True)
             # Don't fail the whole operation just because we couldn't save the title
 
         return True
@@ -1117,7 +1129,7 @@ class ReaderHandler:
             # If we get here, we couldn't find the page number element
             return None
         except Exception as e:
-            logger.error(f"Error getting page number: {e}")
+            logger.error(f"Error getting page number: {e}", exc_info=True)
             return None
 
     def capture_page_screenshot(self):
@@ -1153,7 +1165,7 @@ class ReaderHandler:
                 return False
 
         except Exception as e:
-            logger.error(f"Error capturing page screenshot: {e}")
+            logger.error(f"Error capturing page screenshot: {e}", exc_info=True)
             return False
 
     def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 0):
@@ -1230,7 +1242,7 @@ class ReaderHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error turning page forward: {e}")
+            logger.error(f"Error turning page forward: {e}", exc_info=True)
             return False
 
     def turn_page_forward(self):
@@ -1279,16 +1291,16 @@ class ReaderHandler:
                     os.remove(screenshot_path)
                     logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
             except Exception as e:
-                logger.error(f"Error processing OCR: {e}")
+                logger.error(f"Error processing OCR: {e}", exc_info=True)
                 error_msg = str(e)
 
             return ocr_text, error_msg
 
         except Exception as e:
-            logger.error(f"Error taking screenshot for OCR: {e}")
+            logger.error(f"Error taking screenshot for OCR: {e}", exc_info=True)
             return None, str(e)
 
     def preview_page_forward(self):
@@ -1319,12 +1331,14 @@ class ReaderHandler:
                 return False, None
 
         except Exception as e:
-            logger.error(f"Error during next page preview: {e}")
+            logger.error(f"Error during next page preview: {e}", exc_info=True)
             # Try to turn back to the original page if an error occurred
             try:
                 self.turn_page_backward()
             except Exception as turn_back_error:
-                logger.error(f"Failed to turn back to original page after error: {turn_back_error}")
+                logger.error(
+                    f"Failed to turn back to original page after error: {turn_back_error}", exc_info=True
+                )
             return False, None
 
     def preview_page_backward(self):
@@ -1355,12 +1369,15 @@ class ReaderHandler:
                 return False, None
 
         except Exception as e:
-            logger.error(f"Error during previous page preview: {e}")
+            logger.error(f"Error during previous page preview: {e}", exc_info=True)
             # Try to turn forward to the original page if an error occurred
             try:
                 self.turn_page_forward()
             except Exception as turn_forward_error:
-                logger.error(f"Failed to turn forward to original page after error: {turn_forward_error}")
+                logger.error(
+                    f"Failed to turn forward to original page after error: {turn_forward_error}",
+                    exc_info=True,
+                )
             return False, None
 
     def get_reading_progress(self, show_placemark=False):
@@ -1437,7 +1454,7 @@ class ReaderHandler:
                     logger.info("Reading controls now visible")
                     opened_controls = True
                 except TimeoutException:
-                    logger.error("Could not make reading controls visible")
+                    logger.error("Could not make reading controls visible", exc_info=True)
                     return None
 
                 try:
@@ -1450,7 +1467,7 @@ class ReaderHandler:
                     else:
                         raise NoSuchElementException("Could not find any reading progress element")
                 except NoSuchElementException:
-                    logger.error("Could not find progress element after showing controls")
+                    logger.error("Could not find progress element after showing controls", exc_info=True)
                     return None
 
             # Extract progress text (format: "Page X of Y  •  Z%" or "Page X of Y")
@@ -1483,7 +1500,7 @@ class ReaderHandler:
                         calc_percentage = round((current_page / total_pages) * 100)
                         percentage = calc_percentage  # Return as int, not string
                 except Exception as e:
-                    logger.error(f"Error parsing page numbers: {e}")
+                    logger.error(f"Error parsing page numbers: {e}", exc_info=True)
 
             if opened_controls and show_placemark:
                 # Only try to close controls by tapping if we're in placemark mode
@@ -1501,7 +1518,7 @@ class ReaderHandler:
             return {"percentage": percentage, "current_page": current_page, "total_pages": total_pages}
 
         except Exception as e:
-            logger.error(f"Error getting reading progress: {e}")
+            logger.error(f"Error getting reading progress: {e}", exc_info=True)
             return None
 
     def _check_element_visibility(self, strategies, description):
@@ -1643,7 +1660,7 @@ class ReaderHandler:
             return None
 
         except Exception as e:
-            logger.error(f"Error getting book title: {e}")
+            logger.error(f"Error getting book title: {e}", exc_info=True)
             return None
 
     def navigate_back_to_library(self) -> bool:
@@ -1798,9 +1815,9 @@ class ReaderHandler:
                             logger.info("Successfully dismissed Goodreads dialog")
 
                 except NoSuchElementException:
-                    logger.error("NOT NOW button not found for Goodreads dialog")
+                    logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
                 except Exception as e:
-                    logger.error(f"Error clicking NOT NOW button: {e}")
+                    logger.error(f"Error clicking NOT NOW button: {e}", exc_info=True)
 
             # Check for and dismiss Word Wise dialog
             word_wise_dialog_visible, _ = self._check_element_visibility(
@@ -1833,7 +1850,7 @@ class ReaderHandler:
             return self._show_toolbar_and_close_book()
 
         except Exception as e:
-            logger.error(f"Error handling reading state: {e}")
+            logger.error(f"Error handling reading state: {e}", exc_info=True)
             return False
 
     def _show_toolbar_and_close_book(self):
@@ -1859,9 +1876,9 @@ class ReaderHandler:
                     time.sleep(1)
                     store_page_source(self.driver.page_source, "goodreads_dialog_dismissed_toolbar")
             except NoSuchElementException:
-                logger.error("NOT NOW button not found for Goodreads dialog")
+                logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
             except Exception as e:
-                logger.error(f"Error clicking NOT NOW button: {e}")
+                logger.error(f"Error clicking NOT NOW button: {e}", exc_info=True)
 
         # Check if we're looking at the Word Wise dialog
         word_wise_dialog_visible, _ = self._check_element_visibility(
@@ -1971,9 +1988,9 @@ class ReaderHandler:
                             logger.info("Toolbar appeared (alt check) after dismissing Goodreads dialog")
                             return self._click_close_book_button()
                 except NoSuchElementException:
-                    logger.error("NOT NOW button not found for Goodreads dialog")
+                    logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
                 except Exception as e:
-                    logger.error(f"Error clicking NOT NOW button: {e}")
+                    logger.error(f"Error clicking NOT NOW button: {e}", exc_info=True)
 
             # Check for Word Wise dialog
             word_wise_dialog_visible, _ = self._check_element_visibility(
@@ -2063,7 +2080,7 @@ class ReaderHandler:
                 logger.info("Successfully exited reading view using system back button")
                 return True
         except Exception as e:
-            logger.error(f"Error using system back button: {e}")
+            logger.error(f"Error using system back button: {e}", exc_info=True)
 
         logger.error("Failed to make toolbar visible or exit reading view after all attempts")
         return False
@@ -2134,11 +2151,11 @@ class ReaderHandler:
                     logger.info("Successfully dismissed comic book view")
                     return True
             except Exception as e:
-                logger.error(f"Error verifying comic book view dismissal: {e}")
+                logger.error(f"Error verifying comic book view dismissal: {e}", exc_info=True)
                 return False
 
         except Exception as e:
-            logger.error(f"Error handling comic book view: {e}")
+            logger.error(f"Error handling comic book view: {e}", exc_info=True)
             return False
 
     def _click_close_book_button(self):
@@ -2163,7 +2180,7 @@ class ReaderHandler:
                     )
                     logger.info("Cleared actively reading title")
             except Exception as e:
-                logger.error(f"Error clearing actively reading title: {e}")
+                logger.error(f"Error clearing actively reading title: {e}", exc_info=True)
 
             return True
 

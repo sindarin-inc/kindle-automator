@@ -93,7 +93,7 @@ class LibraryHandler:
             )
 
         except Exception as e:
-            logger.error(f"Error discovering and saving library preferences: {e}")
+            logger.error(f"Error discovering and saving library preferences: {e}", exc_info=True)
 
     def pull_to_refresh(self):
         """Perform pull-to-refresh gesture by swiping from top 1/3 to bottom 1/3 of screen.
@@ -143,7 +143,7 @@ class LibraryHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error performing pull-to-refresh: {e}")
+            logger.error(f"Error performing pull-to-refresh: {e}", exc_info=True)
             store_page_source(self.driver, "pull_refresh_error")
             return False
 
@@ -174,7 +174,7 @@ class LibraryHandler:
 
             return cached_view_type == "list" and cached_group_by_series is False
         except Exception as e:
-            logger.error(f"Error checking library view preferences: {e}")
+            logger.error(f"Error checking library view preferences: {e}", exc_info=True)
             return False
 
     def apply_library_settings(self, view_type="list", group_by_series=False):
@@ -258,7 +258,7 @@ class LibraryHandler:
                     continue
 
             if not view_clicked:
-                logger.error(f"Failed to click {view_type} view option")
+                logger.error(f"Failed to click {view_type} view option", exc_info=True)
                 return False
 
             # Record the view type setting
@@ -279,7 +279,7 @@ class LibraryHandler:
                     continue
 
             if not done_clicked:
-                logger.error("Failed to click DONE button")
+                logger.error("Failed to click DONE button", exc_info=True)
                 return False
 
             # Verify dialog is closed
@@ -293,7 +293,7 @@ class LibraryHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error applying library settings: {e}")
+            logger.error(f"Error applying library settings: {e}", exc_info=True)
             return False
 
     def _is_library_tab_selected(self):
@@ -377,7 +377,7 @@ class LibraryHandler:
             if not self._is_library_tab_selected():
                 logger.info("Not in library view, navigating to library first")
                 if not self.navigate_to_library():
-                    logger.error("Failed to navigate to library")
+                    logger.error("Failed to navigate to library", exc_info=True)
                     return False
 
             # Click view options button to open the dialog
@@ -397,11 +397,11 @@ class LibraryHandler:
                     logger.debug(f"Failed to click view options button with strategy {strategy}: {e}")
                     continue
 
-            logger.error("Failed to open Grid/List view dialog with any strategy")
+            logger.error("Failed to open Grid/List view dialog with any strategy", exc_info=True)
             return False
 
         except Exception as e:
-            logger.error(f"Error opening Grid/List view dialog: {e}")
+            logger.error(f"Error opening Grid/List view dialog: {e}", exc_info=True)
             return False
 
     def open_grid_list_view_dialog(self, force_open=False):
@@ -433,7 +433,7 @@ class LibraryHandler:
             return self._open_grid_list_view_dialog_internal()
 
         except Exception as e:
-            logger.error(f"Error in open_grid_list_view_dialog: {e}")
+            logger.error(f"Error in open_grid_list_view_dialog: {e}", exc_info=True)
             return False
 
     def _is_grid_list_view_dialog_open(self):
@@ -456,7 +456,7 @@ class LibraryHandler:
                     continue
                 except (InvalidSessionIdException, WebDriverException) as e:
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping dialog check")
+                        logger.error("Session terminated, stopping dialog check", exc_info=True)
                         return False
                     raise
 
@@ -471,7 +471,7 @@ class LibraryHandler:
                     continue
                 except (InvalidSessionIdException, WebDriverException) as e:
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping dialog check")
+                        logger.error("Session terminated, stopping dialog check", exc_info=True)
                         return False
                     raise
 
@@ -486,7 +486,7 @@ class LibraryHandler:
                     continue
                 except (InvalidSessionIdException, WebDriverException) as e:
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping dialog check")
+                        logger.error("Session terminated, stopping dialog check", exc_info=True)
                         return False
                     raise
 
@@ -500,7 +500,7 @@ class LibraryHandler:
                 pass
             except (InvalidSessionIdException, WebDriverException) as e:
                 if "A session is either terminated or not started" in str(e):
-                    logger.error("Session terminated, stopping dialog check")
+                    logger.error("Session terminated, stopping dialog check", exc_info=True)
                     return False
                 raise
 
@@ -509,7 +509,7 @@ class LibraryHandler:
 
             return is_dialog_open
         except Exception as e:
-            logger.error(f"Error checking for Grid/List view dialog: {e}")
+            logger.error(f"Error checking for Grid/List view dialog: {e}", exc_info=True)
             return False
 
     def _find_bottom_navigation(self):
@@ -530,7 +530,7 @@ class LibraryHandler:
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is open, handling it first")
                 if not self.handle_grid_list_view_dialog():
-                    logger.error("Failed to handle Grid/List view dialog")
+                    logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                     return False
                 time.sleep(0.5)  # Wait for dialog to close
 
@@ -589,7 +589,7 @@ class LibraryHandler:
                 except:
                     continue
 
-            logger.error("Failed to find Library tab with any strategy")
+            logger.error("Failed to find Library tab with any strategy", exc_info=True)
             # Save page source for debugging
             try:
                 source = self.driver.page_source
@@ -599,10 +599,10 @@ class LibraryHandler:
                 self.driver.save_screenshot(screenshot_path)
                 logger.info(f"Saved diagnostics: XML={xml_path}, Screenshot={screenshot_path}")
             except Exception as screenshot_error:
-                logger.error(f"Failed to save diagnostics: {screenshot_error}")
+                logger.error(f"Failed to save diagnostics: {screenshot_error}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Error navigating to library: {e}")
+            logger.error(f"Error navigating to library: {e}", exc_info=True)
             # Save page source for debugging
             try:
                 source = self.driver.page_source
@@ -612,7 +612,7 @@ class LibraryHandler:
                 self.driver.save_screenshot(screenshot_path)
                 logger.info(f"Saved diagnostics: XML={xml_path}, Screenshot={screenshot_path}")
             except Exception as screenshot_error:
-                logger.error(f"Failed to save diagnostics: {screenshot_error}")
+                logger.error(f"Failed to save diagnostics: {screenshot_error}", exc_info=True)
             return False
 
     def navigate_to_more_settings(self):
@@ -644,11 +644,11 @@ class LibraryHandler:
                     logger.debug(f"Strategy {strategy} failed: {e}")
                     continue
 
-            logger.error("Failed to find More tab with any strategy")
+            logger.error("Failed to find More tab with any strategy", exc_info=True)
             return False
 
         except Exception as e:
-            logger.error(f"Error navigating to More settings: {e}")
+            logger.error(f"Error navigating to More settings: {e}", exc_info=True)
             return False
 
     def navigate_from_more_to_library(self):
@@ -666,7 +666,7 @@ class LibraryHandler:
             return self.navigate_to_library()
 
         except Exception as e:
-            logger.error(f"Error navigating from More to Library: {e}")
+            logger.error(f"Error navigating from More to Library: {e}", exc_info=True)
             return False
 
     def sync_in_more_tab(self):
@@ -695,7 +695,7 @@ class LibraryHandler:
                     continue
 
             if not sync_clicked:
-                logger.error("Could not find Sync Now button")
+                logger.error("Could not find Sync Now button", exc_info=True)
                 return False
 
             # Wait for sync to start
@@ -749,7 +749,7 @@ class LibraryHandler:
                     time.sleep(1)  # Check every second
 
                 except Exception as e:
-                    logger.error(f"Unexpected error in sync monitoring loop: {e}")
+                    logger.error(f"Unexpected error in sync monitoring loop: {e}", exc_info=True)
                     # Don't break the loop on errors, just continue
                     time.sleep(1)
 
@@ -766,7 +766,7 @@ class LibraryHandler:
                     store_page_source(self.driver.page_source, "sync_timeout_failure")
                     logger.warning("Stored page source for sync timeout analysis")
                 except Exception as e:
-                    logger.error(f"Failed to store diagnostic info for sync timeout: {e}")
+                    logger.error(f"Failed to store diagnostic info for sync timeout: {e}", exc_info=True)
             else:
                 logger.info(f"Sync completed after {final_elapsed:.1f}s")
 
@@ -780,9 +780,11 @@ class LibraryHandler:
                 from views.core.ui_helpers import store_page_source
 
                 store_page_source(self.driver.page_source, "sync_exception_failure")
-                logger.error("Stored page source for sync exception analysis")
+                logger.error("Stored page source for sync exception analysis", exc_info=True)
             except Exception as diag_error:
-                logger.error(f"Failed to store diagnostic info for sync exception: {diag_error}")
+                logger.error(
+                    f"Failed to store diagnostic info for sync exception: {diag_error}", exc_info=True
+                )
             logger.info("sync_in_more_tab() caught exception, returning False")
             return False
 
@@ -802,7 +804,7 @@ class LibraryHandler:
 
             return False
         except Exception as e:
-            logger.error(f"Error checking if More tab is selected: {e}")
+            logger.error(f"Error checking if More tab is selected: {e}", exc_info=True)
             return False
 
     def _is_grid_view(self):
@@ -839,7 +841,7 @@ class LibraryHandler:
 
             return False
         except Exception as e:
-            logger.error(f"Error checking grid view: {e}")
+            logger.error(f"Error checking grid view: {e}", exc_info=True)
             return False
 
     def _is_list_view(self):
@@ -853,7 +855,7 @@ class LibraryHandler:
                     continue
             return False
         except Exception as e:
-            logger.error(f"Error checking list view: {e}")
+            logger.error(f"Error checking list view: {e}", exc_info=True)
             return False
 
     def _is_in_search_interface(self):
@@ -913,7 +915,7 @@ class LibraryHandler:
             return is_search
 
         except Exception as e:
-            logger.error(f"Error checking for search interface: {e}")
+            logger.error(f"Error checking for search interface: {e}", exc_info=True)
             return False
 
     def switch_to_list_view(self):
@@ -1012,7 +1014,7 @@ class LibraryHandler:
                     logger.debug(f"Error checking if menu is open: {e}")
 
                 if not menu_open:
-                    logger.error("View options menu did not open properly")
+                    logger.error("View options menu did not open properly", exc_info=True)
                     return False
 
                 # Click list view option
@@ -1030,7 +1032,7 @@ class LibraryHandler:
                         continue
 
                 if not list_option_clicked:
-                    logger.error("Failed to click list view option")
+                    logger.error("Failed to click list view option", exc_info=True)
                     return False
 
                 # Click DONE button
@@ -1047,7 +1049,7 @@ class LibraryHandler:
                         continue
 
                 if not done_clicked:
-                    logger.error("Failed to click DONE button")
+                    logger.error("Failed to click DONE button", exc_info=True)
                     return False
 
                 # Wait longer for list view to appear
@@ -1073,7 +1075,7 @@ class LibraryHandler:
                     time.sleep(1)
                     return True
                 except TimeoutException:
-                    logger.error("Timed out waiting for list view")
+                    logger.error("Timed out waiting for list view", exc_info=True)
                     # Get page source for debugging
                     filepath = store_page_source(self.driver.page_source, "list_view_timeout")
                     logger.info(f"Stored list view timeout page source at: {filepath}")
@@ -1102,7 +1104,7 @@ class LibraryHandler:
                     return False
 
         except Exception as e:
-            logger.error(f"Error switching to list view: {e}")
+            logger.error(f"Error switching to list view: {e}", exc_info=True)
             traceback.print_exc()
             return False
 
@@ -1141,7 +1143,7 @@ class LibraryHandler:
 
             return False
         except Exception as e:
-            logger.error(f"Error closing menu: {e}")
+            logger.error(f"Error closing menu: {e}", exc_info=True)
             return False
 
     def handle_grid_list_view_dialog(self):
@@ -1190,11 +1192,11 @@ class LibraryHandler:
                 logger.debug("Group by Series switch not found")
             except (InvalidSessionIdException, WebDriverException) as e:
                 if "A session is either terminated or not started" in str(e):
-                    logger.error("Session terminated while handling Group by Series switch")
+                    logger.error("Session terminated while handling Group by Series switch", exc_info=True)
                     return False
                 logger.error(f"Error handling Group by Series switch: {e}")
             except Exception as e:
-                logger.error(f"Error handling Group by Series switch: {e}")
+                logger.error(f"Error handling Group by Series switch: {e}", exc_info=True)
 
             # Click the List view option to ensure consistent view
             list_option_clicked = False
@@ -1211,7 +1213,7 @@ class LibraryHandler:
                     logger.debug(f"List view option not found with {strategy}={locator}")
                     continue
                 except Exception as e:
-                    logger.error(f"Error clicking List view option: {e}")
+                    logger.error(f"Error clicking List view option: {e}", exc_info=True)
                     continue
 
             # If we couldn't click the List view option, it might already be selected or not found
@@ -1241,7 +1243,7 @@ class LibraryHandler:
                     logger.debug(f"DONE button not found with {strategy}={locator}")
                     continue
                 except Exception as e:
-                    logger.error(f"Error clicking DONE button: {e}")
+                    logger.error(f"Error clicking DONE button: {e}", exc_info=True)
                     continue
 
             # If we still couldn't click the DONE button, try VIEW_OPTIONS_DONE_STRATEGIES
@@ -1262,7 +1264,9 @@ class LibraryHandler:
                         logger.debug(f"DONE button not found with alternative strategy {strategy}={locator}")
                         continue
                     except Exception as e:
-                        logger.error(f"Error clicking DONE button with alternative strategy: {e}")
+                        logger.error(
+                            f"Error clicking DONE button with alternative strategy: {e}", exc_info=True
+                        )
                         continue
 
             # If we still couldn't click the DONE button, try the alternative approach of tapping outside
@@ -1294,7 +1298,7 @@ class LibraryHandler:
                         done_clicked = True
                         time.sleep(1)  # Wait for dialog to close
                     except Exception as e:
-                        logger.error(f"Error tapping at screen coordinates: {e}")
+                        logger.error(f"Error tapping at screen coordinates: {e}", exc_info=True)
 
             # Verify the dialog was closed
             if self._is_grid_list_view_dialog_open():
@@ -1305,7 +1309,7 @@ class LibraryHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error handling Grid/List view selection dialog: {e}")
+            logger.error(f"Error handling Grid/List view selection dialog: {e}", exc_info=True)
             traceback.print_exc()
             return False
 
@@ -1349,7 +1353,7 @@ class LibraryHandler:
             return False
 
         except Exception as e:
-            logger.error(f"Error checking for sign-in button: {e}")
+            logger.error(f"Error checking for sign-in button: {e}", exc_info=True)
             return False
 
     def handle_library_sign_in(self):
@@ -1388,11 +1392,11 @@ class LibraryHandler:
             except NoSuchElementException:
                 pass
 
-            logger.error("Could not find sign-in button to click")
+            logger.error("Could not find sign-in button to click", exc_info=True)
             return False
 
         except Exception as e:
-            logger.error(f"Error handling library sign-in: {e}")
+            logger.error(f"Error handling library sign-in: {e}", exc_info=True)
             return False
 
     def get_book_titles(self, callback=None, sync=False):
@@ -1483,7 +1487,7 @@ class LibraryHandler:
             return self.scroll_handler._scroll_through_library(callback=callback)
 
         except Exception as e:
-            logger.error(f"Error getting book titles: {e}")
+            logger.error(f"Error getting book titles: {e}", exc_info=True)
             if callback:
                 callback(None, error=str(e))
             return []
@@ -1561,7 +1565,7 @@ class LibraryHandler:
             # Dialog not found
             return False
         except Exception as e:
-            logger.error(f"Error in _check_invalid_item_dialog: {e}")
+            logger.error(f"Error in _check_invalid_item_dialog: {e}", exc_info=True)
             return False
 
     def _check_unable_to_download_dialog(self, book_title, context=""):
@@ -1640,7 +1644,7 @@ class LibraryHandler:
             # Dialog not found
             return False
         except Exception as e:
-            logger.error(f"Error in _check_unable_to_download_dialog: {e}")
+            logger.error(f"Error in _check_unable_to_download_dialog: {e}", exc_info=True)
             return False
 
     def _handle_book_click_and_transition(self, parent_container, button, book_info, book_title):
@@ -1854,7 +1858,7 @@ class LibraryHandler:
 
                             # If we see an error in the content description, abort
                             if any(error in content_desc.lower() for error in ["error", "failed"]):
-                                logger.error(f"Download failed: {content_desc}")
+                                logger.error(f"Download failed: {content_desc}", exc_info=True)
                                 return False
                         except NoSuchElementException:
                             # If we can't find the book element, check if we've left the library view
@@ -1871,7 +1875,7 @@ class LibraryHandler:
 
                         time.sleep(1)
                     except Exception as e:
-                        logger.error(f"Error checking download status: {e}")
+                        logger.error(f"Error checking download status: {e}", exc_info=True)
 
                         # Check if we've already left the library view
                         try:
@@ -1889,7 +1893,9 @@ class LibraryHandler:
                 # If we've timed out but are no longer in library view, that's still success
                 try:
                     self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
-                    logger.error("Timed out waiting for book to download and still in library view")
+                    logger.error(
+                        "Timed out waiting for book to download and still in library view", exc_info=True
+                    )
                     return False
                 except NoSuchElementException:
                     logger.info("Left library view after timeout - book likely opened anyway")
@@ -1931,7 +1937,7 @@ class LibraryHandler:
                 logger.info("Successfully left library view")
                 return True
             except TimeoutException:
-                logger.error("Still in library view after clicking book")
+                logger.error("Still in library view after clicking book", exc_info=True)
                 # Try clicking one more time
                 button.click()
 
@@ -1956,7 +1962,10 @@ class LibraryHandler:
                     logger.info("Successfully left library view after second click")
                     return True
                 except TimeoutException:
-                    logger.error("Still in library view after second click, trying with parent container")
+                    logger.error(
+                        "Still in library view after second click, trying with parent container",
+                        exc_info=True,
+                    )
                     # Try clicking the parent container instead
                     parent_container.click()
 
@@ -1983,11 +1992,11 @@ class LibraryHandler:
                         logger.info("Successfully left library view after clicking parent container")
                         return True
                     except TimeoutException:
-                        logger.error("Failed to leave library view after multiple attempts")
+                        logger.error("Failed to leave library view after multiple attempts", exc_info=True)
                         return False
 
         except Exception as e:
-            logger.error(f"Error handling book click and transition: {e}")
+            logger.error(f"Error handling book click and transition: {e}", exc_info=True)
             traceback.print_exc()
             return False
 
@@ -2091,7 +2100,7 @@ class LibraryHandler:
             return self._handle_book_click_and_transition(parent_container, button, book_info, book_title)
 
         except Exception as e:
-            logger.error(f"Error finding book: {e}")
+            logger.error(f"Error finding book: {e}", exc_info=True)
             traceback.print_exc()
             return False
 
@@ -2164,7 +2173,7 @@ class LibraryHandler:
 
             time.sleep(0.5)
 
-        logger.error(f"Download did not complete within {timeout}s timeout")
+        logger.error(f"Download did not complete within {timeout}s timeout", exc_info=True)
         return False
 
     def open_book(self, book_title: str) -> dict:
@@ -2480,7 +2489,9 @@ class LibraryHandler:
                                 logger.info("Successfully transitioned from library view")
 
                             except TimeoutException:
-                                logger.error("Still in library view after second click attempt")
+                                logger.error(
+                                    "Still in library view after second click attempt", exc_info=True
+                                )
                                 store_page_source(
                                     self.driver.page_source, "stuck_in_library_after_second_click"
                                 )
@@ -2507,7 +2518,7 @@ class LibraryHandler:
                         return self._delegate_to_reader_handler(book_title)
 
                 except TimeoutException:
-                    logger.error("Timeout while checking view state")
+                    logger.error("Timeout while checking view state", exc_info=True)
                     # Capture final page source to see what state we're stuck in
                     store_page_source(self.driver.page_source, "book_open_timeout_final_state")
                     return {"success": False, "error": "Timeout while checking view state"}
@@ -2527,7 +2538,7 @@ class LibraryHandler:
 
         except Exception as e:
             traceback.print_exc()
-            logger.error(f"Error opening book: {e}")
+            logger.error(f"Error opening book: {e}", exc_info=True)
             return {"success": False, "error": f"Error opening book: {e}"}
 
     def _delegate_to_reader_handler(self, book_title):
@@ -2573,11 +2584,11 @@ class LibraryHandler:
                 return {"success": False, "error": "Reader handler failed to handle dialogs"}
 
         except TimeoutException:
-            logger.error(f"Timed out waiting for reading view to appear")
+            logger.error(f"Timed out waiting for reading view to appear", exc_info=True)
             # Check for any dialogs or error states
             return self._handle_loading_timeout(book_title)
         except Exception as e:
-            logger.error(f"Error waiting for reading view: {e}")
+            logger.error(f"Error waiting for reading view: {e}", exc_info=True)
             return {"success": False, "error": f"Error waiting for reading view: {e}"}
 
     def _handle_page_navigation_dialog(self, source_description="dialog check"):
@@ -2642,13 +2653,14 @@ class LibraryHandler:
                                 return True
                             except Exception as e:
                                 logger.error(
-                                    f"Failed to detect reading view after handling page navigation dialog: {e}"
+                                    f"Failed to detect reading view after handling page navigation dialog: {e}",
+                                    exc_info=True,
                                 )
                                 return False
                     except NoSuchElementException:
                         logger.warning("Could not find YES button on page navigation dialog")
                     except Exception as btn_e:
-                        logger.error(f"Error clicking YES button: {btn_e}")
+                        logger.error(f"Error clicking YES button: {btn_e}", exc_info=True)
             return False
         except NoSuchElementException:
             return False
@@ -2720,7 +2732,7 @@ class LibraryHandler:
         """
         filepath = store_page_source(self.driver.page_source, "unknown_library_timeout")
         logger.info(f"Stored unknown library timeout page source at: {filepath}")
-        logger.error(f"Failed to wait for reading view after clicking '{book_title}'")
+        logger.error(f"Failed to wait for reading view after clicking '{book_title}'", exc_info=True)
 
         # Save screenshot for visual debugging
         screenshot_path = os.path.join(self.screenshots_dir, "library_timeout.png")
@@ -2758,7 +2770,7 @@ class LibraryHandler:
                         except:
                             pass
 
-                        logger.error(f"Title Not Available dialog found: {error_text}")
+                        logger.error(f"Title Not Available dialog found: {error_text}", exc_info=True)
 
                         # Try to click the Cancel button to dismiss the dialog
                         try:
@@ -2878,7 +2890,9 @@ class LibraryHandler:
                             logger.info("Reading view loaded after second click")
                             return True
                         except Exception as e:
-                            logger.error(f"Failed to wait for reading view after second click: {e}")
+                            logger.error(
+                                f"Failed to wait for reading view after second click: {e}", exc_info=True
+                            )
 
                             # Store state after second failure
                             store_page_source(self.driver.page_source, "after_second_click_failure")
@@ -2891,12 +2905,12 @@ class LibraryHandler:
             except NoSuchElementException:
                 logger.info("Not in library view after timeout - may be transitioning or in a different view")
             except Exception as e:
-                logger.error(f"Error checking library view status: {e}")
+                logger.error(f"Error checking library view status: {e}", exc_info=True)
 
             logger.info("No known dialogs found after explicit check")
 
         except Exception as dialog_e:
-            logger.error(f"Error checking for known dialogs: {dialog_e}")
+            logger.error(f"Error checking for known dialogs: {dialog_e}", exc_info=True)
 
         # We didn't find any expected dialogs, so return failure
         return {"success": False, "error": "Timeout waiting for reading view or expected dialogs"}

@@ -104,7 +104,7 @@ class ViewInspector:
 
                     if device_count > 1:
                         logger.error(
-                            f"Multiple devices detected ({device_count}) but no device ID available - cannot proceed with app launch"
+                            f"Multiple devices detected ({device_count}, exc_info=True) but no device ID available - cannot proceed with app launch"
                         )
                         return False
                     elif device_count == 1:
@@ -115,7 +115,9 @@ class ViewInspector:
 
             # One more check - if we still don't have a device ID but stderr contains "more than one"
             if not device_id:
-                logger.error("Still no device ID and multiple emulators may be running - cannot proceed")
+                logger.error(
+                    "Still no device ID and multiple emulators may be running - cannot proceed", exc_info=True
+                )
                 return False
 
             # Force stop the app if requested (e.g., when in UNKNOWN state)
@@ -246,7 +248,7 @@ class ViewInspector:
                                         )
                                         logger.info("Used PermissionsHandler to dismiss notification dialog")
                                     except Exception as ph_e:
-                                        logger.error(f"PermissionsHandler also failed: {ph_e}")
+                                        logger.error(f"PermissionsHandler also failed: {ph_e}", exc_info=True)
                                         # As last resort, try pressing back button
                                         try:
                                             self.driver.press_keycode(4)  # Android back key
@@ -303,7 +305,7 @@ class ViewInspector:
                     logger.warning(f"Error checking current activity: {e}")
                     # If session is terminated, stop the loop early
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping app status check")
+                        logger.error("Session terminated, stopping app status check", exc_info=True)
                         break
 
                 # Sleep for poll_interval before checking again
@@ -315,7 +317,7 @@ class ViewInspector:
             logger.info("App brought to foreground")
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error bringing app to foreground: {e}")
+            logger.error(f"Error bringing app to foreground: {e}", exc_info=True)
             return False
 
     def _is_tab_selected(self, tab_name):
@@ -371,7 +373,7 @@ class ViewInspector:
             filepath = store_page_source(source, "unknown_view")
             logger.info(f"Stored unknown view page source at: {filepath}")
         except Exception as e:
-            logger.error(f"Failed to get page source: {e.__class__.__name__}")
+            logger.error(f"Failed to get page source: {e.__class__.__name__}", exc_info=True)
 
     def _try_find_element(self, strategies, success_message=None):
         """Try to find an element using multiple strategies"""
@@ -482,7 +484,7 @@ class ViewInspector:
                         time.sleep(2)  # Give app time to initialize
                         # Don't recurse, just continue with normal detection
                     else:
-                        logger.error("Failed to launch Kindle app from dashboard")
+                        logger.error("Failed to launch Kindle app from dashboard", exc_info=True)
                         return AppView.UNKNOWN
             except Exception as e:
                 logger.debug(f"Error checking current activity: {e}")
@@ -924,7 +926,7 @@ class ViewInspector:
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error determining current view: {e}")
+            logger.error(f"Error determining current view: {e}", exc_info=True)
             logger.warning("Dumping page source due to error")
             traceback.print_exc()
             self._dump_page_source()
@@ -954,7 +956,7 @@ class ViewInspector:
                     self.driver.save_screenshot(screenshot_path)
                     logger.info(f"Saved screenshot of error state to {screenshot_path}")
             except Exception as screenshot_error:
-                logger.error(f"Failed to save error screenshot: {screenshot_error}")
+                logger.error(f"Failed to save error screenshot: {screenshot_error}", exc_info=True)
             return AppView.UNKNOWN
 
     def _focus_input_field_if_needed(self, field_element, field_type="input"):
@@ -1015,7 +1017,9 @@ class ViewInspector:
             return True
 
         except Exception as e:
-            logger.error(f"   Error in _focus_input_field_if_needed for {field_type} field: {e}")
+            logger.error(
+                f"   Error in _focus_input_field_if_needed for {field_type} field: {e}", exc_info=True
+            )
             return False
 
     def _is_auth_view(self):
@@ -1070,7 +1074,7 @@ class ViewInspector:
             return False
 
         except Exception as e:
-            logger.error(f"Error checking for auth view: {e}")
+            logger.error(f"Error checking for auth view: {e}", exc_info=True)
             return False
 
     def _is_in_search_interface(self):
@@ -1162,5 +1166,5 @@ class ViewInspector:
             return is_search
 
         except Exception as e:
-            logger.error(f"Error checking for search interface: {e}")
+            logger.error(f"Error checking for search interface: {e}", exc_info=True)
             return False

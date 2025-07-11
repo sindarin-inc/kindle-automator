@@ -185,7 +185,7 @@ class AVDCreator:
                     return False, f"No compatible system image found in available images"
 
             except Exception as e:
-                logger.error(f"Error getting available system images: {e}")
+                logger.error(f"Error getting available system images: {e}", exc_info=True)
                 return False, f"Error listing system images: {e}"
 
             logger.info(f"Using system image: {sys_img}")
@@ -238,7 +238,7 @@ class AVDCreator:
             return True, avd_name
 
         except Exception as e:
-            logger.error(f"Error creating new AVD: {e}")
+            logger.error(f"Error creating new AVD: {e}", exc_info=True)
             return False, str(e)
 
     def _configure_avd(self, avd_name: str, system_image: str) -> None:
@@ -362,7 +362,7 @@ class AVDCreator:
             logger.info(f"Updated AVD configuration for {avd_name}")
 
         except Exception as e:
-            logger.error(f"Error configuring AVD: {e}")
+            logger.error(f"Error configuring AVD: {e}", exc_info=True)
 
     def get_seed_clone_avd_name(self) -> str:
         """Get the AVD name for the seed clone."""
@@ -437,7 +437,7 @@ class AVDCreator:
                     return False, f"Failed to delete AVD: {result.stderr}"
 
         except Exception as e:
-            logger.error(f"Error deleting AVD: {e}")
+            logger.error(f"Error deleting AVD: {e}", exc_info=True)
             return False, str(e)
 
     def create_seed_clone_avd(self) -> Tuple[bool, str]:
@@ -481,7 +481,7 @@ class AVDCreator:
             Tuple[bool, str]: (success, avd_name or error message)
         """
         if not self.has_seed_clone():
-            logger.error("Seed clone AVD does not exist")
+            logger.error("Seed clone AVD does not exist", exc_info=True)
             return False, "Seed clone AVD does not exist"
 
         try:
@@ -572,7 +572,7 @@ class AVDCreator:
                 randomized_identifiers = randomize_avd_config_identifiers(config_path)
                 logger.info(f"Randomized identifiers for {new_avd_name}: {randomized_identifiers}")
             except Exception as e:
-                logger.error(f"Failed to randomize device identifiers: {e}")
+                logger.error(f"Failed to randomize device identifiers: {e}", exc_info=True)
                 # Continue anyway - better to have a working AVD with duplicate identifiers
                 # than to fail the cloning process
 
@@ -599,7 +599,7 @@ class AVDCreator:
             return True, new_avd_name
 
         except Exception as e:
-            logger.error(f"Error creating AVD from seed clone: {e}")
+            logger.error(f"Error creating AVD from seed clone: {e}", exc_info=True)
             # Clean up any temporary files
             if "temp_backup_path" in locals() and os.path.exists(temp_backup_path):
                 shutil.rmtree(temp_backup_path, ignore_errors=True)
@@ -639,7 +639,7 @@ class AVDCreator:
 
             return True
         except Exception as e:
-            logger.error(f"Error updating file {file_path}: {e}")
+            logger.error(f"Error updating file {file_path}: {e}", exc_info=True)
             return False
 
     def _update_avd_config_for_new_name(self, old_avd_name: str, new_avd_name: str, email: str) -> None:
@@ -668,7 +668,7 @@ class AVDCreator:
                 logger.info(f"Updated hardware-qemu.ini for {new_avd_name}")
 
         except Exception as e:
-            logger.error(f"Error updating AVD config files: {e}")
+            logger.error(f"Error updating AVD config files: {e}", exc_info=True)
 
     def _update_snapshot_references(self, old_avd_name: str, new_avd_name: str) -> None:
         """
@@ -720,7 +720,7 @@ class AVDCreator:
                         logger.warning(f"Failed to update snapshot.pb: {e}")
 
         except Exception as e:
-            logger.error(f"Error updating snapshot references: {e}")
+            logger.error(f"Error updating snapshot references: {e}", exc_info=True)
 
     def is_seed_clone_ready(self) -> bool:
         """

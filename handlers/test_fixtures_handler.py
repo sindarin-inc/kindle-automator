@@ -80,5 +80,5 @@ class TestFixturesHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error creating fixtures: {e}")
+            logger.error(f"Error creating fixtures: {e}", exc_info=True)
             return False

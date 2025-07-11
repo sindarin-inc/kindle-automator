@@ -122,7 +122,7 @@ class SmartScroller:
             # Perform all actions defined in the ActionBuilder
             action_builder.perform()
         except Exception as e:
-            logger.error(f"Error performing scroll: {e}")
+            logger.error(f"Error performing scroll: {e}", exc_info=True)
 
     def scroll_down(self):
         """Scroll down in the view using the smart scrolling technique."""
@@ -225,5 +225,5 @@ class SmartScroller:
             logger.warning("Element reference lost during scroll_to_position, using default scroll")
             self.scroll_down()  # Fallback to default
         except Exception as e:
-            logger.error(f"Error in scroll_to_position: {e}")
+            logger.error(f"Error in scroll_to_position: {e}", exc_info=True)
             self.scroll_down()  # Fallback to default

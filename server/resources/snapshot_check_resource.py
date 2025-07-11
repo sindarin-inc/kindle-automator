@@ -100,7 +100,7 @@ class SnapshotCheckResource(Resource):
             }, 200
 
         except Exception as e:
-            logger.error(f"Error checking snapshot status: {e}")
+            logger.error(f"Error checking snapshot status: {e}", exc_info=True)
             return {"error": "Failed to check snapshot status", "message": str(e)}, 500
 
     def _extract_avd_name_from_email(self, email: str) -> Optional[str]:
@@ -110,7 +110,7 @@ class SnapshotCheckResource(Resource):
             avd_identifier = email.replace("@", "_").replace(".", "_")
             return f"KindleAVD_{avd_identifier}"
         except Exception as e:
-            logger.error(f"Error extracting AVD name from email {email}: {e}")
+            logger.error(f"Error extracting AVD name from email {email}: {e}", exc_info=True)
             return None
 
     def _check_snapshot_existence(self, avd_name: str, emulator_launcher=None) -> Dict[str, any]:
@@ -152,7 +152,7 @@ class SnapshotCheckResource(Resource):
                         snapshot_info["all_snapshots"].append(entry)
 
         except Exception as e:
-            logger.error(f"Error checking snapshot existence: {e}")
+            logger.error(f"Error checking snapshot existence: {e}", exc_info=True)
             snapshot_info["error"] = str(e)
 
         return snapshot_info
@@ -203,7 +203,7 @@ class SnapshotCheckResource(Resource):
                             config_data["hw_gfxstream"] = int(line.split("=")[1])
 
         except Exception as e:
-            logger.error(f"Error checking AVD config: {e}")
+            logger.error(f"Error checking AVD config: {e}", exc_info=True)
             config_data["error"] = str(e)
 
         return config_data
@@ -267,6 +267,6 @@ class SnapshotCheckResource(Resource):
                     emulator_id, _ = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                     return emulator_id is not None
         except Exception as e:
-            logger.error(f"Error checking if emulator is running: {e}")
+            logger.error(f"Error checking if emulator is running: {e}", exc_info=True)
 
         return False

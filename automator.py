@@ -59,7 +59,7 @@ class KindleAutomator:
                         self.driver.quit()
                         logger.info(f"Appium driver quit took {_time.time() - quit_start:.1f}s")
                 except Exception as e:
-                    logger.error(f"Error during driver cleanup: {e}")
+                    logger.error(f"Error during driver cleanup: {e}", exc_info=True)
                     logger.info(f"Driver cleanup error after {_time.time() - cleanup_start:.1f}s")
                 finally:
                     finally_start = _time.time()
@@ -150,10 +150,12 @@ class KindleAutomator:
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
                     ):
-                        logger.error("Failed to bring Kindle app to foreground after relaunch attempt")
+                        logger.error(
+                            "Failed to bring Kindle app to foreground after relaunch attempt", exc_info=True
+                        )
                         return False
         except Exception as e:
-            logger.error(f"Error checking app state after initialization: {e}")
+            logger.error(f"Error checking app state after initialization: {e}", exc_info=True)
             # Continue anyway, the state machine will handle errors later
 
         return True
@@ -233,7 +235,7 @@ class KindleAutomator:
                         or "UiAutomator2 server" in error_message
                         or "An unknown server-side error occurred" in error_message
                     ):
-                        logger.error(f"UiAutomator2 server crashed: {error_message}")
+                        logger.error(f"UiAutomator2 server crashed: {error_message}", exc_info=True)
                         raise activity_error
 
                 # Quick check for app not responding dialog without full state determination
@@ -287,7 +289,7 @@ class KindleAutomator:
 
                 return True
             except Exception as e:
-                logger.error(f"Driver is unhealthy ({e}), reinitializing...")
+                logger.error(f"Driver is unhealthy ({e}, exc_info=True), reinitializing...")
                 # Clean up the old driver
                 self.cleanup()
                 # Tell the middleware that Appium may need to be restarted
@@ -295,7 +297,7 @@ class KindleAutomator:
                     logger.critical("UiAutomator2 crash detected - Appium server needs restarting")
                 return self.initialize_driver()
         except Exception as outer_e:
-            logger.error(f"Unexpected error in ensure_driver_running: {outer_e}")
+            logger.error(f"Unexpected error in ensure_driver_running: {outer_e}", exc_info=True)
             self.cleanup()
             return False
 
@@ -359,7 +361,7 @@ class KindleAutomator:
                         )
                         logger.info("Started Kindle app with ADB fallback method")
                     except Exception as adb_start_error:
-                        logger.error(f"Error using ADB to start app: {adb_start_error}")
+                        logger.error(f"Error using ADB to start app: {adb_start_error}", exc_info=True)
                         return False
 
             # Wait for app to initialize
@@ -374,7 +376,7 @@ class KindleAutomator:
             )
             return True
         except Exception as e:
-            logger.error(f"Error restarting Kindle app: {e}")
+            logger.error(f"Error restarting Kindle app: {e}", exc_info=True)
             return False
 
     # Keep original method for backward compatibility
