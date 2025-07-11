@@ -59,7 +59,7 @@ class KindleAutomator:
                         self.driver.quit()
                         logger.info(f"Appium driver quit took {_time.time() - quit_start:.1f}s")
                 except Exception as e:
-                    logger.error(f"Error during driver cleanup: {e}", exc_info=True)
+                    logger.warning(f"Error during driver cleanup: {e}", exc_info=True)
                     logger.info(f"Driver cleanup error after {_time.time() - cleanup_start:.1f}s")
                 finally:
                     finally_start = _time.time()
@@ -155,7 +155,7 @@ class KindleAutomator:
                         )
                         return False
         except Exception as e:
-            logger.error(f"Error checking app state after initialization: {e}", exc_info=True)
+            logger.warning(f"Error checking app state after initialization: {e}", exc_info=True)
             # Continue anyway, the state machine will handle errors later
 
         return True

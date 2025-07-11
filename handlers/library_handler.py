@@ -93,7 +93,7 @@ class LibraryHandler:
             )
 
         except Exception as e:
-            logger.error(f"Error discovering and saving library preferences: {e}", exc_info=True)
+            logger.warning(f"Error discovering and saving library preferences: {e}", exc_info=True)
 
     def pull_to_refresh(self):
         """Perform pull-to-refresh gesture by swiping from top 1/3 to bottom 1/3 of screen.
@@ -143,7 +143,7 @@ class LibraryHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error performing pull-to-refresh: {e}", exc_info=True)
+            logger.warning(f"Error performing pull-to-refresh: {e}", exc_info=True)
             store_page_source(self.driver, "pull_refresh_error")
             return False
 
@@ -174,7 +174,7 @@ class LibraryHandler:
 
             return cached_view_type == "list" and cached_group_by_series is False
         except Exception as e:
-            logger.error(f"Error checking library view preferences: {e}", exc_info=True)
+            logger.warning(f"Error checking library view preferences: {e}", exc_info=True)
             return False
 
     def apply_library_settings(self, view_type="list", group_by_series=False):
@@ -293,7 +293,7 @@ class LibraryHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error applying library settings: {e}", exc_info=True)
+            logger.warning(f"Error applying library settings: {e}", exc_info=True)
             return False
 
     def _is_library_tab_selected(self):
@@ -401,7 +401,7 @@ class LibraryHandler:
             return False
 
         except Exception as e:
-            logger.error(f"Error opening Grid/List view dialog: {e}", exc_info=True)
+            logger.warning(f"Error opening Grid/List view dialog: {e}", exc_info=True)
             return False
 
     def open_grid_list_view_dialog(self, force_open=False):
@@ -433,7 +433,7 @@ class LibraryHandler:
             return self._open_grid_list_view_dialog_internal()
 
         except Exception as e:
-            logger.error(f"Error in open_grid_list_view_dialog: {e}", exc_info=True)
+            logger.warning(f"Error in open_grid_list_view_dialog: {e}", exc_info=True)
             return False
 
     def _is_grid_list_view_dialog_open(self):
@@ -456,7 +456,7 @@ class LibraryHandler:
                     continue
                 except (InvalidSessionIdException, WebDriverException) as e:
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping dialog check", exc_info=True)
+                        logger.warning("Session terminated, stopping dialog check", exc_info=True)
                         return False
                     raise
 
@@ -471,7 +471,7 @@ class LibraryHandler:
                     continue
                 except (InvalidSessionIdException, WebDriverException) as e:
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping dialog check", exc_info=True)
+                        logger.warning("Session terminated, stopping dialog check", exc_info=True)
                         return False
                     raise
 
@@ -486,7 +486,7 @@ class LibraryHandler:
                     continue
                 except (InvalidSessionIdException, WebDriverException) as e:
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping dialog check", exc_info=True)
+                        logger.warning("Session terminated, stopping dialog check", exc_info=True)
                         return False
                     raise
 
@@ -500,7 +500,7 @@ class LibraryHandler:
                 pass
             except (InvalidSessionIdException, WebDriverException) as e:
                 if "A session is either terminated or not started" in str(e):
-                    logger.error("Session terminated, stopping dialog check", exc_info=True)
+                    logger.warning("Session terminated, stopping dialog check", exc_info=True)
                     return False
                 raise
 

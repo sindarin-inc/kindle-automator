@@ -126,7 +126,7 @@ class AuthenticationHandler:
             return focused_field
 
         except Exception as e:
-            logger.error(f"Error handling {field_type} field focus: {e}", exc_info=True)
+            logger.warning(f"Error handling {field_type} field focus: {e}", exc_info=True)
             return None
 
     def prepare_for_authentication(self):
@@ -212,7 +212,7 @@ class AuthenticationHandler:
                     )
                     state_name = "LIBRARY_SIGN_IN"
             except Exception as e:
-                logger.error(f"Error in thorough state detection: {e}", exc_info=True)
+                logger.warning(f"Error in thorough state detection: {e}", exc_info=True)
                 # Fall back to regular state update
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
@@ -320,7 +320,7 @@ class AuthenticationHandler:
                                 "vnc_url": get_formatted_vnc_url(email),
                             }
                     except Exception as e:
-                        logger.error(f"Error navigating from HOME to LIBRARY: {e}", exc_info=True)
+                        logger.warning(f"Error navigating from HOME to LIBRARY: {e}", exc_info=True)
                         # Continue with HOME state
 
                 # For authenticated states, still provide a VNC URL for convenience
@@ -360,7 +360,7 @@ class AuthenticationHandler:
 
                     # Continue with the flow - don't return here, let it check the new state
                 except Exception as e:
-                    logger.error(f"Failed to handle notification permission dialog: {e}", exc_info=True)
+                    logger.warning(f"Failed to handle notification permission dialog: {e}", exc_info=True)
                     # Continue anyway, maybe it will resolve itself
 
             # Check if we're already in a sign-in flow state
@@ -389,7 +389,7 @@ class AuthenticationHandler:
                         if not is_ready:
                             logger.warning(f"Emulator not ready for {email}, may need to be restarted")
                     except Exception as e:
-                        logger.error(f"Error checking emulator readiness: {e}", exc_info=True)
+                        logger.warning(f"Error checking emulator readiness: {e}", exc_info=True)
 
                 # Focus the email field if needed (only for SIGN_IN state)
                 if state_name == "SIGN_IN":
@@ -416,7 +416,7 @@ class AuthenticationHandler:
                     else:
                         logger.warning("Could not verify Kindle app installation")
                 except Exception as e:
-                    logger.error(f"Error ensuring Kindle app is installed: {e}", exc_info=True)
+                    logger.warning(f"Error ensuring Kindle app is installed: {e}", exc_info=True)
 
             # Try restarting the app to get to the sign-in screen
             success = False
@@ -428,7 +428,7 @@ class AuthenticationHandler:
                     if not success:
                         logger.warning("restart_kindle_app reported failure, will try alternative approaches")
                 else:
-                    logger.error("Automator doesn't have restart_kindle_app method")
+                    logger.warning("Automator doesn't have restart_kindle_app method")
                     # Try to launch app directly as a fallback
                     try:
                         logger.info("Attempting to launch Kindle app directly")
@@ -437,9 +437,9 @@ class AuthenticationHandler:
                         time.sleep(3)  # Give it time to launch
                         success = True
                     except Exception as launch_e:
-                        logger.error(f"Error launching Kindle app: {launch_e}", exc_info=True)
+                        logger.warning(f"Error launching Kindle app: {launch_e}", exc_info=True)
             except Exception as e:
-                logger.error(f"Error restarting app: {e}", exc_info=True)
+                logger.warning(f"Error restarting app: {e}", exc_info=True)
                 # Try to at least launch the app
                 try:
                     logger.info("Fallback - attempting to launch Kindle app via activate_app")
@@ -448,7 +448,7 @@ class AuthenticationHandler:
                     time.sleep(3)  # Give it time to launch
                     success = True
                 except Exception as activate_e:
-                    logger.error(f"Error activating Kindle app: {activate_e}", exc_info=True)
+                    logger.warning(f"Error activating Kindle app: {activate_e}", exc_info=True)
 
             # Update our state to see where we are
             automator.state_machine.update_current_state()
@@ -491,7 +491,7 @@ class AuthenticationHandler:
                             logger.debug(f"Error tapping email field with {strategy}={locator}: {tap_err}")
                             continue
                 except Exception as e:
-                    logger.error(f"Error tapping email field: {e}", exc_info=True)
+                    logger.warning(f"Error tapping email field: {e}", exc_info=True)
 
                 # Always require manual login
                 # Start the keyboard check to continuously hide the keyboard in AUTH state
@@ -552,9 +552,9 @@ class AuthenticationHandler:
                         state_name = (
                             current_state.name if hasattr(current_state, "name") else str(current_state)
                         )
-                        logger.error(f"Current state after failed transition: {state_name}")
+                        logger.warning(f"Current state after failed transition: {state_name}")
                     except Exception as state_err:
-                        logger.error(
+                        logger.warning(
                             f"Error getting state after failed transition: {state_err}", exc_info=True
                         )
                         state_name = "UNKNOWN"
@@ -631,7 +631,7 @@ class AuthenticationHandler:
                     state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
                     logger.info(f"Current state after error: {state_name}")
                 except Exception as state_err:
-                    logger.error(f"Error getting state after transition error: {state_err}", exc_info=True)
+                    logger.warning(f"Error getting state after transition error: {state_err}", exc_info=True)
                     state_name = "UNKNOWN"
 
             # If we get here, we had some serious issues
@@ -761,7 +761,7 @@ class AuthenticationHandler:
                                 AppiumBy.XPATH,
                                 "//android.view.View[@resource-id='auth-error-message-box']//android.view.View[contains(@text, 'incorrect')]",
                             )
-                            logger.error(f"Authentication error: {error_message.text}", exc_info=True)
+                            logger.warning(f"Authentication error: {error_message.text}", exc_info=True)
                             return (LoginVerificationState.ERROR, error_message.text)
                         except:
                             # If specific message not found, try to get any text from the error box
@@ -777,15 +777,15 @@ class AuthenticationHandler:
 
                                 if error_texts:
                                     error_message = " - ".join(error_texts)
-                                    logger.error(f"Authentication error: {error_message}", exc_info=True)
+                                    logger.warning(f"Authentication error: {error_message}", exc_info=True)
                                     return (LoginVerificationState.ERROR, error_message)
                                 else:
-                                    logger.error(
+                                    logger.warning(
                                         "Authentication error box found but couldn't extract message"
                                     )
                                     return (LoginVerificationState.ERROR, "Unknown authentication error")
                             except Exception as e:
-                                logger.error(f"Error extracting message from error box: {e}", exc_info=True)
+                                logger.warning(f"Error extracting message from error box: {e}", exc_info=True)
                                 return (LoginVerificationState.ERROR, "Authentication error")
                 except:
                     # No error box found, continue with other checks
@@ -806,7 +806,7 @@ class AuthenticationHandler:
                             try:
                                 error = driver.find_element(*strategy)
                                 if error and error.text.strip():
-                                    logger.error(
+                                    logger.warning(
                                         f"Found error message with disabled button: {error.text.strip()}",
                                         exc_info=True,
                                     )
@@ -860,7 +860,9 @@ class AuthenticationHandler:
                             try:
                                 error = driver.find_element(*strategy)
                                 if error and error.text.strip():
-                                    logger.error(f"Found error message: {error.text.strip()}", exc_info=True)
+                                    logger.warning(
+                                        f"Found error message: {error.text.strip()}", exc_info=True
+                                    )
                                     return (LoginVerificationState.ERROR, error.text.strip())
                             except:
                                 continue
@@ -952,14 +954,14 @@ class AuthenticationHandler:
                     return True
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.INCORRECT_PASSWORD:
                     # Special handling for incorrect password
-                    logger.error(f"Login failed with incorrect password: {result[1]}", exc_info=True)
+                    logger.warning(f"Login failed with incorrect password: {result[1]}", exc_info=True)
                     # Return the result tuple directly so the server can handle it specifically
                     return result
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.ERROR:
-                    logger.error(f"Login failed: {result[1]}")
+                    logger.warning(f"Login failed: {result[1]}")
                     return result
                 else:
-                    logger.error(f"Could not verify login status, state: {result}")
+                    logger.warning(f"Could not verify login status, state: {result}")
                     return False
 
             except TimeoutException:
@@ -1198,7 +1200,7 @@ class AuthenticationHandler:
 
             return is_captcha
         except Exception as e:
-            logger.error(f"Error checking for captcha screen: {e}", exc_info=True)
+            logger.warning(f"Error checking for captcha screen: {e}", exc_info=True)
             return False
 
     def _try_find_element(self, by, locator):

@@ -290,9 +290,9 @@ class KindleStateMachine:
                 self.view_inspector.driver.save_screenshot(screenshot_path)
                 logger.info(f"Saved failed transition screenshot to {screenshot_path}")
             except Exception as e:
-                logger.error(f"Failed to save transition error screenshot: {e}", exc_info=True)
+                logger.warning(f"Failed to save transition error screenshot: {e}", exc_info=True)
         except Exception as e:
-            logger.error(f"Failed to get page source after failed transitions: {e}", exc_info=True)
+            logger.warning(f"Failed to get page source after failed transitions: {e}", exc_info=True)
 
         return self.current_state
 
@@ -310,7 +310,7 @@ class KindleStateMachine:
             self.view_inspector.driver.save_screenshot(screenshot_path)
             logger.info(f"Saved failed transition screenshot to {screenshot_path}")
         except Exception as e:
-            logger.error(f"Failed to save transition error data: {e}", exc_info=True)
+            logger.warning(f"Failed to save transition error data: {e}", exc_info=True)
 
     def handle_state(self) -> bool:
         """Handle the current state using the appropriate state handler.
@@ -427,7 +427,7 @@ class KindleStateMachine:
             return False
 
         except Exception as e:
-            logger.error(f"Error in is_reading_view check: {e}", exc_info=True)
+            logger.warning(f"Error in is_reading_view check: {e}", exc_info=True)
             return False
 
     def update_current_state(self) -> AppState:
@@ -644,7 +644,7 @@ class KindleStateMachine:
                                 return self.current_state
 
                 except Exception as e:
-                    logger.error(f"Error checking current activity: {e}", exc_info=True)
+                    logger.warning(f"Error checking current activity: {e}", exc_info=True)
 
                 # Store page source for debugging if still unknown
                 source = self.driver.page_source
@@ -687,7 +687,7 @@ class KindleStateMachine:
                         except:
                             continue
                 except Exception as e:
-                    logger.error(f"Error checking for reading state: {e}", exc_info=True)
+                    logger.warning(f"Error checking for reading state: {e}", exc_info=True)
 
             return self.current_state
 
@@ -787,7 +787,7 @@ class KindleStateMachine:
                 )
 
         except Exception as e:
-            logger.error(f"Error verifying auth from search results: {e}", exc_info=True)
+            logger.warning(f"Error verifying auth from search results: {e}", exc_info=True)
 
     def handle_auth_state_detection(self, current_state, sindarin_email=None):
         """
@@ -808,7 +808,7 @@ class KindleStateMachine:
             profile = self.driver.automator.profile_manager.get_current_profile()
             sindarin_email = profile.get("email") if profile else None
             if not sindarin_email:
-                logger.error("No email found for auth state detection")
+                logger.warning("No email found for auth state detection")
                 return None
 
         profile_manager = self.driver.automator.profile_manager

@@ -174,7 +174,7 @@ class BooksResource(Resource):
         sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
-            logger.error("No email provided to identify which profile to use")
+            logger.warning("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
@@ -358,7 +358,7 @@ class BooksStreamResource(Resource):
         sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
-            logger.error("No email provided to identify which profile to use")
+            logger.warning("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
@@ -747,7 +747,7 @@ class ScreenshotResource(Resource):
                     except Exception as inner_e:
                         # If this fails too, we'll log the error but continue with response processing
                         # so the error is properly reported to the client
-                        logger.error(f"Standard screenshot also failed: {inner_e}", exc_info=True)
+                        logger.warning(f"Standard screenshot also failed: {inner_e}", exc_info=True)
                         failed = "Failed to take screenshot - FLAG_SECURE may be set"
             else:
                 # Use standard screenshot for non-auth screens
@@ -1029,7 +1029,7 @@ class BookOpenResource(Resource):
                 try:
                     os.remove(screenshot_path)
                 except Exception as e:
-                    logger.error(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
+                    logger.warning(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
 
             return response_data, 200
 
@@ -1064,7 +1064,7 @@ class BookOpenResource(Resource):
                         logger.error("Failed to handle Download Limit dialog")
                         return {"error": "Failed to handle Download Limit dialog"}, 500
             except Exception as e:
-                logger.error(f"Error checking for Download Limit dialog: {e}", exc_info=True)
+                logger.warning(f"Error checking for Download Limit dialog: {e}", exc_info=True)
 
             # Then, check if we have current_book set
             if current_book:
@@ -1400,7 +1400,7 @@ class AuthResource(Resource):
 
         # Sindarin email is required for profile identification
         if not sindarin_email:
-            logger.error("No sindarin_email provided for profile identification")
+            logger.warning("No sindarin_email provided for profile identification")
             return {"error": "sindarin_email is required for profile identification"}, 400
 
         # Create a unified params dict that combines query params and JSON body
@@ -1587,7 +1587,7 @@ class AuthResource(Resource):
                     else:
                         logger.warning(f"Could not find display number for {sindarin_email}")
                 except Exception as e:
-                    logger.error(f"Error restarting VNC server: {e}", exc_info=True)
+                    logger.warning(f"Error restarting VNC server: {e}", exc_info=True)
 
         # Get the formatted VNC URL with the profile email
         # This will also start the VNC server if it's not running
@@ -1845,7 +1845,7 @@ class TextResource(Resource):
                     if not still_visible:
                         logger.info("Successfully dismissed the 'About this book' slideover")
             except Exception as e:
-                logger.error(
+                logger.warning(
                     f"Error while attempting to dismiss 'About this book' slideover: {e}", exc_info=True
                 )
 
@@ -1887,7 +1887,7 @@ class TextResource(Resource):
                     os.remove(screenshot_path)
                     logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
+                    logger.warning(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
                 if ocr_text:
                     return {"success": True, "progress": progress, "text": ocr_text}, 200
@@ -2118,7 +2118,7 @@ class LastReadPageDialogResource(Resource):
                 try:
                     os.remove(screenshot_path)
                 except Exception as e:
-                    logger.error(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
+                    logger.warning(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
 
             return response_data, 200
 
@@ -2306,7 +2306,7 @@ def check_and_restart_adb_server():
             )
             logger.info("ADB server restarted")
         except Exception as adb_e:
-            logger.error(f"Error restarting ADB server: {adb_e}", exc_info=True)
+            logger.warning(f"Error restarting ADB server: {adb_e}", exc_info=True)
 
 
 def run_idle_check():
@@ -2319,9 +2319,9 @@ def run_idle_check():
             shut_down = result.get("shut_down", 0)
             active = result.get("active", 0)
         else:
-            logger.error(f"Idle check failed with status {status_code}: {result}")
+            logger.warning(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
-        logger.error(f"Error during scheduled idle check: {e}", exc_info=True)
+        logger.warning(f"Error during scheduled idle check: {e}", exc_info=True)
 
 
 def run_cold_storage_check():
@@ -2339,7 +2339,7 @@ def run_cold_storage_check():
         if storage_info and storage_info.get("total_space_saved", 0) > 0:
             logger.info(f"Total space saved: {storage_info['total_space_saved_human']}")
     except Exception as e:
-        logger.error(f"Error during scheduled cold storage check: {e}", exc_info=True)
+        logger.warning(f"Error during scheduled cold storage check: {e}", exc_info=True)
 
 
 def cleanup_resources():
@@ -2353,7 +2353,7 @@ def cleanup_resources():
             logger.info("Shutting down APScheduler...")
             app.scheduler.shutdown(wait=False)
         except Exception as e:
-            logger.error(f"Error shutting down scheduler: {e}", exc_info=True)
+            logger.warning(f"Error shutting down scheduler: {e}", exc_info=True)
 
     # Clean up any active WebSocket proxies
     try:
@@ -2363,7 +2363,7 @@ def cleanup_resources():
         ws_manager.cleanup()
         logger.info("Successfully cleaned up WebSocket proxies")
     except Exception as e:
-        logger.error(f"Error cleaning up WebSocket proxies: {e}", exc_info=True)
+        logger.warning(f"Error cleaning up WebSocket proxies: {e}", exc_info=True)
 
     # Mark all running emulators for restart and shutdown gracefully with preserved state
     from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
@@ -2384,7 +2384,7 @@ def cleanup_resources():
                 vnc_manager.mark_running_for_deployment(email)
                 running_emails.append(email)
             except Exception as e:
-                logger.error(f"✗ Error marking {email} for restart: {e}", exc_info=True)
+                logger.warning(f"✗ Error marking {email} for restart: {e}", exc_info=True)
 
     logger.info(f"Found {len(running_emails)} running emulators to preserve across restart")
 
@@ -2396,7 +2396,7 @@ def cleanup_resources():
             )
             shutdown_manager.shutdown_emulator(email, preserve_reading_state=True, mark_for_restart=True)
         except KeyError as e:
-            logger.error(f"✗ Error shutting down {email}: {e}", exc_info=True)
+            logger.warning(f"✗ Error shutting down {email}: {e}", exc_info=True)
 
     # Stop Appium servers for all running emulators
     from server.utils.appium_driver import AppiumDriver
@@ -2408,14 +2408,14 @@ def cleanup_resources():
             logger.info(f"Stopping Appium server for {email}")
             appium_driver.stop_appium_for_profile(email)
         except Exception as e:
-            logger.error(f"Error stopping Appium for {email} during shutdown: {e}", exc_info=True)
+            logger.warning(f"Error stopping Appium for {email} during shutdown: {e}", exc_info=True)
 
     # Kill any remaining Appium processes (legacy cleanup)
     try:
         logger.info("Cleaning up any remaining Appium processes")
         server.kill_existing_process("appium")
     except Exception as e:
-        logger.error(f"Error killing remaining Appium processes: {e}", exc_info=True)
+        logger.warning(f"Error killing remaining Appium processes: {e}", exc_info=True)
 
     # Clean up ADB port forwards to prevent port conflicts on restart
     logger.info("Cleaning up ADB port forwards")
