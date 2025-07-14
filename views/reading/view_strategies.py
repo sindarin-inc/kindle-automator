@@ -390,6 +390,19 @@ ITEM_REMOVED_DIALOG_CLOSE_BUTTON = [
 ]
 
 
+# Tutorial message identifiers
+TUTORIAL_MESSAGE_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/snackbar_text"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/snackbar_text']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Tap the middle of the page')]"),
+]
+
+TUTORIAL_MESSAGE_CONTAINER = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toast_tutorial_shell"),
+    (AppiumBy.XPATH, "//android.view.ViewGroup[@resource-id='com.amazon.kindle:id/toast_tutorial_shell']"),
+]
+
+
 def is_item_removed_dialog_visible(driver):
     """Check if the 'Item Removed' dialog is visible."""
     try:

@@ -50,6 +50,8 @@ from views.reading.view_strategies import (
     READING_TOOLBAR_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
+    TUTORIAL_MESSAGE_CONTAINER,
+    TUTORIAL_MESSAGE_IDENTIFIERS,
     WHITE_BG_IDENTIFIERS,
     is_item_removed_dialog_visible,
 )
@@ -865,6 +867,13 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Error checking for page content: {e}", exc_info=True)
             # Continue anyway as we already confirmed we're in reading view
+
+        # Check for and handle tutorial message
+        try:
+            if self.check_and_handle_tutorial_message():
+                logger.info("Successfully handled tutorial message")
+        except Exception as e:
+            logger.error(f"Error checking/handling tutorial message: {e}", exc_info=True)
 
         # Check for and dismiss bottom sheet dialog
         try:
@@ -2156,6 +2165,126 @@ class ReaderHandler:
 
         except Exception as e:
             logger.error(f"Error handling comic book view: {e}", exc_info=True)
+            return False
+
+    def check_and_handle_tutorial_message(self) -> bool:
+        """Check for and handle the 'Tap the middle of the page' tutorial message.
+
+        Returns:
+            bool: True if successfully handled the tutorial message, False if not found.
+        """
+        try:
+            # Check if tutorial message is visible
+            tutorial_visible = False
+            for strategy, locator in TUTORIAL_MESSAGE_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        tutorial_visible = True
+                        logger.info(f"Found tutorial message: {element.text}")
+                        break
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error checking for tutorial message: {e}")
+
+            if not tutorial_visible:
+                return False
+
+            logger.info("Tutorial message detected - will tap to dismiss it")
+
+            # Check if we should open the style dialog or just dismiss
+            if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
+                profile_manager = self.driver.automator.profile_manager
+                sindarin_email = get_sindarin_email()
+
+                # Check if the user has the style dialog preference set
+                if sindarin_email:
+                    show_style_dialog = profile_manager.get_style_setting(
+                        "show_style_dialog", email=sindarin_email
+                    )
+
+                    if show_style_dialog is False:
+                        # User doesn't want style dialog, so we need to tap twice
+                        # First tap opens toolbar, second tap closes it
+                        logger.info("User has style dialog disabled - will tap twice to dismiss tutorial")
+
+                        # Get screen dimensions
+                        window_size = self.driver.get_window_size()
+                        center_x = window_size["width"] // 2
+                        center_y = window_size["height"] // 2
+
+                        # First tap to open toolbar
+                        self.driver.tap([(center_x, center_y)])
+                        logger.info("First tap to open toolbar")
+                        time.sleep(0.5)
+
+                        # Second tap to close toolbar and get back to reading view
+                        self.driver.tap([(center_x, center_y)])
+                        logger.info("Second tap to close toolbar and dismiss tutorial")
+                        time.sleep(0.5)
+
+                        # Verify tutorial is gone
+                        tutorial_still_visible = False
+                        for strategy, locator in TUTORIAL_MESSAGE_IDENTIFIERS:
+                            try:
+                                element = self.driver.find_element(strategy, locator)
+                                if element and element.is_displayed():
+                                    tutorial_still_visible = True
+                                    break
+                            except NoSuchElementException:
+                                continue
+
+                        if tutorial_still_visible:
+                            logger.warning("Tutorial message still visible after double tap")
+                            return False
+                        else:
+                            logger.info("Successfully dismissed tutorial message")
+                            return True
+                    else:
+                        # User wants style dialog or hasn't set preference
+                        logger.info("User has style dialog enabled - single tap will open style dialog")
+
+                        # Single tap to open toolbar/style dialog
+                        window_size = self.driver.get_window_size()
+                        center_x = window_size["width"] // 2
+                        center_y = window_size["height"] // 2
+
+                        self.driver.tap([(center_x, center_y)])
+                        logger.info("Tapped to open toolbar and dismiss tutorial")
+                        time.sleep(0.5)
+
+                        # Verify tutorial is gone
+                        tutorial_still_visible = False
+                        for strategy, locator in TUTORIAL_MESSAGE_IDENTIFIERS:
+                            try:
+                                element = self.driver.find_element(strategy, locator)
+                                if element and element.is_displayed():
+                                    tutorial_still_visible = True
+                                    break
+                            except NoSuchElementException:
+                                continue
+
+                        if tutorial_still_visible:
+                            logger.warning("Tutorial message still visible after tap")
+                            return False
+                        else:
+                            logger.info("Successfully dismissed tutorial message and opened toolbar")
+                            return True
+
+            # Fallback: just do a single tap if we can't determine preference
+            window_size = self.driver.get_window_size()
+            center_x = window_size["width"] // 2
+            center_y = window_size["height"] // 2
+
+            self.driver.tap([(center_x, center_y)])
+            logger.info("Tapped to dismiss tutorial message")
+            time.sleep(0.5)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error handling tutorial message: {e}", exc_info=True)
             return False
 
     def _click_close_book_button(self):
