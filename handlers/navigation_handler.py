@@ -93,6 +93,43 @@ class NavigationResourceHandler:
                 current_state = self.automator.state_machine.update_current_state()
                 logger.info(f"Current state: {current_state}")
 
+                # If we're in reading state, check for last read dialog before attempting to transition
+                if current_state == AppState.READING:
+                    # Check if we already have this book open
+                    profile = self.automator.profile_manager.get_current_profile()
+                    sindarin_email = profile.get("email") if profile else None
+
+                    if sindarin_email and hasattr(self.automator, "server_ref") and self.automator.server_ref:
+                        current_book = self.automator.server_ref.get_current_book(sindarin_email)
+                        if current_book and current_book.lower() == book_title.lower():
+                            logger.info(
+                                f"Already in reading state with matching book loaded: '{book_title}' == '{current_book}'"
+                            )
+                        elif current_book:
+                            logger.info(
+                                f"In reading state but different book loaded: requested '{book_title}' != current '{current_book}'"
+                            )
+                        else:
+                            logger.info(
+                                f"In reading state but no current book tracked, requested: '{book_title}'"
+                            )
+
+                    dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+                    if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
+                        # Dialog found, return it to the client instead of transitioning
+                        logger.info(
+                            "Found 'last read page' dialog while in reading state - returning to client for decision"
+                        )
+
+                        response_data = {
+                            "success": True,
+                            "last_read_dialog": True,
+                            "dialog_text": dialog_result.get("dialog_text"),
+                            "message": "Last read page dialog detected",
+                        }
+
+                        return response_data, 200
+
                 # Check if we're in an auth-required state
                 if current_state.is_auth_state():
                     logger.error(f"Cannot navigate - authentication required. Current state: {current_state}")

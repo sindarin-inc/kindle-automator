@@ -73,6 +73,8 @@ class AutomationServer:
             logger.info(f"Created automator={id(automator)} for email={email}")
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
+            # Add server reference so automator can access current book info
+            automator.server_ref = self
 
             # Pass emulator_manager to automator for VNC integration
             automator.emulator_manager = self.profile_manager.emulator_manager
