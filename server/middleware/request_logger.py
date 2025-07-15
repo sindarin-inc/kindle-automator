@@ -86,9 +86,13 @@ class RequestBodyLogger:
                 request_data = request.get_json()
                 # Sanitize sensitive data
                 request_data = RequestBodyLogger.sanitize_sensitive_data(request_data)
-            except Exception as e:
-                logger.error(f"Error parsing JSON request: {e}", exc_info=True)
-                request_data = "Invalid JSON"
+            except Exception:
+                # Don't log error, just show the raw data
+                try:
+                    raw_data = request.data.decode("utf-8")
+                    request_data = f"Invalid JSON: {raw_data}" if raw_data else "Invalid JSON: <empty body>"
+                except UnicodeDecodeError:
+                    request_data = f"Invalid JSON: Binary data ({len(request.data)} bytes)"
         elif request.form:
             request_data = RequestBodyLogger.sanitize_sensitive_data(request.form.to_dict())
         elif request.data:
