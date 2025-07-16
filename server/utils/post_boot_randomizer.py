@@ -273,8 +273,8 @@ class PostBootRandomizer:
         if device_identifiers:
             # Map our identifier keys to actual Android system properties
             property_mappings = {
-                "ro.serialno": device_identifiers.get("ro.serialno"),
-                "ro.build.id": device_identifiers.get("ro.build.id"),
+                # "ro.serialno": device_identifiers.get("ro.serialno"), # Not working
+                # "ro.build.id": device_identifiers.get("ro.build.id"), # Not working
                 "ro.product.name": device_identifiers.get("ro.product.name"),
             }
 
