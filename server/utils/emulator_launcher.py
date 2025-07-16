@@ -404,13 +404,24 @@ class EmulatorLauncher:
 
             # First check if this email already has an entry in profiles_index
             if os.path.exists(users_file_path):
-                with open(users_file_path, "r") as f:
-                    users = json.load(f)
+                try:
+                    with open(users_file_path, "r") as f:
+                        content = f.read().strip()
+                        if content:  # Only parse if file has content
+                            users = json.loads(content)
+                        else:
+                            users = {}
 
-                if email in users:
-                    user_entry = users.get(email)
-                    avd_name = user_entry.get("avd_name")
-                    return avd_name
+                    if email in users:
+                        user_entry = users.get(email)
+                        avd_name = user_entry.get("avd_name")
+                        return avd_name
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON in {users_file_path}, treating as empty")
+                    users = {}
+                except Exception as e:
+                    logger.warning(f"Error reading {users_file_path}: {e}")
+                    users = {}
 
             # No existing entry, detect email format and create appropriate AVD name
             is_normalized = (
@@ -442,18 +453,37 @@ class EmulatorLauncher:
                 os.makedirs(profiles_dir, exist_ok=True)
 
                 # Create or load profiles_index
+                users = None
+                json_error = False
+
                 if os.path.exists(users_file_path):
-                    with open(users_file_path, "r") as f:
-                        users = json.load(f)
+                    try:
+                        with open(users_file_path, "r") as f:
+                            content = f.read().strip()
+                            if content:
+                                users = json.loads(content)
+                            else:
+                                # Empty file - safe to treat as empty dict
+                                users = {}
+                    except (json.JSONDecodeError, Exception) as e:
+                        logger.error(
+                            f"Error reading {users_file_path}, NOT updating file to prevent data loss: {e}"
+                        )
+                        json_error = True
                 else:
+                    # File doesn't exist - safe to create new
                     users = {}
 
-                # Add or update the entry for this email
-                users[email] = {"avd_name": avd_name}
+                # Only update file if we successfully loaded it or it's new
+                if not json_error and users is not None:
+                    # Add or update the entry for this email
+                    users[email] = {"avd_name": avd_name}
 
-                # Save to file
-                with open(users_file_path, "w") as f:
-                    json.dump(users, f, indent=2)
+                    # Save to file
+                    with open(users_file_path, "w") as f:
+                        json.dump(users, f, indent=2)
+                else:
+                    logger.warning(f"Skipping users.json update due to read error - returning AVD name only")
             except Exception as e:
                 logger.warning(f"Error updating users.json: {e}", exc_info=True)
 
