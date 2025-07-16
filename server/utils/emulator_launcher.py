@@ -1626,7 +1626,7 @@ class EmulatorLauncher:
         """Check if any emulator process is running."""
         try:
             ps_check = subprocess.run(
-                ["pgrep", "-f", "qemu-system-aarch64"], check=False, capture_output=True, text=True
+                ["pgrep", "-f", "qemu-system-"], check=False, capture_output=True, text=True
             )
             return ps_check.returncode == 0
         except Exception:
