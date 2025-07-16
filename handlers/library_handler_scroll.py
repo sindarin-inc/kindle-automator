@@ -343,7 +343,7 @@ class LibraryHandlerScroll:
                 logger.info("Successfully exited book selection mode")
                 return True
             else:
-                logger.error("Failed to exit book selection mode")
+                logger.error("Failed to exit book selection mode", exc_info=True)
                 return True  # Return True to indicate mode was detected
         return False
 
@@ -997,7 +997,7 @@ class LibraryHandlerScroll:
             if self.is_in_book_selection_mode():
                 logger.info("In book selection mode, exiting before scrolling")
                 if not self.exit_book_selection_mode():
-                    logger.error("Failed to exit book selection mode, cannot scroll properly")
+                    logger.error("Failed to exit book selection mode, cannot scroll properly", exc_info=True)
                     return False
                 logger.info("Successfully exited book selection mode, continuing with scroll")
 

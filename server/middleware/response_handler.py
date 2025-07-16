@@ -119,7 +119,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
         sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
-            logger.error("No email found to restart driver")
+            logger.error("No email found to restart driver", exc_info=True)
             return False
 
         # Check if we have an automator for this email
@@ -146,7 +146,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
         sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
-            logger.error("No email found to restart emulator")
+            logger.error("No email found to restart emulator", exc_info=True)
             return False
 
         logger.info(f"Attempting to restart emulator for profile: {sindarin_email}")
@@ -285,7 +285,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                         )
                         last_error = retry_error
                 else:
-                    logger.error("Failed to reinitialize driver after UiAutomator2 crash")
+                    logger.error("Failed to reinitialize driver after UiAutomator2 crash", exc_info=True)
             # Special handling for emulator not running or device list error
             elif is_emulator_missing(e):
                 logger.warning(
@@ -305,13 +305,15 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                             logger.error(f"Retry after emulator restart failed: {retry_error}", exc_info=True)
                             last_error = retry_error
                     else:
-                        logger.error("Failed to reinitialize driver after emulator restart")
+                        logger.error("Failed to reinitialize driver after emulator restart", exc_info=True)
                 else:
-                    logger.error("Failed to restart emulator")
+                    logger.error("Failed to restart emulator", exc_info=True)
             else:
                 # Regular error handling for other types of crashes
-                logger.error(f"Attempt {attempt + 1} failed: {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
+                if "Original error: connect ECONNREFUSED" in str(e):
+                    logger.info(f"Attempt {attempt + 1} failed: {e}", exc_info=True)
+                else:
+                    logger.error(f"Attempt {attempt + 1} failed: {e}", exc_info=True)
 
             # Check if we should continue with another attempt
             if attempt < max_retries - 1:
@@ -320,7 +322,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
 
     # If we reach here, all retries failed
     time_taken = round(time.time() - start_time, 3)
-    logger.error(f"All retry attempts failed. Last error: {last_error}")
+    logger.error(f"All retry attempts failed. Last error: {last_error}", exc_info=True)
 
     # Check if the error is a dictionary response (likely from our API)
     if (
@@ -474,7 +476,7 @@ def _handle_timezone_parameter(server_instance, sindarin_email: Optional[str]):
                     else:
                         logger.warning(f"Failed to apply timezone to device for {sindarin_email}")
                 else:
-                    logger.error(f"Failed to save timezone for {sindarin_email}")
+                    logger.error(f"Failed to save timezone for {sindarin_email}", exc_info=True)
             else:
                 logger.debug(f"Timezone unchanged ({timezone}) for {sindarin_email}, skipping device update")
 
@@ -505,7 +507,7 @@ def handle_automator_response(f):
         # Get server instance from request context
         server_instance = current_app.config.get("server_instance")
         if server_instance is None:
-            logger.error("No server instance found in app config")
+            logger.error("No server instance found in app config", exc_info=True)
             return {"error": "Server configuration error"}, 500
 
         # Get the operation name from the function
@@ -621,8 +623,7 @@ def handle_automator_response(f):
 
         except Exception as e:
             time_taken = round(time.time() - start_time, 3)
-            logger.error(f"Error in endpoint {operation_name}: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error in endpoint {operation_name}: {str(e)[:100]}", exc_info=True)
 
             # We still take error snapshots for debugging
             if automator and hasattr(automator, "driver") and automator.driver:

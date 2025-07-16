@@ -89,7 +89,9 @@ class EmulatorBatchConfigResource(Resource):
                     success, message = self.server.switch_profile(email)
 
                     if not success:
-                        logger.error(f"{RED}Failed to start emulator for {email}: {message}{RESET}")
+                        logger.error(
+                            f"{RED}Failed to start emulator for {email}: {message}{RESET}", exc_info=True
+                        )
                         result["status"] = "failed"
                         result["error"] = f"Failed to start emulator: {message}"
                         failed_count += 1
@@ -105,7 +107,7 @@ class EmulatorBatchConfigResource(Resource):
                     # Get the automator for this profile
                     automator = self.server.get_automator(email)
                     if not automator:
-                        logger.error(f"{RED}Failed to create automator for {email}{RESET}")
+                        logger.error(f"{RED}Failed to create automator for {email}{RESET}", exc_info=True)
                         result["status"] = "failed"
                         result["error"] = "Failed to create automator"
                         failed_count += 1
@@ -153,14 +155,18 @@ class EmulatorBatchConfigResource(Resource):
                                 )
                                 result["steps_completed"].append("library_settings_applied")
                             else:
-                                logger.error(f"{RED}Failed to apply library settings for {email}{RESET}")
+                                logger.error(
+                                    f"{RED}Failed to apply library settings for {email}{RESET}", exc_info=True
+                                )
                                 result["status"] = "failed"
                                 result["error"] = "Failed to apply library settings"
                                 failed_count += 1
                                 results.append(result)
                                 continue
                         else:
-                            logger.error(f"{RED}Failed to open grid/list dialog for {email}{RESET}")
+                            logger.error(
+                                f"{RED}Failed to open grid/list dialog for {email}{RESET}", exc_info=True
+                            )
                             result["status"] = "failed"
                             result["error"] = "Failed to open grid/list dialog"
                             failed_count += 1

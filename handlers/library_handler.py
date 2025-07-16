@@ -207,13 +207,13 @@ class LibraryHandler:
 
             # Open the grid/list dialog
             if not self.open_grid_list_view_dialog(force_open=True):
-                logger.error("Failed to open grid/list view dialog")
+                logger.error("Failed to open grid/list view dialog", exc_info=True)
                 return False
 
             # Now apply the settings in the dialog
             dialog_open = self._is_grid_list_view_dialog_open()
             if not dialog_open:
-                logger.error("Dialog not open after attempting to open it")
+                logger.error("Dialog not open after attempting to open it", exc_info=True)
                 return False
 
             # Set group by series switch
@@ -284,7 +284,7 @@ class LibraryHandler:
 
             # Verify dialog is closed
             if self._is_grid_list_view_dialog_open():
-                logger.error("Dialog still open after clicking DONE")
+                logger.error("Dialog still open after clicking DONE", exc_info=True)
                 return False
 
             logger.info(
@@ -538,7 +538,7 @@ class LibraryHandler:
             if self._is_view_options_menu_open():
                 logger.info("View options menu is open, closing it first")
                 if not self._close_menu():
-                    logger.error("Failed to close view options menu")
+                    logger.error("Failed to close view options menu", exc_info=True)
                     return False
                 time.sleep(0.5)  # Wait for menu to close
 
@@ -934,7 +934,7 @@ class LibraryHandler:
             if self._is_in_search_interface():
                 logger.info("Detected we're in search interface, exiting search mode first")
                 if not self.search_handler._exit_search_mode():
-                    logger.error("Failed to exit search mode")
+                    logger.error("Failed to exit search mode", exc_info=True)
                     return False
                 logger.info("Successfully exited search mode")
                 time.sleep(1)  # Give UI time to settle
@@ -969,7 +969,7 @@ class LibraryHandler:
                         "Actually in search interface even though grid view was detected, exiting search mode"
                     )
                     if not self.search_handler._exit_search_mode():
-                        logger.error("Failed to exit search mode")
+                        logger.error("Failed to exit search mode", exc_info=True)
                         return False
                     logger.info("Successfully exited search mode")
                     time.sleep(1)  # Give UI time to settle
@@ -977,7 +977,7 @@ class LibraryHandler:
 
                 # Use the shared internal method to open the dialog
                 if not self._open_grid_list_view_dialog_internal():
-                    logger.error("Failed to open Grid/List view dialog")
+                    logger.error("Failed to open Grid/List view dialog", exc_info=True)
                     return False
 
                 # After clicking the view options button, check if Grid/List dialog is open
@@ -985,7 +985,7 @@ class LibraryHandler:
                 if self._is_grid_list_view_dialog_open():
                     logger.info("Grid/List view dialog opened, handling it")
                     if not self.handle_grid_list_view_dialog():
-                        logger.error("Failed to handle Grid/List view dialog")
+                        logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                         return False
 
                     # After handling the dialog, verify we're in list view
@@ -993,7 +993,7 @@ class LibraryHandler:
                         logger.info("Successfully switched to list view after handling dialog")
                         return True
                     else:
-                        logger.error("Still not in list view after handling dialog")
+                        logger.error("Still not in list view after handling dialog", exc_info=True)
                         return False
 
                 # If we didn't detect the Grid/List dialog, continue with the old approach
@@ -1095,7 +1095,7 @@ class LibraryHandler:
                             # Try once more with the standard approach
                             return self.switch_to_list_view()
                     else:
-                        logger.error("Failed to handle Grid/List view dialog")
+                        logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                         return False
                 else:
                     logger.warning("Neither in grid view nor list view, unable to determine current state")
@@ -1194,7 +1194,7 @@ class LibraryHandler:
                 if "A session is either terminated or not started" in str(e):
                     logger.error("Session terminated while handling Group by Series switch", exc_info=True)
                     return False
-                logger.error(f"Error handling Group by Series switch: {e}")
+                logger.error(f"Error handling Group by Series switch: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"Error handling Group by Series switch: {e}", exc_info=True)
 
@@ -1302,7 +1302,7 @@ class LibraryHandler:
 
             # Verify the dialog was closed
             if self._is_grid_list_view_dialog_open():
-                logger.error("Failed to close Grid/List view dialog")
+                logger.error("Failed to close Grid/List view dialog", exc_info=True)
                 return False
 
             logger.info("Successfully handled Grid/List view selection dialog")
@@ -1418,12 +1418,12 @@ class LibraryHandler:
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is open at the start, handling it first")
                 if not self.handle_grid_list_view_dialog():
-                    logger.error("Failed to handle Grid/List view dialog")
+                    logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                     # Continue anyway, as navigate_to_library will try again
 
             # Ensure we're in the library view
             if not self.navigate_to_library():
-                logger.error("Failed to navigate to library")
+                logger.error("Failed to navigate to library", exc_info=True)
                 if callback:
                     callback(None, error="Failed to navigate to library")
                 return []
@@ -1439,14 +1439,14 @@ class LibraryHandler:
             if self._is_grid_list_view_dialog_open():
                 logger.info("Grid/List view dialog is open after navigation, handling it")
                 if not self.handle_grid_list_view_dialog():
-                    logger.error("Failed to handle Grid/List view dialog")
+                    logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                     # Try to continue anyway
 
             # Check if a book has been selected (happens from inadvertent long press)
             if self.scroll_handler.is_in_book_selection_mode():
                 logger.info("Book selection mode detected, exiting selection mode first")
                 if not self.scroll_handler.exit_book_selection_mode():
-                    logger.error("Failed to exit book selection mode")
+                    logger.error("Failed to exit book selection mode", exc_info=True)
                     if callback:
                         callback(None, error="Failed to exit book selection mode")
                     return []
@@ -1456,7 +1456,7 @@ class LibraryHandler:
             if self._is_in_search_interface():
                 logger.info("Detected we're in search results interface, exiting search mode first")
                 if not self.search_handler._exit_search_mode():
-                    logger.error("Failed to exit search mode")
+                    logger.error("Failed to exit search mode", exc_info=True)
                     if callback:
                         callback(None, error="Failed to exit search mode")
                     return []
@@ -1467,7 +1467,7 @@ class LibraryHandler:
             if self._is_grid_view():
                 logger.info("Detected grid view, switching to list view")
                 if not self.switch_to_list_view():
-                    logger.error("Failed to switch to list view")
+                    logger.error("Failed to switch to list view", exc_info=True)
                     if callback:
                         callback(None, error="Failed to switch to list view")
                     return []
@@ -2024,7 +2024,7 @@ class LibraryHandler:
                 if self._is_grid_list_view_dialog_open():
                     logger.info("Detected Grid/List view dialog is open, handling it first")
                     if not self.handle_grid_list_view_dialog():
-                        logger.error("Failed to handle Grid/List view dialog")
+                        logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                         return False
                     logger.info("Successfully handled Grid/List view dialog")
                     time.sleep(1)  # Wait for UI to stabilize
@@ -2033,7 +2033,7 @@ class LibraryHandler:
                 if self._is_grid_view():
                     logger.info("Detected grid view, switching to list view")
                     if not self.switch_to_list_view():
-                        logger.error("Failed to switch to list view")
+                        logger.error("Failed to switch to list view", exc_info=True)
                         return False
                     logger.info("Successfully switched to list view")
             else:
@@ -2091,7 +2091,9 @@ class LibraryHandler:
                     )
 
                 if not parent_container:
-                    logger.error(f"Failed to find book '{book_title}' using all search methods")
+                    logger.error(
+                        f"Failed to find book '{book_title}' using all search methods", exc_info=True
+                    )
                     return False
 
                 logger.info(f"Found book using partial match fallback: {book_info}")
@@ -2207,7 +2209,7 @@ class LibraryHandler:
                         "Detected Grid/List view dialog is open before opening book, handling it first"
                     )
                     if not self.handle_grid_list_view_dialog():
-                        logger.error("Failed to handle Grid/List view dialog")
+                        logger.error("Failed to handle Grid/List view dialog", exc_info=True)
                         store_page_source(self.driver.page_source, "failed_to_handle_grid_list_dialog")
                         return {"success": False, "error": "Failed to handle Grid/List view dialog"}
                     logger.info("Successfully handled Grid/List view dialog")
@@ -2221,7 +2223,9 @@ class LibraryHandler:
                         if self.open_grid_list_view_dialog(force_open=True):
                             logger.info("Opened Grid/List dialog, now handling it")
                             if not self.handle_grid_list_view_dialog():
-                                logger.error("Failed to handle Grid/List view dialog after opening")
+                                logger.error(
+                                    "Failed to handle Grid/List view dialog after opening", exc_info=True
+                                )
                                 return {
                                     "success": False,
                                     "error": "Failed to handle Grid/List view dialog after opening",
@@ -2505,7 +2509,7 @@ class LibraryHandler:
                             # Now check if we're in reading view or have a dialog
                             return self._delegate_to_reader_handler(book_title)
                         else:
-                            logger.error("Could not re-find book button for second click")
+                            logger.error("Could not re-find book button for second click", exc_info=True)
                             return {
                                 "success": False,
                                 "error": "Could not re-find book button for second click",
@@ -2528,7 +2532,7 @@ class LibraryHandler:
 
             # Find and click the book button
             if not self.find_book(book_title):
-                logger.error(f"Failed to find book: {book_title}")
+                logger.error(f"Failed to find book: {book_title}", exc_info=True)
                 return {"success": False, "error": f"Failed to find book: {book_title}"}
 
             logger.info(f"Successfully found and clicked book: {book_title}")
@@ -2580,7 +2584,9 @@ class LibraryHandler:
                 logger.info(f"Reader handler successfully handled dialogs for book '{book_title}'")
                 return {"success": True}
             else:
-                logger.error(f"Reader handler failed to handle dialogs for book '{book_title}'")
+                logger.error(
+                    f"Reader handler failed to handle dialogs for book '{book_title}'", exc_info=True
+                )
                 return {"success": False, "error": "Reader handler failed to handle dialogs"}
 
         except TimeoutException:

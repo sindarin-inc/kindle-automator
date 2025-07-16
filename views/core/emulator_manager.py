@@ -281,7 +281,7 @@ class EmulatorManager:
                 )
                 return False
             else:
-                logger.error(f"Failed to launch emulator")
+                logger.error(f"Failed to launch emulator", exc_info=True)
                 return False
 
         except Exception as e:

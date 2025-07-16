@@ -55,7 +55,7 @@ class AutomationServer:
             The automator instance or None if no email provided
         """
         if not email:
-            logger.error("Email parameter is required for initialize_automator")
+            logger.error("Email parameter is required for initialize_automator", exc_info=True)
             return None
 
         # Check if we already have an automator for this profile
@@ -100,7 +100,7 @@ class AutomationServer:
             Tuple[bool, str]: (success, message)
         """
         if not email:
-            logger.error("Email parameter is required for switch_profile")
+            logger.error("Email parameter is required for switch_profile", exc_info=True)
             return False, "Email parameter is required"
 
         # Set email context for this thread so logs go to the right file
@@ -223,7 +223,7 @@ class AutomationServer:
             email: The email to associate with this book. REQUIRED.
         """
         if not email:
-            logger.error("Email parameter is required for set_current_book")
+            logger.error("Email parameter is required for set_current_book", exc_info=True)
             return
 
         self.current_books[email] = book_title
@@ -236,7 +236,7 @@ class AutomationServer:
             email: The email for which to clear the book. REQUIRED.
         """
         if not email:
-            logger.error("Email parameter is required for clear_current_book")
+            logger.error("Email parameter is required for clear_current_book", exc_info=True)
             return
 
         if email in self.current_books:
@@ -253,7 +253,7 @@ class AutomationServer:
             str: The title of the current book, or None if no book is open
         """
         if not email:
-            logger.error("Email parameter is required for get_current_book")
+            logger.error("Email parameter is required for get_current_book", exc_info=True)
             return None
 
         return self.current_books.get(email)
@@ -335,7 +335,7 @@ class AutomationServer:
             if success:
                 logger.info(f"Seed clone AVD is ready: {message}")
             else:
-                logger.error(f"Failed to prepare seed clone AVD: {message}")
+                logger.error(f"Failed to prepare seed clone AVD: {message}", exc_info=True)
 
             return success
 

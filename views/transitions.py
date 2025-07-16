@@ -261,7 +261,7 @@ class StateTransitions:
                     time.sleep(3)  # Wait for app to initialize
                     return True
                 else:
-                    logger.error("Failed to restart app with automator.restart_app()")
+                    logger.error("Failed to restart app with automator.restart_app()", exc_info=True)
                     return False
             else:
                 # Fallback to using the view inspector's ensure_app_foreground
@@ -271,7 +271,7 @@ class StateTransitions:
                     time.sleep(3)  # Wait for app to initialize
                     return True
                 else:
-                    logger.error("Failed to restart app with ensure_app_foreground")
+                    logger.error("Failed to restart app with ensure_app_foreground", exc_info=True)
                     return False
 
         except Exception as e:
@@ -348,5 +348,5 @@ class StateTransitions:
 
         handler = handlers.get(state)
         if not handler:
-            logger.error(f"No handler found for state {state}")
+            logger.error(f"No handler found for state {state}", exc_info=True)
         return handler

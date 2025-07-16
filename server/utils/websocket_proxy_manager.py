@@ -4,7 +4,7 @@ WebSocket Proxy Manager for VNC connections.
 This module handles the creation, management, and cleanup of RFB proxy processes
 that convert VNC connections to WebSocket connections for browser-based VNC clients.
 
-It uses the rfbproxy library from Replit (https://github.com/replit/rfbproxy) to 
+It uses the rfbproxy library from Replit (https://github.com/replit/rfbproxy) to
 provide a WebSocket interface to the VNC server, allowing connections from noVNC clients.
 """
 
@@ -125,7 +125,7 @@ class WebSocketProxyManager:
             if process.poll() is not None:
                 # Process terminated immediately
                 stdout, stderr = process.communicate()
-                logger.error(f"WebSocket proxy failed to start: {stderr}")
+                logger.error(f"WebSocket proxy failed to start: {stderr}", exc_info=True)
                 return None
 
             # Store the active proxy

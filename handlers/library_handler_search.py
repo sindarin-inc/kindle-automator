@@ -445,7 +445,7 @@ class LibraryHandlerSearch:
                 self._wait_for_in_library_section()
                 return self._process_search_results(book_title)
             else:
-                logger.error("Failed to submit search")
+                logger.error("Failed to submit search", exc_info=True)
                 self._exit_search_mode()
                 return None
 

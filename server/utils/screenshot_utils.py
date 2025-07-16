@@ -237,13 +237,15 @@ def take_secure_screenshot(
                                         exc_info=True,
                                     )
                             else:
-                                logger.error(f"Output file was not created: {output_path}")
+                                logger.error(f"Output file was not created: {output_path}", exc_info=True)
                         except Exception as e:
                             logger.error(f"ffmpeg frame extraction failed: {e}", exc_info=True)
                     else:
-                        logger.error(f"Video file too small: {os.path.getsize(video_path)} bytes")
+                        logger.error(
+                            f"Video file too small: {os.path.getsize(video_path)} bytes", exc_info=True
+                        )
                 else:
-                    logger.error(f"Video file not created: {video_path}")
+                    logger.error(f"Video file not created: {video_path}", exc_info=True)
 
                 # Clean up temp file if it exists
                 if os.path.exists(video_path):
@@ -359,7 +361,7 @@ def take_secure_screenshot(
         except Exception as e:
             logger.error(f"ADB temp file method failed: {e}", exc_info=True)
 
-        logger.error("All screenshot methods failed")
+        logger.error("All screenshot methods failed", exc_info=True)
         return None
 
     except Exception as e:

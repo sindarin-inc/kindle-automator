@@ -394,13 +394,15 @@ class ReaderHandler:
                         # Now wait for reading view after handling both dialogs
                         return True
                     else:
-                        logger.error("Failed to handle Download Limit dialog after Item Removed dialog")
+                        logger.error(
+                            "Failed to handle Download Limit dialog after Item Removed dialog", exc_info=True
+                        )
                         return False
 
                 # If no Download Limit dialog, then we're just back to library view
                 return True
             else:
-                logger.error("Failed to handle Item Removed dialog detected immediately")
+                logger.error("Failed to handle Item Removed dialog detected immediately", exc_info=True)
                 return False
 
         # Check for download limit dialog
@@ -411,7 +413,7 @@ class ReaderHandler:
                 logger.info("Successfully handled Download Limit dialog immediately")
                 # Continue to reading view handling below
             else:
-                logger.error("Failed to handle Download Limit dialog detected immediately")
+                logger.error("Failed to handle Download Limit dialog detected immediately", exc_info=True)
                 return False
 
         # Check for dialogs that might appear immediately after opening a book
@@ -724,7 +726,9 @@ class ReaderHandler:
                                 )
 
                             # If we're still here, we failed
-                            logger.error("Failed to detect reading view after handling download limit")
+                            logger.error(
+                                "Failed to detect reading view after handling download limit", exc_info=True
+                            )
                             store_page_source(
                                 self.driver.page_source, "failed_to_detect_reading_view_after_download"
                             )
@@ -736,7 +740,7 @@ class ReaderHandler:
                         store_page_source(self.driver.page_source, "error_waiting_after_download_limit")
                         return False
                 else:
-                    logger.error("Failed to handle Download Limit dialog")
+                    logger.error("Failed to handle Download Limit dialog", exc_info=True)
                     return False
 
             # Handle Word Wise dialog if it appeared
@@ -840,7 +844,9 @@ class ReaderHandler:
                     AppiumBy.ID, "com.amazon.kindle:id/library_root_view"
                 )
                 if library_element.is_displayed():
-                    logger.error("Unexpectedly still in library view - book click may have failed")
+                    logger.error(
+                        "Unexpectedly still in library view - book click may have failed", exc_info=True
+                    )
                     store_page_source(self.driver.page_source, "still_in_library_view_in_reader_handler")
                     return False
             except NoSuchElementException:
@@ -892,7 +898,9 @@ class ReaderHandler:
                             try:
                                 bottom_sheet = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[0])
                                 if bottom_sheet.is_displayed():
-                                    logger.error("Bottom sheet dialog is still visible after dismissal")
+                                    logger.error(
+                                        "Bottom sheet dialog is still visible after dismissal", exc_info=True
+                                    )
                                     return False
                                 else:
                                     logger.info("Bottom sheet successfully dismissed")
@@ -1160,7 +1168,7 @@ class ReaderHandler:
                     device_id = lines[0].split("\t")[0]
 
             if not device_id:
-                logger.error("Could not determine device ID for screenshot")
+                logger.error("Could not determine device ID for screenshot", exc_info=True)
                 return False
 
             screenshot_path = os.path.join(self.screenshots_dir, "reading_page.png")
@@ -1170,7 +1178,7 @@ class ReaderHandler:
                 logger.info(f"Successfully saved page screenshot to {result_path}")
                 return True
             else:
-                logger.error("Failed to capture page screenshot")
+                logger.error("Failed to capture page screenshot", exc_info=True)
                 return False
 
         except Exception as e:
@@ -1320,7 +1328,7 @@ class ReaderHandler:
             # First turn the page forward
             success = self.turn_page_forward()
             if not success:
-                logger.error("Failed to turn page forward during preview")
+                logger.error("Failed to turn page forward during preview", exc_info=True)
                 return False, None
 
             # Extract text with OCR
@@ -1329,14 +1337,14 @@ class ReaderHandler:
             # Now turn the page back to the original
             back_success = self.turn_page_backward()
             if not back_success:
-                logger.error("Failed to turn page back to original after preview")
+                logger.error("Failed to turn page back to original after preview", exc_info=True)
                 # Still continue to return the OCR text
 
             if ocr_text:
                 logger.info("Successfully previewed next page and extracted OCR text")
                 return True, ocr_text
             else:
-                logger.error(f"Failed to extract OCR text from preview: {error_msg}")
+                logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
                 return False, None
 
         except Exception as e:
@@ -1358,7 +1366,7 @@ class ReaderHandler:
             # First turn the page backward
             success = self.turn_page_backward()
             if not success:
-                logger.error("Failed to turn page backward during preview")
+                logger.error("Failed to turn page backward during preview", exc_info=True)
                 return False, None
 
             # Extract text with OCR
@@ -1367,14 +1375,14 @@ class ReaderHandler:
             # Now turn the page forward to the original
             forward_success = self.turn_page_forward()
             if not forward_success:
-                logger.error("Failed to turn page forward to original after preview")
+                logger.error("Failed to turn page forward to original after preview", exc_info=True)
                 # Still continue to return the OCR text
 
             if ocr_text:
                 logger.info("Successfully previewed previous page and extracted OCR text")
                 return True, ocr_text
             else:
-                logger.error(f"Failed to extract OCR text from preview: {error_msg}")
+                logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
                 return False, None
 
         except Exception as e:
@@ -1521,7 +1529,7 @@ class ReaderHandler:
                 self.driver.tap([(center_x, center_y)])
 
             if not any([percentage, current_page, total_pages]):
-                logger.error("Could not extract any progress information")
+                logger.error("Could not extract any progress information", exc_info=True)
                 return None
 
             return {"percentage": percentage, "current_page": current_page, "total_pages": total_pages}
@@ -1685,7 +1693,7 @@ class ReaderHandler:
                     # After handling this, we'll be back in library view, so return True
                     return True
                 else:
-                    logger.error("Failed to handle Item Removed dialog")
+                    logger.error("Failed to handle Item Removed dialog", exc_info=True)
                     # Continue with other methods to try getting back to library
 
             # Check for and dismiss the comic book view
@@ -1720,7 +1728,7 @@ class ReaderHandler:
                         BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
                     )
                     if still_visible:
-                        logger.error("Bottom sheet dialog is still visible after dismissal")
+                        logger.error("Bottom sheet dialog is still visible after dismissal", exc_info=True)
                         return False
                     logger.info("Bottom sheet successfully dismissed")
 
@@ -1767,7 +1775,10 @@ class ReaderHandler:
                         ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
                     )
                     if still_visible:
-                        logger.error("'About this book' slideover is still visible after dismissal attempts")
+                        logger.error(
+                            "'About this book' slideover is still visible after dismissal attempts",
+                            exc_info=True,
+                        )
                     else:
                         logger.info("'About this book' slideover successfully dismissed")
                 else:
@@ -1817,7 +1828,9 @@ class ReaderHandler:
                                 AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
                             )
                             if not_now_button.is_displayed():
-                                logger.error("Goodreads dialog still visible after clicking NOT NOW")
+                                logger.error(
+                                    "Goodreads dialog still visible after clicking NOT NOW", exc_info=True
+                                )
                             else:
                                 logger.info("Successfully dismissed Goodreads dialog")
                         except NoSuchElementException:
@@ -1848,12 +1861,12 @@ class ReaderHandler:
                         WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
                     )
                     if still_visible:
-                        logger.error("Word Wise dialog still visible after clicking NO THANKS")
+                        logger.error("Word Wise dialog still visible after clicking NO THANKS", exc_info=True)
                     else:
                         logger.info("Successfully dismissed Word Wise dialog")
 
                 else:
-                    logger.error("NO THANKS button not found for Word Wise dialog")
+                    logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
 
             # Now try to make toolbar visible if it isn't already
             return self._show_toolbar_and_close_book()
@@ -1905,7 +1918,7 @@ class ReaderHandler:
                 time.sleep(1)
                 store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_toolbar")
             else:
-                logger.error("NO THANKS button not found for Word Wise dialog")
+                logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
 
         # First check if toolbar is already visible
         toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
@@ -2037,7 +2050,7 @@ class ReaderHandler:
                         logger.info("Toolbar appeared (alt check) after dismissing Word Wise dialog")
                         return self._click_close_book_button()
                 else:
-                    logger.error("NO THANKS button not found for Word Wise dialog")
+                    logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
 
             # Check for placemark ribbon which could be blocking our taps
             placemark_visible, _ = self._check_element_visibility(PLACEMARK_IDENTIFIERS, "placemark ribbon")
@@ -2091,7 +2104,7 @@ class ReaderHandler:
         except Exception as e:
             logger.error(f"Error using system back button: {e}", exc_info=True)
 
-        logger.error("Failed to make toolbar visible or exit reading view after all attempts")
+        logger.error("Failed to make toolbar visible or exit reading view after all attempts", exc_info=True)
         return False
 
     def handle_comic_book_view(self) -> bool:
@@ -2313,5 +2326,5 @@ class ReaderHandler:
 
             return True
 
-        logger.error("Could not find close book button")
+        logger.error("Could not find close book button", exc_info=True)
         return False

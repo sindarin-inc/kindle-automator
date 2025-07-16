@@ -110,16 +110,16 @@ def ensure_covers_directory(sindarin_email: str) -> str:
 
     # Verify the directories were actually created
     if not os.path.exists(str(covers_dir)):
-        logger.error(f"Failed to create main covers directory: {covers_dir}")
+        logger.error(f"Failed to create main covers directory: {covers_dir}", exc_info=True)
         return ""
 
     if not os.path.exists(str(user_covers_dir)):
-        logger.error(f"Failed to create user covers directory: {user_covers_dir}")
+        logger.error(f"Failed to create user covers directory: {user_covers_dir}", exc_info=True)
         return ""
 
     # Check if user directory is writable
     if not os.access(str(user_covers_dir), os.W_OK):
-        logger.error(f"User covers directory is not writable: {user_covers_dir}")
+        logger.error(f"User covers directory is not writable: {user_covers_dir}", exc_info=True)
         try:
             os.chmod(str(user_covers_dir), 0o755)
             logger.info(f"Fixed permissions on user covers directory: {user_covers_dir}")
@@ -270,7 +270,7 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
 
             # Verify the screenshot exists
             if not os.path.exists(screenshot_path):
-                logger.error(f"Screenshot does not exist at path: {screenshot_path}")
+                logger.error(f"Screenshot does not exist at path: {screenshot_path}", exc_info=True)
                 return None
 
             # Log screenshot details
@@ -289,7 +289,9 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
 
                 # Check that we have valid dimensions after adjustments
                 if right <= left or bottom <= top:
-                    logger.error(f"Invalid crop dimensions: ({left}, {top}, {right}, {bottom})")
+                    logger.error(
+                        f"Invalid crop dimensions: ({left}, {top}, {right}, {bottom})", exc_info=True
+                    )
                     return None
 
                 # Crop the image to the cover coordinates
@@ -335,7 +337,7 @@ def extract_book_cover(driver, book_element, screenshot_path: str, max_retries: 
             return None
 
     # If we've exhausted all retries and still failed
-    logger.error(f"Failed to extract book cover after {max_retries+1} attempts")
+    logger.error(f"Failed to extract book cover after {max_retries+1} attempts", exc_info=True)
     return None
 
 
@@ -353,11 +355,11 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
     """
     try:
         if not title:
-            logger.error("Cannot save cover with empty title")
+            logger.error("Cannot save cover with empty title", exc_info=True)
             return False, ""
 
         if not cover_img:
-            logger.error("Cannot save None or empty cover image")
+            logger.error("Cannot save None or empty cover image", exc_info=True)
             return False, ""
 
         # Get the user's covers directory
@@ -365,7 +367,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
 
         # Verify the directory exists and is writable
         if not os.path.exists(covers_dir):
-            logger.error(f"Covers directory does not exist: {covers_dir}")
+            logger.error(f"Covers directory does not exist: {covers_dir}", exc_info=True)
             # Try to create it again to be sure
             try:
                 os.makedirs(covers_dir, exist_ok=True)
@@ -376,7 +378,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
 
         # Check if directory is writable
         if not os.access(covers_dir, os.W_OK):
-            logger.error(f"Covers directory is not writable: {covers_dir}")
+            logger.error(f"Covers directory is not writable: {covers_dir}", exc_info=True)
             return False, ""
 
         # Create a filename from the slugified title
@@ -423,7 +425,7 @@ def save_book_cover(cover_img, title: str, sindarin_email: str) -> Tuple[bool, s
 
             return True, filename
         else:
-            logger.error(f"Failed to save cover, file doesn't exist: {image_path}")
+            logger.error(f"Failed to save cover, file doesn't exist: {image_path}", exc_info=True)
 
             return False, ""
 

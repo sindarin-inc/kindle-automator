@@ -80,7 +80,7 @@ def ensure_automator_healthy(f):
                         return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
 
                     if not automator.initialize_driver():
-                        logger.error(f"Failed to initialize driver for {sindarin_email}")
+                        logger.error(f"Failed to initialize driver for {sindarin_email}", exc_info=True)
                         return {
                             "error": (
                                 f"Failed to initialize driver for {sindarin_email}. Call /initialize first."
@@ -89,7 +89,7 @@ def ensure_automator_healthy(f):
 
                 # Ensure driver is running
                 if not automator.ensure_driver_running():
-                    logger.error(f"Failed to ensure driver is running for {sindarin_email}")
+                    logger.error(f"Failed to ensure driver is running for {sindarin_email}", exc_info=True)
                     return {"error": f"Failed to ensure driver is running for {sindarin_email}"}, 500
 
                 # Execute the function
@@ -265,11 +265,11 @@ def ensure_automator_healthy(f):
                         logger.info("=" * 80 + "\n")
                         continue  # Retry the operation with the next loop iteration
                     else:
-                        logger.error("Failed to restart driver after UiAutomator2 crash")
+                        logger.error("Failed to restart driver after UiAutomator2 crash", exc_info=True)
 
                 # For non-UiAutomator2 crashes or if restart failed, log and return error
-                logger.error(f"Error in operation (attempt {attempt + 1}/{max_retries}): {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
+                logger.error(f"Error in operation (attempt {attempt + 1}/{max_retries}): {e}", exc_info=True)
+                logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
 
                 # On the last attempt, return the error
                 if attempt == max_retries - 1:

@@ -130,7 +130,7 @@ class KindleStateMachine:
                     f"In UNKNOWN state (attempt {unknown_retries}/{MAX_UNKNOWN_RETRIES}) - bringing app to foreground..."
                 )
                 if not self.view_inspector.ensure_app_foreground():
-                    logger.error("Failed to bring app to foreground")
+                    logger.error("Failed to bring app to foreground", exc_info=True)
                     return self.current_state
                 time.sleep(1)  # Wait for app to come to foreground
 
@@ -268,13 +268,13 @@ class KindleStateMachine:
                         return self.current_state
 
             if not result:
-                logger.error(f"Handler failed for state {self.current_state}")
+                logger.error(f"Handler failed for state {self.current_state}", exc_info=True)
                 return self.current_state
 
             transitions += 1
 
-        logger.error(f"Failed to reach library state after {max_transitions} transitions")
-        logger.error(f"Final state: {self.current_state}")
+        logger.error(f"Failed to reach library state after {max_transitions} transitions", exc_info=True)
+        logger.error(f"Final state: {self.current_state}", exc_info=True)
 
         # Log the page source for debugging and store it
         try:
@@ -298,7 +298,7 @@ class KindleStateMachine:
 
     def _handle_failed_transition(self, from_state, to_state, error):
         """Handle a failed state transition by logging details and saving screenshot"""
-        logger.error(f"Failed to transition from {from_state} to {to_state}: {error}")
+        logger.error(f"Failed to transition from {from_state} to {to_state}: {error}", exc_info=True)
         try:
             # Store page source
             source = self.view_inspector.driver.page_source
@@ -327,7 +327,7 @@ class KindleStateMachine:
         # Get the handler for the current state
         handler = self.transitions.get_handler_for_state(self.current_state)
         if not handler:
-            logger.error(f"No handler found for state {self.current_state}")
+            logger.error(f"No handler found for state {self.current_state}", exc_info=True)
             return False
 
         # Execute the handler
@@ -338,7 +338,7 @@ class KindleStateMachine:
         if result:
             logger.info(f"Successfully handled state {self.current_state}")
         else:
-            logger.error(f"Failed to handle state {self.current_state}")
+            logger.error(f"Failed to handle state {self.current_state}", exc_info=True)
 
         return result
 

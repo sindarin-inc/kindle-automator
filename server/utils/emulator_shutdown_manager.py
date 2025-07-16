@@ -304,7 +304,9 @@ class EmulatorShutdownManager:
 
         # Navigate to More tab
         if not lh.navigate_to_more_settings():
-            logger.error("Failed to navigate to More tab for sync - placemarks may not be synced!")
+            logger.error(
+                "Failed to navigate to More tab for sync - placemarks may not be synced!", exc_info=True
+            )
             return False
 
         # Attempt sync
@@ -312,13 +314,13 @@ class EmulatorShutdownManager:
         if sync_success:
             logger.info("Successfully synced reading progress/placemarks before shutdown")
         else:
-            logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!")
+            logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!", exc_info=True)
             # Store diagnostic information
             try:
                 from views.core.ui_helpers import store_page_source
 
                 store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
-                logger.error("Diagnostic page source saved for sync failure")
+                logger.error("Diagnostic page source saved for sync failure", exc_info=True)
             except Exception as e:
                 logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
 
@@ -334,7 +336,9 @@ class EmulatorShutdownManager:
         launcher = automator.emulator_manager.emulator_launcher
         emulator_id, _ = launcher.get_running_emulator(email)
         if not emulator_id:
-            logger.error(f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot")
+            logger.error(
+                f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot", exc_info=True
+            )
             return
         logger.info(f"Taking ADB snapshot of emulator {emulator_id} for {email}")
         snapshot_start_time = time.time()

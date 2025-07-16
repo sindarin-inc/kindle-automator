@@ -207,7 +207,9 @@ class Driver:
 
                 logger.info(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
             else:
-                logger.error(f"Failed to update profile setting: {setting_name}={value} for {email}")
+                logger.error(
+                    f"Failed to update profile setting: {setting_name}={value} for {email}", exc_info=True
+                )
         except Exception as e:
             logger.error(f"Error updating profile setting {setting_name}: {e}", exc_info=True)
             # Continue execution even if we can't update the profile
@@ -785,7 +787,7 @@ class Driver:
                     apk_paths.append(os.path.join(kindle_x86_dir, file))
 
         if not apk_paths:
-            logger.error("No Kindle APK files found")
+            logger.error("No Kindle APK files found", exc_info=True)
             return None
 
         # If only one APK is found, return it
@@ -819,7 +821,7 @@ class Driver:
             # Find the newest APK
             apk_path = self._find_newest_kindle_apk()
             if not apk_path:
-                logger.error("No Kindle APK found to install")
+                logger.error("No Kindle APK found to install", exc_info=True)
                 return False
 
             # Get version info from APK before installing
@@ -998,7 +1000,7 @@ class Driver:
                     activity = line.split("name=")[1].strip()
                     return activity
 
-            logger.error("Could not find Kindle launch activity")
+            logger.error("Could not find Kindle launch activity", exc_info=True)
             return None
         except Exception as e:
             logger.error(f"Error getting Kindle launch activity: {e}", exc_info=True)
@@ -1066,7 +1068,7 @@ class Driver:
         # Update profile with device ID
         profile = self.automator.profile_manager.get_current_profile()
         if not profile:
-            logger.error("Cannot update profile: get_current_profile returned None")
+            logger.error("Cannot update profile: get_current_profile returned None", exc_info=True)
         else:
             avd_name = profile.get("avd_name")
 
@@ -1083,7 +1085,7 @@ class Driver:
         if not self._is_kindle_installed():
             logger.info("Kindle app not installed - attempting to install")
             if not self._install_kindle():
-                logger.error("Failed to install Kindle app")
+                logger.error("Failed to install Kindle app", exc_info=True)
                 return False
             logger.info("Successfully installed Kindle app")
         else:
@@ -1467,19 +1469,19 @@ class Driver:
                     self._session_retries = 0
                     return True
                 else:
-                    logger.error("Failed to reinitialize driver through automator")
+                    logger.error("Failed to reinitialize driver through automator", exc_info=True)
             finally:
                 self._reconnecting = False
         else:
-            logger.error("No automator reference available for reconnection")
+            logger.error("No automator reference available for reconnection", exc_info=True)
 
-        logger.error("Failed to reconnect driver session after all attempts")
+        logger.error("Failed to reconnect driver session after all attempts", exc_info=True)
         return False
 
     def get_appium_driver_instance(self):
         """Get the Appium driver instance, ensuring session is active"""
         if not self._ensure_session_active():
-            logger.error("Failed to ensure active session")
+            logger.error("Failed to ensure active session", exc_info=True)
             return None
         return self.driver
 
