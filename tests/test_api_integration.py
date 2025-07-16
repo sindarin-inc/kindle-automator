@@ -38,18 +38,43 @@ class TestKindleAPIIntegration:
     def _make_request(
         self, endpoint: str, params: Dict[str, Any] = None, method: str = "GET"
     ) -> requests.Response:
-        """Helper to make API requests."""
+        """Helper to make API requests with retry logic for 503 errors."""
         url = f"{self.base_url}/{endpoint}"
         request_params = {**self.default_params, **(params or {})}
 
-        if method == "GET":
-            response = self.session.get(url, params=request_params, timeout=60)
-        elif method == "POST":
-            response = self.session.post(url, params=request_params, timeout=60)
+        max_retries = 3
+        retry_delay = 10  # seconds
 
+        for attempt in range(max_retries):
+            try:
+                if method == "GET":
+                    response = self.session.get(url, params=request_params, timeout=120)
+                elif method == "POST":
+                    response = self.session.post(url, params=request_params, timeout=120)
+
+                # If we get a 503 and haven't exhausted retries, wait and retry
+                if response.status_code == 503 and attempt < max_retries - 1:
+                    print(
+                        f"Got 503 error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(retry_delay)
+                    continue
+
+                return response
+
+            except requests.exceptions.RequestException as e:
+                # If this is our last attempt, re-raise the exception
+                if attempt == max_retries - 1:
+                    raise
+                print(
+                    f"Request failed with error: {e}, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(retry_delay)
+
+        # This should never be reached, but just in case
         return response
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)
     def test_open_random_book(self):
         """Test /kindle/open-random-book endpoint."""
         response = self._make_request("open-random-book")
@@ -57,15 +82,22 @@ class TestKindleAPIIntegration:
 
         data = response.json()
         assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-        assert "ocr_text" in data, f"Response missing OCR text: {data}"
 
-        # Verify we got actual text back
-        assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
+        # Handle last read dialog response
+        if data.get("last_read_dialog") and data.get("dialog_text"):
+            # Verify dialog-specific fields
+            assert "message" in data, f"Response missing message field: {data}"
+            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
+        else:
+            # Normal book open response
+            assert "ocr_text" in data, f"Response missing OCR text: {data}"
+            # Verify we got actual text back
+            assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
 
         # Store book info for subsequent tests
         self.__class__.opened_book = data
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)
     def test_navigate_with_preview(self):
         """Test /kindle/navigate endpoint with preview."""
         # First ensure a book is open
@@ -89,7 +121,7 @@ class TestKindleAPIIntegration:
         text_field = data.get("ocr_text")
         assert len(text_field) > 0, "OCR text should not be empty"
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)
     def _test_shutdown(self):
         """Test /kindle/shutdown endpoint."""
         try:

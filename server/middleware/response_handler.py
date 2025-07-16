@@ -38,7 +38,7 @@ def serve_image(image_id, delete_after=True):
         logger.info(f"Attempting to serve image from: {image_path}")
 
         if not os.path.exists(image_path):
-            logger.error(f"Image not found at path: {image_path}")
+            logger.error(f"Image not found at path: {image_path}", exc_info=True)
             return {"error": "Image not found"}, 404
 
         # Create a response that bypasses Flask-RESTful's serialization
@@ -56,13 +56,13 @@ def serve_image(image_id, delete_after=True):
                         os.remove(image_path)
                         logger.info(f"Deleted image: {image_path}")
                 except Exception as e:
-                    logger.error(f"Failed to delete image {image_path}: {e}")
+                    logger.error(f"Failed to delete image {image_path}: {e}", exc_info=True)
 
         # Return the response object directly
         return response
 
     except Exception as e:
-        logger.error(f"Error serving image: {e}")
+        logger.error(f"Error serving image: {e}", exc_info=True)
         return {"error": str(e)}, 500
 
 
@@ -191,7 +191,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
             if attempt > 0:
                 logger.info(f"Retry attempt {attempt + 1}/{max_retries}")
                 if not restart_driver():
-                    logger.error("Failed to initialize driver during retry")
+                    logger.error("Failed to initialize driver during retry", exc_info=True)
                     continue
 
             # Execute function
@@ -280,7 +280,9 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                         result = func(*args, **kwargs)
                         return format_response(result)
                     except Exception as retry_error:
-                        logger.error(f"Retry after UiAutomator2 recovery failed: {retry_error}")
+                        logger.error(
+                            f"Retry after UiAutomator2 recovery failed: {retry_error}", exc_info=True
+                        )
                         last_error = retry_error
                 else:
                     logger.error("Failed to reinitialize driver after UiAutomator2 crash")
@@ -300,7 +302,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                             result = func(*args, **kwargs)
                             return format_response(result)
                         except Exception as retry_error:
-                            logger.error(f"Retry after emulator restart failed: {retry_error}")
+                            logger.error(f"Retry after emulator restart failed: {retry_error}", exc_info=True)
                             last_error = retry_error
                     else:
                         logger.error("Failed to reinitialize driver after emulator restart")
@@ -336,7 +338,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
             return error_dict, 500 if "status_code" not in error_dict else error_dict.pop("status_code")
         except Exception as parse_error:
             # If parsing fails, log and fall back to string representation
-            logger.error(f"Failed to parse error as JSON: {parse_error}")
+            logger.error(f"Failed to parse error as JSON: {parse_error}", exc_info=True)
 
     return {"error": str(last_error), "time_taken": time_taken}, 500
 
@@ -405,7 +407,7 @@ def _apply_timezone_to_device(server_instance, sindarin_email: str, timezone: st
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
         if result.returncode != 0:
-            logger.error(f"Failed to set timezone: {result.stderr}")
+            logger.error(f"Failed to set timezone: {result.stderr}", exc_info=True)
             return False
 
         # Broadcast the time change to ensure apps pick it up
@@ -425,7 +427,7 @@ def _apply_timezone_to_device(server_instance, sindarin_email: str, timezone: st
         return True
 
     except Exception as e:
-        logger.error(f"Error applying timezone to device: {e}")
+        logger.error(f"Error applying timezone to device: {e}", exc_info=True)
         return False
 
 
@@ -477,7 +479,7 @@ def _handle_timezone_parameter(server_instance, sindarin_email: Optional[str]):
                 logger.debug(f"Timezone unchanged ({timezone}) for {sindarin_email}, skipping device update")
 
         except Exception as e:
-            logger.error(f"Error handling timezone parameter: {e}")
+            logger.error(f"Error handling timezone parameter: {e}", exc_info=True)
 
 
 def handle_automator_response(f):
@@ -619,7 +621,7 @@ def handle_automator_response(f):
 
         except Exception as e:
             time_taken = round(time.time() - start_time, 3)
-            logger.error(f"Error in endpoint {operation_name}: {e}")
+            logger.error(f"Error in endpoint {operation_name}: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
 
             # We still take error snapshots for debugging

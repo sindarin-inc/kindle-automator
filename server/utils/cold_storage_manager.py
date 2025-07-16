@@ -77,7 +77,7 @@ class ColdStorageManager:
                 config=Config(s3={"addressing_style": "virtual"}),
             )
         except Exception as e:
-            logger.error(f"Failed to initialize S3 client: {e}")
+            logger.error(f"Failed to initialize S3 client: {e}", exc_info=True)
             raise
 
     def _get_directory_size(self, path: str) -> int:
@@ -146,7 +146,7 @@ class ColdStorageManager:
 
                 # Try to stop the emulator
                 if not emulator_manager.stop_specific_emulator(emulator_id):
-                    logger.error(f"Failed to stop emulator {emulator_id} for {email}")
+                    logger.error(f"Failed to stop emulator {emulator_id} for {email}", exc_info=True)
                     return False, {"error": f"Emulator {emulator_id} is running and could not be stopped"}
 
                 # Wait a bit for the emulator to fully shut down
@@ -217,7 +217,7 @@ class ColdStorageManager:
                 upload_time = time.time() - upload_start
                 logger.info(f"S3 upload completed in {upload_time:.2f} seconds")
             except Exception as e:
-                logger.error(f"S3 upload failed: {e}")
+                logger.error(f"S3 upload failed: {e}", exc_info=True)
                 raise
 
             if dry_run:
@@ -276,7 +276,7 @@ class ColdStorageManager:
             return True, storage_info
 
         except Exception as e:
-            logger.error(f"Failed to archive AVD for email {email}: {e}")
+            logger.error(f"Failed to archive AVD for email {email}: {e}", exc_info=True)
             return False, None
         finally:
             # Always clean up the temp file
@@ -286,7 +286,7 @@ class ColdStorageManager:
                     os.unlink(temp_path)
                     logger.info("Temporary file cleaned up successfully")
                 except Exception as e:
-                    logger.error(f"Failed to clean up temporary file: {e}")
+                    logger.error(f"Failed to clean up temporary file: {e}", exc_info=True)
 
     def restore_avd_from_cold_storage(self, email: str, dry_run: bool = False) -> Tuple[bool, Optional[dict]]:
         """
@@ -342,7 +342,7 @@ class ColdStorageManager:
                     for member in members:
                         logger.info(f"  - {member.name}: {self._format_bytes(member.size)}")
             except Exception as e:
-                logger.error(f"Archive verification failed: {e}")
+                logger.error(f"Archive verification failed: {e}", exc_info=True)
                 raise
 
             restore_info = {
@@ -377,7 +377,7 @@ class ColdStorageManager:
             logger.warning(f"No cold storage archive found for email {email}")
             return False, {"error": "Archive not found in S3"}
         except Exception as e:
-            logger.error(f"Failed to restore AVD for email {email}: {e}")
+            logger.error(f"Failed to restore AVD for email {email}: {e}", exc_info=True)
             if temp_path and os.path.exists(temp_path):
                 logger.info(f"Cleaning up temporary file")
                 os.unlink(temp_path)
@@ -401,7 +401,7 @@ class ColdStorageManager:
         except self.s3_client.exceptions.NoSuchKey:
             return False
         except Exception as e:
-            logger.error(f"Error checking cold storage for email {email}: {e}")
+            logger.error(f"Error checking cold storage for email {email}: {e}", exc_info=True)
             return False
 
     def get_profiles_eligible_for_cold_storage(self, days_inactive: int = 30) -> list:
@@ -625,5 +625,5 @@ class ColdStorageManager:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to restore AVD from local backup for {email}: {e}")
+            logger.error(f"Failed to restore AVD from local backup for {email}: {e}", exc_info=True)
             return False

@@ -1,6 +1,7 @@
 """User activity timeline resource for displaying readable activity logs."""
 
 import gzip
+import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -67,7 +68,7 @@ class UserActivityResource(Resource):
                 return response
 
         except Exception as e:
-            logger.error(f"Error generating user activity timeline: {str(e)}")
+            logger.error(f"Error generating user activity timeline: {str(e)}", exc_info=True)
             if request.args.get("json", "0") == "1":
                 return {"success": False, "error": str(e)}, 500
             else:
@@ -136,21 +137,21 @@ class UserActivityResource(Resource):
             with open(log_file, "r") as f:
                 return self._parse_log_lines(f, user_email)
         except Exception as e:
-            logger.error(f"Error parsing log file {log_file}: {str(e)}")
+            logger.error(f"Error parsing log file {log_file}: {str(e)}", exc_info=True)
             return []
 
     def _parse_log_lines(self, file_obj, user_email):
         """Parse log lines from a file object for user activities."""
         activities = []
 
-        # Patterns to extract key events
+        # Patterns to extract key events - specific patterns must come before generic ones
         patterns = {
             "open_book": r'REQUEST \[GET /open-book\].*?"title":\s*"([^"]+)"',
             "books_stream": r"REQUEST \[GET /books-stream\]",
             "books_stream_response": r"RESPONSE \[GET /books-stream\]",
+            "navigate": r"REQUEST \[GET /navigate\].*?: (\{[^}]+\})",
             "book_opened": r"Opening book:\s*(.+?)$",
             "book_already_open": r"Already reading book.*?:\s*(.+?),",
-            "navigate": r"REQUEST \[GET /navigate\].*?(\{[^}]+\})",
             "preview_forward": r"Previewing (\d+) pages? forward",
             "preview_complete": r"Successfully previewed (\d+) pages? forward",
             "emulator_start": r"Starting emulator for (.+?) - will use",
@@ -223,8 +224,6 @@ class UserActivityResource(Resource):
                         activity["title"] = match.group(1)
                         activity["action"] = "book_already_open"
                     elif event_type == "navigate":
-                        import json
-
                         try:
                             params_dict = json.loads(match.group(1))
                             preview = params_dict.get("preview", "0")
@@ -276,6 +275,13 @@ class UserActivityResource(Resource):
                         activity["endpoint"] = match.group(2)
                         activity["params"] = self._strip_ansi_codes(match.group(3))
                         activity["action"] = "api_request"
+                        # Skip if this is a navigate request (handled by specific pattern)
+                        if "/navigate" in activity["endpoint"] and any(
+                            a.get("type") == "navigate"
+                            and abs((timestamp - a["timestamp_obj"]).total_seconds()) < 0.1
+                            for a in activities
+                        ):
+                            continue
                     elif event_type == "response":
                         activity["method"] = match.group(1)
                         activity["endpoint"] = match.group(2)
@@ -326,7 +332,7 @@ class UserActivityResource(Resource):
                 # Use the same parsing logic by passing the file object
                 return self._parse_log_lines(f, user_email)
         except Exception as e:
-            logger.error(f"Error parsing compressed log file {log_file}: {str(e)}")
+            logger.error(f"Error parsing compressed log file {log_file}: {str(e)}", exc_info=True)
             return []
 
     def _format_timeline(self, activities, user_email):
@@ -368,16 +374,36 @@ class UserActivityResource(Resource):
                 # Store request for matching with response
                 endpoint = activity.get("endpoint", "")
                 request_map[endpoint] = activity
+            elif action == "navigation_request" and activity.get("type") == "navigate":
+                # Also store navigate activities for param extraction
+                request_map["/navigate"] = activity
             elif action == "api_response":
                 endpoint = activity.get("endpoint", "")
                 duration = activity.get("duration", 0)
                 params = activity.get("request_params", "")
                 body = activity.get("body", "")
 
+                # Check if we have a matching navigate activity with parsed values
+                navigate_count = None
+                preview_count = None
+                for act in activities:
+                    if (
+                        act.get("action") == "navigation_request"
+                        and act.get("type") == "navigate"
+                        and abs(
+                            (
+                                datetime.fromisoformat(act["timestamp"])
+                                - datetime.fromisoformat(activity["timestamp"])
+                            ).total_seconds()
+                        )
+                        < 1
+                    ):
+                        navigate_count = act.get("navigate_count", None)
+                        preview_count = act.get("preview_count", None)
+                        break
+
                 # Create compressed description based on endpoint
                 if "/open-book" in endpoint:
-                    import json
-
                     try:
                         params_dict = json.loads(params)
                         title = params_dict.get("title", "Unknown")
@@ -385,39 +411,46 @@ class UserActivityResource(Resource):
                     except:
                         desc = "opened book"
                 elif "/navigate" in endpoint:
-                    import json
+                    # First check if we have a navigate activity in request_map
+                    nav_activity = request_map.get("/navigate")
+                    if nav_activity and nav_activity.get("type") == "navigate":
+                        navigate = nav_activity.get("navigate_count", 0)
+                        preview = nav_activity.get("preview_count", 0)
+                    # Use pre-parsed values if available
+                    elif navigate_count is not None or preview_count is not None:
+                        navigate = navigate_count if navigate_count is not None else 0
+                        preview = preview_count if preview_count is not None else 0
+                    else:
+                        # Fall back to parsing from params
+                        try:
+                            # Extract JSON from params (might have email prefix)
+                            json_start = params.find("{")
+                            if json_start != -1:
+                                json_str = params[json_start:]
+                                params_dict = json.loads(json_str)
+                            else:
+                                params_dict = json.loads(params)
 
-                    try:
-                        params_dict = json.loads(params)
-                        preview = params_dict.get("preview", "0")
-                        navigate = params_dict.get("navigate", "0")
-                        # Handle both string and int values
-                        preview = int(preview) if preview else 0
-                        navigate = int(navigate) if navigate else 0
+                            preview = params_dict.get("preview", "0")
+                            navigate = params_dict.get("navigate", "0")
+                            # Handle both string and int values
+                            preview = int(preview) if preview else 0
+                            navigate = int(navigate) if navigate else 0
+                        except Exception as e:
+                            # Log the error for debugging only if params is not empty
+                            if params:
+                                logger.warning(f"Failed to parse navigate params: {params} - {str(e)}")
+                            navigate = 0
+                            preview = 0
 
-                        # Default navigate to 1 if preview is set but navigate isn't
-                        if preview > 0 and navigate == 0:
-                            navigate = 1
+                    # Don't default navigate to 1 - show the actual values from the request
 
-                        # Build description with parameters
-                        desc_parts = []
-                        if navigate > 0:
-                            desc_parts.append(f"navigate={navigate}")
-                        if preview > 0:
-                            desc_parts.append(f"preview={preview}")
-
-                        if desc_parts:
-                            desc = "navigation request (" + ", ".join(desc_parts) + ")"
-                        else:
-                            desc = "navigation request"
-                    except:
-                        desc = "navigation request"
+                    # Build description with parameters - always show both values
+                    desc = f"navigation request (navigate={navigate}, preview={preview})"
                 elif "/books-stream" in endpoint:
                     desc = "requested book library"
                 elif endpoint.endswith("/auth-check"):
                     # Check authentication status from response
-                    import json
-
                     try:
                         if body:
                             # Extract JSON part from body (remove email prefix)
@@ -440,8 +473,6 @@ class UserActivityResource(Resource):
                 elif endpoint.endswith("/auth"):
                     # This is POST /auth - actual sign-in
                     # Check if authentication was successful from response body
-                    import json
-
                     try:
                         if body:
                             # Extract JSON part from body (remove email prefix)
@@ -464,7 +495,22 @@ class UserActivityResource(Resource):
                 elif "/screenshot" in endpoint:
                     desc = "captured screenshot"
                 elif "/state" in endpoint:
-                    desc = "checked app state"
+                    # Extract the state from the response body
+                    try:
+                        if body:
+                            # Extract JSON part from body (remove email prefix if present)
+                            json_start = body.find("{")
+                            if json_start != -1:
+                                json_body = body[json_start:]
+                                body_dict = json.loads(json_body)
+                            else:
+                                body_dict = json.loads(body)
+                            state = body_dict.get("state", "unknown")
+                            desc = f"checked app state ({state})"
+                        else:
+                            desc = "checked app state (no response body)"
+                    except Exception as e:
+                        desc = f"checked app state (parse error: {str(e)[:50]})"
                 elif "/last-read-page-dialog" in endpoint:
                     desc = "handled continue reading dialog"
                 elif "/logs/timeline" in endpoint:

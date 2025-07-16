@@ -126,7 +126,7 @@ class IdleCheckResource(Resource):
                         )
 
                 except Exception as e:
-                    logger.error(f"Error shutting down idle emulator for {email}: {e}")
+                    logger.error(f"Error shutting down idle emulator for {email}: {e}", exc_info=True)
                     shutdown_emails.append(
                         {
                             "email": email,

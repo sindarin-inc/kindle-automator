@@ -19,7 +19,7 @@
     dest: /etc/nginx/sites-available/kindle.sindarin.com
     owner: root
     group: root
-    mode: 0644
+    mode: '0644'
 
 - name: Enable Nginx site
   file:
@@ -35,13 +35,14 @@
 - name: Test Nginx configuration
   command: nginx -t
   register: nginx_test
-  ignore_errors: yes
+  failed_when: false
+  changed_when: false
 
 - name: Start and enable Nginx service
   service:
     name: nginx
     state: started
-    enabled: yes
+    enabled: true
 
 - name: Reload Nginx if configuration is valid
   service:

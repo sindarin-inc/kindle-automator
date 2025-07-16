@@ -53,7 +53,7 @@ class KindleOCR:
                 logger.info(f"Created temporary credentials file at {temp_path}")
                 return temp_path
             except Exception as e:
-                logger.error(f"Failed to decode base64 Google credentials: {e}")
+                logger.error(f"Failed to decode base64 Google credentials: {e}", exc_info=True)
                 return None
 
         # Check if GOOGLE_APPLICATION_CREDENTIALS is already set
@@ -98,7 +98,7 @@ class KindleOCR:
                     image_bytes = base64.b64decode(image_content)
                 except Exception:
                     error_msg = "Invalid base64 string provided for Google Document AI"
-                    logger.error(error_msg)
+                    logger.error(error_msg, exc_info=True)
                     return None, error_msg
             else:
                 image_bytes = image_content
@@ -119,7 +119,7 @@ class KindleOCR:
                     result = client.process_document(request=request)
                     return result
                 except Exception as e:
-                    logger.error(f"Error processing Google Document AI OCR: {e}")
+                    logger.error(f"Error processing Google Document AI OCR: {e}", exc_info=True)
                     return None
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -136,12 +136,12 @@ class KindleOCR:
                 except concurrent.futures.TimeoutError:
                     future.cancel()
                     error_msg = f"Google Document AI OCR request timed out after {TIMEOUT_SECONDS} seconds"
-                    logger.error(error_msg)
+                    logger.error(error_msg, exc_info=True)
                     return None, error_msg
 
         except Exception as e:
             error_msg = f"Error processing Google Document AI OCR: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             return None, error_msg
         finally:
             # Clean up temporary credentials file if created
@@ -173,7 +173,7 @@ class KindleOCR:
                     base64.b64decode(base64_image[:20])
                 except:
                     error_msg = "Invalid base64 string provided for MistralAI"
-                    logger.error(error_msg)
+                    logger.error(error_msg, exc_info=True)
                     return None, error_msg
             else:
                 # It's binary data, encode it as base64
@@ -202,7 +202,7 @@ class KindleOCR:
                         document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
                     )
                 except Exception as e:
-                    logger.error(f"Error processing MistralAI OCR: {e}")
+                    logger.error(f"Error processing MistralAI OCR: {e}", exc_info=True)
                     return None
 
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
@@ -234,17 +234,17 @@ class KindleOCR:
                         # Cancel the future if it times out
                         future.cancel()
                         error_msg = f"MistralAI OCR request timed out after {TIMEOUT_SECONDS} seconds"
-                        logger.error(error_msg)
+                        logger.error(error_msg, exc_info=True)
                         return None, error_msg
 
             except Exception as e:
                 error_msg = f"Error during MistralAI OCR processing with timeout: {e}"
-                logger.error(error_msg)
+                logger.error(error_msg, exc_info=True)
                 return None, error_msg
 
         except Exception as e:
             error_msg = f"Error processing MistralAI OCR: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             return None, error_msg
 
     @staticmethod
@@ -481,7 +481,7 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
                     result["screenshot_url"] = image_url
                     delete_after = False
         except Exception as e:
-            logger.error(f"Error processing OCR: {e}")
+            logger.error(f"Error processing OCR: {e}", exc_info=True)
             result["ocr_error"] = f"Failed to process image for OCR: {str(e)}"
             # Fall back to regular image handling
             if use_base64:
@@ -490,7 +490,7 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
                         encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
                         result["screenshot_base64"] = encoded_image
                 except Exception as e2:
-                    logger.error(f"Error encoding image to base64: {e2}")
+                    logger.error(f"Error encoding image to base64: {e2}", exc_info=True)
                     result["error"] = f"Failed to encode image to base64: {str(e2)}"
             else:
                 # Return URL to image and don't delete file
@@ -504,7 +504,7 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
                 encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
                 result["screenshot_base64"] = encoded_image
         except Exception as e:
-            logger.error(f"Error encoding image to base64: {e}")
+            logger.error(f"Error encoding image to base64: {e}", exc_info=True)
             result["error"] = f"Failed to encode image to base64: {str(e)}"
     else:
         # Regular URL handling
@@ -518,6 +518,6 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
             os.remove(screenshot_path)
             logger.info(f"Deleted image after processing: {screenshot_path}")
         except Exception as e:
-            logger.error(f"Failed to delete image {screenshot_path}: {e}")
+            logger.error(f"Failed to delete image {screenshot_path}: {e}", exc_info=True)
 
     return result

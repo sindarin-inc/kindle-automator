@@ -112,7 +112,7 @@ class VNCInstanceManager:
                 self.save_instances()
                 return True
         except Exception as e:
-            logger.error(f"Error loading VNC instances: {e}")
+            logger.error(f"Error loading VNC instances: {e}", exc_info=True)
             self.instances = self._create_default_instances()
             return False
 
@@ -187,7 +187,7 @@ class VNCInstanceManager:
                 json.dump(data, f, indent=2)
             return True
         except Exception as e:
-            logger.error(f"Error saving VNC instances: {e}")
+            logger.error(f"Error saving VNC instances: {e}", exc_info=True)
             return False
 
     def get_instance_for_profile(self, email: str) -> Optional[Dict]:
@@ -300,7 +300,7 @@ class VNCInstanceManager:
                     logger.info(f"Stopping WebSocket proxy for {email} during cleanup")
                     ws_proxy_manager.stop_proxy(email)
             except Exception as e:
-                logger.error(f"Error stopping WebSocket proxy during cleanup: {e}")
+                logger.error(f"Error stopping WebSocket proxy during cleanup: {e}", exc_info=True)
 
             # Clear Appium-related fields
             instance["appium_pid"] = None
@@ -452,7 +452,7 @@ class VNCInstanceManager:
                 logger.warning(f"Failed to update restart flag for {email}")
                 return False
         except Exception as e:
-            logger.error(f"Error setting restart flag for {email}: {e}")
+            logger.error(f"Error setting restart flag for {email}: {e}", exc_info=True)
             return False
 
     def get_running_at_restart(self) -> List[str]:
@@ -480,7 +480,7 @@ class VNCInstanceManager:
 
             return running_emails
         except Exception as e:
-            logger.error(f"Error getting running at restart emails: {e}")
+            logger.error(f"Error getting running at restart emails: {e}", exc_info=True)
             return []
 
     def clear_running_at_restart_flags(self) -> None:
@@ -504,7 +504,7 @@ class VNCInstanceManager:
 
             logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
-            logger.error(f"Error clearing was_running_at_restart flags: {e}")
+            logger.error(f"Error clearing was_running_at_restart flags: {e}", exc_info=True)
 
     def reset_appium_states_on_startup(self) -> None:
         """
@@ -526,7 +526,7 @@ class VNCInstanceManager:
             else:
                 logger.info("No appium_running states needed resetting")
         except Exception as e:
-            logger.error(f"Error resetting appium states on startup: {e}")
+            logger.error(f"Error resetting appium states on startup: {e}", exc_info=True)
 
     def get_all_instances(self) -> List[Dict]:
         """
@@ -587,4 +587,4 @@ class VNCInstanceManager:
                             )
                             self.release_instance_from_profile(email)
                     except Exception as e:
-                        logger.error(f"Error checking emulator status for {email}: {e}")
+                        logger.error(f"Error checking emulator status for {email}: {e}", exc_info=True)

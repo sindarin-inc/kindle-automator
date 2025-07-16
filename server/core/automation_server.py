@@ -73,6 +73,8 @@ class AutomationServer:
             logger.info(f"Created automator={id(automator)} for email={email}")
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
+            # Add server reference so automator can access current book info
+            automator.server_ref = self
 
             # Pass emulator_manager to automator for VNC integration
             automator.emulator_manager = self.profile_manager.emulator_manager
@@ -202,7 +204,7 @@ class AutomationServer:
             email, force_new_emulator=force_new_emulator
         )
         if not success:
-            logger.error(f"Failed to switch profile: {message}")
+            logger.error(f"Failed to switch profile: {message}", exc_info=True)
             return False, message
 
         # Clear current book since we're switching profiles
@@ -266,7 +268,7 @@ class AutomationServer:
                 f.write(str(pid))
             os.chmod(pid_file, 0o644)
         except Exception as e:
-            logger.error(f"Error saving PID file: {e}")
+            logger.error(f"Error saving PID file: {e}", exc_info=True)
 
     def kill_existing_process(self, name: str):
         """Kill existing Flask process if running on port 4098."""
@@ -277,10 +279,25 @@ class AutomationServer:
                 if pid:
                     os.kill(int(pid), signal.SIGTERM)
                     logger.info(f"Killed existing flask process with PID {pid}")
+
+                    # Wait for port to be released (up to 5 seconds)
+                    import time
+
+                    for i in range(50):  # 50 * 0.1s = 5s max
+                        try:
+                            # Check if port is still in use
+                            subprocess.check_output(["lsof", "-t", "-i:4098"], stderr=subprocess.DEVNULL)
+                            time.sleep(0.1)
+                        except subprocess.CalledProcessError:
+                            # Port is free
+                            logger.info(f"Port 4098 is now free after {(i+1)*0.1:.1f}s")
+                            break
+                    else:
+                        logger.warning("Port 4098 still in use after 5 seconds")
             except subprocess.CalledProcessError:
                 logger.info("No existing flask process found")
             except Exception as e:
-                logger.error(f"Error killing flask process: {e}")
+                logger.error(f"Error killing flask process: {e}", exc_info=True)
 
     def update_activity(self, email):
         """Update the last activity timestamp for an email.
@@ -323,5 +340,5 @@ class AutomationServer:
             return success
 
         except Exception as e:
-            logger.error(f"Error preparing seed clone AVD: {e}")
+            logger.error(f"Error preparing seed clone AVD: {e}", exc_info=True)
             return False

@@ -134,7 +134,7 @@ class StyleHandler:
                     continue
 
             if not style_button_found:
-                logger.error("Could not find style button")
+                logger.error("Could not find style button", exc_info=True)
                 return False
 
             # Store page source after tapping style button
@@ -175,7 +175,7 @@ class StyleHandler:
                     else:
                         logger.warning("Found More tab by text but it's not displayed")
                 except NoSuchElementException:
-                    logger.error("Could not find More tab by any strategy")
+                    logger.error("Could not find More tab by any strategy", exc_info=True)
                     # We'll continue even without the More tab, try to function with what we have
 
             # Store page source after tapping More tab
@@ -226,7 +226,7 @@ class StyleHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error updating reading styles: {e}")
+            logger.error(f"Error updating reading styles: {e}", exc_info=True)
             try:
                 store_page_source(self.driver.page_source, "style_update_exception")
             except:
@@ -486,7 +486,7 @@ class StyleHandler:
             time.sleep(1)
 
         except Exception as e:
-            logger.error(f"Error during scrolling: {e}")
+            logger.error(f"Error during scrolling: {e}", exc_info=True)
             # Continue anyway since some devices might show all options without scrolling
 
     def _close_style_slideover(self):
@@ -539,7 +539,7 @@ class StyleHandler:
                     logger.info(f"Performed generic tap at ({tap_x}, {tap_y})")
                     time.sleep(1)
             except Exception as e:
-                logger.error(f"Error tapping pill location: {e}")
+                logger.error(f"Error tapping pill location: {e}", exc_info=True)
 
         # Store page source after pill tap
         store_page_source(self.driver.page_source, "style_update_after_pill_tap")
@@ -578,13 +578,13 @@ class StyleHandler:
                         else:
                             logger.warning(f"Standard update_style_preference failed for {email}")
                     except Exception as update_e:
-                        logger.error(f"Error during style preference update: {update_e}")
+                        logger.error(f"Error during style preference update: {update_e}", exc_info=True)
                 else:
                     logger.warning(f"No profile_manager available to update style preference for {email}")
             else:
                 logger.warning("No email available from get_sindarin_email() to update style preference")
         except Exception as e:
-            logger.error(f"Error updating style preference in profile: {e}")
+            logger.error(f"Error updating style preference in profile: {e}", exc_info=True)
 
     def _toggle_checkbox(self, checkbox_strategies, desired_state, description):
         """
@@ -696,5 +696,5 @@ class StyleHandler:
             return True
 
         except Exception as e:
-            logger.error(f"Error toggling {description}: {e}")
+            logger.error(f"Error toggling {description}: {e}", exc_info=True)
             return False

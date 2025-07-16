@@ -54,7 +54,7 @@ def _save_tokens(tokens: Dict[str, Dict]) -> bool:
             json.dump(tokens, f, indent=2)
         return True
     except Exception as e:
-        logger.error(f"Failed to save tokens to {TOKENS_FILE}: {e}")
+        logger.error(f"Failed to save tokens to {TOKENS_FILE}: {e}", exc_info=True)
         return False
 
 

@@ -104,7 +104,7 @@ class ViewInspector:
 
                     if device_count > 1:
                         logger.error(
-                            f"Multiple devices detected ({device_count}) but no device ID available - cannot proceed with app launch"
+                            f"Multiple devices detected ({device_count}, exc_info=True) but no device ID available - cannot proceed with app launch"
                         )
                         return False
                     elif device_count == 1:
@@ -115,7 +115,9 @@ class ViewInspector:
 
             # One more check - if we still don't have a device ID but stderr contains "more than one"
             if not device_id:
-                logger.error("Still no device ID and multiple emulators may be running - cannot proceed")
+                logger.error(
+                    "Still no device ID and multiple emulators may be running - cannot proceed", exc_info=True
+                )
                 return False
 
             # Force stop the app if requested (e.g., when in UNKNOWN state)
@@ -156,10 +158,108 @@ class ViewInspector:
             max_wait_time = 3  # 3 seconds max wait time
             poll_interval = 0.1  # 100ms between checks
             app_ready = False
+            notification_dialog_handled = False  # Track if we've already tried to handle notification dialog
 
             while time.time() - start_time < max_wait_time:
                 try:
                     current_activity = self.driver.current_activity
+
+                    # Check for permission controller activity (notification dialog)
+                    if (
+                        "com.android.permissioncontroller" in current_activity
+                        and not notification_dialog_handled
+                    ):
+                        logger.info("Detected permission dialog during app initialization")
+                        notification_dialog_handled = True  # Mark as handled to avoid infinite loops
+                        # Try to handle notification permission dialog
+                        try:
+                            from views.common.dialog_strategies import (
+                                NOTIFICATION_DIALOG_IDENTIFIERS,
+                            )
+
+                            # Check if this is a notification dialog
+                            is_notification_dialog = False
+                            for strategy, locator in NOTIFICATION_DIALOG_IDENTIFIERS:
+                                try:
+                                    element = self.driver.find_element(strategy, locator)
+                                    if element.is_displayed():
+                                        logger.info(
+                                            f"Found notification dialog element: {strategy}={locator}"
+                                        )
+                                        is_notification_dialog = True
+                                        break
+                                except:
+                                    continue
+
+                            if is_notification_dialog:
+                                # Look for deny/don't allow button
+                                deny_buttons = [
+                                    (
+                                        AppiumBy.ID,
+                                        "com.android.permissioncontroller:id/permission_deny_button",
+                                    ),
+                                    (
+                                        AppiumBy.ID,
+                                        "com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button",
+                                    ),
+                                    (AppiumBy.ID, "android:id/button2"),  # Usually the deny button
+                                    (AppiumBy.XPATH, "//android.widget.Button[@text='Deny']"),
+                                    (AppiumBy.XPATH, '//android.widget.Button[@text="Don\'t allow"]'),
+                                    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'Deny')]"),
+                                    (AppiumBy.XPATH, '//android.widget.Button[contains(@text, "Don\'t")]'),
+                                    # Android 36 specific
+                                    (AppiumBy.XPATH, "//android.widget.Button[@text='No thanks']"),
+                                    (AppiumBy.XPATH, "//android.widget.Button[contains(@text, 'No')]"),
+                                    # Generic button search - look for the second button (usually deny)
+                                    (AppiumBy.XPATH, "(//android.widget.Button)[2]"),
+                                ]
+
+                                button_clicked = False
+                                for strategy, locator in deny_buttons:
+                                    try:
+                                        button = self.driver.find_element(strategy, locator)
+                                        if button.is_displayed():
+                                            button.click()
+                                            logger.info(
+                                                f"Clicked deny button for notification permission: {strategy}={locator}"
+                                            )
+                                            time.sleep(0.5)  # Brief pause after dismissing
+                                            button_clicked = True
+                                            break
+                                    except Exception as btn_e:
+                                        logger.debug(
+                                            f"Failed to click deny button {strategy}={locator}: {btn_e}"
+                                        )
+                                        continue
+
+                                if not button_clicked:
+                                    logger.warning(
+                                        "Could not find or click any deny button for notification dialog"
+                                    )
+                                    # Try using the permissions handler as fallback
+                                    try:
+                                        from handlers.permissions_handler import (
+                                            PermissionsHandler,
+                                        )
+
+                                        permissions_handler = PermissionsHandler(self.driver)
+                                        permissions_handler.handle_notifications_permission(
+                                            should_allow=False
+                                        )
+                                        logger.info("Used PermissionsHandler to dismiss notification dialog")
+                                    except Exception as ph_e:
+                                        logger.error(f"PermissionsHandler also failed: {ph_e}", exc_info=True)
+                                        # As last resort, try pressing back button
+                                        try:
+                                            self.driver.press_keycode(4)  # Android back key
+                                            logger.info("Pressed back button to dismiss notification dialog")
+                                        except:
+                                            pass
+                        except Exception as perm_e:
+                            logger.warning(f"Failed to handle permission dialog: {perm_e}")
+
+                        # Continue the loop to check if app is ready after dismissing dialog
+                        continue
 
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                     # Also handle the Google Play review dialog which can appear over the Kindle app
@@ -216,7 +316,7 @@ class ViewInspector:
                     logger.warning(f"Error checking current activity: {e}")
                     # If session is terminated, stop the loop early
                     if "A session is either terminated or not started" in str(e):
-                        logger.error("Session terminated, stopping app status check")
+                        logger.error("Session terminated, stopping app status check", exc_info=True)
                         break
 
                 # Sleep for poll_interval before checking again
@@ -228,7 +328,7 @@ class ViewInspector:
             logger.info("App brought to foreground")
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error bringing app to foreground: {e}")
+            logger.error(f"Error bringing app to foreground: {e}", exc_info=True)
             return False
 
     def _is_tab_selected(self, tab_name):
@@ -284,7 +384,7 @@ class ViewInspector:
             filepath = store_page_source(source, "unknown_view")
             logger.info(f"Stored unknown view page source at: {filepath}")
         except Exception as e:
-            logger.error(f"Failed to get page source: {e.__class__.__name__}")
+            logger.error(f"Failed to get page source: {e.__class__.__name__}", exc_info=True)
 
     def _try_find_element(self, strategies, success_message=None):
         """Try to find an element using multiple strategies"""
@@ -403,7 +503,7 @@ class ViewInspector:
                         time.sleep(2)  # Give app time to initialize
                         # Don't recurse, just continue with normal detection
                     else:
-                        logger.error("Failed to launch Kindle app from dashboard")
+                        logger.error("Failed to launch Kindle app from dashboard", exc_info=True)
                         return AppView.UNKNOWN
             except Exception as e:
                 logger.debug(f"Error checking current activity: {e}")
@@ -845,7 +945,7 @@ class ViewInspector:
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error determining current view: {e}")
+            logger.error(f"Error determining current view: {e}", exc_info=True)
             logger.warning("Dumping page source due to error")
             traceback.print_exc()
             self._dump_page_source()
@@ -875,7 +975,7 @@ class ViewInspector:
                     self.driver.save_screenshot(screenshot_path)
                     logger.info(f"Saved screenshot of error state to {screenshot_path}")
             except Exception as screenshot_error:
-                logger.error(f"Failed to save error screenshot: {screenshot_error}")
+                logger.error(f"Failed to save error screenshot: {screenshot_error}", exc_info=True)
             return AppView.UNKNOWN
 
     def _focus_input_field_if_needed(self, field_element, field_type="input"):
@@ -936,7 +1036,9 @@ class ViewInspector:
             return True
 
         except Exception as e:
-            logger.error(f"   Error in _focus_input_field_if_needed for {field_type} field: {e}")
+            logger.error(
+                f"   Error in _focus_input_field_if_needed for {field_type} field: {e}", exc_info=True
+            )
             return False
 
     def _is_auth_view(self):
@@ -991,7 +1093,7 @@ class ViewInspector:
             return False
 
         except Exception as e:
-            logger.error(f"Error checking for auth view: {e}")
+            logger.error(f"Error checking for auth view: {e}", exc_info=True)
             return False
 
     def _is_in_search_interface(self):
@@ -1083,5 +1185,5 @@ class ViewInspector:
             return is_search
 
         except Exception as e:
-            logger.error(f"Error checking for search interface: {e}")
+            logger.error(f"Error checking for search interface: {e}", exc_info=True)
             return False

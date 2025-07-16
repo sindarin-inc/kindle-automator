@@ -63,7 +63,7 @@ class LogoutResource(Resource):
                         continue
 
                 if not tab_found:
-                    logger.error("Failed to find MORE tab")
+                    logger.error("Failed to find MORE tab", exc_info=True)
                     return {"error": "Failed to navigate to MORE tab"}, 500
 
                 # Update state after navigation
@@ -134,7 +134,7 @@ class LogoutResource(Resource):
                             break
 
                 except Exception as e:
-                    logger.error(f"Error scrolling to find Sign Out button: {e}")
+                    logger.error(f"Error scrolling to find Sign Out button: {e}", exc_info=True)
 
             if not sign_out_clicked:
                 logger.error("Failed to find or click Sign Out button")
@@ -143,7 +143,7 @@ class LogoutResource(Resource):
                     page_source = automator.driver.page_source
                     store_page_source(page_source, "logout_failed")
                 except Exception as ps_error:
-                    logger.error(f"Failed to store page source: {ps_error}")
+                    logger.error(f"Failed to store page source: {ps_error}", exc_info=True)
                 automator.driver.save_screenshot(os.path.join(automator.screenshots_dir, "logout_failed.png"))
                 return {"error": "Failed to find Sign Out button"}, 500
 
@@ -199,12 +199,12 @@ class LogoutResource(Resource):
                         pass
 
                 if not sign_out_confirm_clicked:
-                    logger.error("Failed to click SIGN OUT button in confirmation dialog")
+                    logger.error("Failed to click SIGN OUT button in confirmation dialog", exc_info=True)
                     try:
                         page_source = automator.driver.page_source
                         store_page_source(page_source, "logout_confirm_failed")
                     except Exception as ps_error:
-                        logger.error(f"Failed to store page source: {ps_error}")
+                        logger.error(f"Failed to store page source: {ps_error}", exc_info=True)
                     automator.driver.save_screenshot(
                         os.path.join(automator.screenshots_dir, "logout_confirm_failed.png")
                     )
@@ -288,14 +288,14 @@ class LogoutResource(Resource):
                 }, 200
 
         except Exception as e:
-            logger.error(f"Error during logout: {e}")
+            logger.error(f"Error during logout: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             # Store diagnostics
             try:
                 page_source = automator.driver.page_source
                 store_page_source(page_source, "logout_error")
             except Exception as ps_error:
-                logger.error(f"Failed to store page source: {ps_error}")
+                logger.error(f"Failed to store page source: {ps_error}", exc_info=True)
             automator.driver.save_screenshot(os.path.join(automator.screenshots_dir, "logout_error.png"))
             return {"error": f"Failed to logout: {str(e)}"}, 500
 

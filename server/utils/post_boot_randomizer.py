@@ -138,7 +138,7 @@ class PostBootRandomizer:
             return True
 
         except Exception as e:
-            logger.error(f"Error randomizing Android ID: {e}")
+            logger.error(f"Error randomizing Android ID: {e}", exc_info=True)
             return False
 
     def randomize_system_properties(self, emulator_id: str, properties: dict) -> bool:
@@ -203,13 +203,13 @@ class PostBootRandomizer:
                             )
 
                 except Exception as e:
-                    logger.error(f"Error setting property {prop_name}: {e}")
+                    logger.error(f"Error setting property {prop_name}: {e}", exc_info=True)
                     success = False
 
             return success
 
         except Exception as e:
-            logger.error(f"Error setting system properties: {e}")
+            logger.error(f"Error setting system properties: {e}", exc_info=True)
             return False
 
     def clear_google_play_services_data(self, emulator_id: str) -> bool:
@@ -245,7 +245,7 @@ class PostBootRandomizer:
             return True
 
         except Exception as e:
-            logger.error(f"Error clearing Google Play Services data: {e}")
+            logger.error(f"Error clearing Google Play Services data: {e}", exc_info=True)
             return False
 
     def randomize_all_post_boot_identifiers(
@@ -273,8 +273,8 @@ class PostBootRandomizer:
         if device_identifiers:
             # Map our identifier keys to actual Android system properties
             property_mappings = {
-                "ro.serialno": device_identifiers.get("ro.serialno"),
-                "ro.build.id": device_identifiers.get("ro.build.id"),
+                # "ro.serialno": device_identifiers.get("ro.serialno"), # Not working
+                # "ro.build.id": device_identifiers.get("ro.build.id"), # Not working
                 "ro.product.name": device_identifiers.get("ro.product.name"),
             }
 

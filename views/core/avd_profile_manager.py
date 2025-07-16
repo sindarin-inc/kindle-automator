@@ -294,7 +294,7 @@ class AVDProfileManager:
                 return False, f"Failed to prepare seed clone: {message}"
 
         except Exception as e:
-            logger.error(f"Error ensuring seed clone ready: {e}")
+            logger.error(f"Error ensuring seed clone ready: {e}", exc_info=True)
             return False, str(e)
 
     def update_seed_clone_snapshot(self) -> Tuple[bool, str]:
@@ -340,7 +340,7 @@ class AVDProfileManager:
                 return False, "Failed to save seed clone snapshot"
 
         except Exception as e:
-            logger.error(f"Error updating seed clone snapshot: {e}")
+            logger.error(f"Error updating seed clone snapshot: {e}", exc_info=True)
             return False, str(e)
 
     def _detect_host_architecture(self) -> str:
@@ -370,7 +370,7 @@ class AVDProfileManager:
                     self.profiles_index = data
                     return data
             except Exception as e:
-                logger.error(f"Error loading profiles index: {e}")
+                logger.error(f"Error loading profiles index: {e}", exc_info=True)
                 return {}
         else:
             logger.info(f"Profiles index not found at {self.users_file}, creating empty index")
@@ -388,7 +388,7 @@ class AVDProfileManager:
             with open(self.users_file, "w") as f:
                 json.dump(self.profiles_index, f, indent=2)
         except Exception as e:
-            logger.error(f"Error saving profiles index: {e}")
+            logger.error(f"Error saving profiles index: {e}", exc_info=True)
 
     # Removed _load_current_profile method as we're managing multiple users simultaneously
 
@@ -435,7 +435,7 @@ class AVDProfileManager:
             # Reload user preferences from profiles_index to ensure our cache is up-to-date
             self.user_preferences = self._load_user_preferences()
         except Exception as e:
-            logger.error(f"Error saving user preferences: {e}")
+            logger.error(f"Error saving user preferences: {e}", exc_info=True)
 
     def find_running_emulator_for_email(self, email: str) -> Tuple[bool, Optional[str], Optional[str]]:
         """
@@ -490,7 +490,7 @@ class AVDProfileManager:
             logger.info(f"Updated {section + '.' if section else ''}field {field} for {email} to {value}")
             return True
         except Exception as e:
-            logger.error(f"Error setting user field {field} for {email}: {e}")
+            logger.error(f"Error setting user field {field} for {email}: {e}", exc_info=True)
             return False
 
     def get_user_field(self, email: str, field: str, default=None, section: str = None):
@@ -522,7 +522,7 @@ class AVDProfileManager:
                 # Get value from top level
                 return self.profiles_index[email].get(field, default)
         except Exception as e:
-            logger.error(f"Error getting user field {field} for {email}: {e}")
+            logger.error(f"Error getting user field {field} for {email}: {e}", exc_info=True)
             return default
 
     def update_auth_state(self, email: str, authenticated: bool) -> bool:
@@ -566,7 +566,7 @@ class AVDProfileManager:
 
             return True
         except Exception as e:
-            logger.error(f"Error updating auth state for {email}: {e}")
+            logger.error(f"Error updating auth state for {email}: {e}", exc_info=True)
             return False
 
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
@@ -740,7 +740,8 @@ class AVDProfileManager:
             if actual_avd != avd_name:
                 logger.error(
                     f"CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
-                    f"not {avd_name}. Returning None to prevent cross-user access."
+                    f"not {avd_name}. Returning None to prevent cross-user access.",
+                    exc_info=True,
                 )
                 return None
 
@@ -784,7 +785,7 @@ class AVDProfileManager:
             logger.info(f"Updated AVD name for {email} to {avd_name}")
             return True
         except Exception as e:
-            logger.error(f"Error updating AVD name for {email}: {e}")
+            logger.error(f"Error updating AVD name for {email}: {e}", exc_info=True)
             return False
 
     def list_profiles(self) -> List[Dict]:
@@ -833,6 +834,16 @@ class AVDProfileManager:
                 profile_info["appium_port"] = appium_port
             if vnc_instance:
                 profile_info["vnc_instance"] = vnc_instance
+
+            # Add Android version information if available
+            android_version = profile_entry.get("android_version")
+            if android_version:
+                profile_info["android_version"] = android_version
+
+            # Add system image information if available
+            system_image = profile_entry.get("system_image")
+            if system_image:
+                profile_info["system_image"] = system_image
 
             result.append(profile_info)
         return result
@@ -1053,7 +1064,7 @@ class AVDProfileManager:
         try:
             self._save_profiles_index()
         except Exception as save_e:
-            logger.error(f"Error saving profiles_index: {save_e}")
+            logger.error(f"Error saving profiles_index: {save_e}", exc_info=True)
 
         # Build and log the registration message
         log_message = f"Registered profile for {email} with AVD {avd_name}"
@@ -1235,7 +1246,7 @@ class AVDProfileManager:
 
             return default
         except Exception as e:
-            logger.error(f"Error getting style setting {setting_name}: {e}")
+            logger.error(f"Error getting style setting {setting_name}: {e}", exc_info=True)
             return default
 
     def save_style_setting(self, setting_name: str, setting_value, email: str = None) -> bool:
@@ -1275,7 +1286,7 @@ class AVDProfileManager:
             logger.info(f"Saved library style setting {setting_name}={setting_value} for {email}")
             return True
         except Exception as e:
-            logger.error(f"Error saving style setting {setting_name}: {e}")
+            logger.error(f"Error saving style setting {setting_name}: {e}", exc_info=True)
             return False
 
     def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
@@ -1342,7 +1353,7 @@ class AVDProfileManager:
             logger.info(f"Successfully updated style preferences for {email} to {is_updated}")
             return True
         except Exception as e:
-            logger.error(f"Error updating style preference: {e}")
+            logger.error(f"Error updating style preference: {e}", exc_info=True)
             return False
 
     def switch_profile_and_start_emulator(
@@ -1455,11 +1466,15 @@ class AVDProfileManager:
         if not avd_exists:
             logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
 
+            # Check if this user requires ALT_SYSTEM_IMAGE
+            if self.avd_creator.host_arch == "arm64":
+                ignore_seed_clone = True  # Use the MAC_SYSTEM_IMAGE
+            else:
+                ignore_seed_clone = email in self.avd_creator.ALT_IMAGE_TEST_EMAILS
+
             # Check if we can use the seed clone for faster AVD creation
-            logger.info(f"Checking if seed clone is ready. avd_dir={self.avd_creator.avd_dir}")
-            seed_clone_ready = self.avd_creator.is_seed_clone_ready()
-            logger.info(f"Seed clone ready: {seed_clone_ready}")
-            if seed_clone_ready:
+            # Skip seed clone for ALT_IMAGE users since seed clone uses Android 30
+            if self.avd_creator.is_seed_clone_ready() and not ignore_seed_clone:
                 logger.info("Seed clone is ready - using fast AVD copy method")
                 success, result = self.avd_creator.copy_avd_from_seed_clone(email)
                 if success:
@@ -1474,8 +1489,13 @@ class AVDProfileManager:
                         return False, f"Failed to create AVD for {email}: {result}"
                     avd_name = result
             else:
-                # Seed clone not ready, use normal AVD creation
-                logger.info("Seed clone not ready, using normal AVD creation")
+                # Either seed clone not ready or user requires ALT_SYSTEM_IMAGE
+                if ignore_seed_clone:
+                    logger.info(
+                        f"User {email} requires ALT_SYSTEM_IMAGE (Android 36), using normal AVD creation"
+                    )
+                else:
+                    logger.info("Seed clone not ready, using normal AVD creation")
                 success, result = self.create_new_avd(email)
                 if not success:
                     logger.error(f"Failed to create AVD: {result}")
@@ -1586,7 +1606,7 @@ class AVDProfileManager:
             return True, f"Successfully recreated: {', '.join(actions)}"
 
         except Exception as e:
-            logger.error(f"Error recreating profile AVD for {email}: {e}")
+            logger.error(f"Error recreating profile AVD for {email}: {e}", exc_info=True)
             return False, f"Failed to recreate profile AVD: {str(e)}"
 
     def clear_emulator_settings(self, email: str) -> bool:
@@ -1628,5 +1648,5 @@ class AVDProfileManager:
             return True
 
         except Exception as e:
-            logger.error(f"Error clearing emulator settings for {email}: {e}")
+            logger.error(f"Error clearing emulator settings for {email}: {e}", exc_info=True)
             return False

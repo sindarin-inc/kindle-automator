@@ -5,6 +5,7 @@ import time
 from functools import wraps
 from io import BytesIO
 
+import sentry_sdk
 from flask import Response, current_app, g, request
 
 # Removed set_current_request_email import as it's no longer needed
@@ -85,9 +86,13 @@ class RequestBodyLogger:
                 request_data = request.get_json()
                 # Sanitize sensitive data
                 request_data = RequestBodyLogger.sanitize_sensitive_data(request_data)
-            except Exception as e:
-                logger.error(f"Error parsing JSON request: {e}")
-                request_data = "Invalid JSON"
+            except Exception:
+                # Don't log error, just show the raw data
+                try:
+                    raw_data = request.data.decode("utf-8")
+                    request_data = f"Invalid JSON: {raw_data}" if raw_data else "Invalid JSON: <empty body>"
+                except UnicodeDecodeError:
+                    request_data = f"Invalid JSON: Binary data ({len(request.data)} bytes)"
         elif request.form:
             request_data = RequestBodyLogger.sanitize_sensitive_data(request.form.to_dict())
         elif request.data:
@@ -108,17 +113,17 @@ class RequestBodyLogger:
         if request_data:
             if isinstance(request_data, (dict, list)):
                 json_str = json.dumps(request_data, default=str)
-                if len(json_str) > 500:
+                if len(json_str) > 5000:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                     )
                 else:
                     logger.info(
                         f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                     )
-            elif isinstance(request_data, str) and len(request_data) > 500:
+            elif isinstance(request_data, str) and len(request_data) > 5000:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:500]}{RESET}... (truncated, total {len(request_data)} bytes)"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:5000]}{RESET}... (truncated, total {len(request_data)} bytes)"
                 )
             else:
                 logger.info(
@@ -169,9 +174,9 @@ class RequestBodyLogger:
                 if isinstance(response_data, dict):
                     sanitized_data = RequestBodyLogger.sanitize_sensitive_data(response_data)
                     json_str = json.dumps(sanitized_data, default=str)
-                    if len(json_str) > 500:
+                    if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
@@ -179,18 +184,18 @@ class RequestBodyLogger:
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
-                    if len(json_str) > 500:
+                    if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:500]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
                             f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
-                if len(response_text) > 500:
+                if len(response_text) > 5000:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:500]}{RESET}... (truncated, total {len(response_text)} bytes)"
+                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
                     logger.info(
@@ -222,6 +227,21 @@ def setup_request_logger(app):
 
         # Store the email in flask.g for this request
         g.request_email = email
+
+        # Set Sentry user context if email is available
+        if email:
+            sentry_sdk.set_user({"email": email})
+
+        # Set request context for Sentry
+        sentry_sdk.set_context(
+            "request",
+            {
+                "method": request.method,
+                "path": request.path,
+                "endpoint": request.endpoint,
+                "remote_addr": request.remote_addr,
+            },
+        )
 
         # Log the request details
         RequestBodyLogger.log_request()

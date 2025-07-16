@@ -126,7 +126,7 @@ class AuthenticationHandler:
             return focused_field
 
         except Exception as e:
-            logger.error(f"Error handling {field_type} field focus: {e}")
+            logger.warning(f"Error handling {field_type} field focus: {e}", exc_info=True)
             return None
 
     def prepare_for_authentication(self):
@@ -212,7 +212,7 @@ class AuthenticationHandler:
                     )
                     state_name = "LIBRARY_SIGN_IN"
             except Exception as e:
-                logger.error(f"Error in thorough state detection: {e}")
+                logger.warning(f"Error in thorough state detection: {e}", exc_info=True)
                 # Fall back to regular state update
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
@@ -240,8 +240,8 @@ class AuthenticationHandler:
                     "vnc_url": get_formatted_vnc_url(email),
                 }
 
-            # Check if we're already in a logged-in state (LIBRARY or HOME)
-            if state_name in ["LIBRARY", "HOME"]:
+            # Check if we're already in a logged-in state (LIBRARY, HOME, or READING)
+            if state_name in ["LIBRARY", "HOME", "READING"]:
                 logger.info(f"Already authenticated in {state_name} state")
 
                 # If we're in HOME state, try to navigate to LIBRARY for consistency
@@ -320,7 +320,7 @@ class AuthenticationHandler:
                                 "vnc_url": get_formatted_vnc_url(email),
                             }
                     except Exception as e:
-                        logger.error(f"Error navigating from HOME to LIBRARY: {e}")
+                        logger.warning(f"Error navigating from HOME to LIBRARY: {e}", exc_info=True)
                         # Continue with HOME state
 
                 # For authenticated states, still provide a VNC URL for convenience
@@ -431,7 +431,7 @@ class AuthenticationHandler:
                         if not is_ready:
                             logger.warning(f"Emulator not ready for {email}, may need to be restarted")
                     except Exception as e:
-                        logger.error(f"Error checking emulator readiness: {e}")
+                        logger.warning(f"Error checking emulator readiness: {e}", exc_info=True)
 
                 # Focus the email field if needed (only for SIGN_IN state)
                 if state_name == "SIGN_IN":
@@ -458,7 +458,7 @@ class AuthenticationHandler:
                     else:
                         logger.warning("Could not verify Kindle app installation")
                 except Exception as e:
-                    logger.error(f"Error ensuring Kindle app is installed: {e}")
+                    logger.warning(f"Error ensuring Kindle app is installed: {e}", exc_info=True)
 
             # If we're in HOME state, try to use transition_to_library which handles navigation
             # from HOME to sign-in states properly
@@ -524,7 +524,7 @@ class AuthenticationHandler:
                     time.sleep(3)  # Give it time to launch
                     success = True
                 except Exception as activate_e:
-                    logger.error(f"Error activating Kindle app: {activate_e}")
+                    logger.warning(f"Error activating Kindle app: {activate_e}", exc_info=True)
 
             # Update our state to see where we are
             automator.state_machine.update_current_state()
@@ -567,7 +567,7 @@ class AuthenticationHandler:
                             logger.debug(f"Error tapping email field with {strategy}={locator}: {tap_err}")
                             continue
                 except Exception as e:
-                    logger.error(f"Error tapping email field: {e}")
+                    logger.warning(f"Error tapping email field: {e}", exc_info=True)
 
                 # Always require manual login
                 # Start the keyboard check to continuously hide the keyboard in AUTH state
@@ -581,7 +581,7 @@ class AuthenticationHandler:
                 }
 
             # If we reached a library state after restart, we're already logged in
-            if state_name in ["LIBRARY", "HOME"]:
+            if state_name in ["LIBRARY", "HOME", "READING"]:
                 logger.info(f"Already authenticated in {state_name}")
                 return {
                     "state": state_name,
@@ -614,7 +614,10 @@ class AuthenticationHandler:
 
                 # Check if transition ended in an acceptable state
                 if final_state != AppState.LIBRARY and not final_state.is_auth_state():
-                    logger.error("transition_to_library failed - unable to navigate to library or auth state")
+                    logger.error(
+                        "transition_to_library failed - unable to navigate to library or auth state",
+                        exc_info=True,
+                    )
                     # Get the formatted VNC URL for error response
                     formatted_vnc_url = get_formatted_vnc_url(email)
 
@@ -625,9 +628,11 @@ class AuthenticationHandler:
                         state_name = (
                             current_state.name if hasattr(current_state, "name") else str(current_state)
                         )
-                        logger.error(f"Current state after failed transition: {state_name}")
+                        logger.warning(f"Current state after failed transition: {state_name}")
                     except Exception as state_err:
-                        logger.error(f"Error getting state after failed transition: {state_err}")
+                        logger.warning(
+                            f"Error getting state after failed transition: {state_err}", exc_info=True
+                        )
                         state_name = "UNKNOWN"
 
                     return {
@@ -689,7 +694,7 @@ class AuthenticationHandler:
                         "message": f"In unexpected state after navigation attempt: {state_name}",
                     }
             except Exception as e:
-                logger.error(f"Error in transition_to_library: {e}")
+                logger.error(f"Error in transition_to_library: {e}", exc_info=True)
                 # Capture and log the full stack trace
                 import traceback
 
@@ -702,7 +707,7 @@ class AuthenticationHandler:
                     state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
                     logger.info(f"Current state after error: {state_name}")
                 except Exception as state_err:
-                    logger.error(f"Error getting state after transition error: {state_err}")
+                    logger.warning(f"Error getting state after transition error: {state_err}", exc_info=True)
                     state_name = "UNKNOWN"
 
             # If we get here, we had some serious issues
@@ -744,7 +749,7 @@ class AuthenticationHandler:
             }
 
         except Exception as e:
-            logger.error(f"Error in prepare_for_authentication: {e}")
+            logger.error(f"Error in prepare_for_authentication: {e}", exc_info=True)
             # Even in case of error, try to get the email if possible
             email = ""
             try:
@@ -786,7 +791,7 @@ class AuthenticationHandler:
                 "Authentication must be done manually via VNC",
             )
         except Exception as e:
-            logger.error(f"Authentication failed: {e}")
+            logger.error(f"Authentication failed: {e}", exc_info=True)
             return False
 
     def _select_sign_in_if_needed(self):
@@ -832,7 +837,7 @@ class AuthenticationHandler:
                                 AppiumBy.XPATH,
                                 "//android.view.View[@resource-id='auth-error-message-box']//android.view.View[contains(@text, 'incorrect')]",
                             )
-                            logger.error(f"Authentication error: {error_message.text}")
+                            logger.warning(f"Authentication error: {error_message.text}", exc_info=True)
                             return (LoginVerificationState.ERROR, error_message.text)
                         except:
                             # If specific message not found, try to get any text from the error box
@@ -848,15 +853,15 @@ class AuthenticationHandler:
 
                                 if error_texts:
                                     error_message = " - ".join(error_texts)
-                                    logger.error(f"Authentication error: {error_message}")
+                                    logger.warning(f"Authentication error: {error_message}", exc_info=True)
                                     return (LoginVerificationState.ERROR, error_message)
                                 else:
-                                    logger.error(
+                                    logger.warning(
                                         "Authentication error box found but couldn't extract message"
                                     )
                                     return (LoginVerificationState.ERROR, "Unknown authentication error")
                             except Exception as e:
-                                logger.error(f"Error extracting message from error box: {e}")
+                                logger.warning(f"Error extracting message from error box: {e}", exc_info=True)
                                 return (LoginVerificationState.ERROR, "Authentication error")
                 except:
                     # No error box found, continue with other checks
@@ -877,8 +882,9 @@ class AuthenticationHandler:
                             try:
                                 error = driver.find_element(*strategy)
                                 if error and error.text.strip():
-                                    logger.error(
-                                        f"Found error message with disabled button: {error.text.strip()}"
+                                    logger.warning(
+                                        f"Found error message with disabled button: {error.text.strip()}",
+                                        exc_info=True,
                                     )
                                     error_found = True
                                     return (LoginVerificationState.ERROR, error.text.strip())
@@ -930,7 +936,9 @@ class AuthenticationHandler:
                             try:
                                 error = driver.find_element(*strategy)
                                 if error and error.text.strip():
-                                    logger.error(f"Found error message: {error.text.strip()}")
+                                    logger.warning(
+                                        f"Found error message: {error.text.strip()}", exc_info=True
+                                    )
                                     return (LoginVerificationState.ERROR, error.text.strip())
                             except:
                                 continue
@@ -1022,14 +1030,14 @@ class AuthenticationHandler:
                     return True
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.INCORRECT_PASSWORD:
                     # Special handling for incorrect password
-                    logger.error(f"Login failed with incorrect password: {result[1]}")
+                    logger.warning(f"Login failed with incorrect password: {result[1]}", exc_info=True)
                     # Return the result tuple directly so the server can handle it specifically
                     return result
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.ERROR:
-                    logger.error(f"Login failed: {result[1]}")
+                    logger.warning(f"Login failed: {result[1]}")
                     return result
                 else:
-                    logger.error(f"Could not verify login status, state: {result}")
+                    logger.warning(f"Could not verify login status, state: {result}")
                     return False
 
             except TimeoutException:
@@ -1089,11 +1097,11 @@ class AuthenticationHandler:
                 filepath = store_page_source(self.driver.page_source, "auth_login_timeout")
                 logger.info(f"Stored unknown timeout page source at: {filepath}")
 
-                logger.error("Could not verify login status within timeout")
+                logger.error("Could not verify login status within timeout", exc_info=True)
                 return False
 
         except Exception as e:
-            logger.error(f"Error verifying login: {e}")
+            logger.error(f"Error verifying login: {e}", exc_info=True)
             return False
 
     def hide_keyboard_if_visible(self):
@@ -1268,7 +1276,7 @@ class AuthenticationHandler:
 
             return is_captcha
         except Exception as e:
-            logger.error(f"Error checking for captcha screen: {e}")
+            logger.warning(f"Error checking for captcha screen: {e}", exc_info=True)
             return False
 
     def _try_find_element(self, by, locator):

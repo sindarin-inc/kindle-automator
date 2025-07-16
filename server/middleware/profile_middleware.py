@@ -32,7 +32,7 @@ def find_device_id_by_android_id(email):
             return emulator_ids[0]
         return None
     except Exception as e:
-        logger.error(f"Error finding device by Android ID: {e}")
+        logger.error(f"Error finding device by Android ID: {e}", exc_info=True)
         return None
 
 

@@ -91,7 +91,7 @@ class ColdStorageArchiveResource(Resource):
             }
 
         except Exception as e:
-            logger.error(f"Error during cold storage archival: {e}")
+            logger.error(f"Error during cold storage archival: {e}", exc_info=True)
             return {"success": False, "error": str(e)}, 500
 
 
@@ -193,7 +193,7 @@ class ColdStorageStatusResource(Resource):
             }
 
         except Exception as e:
-            logger.error(f"Error checking cold storage status: {e}")
+            logger.error(f"Error checking cold storage status: {e}", exc_info=True)
             return {"success": False, "error": str(e)}, 500
 
 
@@ -292,5 +292,5 @@ class ColdStorageRestoreResource(Resource):
                     }, 400
 
         except Exception as e:
-            logger.error(f"Error during cold storage restore: {e}")
+            logger.error(f"Error during cold storage restore: {e}", exc_info=True)
             return {"success": False, "error": str(e)}, 500

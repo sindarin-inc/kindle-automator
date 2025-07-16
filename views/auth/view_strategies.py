@@ -132,4 +132,18 @@ TWO_FACTOR_VIEW_IDENTIFIERS = [
     # Form container
     (AppiumBy.ID, "auth-mfa-form"),
     (AppiumBy.XPATH, "//android.view.View[@resource-id='auth-mfa-form']"),
+    # Email OTP variant identifiers
+    (AppiumBy.XPATH, "//android.view.View[@text='Enter verification code']"),
+    (AppiumBy.ID, "input-box-otp"),
+    (AppiumBy.XPATH, "//android.widget.EditText[@resource-id='input-box-otp']"),
+    (AppiumBy.ID, "verification-code-form"),
+    (AppiumBy.XPATH, "//android.view.View[@resource-id='verification-code-form']"),
+    (AppiumBy.ID, "cvf-submit-otp-button"),
+    (AppiumBy.XPATH, "//android.widget.Button[@text='Submit code']"),
+    (
+        AppiumBy.XPATH,
+        '//android.view.View[contains(@text, "For your security, we\'ve sent the code to your email")]',
+    ),
+    (AppiumBy.ID, "channelDetailsForOtp"),
+    (AppiumBy.XPATH, "//android.view.View[@content-desc='Resend code']"),
 ]

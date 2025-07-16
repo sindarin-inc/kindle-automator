@@ -34,6 +34,8 @@ class EmulatorShutdownManager:
         "websocket_stopped",
         "automator_cleaned",
         "snapshot_taken",
+        "placemark_sync_attempted",
+        "placemark_sync_success",
     )
 
     # ---------------------------------------------------------------------
@@ -71,6 +73,9 @@ class EmulatorShutdownManager:
         summary = {key: False for key in self._SUMMARY_KEYS}
         summary["email"] = email
 
+        import time as _time
+
+        start_time = _time.time()
         logger.info(
             "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s, skip_snapshot=%s)",
             email,
@@ -94,6 +99,7 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         # 3. UI preparation (navigate + snapshot)                      ──────
         # ------------------------------------------------------------------
+        ui_prep_start = _time.time()
         ui_crashed = not self._prepare_emulator_ui(
             automator,
             email,
@@ -101,13 +107,16 @@ class EmulatorShutdownManager:
             skip_snapshot,
             summary,
         )
+        logger.info(f"UI preparation took {_time.time() - ui_prep_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
         # 4. Stop emulator + auxiliary processes                       ──────
         # ------------------------------------------------------------------
+        stop_emulator_start = _time.time()
         display_num: Optional[int] = None
         try:
             display_num = self._stop_emulator_processes(automator, email, summary)
+            logger.info(f"Stop emulator processes took {_time.time() - stop_emulator_start:.1f}s for {email}")
         finally:
             # Always cleanup ports even when stop_emulator raised.
             emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]
@@ -119,14 +128,19 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
         # ------------------------------------------------------------------
+        cleanup_display_start = _time.time()
         self._cleanup_display_resources(email, display_num, summary)
+        logger.info(f"Display resource cleanup took {_time.time() - cleanup_display_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
         # 6. Final in‑memory cleanups                                   ──────
         # ------------------------------------------------------------------
+        cleanup_automator_start = _time.time()
         self._cleanup_automator(email, automator, summary)
         self.server.clear_current_book(email)
+        logger.info(f"Automator cleanup took {_time.time() - cleanup_automator_start:.1f}s for {email}")
 
+        logger.info(f"Total shutdown took {_time.time() - start_time:.1f}s for {email}")
         return summary
 
     def shutdown_all_emulators(self, preserve_reading_state: bool = False):  # noqa: D401, ANN001
@@ -208,45 +222,102 @@ class EmulatorShutdownManager:
             return False
         except Exception as exc:
             # If UiAutomator crashed, instruct caller to skip UI‑dependent steps.
-            logger.error("UiAutomator2 crashed for %s: %s", email, exc)
+            logger.error("UiAutomator2 crashed for %s: %s", email, exc, exc_info=True)
             return False
 
         if not preserve_reading_state:
-            self._park_in_library(sm, email)
+            self._park_in_library(sm, email, summary)
         if not skip_snapshot:
             self._take_snapshot(automator, email, summary)
         return True
 
-    def _park_in_library(self, state_machine: KindleStateMachine, email: str) -> None:
+    def _park_in_library(
+        self, state_machine: KindleStateMachine, email: str, summary: Dict[str, bool]
+    ) -> None:
         """Navigate from any state into the Library view and optionally sync progress."""
         try:
             current_state = state_machine._get_current_state()
             was_reading = current_state == AppState.READING
+            logger.info(f"Current state before shutdown: {current_state.name} for {email}")
+
+            if was_reading:
+                logger.info(
+                    f"User {email} was reading - will attempt to sync placemarks after navigating to library"
+                )
+                summary["placemark_sync_attempted"] = True
+
             final_state = state_machine.transition_to_library(max_transitions=10, server=self.server)
             if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to Library view (%s)", email)
                 if was_reading and state_machine.library_handler:
-                    self._sync_from_more_tab(state_machine)
-                time.sleep(5)  # Give Kindle a moment to flush state.
+                    logger.info(f"Initiating placemark sync for {email} since they were reading...")
+                    sync_success = self._sync_from_more_tab(state_machine)
+                    summary["placemark_sync_success"] = sync_success
+                elif was_reading and not state_machine.library_handler:
+                    logger.error(
+                        f"User {email} was reading but no library handler available - CANNOT SYNC PLACEMARKS!"
+                    )
+                    summary["placemark_sync_success"] = False
+                time.sleep(1)  # Give Kindle a moment to flush state.
             else:
                 logger.warning(
                     "Failed to transition to Library before shutdown (%s), ended in state: %s",
                     email,
                     final_state.name,
                 )
+                if was_reading:
+                    logger.error(
+                        f"CRITICAL: User {email} was reading but failed to reach library - PLACEMARKS NOT SYNCED!"
+                    )
+                    summary["placemark_sync_success"] = False
         except Exception as exc:
-            logger.warning("Error while parking emulator %s into Library: %s", email, exc)
+            logger.error(f"Error while parking emulator {email} into Library: {exc}", exc_info=True)
+            logger.error(
+                f"CRITICAL: Shutdown navigation failed for {email} - placemarks may not be synced!",
+                exc_info=True,
+            )
+            if summary.get("placemark_sync_attempted"):
+                summary["placemark_sync_success"] = False
 
     @staticmethod
-    def _sync_from_more_tab(state_machine: KindleStateMachine):
-        """Navigate to *More* tab and perform a manual sync."""
+    def _sync_from_more_tab(state_machine: KindleStateMachine) -> bool:
+        """Navigate to *More* tab and perform a manual sync.
+
+        Returns:
+            bool: True if sync was successful, False otherwise
+        """
         lh = state_machine.library_handler
         if not lh:
-            return
-        if lh.navigate_to_more_settings():
-            if lh.sync_in_more_tab():
-                logger.info("Successfully synced reading progress")
-            lh.navigate_from_more_to_library()
+            logger.warning("No library handler available for sync - cannot sync placemarks")
+            return False
+
+        logger.info("Attempting to sync placemarks before shutdown...")
+
+        # Navigate to More tab
+        if not lh.navigate_to_more_settings():
+            logger.error("Failed to navigate to More tab for sync - placemarks may not be synced!")
+            return False
+
+        # Attempt sync
+        sync_success = lh.sync_in_more_tab()
+        if sync_success:
+            logger.info("Successfully synced reading progress/placemarks before shutdown")
+        else:
+            logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!")
+            # Store diagnostic information
+            try:
+                from views.core.ui_helpers import store_page_source
+
+                store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
+                logger.error("Diagnostic page source saved for sync failure")
+            except Exception as e:
+                logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
+
+        # Always try to navigate back to library
+        if not lh.navigate_from_more_to_library():
+            logger.warning("Failed to navigate back to library after sync attempt")
+
+        return sync_success
 
     # ----------------------------- snapshot ------------------------ #
 
@@ -254,13 +325,21 @@ class EmulatorShutdownManager:
         launcher = automator.emulator_manager.emulator_launcher
         emulator_id, _ = launcher.get_running_emulator(email)
         if not emulator_id:
+            logger.error(f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot")
             return
-        logger.info("Taking ADB snapshot of emulator %s", emulator_id)
+        logger.info(f"Taking ADB snapshot of emulator {emulator_id} for {email}")
+        snapshot_start_time = time.time()
         if launcher.save_snapshot(email):
             summary["snapshot_taken"] = True
             self._update_snapshot_timestamp(email)
+            logger.info(
+                f"Snapshot completed successfully for {email} in {time.time() - snapshot_start_time:.1f}s"
+            )
         else:
-            logger.error("Failed to save snapshot for %s", email)
+            logger.critical(
+                f"SNAPSHOT FAILURE: Failed to save snapshot for {email} - user's reading position may be lost! "
+                f"This will cause cold boot on next launch."
+            )
 
     @staticmethod
     def _update_snapshot_timestamp(email: str):
@@ -283,7 +362,7 @@ class EmulatorShutdownManager:
         try:
             emulator_id, display_num = launcher.get_running_emulator(email)
         except Exception as exc:
-            logger.error("Error getting running emulator info for %s: %s", email, exc)
+            logger.error("Error getting running emulator info for %s: %s", email, exc, exc_info=True)
         finally:
             stopped = launcher.stop_emulator(email)
             summary["emulator_stopped"] = stopped
@@ -353,6 +432,8 @@ class EmulatorShutdownManager:
 
     def _cleanup_automator(self, email: str, automator, summary: Dict[str, bool]):
         """Stop Appium (if still running) and cleanup automator instance."""
+        import time as _time
+
         with contextlib.suppress(Exception):
             from server.utils.appium_driver import AppiumDriver
 
@@ -360,7 +441,10 @@ class EmulatorShutdownManager:
             if (info := ad.get_appium_process_info(email)) and info.get("running"):
                 ad.stop_appium_for_profile(email)
         with contextlib.suppress(Exception):
-            automator.cleanup()
+            cleanup_start = _time.time()
+            # Skip driver.quit() during shutdown since emulator is already stopped
+            automator.cleanup(skip_driver_quit=True)
+            logger.info(f"automator.cleanup() took {_time.time() - cleanup_start:.1f}s for {email}")
             summary["automator_cleaned"] = True
         # Clear reference even if cleanup errored.
         self.server.automators[email] = None
@@ -450,14 +534,16 @@ class EmulatorShutdownManager:
                         if ws_mgr.is_proxy_running(email):
                             ws_mgr.stop_proxy(email)
         except Exception as exc:
-            logger.error("Error in _cleanup_emulator_ports: %s", exc)
+            logger.error("Error in _cleanup_emulator_ports: %s", exc, exc_info=True)
 
     def _kill_process_on_port(self, port: int) -> None:  # noqa: ANN001, D401
         """Kill any process listening on *port* (signature unchanged)."""
         if not port:
             return
         try:
-            result = subprocess.run(["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True)
+            result = subprocess.run(
+                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True
+            )
             for pid in filter(None, result.stdout.split()):
                 with contextlib.suppress(Exception):
                     os.kill(int(pid), signal.SIGTERM)

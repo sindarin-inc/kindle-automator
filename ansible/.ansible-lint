@@ -1,0 +1,22 @@
+---
+exclude_paths:
+  - .cache/
+  - .github/
+
+# Ignore warnings about community.docker collection not being installed locally
+warn_list:
+  - experimental
+
+# Skip specific rules for files that use external collections
+skip_list:
+  - yaml[line-length]  # Some long lines are unavoidable
+  - jinja[spacing]  # Jinja spacing warnings are too pedantic
+  - fqcn[action-core]  # Short module names are clear enough
+  - fqcn  # Disable all FQCN checks
+
+# Add Docker collection to runtime
+mock_modules:
+  - community.docker.docker_container
+
+# Allow all-caps variables for environment variables
+var_naming_pattern: "^[a-z_][a-z0-9_]*$|^[A-Z_][A-Z0-9_]*$"

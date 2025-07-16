@@ -3,7 +3,11 @@
 run: server
 
 claude-run: 
-	@bash -c 'source ~/.virtualenvs/kindle-automator/bin/activate && nohup make server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid'
+	@echo "Starting Flask server in background..."
+	@bash -c 'source ~/.virtualenvs/kindle-automator/bin/activate && (FLASK_ENV=development PYTHONPATH=$$(pwd) python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@sleep 1
+	@echo "Server started with PID $$(cat logs/server.pid)"
+	@echo "Monitor logs with: tail -f logs/server_output.log"
 
 deps:
 	uv pip install -r requirements.txt

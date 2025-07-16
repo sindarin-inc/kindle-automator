@@ -39,19 +39,35 @@ class LibraryHandlerScroll:
         # Store partial matches for later retrieval
         self.partial_matches = []
 
-    def _log_page_summary(self, page_number, new_titles, total_found):
+    def _log_page_summary(self, page_number, new_books, total_found):
         """Log a concise summary of books found on current page.
 
         Args:
             page_number: Current page number
-            new_titles: List of new book titles found on this page
+            new_books: List of new book info dicts or titles found on this page
             total_found: Total number of unique books found so far
         """
-        logger.info(f"Page {page_number}: Found {len(new_titles)} new books, total {total_found}")
-        if new_titles:
+        if new_books:
             separator = "\n\t\t\t"
-            joined_titles = f"{separator}".join(new_titles)
-            logger.info(f"New titles: {separator}{joined_titles}")
+            # Handle both book info dicts and plain title strings
+            book_entries = []
+            for book in new_books:
+                if isinstance(book, dict):
+                    title = book.get("title", "Unknown")
+                    author = book.get("author")
+                    if author:
+                        book_entries.append(f"{title} / {author}")
+                    else:
+                        book_entries.append(title)
+                else:
+                    # Fallback for plain string titles
+                    book_entries.append(str(book))
+            joined_entries = f"{separator}".join(book_entries)
+            logger.info(
+                f"Page {page_number}: Found {len(new_books)} new books, total {total_found}:{separator}{joined_entries}"
+            )
+        else:
+            logger.info(f"Page {page_number}: Found {len(new_books)} new books, total {total_found}")
 
     def _extract_book_info(self, container):
         """Extract book metadata from a container element.
@@ -101,10 +117,6 @@ class LibraryHandlerScroll:
 
                     if elements:
                         book_info[field] = elements[0].text
-                        if field == "author":
-                            logger.info(
-                                f"Found author '{book_info[field]}' using strategy {strategy_index}: {locator}"
-                            )
                         break
                     else:
                         # Try finding within title container
@@ -120,49 +132,33 @@ class LibraryHandlerScroll:
                                 book_info[field] = elements[0].text
                                 break
                         except NoSuchElementException:
-                            if field == "author":
-                                logger.debug(
-                                    f"No author element found in title container with strategy {strategy_index}"
-                                )
                             pass
                         except Exception as e:
-                            logger.error(f"Unexpected error finding {field} in title container: {e}")
+                            logger.error(
+                                f"Unexpected error finding {field} in title container: {e}", exc_info=True
+                            )
 
                 except NoSuchElementException:
-                    if field == "author":
-                        logger.debug(f"No author element found with strategy {strategy_index}: {locator}")
                     continue
                 except StaleElementReferenceException:
                     logger.debug(f"Stale element reference when finding {field}, will retry on next scroll")
                     continue
                 except Exception as e:
-                    logger.error(f"Unexpected error finding {field}: {e}")
+                    logger.error(f"Unexpected error finding {field}: {e}", exc_info=True)
                     continue
 
         # Extract author from content-desc if still missing
         if not book_info["author"]:
-            logger.debug(
-                f"No author found via element search for '{book_info.get('title', 'Unknown')}', trying content-desc"
-            )
             try:
                 content_desc = container.get_attribute("content-desc")
                 if content_desc:
-                    logger.debug(f"Content-desc for book: {content_desc}")
                     self._extract_author_from_content_desc(book_info, content_desc)
-                    if book_info["author"]:
-                        logger.info(f"Extracted author '{book_info['author']}' from content-desc")
                 else:
                     logger.debug("No content-desc attribute found")
             except StaleElementReferenceException:
                 logger.debug("Stale element reference when getting content-desc, skipping")
             except Exception as e:
                 logger.debug(f"Error getting content-desc: {e}")
-
-        # Log summary of extracted book info
-        if book_info["title"]:
-            logger.debug(
-                f"Extracted book info - Title: '{book_info['title']}', Author: '{book_info['author'] or 'None found'}', Progress: '{book_info['progress']}', Size: '{book_info['size']}'"
-            )
 
         return book_info
 
@@ -196,7 +192,6 @@ class LibraryHandlerScroll:
                     partially_visible_books.append(
                         {"element": container, "title": title_text, "top": top, "bottom": bottom}
                     )
-                    logger.info(f"Book partially obscured: '{title_text}' at y={top}-{bottom}")
 
             except Exception as e:
                 logger.debug(f"Error processing container {i}: {e}")
@@ -232,14 +227,25 @@ class LibraryHandlerScroll:
         return None
 
     def _perform_smart_scroll(self, ref_container, screen_size):
-        """Perform smart scroll to position reference container at 10% from top.
+        """Perform smart scroll to position reference container properly.
 
         Args:
             ref_container: Dict with element and position info
             screen_size: Dict with screen dimensions
         """
-        # Use the common SmartScroller to scroll the reference container to 10% from top
-        self.scroller.scroll_to_position(ref_container["element"], 0.1)
+        # Determine target position based on whether this is a partially visible book
+        # For partially visible books at bottom, scroll them to just below the top toolbar
+        # The top toolbar appears to end around 20% of screen height based on the logs
+        if "bottom" in ref_container and ref_container["bottom"] > screen_size["height"] * 0.85:
+            # This is a partially visible book at the bottom
+            # Position it at 22% from top to ensure it's fully visible below the toolbar
+            target_position = 0.22
+        else:
+            # For other books, use a safer 20% position to avoid cutting off at top
+            target_position = 0.20
+
+        # Use the common SmartScroller to scroll the reference container to target position
+        self.scroller.scroll_to_position(ref_container["element"], target_position)
 
     def _default_page_scroll(self, start_y, end_y):
         """Wrapper for default page scroll operation.
@@ -288,7 +294,7 @@ class LibraryHandlerScroll:
                 except StaleElementReferenceException:
                     logger.debug(f"Stale element reference when finding book button for '{book['title']}'")
                 except Exception as e:
-                    logger.error(f"Error finding book button by content-desc: {e}")
+                    logger.error(f"Error finding book button by content-desc: {e}", exc_info=True)
 
         # Try alternative approaches if we found a match but couldn't get the button
         if found_matching_title and matched_book:
@@ -313,7 +319,7 @@ class LibraryHandlerScroll:
                         parent = title_elements[0].find_element(AppiumBy.XPATH, "./../../..")
                         return parent, title_elements[0], matched_book
             except Exception as e:
-                logger.error(f"Error trying alternative methods to find button: {e}")
+                logger.error(f"Error trying alternative methods to find button: {e}", exc_info=True)
 
         if not found_matching_title:
             logger.warning(f"Book not found after searching entire library: {target_title}")
@@ -378,9 +384,7 @@ class LibraryHandlerScroll:
                     new_titles_on_page.append(new_title)
 
                 # Log summary for double-check findings
-                self._log_page_summary(
-                    page_count, [b["title"] for b in current_double_check_batch], len(books_list)
-                )
+                self._log_page_summary(page_count, current_double_check_batch, len(books_list))
 
                 # Send additional books via callback if available
                 if callback and current_double_check_batch:
@@ -394,7 +398,7 @@ class LibraryHandlerScroll:
                     callback(None, done=True, total_books=len(books_list))
                 return False
         except Exception as e:
-            logger.error(f"Error during double-check for titles: {e}")
+            logger.error(f"Error during double-check for titles: {e}", exc_info=True)
             return False
 
     def _try_match_target(self, book_info, container, target_title, title_match_func):
@@ -475,7 +479,7 @@ class LibraryHandlerScroll:
                 logger.debug(f"Stale element reference when finding button for {book_info['title']}")
                 continue
             except Exception as e:
-                logger.error(f"Unexpected error finding button for {book_info['title']}: {e}")
+                logger.error(f"Unexpected error finding button for {book_info['title']}: {e}", exc_info=True)
                 continue
 
         return False, None, None
@@ -514,7 +518,7 @@ class LibraryHandlerScroll:
             return True
         else:
             if book_info["title"]:
-                logger.info(f"Already seen book ({len(seen_titles)} found): {book_info['title']}")
+                logger.info(f"Already seen book ({len(seen_titles)} found): {book_info['title'][:15]}...")
             return False
 
     def get_partial_matches(self):
@@ -611,16 +615,28 @@ class LibraryHandlerScroll:
         containers = []
 
         try:
-            # Look specifically for title elements
-            title_elements = self.driver.find_elements(AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title")
+            # Find ALL direct children of RecyclerView that have content-desc (both Button and RelativeLayout)
+            # This handles mixed layouts where some books are buttons and some are relative layouts
+            book_containers = self.driver.find_elements(
+                AppiumBy.XPATH,
+                "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/*[@content-desc]",
+            )
 
-            # Convert these title elements to containers
-            containers = self._convert_title_elements(title_elements)
+            if book_containers:
+                containers = book_containers
+            else:
+                # Look specifically for title elements as fallback
+                title_elements = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
+                )
+
+                # Convert these title elements to containers
+                containers = self._convert_title_elements(title_elements)
 
         except Exception as e:
-            logger.error(f"Error finding direct title elements: {e}")
+            logger.error(f"Error finding book containers: {e}", exc_info=True)
 
-        # FALLBACK: If we couldn't find titles directly, try the old button approach
+        # FALLBACK: If we couldn't find containers, try the old approach
         if not containers:
             containers = self._fallback_container_discovery()
 
@@ -702,7 +718,7 @@ class LibraryHandlerScroll:
                     # If can't find actual container, use our synthetic wrapper
                     containers.append(book_wrapper)
             except Exception as e:
-                logger.error(f"Error processing title '{title.text}': {e}")
+                logger.error(f"Error processing title '{title.text}': {e}", exc_info=True)
 
         return containers
 
@@ -757,6 +773,8 @@ class LibraryHandlerScroll:
             # No normalization needed for exact matching
             page_count = 0
             use_hook_for_current_scroll = True
+            consecutive_identical_screen_iterations = 0
+            IDENTICAL_SCREEN_THRESHOLD = 10
 
             while True:
                 page_count += 1
@@ -783,7 +801,6 @@ class LibraryHandlerScroll:
                                     potential_title = container.text
                             except Exception:
                                 pass
-                            logger.info(f"Skipping partially obscured book: '{potential_title}'")
                             continue
 
                         # Extract book info
@@ -809,18 +826,16 @@ class LibraryHandlerScroll:
                             )
                             if was_new:
                                 books_added_in_current_page_processing = True
-                        else:
-                            logger.debug(f"Container has no book info, skipping: {book_info}")
 
                     except StaleElementReferenceException:
                         logger.debug("Stale element reference, skipping container")
                         continue
                     except Exception as e:
-                        logger.error(f"Error processing container: {e}")
+                        logger.error(f"Error processing container: {e}", exc_info=True)
                         continue
 
                 # Log a summary of this page's findings
-                self._log_page_summary(page_count, new_titles_on_page, len(books))
+                self._log_page_summary(page_count, new_books_batch, len(books))
 
                 # Send new books via callback if available
                 if callback and new_books_batch:
@@ -828,6 +843,16 @@ class LibraryHandlerScroll:
 
                 # Decision for the UPCOMING scroll's hook is based on whether THIS page's MAIN pass found anything.
                 use_hook_for_current_scroll = books_added_in_current_page_processing
+
+                # Check if all titles processed on this page are identical
+                if new_titles_on_page and len(new_titles_on_page) > 1 and len(set(new_titles_on_page)) == 1:
+                    consecutive_identical_screen_iterations += 1
+                    logger.info(
+                        f"All {len(new_titles_on_page)} titles on page are identical: '{new_titles_on_page[0]}' "
+                        f"(iteration {consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD})"
+                    )
+                else:
+                    consecutive_identical_screen_iterations = 0
 
                 # If we've found no new books on this screen (via main processing), we need to double-check
                 # Also, determine if any new books overall were found in this iteration (main pass + double_check)
@@ -840,15 +865,25 @@ class LibraryHandlerScroll:
                     if found_new_titles:
                         any_new_books_this_iteration = True
                     else:
-                        break  # No new books found, stop scrolling
+                        if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
+                            break  # No new books found, stop scrolling
+                        else:
+                            logger.info(
+                                f"All titles identical but haven't reached threshold ({consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD}), continuing scroll"
+                            )
 
                 # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
                 if not any_new_books_this_iteration or seen_titles == previous_titles:
-                    logger.info("No progress in finding new books, stopping scroll")
-                    # Send completion notification via callback if available
-                    if callback:
-                        callback(None, done=True, total_books=len(books))
-                    break
+                    if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
+                        logger.info("No progress in finding new books, stopping scroll")
+                        # Send completion notification via callback if available
+                        if callback:
+                            callback(None, done=True, total_books=len(books))
+                        break
+                    else:
+                        logger.info(
+                            f"No progress but all titles identical ({consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD}), continuing scroll"
+                        )
 
                 # Find scroll reference and perform scrolling
                 book_containers = self.driver.find_elements(
@@ -887,7 +922,7 @@ class LibraryHandlerScroll:
             if is_appium_error(e):
                 raise
 
-            logger.error(f"Error scrolling through library: {e}")
+            logger.error(f"Error scrolling through library: {e}", exc_info=True)
 
             # Send error via callback if available
             if callback:
@@ -952,7 +987,7 @@ class LibraryHandlerScroll:
                 logger.warning("Still in book selection mode after clicking DONE")
                 return False
         except Exception as e:
-            logger.error(f"Error exiting book selection mode: {e}")
+            logger.error(f"Error exiting book selection mode: {e}", exc_info=True)
             return False
 
     def scroll_to_list_top(self):
@@ -986,9 +1021,9 @@ class LibraryHandlerScroll:
                 return True
 
             except NoSuchElementException:
-                logger.error("Could not find Downloaded or All toggle buttons")
+                logger.error("Could not find Downloaded or All toggle buttons", exc_info=True)
                 return False
 
         except Exception as e:
-            logger.error(f"Error scrolling to top of list: {e}")
+            logger.error(f"Error scrolling to top of list: {e}", exc_info=True)
             return False

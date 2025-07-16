@@ -24,7 +24,6 @@ class ShutdownResource(Resource):
         self.shutdown_manager = EmulatorShutdownManager(server_instance)
         super().__init__()
 
-    @ensure_automator_healthy
     def post(self):
         """Shutdown emulator and VNC/xvfb display for the email"""
         sindarin_email = get_sindarin_email()
@@ -39,43 +38,16 @@ class ShutdownResource(Resource):
 
         preserve_reading_state = get_boolean_param("preserve_reading_state", default=False)
         mark_for_restart = get_boolean_param("mark_for_restart", default=False)
-        cold_restart = get_boolean_param("cold", default=False)
+        cold = get_boolean_param("cold", default=False)
 
         try:
             # Use the shutdown manager to handle the shutdown
             shutdown_summary = self.shutdown_manager.shutdown_emulator(
                 sindarin_email,
                 preserve_reading_state=preserve_reading_state,
-                mark_for_restart=mark_for_restart or cold_restart,  # Mark for restart if cold boot requested
-                skip_snapshot=cold_restart,  # Skip snapshot if cold boot requested
+                mark_for_restart=mark_for_restart,
+                skip_snapshot=cold,  # Skip snapshot if cold shutdown requested
             )
-
-            # If cold restart requested, restart the emulator with cold boot
-            if cold_restart:
-                logger.info(f"Cold restart requested for {sindarin_email}, restarting emulator...")
-                # Import here to avoid circular imports
-                from views.core.avd_profile_manager import AVDProfileManager
-
-                avd_manager = AVDProfileManager.get_instance()
-                if (
-                    avd_manager
-                    and avd_manager.emulator_manager
-                    and avd_manager.emulator_manager.emulator_launcher
-                ):
-                    # Start the emulator with cold boot flag
-                    (
-                        success,
-                        emulator_id,
-                        display_num,
-                    ) = avd_manager.emulator_manager.emulator_launcher.launch_emulator(
-                        sindarin_email, cold_boot=True
-                    )
-                    if success:
-                        logger.info(f"Successfully restarted emulator {emulator_id} with cold boot")
-                        shutdown_summary["cold_restarted"] = True
-                    else:
-                        logger.error(f"Failed to restart emulator with cold boot for {sindarin_email}")
-                        shutdown_summary["cold_restarted"] = False
 
             # Prepare response
             message_parts = []
@@ -89,29 +61,52 @@ class ShutdownResource(Resource):
                 message_parts.append("automator cleaned")
             if shutdown_summary["snapshot_taken"]:
                 message_parts.append("snapshot taken")
-            if shutdown_summary.get("cold_restarted"):
-                message_parts.append("emulator restarted with cold boot")
+            elif cold:
+                message_parts.append("snapshot skipped for cold boot")
+            elif not cold and not shutdown_summary["snapshot_taken"]:
+                message_parts.append("SNAPSHOT FAILED - will cold boot next time")
+
+            # Add sync status if attempted
+            if shutdown_summary.get("placemark_sync_attempted"):
+                if shutdown_summary.get("placemark_sync_success"):
+                    message_parts.append("placemarks synced")
+                else:
+                    message_parts.append("PLACEMARK SYNC FAILED")
 
             if message_parts:
                 message = f"Successfully shut down for {sindarin_email}: {', '.join(message_parts)}"
             else:
                 message = f"No active resources found to shut down for {sindarin_email}"
 
+            # Log critical warning if sync failed
+            if shutdown_summary.get("placemark_sync_attempted") and not shutdown_summary.get(
+                "placemark_sync_success"
+            ):
+                logger.critical(
+                    f"PLACEMARK SYNC FAILED during shutdown for {sindarin_email} - user's reading position may be lost!"
+                )
+
+            # Log critical warning if snapshot failed
+            if not cold and not shutdown_summary["snapshot_taken"]:
+                logger.critical(
+                    f"SNAPSHOT FAILED during shutdown for {sindarin_email} - emulator will cold boot next time! "
+                    f"This means user will need to navigate back to their book."
+                )
+
             return {
                 "success": True,
                 "message": message,
                 "details": shutdown_summary,
-                "cold_restart": cold_restart,
+                "cold_shutdown": cold,
             }, 200
 
         except Exception as e:
-            logger.error(f"Error during shutdown for {sindarin_email}: {e}")
+            logger.error(f"Error during shutdown for {sindarin_email}: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
             }, 500
 
-    @ensure_automator_healthy
     def get(self):
         """GET method for shutdown - same as POST"""
         return self.post()

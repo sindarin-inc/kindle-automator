@@ -10,6 +10,7 @@ import traceback
 import urllib.parse
 from pathlib import Path
 
+import sentry_sdk
 from appium.webdriver.common.appiumby import AppiumBy
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -17,6 +18,8 @@ from dotenv import load_dotenv
 from flask import Flask, Response, make_response, request, send_file
 from flask_restful import Api, Resource
 from selenium.common import exceptions as selenium_exceptions
+from sentry_sdk.integrations.flask import FlaskIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
 
 from handlers.navigation_handler import NavigationResourceHandler
 from handlers.test_fixtures_handler import TestFixturesHandler
@@ -76,6 +79,46 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 app = Flask(__name__)
 api = Api(app)
 
+# Initialize Sentry
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+
+    def before_send(event, hint):
+        """Filter out expected Appium/WebDriver errors from Sentry."""
+        # Filter out duplicate "Error on request" messages from Flask-RESTful
+        if "logentry" in event and "message" in event["logentry"]:
+            message = event["logentry"]["message"]
+            if message.startswith("Error on request:"):
+                return None
+
+        if "exc_info" in hint:
+            exc_type, exc_value, tb = hint["exc_info"]
+            from server.utils.appium_error_utils import is_appium_error
+
+            # Don't send Appium errors to Sentry as they're expected and handled
+            if is_appium_error(exc_value):
+                return None
+
+        return event
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            FlaskIntegration(transaction_style="endpoint"),
+            LoggingIntegration(
+                level=logging.INFO,  # Capture info and above as breadcrumbs
+                event_level=logging.ERROR,  # Send errors as events
+            ),
+        ],
+        environment=ENVIRONMENT.lower(),
+        traces_sample_rate=0.1 if ENVIRONMENT.lower() == "prod" else 1.0,
+        before_send=before_send,
+        send_default_pii=False,  # Don't send PII by default
+    )
+    logger.info(f"Sentry initialized for {ENVIRONMENT} environment")
+else:
+    logger.warning("SENTRY_DSN not found in environment variables - Sentry not initialized")
+
 # Set up request and response logging middleware
 setup_request_logger(app)
 
@@ -116,7 +159,7 @@ class StateResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error getting state: {e}")
+            logger.error(f"Error getting state: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -131,7 +174,7 @@ class BooksResource(Resource):
         sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
-            logger.error("No email provided to identify which profile to use")
+            logger.warning("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
@@ -292,7 +335,7 @@ class BooksResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error extracting book covers: {e}")
+            logger.error(f"Error extracting book covers: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
 
         return {"books": books}, 200
@@ -315,7 +358,7 @@ class BooksStreamResource(Resource):
         sindarin_email = get_sindarin_email()
 
         if not sindarin_email:
-            logger.error("No email provided to identify which profile to use")
+            logger.warning("No email provided to identify which profile to use")
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Get the appropriate automator
@@ -442,7 +485,6 @@ class BooksStreamResource(Resource):
 
         # Extract sync parameter
         sync = request.args.get("sync", "false").lower() in ("true", "1")
-        logger.info(f"Sync parameter: {sync}")
 
         # Standard implementation with book retrieval
         def generate_stream():
@@ -480,15 +522,16 @@ class BooksStreamResource(Resource):
 
                 if raw_books_batch:
                     try:
+                        # Update activity to prevent idle timeout during long scrolls
+                        server.update_activity(sindarin_email)
+
                         # At this point, the UI should be stable for raw_books_batch
                         timestamp = int(time.time())
                         screenshot_filename = f"library_view_stream_{timestamp}.png"
                         screenshot_path = os.path.join(automator.screenshots_dir, screenshot_filename)
-                        logger.info(f"Taking screenshot for batch: {screenshot_path}")
                         automator.driver.save_screenshot(screenshot_path)
 
                         # Extract covers from the current screen for this batch
-                        logger.info("Extracting covers for the current batch.")
                         cover_info_for_batch = extract_book_covers_from_screen(
                             automator.driver, raw_books_batch, sindarin_email, screenshot_path
                         )
@@ -505,7 +548,7 @@ class BooksStreamResource(Resource):
 
                         if is_appium_error(e):
                             raise
-                        logger.error(f"Error processing book batch in callback: {e}")
+                        logger.error(f"Error processing book batch in callback: {e}", exc_info=True)
                         logger.error(f"Traceback: {traceback.format_exc()}")
                         # This error is for a single batch; retrieval might continue for others.
                         # The main error_message is for fatal errors in the retrieval thread itself.
@@ -516,40 +559,46 @@ class BooksStreamResource(Resource):
             def start_book_retrieval_thread_fn():
                 # Set email context for this background thread
                 from server.logging_config import clear_email_context, set_email_context
+                from server.utils.request_utils import email_override
 
                 set_email_context(sindarin_email)
-                try:
-                    logger.info(
-                        f"Starting book retrieval with processing callback in a new thread (sync={sync})."
-                    )
-                    automator.state_machine.library_handler.get_book_titles(
-                        callback=book_processing_callback, sync=sync
-                    )
-                    logger.info("Book retrieval process (get_book_titles) completed in its thread.")
-                except Exception as e:
-                    from server.utils.appium_error_utils import is_appium_error
+                with email_override(sindarin_email):
+                    try:
+                        logger.info(
+                            f"Starting book retrieval with processing callback in a new thread (sync={sync})."
+                        )
+                        automator.state_machine.library_handler.get_book_titles(
+                            callback=book_processing_callback, sync=sync
+                        )
+                    except Exception as e:
+                        from server.utils.appium_error_utils import is_appium_error
 
-                    if is_appium_error(e):
-                        raise
-                    logger.error(f"Error in book retrieval thread (start_book_retrieval_thread_fn): {e}")
-                    nonlocal error_message  # To set the shared error_message
-                    error_message = str(e)
-                    # Ensure the main loop knows about this fatal error and can terminate
-                    if not all_books_retrieved_event.is_set():
-                        all_books_retrieved_event.set()
-                finally:
-                    # Clear email context when thread completes
-                    clear_email_context()
+                        if is_appium_error(e):
+                            raise
+                        logger.error(
+                            f"Error in book retrieval thread (start_book_retrieval_thread_fn, exc_info=True): {e}"
+                        )
+                        nonlocal error_message  # To set the shared error_message
+                        error_message = str(e)
+                        # Ensure the main loop knows about this fatal error and can terminate
+                        if not all_books_retrieved_event.is_set():
+                            all_books_retrieved_event.set()
+                    finally:
+                        # Clear email context when thread completes
+                        clear_email_context()
 
             retrieval_thread = threading.Thread(target=start_book_retrieval_thread_fn, daemon=True)
             retrieval_thread.start()
-            logger.info("Book retrieval and processing thread started.")
 
             # Generator part for SSE (runs in Flask worker thread)
             try:
 
                 def encode_message(msg_dict):
                     return (json.dumps(msg_dict) + "\n").encode("utf-8")
+
+                # Update activity at the start of streaming
+                logger.info(f"Starting book stream for {sindarin_email}, updating activity")
+                server.update_activity(sindarin_email)
 
                 yield encode_message(
                     {"status": "started", "message": "Book retrieval and processing initiated"}
@@ -581,29 +630,35 @@ class BooksStreamResource(Resource):
 
                         if is_appium_error(e):
                             raise
-                        logger.error(f"Unexpected error in generate_stream while getting from queue: {e}")
+                        logger.error(
+                            f"Unexpected error in generate_stream while getting from queue: {e}",
+                            exc_info=True,
+                        )
                         yield encode_message({"error": f"Streaming error: {str(e)}"})  # Send error to client
                         break  # Terminate stream on unexpected errors
 
                 # After the loop, if no error was yielded from inside the loop
                 if not error_message:
+                    # Update activity at the end of successful streaming
+                    logger.info(f"Book stream completed for {sindarin_email}, updating activity")
+                    server.update_activity(sindarin_email)
+
                     logger.info(
-                        f"Stream finished. Total books expected from handler: {total_books_from_handler}."
+                        f'Stream finished: {{"done": true, "total_books": {total_books_from_handler}}}'
                     )
                     yield encode_message({"done": True, "total_books": total_books_from_handler})
 
                 yield encode_message({"complete": True})
-                logger.info("SSE stream complete message sent.")
+                logger.info("SSE stream complete message sent")
 
             except Exception as e:
                 error_trace = traceback.format_exc()
-                logger.error(f"Error in generate_stream generator: {e}")
+                logger.error(f"Error in generate_stream generator: {e}", exc_info=True)
                 logger.error(f"Traceback: {error_trace}")
                 # Ensure this also yields an error if the generator itself has an issue
                 yield encode_message({"error": str(e), "trace": error_trace})
 
         # Return the streaming response with proper configuration
-        logger.info("Setting up streaming response")
         return Response(
             generate_stream(),
             mimetype="text/plain",
@@ -692,7 +747,7 @@ class ScreenshotResource(Resource):
                     except Exception as inner_e:
                         # If this fails too, we'll log the error but continue with response processing
                         # so the error is properly reported to the client
-                        logger.error(f"Standard screenshot also failed: {inner_e}")
+                        logger.warning(f"Standard screenshot also failed: {inner_e}", exc_info=True)
                         failed = "Failed to take screenshot - FLAG_SECURE may be set"
             else:
                 # Use standard screenshot for non-auth screens
@@ -702,7 +757,7 @@ class ScreenshotResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error taking screenshot: {e}")
+            logger.error(f"Error taking screenshot: {e}", exc_info=True)
             failed = "Failed to take screenshot"
 
         # Get the image ID for URLs
@@ -760,7 +815,7 @@ class ScreenshotResource(Resource):
                     xml_url = f"/fixtures/dumps/{xml_filename}"
                     response_data["xml_url"] = xml_url
                 except Exception as xml_error:
-                    logger.error(f"Error getting page source XML: {xml_error}")
+                    logger.error(f"Error getting page source XML: {xml_error}", exc_info=True)
                     response_data["xml_error"] = str(xml_error)
 
             # OCR is now handled by process_screenshot_response
@@ -974,7 +1029,7 @@ class BookOpenResource(Resource):
                 try:
                     os.remove(screenshot_path)
                 except Exception as e:
-                    logger.error(f"Error removing temporary OCR screenshot: {e}")
+                    logger.warning(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
 
             return response_data, 200
 
@@ -1009,7 +1064,7 @@ class BookOpenResource(Resource):
                         logger.error("Failed to handle Download Limit dialog")
                         return {"error": "Failed to handle Download Limit dialog"}, 500
             except Exception as e:
-                logger.error(f"Error checking for Download Limit dialog: {e}")
+                logger.warning(f"Error checking for Download Limit dialog: {e}", exc_info=True)
 
             # Then, check if we have current_book set
             if current_book:
@@ -1265,7 +1320,9 @@ class BookOpenResource(Resource):
                 "success": False,
                 "error": f"Failed to transition from {current_state} to library (ended in {final_state})",
                 "current_state": final_state.name,
-                "authenticated": True,  # User is authenticated but we couldn't reach library for other reasons
+                "authenticated": (
+                    True
+                ),  # User is authenticated but we couldn't reach library for other reasons
             }, 500
 
     @ensure_user_profile_loaded
@@ -1328,7 +1385,7 @@ class AuthResource(Resource):
         # Use the new recreate_profile_avd method with parameters
         success, message = profile_manager.recreate_profile_avd(sindarin_email, recreate_user, recreate_seed)
         if not success:
-            logger.error(f"Failed to recreate profile AVD: {message}")
+            logger.error(f"Failed to recreate profile AVD: {message}", exc_info=True)
             return False, message
 
         return True, f"Successfully recreated: {', '.join(actions)}"
@@ -1343,7 +1400,7 @@ class AuthResource(Resource):
 
         # Sindarin email is required for profile identification
         if not sindarin_email:
-            logger.error("No sindarin_email provided for profile identification")
+            logger.warning("No sindarin_email provided for profile identification")
             return {"error": "sindarin_email is required for profile identification"}, 400
 
         # Create a unified params dict that combines query params and JSON body
@@ -1406,7 +1463,7 @@ class AuthResource(Resource):
 
         # Ensure the automator exists and driver is healthy and all components are initialized
         if not automator:
-            logger.error("Failed to get automator for request")
+            logger.error("Failed to get automator for request", exc_info=True)
             return {"error": "Failed to initialize automator"}, 500
 
         if not automator.ensure_driver_running():
@@ -1452,7 +1509,7 @@ class AuthResource(Resource):
                             "authorized_kindle_account": True,
                         }, 200
                 except Exception as e:
-                    logger.error(f"Error clicking on LIBRARY tab: {e}")
+                    logger.error(f"Error clicking on LIBRARY tab: {e}", exc_info=True)
                     # Continue with normal authentication process
             else:
                 # We're already in LIBRARY state
@@ -1484,7 +1541,7 @@ class AuthResource(Resource):
                 else:
                     logger.error("Failed to click sign-in button")
             except Exception as e:
-                logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}")
+                logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}", exc_info=True)
                 # Continue with normal authentication process
 
         # Always use manual login via VNC (no automation of Amazon credentials)
@@ -1530,7 +1587,7 @@ class AuthResource(Resource):
                     else:
                         logger.warning(f"Could not find display number for {sindarin_email}")
                 except Exception as e:
-                    logger.error(f"Error restarting VNC server: {e}")
+                    logger.warning(f"Error restarting VNC server: {e}", exc_info=True)
 
         # Get the formatted VNC URL with the profile email
         # This will also start the VNC server if it's not running
@@ -1642,7 +1699,7 @@ class FixturesResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error creating fixtures: {e}")
+            logger.error(f"Error creating fixtures: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -1685,7 +1742,7 @@ class CoverImageResource(Resource):
 
             if is_appium_error(e):
                 raise
-            logger.error(f"Error serving cover image: {e}")
+            logger.error(f"Error serving cover image: {e}", exc_info=True)
             traceback.print_exc()
             return {"error": str(e)}, 500
 
@@ -1788,7 +1845,9 @@ class TextResource(Resource):
                     if not still_visible:
                         logger.info("Successfully dismissed the 'About this book' slideover")
             except Exception as e:
-                logger.error(f"Error while attempting to dismiss 'About this book' slideover: {e}")
+                logger.warning(
+                    f"Error while attempting to dismiss 'About this book' slideover: {e}", exc_info=True
+                )
 
             # Save screenshot with unique ID
             screenshot_id = f"text_extract_{int(time.time())}"
@@ -1828,7 +1887,7 @@ class TextResource(Resource):
                     os.remove(screenshot_path)
                     logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
-                    logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}")
+                    logger.warning(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
                 if ocr_text:
                     return {"success": True, "progress": progress, "text": ocr_text}, 200
@@ -1840,7 +1899,7 @@ class TextResource(Resource):
                     }, 500
 
             except Exception as e:
-                logger.error(f"Error processing OCR: {e}")
+                logger.error(f"Error processing OCR: {e}", exc_info=True)
                 return {
                     "success": False,
                     "progress": progress,
@@ -1848,7 +1907,7 @@ class TextResource(Resource):
                 }, 500
 
         except Exception as e:
-            logger.error(f"Error extracting text: {e}")
+            logger.error(f"Error extracting text: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": str(e)}, 500
 
@@ -2020,7 +2079,9 @@ class LastReadPageDialogResource(Resource):
                         logger.warning("NO button not found by text")
 
             if not button_clicked:
-                logger.error(f"Failed to click {'YES' if goto_last_read_page else 'NO'} button")
+                logger.error(
+                    f"Failed to click {'YES' if goto_last_read_page else 'NO'} button", exc_info=True
+                )
                 return {"error": f"Failed to click {'YES' if goto_last_read_page else 'NO'} button"}, 500
 
             # Get reading progress
@@ -2057,14 +2118,51 @@ class LastReadPageDialogResource(Resource):
                 try:
                     os.remove(screenshot_path)
                 except Exception as e:
-                    logger.error(f"Error removing temporary OCR screenshot: {e}")
+                    logger.warning(f"Error removing temporary OCR screenshot: {e}", exc_info=True)
 
             return response_data, 200
 
         except Exception as e:
-            logger.error(f"Error handling Last read page dialog choice: {e}")
+            logger.error(f"Error handling Last read page dialog choice: {e}", exc_info=True)
             logger.error(f"Traceback: {traceback.format_exc()}")
             return {"error": f"Failed to handle dialog choice: {str(e)}"}, 500
+
+
+class SentryDebugResource(Resource):
+    """Debug endpoint for testing Sentry integration."""
+
+    def get(self):
+        """Trigger a test error for Sentry."""
+        sindarin_email = get_sindarin_email()
+
+        # Set user context for Sentry
+        if sindarin_email:
+            sentry_sdk.set_user({"email": sindarin_email})
+
+        # Add custom context
+        sentry_sdk.set_context(
+            "environment",
+            {
+                "flask_env": os.getenv("FLASK_ENV", "production"),
+                "environment": ENVIRONMENT,
+                "has_sentry": bool(SENTRY_DSN),
+            },
+        )
+
+        # Check if we should actually trigger an error
+        trigger_error = request.args.get("trigger", "false").lower() == "true"
+
+        if trigger_error:
+            # This will be caught by Sentry
+            raise Exception("Test error from /sentry-debug endpoint")
+        else:
+            return {
+                "message": "Sentry debug endpoint is working",
+                "sentry_enabled": bool(SENTRY_DSN),
+                "environment": ENVIRONMENT,
+                "user_email": sindarin_email,
+                "hint": "Add ?trigger=true to actually trigger a test error",
+            }, 200
 
 
 # Import resource modules
@@ -2078,6 +2176,7 @@ from server.resources.idle_check_resources import IdleCheckResource
 from server.resources.log_timeline_resource import LogTimelineResource
 from server.resources.logout_resource import LogoutResource
 from server.resources.shutdown_resources import ShutdownResource
+from server.resources.snapshot_check_resource import SnapshotCheckResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 from server.resources.user_activity_resource import UserActivityResource
 
@@ -2126,6 +2225,11 @@ api.add_resource(
 )
 api.add_resource(AuthResource, "/auth")
 api.add_resource(AuthCheckResource, "/auth-check")
+api.add_resource(
+    SnapshotCheckResource,
+    "/snapshot-check",
+    resource_class_kwargs={"server_instance": server},
+)
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
@@ -2172,6 +2276,7 @@ api.add_resource(
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(UserActivityResource, "/log")
+api.add_resource(SentryDebugResource, "/sentry-debug")
 
 
 def check_and_restart_adb_server():
@@ -2201,7 +2306,7 @@ def check_and_restart_adb_server():
             )
             logger.info("ADB server restarted")
         except Exception as adb_e:
-            logger.error(f"Error restarting ADB server: {adb_e}")
+            logger.warning(f"Error restarting ADB server: {adb_e}", exc_info=True)
 
 
 def run_idle_check():
@@ -2214,9 +2319,9 @@ def run_idle_check():
             shut_down = result.get("shut_down", 0)
             active = result.get("active", 0)
         else:
-            logger.error(f"Idle check failed with status {status_code}: {result}")
+            logger.warning(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
-        logger.error(f"Error during scheduled idle check: {e}")
+        logger.warning(f"Error during scheduled idle check: {e}", exc_info=True)
 
 
 def run_cold_storage_check():
@@ -2234,7 +2339,7 @@ def run_cold_storage_check():
         if storage_info and storage_info.get("total_space_saved", 0) > 0:
             logger.info(f"Total space saved: {storage_info['total_space_saved_human']}")
     except Exception as e:
-        logger.error(f"Error during scheduled cold storage check: {e}")
+        logger.warning(f"Error during scheduled cold storage check: {e}", exc_info=True)
 
 
 def cleanup_resources():
@@ -2248,7 +2353,7 @@ def cleanup_resources():
             logger.info("Shutting down APScheduler...")
             app.scheduler.shutdown(wait=False)
         except Exception as e:
-            logger.error(f"Error shutting down scheduler: {e}")
+            logger.warning(f"Error shutting down scheduler: {e}", exc_info=True)
 
     # Clean up any active WebSocket proxies
     try:
@@ -2258,7 +2363,7 @@ def cleanup_resources():
         ws_manager.cleanup()
         logger.info("Successfully cleaned up WebSocket proxies")
     except Exception as e:
-        logger.error(f"Error cleaning up WebSocket proxies: {e}")
+        logger.warning(f"Error cleaning up WebSocket proxies: {e}", exc_info=True)
 
     # Mark all running emulators for restart and shutdown gracefully with preserved state
     from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
@@ -2273,13 +2378,13 @@ def cleanup_resources():
     logger.info(f"Checking {len(server.automators)} automators for running emulators...")
 
     for email, automator in server.automators.items():
-        if automator.emulator_manager.is_emulator_running(email):
+        if automator and automator.emulator_manager.is_emulator_running(email):
             try:
                 logger.info(f"✓ Marking {email} as running at restart for deployment recovery")
                 vnc_manager.mark_running_for_deployment(email)
                 running_emails.append(email)
             except Exception as e:
-                logger.error(f"✗ Error marking {email} for restart: {e}")
+                logger.warning(f"✗ Error marking {email} for restart: {e}", exc_info=True)
 
     logger.info(f"Found {len(running_emails)} running emulators to preserve across restart")
 
@@ -2291,7 +2396,7 @@ def cleanup_resources():
             )
             shutdown_manager.shutdown_emulator(email, preserve_reading_state=True, mark_for_restart=True)
         except KeyError as e:
-            logger.error(f"✗ Error shutting down {email}: {e}")
+            logger.warning(f"✗ Error shutting down {email}: {e}", exc_info=True)
 
     # Stop Appium servers for all running emulators
     from server.utils.appium_driver import AppiumDriver
@@ -2303,14 +2408,14 @@ def cleanup_resources():
             logger.info(f"Stopping Appium server for {email}")
             appium_driver.stop_appium_for_profile(email)
         except Exception as e:
-            logger.error(f"Error stopping Appium for {email} during shutdown: {e}")
+            logger.warning(f"Error stopping Appium for {email} during shutdown: {e}", exc_info=True)
 
     # Kill any remaining Appium processes (legacy cleanup)
     try:
         logger.info("Cleaning up any remaining Appium processes")
         server.kill_existing_process("appium")
     except Exception as e:
-        logger.error(f"Error killing remaining Appium processes: {e}")
+        logger.warning(f"Error killing remaining Appium processes: {e}", exc_info=True)
 
     # Clean up ADB port forwards to prevent port conflicts on restart
     logger.info("Cleaning up ADB port forwards")

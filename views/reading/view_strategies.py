@@ -78,6 +78,11 @@ READING_VIEW_FULL_SCREEN_DIALOG = [
     ),
     (AppiumBy.ID, "com.android.systemui:id/immersive_cling_title"),
     (AppiumBy.ID, "com.android.systemui:id/ok"),  # The "Got it" button
+    (AppiumBy.ID, "android:id/ok"),  # Android 36 uses android:id instead of com.android.systemui:id
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[@resource-id='android:id/ok' and @text='Got it']",
+    ),  # More specific for Android 36
 ]
 
 # Add new identifiers for the "last read page" dialog
@@ -382,6 +387,19 @@ ITEM_REMOVED_DIALOG_IDENTIFIERS = [
 ITEM_REMOVED_DIALOG_CLOSE_BUTTON = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='CLOSE']"),
     (AppiumBy.ID, "android:id/button1"),
+]
+
+
+# Tutorial message identifiers
+TUTORIAL_MESSAGE_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/snackbar_text"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/snackbar_text']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Tap the middle of the page')]"),
+]
+
+TUTORIAL_MESSAGE_CONTAINER = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toast_tutorial_shell"),
+    (AppiumBy.XPATH, "//android.view.ViewGroup[@resource-id='com.amazon.kindle:id/toast_tutorial_shell']"),
 ]
 
 

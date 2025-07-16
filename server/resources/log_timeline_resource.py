@@ -149,7 +149,7 @@ class LogTimelineResource(Resource):
             }, 200
 
         except Exception as e:
-            logger.error(f"Error retrieving log timeline: {e}")
+            logger.error(f"Error retrieving log timeline: {e}", exc_info=True)
             return {"error": f"Failed to retrieve logs: {str(e)}"}, 500
 
     def _parse_log_file(self, log_file, min_level, start_dt, end_dt, max_entries):
@@ -172,7 +172,7 @@ class LogTimelineResource(Resource):
             with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
                 return self._parse_log_lines(f, source, min_level, start_dt, end_dt, max_entries)
         except Exception as e:
-            logger.error(f"Error parsing log file {log_file}: {e}")
+            logger.error(f"Error parsing log file {log_file}: {e}", exc_info=True)
             return []
 
     def _parse_log_lines(self, file_obj, source, min_level, start_dt, end_dt, max_entries):
@@ -269,5 +269,5 @@ class LogTimelineResource(Resource):
                 source = "server" if "server.log" in str(log_file) else log_file.stem.split(".")[0]
                 return self._parse_log_lines(f, source, min_level, start_dt, end_dt, max_entries)
         except Exception as e:
-            logger.error(f"Error parsing compressed log file {log_file}: {e}")
+            logger.error(f"Error parsing compressed log file {log_file}: {e}", exc_info=True)
             return []

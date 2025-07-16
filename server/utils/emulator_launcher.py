@@ -9,6 +9,7 @@ import os
 import platform
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -73,9 +74,6 @@ class EmulatorLauncher:
                 timeout=3,
             )
 
-            # Always log the full adb devices output for debugging
-            logger.info(f"ADB devices output: {devices_result.stdout.strip()}")
-
             if devices_result.returncode == 0:
                 # Parse output to get emulator IDs
                 lines = devices_result.stdout.strip().split("\n")
@@ -97,9 +95,8 @@ class EmulatorLauncher:
                 logger.warning(f"Failed to get adb devices: {devices_result.stderr}")
 
         except Exception as e:
-            logger.error(f"Error checking running emulators via adb: {e}")
+            logger.warning(f"Error checking running emulators via adb: {e}", exc_info=True)
 
-        logger.info(f"Running emulator IDs: {running_ids}")
         return running_ids
 
     def _verify_emulator_running(self, emulator_id: str, email: str) -> bool:
@@ -180,7 +177,7 @@ class EmulatorLauncher:
                 return False
 
         except Exception as e:
-            logger.error(f"Error running adb devices: {e}")
+            logger.warning(f"Error running adb devices: {e}", exc_info=True)
             return False
 
     def _extract_avd_name_from_emulator_id(self, emulator_id: str) -> Optional[str]:
@@ -280,7 +277,7 @@ class EmulatorLauncher:
             return None
 
         except Exception as e:
-            logger.error(f"Error extracting AVD name from emulator ID {emulator_id}: {e}")
+            logger.warning(f"Error extracting AVD name from emulator ID {emulator_id}: {e}", exc_info=True)
             return None
 
     def get_x_display(self, email: str) -> Optional[int]:
@@ -300,7 +297,7 @@ class EmulatorLauncher:
                 logger.warning(f"No display found for {email}")
             return display
         except Exception as e:
-            logger.error(f"Error getting X display for {email}: {e}")
+            logger.warning(f"Error getting X display for {email}: {e}", exc_info=True)
             return None
 
     def get_emulator_port(self, email: str) -> Optional[int]:
@@ -325,7 +322,7 @@ class EmulatorLauncher:
             logger.warning(f"No emulator port found for {email}")
             return None
         except Exception as e:
-            logger.error(f"Error getting emulator port for {email}: {e}")
+            logger.warning(f"Error getting emulator port for {email}: {e}", exc_info=True)
             return None
 
     def get_emulator_id(self, email: str) -> Optional[str]:
@@ -386,7 +383,7 @@ class EmulatorLauncher:
             logger.error(f"Failed to assign display for {email}")
             return None
         except Exception as e:
-            logger.error(f"Error assigning display to profile {email}: {e}")
+            logger.error(f"Error assigning display to profile {email}: {e}", exc_info=True)
             return None
 
     def _extract_avd_name_from_email(self, email: str) -> Optional[str]:
@@ -430,7 +427,7 @@ class EmulatorLauncher:
                 # Standard email format - normalize it
                 email_parts = email.split("@")
                 if len(email_parts) != 2:
-                    logger.error(f"Invalid email format: {email}")
+                    logger.warning(f"Invalid email format: {email}")
                     return None
 
                 username, domain = email_parts
@@ -458,14 +455,14 @@ class EmulatorLauncher:
                 with open(users_file_path, "w") as f:
                     json.dump(users, f, indent=2)
             except Exception as e:
-                logger.error(f"Error updating users.json: {e}")
+                logger.warning(f"Error updating users.json: {e}", exc_info=True)
 
             # Return the AVD name
             logger.info(f"Registered profile for {email} with AVD {avd_name} in users.json")
             return avd_name
 
         except Exception as e:
-            logger.error(f"Error extracting AVD name for email '{email}': {e}")
+            logger.warning(f"Error extracting AVD name for email '{email}': {e}", exc_info=True)
             return None
 
     def _ensure_vnc_running(self, display_num: int, email: str = None) -> bool:
@@ -541,7 +538,7 @@ class EmulatorLauncher:
             )
 
             if vnc_check.returncode == 0:
-                logger.error(f"VNC server already running for display :{display_num}, killing")
+                logger.warning(f"VNC server already running for display :{display_num}, killing")
 
             # Start VNC directly
             # Kill any existing VNC process for this display
@@ -659,7 +656,10 @@ class EmulatorLauncher:
                 ["pgrep", "-f", f"x11vnc.*rfbport {vnc_port}"], capture_output=True, text=True
             )
             if vnc_check.returncode != 0:
-                logger.error(f"x11vnc process not found for display :{display_num} after launch attempt.")
+                logger.error(
+                    f"x11vnc process not found for display :{display_num} after launch attempt.",
+                    exc_info=True,
+                )
                 logger.info(
                     f"For x11vnc startup issues, check its dedicated log: /var/log/x11vnc-{display_num}.log"
                 )
@@ -676,7 +676,7 @@ class EmulatorLauncher:
             return True
 
         except Exception as e:
-            logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}")
+            logger.error(f"Error ensuring VNC is running for display :{display_num}: {e}", exc_info=True)
             return False
 
     def _ensure_avd_ram_upgraded(self, avd_name: str) -> bool:
@@ -729,11 +729,11 @@ class EmulatorLauncher:
             return True
 
         except Exception as e:
-            logger.error(f"Error ensuring RAM upgrade for {avd_name}: {e}")
+            logger.warning(f"Error ensuring RAM upgrade for {avd_name}: {e}", exc_info=True)
             return False
 
     def launch_emulator(
-        self, email: str, cold_boot: bool = False
+        self, email: str, cold_boot: bool = False, zombie_cleanup_attempted: bool = False
     ) -> Tuple[bool, Optional[str], Optional[int]]:
         """
         Launch an emulator for the specified AVD and email, with proper VNC display coordination.
@@ -787,7 +787,7 @@ class EmulatorLauncher:
                         vnc_manager.set_emulator_id(email, emulator_id)
                         logger.info(f"Updated VNC instance with emulator ID {emulator_id} for {email}")
                     except Exception as e:
-                        logger.error(f"Failed to update VNC instance with emulator ID: {e}")
+                        logger.warning(f"Failed to update VNC instance with emulator ID: {e}", exc_info=True)
 
                     return True, emulator_id, display_num
                 else:
@@ -1043,7 +1043,7 @@ class EmulatorLauncher:
                 vnc_manager.set_emulator_id(email, emulator_id)
                 logger.info(f"Set emulator ID {emulator_id} for {email} in VNC instance manager")
             except Exception as e:
-                logger.error(f"Error storing emulator ID in VNC instance: {e}")
+                logger.warning(f"Error storing emulator ID in VNC instance: {e}", exc_info=True)
 
             # 3. No longer storing emulator_id in profiles - VNC instance manager is the source of truth
 
@@ -1068,19 +1068,70 @@ class EmulatorLauncher:
                 logger.error(f"Emulator process exited immediately with code {exit_code}")
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}")
                 # Read and log stdout
+                stdout_content = ""
                 try:
                     with open(stdout_log, "r") as f:
                         stdout_content = f.read()
                     logger.error(f"Emulator stdout ({stdout_log}):\n{stdout_content}")
                 except Exception as e:
-                    logger.error(f"Failed to read emulator stdout log {stdout_log}: {e}")
+                    logger.warning(f"Failed to read emulator stdout log {stdout_log}: {e}", exc_info=True)
                 # Read and log stderr
                 try:
                     with open(stderr_log, "r") as f:
                         stderr_content = f.read()
                     logger.error(f"Emulator stderr ({stderr_log}):\n{stderr_content}")
                 except Exception as e:
-                    logger.error(f"Failed to read emulator stderr log {stderr_log}: {e}")
+                    logger.warning(f"Failed to read emulator stderr log {stderr_log}: {e}", exc_info=True)
+
+                # Check if this is a "multiple emulators with same AVD" error
+                if (
+                    "Running multiple emulators with the same AVD" in stdout_content
+                    and not zombie_cleanup_attempted
+                ):
+                    logger.warning(f"Detected zombie emulator for AVD {avd_name}, attempting cleanup...")
+                    try:
+                        from server.utils.zombie_emulator_cleanup import (
+                            cleanup_zombie_emulator_for_avd,
+                            cleanup_zombies_on_display,
+                            cleanup_zombies_on_port,
+                        )
+
+                        # First try to clean up just this AVD
+                        if cleanup_zombie_emulator_for_avd(avd_name):
+                            logger.info(f"Successfully cleaned up zombie emulator for AVD {avd_name}")
+
+                        # Also clean up any other zombies on this port since we're having port conflicts
+                        zombies_on_port = cleanup_zombies_on_port(emulator_port)
+                        if zombies_on_port > 0:
+                            logger.info(
+                                f"Cleaned up {zombies_on_port} additional zombie(s) on port {emulator_port}"
+                            )
+
+                        # Clean up all zombies on this display to ensure no crash dialogs remain
+                        zombies_on_display = cleanup_zombies_on_display(display_num)
+                        if zombies_on_display > 0:
+                            logger.info(
+                                f"Cleaned up {zombies_on_display} zombie(s) on display :{display_num}"
+                            )
+
+                        # Clean up this failed process
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except:
+                            pass
+
+                        # Remove from running_emulators cache if it was added
+                        if avd_name in self.running_emulators:
+                            del self.running_emulators[avd_name]
+
+                        # Retry the launch with zombie_cleanup_attempted=True to prevent infinite recursion
+                        time.sleep(3)  # Brief pause before retry
+                        logger.info("Retrying emulator launch after zombie cleanup...")
+                        return self.launch_emulator(email, cold_boot=cold_boot, zombie_cleanup_attempted=True)
+                    except Exception as cleanup_error:
+                        logger.warning(f"Error during zombie cleanup: {cleanup_error}", exc_info=True)
+
                 return False, None, None
 
             # Wait for emulator to be ready before applying post-boot randomization
@@ -1145,7 +1196,7 @@ class EmulatorLauncher:
                     else:
                         logger.warning(f"Some post-boot randomizations may have failed")
                 except Exception as e:
-                    logger.error(f"Failed to apply post-boot randomization: {e}")
+                    logger.warning(f"Failed to apply post-boot randomization: {e}", exc_info=True)
                     # Continue anyway - better to have a working emulator with duplicate identifiers
             elif (created_from_seed or needs_device_randomization_check) and post_boot_randomized_check:
                 logger.info(f"Skipping post-boot randomization for {email} - already randomized")
@@ -1153,7 +1204,7 @@ class EmulatorLauncher:
             return True, emulator_id, display_num
 
         except Exception as e:
-            logger.error(f"Error launching emulator for {avd_name}: {e}")
+            logger.error(f"Error launching emulator for {avd_name}: {e}", exc_info=True)
             return False, None, None
 
     def release_profile(self, email: str) -> bool:
@@ -1175,7 +1226,7 @@ class EmulatorLauncher:
                 logger.warning(f"No VNC instance found for profile {email}")
                 return False
         except Exception as e:
-            logger.error(f"Error releasing profile {email}: {e}")
+            logger.warning(f"Error releasing profile {email}: {e}", exc_info=True)
             return False
 
     def stop_emulator(self, email: str) -> bool:
@@ -1238,19 +1289,22 @@ class EmulatorLauncher:
                     timeout=5,
                 )
 
-                # Wait briefly for emulator to shut down
-                time.sleep(3)
+                # Poll for emulator shutdown with shorter intervals
+                shutdown_successful = False
+                for i in range(6):  # Check up to 6 times over 3 seconds
+                    time.sleep(0.5)
+                    check_result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    if emulator_id not in check_result.stdout:
+                        shutdown_successful = True
+                        break
 
-                # Check if emulator is still running
-                check_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-
-                if emulator_id not in check_result.stdout:
+                if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for AVD {avd_name}")
                     del self.running_emulators[avd_name]
                     return True
@@ -1319,19 +1373,22 @@ class EmulatorLauncher:
                     timeout=5,
                 )
 
-                # Wait briefly for emulator to shut down
-                time.sleep(3)
+                # Poll for emulator shutdown with shorter intervals
+                shutdown_successful = False
+                for i in range(6):  # Check up to 6 times over 3 seconds
+                    time.sleep(0.5)
+                    check_result = subprocess.run(
+                        [f"{self.android_home}/platform-tools/adb", "devices"],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    if emulator_id not in check_result.stdout:
+                        shutdown_successful = True
+                        break
 
-                # Check if emulator is still running
-                check_result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-
-                if emulator_id not in check_result.stdout:
+                if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for {email}")
                     del self.running_emulators[email]
                     return True
@@ -1359,7 +1416,7 @@ class EmulatorLauncher:
                 return False
 
         except Exception as e:
-            logger.error(f"Error stopping emulator for {email}: {e}")
+            logger.warning(f"Error stopping emulator for {email}: {e}", exc_info=True)
             return False
 
     def get_running_emulator(self, email: str) -> Tuple[Optional[str], Optional[int]]:
@@ -1401,14 +1458,14 @@ class EmulatorLauncher:
                         )
                         del self.running_emulators[avd_name]
                 except Exception as adb_e:
-                    logger.error(f"Error running adb devices: {adb_e}")
+                    logger.warning(f"Error running adb devices: {adb_e}", exc_info=True)
                     # Fall back to our regular verify method if adb command fails
                     if self._verify_emulator_running(emulator_id, email):
                         return emulator_id, display_num
                     else:
                         del self.running_emulators[avd_name]
         except Exception as e:
-            logger.error(f"Error checking running emulator via adb: {e}")
+            logger.warning(f"Error checking running emulator via adb: {e}", exc_info=True)
 
         return None, None
 
@@ -1464,7 +1521,7 @@ class EmulatorLauncher:
             return True
 
         except Exception as e:
-            logger.error(f"Error checking if emulator is ready for {email}: {e}")
+            logger.warning(f"Error checking if emulator is ready for {email}: {e}", exc_info=True)
             return False
 
     def _get_emulator_id_for_readiness_check(self, email: str) -> Optional[str]:
@@ -1563,7 +1620,7 @@ class EmulatorLauncher:
                     f"Expected emulator {expected_emulator_id} appears in adb devices output but wasn't recognized"
                 )
         except Exception as e:
-            logger.error(f"Error during direct adb devices check: {e}")
+            logger.warning(f"Error during direct adb devices check: {e}", exc_info=True)
 
     def _is_emulator_process_running(self) -> bool:
         """Check if any emulator process is running."""
@@ -1599,7 +1656,7 @@ class EmulatorLauncher:
 
             return "unknown"
         except Exception as e:
-            logger.error(f"Error checking device status: {e}")
+            logger.warning(f"Error checking device status: {e}", exc_info=True)
             return None
 
     def _is_device_status_ready(self, device_status: Optional[str]) -> bool:
@@ -1639,7 +1696,7 @@ class EmulatorLauncher:
 
             return boot_check.stdout.strip() == "1"
         except Exception as e:
-            logger.error(f"Error checking boot status: {e}")
+            logger.warning(f"Error checking boot status: {e}", exc_info=True)
             return False
 
     def _log_device_identifiers(self, emulator_id: str, email: str) -> None:
@@ -1722,7 +1779,7 @@ class EmulatorLauncher:
             logger.info(f"  {' | '.join(id_parts)}")
 
         except Exception as e:
-            logger.error(f"Error logging device identifiers: {e}")
+            logger.warning(f"Error logging device identifiers: {e}", exc_info=True)
 
     def _is_package_manager_ready(self, emulator_id: str) -> bool:
         """Check if package manager is ready to accept commands."""
@@ -1765,7 +1822,7 @@ class EmulatorLauncher:
 
             return True
         except Exception as e:
-            logger.error(f"Error checking package list: {e}")
+            logger.warning(f"Error checking package list: {e}", exc_info=True)
             return False
 
     def _can_query_package_path(self, emulator_id: str) -> bool:
@@ -1793,7 +1850,7 @@ class EmulatorLauncher:
 
             return True
         except Exception as e:
-            logger.error(f"Error checking package path: {e}")
+            logger.warning(f"Error checking package path: {e}", exc_info=True)
             return False
 
     def save_snapshot(self, email: str) -> bool:
@@ -1819,19 +1876,21 @@ class EmulatorLauncher:
                     emulator_id, _ = self.running_emulators[avd_name]
                     logger.info(f"Using cached emulator ID {emulator_id} for snapshot")
                 else:
-                    logger.error(f"No running emulator found for {email}")
+                    logger.error(f"SNAPSHOT FAILURE: No running emulator found for {email}")
                     return False
 
             # Use avdmanager to save the snapshot
             # First, get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
             if not avd_name:
-                logger.error(f"Could not determine AVD name for {email}")
+                logger.error(f"SNAPSHOT FAILURE: Could not determine AVD name for {email}")
                 return False
 
             # Method 1: Try using ADB emu command first (more reliable than telnet)
             try:
-                logger.info(f"Attempting to save snapshot using adb emu command")
+                logger.info(
+                    f"Attempting to save snapshot using adb emu command for {email} (AVD: {avd_name})"
+                )
                 adb_result = subprocess.run(
                     [
                         f"{self.android_home}/platform-tools/adb",
@@ -1849,20 +1908,27 @@ class EmulatorLauncher:
                 )
 
                 if adb_result.returncode == 0:
-                    logger.info(f"Successfully saved snapshot for {email} on emulator {emulator_id}")
+                    logger.info(f"ADB emu snapshot command succeeded for {email} on emulator {emulator_id}")
                     # Verify the snapshot was created
                     if self.has_snapshot(email, "default_boot"):
-                        logger.info(f"Verified snapshot exists on disk")
+                        logger.info(f"✓ SNAPSHOT SUCCESS: Verified snapshot exists on disk for {email}")
                         return True
                     else:
-                        logger.warning(f"Snapshot command succeeded but snapshot not found on disk")
+                        logger.error(
+                            f"SNAPSHOT FAILURE: Command succeeded but snapshot not found on disk for {email}. "
+                            f"AVD path: {os.path.join(self.avd_dir, f'{avd_name}.avd')}"
+                        )
                 else:
-                    logger.warning(f"ADB emu snapshot failed: {adb_result.stderr}")
+                    logger.error(
+                        f"SNAPSHOT FAILURE: ADB emu snapshot failed for {email} with return code {adb_result.returncode}\n"
+                        f"STDOUT: {adb_result.stdout}\n"
+                        f"STDERR: {adb_result.stderr}"
+                    )
             except Exception as adb_e:
-                logger.warning(f"ADB emu method failed: {adb_e}")
+                logger.error(f"SNAPSHOT FAILURE: ADB emu method failed for {email}: {adb_e}", exc_info=True)
 
             # Method 2: Fall back to telnet if ADB method fails
-            logger.info("Falling back to telnet method for snapshot creation")
+            logger.info(f"Falling back to telnet method for snapshot creation for {email}")
             # The emulator port is the last part of the emulator-xxxx ID
             emulator_port = int(emulator_id.split("-")[1])
             console_port = emulator_port - 1  # Console port is usually emulator_port - 1
@@ -1876,16 +1942,22 @@ class EmulatorLauncher:
                 result = sock.connect_ex(("localhost", console_port))
                 sock.close()
                 if result != 0:
-                    logger.error(f"Console port {console_port} is not available")
+                    logger.error(
+                        f"SNAPSHOT FAILURE: Console port {console_port} is not available for {email}"
+                    )
                     return False
             except Exception as sock_e:
-                logger.error(f"Error checking console port: {sock_e}")
+                logger.error(
+                    f"SNAPSHOT FAILURE: Error checking console port {console_port} for {email}: {sock_e}",
+                    exc_info=True,
+                )
                 return False
 
             # Create the telnet command to save the snapshot
             telnet_commands = f"avd snapshot save default_boot\nquit\n"
 
             # Execute the command
+            logger.info(f"Executing telnet snapshot command on port {console_port} for {email}")
             result = subprocess.run(
                 ["telnet", "localhost", str(console_port)],
                 input=telnet_commands,
@@ -1895,14 +1967,27 @@ class EmulatorLauncher:
             )
 
             if result.returncode == 0 and "OK" in result.stdout:
-                logger.info(f"Successfully saved snapshot for {email} on emulator {emulator_id}")
-                return True
+                # Verify the snapshot was actually created
+                if self.has_snapshot(email, "default_boot"):
+                    logger.info(f"✓ SNAPSHOT SUCCESS: Telnet method saved snapshot for {email}")
+                    return True
+                else:
+                    logger.error(
+                        f"SNAPSHOT FAILURE: Telnet command succeeded but snapshot not found on disk for {email}"
+                    )
+                    return False
             else:
-                logger.error(f"Failed to save snapshot for {email}: {result.stderr}")
+                logger.error(
+                    f"SNAPSHOT FAILURE: Telnet snapshot failed for {email} with return code {result.returncode}\n"
+                    f"STDOUT: {result.stdout}\n"
+                    f"STDERR: {result.stderr}"
+                )
                 return False
 
         except Exception as e:
-            logger.error(f"Error saving snapshot for {email}: {e}")
+            logger.error(
+                f"SNAPSHOT FAILURE: Unexpected error saving snapshot for {email}: {e}", exc_info=True
+            )
             return False
 
     def has_snapshot(self, email: str, snapshot_name: str) -> bool:
@@ -1929,13 +2014,30 @@ class EmulatorLauncher:
             snapshot_path = os.path.join(snapshots_dir, snapshot_name)
 
             exists = os.path.exists(snapshot_path)
-            logger.info(
-                f"Snapshot '{snapshot_name}' for {email} {'exists' if exists else 'does not exist'} at {snapshot_path}"
-            )
+            if exists:
+                # Get snapshot size and modification time for debugging
+                snapshot_stat = os.stat(snapshot_path)
+                snapshot_size_mb = snapshot_stat.st_size / (1024 * 1024)
+                snapshot_mtime = datetime.fromtimestamp(snapshot_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(
+                    f"Snapshot '{snapshot_name}' exists for {email} at {snapshot_path} "
+                    f"(size: {snapshot_size_mb:.1f}MB, modified: {snapshot_mtime})"
+                )
+            else:
+                logger.warning(f"Snapshot '{snapshot_name}' does not exist for {email} at {snapshot_path}")
+                # Check if snapshots directory exists
+                if not os.path.exists(snapshots_dir):
+                    logger.warning(f"Snapshots directory does not exist: {snapshots_dir}")
+                else:
+                    # List existing snapshots for debugging
+                    existing_snapshots = os.listdir(snapshots_dir) if os.path.isdir(snapshots_dir) else []
+                    logger.warning(f"Existing snapshots in {snapshots_dir}: {existing_snapshots}")
             return exists
 
         except Exception as e:
-            logger.error(f"Error checking if snapshot '{snapshot_name}' exists for {email}: {e}")
+            logger.error(
+                f"Error checking if snapshot '{snapshot_name}' exists for {email}: {e}", exc_info=True
+            )
             return False
 
     def list_snapshots(self, email: str) -> List[str]:
@@ -1974,7 +2076,7 @@ class EmulatorLauncher:
             return snapshots
 
         except Exception as e:
-            logger.error(f"Error listing snapshots for {email}: {e}")
+            logger.warning(f"Error listing snapshots for {email}: {e}", exc_info=True)
             return []
 
     def cleanup_old_snapshots(self, email: str, keep_count: int = 3) -> int:
@@ -2041,11 +2143,11 @@ class EmulatorLauncher:
                     else:
                         logger.warning(f"Snapshot not found at expected path: {snapshot_path}")
                 except Exception as del_error:
-                    logger.error(f"Error deleting snapshot {snapshot_name}: {del_error}")
+                    logger.warning(f"Error deleting snapshot {snapshot_name}: {del_error}", exc_info=True)
 
             logger.info(f"Successfully deleted {deleted_count} old library park snapshots for {email}")
             return deleted_count
 
         except Exception as e:
-            logger.error(f"Error cleaning up old snapshots for {email}: {e}")
+            logger.warning(f"Error cleaning up old snapshots for {email}: {e}", exc_info=True)
             return 0

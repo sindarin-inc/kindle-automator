@@ -39,7 +39,7 @@ def ensure_automator_healthy(f):
                 logger.debug(f"Using email from current profile: {sindarin_email}")
 
         if not sindarin_email:
-            logger.error("No sindarin_email found in request or current state")
+            logger.error("No sindarin_email found in request or current state", exc_info=True)
             return {"error": "No email provided to identify which profile to use"}, 400
 
         # Update activity timestamp for this email
@@ -76,7 +76,7 @@ def ensure_automator_healthy(f):
                     logger.info(f"No automator found for {sindarin_email}. Initializing automatically...")
                     automator = server.initialize_automator(sindarin_email)
                     if not automator:
-                        logger.error(f"Failed to initialize automator for {sindarin_email}")
+                        logger.error(f"Failed to initialize automator for {sindarin_email}", exc_info=True)
                         return {"error": f"Failed to initialize automator for {sindarin_email}"}, 500
 
                     if not automator.initialize_driver():
@@ -238,7 +238,9 @@ def ensure_automator_healthy(f):
 
                         # Start a dedicated Appium server for this email
                         if not appium_driver.start_appium_for_profile(sindarin_email):
-                            logger.error(f"Failed to restart Appium server for {sindarin_email}")
+                            logger.error(
+                                f"Failed to restart Appium server for {sindarin_email}", exc_info=True
+                            )
                             return {"error": f"Failed to start Appium server for {sindarin_email}"}, 500
 
                         time.sleep(2)  # Wait for the Appium server to start
@@ -248,7 +250,7 @@ def ensure_automator_healthy(f):
                     # Try to switch back to the profile
                     success, message = server.switch_profile(sindarin_email)
                     if not success:
-                        logger.error(f"Failed to switch back to profile: {message}")
+                        logger.error(f"Failed to switch back to profile: {message}", exc_info=True)
                         return {"error": f"Failed to switch back to profile: {message}"}, 500
 
                     automator = server.initialize_automator(sindarin_email)

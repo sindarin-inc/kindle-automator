@@ -1,5 +1,10 @@
 # Kindle Automator Project Guide
 
+## Issue References
+
+- When you see references to KINDLE-AUTOMATOR-[A-Z0-9]+ (e.g., KINDLE-AUTOMATOR-8), use the Sentry MCP tools to look up the issue details
+- Never use Sentry's Seer AI analysis - fix issues using Claude Code instead
+
 ## Commands
 
 - `make claude-run`: Start the Flask server in the background. It will auto-kill other running servers.
@@ -12,14 +17,17 @@
 ## Running the server
 
 ```bash
-# Start server in background (kills existing server)
+# Start server in background (automatically kills existing server)
 make claude-run
 
-# Monitor server startup (first 20 lines)
-tail -n 20 logs/server_output.log
-
-# Check server is running
+# The server starts instantly - no need to sleep before making requests
 curl -s http://localhost:4098/emulators/active
+
+# Monitor server logs in real-time
+tail -f logs/server_output.log
+
+# Or just check the last 20 lines
+tail -n 20 logs/server_output.log
 ```
 
 ## Ansible Commands

@@ -125,7 +125,7 @@ class DeviceDiscovery:
                 vnc_manager.set_emulator_id(email, emulator_id)
                 logger.info(f"Updated VNC instance with emulator ID {emulator_id} for {email}")
             except Exception as e:
-                logger.error(f"Error updating VNC instance with emulator ID: {e}")
+                logger.error(f"Error updating VNC instance with emulator ID: {e}", exc_info=True)
 
             # No longer storing emulator_id in profiles - VNC instance manager is the source of truth
 
@@ -233,7 +233,7 @@ class DeviceDiscovery:
             return None
 
         except Exception as e:
-            logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}")
+            logger.error(f"Error getting AVD name for emulator {emulator_id}: {e}", exc_info=True)
 
         return None
 
@@ -309,7 +309,8 @@ class DeviceDiscovery:
             # After retries, check final result
             if not result or result.returncode != 0:
                 logger.error(
-                    f"Failed to get devices list after multiple attempts: {result.returncode if result else 'unknown'} {result.stderr if result else 'unknown'}"
+                    f"Failed to get devices list after multiple attempts: {result.returncode if result else 'unknown'} {result.stderr if result else 'unknown'}",
+                    exc_info=True,
                 )
                 # Log the error but return empty dict instead of raising exception
                 # This prevents unnecessary errors when the emulator is actually running
@@ -321,7 +322,7 @@ class DeviceDiscovery:
 
             # Make sure we get valid output - needs at least the header line
             if len(lines) < 1 or "List of devices attached" not in lines[0]:
-                logger.error(f"Invalid ADB devices output format: {result.stdout}")
+                logger.error(f"Invalid ADB devices output format: {result.stdout}", exc_info=True)
                 return running_emulators
 
             # If we only have the header line, there are no devices
@@ -363,5 +364,5 @@ class DeviceDiscovery:
             logger.warning("Timeout mapping running emulators")
             return running_emulators
         except Exception as e:
-            logger.error(f"Error mapping running emulators: {e}")
+            logger.error(f"Error mapping running emulators: {e}", exc_info=True)
             return running_emulators

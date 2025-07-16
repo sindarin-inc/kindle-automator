@@ -32,10 +32,10 @@ def make_request(url, method="GET", data=None, headers=None):
         response = urllib.request.urlopen(req, timeout=10)
         return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        logger.error(f"HTTP error: {e.code} - {e.reason}")
+        logger.error(f"HTTP error: {e.code} - {e.reason}", exc_info=True)
         return None
     except Exception as e:
-        logger.error(f"Request error: {e}")
+        logger.error(f"Request error: {e}", exc_info=True)
         return None
 
 

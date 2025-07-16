@@ -17,6 +17,8 @@ import subprocess
 import time
 from typing import Dict, Optional
 
+import sentry_sdk
+
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
@@ -236,7 +238,7 @@ class AppiumDriver:
         try:
             # Check if anything is listening on the port first
             port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True, check=False
             )
             if not port_check.stdout.strip():
                 return False
@@ -387,7 +389,7 @@ class AppiumDriver:
                 f.write(str(pid))
             os.chmod(pid_file, 0o644)
         except Exception as e:
-            logger.error(f"Error saving PID file: {e}")
+            logger.error(f"Error saving PID file: {e}", exc_info=True)
 
     def _kill_existing_process(self, name: str):
         """Kill existing process by PID file."""
@@ -409,7 +411,7 @@ class AppiumDriver:
                 os.remove(pid_file)
                 logger.info(f"Killed existing {name} process using PID {pid}")
             except Exception as e:
-                logger.error(f"Error killing {name} process by PID: {e}")
+                logger.warning(f"Error killing {name} process by PID: {e}", exc_info=True)
         else:
             logger.debug(f"No PID file found for {name}")
 
@@ -417,7 +419,7 @@ class AppiumDriver:
         """Kill any process using the specified port."""
         try:
             port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-t"], capture_output=True, text=True, check=False
+                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True, check=False
             )
             if port_check.stdout.strip():
                 pids = port_check.stdout.strip().split("\n")
