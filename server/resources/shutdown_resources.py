@@ -63,6 +63,8 @@ class ShutdownResource(Resource):
                 message_parts.append("snapshot taken")
             elif cold:
                 message_parts.append("snapshot skipped for cold boot")
+            elif not cold and not shutdown_summary["snapshot_taken"]:
+                message_parts.append("SNAPSHOT FAILED - will cold boot next time")
 
             # Add sync status if attempted
             if shutdown_summary.get("placemark_sync_attempted"):
@@ -82,6 +84,13 @@ class ShutdownResource(Resource):
             ):
                 logger.critical(
                     f"PLACEMARK SYNC FAILED during shutdown for {sindarin_email} - user's reading position may be lost!"
+                )
+
+            # Log critical warning if snapshot failed
+            if not cold and not shutdown_summary["snapshot_taken"]:
+                logger.critical(
+                    f"SNAPSHOT FAILED during shutdown for {sindarin_email} - emulator will cold boot next time! "
+                    f"This means user will need to navigate back to their book."
                 )
 
             return {

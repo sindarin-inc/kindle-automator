@@ -9,6 +9,7 @@ import os
 import platform
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -1827,19 +1828,21 @@ class EmulatorLauncher:
                     emulator_id, _ = self.running_emulators[avd_name]
                     logger.info(f"Using cached emulator ID {emulator_id} for snapshot")
                 else:
-                    logger.error(f"No running emulator found for {email}")
+                    logger.error(f"SNAPSHOT FAILURE: No running emulator found for {email}")
                     return False
 
             # Use avdmanager to save the snapshot
             # First, get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
             if not avd_name:
-                logger.error(f"Could not determine AVD name for {email}")
+                logger.error(f"SNAPSHOT FAILURE: Could not determine AVD name for {email}")
                 return False
 
             # Method 1: Try using ADB emu command first (more reliable than telnet)
             try:
-                logger.info(f"Attempting to save snapshot using adb emu command")
+                logger.info(
+                    f"Attempting to save snapshot using adb emu command for {email} (AVD: {avd_name})"
+                )
                 adb_result = subprocess.run(
                     [
                         f"{self.android_home}/platform-tools/adb",
@@ -1857,20 +1860,27 @@ class EmulatorLauncher:
                 )
 
                 if adb_result.returncode == 0:
-                    logger.info(f"Successfully saved snapshot for {email} on emulator {emulator_id}")
+                    logger.info(f"ADB emu snapshot command succeeded for {email} on emulator {emulator_id}")
                     # Verify the snapshot was created
                     if self.has_snapshot(email, "default_boot"):
-                        logger.info(f"Verified snapshot exists on disk")
+                        logger.info(f"✓ SNAPSHOT SUCCESS: Verified snapshot exists on disk for {email}")
                         return True
                     else:
-                        logger.warning(f"Snapshot command succeeded but snapshot not found on disk")
+                        logger.error(
+                            f"SNAPSHOT FAILURE: Command succeeded but snapshot not found on disk for {email}. "
+                            f"AVD path: {os.path.join(self.avd_dir, f'{avd_name}.avd')}"
+                        )
                 else:
-                    logger.warning(f"ADB emu snapshot failed: {adb_result.stderr}")
+                    logger.error(
+                        f"SNAPSHOT FAILURE: ADB emu snapshot failed for {email} with return code {adb_result.returncode}\n"
+                        f"STDOUT: {adb_result.stdout}\n"
+                        f"STDERR: {adb_result.stderr}"
+                    )
             except Exception as adb_e:
-                logger.warning(f"ADB emu method failed: {adb_e}")
+                logger.error(f"SNAPSHOT FAILURE: ADB emu method failed for {email}: {adb_e}", exc_info=True)
 
             # Method 2: Fall back to telnet if ADB method fails
-            logger.info("Falling back to telnet method for snapshot creation")
+            logger.info(f"Falling back to telnet method for snapshot creation for {email}")
             # The emulator port is the last part of the emulator-xxxx ID
             emulator_port = int(emulator_id.split("-")[1])
             console_port = emulator_port - 1  # Console port is usually emulator_port - 1
@@ -1884,16 +1894,22 @@ class EmulatorLauncher:
                 result = sock.connect_ex(("localhost", console_port))
                 sock.close()
                 if result != 0:
-                    logger.error(f"Console port {console_port} is not available", exc_info=True)
+                    logger.error(
+                        f"SNAPSHOT FAILURE: Console port {console_port} is not available for {email}"
+                    )
                     return False
             except Exception as sock_e:
-                logger.warning(f"Error checking console port: {sock_e}", exc_info=True)
+                logger.error(
+                    f"SNAPSHOT FAILURE: Error checking console port {console_port} for {email}: {sock_e}",
+                    exc_info=True,
+                )
                 return False
 
             # Create the telnet command to save the snapshot
             telnet_commands = f"avd snapshot save default_boot\nquit\n"
 
             # Execute the command
+            logger.info(f"Executing telnet snapshot command on port {console_port} for {email}")
             result = subprocess.run(
                 ["telnet", "localhost", str(console_port)],
                 input=telnet_commands,
@@ -1903,14 +1919,27 @@ class EmulatorLauncher:
             )
 
             if result.returncode == 0 and "OK" in result.stdout:
-                logger.info(f"Successfully saved snapshot for {email} on emulator {emulator_id}")
-                return True
+                # Verify the snapshot was actually created
+                if self.has_snapshot(email, "default_boot"):
+                    logger.info(f"✓ SNAPSHOT SUCCESS: Telnet method saved snapshot for {email}")
+                    return True
+                else:
+                    logger.error(
+                        f"SNAPSHOT FAILURE: Telnet command succeeded but snapshot not found on disk for {email}"
+                    )
+                    return False
             else:
-                logger.error(f"Failed to save snapshot for {email}: {result.stderr}")
+                logger.error(
+                    f"SNAPSHOT FAILURE: Telnet snapshot failed for {email} with return code {result.returncode}\n"
+                    f"STDOUT: {result.stdout}\n"
+                    f"STDERR: {result.stderr}"
+                )
                 return False
 
         except Exception as e:
-            logger.error(f"Error saving snapshot for {email}: {e}", exc_info=True)
+            logger.error(
+                f"SNAPSHOT FAILURE: Unexpected error saving snapshot for {email}: {e}", exc_info=True
+            )
             return False
 
     def has_snapshot(self, email: str, snapshot_name: str) -> bool:
@@ -1937,13 +1966,28 @@ class EmulatorLauncher:
             snapshot_path = os.path.join(snapshots_dir, snapshot_name)
 
             exists = os.path.exists(snapshot_path)
-            logger.info(
-                f"Snapshot '{snapshot_name}' for {email} {'exists' if exists else 'does not exist'} at {snapshot_path}"
-            )
+            if exists:
+                # Get snapshot size and modification time for debugging
+                snapshot_stat = os.stat(snapshot_path)
+                snapshot_size_mb = snapshot_stat.st_size / (1024 * 1024)
+                snapshot_mtime = datetime.fromtimestamp(snapshot_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(
+                    f"Snapshot '{snapshot_name}' exists for {email} at {snapshot_path} "
+                    f"(size: {snapshot_size_mb:.1f}MB, modified: {snapshot_mtime})"
+                )
+            else:
+                logger.warning(f"Snapshot '{snapshot_name}' does not exist for {email} at {snapshot_path}")
+                # Check if snapshots directory exists
+                if not os.path.exists(snapshots_dir):
+                    logger.warning(f"Snapshots directory does not exist: {snapshots_dir}")
+                else:
+                    # List existing snapshots for debugging
+                    existing_snapshots = os.listdir(snapshots_dir) if os.path.isdir(snapshots_dir) else []
+                    logger.warning(f"Existing snapshots in {snapshots_dir}: {existing_snapshots}")
             return exists
 
         except Exception as e:
-            logger.warning(
+            logger.error(
                 f"Error checking if snapshot '{snapshot_name}' exists for {email}: {e}", exc_info=True
             )
             return False

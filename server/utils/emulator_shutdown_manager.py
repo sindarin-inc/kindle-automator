@@ -325,13 +325,21 @@ class EmulatorShutdownManager:
         launcher = automator.emulator_manager.emulator_launcher
         emulator_id, _ = launcher.get_running_emulator(email)
         if not emulator_id:
+            logger.error(f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot")
             return
-        logger.info("Taking ADB snapshot of emulator %s", emulator_id)
+        logger.info(f"Taking ADB snapshot of emulator {emulator_id} for {email}")
+        snapshot_start_time = time.time()
         if launcher.save_snapshot(email):
             summary["snapshot_taken"] = True
             self._update_snapshot_timestamp(email)
+            logger.info(
+                f"Snapshot completed successfully for {email} in {time.time() - snapshot_start_time:.1f}s"
+            )
         else:
-            logger.error("Failed to save snapshot for %s", email)
+            logger.critical(
+                f"SNAPSHOT FAILURE: Failed to save snapshot for {email} - user's reading position may be lost! "
+                f"This will cause cold boot on next launch."
+            )
 
     @staticmethod
     def _update_snapshot_timestamp(email: str):
