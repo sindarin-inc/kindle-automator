@@ -53,6 +53,7 @@ tail -n 20 logs/server_output.log
 - **DRY**: Keep it DRY, so do extra thinking to ensure we don't repeat code
 - **Comments**: Only include comments if they add context that's not readily apparent in the next line of code or if the code block has some complexity
 - **Comments**: Don't add comments that are simply addressing the prompt, only add them if the comments clear up confusion
+- **Linting**: Run `make lint` after making code changes to ensure formatting compliance
 
 ## Project Structure
 

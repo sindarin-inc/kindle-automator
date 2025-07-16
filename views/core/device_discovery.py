@@ -197,7 +197,6 @@ class DeviceDiscovery:
             # Check if we're on macOS
             is_mac = platform.system() == "Darwin"
 
-
             # Next, check VNC instances for this emulator ID
             try:
                 from server.utils.vnc_instance_manager import VNCInstanceManager

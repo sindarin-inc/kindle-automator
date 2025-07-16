@@ -1,6 +1,7 @@
 """Idle check resources for monitoring and shutting down idle emulators."""
 
 import logging
+import platform
 import time
 from datetime import datetime, timedelta
 
@@ -22,7 +23,11 @@ class IdleCheckResource(Resource):
             server_instance: The AutomationServer instance
         """
         self.server = server_instance
-        self.idle_timeout_minutes = 30  # Default to 30 minutes
+        # Mac emulators get 24 hours (1440 minutes), Linux gets 30 minutes
+        if platform.system() == "Darwin":
+            self.idle_timeout_minutes = 1440  # 24 hours for Mac
+        else:
+            self.idle_timeout_minutes = 30  # 30 minutes for Linux
         super().__init__()
 
     def get(self):

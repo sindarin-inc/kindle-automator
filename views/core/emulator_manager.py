@@ -216,7 +216,6 @@ class EmulatorManager:
                 self._emulator_cache[email] = (emulator_id, avd_name, time.time())
                 logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
 
-
                 # Check adb devices immediately after launch to see if it's detected
                 try:
                     devices_after = subprocess.run(

@@ -60,7 +60,6 @@ class AVDProfileManager:
         self.is_macos = platform.system() == "Darwin"
         self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
 
-
         # Get Android home from environment or fallback to default
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
 
