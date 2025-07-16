@@ -410,6 +410,8 @@ class AppiumDriver:
                 # Remove the PID file
                 os.remove(pid_file)
                 logger.info(f"Killed existing {name} process using PID {pid}")
+            except ProcessLookupError:
+                logger.info(f"Process {pid} not found, skipping")
             except Exception as e:
                 logger.warning(f"Error killing {name} process by PID: {e}", exc_info=True)
         else:
