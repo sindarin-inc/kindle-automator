@@ -60,8 +60,6 @@ class AVDProfileManager:
         self.is_macos = platform.system() == "Darwin"
         self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
 
-        # No longer use simplified mode - we want full emulator management on all platforms
-        self.use_simplified_mode = False
 
         # Get Android home from environment or fallback to default
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
@@ -104,8 +102,8 @@ class AVDProfileManager:
         # Ensure directories exist
         os.makedirs(self.profiles_dir, exist_ok=True)
         # Initialize component managers
-        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir, False)
-        self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch, False)
+        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
+        self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch)
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
 
         # Load profile index if it exists, otherwise create empty one

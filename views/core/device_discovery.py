@@ -14,10 +14,9 @@ class DeviceDiscovery:
     Handles detection of running emulators and device ID mapping.
     """
 
-    def __init__(self, android_home, avd_dir, use_simplified_mode=False):
+    def __init__(self, android_home, avd_dir):
         self.android_home = android_home
         self.avd_dir = avd_dir
-        self.use_simplified_mode = use_simplified_mode
 
     # Only called by AVDProfileManager
     def find_running_emulator_for_email(
@@ -198,10 +197,6 @@ class DeviceDiscovery:
             # Check if we're on macOS
             is_mac = platform.system() == "Darwin"
 
-            # In simplified mode, we may not have AVD names in profiles
-            if self.use_simplified_mode and not is_mac:
-                # Don't assume any email, just return None
-                return None
 
             # Next, check VNC instances for this emulator ID
             try:
