@@ -97,20 +97,29 @@ class EmulatorShutdownManager:
             return self._handle_orphaned_emulator(email, summary)
 
         # ------------------------------------------------------------------
-        # 3. UI preparation (navigate + snapshot)                      ──────
+        # 3. UI navigation (navigate to library if needed)             ──────
         # ------------------------------------------------------------------
-        ui_prep_start = _time.time()
-        ui_crashed = not self._prepare_emulator_ui(
+        ui_nav_start = _time.time()
+        ui_crashed = not self._navigate_to_library_if_needed(
             automator,
             email,
             preserve_reading_state,
-            skip_snapshot,
             summary,
         )
-        logger.info(f"UI preparation took {_time.time() - ui_prep_start:.1f}s for {email}")
+        logger.info(f"UI navigation took {_time.time() - ui_nav_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
-        # 4. Stop emulator + auxiliary processes                       ──────
+        # 4. Take snapshot (always attempt, even if UI crashed)        ──────
+        # ------------------------------------------------------------------
+        if not skip_snapshot:
+            snapshot_start = _time.time()
+            self._take_snapshot(automator, email, summary)
+            logger.info(f"Snapshot attempt took {_time.time() - snapshot_start:.1f}s for {email}")
+        else:
+            logger.info(f"Skipping snapshot for {email} as requested (cold boot)")
+
+        # ------------------------------------------------------------------
+        # 5. Stop emulator + auxiliary processes                       ──────
         # ------------------------------------------------------------------
         stop_emulator_start = _time.time()
         display_num: Optional[int] = None
@@ -126,14 +135,14 @@ class EmulatorShutdownManager:
                 logger.info(f"No emulator ID found for cleanup of email={email}")
 
         # ------------------------------------------------------------------
-        # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
+        # 6. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
         # ------------------------------------------------------------------
         cleanup_display_start = _time.time()
         self._cleanup_display_resources(email, display_num, summary)
         logger.info(f"Display resource cleanup took {_time.time() - cleanup_display_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
-        # 6. Final in‑memory cleanups                                   ──────
+        # 7. Final in‑memory cleanups                                   ──────
         # ------------------------------------------------------------------
         cleanup_automator_start = _time.time()
         self._cleanup_automator(email, automator, summary)
@@ -203,32 +212,32 @@ class EmulatorShutdownManager:
 
     # -------------------- UI preparation + snapshot ----------------- #
 
-    def _prepare_emulator_ui(
+    def _navigate_to_library_if_needed(
         self,
         automator,
         email: str,
         preserve_reading_state: bool,
-        skip_snapshot: bool,
         summary: Dict[str, bool],
     ) -> bool:
-        """Navigate to Library (if requested) and take emulator snapshot."""
+        """Navigate to Library if not preserving reading state and driver is available."""
         try:
             driver = automator.driver
             if not driver:
-                return True  # nothing to do
+                logger.info(f"No driver available for {email}, skipping library navigation")
+                return True  # Not an error - we can still take snapshots
             sm = KindleStateMachine(driver)
         except InvalidSessionIdException:
-            logger.warning("Emulator for %s has no valid session ID, skipping UI ops", email)
+            logger.warning("Emulator for %s has no valid session ID, skipping library navigation", email)
             return False
         except Exception as exc:
-            # If UiAutomator crashed, instruct caller to skip UI‑dependent steps.
-            logger.error("UiAutomator2 crashed for %s: %s", email, exc, exc_info=True)
+            # If UiAutomator crashed, we can't navigate but can still snapshot
+            logger.error(
+                "UiAutomator2 crashed for %s during navigation attempt: %s", email, exc, exc_info=True
+            )
             return False
 
         if not preserve_reading_state:
             self._park_in_library(sm, email, summary)
-        if not skip_snapshot:
-            self._take_snapshot(automator, email, summary)
         return True
 
     def _park_in_library(
