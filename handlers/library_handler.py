@@ -761,7 +761,7 @@ class LibraryHandler:
                 )
                 # Store diagnostic information for sync timeout
                 try:
-                    from views.core.ui_helpers import store_page_source
+                    from server.logging_config import store_page_source
 
                     store_page_source(self.driver.page_source, "sync_timeout_failure")
                     logger.warning("Stored page source for sync timeout analysis")
@@ -777,7 +777,7 @@ class LibraryHandler:
             logger.error(f"Error during sync: {e}", exc_info=True)
             # Store diagnostic information for sync exception
             try:
-                from views.core.ui_helpers import store_page_source
+                from server.logging_config import store_page_source
 
                 store_page_source(self.driver.page_source, "sync_exception_failure")
                 logger.error("Stored page source for sync exception analysis", exc_info=True)

@@ -317,7 +317,7 @@ class EmulatorShutdownManager:
             logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!", exc_info=True)
             # Store diagnostic information
             try:
-                from views.core.ui_helpers import store_page_source
+                from server.logging_config import store_page_source
 
                 store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
                 logger.error("Diagnostic page source saved for sync failure", exc_info=True)
