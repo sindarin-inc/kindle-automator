@@ -161,6 +161,7 @@ class TestKindleAPIIntegration:
         shutdown_response = self._make_request("shutdown", method="POST")
         assert shutdown_response.status_code == 200
 
+    @pytest.mark.expensive
     def test_recreate(self):
         """Ensure that recreation/creating a new AVD works"""
         response = self._make_request(
