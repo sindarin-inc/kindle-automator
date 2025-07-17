@@ -165,9 +165,9 @@ class TestKindleAPIIntegration:
         """Ensure that recreation/creating a new AVD works"""
         response = self._make_request(
             "auth",
-            method="POST",
+            method="GET",
             params={
-                "email": "recreate@solreader.com",
+                "user_email": "recreate@solreader.com",
                 "recreate": "1",
             },
         )
@@ -176,6 +176,12 @@ class TestKindleAPIIntegration:
         assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
         assert data["success"] is True, f"Recreation failed: {data}"
         assert data["authenticated"] is False, f"Recreation failed: {data}"
+
+        # Shutdown
+        shutdown_response = self._make_request(
+            "shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
+        )
+        assert shutdown_response.status_code == 200
 
 
 if __name__ == "__main__":
