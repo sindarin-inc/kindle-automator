@@ -76,7 +76,8 @@ class Driver:
                     # Do not continue to regular device search if a specific device was requested
                     # but is not available. This prevents using the wrong device.
                     logger.error(
-                        f"Requested specific device {specific_device_id} was not found or is not ready for email={email}"
+                        f"Requested specific device {specific_device_id} was not found or is not ready for email={email}",
+                        exc_info=True,
                     )
                     return None
 
@@ -1074,7 +1075,8 @@ class Driver:
 
             if not email or not avd_name:
                 logger.error(
-                    f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}"
+                    f"Missing required profile fields: email={email}, avd_name={avd_name}, profile={profile}",
+                    exc_info=True,
                 )
 
             else:

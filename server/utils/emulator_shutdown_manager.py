@@ -225,7 +225,8 @@ class EmulatorShutdownManager:
             if not driver:
                 logger.info(f"No driver available for {email}, skipping library navigation")
                 return True  # Not an error - we can still take snapshots
-            sm = KindleStateMachine(driver)
+            if not automator.state_machine:
+                automator.state_machine = KindleStateMachine(driver)
         except InvalidSessionIdException:
             logger.warning("Emulator for %s has no valid session ID, skipping library navigation", email)
             return False
@@ -237,7 +238,7 @@ class EmulatorShutdownManager:
             return False
 
         if not preserve_reading_state:
-            self._park_in_library(sm, email, summary)
+            self._park_in_library(automator.state_machine, email, summary)
         return True
 
     def _park_in_library(
@@ -264,7 +265,8 @@ class EmulatorShutdownManager:
                     summary["placemark_sync_success"] = sync_success
                 elif was_reading and not state_machine.library_handler:
                     logger.error(
-                        f"User {email} was reading but no library handler available - CANNOT SYNC PLACEMARKS!"
+                        f"User {email} was reading but no library handler available - CANNOT SYNC PLACEMARKS!",
+                        exc_info=True,
                     )
                     summary["placemark_sync_success"] = False
                 time.sleep(1)  # Give Kindle a moment to flush state.
@@ -276,7 +278,8 @@ class EmulatorShutdownManager:
                 )
                 if was_reading:
                     logger.error(
-                        f"CRITICAL: User {email} was reading but failed to reach library - PLACEMARKS NOT SYNCED!"
+                        f"User {email} was reading but failed to reach library - PLACEMARKS NOT SYNCED!",
+                        exc_info=True,
                     )
                     summary["placemark_sync_success"] = False
         except Exception as exc:

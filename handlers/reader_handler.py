@@ -703,7 +703,8 @@ class ReaderHandler:
                                             return False
                                     else:
                                         logger.error(
-                                            f"Cannot reopen book: {book_title} - library_handler not available"
+                                            f"Cannot reopen book: {book_title} - library_handler not available",
+                                            exc_info=True,
                                         )
                                         return False
 

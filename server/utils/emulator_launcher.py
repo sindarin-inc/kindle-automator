@@ -467,7 +467,8 @@ class EmulatorLauncher:
                                 users = {}
                     except (json.JSONDecodeError, Exception) as e:
                         logger.error(
-                            f"Error reading {users_file_path}, NOT updating file to prevent data loss: {e}"
+                            f"Error reading {users_file_path}, NOT updating file to prevent data loss: {e}",
+                            exc_info=True,
                         )
                         json_error = True
                 else:
@@ -1925,7 +1926,8 @@ class EmulatorLauncher:
                 sock.close()
                 if result != 0:
                     logger.error(
-                        f"SNAPSHOT FAILURE: Console port {console_port} is not available for {email}"
+                        f"SNAPSHOT FAILURE: Console port {console_port} is not available for {email}",
+                        exc_info=True,
                     )
                     return False
             except Exception as sock_e:

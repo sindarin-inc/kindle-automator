@@ -128,7 +128,8 @@ class EmulatorBatchConfigResource(Resource):
 
                     if final_state != AppState.LIBRARY:
                         logger.error(
-                            f"{RED}Failed to navigate to library for {email}, ended in state: {final_state.name}{RESET}"
+                            f"{RED}Failed to navigate to library for {email}, ended in state: {final_state.name}{RESET}",
+                            exc_info=True,
                         )
                         result["status"] = "failed"
                         result["error"] = f"Failed to navigate to library, ended in state: {final_state.name}"

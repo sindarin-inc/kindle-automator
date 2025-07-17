@@ -172,7 +172,6 @@ class AVDProfileManager:
             from server.utils.appium_driver import AppiumDriver
             from server.utils.request_utils import email_override
             from server.utils.vnc_instance_manager import VNCInstanceManager
-            from views.state_machine import KindleStateMachine
 
             # Use email_override to ensure all operations use seed@clone.local
             with email_override(email):  # email is seed@clone.local here
