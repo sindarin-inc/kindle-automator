@@ -61,7 +61,7 @@ class PostBootRandomizer:
 
                 time.sleep(wait_interval)
             else:
-                logger.error(f"Device {emulator_id} not online after {max_wait}s")
+                logger.error(f"Device {emulator_id} not online after {max_wait}s", exc_info=True)
                 return False
 
             # First, ensure we have root access
@@ -73,7 +73,7 @@ class PostBootRandomizer:
             ]
             root_result = subprocess.run(root_cmd, capture_output=True, text=True, timeout=5)
             if root_result.returncode != 0:
-                logger.error(f"Failed to get root access: {root_result.stderr}")
+                logger.error(f"Failed to get root access: {root_result.stderr}", exc_info=True)
                 return False
 
             # Method 1: Try using settings command (Android 8+)
@@ -131,7 +131,7 @@ class PostBootRandomizer:
 
             db_result = subprocess.run(db_cmd, capture_output=True, text=True, timeout=10)
             if db_result.returncode != 0:
-                logger.error(f"Failed to update database: {db_result.stderr}")
+                logger.error(f"Failed to update database: {db_result.stderr}", exc_info=True)
                 return False
 
             logger.info(f"Successfully updated Android ID in database")
@@ -180,7 +180,7 @@ class PostBootRandomizer:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
 
                     if result.returncode != 0:
-                        logger.error(f"Failed to set property {prop_name}: {result.stderr}")
+                        logger.error(f"Failed to set property {prop_name}: {result.stderr}", exc_info=True)
                         success = False
                     else:
                         # Verify it was set
@@ -238,7 +238,7 @@ class PostBootRandomizer:
 
             result = subprocess.run(clear_cmd, capture_output=True, text=True, timeout=10)
             if result.returncode != 0:
-                logger.error(f"Failed to clear Google Play Services data: {result.stderr}")
+                logger.error(f"Failed to clear Google Play Services data: {result.stderr}", exc_info=True)
                 return False
 
             logger.info("Successfully cleared Google Play Services data")
@@ -266,7 +266,7 @@ class PostBootRandomizer:
 
         # Randomize Android ID
         if not self.randomize_android_id(emulator_id, android_id):
-            logger.error("Failed to randomize Android ID")
+            logger.error("Failed to randomize Android ID", exc_info=True)
             success = False
 
         # Set system properties if provided

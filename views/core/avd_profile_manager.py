@@ -166,7 +166,6 @@ class AVDProfileManager:
             from server.utils.appium_driver import AppiumDriver
             from server.utils.request_utils import email_override
             from server.utils.vnc_instance_manager import VNCInstanceManager
-            from views.state_machine import KindleStateMachine
 
             # Use email_override to ensure all operations use seed@clone.local
             with email_override(email):  # email is seed@clone.local here
@@ -870,7 +869,7 @@ class AVDProfileManager:
         if "avd_name" in profile_entry:
             avd_name = profile_entry["avd_name"]
         else:
-            logger.error(f"Could not determine AVD name from profile entry for {email}")
+            logger.error(f"Could not determine AVD name from profile entry for {email}", exc_info=True)
             return None
 
         # Build profile information
@@ -1431,7 +1430,7 @@ class AVDProfileManager:
             logger.info(f"Stopping emulator {emulator_id} to start a fresh one")
             # Stop only this specific emulator, not others
             if not self.stop_emulator(emulator_id):
-                logger.error(f"Failed to stop emulator {emulator_id} for profile {email}")
+                logger.error(f"Failed to stop emulator {emulator_id} for profile {email}", exc_info=True)
                 # We'll try to continue anyway
             # Clear the is_running flag so we'll start a new emulator
             is_running = False
@@ -1482,7 +1481,7 @@ class AVDProfileManager:
                     # Fall back to normal AVD creation
                     success, result = self.create_new_avd(email)
                     if not success:
-                        logger.error(f"Failed to create AVD: {result}")
+                        logger.error(f"Failed to create AVD: {result}", exc_info=True)
                         return False, f"Failed to create AVD for {email}: {result}"
                     avd_name = result
             else:
@@ -1495,7 +1494,7 @@ class AVDProfileManager:
                     logger.info("Seed clone not ready, using normal AVD creation")
                 success, result = self.create_new_avd(email)
                 if not success:
-                    logger.error(f"Failed to create AVD: {result}")
+                    logger.error(f"Failed to create AVD: {result}", exc_info=True)
                     return False, f"Failed to create AVD for {email}: {result}"
                 avd_name = result
 
@@ -1513,7 +1512,9 @@ class AVDProfileManager:
         else:
             # Failed to start emulator, but still update the profile status for tracking
             self._save_profile_status(email, avd_name)
-            logger.error(f"Failed to start emulator for profile {email}, but updated profile tracking")
+            logger.error(
+                f"Failed to start emulator for profile {email}, but updated profile tracking", exc_info=True
+            )
             return False, f"Failed to start emulator for profile {email}"
 
     def recreate_profile_avd(
@@ -1569,7 +1570,7 @@ class AVDProfileManager:
                 logger.info(f"Deleting user AVD: {avd_name}")
                 success, msg = self.avd_creator.delete_avd(email)
                 if not success:
-                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}")
+                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}", exc_info=True)
                     raise Exception(f"Failed to delete user AVD: {msg}")
 
             # Delete the seed clone AVD (only if recreate_seed=True)
@@ -1579,7 +1580,7 @@ class AVDProfileManager:
                 logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
                 success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
                 if not success:
-                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}")
+                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}", exc_info=True)
                     raise Exception(f"Failed to delete seed clone AVD: {msg}")
                 elif "does not exist" in msg:
                     logger.info(f"Seed clone AVD did not exist, proceeding with recreation")

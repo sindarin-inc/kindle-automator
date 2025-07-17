@@ -125,7 +125,7 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                                 logger.error(f"✗ Failed to initialize driver for {email}", exc_info=True)
                                 failed_restarts.append(email)
                         else:
-                            logger.error(f"✗ Failed to start emulator for {email}: {message}")
+                            logger.error(f"✗ Failed to start emulator for {email}: {message}", exc_info=True)
                             failed_restarts.append(email)
 
                 except Exception as e:

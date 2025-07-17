@@ -262,11 +262,12 @@ class EmulatorManager:
                             return True
 
                 logger.error(
-                    f"Timeout waiting for emulator to boot for {email} after 45 seconds and {check_count} checks"
+                    f"Timeout waiting for emulator to boot for {email} after 45 seconds and {check_count} checks",
+                    exc_info=True,
                 )
                 return False
             else:
-                logger.error(f"Failed to launch emulator")
+                logger.error(f"Failed to launch emulator", exc_info=True)
                 return False
 
         except Exception as e:

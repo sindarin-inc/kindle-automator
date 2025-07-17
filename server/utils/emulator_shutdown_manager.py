@@ -97,20 +97,29 @@ class EmulatorShutdownManager:
             return self._handle_orphaned_emulator(email, summary)
 
         # ------------------------------------------------------------------
-        # 3. UI preparation (navigate + snapshot)                      ──────
+        # 3. UI navigation (navigate to library if needed)             ──────
         # ------------------------------------------------------------------
-        ui_prep_start = _time.time()
-        ui_crashed = not self._prepare_emulator_ui(
+        ui_nav_start = _time.time()
+        ui_crashed = not self._navigate_to_library_if_needed(
             automator,
             email,
             preserve_reading_state,
-            skip_snapshot,
             summary,
         )
-        logger.info(f"UI preparation took {_time.time() - ui_prep_start:.1f}s for {email}")
+        logger.info(f"UI navigation took {_time.time() - ui_nav_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
-        # 4. Stop emulator + auxiliary processes                       ──────
+        # 4. Take snapshot (always attempt, even if UI crashed)        ──────
+        # ------------------------------------------------------------------
+        if not skip_snapshot:
+            snapshot_start = _time.time()
+            self._take_snapshot(automator, email, summary)
+            logger.info(f"Snapshot attempt took {_time.time() - snapshot_start:.1f}s for {email}")
+        else:
+            logger.info(f"Skipping snapshot for {email} as requested (cold boot)")
+
+        # ------------------------------------------------------------------
+        # 5. Stop emulator + auxiliary processes                       ──────
         # ------------------------------------------------------------------
         stop_emulator_start = _time.time()
         display_num: Optional[int] = None
@@ -126,14 +135,14 @@ class EmulatorShutdownManager:
                 logger.info(f"No emulator ID found for cleanup of email={email}")
 
         # ------------------------------------------------------------------
-        # 5. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
+        # 6. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
         # ------------------------------------------------------------------
         cleanup_display_start = _time.time()
         self._cleanup_display_resources(email, display_num, summary)
         logger.info(f"Display resource cleanup took {_time.time() - cleanup_display_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
-        # 6. Final in‑memory cleanups                                   ──────
+        # 7. Final in‑memory cleanups                                   ──────
         # ------------------------------------------------------------------
         cleanup_automator_start = _time.time()
         self._cleanup_automator(email, automator, summary)
@@ -203,32 +212,33 @@ class EmulatorShutdownManager:
 
     # -------------------- UI preparation + snapshot ----------------- #
 
-    def _prepare_emulator_ui(
+    def _navigate_to_library_if_needed(
         self,
         automator,
         email: str,
         preserve_reading_state: bool,
-        skip_snapshot: bool,
         summary: Dict[str, bool],
     ) -> bool:
-        """Navigate to Library (if requested) and take emulator snapshot."""
+        """Navigate to Library if not preserving reading state and driver is available."""
         try:
             driver = automator.driver
             if not driver:
-                return True  # nothing to do
-            sm = KindleStateMachine(driver)
+                logger.info(f"No driver available for {email}, skipping library navigation")
+                return True  # Not an error - we can still take snapshots
+            if not automator.state_machine:
+                automator.state_machine = KindleStateMachine(driver)
         except InvalidSessionIdException:
-            logger.warning("Emulator for %s has no valid session ID, skipping UI ops", email)
+            logger.warning("Emulator for %s has no valid session ID, skipping library navigation", email)
             return False
         except Exception as exc:
-            # If UiAutomator crashed, instruct caller to skip UI‑dependent steps.
-            logger.error("UiAutomator2 crashed for %s: %s", email, exc, exc_info=True)
+            # If UiAutomator crashed, we can't navigate but can still snapshot
+            logger.error(
+                "UiAutomator2 crashed for %s during navigation attempt: %s", email, exc, exc_info=True
+            )
             return False
 
         if not preserve_reading_state:
-            self._park_in_library(sm, email, summary)
-        if not skip_snapshot:
-            self._take_snapshot(automator, email, summary)
+            self._park_in_library(automator.state_machine, email, summary)
         return True
 
     def _park_in_library(
@@ -255,7 +265,8 @@ class EmulatorShutdownManager:
                     summary["placemark_sync_success"] = sync_success
                 elif was_reading and not state_machine.library_handler:
                     logger.error(
-                        f"User {email} was reading but no library handler available - CANNOT SYNC PLACEMARKS!"
+                        f"User {email} was reading but no library handler available - CANNOT SYNC PLACEMARKS!",
+                        exc_info=True,
                     )
                     summary["placemark_sync_success"] = False
                 time.sleep(1)  # Give Kindle a moment to flush state.
@@ -267,7 +278,8 @@ class EmulatorShutdownManager:
                 )
                 if was_reading:
                     logger.error(
-                        f"CRITICAL: User {email} was reading but failed to reach library - PLACEMARKS NOT SYNCED!"
+                        f"User {email} was reading but failed to reach library - PLACEMARKS NOT SYNCED!",
+                        exc_info=True,
                     )
                     summary["placemark_sync_success"] = False
         except Exception as exc:
@@ -295,7 +307,9 @@ class EmulatorShutdownManager:
 
         # Navigate to More tab
         if not lh.navigate_to_more_settings():
-            logger.error("Failed to navigate to More tab for sync - placemarks may not be synced!")
+            logger.error(
+                "Failed to navigate to More tab for sync - placemarks may not be synced!", exc_info=True
+            )
             return False
 
         # Attempt sync
@@ -303,13 +317,13 @@ class EmulatorShutdownManager:
         if sync_success:
             logger.info("Successfully synced reading progress/placemarks before shutdown")
         else:
-            logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!")
+            logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!", exc_info=True)
             # Store diagnostic information
             try:
-                from views.core.ui_helpers import store_page_source
+                from server.logging_config import store_page_source
 
                 store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
-                logger.error("Diagnostic page source saved for sync failure")
+                logger.error("Diagnostic page source saved for sync failure", exc_info=True)
             except Exception as e:
                 logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
 
@@ -325,7 +339,9 @@ class EmulatorShutdownManager:
         launcher = automator.emulator_manager.emulator_launcher
         emulator_id, _ = launcher.get_running_emulator(email)
         if not emulator_id:
-            logger.error(f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot")
+            logger.error(
+                f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot", exc_info=True
+            )
             return
         logger.info(f"Taking ADB snapshot of emulator {emulator_id} for {email}")
         snapshot_start_time = time.time()

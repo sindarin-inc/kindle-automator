@@ -81,7 +81,7 @@ class KindleOCR:
 
             if not temp_creds_path and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
                 error_msg = "No Google credentials found. Please set GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 or GOOGLE_APPLICATION_CREDENTIALS"
-                logger.error(error_msg)
+                logger.error(error_msg, exc_info=True)
                 return None, error_msg
 
             # Initialize the Document AI client
@@ -131,7 +131,7 @@ class KindleOCR:
                         return result.document.text.strip(), None
                     else:
                         error_msg = "No text found in Google Document AI response"
-                        logger.error(error_msg)
+                        logger.error(error_msg, exc_info=True)
                         return None, error_msg
                 except concurrent.futures.TimeoutError:
                     future.cancel()
@@ -185,7 +185,7 @@ class KindleOCR:
                 error_msg = (
                     "MISTRAL_API_KEY not found in environment variables. Please add it to your .env file."
                 )
-                logger.error(error_msg)
+                logger.error(error_msg, exc_info=True)
                 return None, error_msg
 
             # Initialize Mistral client
@@ -209,7 +209,9 @@ class KindleOCR:
                     page = ocr_response.pages[0]
                     return page.markdown
                 else:
-                    logger.error(f"No MistralAI OCR response or no pages found: {ocr_response}")
+                    logger.error(
+                        f"No MistralAI OCR response or no pages found: {ocr_response}", exc_info=True
+                    )
                 return None
 
             # Execute with timeout
@@ -227,7 +229,7 @@ class KindleOCR:
                             return ocr_text, None
                         else:
                             error_msg = "No MistralAI OCR response or no pages found"
-                            logger.error(error_msg)
+                            logger.error(error_msg, exc_info=True)
                             return None, error_msg
 
                     except concurrent.futures.TimeoutError:

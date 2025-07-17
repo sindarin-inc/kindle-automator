@@ -380,7 +380,7 @@ class EmulatorLauncher:
                 return display
 
             # No instance could be assigned
-            logger.error(f"Failed to assign display for {email}")
+            logger.error(f"Failed to assign display for {email}", exc_info=True)
             return None
         except Exception as e:
             logger.error(f"Error assigning display to profile {email}: {e}", exc_info=True)
@@ -404,13 +404,24 @@ class EmulatorLauncher:
 
             # First check if this email already has an entry in profiles_index
             if os.path.exists(users_file_path):
-                with open(users_file_path, "r") as f:
-                    users = json.load(f)
+                try:
+                    with open(users_file_path, "r") as f:
+                        content = f.read().strip()
+                        if content:  # Only parse if file has content
+                            users = json.loads(content)
+                        else:
+                            users = {}
 
-                if email in users:
-                    user_entry = users.get(email)
-                    avd_name = user_entry.get("avd_name")
-                    return avd_name
+                    if email in users:
+                        user_entry = users.get(email)
+                        avd_name = user_entry.get("avd_name")
+                        return avd_name
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON in {users_file_path}, treating as empty")
+                    users = {}
+                except Exception as e:
+                    logger.warning(f"Error reading {users_file_path}: {e}")
+                    users = {}
 
             # No existing entry, detect email format and create appropriate AVD name
             is_normalized = (
@@ -442,18 +453,38 @@ class EmulatorLauncher:
                 os.makedirs(profiles_dir, exist_ok=True)
 
                 # Create or load profiles_index
+                users = None
+                json_error = False
+
                 if os.path.exists(users_file_path):
-                    with open(users_file_path, "r") as f:
-                        users = json.load(f)
+                    try:
+                        with open(users_file_path, "r") as f:
+                            content = f.read().strip()
+                            if content:
+                                users = json.loads(content)
+                            else:
+                                # Empty file - safe to treat as empty dict
+                                users = {}
+                    except (json.JSONDecodeError, Exception) as e:
+                        logger.error(
+                            f"Error reading {users_file_path}, NOT updating file to prevent data loss: {e}",
+                            exc_info=True,
+                        )
+                        json_error = True
                 else:
+                    # File doesn't exist - safe to create new
                     users = {}
 
-                # Add or update the entry for this email
-                users[email] = {"avd_name": avd_name}
+                # Only update file if we successfully loaded it or it's new
+                if not json_error and users is not None:
+                    # Add or update the entry for this email
+                    users[email] = {"avd_name": avd_name}
 
-                # Save to file
-                with open(users_file_path, "w") as f:
-                    json.dump(users, f, indent=2)
+                    # Save to file
+                    with open(users_file_path, "w") as f:
+                        json.dump(users, f, indent=2)
+                else:
+                    logger.warning(f"Skipping users.json update due to read error - returning AVD name only")
             except Exception as e:
                 logger.warning(f"Error updating users.json: {e}", exc_info=True)
 
@@ -486,7 +517,7 @@ class EmulatorLauncher:
 
         # If still no email, we can't determine the AVD name
         if not email:
-            logger.error("No email available for VNC setup - cannot determine AVD name")
+            logger.error("No email available for VNC setup - cannot determine AVD name", exc_info=True)
             return False
 
         avd_name = self._extract_avd_name_from_email(email)
@@ -527,7 +558,7 @@ class EmulatorLauncher:
                     ["pgrep", "-f", f"Xvfb :{display_num}"], capture_output=True, text=True
                 )
                 if xvfb_check.returncode != 0:
-                    logger.error(f"Failed to start Xvfb for display :{display_num}")
+                    logger.error(f"Failed to start Xvfb for display :{display_num}", exc_info=True)
                     return False
                 else:
                     logger.info(f"Started Xvfb for display :{display_num}")
@@ -695,7 +726,7 @@ class EmulatorLauncher:
             config_path = os.path.join(avd_path, "config.ini")
 
             if not os.path.exists(config_path):
-                logger.error(f"Config file not found: {config_path}")
+                logger.error(f"Config file not found: {config_path}", exc_info=True)
                 return False
 
             # Read current config
@@ -752,7 +783,7 @@ class EmulatorLauncher:
             avd_name = self._extract_avd_name_from_email(email)
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
             if not os.path.exists(avd_path):
-                logger.error(f"AVD {avd_name} does not exist at {avd_path}")
+                logger.error(f"AVD {avd_name} does not exist at {avd_path}", exc_info=True)
                 return False, None, None
 
             # Ensure AVD has sufficient RAM before launching
@@ -815,7 +846,7 @@ class EmulatorLauncher:
                         )
                         return False, None, None
                 else:
-                    logger.error(f"Failed to assign display for {email} - AVD {avd_name}")
+                    logger.error(f"Failed to assign display for {email} - AVD {avd_name}", exc_info=True)
                     return False, None, None
 
             # Calculate emulator ID based on port
@@ -1065,21 +1096,21 @@ class EmulatorLauncher:
                     if stderr_content:
                         logger.error(f"Emulator stderr: {stderr_content}")
                 exit_code = process.returncode
-                logger.error(f"Emulator process exited immediately with code {exit_code}")
-                logger.error(f"Check logs at {stdout_log} and {stderr_log}")
+                logger.error(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
+                logger.error(f"Check logs at {stdout_log} and {stderr_log}", exc_info=True)
                 # Read and log stdout
                 stdout_content = ""
                 try:
                     with open(stdout_log, "r") as f:
                         stdout_content = f.read()
-                    logger.error(f"Emulator stdout ({stdout_log}):\n{stdout_content}")
+                    logger.error(f"Emulator stdout ({stdout_log}):\n{stdout_content}", exc_info=True)
                 except Exception as e:
                     logger.warning(f"Failed to read emulator stdout log {stdout_log}: {e}", exc_info=True)
                 # Read and log stderr
                 try:
                     with open(stderr_log, "r") as f:
                         stderr_content = f.read()
-                    logger.error(f"Emulator stderr ({stderr_log}):\n{stderr_content}")
+                    logger.error(f"Emulator stderr ({stderr_log}):\n{stderr_content}", exc_info=True)
                 except Exception as e:
                     logger.warning(f"Failed to read emulator stderr log {stderr_log}: {e}", exc_info=True)
 
@@ -1876,14 +1907,14 @@ class EmulatorLauncher:
                     emulator_id, _ = self.running_emulators[avd_name]
                     logger.info(f"Using cached emulator ID {emulator_id} for snapshot")
                 else:
-                    logger.error(f"SNAPSHOT FAILURE: No running emulator found for {email}")
+                    logger.error(f"SNAPSHOT FAILURE: No running emulator found for {email}", exc_info=True)
                     return False
 
             # Use avdmanager to save the snapshot
             # First, get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
             if not avd_name:
-                logger.error(f"SNAPSHOT FAILURE: Could not determine AVD name for {email}")
+                logger.error(f"SNAPSHOT FAILURE: Could not determine AVD name for {email}", exc_info=True)
                 return False
 
             # Method 1: Try using ADB emu command first (more reliable than telnet)
@@ -1943,7 +1974,8 @@ class EmulatorLauncher:
                 sock.close()
                 if result != 0:
                     logger.error(
-                        f"SNAPSHOT FAILURE: Console port {console_port} is not available for {email}"
+                        f"SNAPSHOT FAILURE: Console port {console_port} is not available for {email}",
+                        exc_info=True,
                     )
                     return False
             except Exception as sock_e:
@@ -2005,7 +2037,7 @@ class EmulatorLauncher:
             # Get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
             if not avd_name:
-                logger.error(f"Could not determine AVD name for {email}")
+                logger.error(f"Could not determine AVD name for {email}", exc_info=True)
                 return False
 
             # Check if the snapshot exists in the AVD directory
@@ -2054,7 +2086,7 @@ class EmulatorLauncher:
             # Get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
             if not avd_name:
-                logger.error(f"Could not determine AVD name for {email}")
+                logger.error(f"Could not determine AVD name for {email}", exc_info=True)
                 return []
 
             # List snapshots in the AVD directory
@@ -2094,7 +2126,7 @@ class EmulatorLauncher:
             # Get the AVD name for this email
             avd_name = self._extract_avd_name_from_email(email)
             if not avd_name:
-                logger.error(f"Could not determine AVD name for {email}")
+                logger.error(f"Could not determine AVD name for {email}", exc_info=True)
                 return 0
 
             # Get the AVD identifier for snapshot naming

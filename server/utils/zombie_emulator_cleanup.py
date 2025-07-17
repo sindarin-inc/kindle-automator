@@ -166,7 +166,7 @@ class ZombieEmulatorCleaner:
             logger.info(f"Successfully cleaned up zombie emulator for AVD {avd_name}")
             return True
         else:
-            logger.error(f"Failed to clean up zombie emulator for AVD {avd_name}")
+            logger.error(f"Failed to clean up zombie emulator for AVD {avd_name}", exc_info=True)
             return False
 
     def clean_all_zombies_on_port(self, port: int) -> int:

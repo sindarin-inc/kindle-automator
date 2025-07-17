@@ -69,7 +69,9 @@ class LogoutResource(Resource):
                 # Update state after navigation
                 current_state = automator.state_machine.update_current_state()
                 if current_state != AppState.MORE_SETTINGS:
-                    logger.error(f"Failed to reach MORE_SETTINGS state, current state: {current_state}")
+                    logger.error(
+                        f"Failed to reach MORE_SETTINGS state, current state: {current_state}", exc_info=True
+                    )
                     return {
                         "error": f"Failed to reach MORE settings, current state: {current_state.name}"
                     }, 500
@@ -137,7 +139,7 @@ class LogoutResource(Resource):
                     logger.error(f"Error scrolling to find Sign Out button: {e}", exc_info=True)
 
             if not sign_out_clicked:
-                logger.error("Failed to find or click Sign Out button")
+                logger.error("Failed to find or click Sign Out button", exc_info=True)
                 # Store diagnostics
                 try:
                     page_source = automator.driver.page_source
@@ -289,7 +291,7 @@ class LogoutResource(Resource):
 
         except Exception as e:
             logger.error(f"Error during logout: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
             # Store diagnostics
             try:
                 page_source = automator.driver.page_source

@@ -153,7 +153,7 @@ class ColdStorageManager:
 
                 # Double-check it's stopped
                 if emulator_manager.is_emulator_running(email):
-                    logger.error(f"Emulator {emulator_id} still running after stop attempt")
+                    logger.error(f"Emulator {emulator_id} still running after stop attempt", exc_info=True)
                     return False, {"error": f"Emulator {emulator_id} is still running after stop attempt"}
 
                 logger.info(f"Successfully stopped emulator {emulator_id} for {email}")
@@ -249,10 +249,12 @@ class ColdStorageManager:
 
                 # Verify deletion
                 if os.path.exists(avd_path):
-                    logger.error(f"AVD directory still exists after deletion attempt: {avd_path}")
+                    logger.error(
+                        f"AVD directory still exists after deletion attempt: {avd_path}", exc_info=True
+                    )
                     raise Exception(f"Failed to delete AVD directory: {avd_path}")
                 if os.path.exists(ini_path):
-                    logger.error(f"INI file still exists after deletion attempt: {ini_path}")
+                    logger.error(f"INI file still exists after deletion attempt: {ini_path}", exc_info=True)
                     raise Exception(f"Failed to delete INI file: {ini_path}")
 
                 logger.info(f"Successfully deleted local AVD files for {email}")

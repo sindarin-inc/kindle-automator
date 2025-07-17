@@ -76,7 +76,9 @@ class AVDCreator:
             logger.info(f"Using configured system image: {self.SYSTEM_IMAGE}")
             return self.SYSTEM_IMAGE
         else:
-            logger.error(f"Configured system image {self.SYSTEM_IMAGE} not found in available images")
+            logger.error(
+                f"Configured system image {self.SYSTEM_IMAGE} not found in available images", exc_info=True
+            )
             return None
 
     def _get_system_image_for_email(self, email: str, available_images: List[str]) -> Optional[str]:
@@ -123,7 +125,7 @@ class AVDCreator:
                 return self.SYSTEM_IMAGE
 
         # No compatible image found
-        logger.error(f"No compatible system image found for {email}")
+        logger.error(f"No compatible system image found for {email}", exc_info=True)
         return None
 
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
@@ -189,10 +191,12 @@ class AVDCreator:
                     )
 
                     if install_result.returncode != 0:
-                        logger.error(f"Failed to install system image: {install_result.stderr}")
+                        logger.error(
+                            f"Failed to install system image: {install_result.stderr}", exc_info=True
+                        )
                         return False, f"Failed to install system image: {install_result.stderr}"
                 else:
-                    logger.error(f"No compatible system image found for {email}")
+                    logger.error(f"No compatible system image found for {email}", exc_info=True)
                     return False, f"No compatible system image found in available images"
 
             except Exception as e:
@@ -235,9 +239,7 @@ class AVDCreator:
                 logger.warning(f"AVD creation stderr: {process.stderr}")
 
             if process.returncode != 0:
-                logger.error(f"Failed to create AVD with return code {process.returncode}")
-                logger.error(f"stdout: {process.stdout}")
-                logger.error(f"stderr: {process.stderr}")
+                logger.error(f"Failed to create AVD: {process.stderr}", exc_info=True)
                 return False, f"Failed to create AVD: {process.stderr}"
 
             # Configure AVD settings for better performance
@@ -264,7 +266,7 @@ class AVDCreator:
         """Configure AVD settings for better performance."""
         config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
         if not os.path.exists(config_path):
-            logger.error(f"AVD config file not found at {config_path}")
+            logger.error(f"AVD config file not found at {config_path}", exc_info=True)
             return
 
         try:
@@ -464,7 +466,7 @@ class AVDCreator:
                     logger.info(f"AVD {avd_name} does not exist, nothing to delete")
                     return True, f"AVD {avd_name} does not exist, nothing to delete"
                 else:
-                    logger.error(f"Failed to delete AVD: {result.stderr}")
+                    logger.error(f"Failed to delete AVD: {result.stderr}", exc_info=True)
                     return False, f"Failed to delete AVD: {result.stderr}"
 
         except Exception as e:
@@ -569,7 +571,7 @@ class AVDCreator:
             result = subprocess.run(move_cmd, capture_output=True, text=True, env=env)
 
             if result.returncode != 0:
-                logger.error(f"Failed to move AVD: {result.stderr}")
+                logger.error(f"Failed to move AVD: {result.stderr}", exc_info=True)
                 # Clean up backup before failing
                 if os.path.exists(temp_backup_path):
                     shutil.rmtree(temp_backup_path)

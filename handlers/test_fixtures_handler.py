@@ -47,7 +47,7 @@ class TestFixturesHandler:
             if self.library_handler.navigate_to_library():
                 self._capture_view("library")
             else:
-                logger.error("Failed to navigate to Library view")
+                logger.error("Failed to navigate to Library view", exc_info=True)
 
             # Step 3: Open a book and capture reading views
             logger.info("Opening book...")
@@ -64,7 +64,7 @@ class TestFixturesHandler:
                 time.sleep(1)
                 self._capture_view("reading_with_toolbar")
             else:
-                logger.error("Failed to open book")
+                logger.error("Failed to open book", exc_info=True)
 
             # Step 4: Force sign out and capture auth view
             logger.info("Capturing auth view...")

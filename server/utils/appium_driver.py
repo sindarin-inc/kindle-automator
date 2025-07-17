@@ -71,7 +71,7 @@ class AppiumDriver:
         # Get instance for this profile
         instance = self.vnc_manager.get_instance_for_profile(email)
         if not instance:
-            logger.error(f"Could not start appium, no VNC instance found for profile {email}")
+            logger.error(f"Could not start appium, no VNC instance found for profile {email}", exc_info=True)
             return False
 
         # Check if already running - verify with actual health check
@@ -171,7 +171,7 @@ class AppiumDriver:
                     retry_delay *= 2
 
             # Failed after all retries
-            logger.error(f"Appium failed to start correctly on port {port}")
+            logger.error(f"Appium failed to start correctly on port {port}", exc_info=True)
             self.stop_appium_for_profile(email)
             return False
 
@@ -410,6 +410,8 @@ class AppiumDriver:
                 # Remove the PID file
                 os.remove(pid_file)
                 logger.info(f"Killed existing {name} process using PID {pid}")
+            except ProcessLookupError:
+                logger.info(f"Process {pid} not found, skipping")
             except Exception as e:
                 logger.warning(f"Error killing {name} process by PID: {e}", exc_info=True)
         else:

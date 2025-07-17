@@ -99,7 +99,7 @@ def ensure_user_profile_loaded(f):
         # Use the already imported request object from the global scope
 
         if not hasattr(app, "config") or "server_instance" not in app.config:
-            logger.error("Server instance not available in app.config")
+            logger.error("Server instance not available in app.config", exc_info=True)
             return jsonify({"error": "Server configuration error"}), 500
 
         server = app.config["server_instance"]
@@ -118,7 +118,7 @@ def ensure_user_profile_loaded(f):
 
             # Verify it was added correctly
             if sindarin_email not in server.profile_manager.profiles_index:
-                logger.error(f"Failed to register {sindarin_email} in profiles_index")
+                logger.error(f"Failed to register {sindarin_email} in profiles_index", exc_info=True)
 
         # Now check if this profile exists by looking for an AVD
         avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
@@ -143,7 +143,9 @@ def ensure_user_profile_loaded(f):
                     server.profile_manager.set_user_field(sindarin_email, "cold_storage_date", None)
                     logger.info(f"Successfully restored profile {sindarin_email} from cold storage")
                 else:
-                    logger.error(f"Failed to restore profile {sindarin_email} from cold storage")
+                    logger.error(
+                        f"Failed to restore profile {sindarin_email} from cold storage", exc_info=True
+                    )
                     return {
                         "error": "Failed to restore profile from cold storage",
                         "message": f"Could not restore AVD for {sindarin_email} from cold storage",
@@ -212,7 +214,7 @@ def ensure_user_profile_loaded(f):
         if not vnc_instance:
             vnc_instance = vnc_manager.assign_instance_to_profile(sindarin_email)
             if not vnc_instance:
-                logger.error(f"Failed to assign VNC instance for {sindarin_email}")
+                logger.error(f"Failed to assign VNC instance for {sindarin_email}", exc_info=True)
                 return {
                     "error": f"Failed to create instance tracking for {sindarin_email}",
                     "message": "Could not initialize instance tracking",
@@ -277,7 +279,7 @@ def ensure_user_profile_loaded(f):
         success, message = server.switch_profile(sindarin_email, force_new_emulator=force_new_emulator)
 
         if not success:
-            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}")
+            logger.error(f"Failed to switch to profile for {sindarin_email}: {message}", exc_info=True)
             return {
                 "error": f"Failed to load profile: {message}",
                 "message": "There was an error loading this user profile",
@@ -291,7 +293,7 @@ def ensure_user_profile_loaded(f):
             automator = server.initialize_automator(sindarin_email)
 
             if not automator:
-                logger.error(f"Failed to initialize automator for {sindarin_email}")
+                logger.error(f"Failed to initialize automator for {sindarin_email}", exc_info=True)
                 return {
                     "error": f"Failed to initialize automator for {sindarin_email}",
                     "message": "Could not create automator instance",
@@ -300,7 +302,7 @@ def ensure_user_profile_loaded(f):
             # Try initializing the driver if needed
             if not automator.driver:
                 if not automator.initialize_driver():
-                    logger.error(f"Failed to initialize driver for {sindarin_email}")
+                    logger.error(f"Failed to initialize driver for {sindarin_email}", exc_info=True)
                     return {
                         "error": f"Failed to initialize driver for {sindarin_email}",
                         "message": "The device could not be connected",

@@ -73,7 +73,7 @@ class KindleAutomator:
         """Initialize the Appium driver and Kindle app."""
         # Check if we're already in initialization to prevent infinite recursion
         if hasattr(self, "_initializing_driver") and self._initializing_driver:
-            logger.error("Already initializing driver, avoiding infinite recursion")
+            logger.error("Already initializing driver, avoiding infinite recursion", exc_info=True)
             return False
 
         self._initializing_driver = True
@@ -83,12 +83,12 @@ class KindleAutomator:
             # Set the automator reference in the driver
             driver.automator = self
             if not driver.initialize():
-                logger.error("Failed to initialize driver")
+                logger.error("Failed to initialize driver", exc_info=True)
                 return False
 
             self.driver = driver.get_appium_driver_instance()
             if not self.driver:
-                logger.error("Failed to get Appium driver instance")
+                logger.error("Failed to get Appium driver instance", exc_info=True)
                 return False
 
             # Store reference to the Driver instance for cleanup
@@ -119,15 +119,12 @@ class KindleAutomator:
         except Exception as e:
             logger.warning(f"Could not verify device ID from VNC instance manager: {e}")
 
-        # Initialize state machine without credentials or captcha
+        # Initialize state machine
         self.state_machine = KindleStateMachine(self.driver)
 
         # Ensure the view_inspector has the device_id directly
         if self.device_id and hasattr(self.state_machine, "view_inspector"):
             self.state_machine.view_inspector.device_id = self.device_id
-
-        # The profile_manager reference is set on the automator instance
-        # The reader_handler will access it via driver.automator.profile_manager
 
         # Verify app is in foreground - sometimes it quits after driver connects
         try:
@@ -267,7 +264,8 @@ class KindleAutomator:
                                             return True
                                     # If handler failed, reinitialize
                                     logger.error(
-                                        "Failed to handle app not responding state, reinitializing driver"
+                                        "Failed to handle app not responding state, reinitializing driver",
+                                        exc_info=True,
                                     )
                                     self.cleanup()
                                     return self.initialize_driver()
@@ -334,7 +332,7 @@ class KindleAutomator:
                 if self.initialize_driver():
                     logger.info("Successfully initialized driver for app restart")
                 else:
-                    logger.error("Failed to initialize driver for app restart")
+                    logger.error("Failed to initialize driver for app restart", exc_info=True)
                     return False
 
             # Force stop the app more reliably with ADB command

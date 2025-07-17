@@ -132,7 +132,10 @@ class NavigationResourceHandler:
 
                 # Check if we're in an auth-required state
                 if current_state.is_auth_state():
-                    logger.error(f"Cannot navigate - authentication required. Current state: {current_state}")
+                    logger.error(
+                        f"Cannot navigate - authentication required. Current state: {current_state}",
+                        exc_info=True,
+                    )
 
                     # Check if user was previously authenticated
                     profile_manager = self.automator.profile_manager
@@ -153,13 +156,13 @@ class NavigationResourceHandler:
 
                 # Try to transition to library first
                 if self.automator.state_machine.transition_to_library() != AppState.LIBRARY:
-                    logger.error("Failed to transition to library to reopen book")
+                    logger.error("Failed to transition to library to reopen book", exc_info=True)
                     return {"error": "Failed to reach library to reopen book"}, 500
 
                 # Now open the book
                 logger.info(f"Opening book: {book_title}")
                 if not self.automator.state_machine.library_handler.open_book(book_title):
-                    logger.error(f"Failed to open book: {book_title}")
+                    logger.error(f"Failed to open book: {book_title}", exc_info=True)
                     return {"error": f"Failed to open book: {book_title}"}, 500
 
                 # Wait for book to open
@@ -167,13 +170,13 @@ class NavigationResourceHandler:
 
                 # Verify we're now in reading view
                 if not self.automator.state_machine.is_reading_view():
-                    logger.error("Still not in reading view after opening book")
+                    logger.error("Still not in reading view after opening book", exc_info=True)
                     return {"error": "Failed to reach reading view after opening book"}, 500
 
                 logger.info("Successfully reopened book, now in reading view")
             else:
                 # No book title provided, can't recover
-                logger.error("Not in reading view and no book_title provided to reopen")
+                logger.error("Not in reading view and no book_title provided to reopen", exc_info=True)
                 return {"error": "Not in reading view. Please provide title parameter to reopen book."}, 400
 
         # First, check for the 'last read page' dialog before any navigation
@@ -408,7 +411,7 @@ class NavigationResourceHandler:
                 page_success = self.automator.state_machine.reader_handler.turn_page_backward()
 
             if not page_success:
-                logger.error(f"Failed to navigate on page {i+1} of {count}")
+                logger.error(f"Failed to navigate on page {i+1} of {count}", exc_info=True)
                 success = False
                 break
 
@@ -435,7 +438,7 @@ class NavigationResourceHandler:
         # Navigate forward the specified number of pages
         forward_success = self._navigate_pages(forward=True, count=count)
         if not forward_success:
-            logger.error("Failed to navigate forward during preview")
+            logger.error("Failed to navigate forward during preview", exc_info=True)
             return False, None
 
         # Capture OCR from the preview page
@@ -444,14 +447,14 @@ class NavigationResourceHandler:
         # Now navigate back to original position
         backward_success = self._navigate_pages(forward=False, count=count)
         if not backward_success:
-            logger.error("Failed to navigate back to original page after preview")
+            logger.error("Failed to navigate back to original page after preview", exc_info=True)
             # Still continue to return the OCR text even if we couldn't navigate back
 
         if ocr_text:
             logger.info(f"Successfully previewed {count} pages forward and extracted OCR text")
             return True, ocr_text
         else:
-            logger.error(f"Failed to extract OCR text from preview: {error_msg}")
+            logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
             return False, None
 
     def _preview_multiple_pages_backward(self, count: int) -> Tuple[bool, Optional[str]]:
@@ -471,7 +474,7 @@ class NavigationResourceHandler:
         # Navigate backward the specified number of pages
         backward_success = self._navigate_pages(forward=False, count=count)
         if not backward_success:
-            logger.error("Failed to navigate backward during preview")
+            logger.error("Failed to navigate backward during preview", exc_info=True)
             return False, None
 
         # Capture OCR from the preview page
@@ -480,14 +483,14 @@ class NavigationResourceHandler:
         # Now navigate forward to original position
         forward_success = self._navigate_pages(forward=True, count=count)
         if not forward_success:
-            logger.error("Failed to navigate back to original page after preview")
+            logger.error("Failed to navigate back to original page after preview", exc_info=True)
             # Still continue to return the OCR text even if we couldn't navigate back
 
         if ocr_text:
             logger.info(f"Successfully previewed {count} pages backward and extracted OCR text")
             return True, ocr_text
         else:
-            logger.error(f"Failed to extract OCR text from preview: {error_msg}")
+            logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
             return False, None
 
     def _preview_pages_forward(self, count: int, show_placemark: bool) -> Tuple[Dict, int]:

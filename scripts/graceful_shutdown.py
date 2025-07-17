@@ -66,7 +66,7 @@ def shutdown_emulator(email):
         logger.info(f"Successfully shut down emulator for {email}")
         return True
     else:
-        logger.error(f"Failed to shut down emulator for {email}: {response}")
+        logger.error(f"Failed to shut down emulator for {email}: {response}", exc_info=True)
         return False
 
 

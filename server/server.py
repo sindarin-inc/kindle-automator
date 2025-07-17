@@ -160,7 +160,7 @@ class StateResource(Resource):
             if is_appium_error(e):
                 raise
             logger.error(f"Error getting state: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
             return {"error": str(e)}, 500
 
 
@@ -180,7 +180,7 @@ class BooksResource(Resource):
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
-            logger.error(f"No automator found for {sindarin_email}")
+            logger.error(f"No automator found for {sindarin_email}", exc_info=True)
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         current_state = automator.state_machine.current_state
@@ -336,7 +336,7 @@ class BooksResource(Resource):
             if is_appium_error(e):
                 raise
             logger.error(f"Error extracting book covers: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
 
         return {"books": books}, 200
 
@@ -364,7 +364,7 @@ class BooksStreamResource(Resource):
         # Get the appropriate automator
         automator = server.automators.get(sindarin_email)
         if not automator:
-            logger.error(f"No automator found for {sindarin_email}")
+            logger.error(f"No automator found for {sindarin_email}", exc_info=True)
             return {"error": f"No automator found for {sindarin_email}"}, 404
 
         # Check initial state and restart if UNKNOWN
@@ -549,7 +549,7 @@ class BooksStreamResource(Resource):
                         if is_appium_error(e):
                             raise
                         logger.error(f"Error processing book batch in callback: {e}", exc_info=True)
-                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
                         # This error is for a single batch; retrieval might continue for others.
                         # The main error_message is for fatal errors in the retrieval thread itself.
                 else:
@@ -654,7 +654,7 @@ class BooksStreamResource(Resource):
             except Exception as e:
                 error_trace = traceback.format_exc()
                 logger.error(f"Error in generate_stream generator: {e}", exc_info=True)
-                logger.error(f"Traceback: {error_trace}")
+                logger.error(f"Traceback: {error_trace}", exc_info=True)
                 # Ensure this also yields an error if the generator itself has an issue
                 yield encode_message({"error": str(e), "trace": error_trace})
 
@@ -1035,7 +1035,7 @@ class BookOpenResource(Resource):
 
         # Ensure state_machine is initialized
         if not automator.state_machine:
-            logger.error("State machine not initialized for automator")
+            logger.error("State machine not initialized for automator", exc_info=True)
             return {
                 "error": "State machine not initialized. Please ensure the automator is properly initialized."
             }, 500
@@ -1061,7 +1061,7 @@ class BookOpenResource(Resource):
                         logger.info("Successfully handled Download Limit dialog")
                         # Continue with normal flow after handling dialog
                     else:
-                        logger.error("Failed to handle Download Limit dialog")
+                        logger.error("Failed to handle Download Limit dialog", exc_info=True)
                         return {"error": "Failed to handle Download Limit dialog"}, 500
             except Exception as e:
                 logger.warning(f"Error checking for Download Limit dialog: {e}", exc_info=True)
@@ -1467,7 +1467,9 @@ class AuthResource(Resource):
             return {"error": "Failed to initialize automator"}, 500
 
         if not automator.ensure_driver_running():
-            logger.error("Failed to ensure driver is running, cannot proceed with authentication")
+            logger.error(
+                "Failed to ensure driver is running, cannot proceed with authentication", exc_info=True
+            )
             return {"error": "Failed to initialize automator driver"}, 500
 
         # This is the critical method that ensures we navigate to AUTH or LIBRARY
@@ -1479,7 +1481,7 @@ class AuthResource(Resource):
         # Check for fatal errors that would prevent continuing
         if auth_status.get("fatal_error", False):
             error_msg = auth_status.get("error", "Unknown fatal error in authentication preparation")
-            logger.error(f"Fatal error in authentication preparation: {error_msg}")
+            logger.error(f"Fatal error in authentication preparation: {error_msg}", exc_info=True)
             return {"success": False, "error": error_msg}, 500
 
         # Handle already authenticated cases (LIBRARY or HOME)
@@ -1539,7 +1541,7 @@ class AuthResource(Resource):
                     auth_status["state"] = state_name
                     auth_status["authenticated"] = False
                 else:
-                    logger.error("Failed to click sign-in button")
+                    logger.error("Failed to click sign-in button", exc_info=True)
             except Exception as e:
                 logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}", exc_info=True)
                 # Continue with normal authentication process
@@ -1700,7 +1702,7 @@ class FixturesResource(Resource):
             if is_appium_error(e):
                 raise
             logger.error(f"Error creating fixtures: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
             return {"error": str(e)}, 500
 
 
@@ -1728,7 +1730,7 @@ class CoverImageResource(Resource):
 
             # Check if cover file exists
             if not cover_path.exists():
-                logger.error(f"Cover image not found: {cover_path}")
+                logger.error(f"Cover image not found: {cover_path}", exc_info=True)
                 return {"error": "Cover image not found"}, 404
 
             # Create response with proper mime type
@@ -1908,7 +1910,7 @@ class TextResource(Resource):
 
         except Exception as e:
             logger.error(f"Error extracting text: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
             return {"error": str(e)}, 500
 
     @ensure_automator_healthy
@@ -2124,7 +2126,7 @@ class LastReadPageDialogResource(Resource):
 
         except Exception as e:
             logger.error(f"Error handling Last read page dialog choice: {e}", exc_info=True)
-            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
             return {"error": f"Failed to handle dialog choice: {str(e)}"}, 500
 
 

@@ -16,7 +16,7 @@ Usage:
 
     # Get the automator for the current request
     automator, email, error = get_automator_for_request(server)
-    
+
     # Set email override for operations outside request context
     with email_override("user@example.com"):
         email = get_sindarin_email()  # Returns "user@example.com"
@@ -148,14 +148,14 @@ def get_automator_for_request(server):
 
     if not sindarin_email:
         error = {"error": "No email provided to identify which profile to use"}
-        logger.error("No email provided in request to identify profile")
+        logger.error("No email provided in request to identify profile", exc_info=True)
         return None, None, (error, 400)
 
     # Get the appropriate automator
     automator = server.automators.get(sindarin_email)
     if not automator:
         error = {"error": f"No automator found for {sindarin_email}"}
-        logger.error(f"No automator found for {sindarin_email}")
+        logger.error(f"No automator found for {sindarin_email}", exc_info=True)
         return None, None, (error, 404)
 
     logger.debug(f"Found automator for {sindarin_email}")
@@ -342,7 +342,7 @@ def get_formatted_vnc_url(
                         logger.info(f"WebSocket URL for {sindarin_email}: {ws_url}")
                         return ws_url
                     else:
-                        logger.error(f"Failed to start WebSocket proxy for {sindarin_email}")
+                        logger.error(f"Failed to start WebSocket proxy for {sindarin_email}", exc_info=True)
                         # Fall back to regular VNC URL
 
                 vnc_url = f"vnc://{hostname}:{instance['vnc_port']}"

@@ -147,7 +147,9 @@ class AuthenticationHandler:
             automator = getattr(self.driver, "automator", None)
 
             if not automator:
-                logger.error("Driver does not have automator reference. This should not happen.")
+                logger.error(
+                    "Driver does not have automator reference. This should not happen.", exc_info=True
+                )
                 return {
                     "state": "UNKNOWN",
                     "authenticated": False,
@@ -167,7 +169,7 @@ class AuthenticationHandler:
 
             # Verify we have the state machine
             if not hasattr(automator, "state_machine") or not automator.state_machine:
-                logger.error("Automator does not have state machine. This should not happen.")
+                logger.error("Automator does not have state machine. This should not happen.", exc_info=True)
                 return {
                     "state": "UNKNOWN",
                     "authenticated": False,
@@ -698,7 +700,7 @@ class AuthenticationHandler:
                 # Capture and log the full stack trace
                 import traceback
 
-                logger.error(f"Traceback: {traceback.format_exc()}")
+                logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
 
                 # Try one more time to update our state
                 try:
