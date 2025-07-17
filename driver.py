@@ -700,15 +700,28 @@ class Driver:
 
             # If we couldn't parse from filename, try using ADB
             if not version_name_match or not version_code:
+                # First check if the APK file exists
+                if not os.path.exists(apk_path):
+                    logger.warning(f"APK file not found at {apk_path}, skipping ADB version check")
+                    return (None, None)
+
                 logger.info(f"Using ADB to get version info from {apk_path}")
                 # Upload APK to device temporarily
                 temp_path = "/sdcard/temp_kindle.apk"
-                subprocess.run(
-                    ["adb", "-s", self.device_id, "push", apk_path, temp_path],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
+                try:
+                    result = subprocess.run(
+                        ["adb", "-s", self.device_id, "push", apk_path, temp_path],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to push APK to device: {e}")
+                    logger.error(f"stdout: {e.stdout}")
+                    logger.error(f"stderr: {e.stderr}")
+                    # Don't fail completely if we can't get version info
+                    logger.warning("Continuing without APK version information")
+                    return (None, None)
 
                 # Use package manager to get info
                 result = subprocess.run(
