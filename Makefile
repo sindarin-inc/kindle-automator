@@ -10,6 +10,11 @@ claude-run:
 	@echo "Monitor logs with: tail -f logs/server_output.log"
 
 deps:
+	@if [ -z "$$VIRTUAL_ENV" ]; then \
+		echo "ERROR: You must be in a virtualenv to run 'make deps'"; \
+		echo "Run: source ~/.virtualenvs/kindle-automator/bin/activate"; \
+		exit 1; \
+	fi
 	uv pip install -r requirements.txt
 
 lint:
