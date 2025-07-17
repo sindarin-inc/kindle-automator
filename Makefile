@@ -62,3 +62,11 @@ ssh3: ssh-3
 ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging
+
+# Include database commands
+include Makefile.database
+
+# Export database to JSON format
+db-export:
+	@echo "Exporting users from database to JSON format..."
+	@python scripts/export_users_to_json.py

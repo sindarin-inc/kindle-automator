@@ -468,12 +468,10 @@ class VNCInstanceManager:
             # Check each profile for the was_running_at_restart flag
             # Get all profiles and check each one
             profiles = avd_manager.list_profiles()
-            for profile in profiles:
-                email = profile.get("email")
-                if email:
-                    was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
-                    if was_running:
-                        running_emails.append(email)
+            for email, profile in profiles.items():
+                was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
+                if was_running:
+                    running_emails.append(email)
 
             return running_emails
         except Exception as e:
