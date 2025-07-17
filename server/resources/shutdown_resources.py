@@ -156,19 +156,21 @@ class ShutdownResource(Resource):
             else:
                 message = f"No active resources found to shut down for {sindarin_email}"
 
-            # Log critical warning if sync failed
+            # Log error if sync failed
             if shutdown_summary.get("placemark_sync_attempted") and not shutdown_summary.get(
                 "placemark_sync_success"
             ):
-                logger.critical(
-                    f"PLACEMARK SYNC FAILED during shutdown for {sindarin_email} - user's reading position may be lost!"
+                logger.error(
+                    f"PLACEMARK SYNC FAILED during shutdown for {sindarin_email} - user's reading position may be lost!",
+                    exc_info=True,
                 )
 
-            # Log critical warning if snapshot failed
+            # Log error if snapshot failed
             if not cold and not shutdown_summary["snapshot_taken"]:
-                logger.critical(
+                logger.error(
                     f"SNAPSHOT FAILED during shutdown for {sindarin_email} - emulator will cold boot next time! "
-                    f"This means user will need to navigate back to their book."
+                    f"This means user will need to navigate back to their book.",
+                    exc_info=True,
                 )
 
             return {
