@@ -26,6 +26,7 @@ class AVDCreator:
         "kindle@solreader.com",
         "sam@solreader.com",
         "samuel@ofbrooklyn.com",
+        "recreate@solreader.com",
         "craigcreative@me.com",
         "dan.andrei91@gmail.com",
     ]
