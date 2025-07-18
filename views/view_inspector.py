@@ -1052,13 +1052,20 @@ class ViewInspector:
             from views.auth.view_strategies import TWO_FACTOR_VIEW_IDENTIFIERS
 
             two_factor_indicators = 0
+            otp_input_field = None
             for strategy, locator in TWO_FACTOR_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         two_factor_indicators += 1
+                        # Keep track of the OTP input field for focusing
+                        if locator == "auth-mfa-otpcode" or "auth-mfa-otpcode" in locator:
+                            otp_input_field = element
                         if two_factor_indicators >= 2:
                             logger.info("   Found Two-Step Verification screen")
+                            # Focus the OTP input field if we found it
+                            if otp_input_field:
+                                self._focus_input_field_if_needed(otp_input_field, "OTP")
                             return AppView.TWO_FACTOR
                 except NoSuchElementException:
                     continue
