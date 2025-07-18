@@ -255,33 +255,33 @@ def clear_email_context():
 
 def get_idle_timer_handler():
     """Get a file handler for idle timer logs.
-    
+
     Creates a dedicated file handler that writes to logs/idle_timer.log
     for tracking idle timer shutdown activity.
-    
+
     Returns:
         logging.FileHandler: A file handler for idle timer logging
     """
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
-    
+
     # Create a file handler for idle timer logs
     log_file = "logs/idle_timer.log"
     file_handler = logging.FileHandler(log_file)
-    
+
     # Use the same formatter as the main logger
     formatter = RelativePathFormatter(
         "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
     file_handler.setFormatter(formatter)
-    
+
     # Add the custom filter
     file_handler.addFilter(CustomFilter())
-    
+
     # Set the level to DEBUG to capture all relevant logs
     file_handler.setLevel(logging.DEBUG)
-    
+
     return file_handler
 
 
@@ -312,11 +312,11 @@ class IdleTimerContext:
     def __enter__(self):
         # Get the logger
         self.logger = logging.getLogger(self.logger_name)
-        
+
         # Create and add the idle timer handler
         self.idle_handler = get_idle_timer_handler()
         self.logger.addHandler(self.idle_handler)
-        
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
