@@ -29,6 +29,7 @@ class AVDCreator:
         "recreate@solreader.com",
         "craigcreative@me.com",
         "dan.andrei91@gmail.com",
+        "canyonet@aol.com",
     ]
 
     def __init__(self, android_home, avd_dir, host_arch):
