@@ -338,6 +338,8 @@ class EmulatorManager:
                 (["pm", "disable-user", "com.android.vending"], "Disabling Play Store"),
                 # Disable YouTube (prevents background crashes)
                 (["pm", "disable-user", "com.google.android.youtube"], "Disabling YouTube"),
+                # Disable Gboard to prevent soft keyboard from appearing
+                (["pm", "disable-user", "com.google.android.inputmethod.latin"], "Disabling Gboard"),
                 # Disable auto app updates
                 (["settings", "put", "global", "auto_update_apps", "0"], "Disabling auto app updates"),
                 # Deny background execution for Play Services

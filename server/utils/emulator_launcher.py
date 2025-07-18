@@ -1150,9 +1150,7 @@ class EmulatorLauncher:
                 pass
 
             # Randomize if: (1) created from seed and not randomized, OR (2) explicitly needs randomization (seed clone)
-            if (created_from_seed and not post_boot_randomized_check) or (
-                needs_device_randomization_check and not post_boot_randomized_check
-            ):
+            if not post_boot_randomized_check and (created_from_seed or needs_device_randomization_check):
                 try:
                     from server.utils.post_boot_randomizer import PostBootRandomizer
 
