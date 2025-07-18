@@ -387,11 +387,17 @@ class EmulatorManager:
             ]
 
             # Run each command
+            keyboard_disabled = False
             for cmd, description in optimization_commands:
                 try:
                     full_cmd = adb_prefix + cmd
                     logger.debug(f"{description}...")
                     result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5, check=False)
+
+                    # Check if Gboard was successfully disabled
+                    if "Disabling Gboard" in description and result.returncode == 0:
+                        keyboard_disabled = True
+                        logger.info("Gboard successfully disabled, keyboard_disabled flag set to True")
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
@@ -414,6 +420,9 @@ class EmulatorManager:
             profile_manager.set_user_field(
                 email, "memory_optimization_timestamp", int(time.time()), section="emulator_settings"
             )
+            # Store keyboard disabled state
+            if keyboard_disabled:
+                profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
 
             logger.info(f"Memory optimization settings applied successfully for {email}")
 
