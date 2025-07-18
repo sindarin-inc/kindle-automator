@@ -65,6 +65,21 @@ class ViewInspector:
         # Initialize device_id to None - will be set properly later
         self.automator = self.driver.automator
 
+    def _should_hide_keyboard(self):
+        """Check if keyboard hiding should be attempted based on emulator settings."""
+        try:
+            profile_manager = self.driver.automator.profile_manager
+            email = self.driver.automator.email
+            keyboard_disabled = profile_manager.get_user_field(
+                email, "keyboard_disabled", default=False, section="emulator_settings"
+            )
+            if keyboard_disabled:
+                logger.debug("Keyboard is disabled for this emulator, skipping hide_keyboard()")
+                return False
+        except Exception as check_err:
+            logger.debug(f"Error checking keyboard_disabled flag: {check_err}")
+        return True
+
     def ensure_app_foreground(self, force_restart=False):
         """Ensures the Kindle app is in the foreground
 
@@ -734,13 +749,14 @@ class ViewInspector:
                         captcha_input.click()
 
                         # Hide the keyboard after tapping
-                        try:
-                            self.driver.hide_keyboard()
-                            logger.info("   Successfully hid keyboard after focusing captcha field")
-                        except Exception as hide_err:
-                            logger.warning(
-                                f"   Could not hide keyboard after focusing captcha field: {hide_err}"
-                            )
+                        if self._should_hide_keyboard():
+                            try:
+                                self.driver.hide_keyboard()
+                                logger.info("   Successfully hid keyboard after focusing captcha field")
+                            except Exception as hide_err:
+                                logger.warning(
+                                    f"   Could not hide keyboard after focusing captcha field: {hide_err}"
+                                )
                 except Exception as tap_err:
                     logger.warning(f"   Error tapping captcha input field: {tap_err}")
 
@@ -983,13 +999,16 @@ class ViewInspector:
                     has_focus = True
 
                     # Hide the keyboard if it's visible
-                    try:
-                        self.driver.hide_keyboard()
-                        logger.info(f"   Successfully hid keyboard for already focused {field_type} field")
-                    except Exception as hide_err:
-                        logger.warning(
-                            f"   Could not hide keyboard for already focused {field_type} field: {hide_err}"
-                        )
+                    if self._should_hide_keyboard():
+                        try:
+                            self.driver.hide_keyboard()
+                            logger.info(
+                                f"   Successfully hid keyboard for already focused {field_type} field"
+                            )
+                        except Exception as hide_err:
+                            logger.warning(
+                                f"   Could not hide keyboard for already focused {field_type} field: {hide_err}"
+                            )
             except NoSuchElementException:
                 # No focused element found, we'll need to tap
                 pass
@@ -1003,13 +1022,14 @@ class ViewInspector:
                     field_element.click()
 
                     # Hide the keyboard after tapping
-                    try:
-                        self.driver.hide_keyboard()
-                        logger.info(f"   Successfully hid keyboard after focusing {field_type} field")
-                    except Exception as hide_err:
-                        logger.warning(
-                            f"   Could not hide keyboard after focusing {field_type} field: {hide_err}"
-                        )
+                    if self._should_hide_keyboard():
+                        try:
+                            self.driver.hide_keyboard()
+                            logger.info(f"   Successfully hid keyboard after focusing {field_type} field")
+                        except Exception as hide_err:
+                            logger.warning(
+                                f"   Could not hide keyboard after focusing {field_type} field: {hide_err}"
+                            )
                 except Exception as tap_err:
                     logger.warning(f"   Error tapping {field_type} field: {tap_err}")
                     return False

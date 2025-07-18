@@ -120,19 +120,13 @@ class AuthenticationHandler:
                 # Check if keyboard is disabled for this emulator
                 keyboard_disabled = False
                 try:
-                    if hasattr(self.driver, "automator") and hasattr(
-                        self.driver.automator, "profile_manager"
-                    ):
-                        profile_manager = self.driver.automator.profile_manager
-                        if hasattr(self.driver.automator, "email"):
-                            email = self.driver.automator.email
-                            keyboard_disabled = profile_manager.get_user_field(
-                                email, "keyboard_disabled", default=False, section="emulator_settings"
-                            )
-                            if keyboard_disabled:
-                                logger.debug(
-                                    "Keyboard is disabled for this emulator, skipping hide_keyboard()"
-                                )
+                    profile_manager = self.driver.automator.profile_manager
+                    email = self.driver.automator.email
+                    keyboard_disabled = profile_manager.get_user_field(
+                        email, "keyboard_disabled", default=False, section="emulator_settings"
+                    )
+                    if keyboard_disabled:
+                        logger.debug("Keyboard is disabled for this emulator, skipping hide_keyboard()")
                 except Exception as check_err:
                     logger.debug(f"Error checking keyboard_disabled flag: {check_err}")
 
