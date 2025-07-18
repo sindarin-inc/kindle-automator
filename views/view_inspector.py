@@ -68,8 +68,11 @@ class ViewInspector:
     def _should_hide_keyboard(self):
         """Check if keyboard hiding should be attempted based on emulator settings."""
         try:
+            email = get_sindarin_email()
+            if not email:
+                return True  # Default to attempting keyboard hide if no email context
+
             profile_manager = self.driver.automator.profile_manager
-            email = self.driver.automator.email
             keyboard_disabled = profile_manager.get_user_field(
                 email, "keyboard_disabled", default=False, section="emulator_settings"
             )

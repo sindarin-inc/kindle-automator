@@ -11,7 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
-from server.utils.request_utils import get_formatted_vnc_url
+from server.utils.request_utils import get_formatted_vnc_url, get_sindarin_email
 from views.auth.interaction_strategies import (
     AUTH_ERROR_STRATEGIES,
     CAPTCHA_CONTINUE_BUTTON,
@@ -120,13 +120,14 @@ class AuthenticationHandler:
                 # Check if keyboard is disabled for this emulator
                 keyboard_disabled = False
                 try:
-                    profile_manager = self.driver.automator.profile_manager
-                    email = self.driver.automator.email
-                    keyboard_disabled = profile_manager.get_user_field(
-                        email, "keyboard_disabled", default=False, section="emulator_settings"
-                    )
-                    if keyboard_disabled:
-                        logger.debug("Keyboard is disabled for this emulator, skipping hide_keyboard()")
+                    email = get_sindarin_email()
+                    if email:
+                        profile_manager = self.driver.automator.profile_manager
+                        keyboard_disabled = profile_manager.get_user_field(
+                            email, "keyboard_disabled", default=False, section="emulator_settings"
+                        )
+                        if keyboard_disabled:
+                            logger.debug("Keyboard is disabled for this emulator, skipping hide_keyboard()")
                 except Exception as check_err:
                     logger.debug(f"Error checking keyboard_disabled flag: {check_err}")
 
