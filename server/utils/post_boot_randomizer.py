@@ -292,4 +292,108 @@ class PostBootRandomizer:
             logger.warning("Failed to clear Google Play Services data (advertising ID may not be reset)")
             # Don't fail completely if this fails, as it's less critical
 
+        # Uninstall/disable Gboard to prevent soft keyboard from appearing
+        if not self.uninstall_gboard(emulator_id):
+            logger.warning("Failed to disable/uninstall Gboard (soft keyboard may still appear)")
+            # Don't fail completely if this fails, as keyboard suppression has other methods
+
         return success
+
+    def uninstall_gboard(self, emulator_id: str) -> bool:
+        """
+        Attempt to uninstall or disable the Gboard app to prevent soft keyboard from appearing.
+        
+        The Gboard package name is com.google.android.inputmethod.latin.
+        Since it's likely a system app, we'll first try to disable it (which is often
+        more effective than uninstalling for system apps).
+        
+        Args:
+            emulator_id: The emulator ID (e.g., 'emulator-5554')
+            
+        Returns:
+            bool: True if Gboard was successfully uninstalled/disabled or already absent
+        """
+        try:
+            logger.info(f"Attempting to disable/uninstall Gboard on {emulator_id}")
+            
+            # First check if Gboard is installed
+            list_cmd = [
+                f"{self.android_home}/platform-tools/adb",
+                "-s",
+                emulator_id,
+                "shell",
+                "pm",
+                "list",
+                "packages",
+                "com.google.android.inputmethod.latin",
+            ]
+            
+            list_result = subprocess.run(list_cmd, capture_output=True, text=True, timeout=5)
+            
+            if list_result.returncode != 0 or "com.google.android.inputmethod.latin" not in list_result.stdout:
+                logger.info("Gboard is not installed on this emulator")
+                return True
+                
+            # Try to disable it first (works for system apps)
+            disable_cmd = [
+                f"{self.android_home}/platform-tools/adb",
+                "-s", 
+                emulator_id,
+                "shell",
+                "pm",
+                "disable-user",
+                "com.google.android.inputmethod.latin",
+            ]
+            
+            disable_result = subprocess.run(disable_cmd, capture_output=True, text=True, timeout=10)
+            
+            if disable_result.returncode == 0 and "disabled" in disable_result.stdout.lower():
+                logger.info("Successfully disabled Gboard")
+                return True
+                
+            # If disabling didn't work, try uninstalling
+            logger.info("Disable command didn't succeed, attempting uninstall")
+            
+            uninstall_cmd = [
+                f"{self.android_home}/platform-tools/adb",
+                "-s",
+                emulator_id,
+                "shell",
+                "pm",
+                "uninstall",
+                "com.google.android.inputmethod.latin",
+            ]
+            
+            uninstall_result = subprocess.run(uninstall_cmd, capture_output=True, text=True, timeout=10)
+            
+            if uninstall_result.returncode == 0:
+                logger.info("Successfully uninstalled Gboard")
+                return True
+            else:
+                logger.warning(f"Failed to uninstall Gboard: {uninstall_result.stderr}")
+                
+                # As a last resort, try uninstalling for user 0 specifically
+                uninstall_user_cmd = [
+                    f"{self.android_home}/platform-tools/adb",
+                    "-s",
+                    emulator_id,
+                    "shell",
+                    "pm",
+                    "uninstall",
+                    "--user",
+                    "0",
+                    "com.google.android.inputmethod.latin",
+                ]
+                
+                user_result = subprocess.run(uninstall_user_cmd, capture_output=True, text=True, timeout=10)
+                
+                if user_result.returncode == 0:
+                    logger.info("Successfully uninstalled Gboard for user 0")
+                    return True
+                else:
+                    logger.error(f"Failed to uninstall Gboard for user 0: {user_result.stderr}", exc_info=True)
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Error disabling/uninstalling Gboard: {e}", exc_info=True)
+            return False
