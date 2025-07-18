@@ -161,6 +161,29 @@ class TestKindleAPIIntegration:
         shutdown_response = self._make_request("shutdown", method="POST")
         assert shutdown_response.status_code == 200
 
+    @pytest.mark.expensive
+    def test_recreate(self):
+        """Ensure that recreation/creating a new AVD works"""
+        response = self._make_request(
+            "auth",
+            method="GET",
+            params={
+                "user_email": "recreate@solreader.com",
+                "recreate": "1",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
+        assert data["success"] is True, f"Recreation failed: {data}"
+        assert data["authenticated"] is False, f"Recreation failed: {data}"
+
+        # Shutdown
+        shutdown_response = self._make_request(
+            "shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
+        )
+        assert shutdown_response.status_code == 200
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

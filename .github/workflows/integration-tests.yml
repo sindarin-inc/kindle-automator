@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: integration-tests-${{ github.ref }}
+  group: integration-tests
   cancel-in-progress: true
 
 jobs:
@@ -27,15 +27,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pytest pytest-timeout python-dotenv
 
-      - name: Run integration tests
+      - name: Run regular integration tests
         env:
           API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_api_integration.py -v --tb=short
+          python -m pytest tests/test_api_integration.py -v --tb=short -m "not expensive"
         timeout-minutes: 5
+
+      - name: Run expensive integration tests
+        if: success()
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: kindle@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_api_integration.py -v --tb=short -m "expensive"
+        timeout-minutes: 10
 
       - name: Upload test results
         if: always()
