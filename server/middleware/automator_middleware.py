@@ -100,7 +100,7 @@ def ensure_automator_healthy(f):
                     from server.utils.vnc_instance_manager import VNCInstanceManager
 
                     vnc_manager = VNCInstanceManager.get_instance()
-                    instance = vnc_manager.get_instance_by_email(sindarin_email)
+                    instance = vnc_manager.get_instance_for_profile(sindarin_email)
 
                     if instance and automator.device_id:
                         system_port = instance.get("appium_system_port")
