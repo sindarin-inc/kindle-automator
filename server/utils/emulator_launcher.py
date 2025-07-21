@@ -925,10 +925,6 @@ class EmulatorLauncher:
                 "qemu.settings.system.show_ime_with_hard_keyboard=0",
             ]
 
-            # Add no-window flag only for Linux
-            if platform.system() != "Darwin":
-                common_args.append("-no-window")
-
             # Add randomized device identifiers if available
             try:
                 from server.utils.device_identifier_utils import get_emulator_prop_args
