@@ -92,6 +92,26 @@ def ensure_automator_healthy(f):
                     logger.error(f"Failed to ensure driver is running for {sindarin_email}", exc_info=True)
                     return {"error": f"Failed to ensure driver is running for {sindarin_email}"}, 500
 
+                # Ensure port forwarding is active for multi-user scenarios
+                try:
+                    from server.utils.port_forwarding_utils import (
+                        ensure_port_forwarding,
+                    )
+                    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                    vnc_manager = VNCInstanceManager.get_instance()
+                    instance = vnc_manager.get_instance_by_email(sindarin_email)
+
+                    if instance and automator.device_id:
+                        system_port = instance.get("appium_system_port")
+                        if system_port:
+                            ensure_port_forwarding(automator.device_id, system_port)
+                            logger.debug(
+                                f"Checked port forwarding for {sindarin_email} on port {system_port}"
+                            )
+                except Exception as e:
+                    logger.warning(f"Error checking port forwarding: {e}")
+
                 # Execute the function
                 result = f(*args, **kwargs)
 
