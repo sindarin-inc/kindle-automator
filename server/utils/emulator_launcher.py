@@ -1016,17 +1016,6 @@ class EmulatorLauncher:
             logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
             # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
-            # Wrap with xvfb-run on Linux
-            if platform.system() != "Darwin":
-                emulator_cmd = [
-                    "xvfb-run",
-                    "-n",
-                    str(display_num),
-                    "-s",
-                    f"-screen 0 1080x1920x24",
-                    "--",
-                ] + emulator_cmd
-
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
                 process = subprocess.Popen(
                     emulator_cmd,
@@ -1035,27 +1024,6 @@ class EmulatorLauncher:
                     stderr=stderr_file,
                     cwd="/tmp",  # Run in /tmp to avoid permission issues
                 )
-
-            # Add immediate check after launch
-            import time
-
-            time.sleep(0.5)  # Brief pause to let process start
-            poll_result = process.poll()
-            if poll_result is not None:
-                logger.error(f"Emulator process exited immediately with code: {poll_result}")
-                # Read the error logs
-                try:
-                    with open(stderr_log, "r") as f:
-                        stderr_content = f.read()
-                        if stderr_content:
-                            logger.error(f"Emulator stderr content: {stderr_content}")
-                    with open(stdout_log, "r") as f:
-                        stdout_content = f.read()
-                        if stdout_content:
-                            logger.error(f"Emulator stdout content: {stdout_content}")
-                except Exception as e:
-                    logger.error(f"Failed to read emulator logs: {e}")
-                raise Exception(f"Emulator failed to start with exit code {poll_result}")
 
             # Store the running emulator info in multiple places to ensure tracking:
 
