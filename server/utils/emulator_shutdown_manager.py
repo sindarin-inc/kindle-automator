@@ -513,14 +513,10 @@ class EmulatorShutdownManager:
             except Exception as e:
                 logger.warning(f"Error checking AVD: {e}")
 
-            logger.info(f"Removing all ADB port forwards for {emulator_id}")
-            with contextlib.suppress(Exception):
-                subprocess.run(
-                    [f"adb -s {emulator_id} forward --remove-all"],
-                    shell=True,
-                    capture_output=True,
-                    timeout=5,
-                )
+            # Port forwards are persistent and tied to the user's instance ID
+            # We keep them in place for faster startup on next launch
+            # Only remove if explicitly cleaning up the instance permanently
+            logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
 
             logger.info(f"Killing uiautomator processes on {emulator_id} for email={email}")
             with contextlib.suppress(Exception):
