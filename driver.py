@@ -1254,19 +1254,9 @@ class Driver:
                     # options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     self.appium_port = allocated_ports["appiumPort"]
 
-                    # Clean up any existing port forwards for this device to avoid conflicts
-                    logger.info(
-                        f"Cleaning up port forwards for {self.device_id} before initialization, using ports {allocated_ports}"
-                    )
-                    try:
-                        subprocess.run(
-                            f"adb -s {self.device_id} forward --remove-all",
-                            shell=True,
-                            check=False,
-                            timeout=5,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Error cleaning port forwards: {e}")
+                    # Port forwards are persistent and reused - no need to remove them
+                    # They're tied to the user's instance ID and will be the same on every run
+                    logger.info(f"Using allocated ports for {self.device_id}: {allocated_ports}")
                 else:
                     logger.error(f"No allocated ports found for {email}", exc_info=True)
                     return False
@@ -1465,20 +1455,10 @@ class Driver:
         """Quit the Appium driver"""
         logger.info(f"Quitting driver: {self.driver}")
 
-        # Clean up port forwards before quitting driver
+        # Keep port forwards in place - they're persistent and tied to instance IDs
+        # Only kill UiAutomator2 processes since the app session is ending
         if self.device_id:
-            logger.info(f"Cleaning up port forwards for device {self.device_id}")
-            try:
-                subprocess.run(
-                    f"adb -s {self.device_id} forward --remove-all",
-                    shell=True,
-                    check=False,
-                    capture_output=True,
-                    timeout=5,
-                )
-                logger.info(f"Successfully removed all port forwards for {self.device_id}")
-            except Exception as e:
-                logger.warning(f"Error removing port forwards during driver quit: {e}")
+            logger.info(f"Keeping port forwards for {self.device_id} for faster next startup")
 
             # Also kill any UiAutomator2 processes
             try:
