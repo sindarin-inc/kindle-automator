@@ -44,29 +44,23 @@ class LogoutResource(Resource):
 
             # Navigate to MORE tab if not already there
             if current_state != AppState.MORE_SETTINGS:
-                logger.info("Navigating to MORE tab")
+                # First ensure we're in LIBRARY state using the state machine
+                # This handles any state transitions properly (including closing books from READING state)
+                if current_state not in [AppState.LIBRARY, AppState.HOME]:
+                    logger.info(f"Transitioning from {current_state} to LIBRARY first")
+                    result_state = automator.state_machine.transition_to_library(server=server)
+                    if result_state != AppState.LIBRARY:
+                        logger.error(f"Failed to transition to LIBRARY, current state: {result_state}")
+                        return {"error": f"Failed to reach library state: {result_state.name}"}, 500
+                    logger.info("Successfully transitioned to LIBRARY state")
 
-                # Try to click the MORE tab
-                from views.more.interaction_strategies import MORE_TAB_STRATEGIES
-
-                tab_found = False
-                for strategy, locator in MORE_TAB_STRATEGIES:
-                    try:
-                        more_tab = automator.driver.find_element(strategy, locator)
-                        if more_tab.is_displayed():
-                            more_tab.click()
-                            tab_found = True
-                            logger.info("Successfully clicked MORE tab")
-                            time.sleep(1)  # Wait for tab to load
-                            break
-                    except selenium_exceptions.NoSuchElementException:
-                        continue
-
-                if not tab_found:
-                    logger.error("Failed to find MORE tab", exc_info=True)
+                # Now navigate from LIBRARY to MORE_SETTINGS
+                logger.info("Navigating to MORE tab from LIBRARY")
+                if not automator.library_handler.navigate_to_more_settings():
+                    logger.error("Failed to navigate to MORE settings", exc_info=True)
                     return {"error": "Failed to navigate to MORE tab"}, 500
 
-                # Update state after navigation
+                # Verify we reached MORE_SETTINGS
                 current_state = automator.state_machine.update_current_state()
                 if current_state != AppState.MORE_SETTINGS:
                     logger.error(
@@ -75,6 +69,7 @@ class LogoutResource(Resource):
                     return {
                         "error": f"Failed to reach MORE settings, current state: {current_state.name}"
                     }, 500
+                logger.info("Successfully reached MORE_SETTINGS state")
 
             # Now we're in MORE_SETTINGS, find and click Sign Out
             logger.info("Looking for Sign Out button")
