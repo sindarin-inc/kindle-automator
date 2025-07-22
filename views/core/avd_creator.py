@@ -35,6 +35,11 @@ class AVDCreator:
         "hlbruce79@gmail.com",
     ]
 
+    # List of email addresses that should get 8GB RAM instead of 5GB
+    HIGH_MEMORY_EMAILS = [
+        "hlbruce79@gmail.com",
+    ]
+
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
         self.avd_dir = avd_dir
@@ -247,7 +252,7 @@ class AVDCreator:
                 return False, f"Failed to create AVD: {process.stderr}"
 
             # Configure AVD settings for better performance
-            self._configure_avd(avd_name, sys_img)
+            self._configure_avd(avd_name, sys_img, email)
 
             # Update profile with system image information
             from views.core.avd_profile_manager import AVDProfileManager
@@ -266,7 +271,7 @@ class AVDCreator:
             logger.error(f"Error creating new AVD: {e}", exc_info=True)
             return False, str(e)
 
-    def _configure_avd(self, avd_name: str, system_image: str) -> None:
+    def _configure_avd(self, avd_name: str, system_image: str, email: str) -> None:
         """Configure AVD settings for better performance."""
         config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
         if not os.path.exists(config_path):
@@ -300,9 +305,14 @@ class AVDCreator:
                 f"Configuring AVD {avd_name} for {self.host_arch} host with {cpu_arch} CPU architecture"
             )
 
+            # Determine RAM size based on email
+            ram_size = "8192" if email in self.HIGH_MEMORY_EMAILS else "5120"
+            if email in self.HIGH_MEMORY_EMAILS:
+                logger.info(f"Using high memory configuration (8GB) for {email}")
+
             # Define settings to update
             settings = {
-                "hw.ramSize": "5120",
+                "hw.ramSize": ram_size,
                 "hw.cpu.ncore": "4",
                 "hw.gpu.enabled": "yes",
                 "hw.gpu.mode": "swiftshader",
@@ -595,7 +605,7 @@ class AVDCreator:
             # Step 5: Configure the new AVD with proper settings (including RAM)
             logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
             # Seed clone always uses the default SYSTEM_IMAGE (Android 30)
-            self._configure_avd(new_avd_name, self.SYSTEM_IMAGE)
+            self._configure_avd(new_avd_name, self.SYSTEM_IMAGE, email)
 
             # Step 6: Randomize device identifiers to prevent auth token ejection
             logger.info(f"Randomizing device identifiers for {new_avd_name}")
