@@ -18,7 +18,9 @@ class AVDCreator:
 
     # System image to use for all AVDs
     # Must match `sdkmanager --list` format exactly
+    # Use ARM64 for native performance on ARM Macs
     SYSTEM_IMAGE = "system-images;android-30;google_apis;x86_64"
+    MAC_SYSTEM_IMAGE = "system-images;android-35;default;arm64-v8a"
     ALT_SYSTEM_IMAGE = "system-images;android-36;google_apis;x86_64"
 
     # List of email addresses that should use ALT_SYSTEM_IMAGE for testing
@@ -30,6 +32,12 @@ class AVDCreator:
         "craigcreative@me.com",
         "dan.andrei91@gmail.com",
         "canyonet@aol.com",
+        "hlbruce79@gmail.com",
+    ]
+
+    # List of email addresses that should get 8GB RAM instead of 5GB
+    HIGH_MEMORY_EMAILS = [
+        "hlbruce79@gmail.com",
     ]
 
     def __init__(self, android_home, avd_dir, host_arch):
@@ -96,6 +104,15 @@ class AVDCreator:
             Optional[str]: System image to use, or None if no compatible image found
         """
         # Check if this email is in the test list
+        if self.host_arch == "arm64":
+            if self.MAC_SYSTEM_IMAGE in available_images:
+                logger.info(f"Using Android 35 system image: {self.MAC_SYSTEM_IMAGE}")
+                return self.MAC_SYSTEM_IMAGE
+            else:
+                logger.warning(
+                    f"Android 35 image {self.MAC_SYSTEM_IMAGE} not available, falling back to Android 30"
+                )
+                # Fall back to Android 30
         if email in self.ALT_IMAGE_TEST_EMAILS:
             logger.info(f"User {email} is in ALT_IMAGE_TEST_EMAILS, attempting to use Android 36")
             if self.ALT_SYSTEM_IMAGE in available_images:
@@ -224,12 +241,18 @@ class AVDCreator:
             # Execute AVD creation command
             process = subprocess.run(create_cmd, env=env, check=False, text=True, capture_output=True)
 
+            # Log both stdout and stderr for debugging
+            if process.stdout:
+                logger.info(f"AVD creation stdout: {process.stdout}")
+            if process.stderr:
+                logger.warning(f"AVD creation stderr: {process.stderr}")
+
             if process.returncode != 0:
                 logger.error(f"Failed to create AVD: {process.stderr}", exc_info=True)
                 return False, f"Failed to create AVD: {process.stderr}"
 
             # Configure AVD settings for better performance
-            self._configure_avd(avd_name, sys_img)
+            self._configure_avd(avd_name, sys_img, email)
 
             # Update profile with system image information
             from views.core.avd_profile_manager import AVDProfileManager
@@ -248,7 +271,7 @@ class AVDCreator:
             logger.error(f"Error creating new AVD: {e}", exc_info=True)
             return False, str(e)
 
-    def _configure_avd(self, avd_name: str, system_image: str) -> None:
+    def _configure_avd(self, avd_name: str, system_image: str, email: str) -> None:
         """Configure AVD settings for better performance."""
         config_path = os.path.join(self.avd_dir, f"{avd_name}.avd", "config.ini")
         if not os.path.exists(config_path):
@@ -260,17 +283,18 @@ class AVDCreator:
             with open(config_path, "r") as f:
                 config_lines = f.readlines()
 
-            # Always use x86_64 for all host types
-            # Even on ARM Macs, we need to use x86_64 images with Rosetta 2 translation
-            # as the Android emulator doesn't properly support ARM64 emulation yet
-            cpu_arch = "x86_64"
+            # Use native architecture for best performance
+            if self.host_arch == "arm64":
+                cpu_arch = "arm64-v8a"
+            else:
+                cpu_arch = "x86_64"
 
             # Derive sysdir from system_image parameter
             # Convert from sdkmanager format to path format
             # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"
             sysdir = system_image.replace(";", "/") + "/"
 
-            logger.info(f"Using x86_64 architecture for all host types (even on ARM Macs)")
+            logger.info(f"Using {cpu_arch} architecture for {self.host_arch} host")
 
             # Special handling for cloud linux servers
             if self.host_arch == "x86_64" and os.path.exists("/etc/os-release"):
@@ -281,9 +305,14 @@ class AVDCreator:
                 f"Configuring AVD {avd_name} for {self.host_arch} host with {cpu_arch} CPU architecture"
             )
 
+            # Determine RAM size based on email
+            ram_size = "8192" if email in self.HIGH_MEMORY_EMAILS else "5120"
+            if email in self.HIGH_MEMORY_EMAILS:
+                logger.info(f"Using high memory configuration (8GB) for {email}")
+
             # Define settings to update
             settings = {
-                "hw.ramSize": "5120",
+                "hw.ramSize": ram_size,
                 "hw.cpu.ncore": "4",
                 "hw.gpu.enabled": "yes",
                 "hw.gpu.mode": "swiftshader",
@@ -308,9 +337,18 @@ class AVDCreator:
                 "disk.dataPartition.size": "6G",
                 "PlayStore.enabled": "true",
                 "image.sysdir.1": sysdir,
-                "tag.id": "google_apis_playstore" if "playstore" in sysdir else "google_apis",
-                "tag.display": "Google Play" if "playstore" in sysdir else "Google APIs",
-                "hw.cpu.arch": cpu_arch,
+                "tag.id": (
+                    "default"
+                    if "default" in sysdir
+                    else ("google_apis_playstore" if "playstore" in sysdir else "google_apis")
+                ),
+                "tag.display": (
+                    "Default Android System Image"
+                    if "default" in sysdir
+                    else ("Google Play" if "playstore" in sysdir else "Google APIs")
+                ),
+                "hw.cpu.arch": "arm64" if cpu_arch == "arm64-v8a" else cpu_arch,
+                "abi.type": cpu_arch,  # Keep abi.type as arm64-v8a for ARM64 emulation
                 "ro.kernel.qemu.gles": "1",
                 "hw.gfxstream": "0",  # Disable gfxstream to maintain snapshot compatibility
                 "skin.dynamic": "yes",
@@ -379,7 +417,9 @@ class AVDCreator:
         """Check if the seed clone AVD exists."""
         seed_clone_name = self.get_seed_clone_avd_name()
         avd_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
-        return os.path.exists(avd_path)
+        exists = os.path.exists(avd_path)
+        logger.info(f"Checking seed clone at {avd_path}: exists={exists}")
+        return exists
 
     def has_seed_clone_snapshot(self) -> bool:
         """Check if the seed clone has a snapshot (now always checks for default_boot)."""
@@ -565,7 +605,7 @@ class AVDCreator:
             # Step 5: Configure the new AVD with proper settings (including RAM)
             logger.info(f"Configuring cloned AVD {new_avd_name} with proper settings")
             # Seed clone always uses the default SYSTEM_IMAGE (Android 30)
-            self._configure_avd(new_avd_name, self.SYSTEM_IMAGE)
+            self._configure_avd(new_avd_name, self.SYSTEM_IMAGE, email)
 
             # Step 6: Randomize device identifiers to prevent auth token ejection
             logger.info(f"Randomizing device identifiers for {new_avd_name}")

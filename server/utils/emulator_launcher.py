@@ -970,21 +970,16 @@ class EmulatorLauncher:
                     "-gpu",
                     "swiftshader",
                 ] + common_args
-            elif self.host_arch == "arm64":
-                # For ARM Macs, use Rosetta to run x86_64 emulator
+            elif self.host_arch == "arm64" and platform.system() == "Darwin":
+                # For ARM Macs, use native ARM64 emulation
+                # The Android emulator will automatically use qemu-system-aarch64
                 emulator_cmd = [
-                    "arch",
-                    "-x86_64",
                     f"{self.android_home}/emulator/emulator",
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
-                    "-feature",
-                    "-HVF",  # Disable hardware virtualization
-                    "-feature",
-                    "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
-                    "off",
+                    "auto",  # Let emulator auto-detect the best acceleration method
                 ] + common_args
             else:
                 # For Intel Macs
@@ -1002,7 +997,14 @@ class EmulatorLauncher:
                 ] + common_args
 
             # Create log files for debugging
-            log_dir = "/var/log/emulator"
+            if platform.system() == "Darwin":
+                # Use local logs directory on macOS
+                log_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "emulator"
+                )
+            else:
+                # Use system log directory on Linux
+                log_dir = "/var/log/emulator"
             os.makedirs(log_dir, exist_ok=True)
             stdout_log = os.path.join(log_dir, f"emulator_{avd_name}_stdout.log")
             stderr_log = os.path.join(log_dir, f"emulator_{avd_name}_stderr.log")
@@ -1047,6 +1049,16 @@ class EmulatorLauncher:
             # Check if emulator process is actually running
             if process.poll() is not None:
                 # Process already exited
+                logger.error(f"Emulator process exited immediately with code: {process.poll()}")
+                # Check the log files
+                with open(stdout_log, "r") as f:
+                    stdout_content = f.read()
+                    if stdout_content:
+                        logger.error(f"Emulator stdout: {stdout_content}")
+                with open(stderr_log, "r") as f:
+                    stderr_content = f.read()
+                    if stderr_content:
+                        logger.error(f"Emulator stderr: {stderr_content}")
                 exit_code = process.returncode
                 logger.error(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}", exc_info=True)
@@ -1241,17 +1253,12 @@ class EmulatorLauncher:
                     del self.running_emulators[avd_name]
                     return False
 
-                # Clean up all ports before killing emulator
-                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                # Clean up processes before killing emulator
+                logger.info(f"Cleaning up processes for emulator {emulator_id}")
                 try:
-                    # Remove all ADB port forwards
-                    subprocess.run(
-                        [f"adb -s {emulator_id} forward --remove-all"],
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        timeout=5,
-                    )
+                    # Port forwards are persistent and tied to the user's instance ID
+                    # We keep them in place for faster startup on next launch
+                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1325,17 +1332,12 @@ class EmulatorLauncher:
                     del self.running_emulators[email]
                     return False
 
-                # Clean up all ports before killing emulator
-                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                # Clean up processes before killing emulator
+                logger.info(f"Cleaning up processes for emulator {emulator_id}")
                 try:
-                    # Remove all ADB port forwards
-                    subprocess.run(
-                        [f"adb -s {emulator_id} forward --remove-all"],
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        timeout=5,
-                    )
+                    # Port forwards are persistent and tied to the user's instance ID
+                    # We keep them in place for faster startup on next launch
+                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1607,7 +1609,7 @@ class EmulatorLauncher:
         """Check if any emulator process is running."""
         try:
             ps_check = subprocess.run(
-                ["pgrep", "-f", "qemu-system-x86_64"], check=False, capture_output=True, text=True
+                ["pgrep", "-f", "qemu-system-"], check=False, capture_output=True, text=True
             )
             return ps_check.returncode == 0
         except Exception:

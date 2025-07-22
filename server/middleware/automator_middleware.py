@@ -92,6 +92,26 @@ def ensure_automator_healthy(f):
                     logger.error(f"Failed to ensure driver is running for {sindarin_email}", exc_info=True)
                     return {"error": f"Failed to ensure driver is running for {sindarin_email}"}, 500
 
+                # Ensure port forwarding is active for multi-user scenarios
+                try:
+                    from server.utils.port_forwarding_utils import (
+                        ensure_port_forwarding,
+                    )
+                    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                    vnc_manager = VNCInstanceManager.get_instance()
+                    instance = vnc_manager.get_instance_for_profile(sindarin_email)
+
+                    if instance and automator.device_id:
+                        system_port = instance.get("appium_system_port")
+                        if system_port:
+                            ensure_port_forwarding(automator.device_id, system_port)
+                            logger.debug(
+                                f"Checked port forwarding for {sindarin_email} on port {system_port}"
+                            )
+                except Exception as e:
+                    logger.warning(f"Error checking port forwarding: {e}")
+
                 # Execute the function
                 result = f(*args, **kwargs)
 
@@ -169,13 +189,9 @@ def ensure_automator_healthy(f):
                                 check=False,
                                 timeout=5,
                             )
-                            # Forward --remove-all to clear port forwards
-                            subprocess.run(
-                                [f"adb -s {device_id} forward --remove-all"],
-                                shell=True,
-                                check=False,
-                                timeout=5,
-                            )
+                            # Port forwards are persistent and tied to the user's instance ID
+                            # We keep them in place for faster startup on next launch
+                            logger.info(f"Keeping ADB port forwards for {device_id} to speed up next startup")
                             time.sleep(2)  # Give it time to fully terminate
                     except Exception as kill_e:
                         logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")
