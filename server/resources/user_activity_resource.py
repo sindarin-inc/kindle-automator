@@ -404,12 +404,16 @@ class UserActivityResource(Resource):
 
                 # Create compressed description based on endpoint
                 if "/open-book" in endpoint:
+                    title = "Unknown"
                     try:
                         params_dict = json.loads(params)
                         title = params_dict.get("title", "Unknown")
-                        desc = f'opened book "{title}"'
                     except:
-                        desc = "opened book"
+                        # Try to extract title from params string if JSON parsing fails
+                        title_match = re.search(r'"title":\s*"([^"]+)"', params)
+                        if title_match:
+                            title = title_match.group(1)
+                    desc = f"opened book ({title})"
                 elif "/navigate" in endpoint:
                     # First check if we have a navigate activity in request_map
                     nav_activity = request_map.get("/navigate")
