@@ -225,6 +225,11 @@ class LogoutResource(Resource):
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
 
+                    # Clear auth_date since user has logged out
+                    if automator.profile_manager:
+                        automator.profile_manager.set_user_field(sindarin_email, "auth_date", None)
+                        logger.info(f"Cleared auth_date for {sindarin_email}")
+
                     # Clear emulator settings to force fresh initialization on next login
                     if automator.profile_manager:
                         cleared = automator.profile_manager.clear_emulator_settings(sindarin_email)
@@ -246,6 +251,11 @@ class LogoutResource(Resource):
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
                     server.clear_current_book(sindarin_email)
+
+                    # Clear auth_date since user has logged out
+                    if automator.profile_manager:
+                        automator.profile_manager.set_user_field(sindarin_email, "auth_date", None)
+                        logger.info(f"Cleared auth_date for {sindarin_email}")
 
                     # Clear emulator settings to force fresh initialization on next login
                     if automator.profile_manager:
