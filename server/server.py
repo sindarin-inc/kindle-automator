@@ -2419,19 +2419,9 @@ def cleanup_resources():
     except Exception as e:
         logger.warning(f"Error killing remaining Appium processes: {e}", exc_info=True)
 
-    # Clean up ADB port forwards to prevent port conflicts on restart
-    logger.info("Cleaning up ADB port forwards")
-    try:
-        # Get all connected devices
-        result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
-        lines = result.stdout.strip().split("\n")[1:]  # Skip header
-        for line in lines:
-            if "\tdevice" in line:
-                device_id = line.split("\t")[0]
-                logger.info(f"Removing port forwards for device {device_id}")
-                subprocess.run([f"adb -s {device_id} forward --remove-all"], shell=True, check=False)
-    except Exception as e:
-        logger.warning(f"Error cleaning up ADB port forwards: {e}")
+    # Port forwards are persistent and tied to instance IDs
+    # We keep them in place for faster startup on next server start
+    logger.info("Keeping ADB port forwards in place for faster restart")
 
     logger.info(f"=== Graceful shutdown complete ===")
     logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")

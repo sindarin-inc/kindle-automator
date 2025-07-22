@@ -189,13 +189,9 @@ def ensure_automator_healthy(f):
                                 check=False,
                                 timeout=5,
                             )
-                            # Forward --remove-all to clear port forwards
-                            subprocess.run(
-                                [f"adb -s {device_id} forward --remove-all"],
-                                shell=True,
-                                check=False,
-                                timeout=5,
-                            )
+                            # Port forwards are persistent and tied to the user's instance ID
+                            # We keep them in place for faster startup on next launch
+                            logger.info(f"Keeping ADB port forwards for {device_id} to speed up next startup")
                             time.sleep(2)  # Give it time to fully terminate
                     except Exception as kill_e:
                         logger.warning(f"Error while killing UiAutomator2 processes: {kill_e}")

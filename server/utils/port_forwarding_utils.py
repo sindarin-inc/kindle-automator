@@ -99,33 +99,21 @@ def get_device_port_forwards(device_id: str) -> list[Tuple[str, str]]:
 def clear_port_forwarding(device_id: str, system_port: Optional[int] = None) -> bool:
     """Clear port forwarding for a device.
 
+    Note: This function now preserves port forwards as they are persistent
+    and tied to instance IDs. It only logs the action without removing them.
+
     Args:
         device_id: The device/emulator ID
         system_port: Specific port to clear, or None to clear all
 
     Returns:
-        True if successful, False otherwise
+        True always (for backwards compatibility)
     """
-    try:
-        if system_port:
-            # Clear specific port
-            cmd = ["adb", "-s", device_id, "forward", "--remove", f"tcp:{system_port}"]
-        else:
-            # Clear all forwards for this device
-            cmd = ["adb", "-s", device_id, "forward", "--remove-all"]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-
-        if result.returncode != 0 and "error" in result.stderr.lower():
-            logger.error(f"Failed to clear port forwarding: {result.stderr}")
-            return False
-
-        logger.info(
-            f"Cleared port forwarding for {device_id}"
-            + (f" port {system_port}" if system_port else " (all ports)")
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"Error clearing port forwarding: {e}")
-        return False
+    # Port forwards are persistent and tied to the user's instance ID
+    # We keep them in place for faster startup on next launch
+    logger.info(
+        f"Keeping port forwards for {device_id}"
+        + (f" port {system_port}" if system_port else " (all ports)")
+        + " - port forwards are persistent and speed up startup"
+    )
+    return True

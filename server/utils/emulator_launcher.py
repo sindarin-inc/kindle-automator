@@ -1255,17 +1255,12 @@ class EmulatorLauncher:
                     del self.running_emulators[avd_name]
                     return False
 
-                # Clean up all ports before killing emulator
-                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                # Clean up processes before killing emulator
+                logger.info(f"Cleaning up processes for emulator {emulator_id}")
                 try:
-                    # Remove all ADB port forwards
-                    subprocess.run(
-                        [f"adb -s {emulator_id} forward --remove-all"],
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        timeout=5,
-                    )
+                    # Port forwards are persistent and tied to the user's instance ID
+                    # We keep them in place for faster startup on next launch
+                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1339,17 +1334,12 @@ class EmulatorLauncher:
                     del self.running_emulators[email]
                     return False
 
-                # Clean up all ports before killing emulator
-                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                # Clean up processes before killing emulator
+                logger.info(f"Cleaning up processes for emulator {emulator_id}")
                 try:
-                    # Remove all ADB port forwards
-                    subprocess.run(
-                        [f"adb -s {emulator_id} forward --remove-all"],
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        timeout=5,
-                    )
+                    # Port forwards are persistent and tied to the user's instance ID
+                    # We keep them in place for faster startup on next launch
+                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
