@@ -56,7 +56,7 @@ class LogoutResource(Resource):
 
                 # Now navigate from LIBRARY to MORE_SETTINGS
                 logger.info("Navigating to MORE tab from LIBRARY")
-                if not automator.library_handler.navigate_to_more_settings():
+                if not automator.state_machine.library_handler.navigate_to_more_settings():
                     logger.error("Failed to navigate to MORE settings", exc_info=True)
                     return {"error": "Failed to navigate to MORE tab"}, 500
 
