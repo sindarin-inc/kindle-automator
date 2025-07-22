@@ -1,22 +1,18 @@
 # Kindle Automator Project Guide
 
 ## Issue References
+
 - When you see references to KINDLE-AUTOMATOR-[A-Z0-9]+ (e.g., KINDLE-AUTOMATOR-8), use the Sentry MCP tools to look up the issue details
 - Never use Sentry's Seer AI analysis - fix issues using Claude Code instead
 
 ## Commands
 
-- `make claude-run`: Start the Flask server in the background with proper output redirection
+- `make claude-run`: Start the Flask server in the background. It will auto-kill other running servers.
 - `make deps`: Install dependencies using uv
 - `make lint`: Run isort, black, and flake8
 - `make test-*`: Run various API endpoint tests (e.g. `make test-init`, `make test-books`)
 - `make reinstall`: Reinstall the application
 - `make ssh`: Use the Makefile to SSH into prod or staging with the appropriate non-interactive command prefix
-
-## Virtualenv Management
-
-- `source ~/.virtualenvs/kindle-automator/bin/activate`: Source the virtualenv for the Kindle Automator project, activating the virtual environment located at ~/.virtualenvs/kindle-automator/bin/activate
-- The virtualenv is automatically activated when using `make claude-run`
 
 ## Running the server
 
@@ -57,6 +53,7 @@ tail -n 20 logs/server_output.log
 - **DRY**: Keep it DRY, so do extra thinking to ensure we don't repeat code
 - **Comments**: Only include comments if they add context that's not readily apparent in the next line of code or if the code block has some complexity
 - **Comments**: Don't add comments that are simply addressing the prompt, only add them if the comments clear up confusion
+- **Linting**: Run `make lint` after making code changes to ensure formatting compliance
 
 ## Project Structure
 

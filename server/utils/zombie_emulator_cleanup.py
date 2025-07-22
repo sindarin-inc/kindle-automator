@@ -35,7 +35,7 @@ class ZombieEmulatorCleaner:
 
     def _get_emulator_process_by_avd(self, avd_name: str) -> Optional[Dict]:
         """Get emulator process info for a specific AVD."""
-        cmd = f"ps aux | grep 'qemu-system-x86_64.*-avd {avd_name}' | grep -v grep"
+        cmd = f"ps aux | grep 'qemu-system-.*-avd {avd_name}' | grep -v grep"
         output = self._run_command(cmd, check=False)
 
         if not output:
@@ -171,7 +171,7 @@ class ZombieEmulatorCleaner:
 
     def clean_all_zombies_on_port(self, port: int) -> int:
         """Clean all zombie emulators on a specific port."""
-        cmd = f"ps aux | grep 'qemu-system-x86_64.*-port {port}' | grep -v grep"
+        cmd = f"ps aux | grep 'qemu-system-.*-port {port}' | grep -v grep"
         output = self._run_command(cmd, check=False)
 
         cleaned_count = 0
@@ -193,7 +193,7 @@ class ZombieEmulatorCleaner:
     def clean_all_zombies_on_display(self, display_num: int) -> int:
         """Clean all zombie emulators on a specific display."""
         # Find all emulator processes running on this display
-        cmd = f"ps aux | grep 'qemu-system-x86_64' | grep -v grep"
+        cmd = f"ps aux | grep 'qemu-system-' | grep -v grep"
         output = self._run_command(cmd, check=False)
 
         cleaned_count = 0

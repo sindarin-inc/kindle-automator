@@ -24,7 +24,7 @@ def test_zombie_detection():
         in_adb = cleaner._is_emulator_in_adb(port)
         if not listening and not in_adb:
             # Check if there's a process using this port
-            cmd = f"ps aux | grep 'qemu-system-x86_64.*-port {port}' | grep -v grep"
+            cmd = f"ps aux | grep 'qemu-system-.*-port {port}' | grep -v grep"
             result = cleaner._run_command(cmd, check=False)
             if result:
                 print(f"Port {port}: ZOMBIE (not listening, not in ADB, but process exists)")

@@ -133,9 +133,12 @@ class KindleAutomator:
             # If we're not in the Kindle app, try to relaunch it
             # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle app activities)
             # Also accept the Google Play review dialog which can appear over the Kindle app
+            # Also accept permission dialogs as the app is running behind them
             if not (
                 current_activity.startswith("com.amazon")
                 or current_activity == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                or current_activity
+                == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
             ):
                 logger.warning("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
@@ -146,6 +149,8 @@ class KindleAutomator:
                         current_activity.startswith("com.amazon")
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                        or current_activity
+                        == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                     ):
                         logger.error(
                             "Failed to bring Kindle app to foreground after relaunch attempt", exc_info=True
@@ -274,13 +279,29 @@ class KindleAutomator:
                 try:
                     current_activity = self.driver.current_activity
                     # If we're not in the Kindle app, try to relaunch it
-                    if not current_activity.startswith("com.amazon"):
+                    # But don't relaunch if we're in a permission dialog (app is running behind it)
+                    if (
+                        not current_activity.startswith("com.amazon")
+                        and current_activity
+                        != "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
+                    ):
                         logger.warning("App is not in Kindle foreground, trying to relaunch")
+                        # Capture page source before relaunching to see what's on screen
+                        try:
+                            from server.logging_config import store_page_source
+
+                            filepath = store_page_source(self.driver.page_source, "before_app_relaunch")
+                            logger.info(f"Stored page source before relaunch at: {filepath}")
+                        except Exception as ps_error:
+                            logger.error(f"Failed to store page source: {ps_error}")
+
                         if hasattr(self.state_machine, "view_inspector") and hasattr(
                             self.state_machine.view_inspector, "ensure_app_foreground"
                         ):
                             self.state_machine.view_inspector.ensure_app_foreground()
                             logger.info("Relaunched Kindle app")
+                            # Give app time to show any dialogs
+                            time.sleep(2)
                 except Exception as e:
                     logger.warning(f"Failed to check current activity: {e}")
                     # Continue anyway, the app might still be usable

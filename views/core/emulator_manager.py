@@ -21,11 +21,10 @@ class EmulatorManager:
     Handles starting, stopping, and monitoring emulator instances.
     """
 
-    def __init__(self, android_home, avd_dir, host_arch, use_simplified_mode=False):
+    def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
         self.avd_dir = avd_dir
         self.host_arch = host_arch
-        self.use_simplified_mode = use_simplified_mode
 
         self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
 
@@ -216,20 +215,6 @@ class EmulatorManager:
                 # Cache the emulator info to avoid repeated ADB queries
                 self._emulator_cache[email] = (emulator_id, avd_name, time.time())
                 logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
-
-                # For macOS simplified mode, also ensure the profile has the proper AVD name
-                if self.use_simplified_mode and avd_name:
-                    from views.core.avd_profile_manager import AVDProfileManager
-
-                    profile_manager = AVDProfileManager.get_instance()
-                    if email in profile_manager.profiles_index:
-                        profile = profile_manager.profiles_index[email]
-                        if not profile.get("avd_name"):
-                            profile["avd_name"] = avd_name
-                            profile_manager._save_profiles_index()
-                            logger.info(
-                                f"Updated profile with AVD name {avd_name} for {email} in simplified mode"
-                            )
 
                 # Check adb devices immediately after launch to see if it's detected
                 try:
