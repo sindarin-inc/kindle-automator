@@ -25,6 +25,25 @@
   with_items:
     - /opt/keys
 
+# Copy environment files
+- name: Copy .env.prod to /opt/kindle-automator/.env.prod
+  copy:
+    src: ../../../../.env.prod
+    dest: /opt/kindle-automator/.env.prod
+    owner: root
+    group: root
+    mode: 0644
+  when: "'staging' not in inventory_hostname"
+
+- name: Copy .env.staging to /opt/kindle-automator/.env.staging
+  copy:
+    src: ../../../../.env.staging
+    dest: /opt/kindle-automator/.env.staging
+    owner: root
+    group: root
+    mode: 0644
+  when: "'staging' in inventory_hostname"
+
 # Create public deploy key for GitHub
 - name: Copy public deploy key for GitHub
   copy:
@@ -39,13 +58,22 @@
     path: /opt/kindle-automator/requirements.txt
   register: repo_files
 
-# Backup .env.prod if it exists
+# Backup appropriate .env file if it exists
 - name: Backup .env.prod
   shell: |
     if [ -f /opt/kindle-automator/.env.prod ]; then
       cp /opt/kindle-automator/.env.prod /tmp/.env.prod.backup
     fi
   changed_when: false
+  when: "'staging' not in inventory_hostname"
+
+- name: Backup .env.staging
+  shell: |
+    if [ -f /opt/kindle-automator/.env.staging ]; then
+      cp /opt/kindle-automator/.env.staging /tmp/.env.staging.backup
+    fi
+  changed_when: false
+  when: "'staging' in inventory_hostname"
 
 # Backup existing env and venv
 - name: Backup essential files
@@ -87,7 +115,7 @@
     rm -rf /tmp/kindle-temp
   changed_when: true
 
-# Restore .env.prod if backup exists
+# Restore appropriate .env file if backup exists
 - name: Restore .env.prod
   shell: |
     if [ -f /tmp/.env.prod.backup ]; then
@@ -95,6 +123,16 @@
       rm /tmp/.env.prod.backup
     fi
   changed_when: false
+  when: "'staging' not in inventory_hostname"
+
+- name: Restore .env.staging
+  shell: |
+    if [ -f /tmp/.env.staging.backup ]; then
+      cp /tmp/.env.staging.backup /opt/kindle-automator/.env.staging
+      rm /tmp/.env.staging.backup
+    fi
+  changed_when: false
+  when: "'staging' in inventory_hostname"
 
 # Set up Python virtual environment
 - name: Create Python virtual environment
