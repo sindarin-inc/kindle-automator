@@ -10,19 +10,21 @@ from flask import request
 from flask_restful import Resource
 from selenium.common import exceptions as selenium_exceptions
 
+from server.core.automation_server import AutomationServer
 from server.logging_config import store_page_source
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import get_automator_for_request, get_sindarin_email
 from views.core.app_state import AppState
+from views.more.interaction_strategies import MORE_MENU_ITEM_STRATEGIES
 
 logger = logging.getLogger(__name__)
 
 
 class LogoutResource(Resource):
     def __init__(self, **kwargs):
-        self.server_instance = kwargs.get("server_instance")
+        # Accept server_instance for backwards compatibility but use singleton
         super().__init__()
 
     @ensure_user_profile_loaded
@@ -30,8 +32,8 @@ class LogoutResource(Resource):
     @handle_automator_response
     def _logout(self):
         """Sign out of the Kindle app"""
-        # Get server instance from the request context if not provided
-        server = self.server_instance or request.app.config.get("server_instance")
+        # Get server instance using singleton
+        server = AutomationServer.get_instance()
 
         automator, _, error_response = get_automator_for_request(server)
         if error_response:
@@ -73,8 +75,6 @@ class LogoutResource(Resource):
 
             # Now we're in MORE_SETTINGS, find and click Sign Out
             logger.info("Looking for Sign Out button")
-
-            from views.more.interaction_strategies import MORE_MENU_ITEM_STRATEGIES
 
             sign_out_clicked = False
             for strategy, locator in MORE_MENU_ITEM_STRATEGIES.get("sign_out", []):
@@ -223,6 +223,7 @@ class LogoutResource(Resource):
                 # Clear the current book tracking
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
+                    server = AutomationServer.get_instance()
                     server.clear_current_book(sindarin_email)
 
                     # Clear auth_date since user has logged out
@@ -250,6 +251,7 @@ class LogoutResource(Resource):
                 # Clear the current book tracking
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
+                    server = AutomationServer.get_instance()
                     server.clear_current_book(sindarin_email)
 
                     # Clear auth_date since user has logged out
@@ -277,6 +279,7 @@ class LogoutResource(Resource):
                 # Still clear the current book tracking as logout was attempted
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
+                    server = AutomationServer.get_instance()
                     server.clear_current_book(sindarin_email)
 
                     # Clear emulator settings to force fresh initialization on next login

@@ -17,7 +17,19 @@ logger = logging.getLogger(__name__)
 
 
 class AutomationServer:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
+
         self.automators = {}  # Dictionary to track multiple automators by email
         self.pid_dir = "logs"
         self.current_books = {}  # Track the currently open book title for each email
@@ -27,6 +39,13 @@ class AutomationServer:
         # Initialize the AVD profile manager
         self.android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
         self.profile_manager = AVDProfileManager.get_instance(base_dir=self.android_home)
+
+    @classmethod
+    def get_instance(cls):
+        """Get the singleton instance of AutomationServer."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     # automator property has been removed - use get_automator(email) instead
 

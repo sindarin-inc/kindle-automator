@@ -9,12 +9,17 @@ from flask import request
 from flask_restful import Resource
 from selenium.common import exceptions as selenium_exceptions
 
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
 from server.utils.ocr_utils import KindleOCR
 from server.utils.request_utils import get_automator_for_request
 from views.core.app_state import AppState
+from views.reading.interaction_strategies import (
+    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
+    BOTTOM_SHEET_IDENTIFIERS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +30,9 @@ class TextResource(Resource):
     @handle_automator_response
     def _extract_text(self):
         """Shared implementation for extracting text from the current reading page."""
-        try:
-            from server.server import server
+        server = AutomationServer.get_instance()
 
+        try:
             automator, _, error_response = get_automator_for_request(server)
             if error_response:
                 return error_response
@@ -44,11 +49,6 @@ class TextResource(Resource):
             # Before proceeding, manually check and dismiss the "About this book" slideover
             # This is needed because it can prevent accessing the reading controls
             try:
-                from views.reading.interaction_strategies import (
-                    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS,
-                    BOTTOM_SHEET_IDENTIFIERS,
-                )
-
                 # Check if About Book slideover is visible
                 about_book_visible = False
                 for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:

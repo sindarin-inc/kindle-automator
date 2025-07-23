@@ -6,6 +6,7 @@ from flask import request
 from flask_restful import Resource
 
 from handlers.navigation_handler import NavigationResourceHandler
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
@@ -26,7 +27,7 @@ class NavigationResource(Resource):
 
     def _navigate_impl(self, direction=None):
         """Internal implementation for navigation - shared by GET and POST."""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()

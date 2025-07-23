@@ -7,6 +7,8 @@ import time
 from flask import request
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
+from server.logging_config import store_page_source
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import (
@@ -14,6 +16,7 @@ from server.middleware.response_handler import (
     handle_automator_response,
     serve_image,
 )
+from server.utils.appium_error_utils import is_appium_error
 from server.utils.ocr_utils import (
     is_base64_requested,
     is_ocr_requested,
@@ -34,7 +37,7 @@ class ScreenshotResource(Resource):
         If xml=1 is provided, also returns the XML page source.
         If text=1 is provided, OCRs the image and returns the text.
         If base64=1 is provided, returns the image encoded as base64 instead of a URL."""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         failed = None
         # Check if save parameter is provided
@@ -108,8 +111,6 @@ class ScreenshotResource(Resource):
                 # Use standard screenshot for non-auth screens
                 automator.driver.save_screenshot(screenshot_path)
         except Exception as e:
-            from server.utils.appium_error_utils import is_appium_error
-
             if is_appium_error(e):
                 raise
             logger.error(f"Error taking screenshot: {e}", exc_info=True)
@@ -160,8 +161,6 @@ class ScreenshotResource(Resource):
 
                     # Store the XML with the same base name as the screenshot
                     xml_filename = f"{image_id}.xml"
-                    from server.logging_config import store_page_source
-
                     xml_path = store_page_source(page_source, image_id)
                     logger.info(f"Stored page source XML at {xml_path}")
 

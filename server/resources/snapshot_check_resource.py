@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
 from server.utils.request_utils import get_sindarin_email
 from views.core.avd_profile_manager import AVDProfileManager
 
@@ -20,9 +21,9 @@ class SnapshotCheckResource(Resource):
         """Initialize the snapshot check resource.
 
         Args:
-            server_instance: The AutomationServer instance
+            server_instance: The AutomationServer instance (ignored, uses singleton)
         """
-        self.server = server_instance
+        # Accept server_instance for backwards compatibility but use singleton
         super().__init__()
 
     def get(self):
@@ -55,9 +56,10 @@ class SnapshotCheckResource(Resource):
 
             # Get emulator launcher to check snapshot existence
             emulator_launcher = None
-            if self.server and hasattr(self.server, "automators"):
+            server = AutomationServer.get_instance()
+            if server and hasattr(server, "automators"):
                 # Try to get launcher from any automator or create one
-                for automator in self.server.automators.values():
+                for automator in server.automators.values():
                     if automator and hasattr(automator, "emulator_manager"):
                         emulator_launcher = automator.emulator_manager.emulator_launcher
                         break
@@ -261,8 +263,9 @@ class SnapshotCheckResource(Resource):
     def _check_if_running(self, email: str) -> bool:
         """Check if emulator is currently running for this user."""
         try:
-            if self.server and hasattr(self.server, "automators"):
-                automator = self.server.automators.get(email)
+            server = AutomationServer.get_instance()
+            if server and hasattr(server, "automators"):
+                automator = server.automators.get(email)
                 if automator and hasattr(automator, "emulator_manager"):
                     emulator_id, _ = automator.emulator_manager.emulator_launcher.get_running_emulator(email)
                     return emulator_id is not None

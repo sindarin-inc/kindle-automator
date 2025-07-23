@@ -4,9 +4,10 @@ import logging
 
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
-from server.utils.request_utils import get_sindarin_email
+from server.utils.request_utils import get_boolean_param, get_sindarin_email
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,10 @@ class ShutdownResource(Resource):
         """Initialize the shutdown resource.
 
         Args:
-            server_instance: The AutomationServer instance
+            server_instance: The AutomationServer instance (ignored, uses singleton)
         """
-        self.server = server_instance
-        self.shutdown_manager = EmulatorShutdownManager(server_instance)
+        # Accept server_instance for backwards compatibility but use singleton
+        self.shutdown_manager = EmulatorShutdownManager()
         super().__init__()
 
     def _try_ensure_driver_connected(self, sindarin_email):
@@ -31,7 +32,8 @@ class ShutdownResource(Resource):
         We don't create new automators during shutdown to avoid conflicts.
         """
         # Get the automator for this email
-        automator = self.server.automators.get(sindarin_email)
+        server = AutomationServer.get_instance()
+        automator = server.automators.get(sindarin_email)
 
         # If no automator exists, don't create one - just proceed with shutdown
         # This avoids conflicts with concurrent shutdown attempts
@@ -112,8 +114,6 @@ class ShutdownResource(Resource):
         # Check if we should preserve reading state (default: True)
         # Note: UI clients should pass preserve_reading_state=false for user-initiated shutdowns
         # to ensure the Kindle app navigates to library and syncs reading position
-        from server.utils.request_utils import get_boolean_param
-
         preserve_reading_state = get_boolean_param("preserve_reading_state", default=False)
         mark_for_restart = get_boolean_param("mark_for_restart", default=False)
         skip_snapshot = get_boolean_param("skip_snapshot", default=False)

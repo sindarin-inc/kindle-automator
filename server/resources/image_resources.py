@@ -8,6 +8,7 @@ from flask import make_response, send_file
 from flask_restful import Resource
 
 from server.middleware.response_handler import serve_image
+from server.utils.appium_error_utils import is_appium_error
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,6 @@ class CoverImageResource(Resource):
             return response
 
         except Exception as e:
-            from server.utils.appium_error_utils import is_appium_error
-
             if is_appium_error(e):
                 raise
             logger.error(f"Error serving cover image: {e}", exc_info=True)

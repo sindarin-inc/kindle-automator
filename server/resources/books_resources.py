@@ -9,14 +9,17 @@ import traceback
 from flask import Response, request
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
+from server.logging_config import clear_email_context, set_email_context
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
+from server.utils.appium_error_utils import is_appium_error
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
     extract_book_covers_from_screen,
 )
-from server.utils.request_utils import get_sindarin_email
+from server.utils.request_utils import email_override, get_sindarin_email
 from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
@@ -28,7 +31,7 @@ class BooksResource(Resource):
     @handle_automator_response
     def _get_books(self):
         """Get list of available books with metadata"""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
@@ -191,8 +194,6 @@ class BooksResource(Resource):
             # Add cover URLs only for books with successfully extracted covers
             books = add_cover_urls_to_books(books, cover_info_dict, sindarin_email)
         except Exception as e:
-            from server.utils.appium_error_utils import is_appium_error
-
             if is_appium_error(e):
                 raise
             logger.error(f"Error extracting book covers: {e}", exc_info=True)
@@ -214,7 +215,7 @@ class BooksStreamResource(Resource):
     @ensure_automator_healthy
     def get(self):
         """Stream book results as they're found using Flask streaming"""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
@@ -350,9 +351,7 @@ class BooksStreamResource(Resource):
 
         # Standard implementation with book retrieval
         def generate_stream():
-            import json
             import queue  # For thread-safe communication
-            import sys
             import threading
 
             # Event for signaling all books are retrieved by the library_handler
@@ -406,8 +405,6 @@ class BooksStreamResource(Resource):
                         processed_books_queue.put(processed_batch_with_covers)
 
                     except Exception as e:
-                        from server.utils.appium_error_utils import is_appium_error
-
                         if is_appium_error(e):
                             raise
                         logger.error(f"Error processing book batch in callback: {e}", exc_info=True)
@@ -420,9 +417,6 @@ class BooksStreamResource(Resource):
             # Thread to run the library_handler's book retrieval
             def start_book_retrieval_thread_fn():
                 # Set email context for this background thread
-                from server.logging_config import clear_email_context, set_email_context
-                from server.utils.request_utils import email_override
-
                 set_email_context(sindarin_email)
                 with email_override(sindarin_email):
                     try:
@@ -433,8 +427,6 @@ class BooksStreamResource(Resource):
                             callback=book_processing_callback, sync=sync
                         )
                     except Exception as e:
-                        from server.utils.appium_error_utils import is_appium_error
-
                         if is_appium_error(e):
                             raise
                         logger.error(
@@ -488,8 +480,6 @@ class BooksStreamResource(Resource):
                             break
                         # else: continue polling, the event wasn't set yet.
                     except Exception as e:
-                        from server.utils.appium_error_utils import is_appium_error
-
                         if is_appium_error(e):
                             raise
                         logger.error(

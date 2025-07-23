@@ -1,9 +1,11 @@
 import logging
 from datetime import datetime
 
+from flask import request
 from flask_restful import Resource
 
 from server.utils.cold_storage_manager import ColdStorageManager
+from views.core.avd_profile_manager import AVDProfileManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +28,6 @@ class ColdStorageArchiveResource(Resource):
     def _handle_archive_request(self):
         """Handle archive request for both GET and POST"""
         try:
-            from flask import request
-
             # Get parameters from query params (GET) or JSON body (POST)
             if request.method == "GET":
                 # Support both 'days' and 'days_inactive' for flexibility
@@ -105,10 +105,6 @@ class ColdStorageStatusResource(Resource):
     def get(self):
         """Get cold storage status for all profiles"""
         try:
-            from flask import request
-
-            from views.core.avd_profile_manager import AVDProfileManager
-
             # Get days parameter from query params
             days_inactive = int(request.args.get("days", request.args.get("days_inactive", 30)))
             logger.info(f"Checking cold storage status with days_inactive={days_inactive}")
@@ -215,8 +211,6 @@ class ColdStorageRestoreResource(Resource):
     def _handle_restore_request(self):
         """Handle restore request for both GET and POST"""
         try:
-            from flask import request
-
             # Get parameters from query params (GET) or JSON body (POST)
             if request.method == "GET":
                 user_email = request.args.get("user_email")
@@ -262,8 +256,6 @@ class ColdStorageRestoreResource(Resource):
                 if success:
                     if not dry_run:
                         # Clear cold storage date only if not a dry run
-                        from views.core.avd_profile_manager import AVDProfileManager
-
                         profile_manager = AVDProfileManager.get_instance()
                         profile_manager.set_user_field(user_email, "cold_storage_date", None)
                         profile_manager.set_user_field(user_email, "cold_storage_dry_run", None)

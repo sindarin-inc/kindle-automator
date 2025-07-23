@@ -9,11 +9,15 @@ from flask import request
 from flask_restful import Resource
 from selenium.common.exceptions import NoSuchElementException
 
+from handlers.navigation_handler import NavigationResourceHandler
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
 from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
 from server.utils.request_utils import get_sindarin_email
+from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
+from views.reading.view_strategies import LAST_READ_PAGE_DIALOG_IDENTIFIERS
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +47,7 @@ class LastReadPageDialogResource(Resource):
 
     def _handle_last_read_page_dialog_choice(self):
         """Implementation for handling Last read page dialog choice from both GET and POST requests."""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         # Get sindarin_email from request to determine which automator to use
         sindarin_email = get_sindarin_email()
@@ -112,8 +116,6 @@ class LastReadPageDialogResource(Resource):
         logger.info(f"Last read page dialog choice: goto_last_read_page={goto_last_read_page}")
 
         # Use NavigationResourceHandler to handle the dialog
-        from handlers.navigation_handler import NavigationResourceHandler
-
         nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
 
         # First check if the dialog is still visible before trying to click
@@ -126,9 +128,6 @@ class LastReadPageDialogResource(Resource):
         dialog_text = dialog_result.get("dialog_text", "")
 
         # Now click the appropriate button based on the client's choice
-        from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
-        from views.reading.view_strategies import LAST_READ_PAGE_DIALOG_IDENTIFIERS
-
         try:
             # Try to click YES or NO based on the goto_last_read_page value
             button_clicked = False

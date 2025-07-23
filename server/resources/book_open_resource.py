@@ -8,6 +8,8 @@ import urllib.parse
 from flask import request
 from flask_restful import Resource
 
+from handlers.navigation_handler import NavigationResourceHandler
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 class BookOpenResource(Resource):
     def _open_book(self, book_title):
         """Open a specific book - shared implementation for GET and POST."""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         # URL decode the book title to handle plus signs and other encoded characters
         if book_title:
@@ -65,8 +67,6 @@ class BookOpenResource(Resource):
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
             # Check for the 'last read page' dialog without auto-accepting
-            from handlers.navigation_handler import NavigationResourceHandler
-
             nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
             dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
 

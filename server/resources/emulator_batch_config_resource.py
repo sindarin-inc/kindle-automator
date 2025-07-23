@@ -5,11 +5,13 @@ then performs a graceful shutdown with snapshot.
 """
 
 import logging
+import subprocess
 import time
 
 from flask import jsonify, request
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
 from server.utils.ansi_colors import CYAN, GREEN, RED, RESET, YELLOW
 from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
 from views.core.app_state import AppState
@@ -26,8 +28,9 @@ class EmulatorBatchConfigResource(Resource):
     POST /batch-configure-emulators
     """
 
-    def __init__(self, server_instance):
-        self.server = server_instance
+    def __init__(self, server_instance=None):
+        # Accept server_instance for backwards compatibility but use singleton
+        pass
 
     def post(self):
         """
@@ -48,7 +51,8 @@ class EmulatorBatchConfigResource(Resource):
 
             # Initialize managers
             avd_manager = AVDProfileManager.get_instance()
-            shutdown_manager = EmulatorShutdownManager(self.server)
+            server = AutomationServer.get_instance()
+            shutdown_manager = EmulatorShutdownManager(server)
 
             # Get all profiles
             all_profiles = avd_manager.list_profiles()
@@ -86,7 +90,8 @@ class EmulatorBatchConfigResource(Resource):
                     # Boot the emulator
                     logger.info(f"{GREEN}Starting emulator for {email}{RESET}")
                     # Use switch_profile to start emulator, same as the successful flow
-                    success, message = self.server.switch_profile(email)
+                    server = AutomationServer.get_instance()
+                    success, message = server.switch_profile(email)
 
                     if not success:
                         logger.error(
@@ -105,7 +110,8 @@ class EmulatorBatchConfigResource(Resource):
                     time.sleep(10)  # Give it time to boot
 
                     # Get the automator for this profile
-                    automator = self.server.get_automator(email)
+                    server = AutomationServer.get_instance()
+                    automator = server.get_automator(email)
                     if not automator:
                         logger.error(f"{RED}Failed to create automator for {email}{RESET}", exc_info=True)
                         result["status"] = "failed"
@@ -124,7 +130,8 @@ class EmulatorBatchConfigResource(Resource):
 
                     # Navigate to library
                     logger.info(f"Navigating to library for {email}")
-                    final_state = state_machine.transition_to_library(max_transitions=10, server=self.server)
+                    server = AutomationServer.get_instance()
+                    final_state = state_machine.transition_to_library(max_transitions=10, server=server)
 
                     if final_state != AppState.LIBRARY:
                         logger.error(
@@ -286,22 +293,22 @@ class EmulatorBatchConfigResource(Resource):
             # Check if there's an existing automator for this profile
             # First, find the email for this emulator_id
             email = None
-            for profile in self.server.profile_manager.list_profiles():
+            server = AutomationServer.get_instance()
+            for profile in server.profile_manager.list_profiles():
                 if profile.get("emulator_id") == emulator_id:
                     email = profile.get("email")
                     break
 
-            if email and email in self.server.automators:
-                automator = self.server.automators[email]
+            server = AutomationServer.get_instance()
+            if email and email in server.automators:
+                automator = server.automators[email]
                 if automator and hasattr(automator, "driver") and automator.driver:
                     # There's an active automator, emulator is likely running
                     return True
 
             # Fallback to basic ADB check
-            import subprocess
-
             result = subprocess.run(
-                [f"{self.server.android_home}/platform-tools/adb", "devices"],
+                [f"{server.android_home}/platform-tools/adb", "devices"],
                 capture_output=True,
                 text=True,
                 check=False,

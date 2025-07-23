@@ -6,9 +6,11 @@ import traceback
 from flask_restful import Resource
 
 from handlers.test_fixtures_handler import TestFixturesHandler
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
+from server.utils.appium_error_utils import is_appium_error
 from server.utils.request_utils import get_automator_for_request
 
 logger = logging.getLogger(__name__)
@@ -20,9 +22,9 @@ class FixturesResource(Resource):
     @handle_automator_response
     def post(self):
         """Create fixtures for major views"""
-        try:
-            from server.server import server
+        server = AutomationServer.get_instance()
 
+        try:
             automator, _, error_response = get_automator_for_request(server)
             if error_response:
                 return error_response
@@ -33,8 +35,6 @@ class FixturesResource(Resource):
             return {"error": "Failed to create fixtures"}, 500
 
         except Exception as e:
-            from server.utils.appium_error_utils import is_appium_error
-
             if is_appium_error(e):
                 raise
             logger.error(f"Error creating fixtures: {e}", exc_info=True)

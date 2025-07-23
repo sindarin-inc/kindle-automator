@@ -1,12 +1,15 @@
 """Authentication resource for setting up manual authentication via VNC."""
 
 import logging
+import platform
+import subprocess
 import time
 
 from appium.webdriver.common.appiumby import AppiumBy
 from flask import request
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
@@ -16,7 +19,9 @@ from server.utils.request_utils import (
     get_vnc_and_websocket_urls,
     is_websockets_requested,
 )
+from server.utils.vnc_instance_manager import VNCInstanceManager
 from views.core.app_state import AppState
+from views.core.avd_profile_manager import AVDProfileManager
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +29,7 @@ logger = logging.getLogger(__name__)
 class AuthResource(Resource):
     def _handle_recreate(self, sindarin_email, recreate_user=True, recreate_seed=False):
         """Handle deletion of AVDs when recreate is requested"""
-        from server.server import server
+        server = AutomationServer.get_instance()
 
         actions = []
         if recreate_user:
@@ -33,8 +38,6 @@ class AuthResource(Resource):
             actions.append("seed clone")
 
         logger.info(f"Recreate requested for {sindarin_email}, will recreate: {', '.join(actions)}")
-
-        from views.core.avd_profile_manager import AVDProfileManager
 
         profile_manager = AVDProfileManager.get_instance()
 
@@ -59,7 +62,6 @@ class AuthResource(Resource):
     @handle_automator_response
     def _auth(self):
         """Set up a profile for manual authentication via VNC or WebSockets"""
-        from server.server import server
 
         # Use get_sindarin_email() to properly handle user_email overrides
         sindarin_email = get_sindarin_email()
@@ -118,6 +120,7 @@ class AuthResource(Resource):
         # Debug logging for cross-user interference
 
         # Get the automator (should have been created by the decorator)
+        server = AutomationServer.get_instance()
         automator = server.automators.get(sindarin_email)
 
         # Use the prepare_for_authentication method - always using VNC
@@ -217,11 +220,6 @@ class AuthResource(Resource):
 
         # Handle restart_vnc parameter if set - force kill existing VNC process
         if restart_vnc:
-            import platform
-            import subprocess
-
-            from server.utils.vnc_instance_manager import VNCInstanceManager
-
             # Get the display number for this profile
             logger.info(f"Explicitly restarting VNC server for {sindarin_email}")
 
