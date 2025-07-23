@@ -116,7 +116,7 @@ class ShutdownResource(Resource):
 
         preserve_reading_state = get_boolean_param("preserve_reading_state", default=False)
         mark_for_restart = get_boolean_param("mark_for_restart", default=False)
-        cold = get_boolean_param("cold", default=False)
+        skip_snapshot = get_boolean_param("skip_snapshot", default=False)
 
         try:
             # Use the shutdown manager to handle the shutdown
@@ -124,7 +124,7 @@ class ShutdownResource(Resource):
                 sindarin_email,
                 preserve_reading_state=preserve_reading_state,
                 mark_for_restart=mark_for_restart,
-                skip_snapshot=cold,  # Skip snapshot if cold shutdown requested
+                skip_snapshot=skip_snapshot,
             )
 
             # Prepare response
@@ -139,9 +139,13 @@ class ShutdownResource(Resource):
                 message_parts.append("automator cleaned")
             if shutdown_summary["snapshot_taken"]:
                 message_parts.append("snapshot taken")
-            elif cold:
+            elif skip_snapshot:
                 message_parts.append("snapshot skipped for cold boot")
-            elif not cold and not shutdown_summary["snapshot_taken"]:
+            elif (
+                not skip_snapshot
+                and not shutdown_summary["snapshot_taken"]
+                and (shutdown_summary["emulator_stopped"] or shutdown_summary["automator_cleaned"])
+            ):
                 message_parts.append("SNAPSHOT FAILED - will cold boot next time")
 
             # Add sync status if attempted
@@ -165,8 +169,12 @@ class ShutdownResource(Resource):
                     exc_info=True,
                 )
 
-            # Log error if snapshot failed
-            if not cold and not shutdown_summary["snapshot_taken"]:
+            # Log error if snapshot failed (only if there was an emulator or automator to snapshot)
+            if (
+                not skip_snapshot
+                and not shutdown_summary["snapshot_taken"]
+                and (shutdown_summary["emulator_stopped"] or shutdown_summary["automator_cleaned"])
+            ):
                 logger.error(
                     f"SNAPSHOT FAILED during shutdown for {sindarin_email} - emulator will cold boot next time! "
                     f"This means user will need to navigate back to their book.",
@@ -177,7 +185,7 @@ class ShutdownResource(Resource):
                 "success": True,
                 "message": message,
                 "details": shutdown_summary,
-                "cold_shutdown": cold,
+                "cold_shutdown": skip_snapshot,
             }, 200
 
         except Exception as e:
