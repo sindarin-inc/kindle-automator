@@ -2,4 +2,5 @@
 # Staging configuration for kindle-automator-staging
 kindle_automator_url: "http://localhost:4098"
 # kindle_repo_branch: "main"  # Staging branch
-kindle_repo_branch: "staging"  # Staging branch
+# kindle_repo_branch: "staging"  # Staging branch
+kindle_repo_branch: "sam/refactor-server-routes"  # Staging branch

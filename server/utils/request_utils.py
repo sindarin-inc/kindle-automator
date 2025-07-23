@@ -30,7 +30,6 @@ from typing import Optional, Tuple
 
 from flask import request
 
-
 logger = logging.getLogger(__name__)
 
 # Thread-local storage for email override
@@ -157,7 +156,7 @@ def get_automator_for_request(server=None):
         error = {"error": "Server instance required for get_automator_for_request"}
         logger.error("No server instance provided to get_automator_for_request", exc_info=True)
         return None, None, (error, 500)
-        
+
     automator = server.automators.get(sindarin_email)
     if not automator:
         error = {"error": f"No automator found for {sindarin_email}"}
