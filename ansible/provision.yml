@@ -5,7 +5,7 @@
 
   roles:
     - { role: provision, tags: base }
-    - { role: mount_drives, tags: storage }
+    - { role: mount_drives, tags: storage, when: "'bigdrives' in group_names" }
     # - { role: storagebox, tags: storage }
     - { role: nginx, tags: nginx }
     - { role: mezmo, tags: mezmo }

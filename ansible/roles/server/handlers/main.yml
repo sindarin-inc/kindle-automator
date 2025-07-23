@@ -4,3 +4,10 @@
     name: kindle-automator
     state: restarted
     daemon_reload: yes
+
+- name: stop apport
+  systemd:
+    name: apport
+    state: stopped
+    enabled: no
+  failed_when: false

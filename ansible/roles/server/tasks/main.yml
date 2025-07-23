@@ -155,15 +155,6 @@
     global: yes
     state: present
 
-# Install Appium UiAutomator2 driver
-- name: Install Appium UiAutomator2 driver
-  command: npx appium driver install uiautomator2
-  args:
-    creates: /usr/local/lib/node_modules/appium/node_modules/appium-uiautomator2-driver
-  register: uiautomator2_installed
-  ignore_errors: yes
-  changed_when: false
-
 # Create systemd service file
 - name: Create systemd service file
   template:
@@ -195,3 +186,19 @@
     dest: /etc/logrotate.d/kindle-automator
     mode: "0644"
   tags: logrotate
+
+# Disable apport crash reporting to prevent dialog popups
+- name: Check if apport is installed
+  stat:
+    path: /etc/default/apport
+  register: apport_config
+
+- name: Disable apport crash reporting
+  lineinfile:
+    path: /etc/default/apport
+    regexp: "^enabled="
+    line: "enabled=0"
+    backrefs: yes
+  when: apport_config.stat.exists
+  notify: stop apport
+# No continuous monitoring - crash dialogs will be handled during emulator launch
