@@ -8,7 +8,9 @@ from datetime import datetime, timedelta
 from flask import request
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
 from server.logging_config import IdleTimerContext
+from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
@@ -21,9 +23,9 @@ class IdleCheckResource(Resource):
         """Initialize the idle check resource.
 
         Args:
-            server_instance: The AutomationServer instance
+            server_instance: The AutomationServer instance (ignored, uses singleton)
         """
-        self.server = server_instance
+        # Accept server_instance for backwards compatibility but use singleton
         # Mac emulators get 24 hours (1440 minutes), Linux gets 30 minutes
         if platform.system() == "Darwin":
             self.idle_timeout_minutes = 1440  # 24 hours for Mac
@@ -78,12 +80,14 @@ class IdleCheckResource(Resource):
             logger.info(f"Checking for emulators idle for more than {timeout_minutes} minutes")
 
             # Check each automator for idle time
-            for email, automator in self.server.automators.items():
+            server = AutomationServer.get_instance()
+            for email, automator in server.automators.items():
                 if automator is None:
                     continue
 
                 # Get last activity time
-                last_activity = self.server.get_last_activity_time(email)
+                server = AutomationServer.get_instance()
+                last_activity = server.get_last_activity_time(email)
 
                 if last_activity is None:
                     # If no activity recorded, consider it as just started
@@ -100,12 +104,8 @@ class IdleCheckResource(Resource):
 
                     # Use the shutdown manager directly instead of going through HTTP
                     try:
-                        # Import and use shutdown manager directly
-                        from server.utils.emulator_shutdown_manager import (
-                            EmulatorShutdownManager,
-                        )
-
-                        shutdown_manager = EmulatorShutdownManager(self.server)
+                        server = AutomationServer.get_instance()
+                        shutdown_manager = EmulatorShutdownManager(server)
                         # Idle shutdowns should navigate to library and NOT mark for restart
                         shutdown_summary = shutdown_manager.shutdown_emulator(
                             email, preserve_reading_state=False, mark_for_restart=False
@@ -150,10 +150,11 @@ class IdleCheckResource(Resource):
                     active_emails.append({"email": email, "active_minutes": round(active_duration, 1)})
 
             # Prepare summary
+            server = AutomationServer.get_instance()
             summary = {
                 "timestamp": datetime.now().isoformat(),
                 "idle_timeout_minutes": timeout_minutes,
-                "total_checked": len(self.server.automators),
+                "total_checked": len(server.automators),
                 "shut_down": len([s for s in shutdown_emails if s.get("status") == "shutdown"]),
                 "active": len(active_emails),
                 "failed": len([s for s in shutdown_emails if s.get("status") != "shutdown"]),

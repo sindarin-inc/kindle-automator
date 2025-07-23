@@ -8,6 +8,7 @@ import flask
 from flask import Response
 from selenium.common import exceptions as selenium_exceptions
 
+from server.core.automation_server import AutomationServer
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -20,10 +21,8 @@ def ensure_automator_healthy(f):
 
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # Access server instance from the Flask app
-        from flask import current_app as app
-
-        server = app.config["server_instance"]
+        # Get server instance using singleton
+        server = AutomationServer.get_instance()
 
         max_retries = 2  # Allow retries for UiAutomator2 crashes
 

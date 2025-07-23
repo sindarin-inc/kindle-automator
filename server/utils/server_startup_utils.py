@@ -119,9 +119,6 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                                 if platform.system() == "Darwin" and hasattr(automator, "device_id"):
                                     emulators_in_use[automator.device_id] = email
                                     logger.info(f"Marked emulator {automator.device_id} as in use by {email}")
-
-                                # Add a delay between restarts to avoid overwhelming the system
-                                time.sleep(5)
                             else:
                                 logger.error(f"✗ Failed to initialize driver for {email}", exc_info=True)
                                 failed_restarts.append(email)

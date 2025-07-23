@@ -9,6 +9,7 @@ from typing import Optional
 from flask import Response, current_app, make_response, send_file
 from selenium.common import exceptions as selenium_exceptions
 
+from server.core.automation_server import AutomationServer
 from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
 
@@ -78,6 +79,7 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
     Returns:
         The result from the function or a formatted error response
     """
+    server = AutomationServer.get_instance()
     max_retries = 2
     if start_time is None:
         start_time = time.time()
@@ -123,19 +125,19 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
             return False
 
         # Check if we have an automator for this email
-        if sindarin_email not in server_instance.automators or not server_instance.automators[sindarin_email]:
+        if sindarin_email not in server.automators or not server.automators[sindarin_email]:
             logger.info(f"Initializing automator for {sindarin_email}")
-            automator = server_instance.initialize_automator(sindarin_email)
+            automator = server.initialize_automator(sindarin_email)
             return automator.initialize_driver() if automator else False
 
         # Clean up existing automator
-        automator = server_instance.automators[sindarin_email]
+        automator = server.automators[sindarin_email]
         if automator:
             automator.cleanup()
-            server_instance.automators[sindarin_email] = None
+            server.automators[sindarin_email] = None
 
         # Initialize new automator
-        automator = server_instance.initialize_automator(sindarin_email)
+        automator = server.initialize_automator(sindarin_email)
         return automator.initialize_driver() if automator else False
 
     def restart_emulator():
@@ -151,12 +153,12 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
 
         logger.info(f"Attempting to restart emulator for profile: {sindarin_email}")
         # Force a new emulator to be created
-        success, _ = server_instance.switch_profile(sindarin_email, force_new_emulator=True)
+        success, _ = server.switch_profile(sindarin_email, force_new_emulator=True)
 
         # Initialize automator
         if success:
             logger.info(f"Initializing automator after emulator restart for {sindarin_email}")
-            automator = server_instance.initialize_automator(sindarin_email)
+            automator = server.initialize_automator(sindarin_email)
             if automator:
                 automator.initialize_driver()
 
@@ -391,9 +393,10 @@ def _apply_timezone_to_device(server_instance, sindarin_email: str, timezone: st
     Returns:
         bool: True if successful, False otherwise
     """
+    server = AutomationServer.get_instance()
     try:
         # Get the automator for this email
-        automator = server_instance.automators.get(sindarin_email)
+        automator = server.automators.get(sindarin_email)
         if not automator:
             logger.warning(f"No automator found for {sindarin_email}, cannot apply timezone")
             return False
@@ -440,6 +443,7 @@ def _handle_timezone_parameter(server_instance, sindarin_email: Optional[str]):
         server_instance: The AutomationServer instance
         sindarin_email: The user's email
     """
+    server = AutomationServer.get_instance()
     if not sindarin_email:
         return
 
@@ -504,11 +508,8 @@ def handle_automator_response(f):
             start_time = time.time()
             logger.debug("Request start time not found in g, using current time")
 
-        # Get server instance from request context
-        server_instance = current_app.config.get("server_instance")
-        if server_instance is None:
-            logger.error("No server instance found in app config", exc_info=True)
-            return {"error": "Server configuration error"}, 500
+        # Get server instance using singleton
+        server_instance = AutomationServer.get_instance()
 
         # Get the operation name from the function
         operation_name = f.__name__

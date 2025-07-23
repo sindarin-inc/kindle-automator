@@ -4,6 +4,8 @@ import logging
 
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,9 +16,9 @@ class ActiveEmulatorsResource(Resource):
         """Initialize the resource.
 
         Args:
-            server_instance: The AutomationServer instance
+            server_instance: The AutomationServer instance (ignored, uses singleton)
         """
-        self.server = server_instance
+        # Accept server_instance for backwards compatibility but use singleton
         super().__init__()
 
     def get(self):
@@ -25,7 +27,8 @@ class ActiveEmulatorsResource(Resource):
             # Get all emails with active automators
             active_emails = []
 
-            for email, automator in self.server.automators.items():
+            server = AutomationServer.get_instance()
+            for email, automator in server.automators.items():
                 if automator is not None:
                     # Check if the automator has a running emulator
                     has_emulator = False
