@@ -185,12 +185,14 @@ class TextResource(Resource):
             logger.error(f"Traceback: {traceback.format_exc()}", exc_info=True)
             return {"error": str(e)}, 500
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response
     def get(self):
         """Get OCR text of the current reading page without turning the page."""
         return self._extract_text()
 
+    @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response
     def post(self):
