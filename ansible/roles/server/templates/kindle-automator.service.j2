@@ -9,7 +9,7 @@ Environment="PATH=/opt/kindle-automator/venv/bin:/opt/android-sdk/platform-tools
 Environment="ANDROID_HOME=/opt/android-sdk"
 Environment="ANDROID_SDK_ROOT=/opt/android-sdk"
 Environment="FLASK_ENV=production"
-Environment="ENVIRONMENT=prod"
+Environment="ENVIRONMENT={% if 'staging' in inventory_hostname %}staging{% else %}prod{% endif %}"
 Environment="PYTHONPATH=/opt/kindle-automator"
 ExecStart=/opt/kindle-automator/venv/bin/python -m server.server
 # Run graceful shutdown before stopping the service
