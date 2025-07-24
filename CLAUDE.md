@@ -4,6 +4,10 @@
 
 - When you see references to KINDLE-AUTOMATOR-[A-Z0-9]+ (e.g., KINDLE-AUTOMATOR-8), use the Sentry MCP tools to look up the issue details
 - Never use Sentry's Seer AI analysis - fix issues using Claude Code instead
+- When investigating a Sentry issue, look for the user's email address in the ticket details
+- Fetch the user's log file from production using SCP: `scp PROD:/opt/kindle-automator/logs/email_log/<user_email>.log .`
+- The PROD server's credentials are the same as specified in the Makefile's `make ssh` command
+- This provides detailed logs for debugging exactly what's happening to that specific user
 
 ## Commands
 

@@ -51,8 +51,11 @@ env:
 
 # SSH
 
-ssh:
+ssh: ssh-3
+
+ssh-1:
 	ssh -i ansible/keys/kindle.key root@157.180.51.112
+ssh1: ssh-1
 ssh-3:
 	ssh -i ansible/keys/kindle.key root@157.180.14.166
 ssh3: ssh-3
