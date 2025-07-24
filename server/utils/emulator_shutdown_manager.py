@@ -329,7 +329,7 @@ class EmulatorShutdownManager:
                 from server.logging_config import store_page_source
 
                 store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
-                logger.error("Diagnostic page source saved for sync failure", exc_info=True)
+                logger.debug("Diagnostic page source saved for sync failure", exc_info=True)
             except Exception as e:
                 logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
 
