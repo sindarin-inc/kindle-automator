@@ -265,6 +265,11 @@ class EmulatorManager:
                     f"Timeout waiting for emulator to boot for {email} after 45 seconds and {check_count} checks",
                     exc_info=True,
                 )
+
+                # Check for crash dialog on timeout
+                if self.emulator_launcher._check_and_dismiss_crash_dialog(display_num):
+                    logger.warning("Found and dismissed crash dialog after emulator boot timeout")
+
                 return False
             else:
                 logger.error(f"Failed to launch emulator", exc_info=True)

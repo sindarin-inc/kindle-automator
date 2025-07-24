@@ -99,6 +99,61 @@ class EmulatorLauncher:
 
         return running_ids
 
+    def _check_and_dismiss_crash_dialog(self, display_num: int) -> bool:
+        """
+        Check for Ubuntu crash dialog (apport) and dismiss it.
+
+        Args:
+            display_num: The X display number
+
+        Returns:
+            True if a crash dialog was found and dismissed, False otherwise
+        """
+        try:
+            # Check for crash dialog windows
+            result = subprocess.run(
+                ["xwininfo", "-root", "-tree"],
+                env={**os.environ, "DISPLAY": f":{display_num}"},
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                output = result.stdout.lower()
+                # Look for crash dialog indicators
+                if any(phrase in output for phrase in ["crash", "error", "closed unexpectedly", "apport"]):
+                    # Also check window dimensions - crash dialogs are typically around 562x422
+                    for line in result.stdout.split("\n"):
+                        if "562x422" in line or ("android emulator" in line.lower() and "x4" in line):
+                            email = get_sindarin_email()
+                            logger.error(
+                                f"Detected crash dialog on display :{display_num}, email: {email}",
+                                exc_info=True,
+                            )
+
+                            # Try to dismiss with Escape key
+                            dismiss_result = subprocess.run(
+                                ["xdotool", "key", "Escape"],
+                                env={**os.environ, "DISPLAY": f":{display_num}"},
+                                capture_output=True,
+                                timeout=3,
+                            )
+
+                            if dismiss_result.returncode == 0:
+                                logger.info(f"Dismissed crash dialog on display :{display_num}")
+                                time.sleep(1)  # Give it a moment to close
+                                return True
+                            else:
+                                logger.error(
+                                    f"Failed to dismiss crash dialog: {dismiss_result.stderr}", exc_info=True
+                                )
+
+        except Exception as e:
+            logger.debug(f"Error checking for crash dialog: {e}")
+
+        return False
+
     def _verify_emulator_running(self, emulator_id: str, email: str) -> bool:
         """
         Verify if a specific emulator is running using adb devices and has the correct AVD.
@@ -1050,6 +1105,11 @@ class EmulatorLauncher:
             if process.poll() is not None:
                 # Process already exited
                 logger.error(f"Emulator process exited immediately with code: {process.poll()}")
+
+                # Check for and dismiss crash dialog
+                if self._check_and_dismiss_crash_dialog(display_num):
+                    logger.info("Dismissed crash dialog, will retry emulator launch")
+
                 # Check the log files
                 with open(stdout_log, "r") as f:
                     stdout_content = f.read()
