@@ -1,4 +1,5 @@
 """Database connection and session management using SQLAlchemy 2.0."""
+
 import logging
 import os
 from contextlib import contextmanager
@@ -86,7 +87,7 @@ class DatabaseConnection:
     def get_session(self) -> Generator[Session, None, None]:
         """
         Get a database session with automatic cleanup.
-        
+
         Usage:
             with db.get_session() as session:
                 # Use session here
@@ -118,7 +119,7 @@ db_connection = DatabaseConnection()
 def get_db() -> Generator[Session, None, None]:
     """
     Dependency function for getting database sessions in Flask routes.
-    
+
     Usage in Flask:
         with get_db() as session:
             # Use session

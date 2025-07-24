@@ -54,18 +54,43 @@ python tests/test_concurrent_access.py
 
 ## Database Connection
 
-The system connects to the existing `sol_postgres` container on port 5496. The connection details are in `.env`:
+The system supports both local and remote database connections:
+
+### Local Development
+For local development, the system connects to the existing `sol_postgres` container on port 5496. The connection details are in `.env`:
 ```
-DATABASE_URL=postgresql://kindle_user:kindle_password@localhost:5496/kindle_db
+DATABASE_URL=postgresql://local:local@localhost:5496/kindle_db
 ```
+
+### Staging/Production
+For staging and production, update the `.env.staging` or `.env.prod` files with the appropriate remote database URL:
+```
+DATABASE_URL=postgresql://user:password@remote-host:5432/kindle_db
+```
+
+The database commands automatically detect whether to use Docker or the remote connection based on the environment.
 
 ## Database Management Commands
 
+### Local Commands (using .env)
 - `make db-connect` - Connect to database with psql
 - `make db-status` - Show table counts
 - `make db-activity` - Show recent user activity
 - `make db-backup` - Backup the database
 - `make db-restore FILE=backup.sql` - Restore from backup
+- `make db-export` - Export database to JSON
+
+### Staging Commands (using .env.staging)
+- `make db-status-staging` - Show table counts on staging
+- `make db-activity-staging` - Show recent user activity on staging
+- `make db-backup-staging` - Backup the staging database
+- `make db-export-staging` - Export staging database to JSON
+
+### Production Commands (using .env.prod)
+- `make db-status-prod` - Show table counts on production
+- `make db-activity-prod` - Show recent user activity on production
+- `make db-backup-prod` - Backup the production database
+- `make db-export-prod` - Export production database to JSON
 
 ## No Going Back
 

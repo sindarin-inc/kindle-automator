@@ -1,4 +1,5 @@
 """SQLAlchemy 2.0 ORM models for Kindle Automator."""
+
 from datetime import datetime
 from typing import Optional
 
@@ -18,12 +19,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     """Base class for all models."""
+
     pass
 
 
 class User(Base):
     """User model representing a Kindle account profile."""
-    
+
     __tablename__ = "users"
     __table_args__ = {"schema": "kindle_automator"}
 
@@ -42,9 +44,7 @@ class User(Base):
     last_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
     kindle_version_name: Mapped[Optional[str]] = mapped_column(String(50))
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
@@ -73,7 +73,7 @@ class User(Base):
 
 class EmulatorSettings(Base):
     """Emulator settings for a user."""
-    
+
     __tablename__ = "emulator_settings"
     __table_args__ = {"schema": "kindle_automator"}
 
@@ -96,7 +96,7 @@ class EmulatorSettings(Base):
 
 class DeviceIdentifiers(Base):
     """Device identifiers for a user's AVD."""
-    
+
     __tablename__ = "device_identifiers"
     __table_args__ = {"schema": "kindle_automator"}
 
@@ -117,7 +117,7 @@ class DeviceIdentifiers(Base):
 
 class LibrarySettings(Base):
     """Library display settings for a user."""
-    
+
     __tablename__ = "library_settings"
     __table_args__ = {"schema": "kindle_automator"}
 
@@ -135,7 +135,7 @@ class LibrarySettings(Base):
 
 class ReadingSettings(Base):
     """Reading display settings for a user."""
-    
+
     __tablename__ = "reading_settings"
     __table_args__ = {"schema": "kindle_automator"}
 
@@ -157,7 +157,7 @@ class ReadingSettings(Base):
 
 class UserPreference(Base):
     """Generic key-value preferences for a user."""
-    
+
     __tablename__ = "user_preferences"
     __table_args__ = (
         UniqueConstraint("user_id", "preference_key", name="uq_user_preference"),

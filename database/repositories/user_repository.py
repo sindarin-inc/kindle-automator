@@ -1,4 +1,5 @@
 """Repository for user data access with atomic operations."""
+
 import json
 import logging
 from datetime import datetime
@@ -29,10 +30,10 @@ class UserRepository:
     def get_user_by_email(self, email: str) -> Optional[User]:
         """
         Get a user by email address with all related data.
-        
+
         Args:
             email: The user's email address
-            
+
         Returns:
             User object with all relationships loaded, or None if not found
         """
@@ -56,31 +57,33 @@ class UserRepository:
     def create_user(self, email: str, avd_name: Optional[str] = None) -> User:
         """
         Create a new user with default settings.
-        
+
         Args:
             email: The user's email address
             avd_name: Optional AVD name
-            
+
         Returns:
             The created User object
         """
         try:
             user = User(email=email, avd_name=avd_name)
             self.session.add(user)
-            
+
             # Create default related records
             emulator_settings = EmulatorSettings(user=user)
             device_identifiers = DeviceIdentifiers(user=user)
             library_settings = LibrarySettings(user=user)
             reading_settings = ReadingSettings(user=user)
-            
-            self.session.add_all([
-                emulator_settings,
-                device_identifiers,
-                library_settings,
-                reading_settings,
-            ])
-            
+
+            self.session.add_all(
+                [
+                    emulator_settings,
+                    device_identifiers,
+                    library_settings,
+                    reading_settings,
+                ]
+            )
+
             self.session.commit()
             self.session.refresh(user)
             logger.info(f"Created new user: {email}")
@@ -97,11 +100,11 @@ class UserRepository:
     def get_or_create_user(self, email: str, avd_name: Optional[str] = None) -> tuple[User, bool]:
         """
         Get an existing user or create a new one.
-        
+
         Args:
             email: The user's email address
             avd_name: Optional AVD name for new users
-            
+
         Returns:
             Tuple of (User object, was_created boolean)
         """
@@ -115,12 +118,12 @@ class UserRepository:
     def update_user_field(self, email: str, field: str, value: Any) -> bool:
         """
         Update a specific field for a user atomically.
-        
+
         Args:
             email: The user's email address
             field: The field name to update
             value: The new value
-            
+
         Returns:
             True if update was successful, False otherwise
         """
@@ -128,7 +131,7 @@ class UserRepository:
             # Handle nested fields
             if "." in field:
                 return self._update_nested_field(email, field, value)
-            
+
             # Handle top-level user fields
             stmt = (
                 update(User)
@@ -137,14 +140,14 @@ class UserRepository:
             )
             result = self.session.execute(stmt)
             self.session.commit()
-            
+
             if result.rowcount > 0:
                 logger.debug(f"Updated {field} for user {email}")
                 return True
             else:
                 logger.warning(f"No user found with email {email}")
                 return False
-                
+
         except SQLAlchemyError as e:
             self.session.rollback()
             logger.error(f"Error updating field {field} for user {email}: {e}")
@@ -155,45 +158,45 @@ class UserRepository:
         parts = field_path.split(".", 1)
         section = parts[0]
         field = parts[1] if len(parts) > 1 else None
-        
+
         user = self.get_user_by_email(email)
         if not user:
             logger.warning(f"No user found with email {email}")
             return False
-        
+
         try:
             if section == "emulator_settings":
                 if not user.emulator_settings:
                     user.emulator_settings = EmulatorSettings(user=user)
                 setattr(user.emulator_settings, field, value)
-                
+
             elif section == "device_identifiers":
                 if not user.device_identifiers:
                     user.device_identifiers = DeviceIdentifiers(user=user)
                 setattr(user.device_identifiers, field, value)
-                
+
             elif section == "library_settings":
                 if not user.library_settings:
                     user.library_settings = LibrarySettings(user=user)
                 setattr(user.library_settings, field, value)
-                
+
             elif section == "reading_settings":
                 if not user.reading_settings:
                     user.reading_settings = ReadingSettings(user=user)
                 setattr(user.reading_settings, field, value)
-                
+
             elif section == "preferences":
                 self._update_preference(user, field, value)
-                
+
             else:
                 logger.error(f"Unknown section: {section}")
                 return False
-            
+
             user.updated_at = datetime.utcnow()
             user.version += 1
             self.session.commit()
             return True
-            
+
         except SQLAlchemyError as e:
             self.session.rollback()
             logger.error(f"Error updating nested field {field_path}: {e}")
@@ -203,7 +206,7 @@ class UserRepository:
         """Update or create a user preference."""
         # Find existing preference
         pref = next((p for p in user.preferences if p.preference_key == key), None)
-        
+
         if pref:
             pref.preference_value = json.dumps(value) if not isinstance(value, str) else value
         else:
@@ -217,31 +220,27 @@ class UserRepository:
     def update_last_used(self, email: str, emulator_id: Optional[str] = None) -> bool:
         """
         Update the last_used timestamp for a user.
-        
+
         Args:
             email: The user's email address
             emulator_id: Optional emulator ID (not stored but logged)
-            
+
         Returns:
             True if update was successful
         """
         try:
             now = datetime.utcnow()
-            stmt = (
-                update(User)
-                .where(User.email == email)
-                .values(last_used=now, updated_at=now)
-            )
+            stmt = update(User).where(User.email == email).values(last_used=now, updated_at=now)
             result = self.session.execute(stmt)
             self.session.commit()
-            
+
             if result.rowcount > 0:
                 logger.info(f"Updated last_used for {email}")
                 if emulator_id:
                     logger.debug(f"Emulator ID: {emulator_id}")
                 return True
             return False
-            
+
         except SQLAlchemyError as e:
             self.session.rollback()
             logger.error(f"Error updating last_used for {email}: {e}")
@@ -250,11 +249,11 @@ class UserRepository:
     def update_auth_state(self, email: str, authenticated: bool) -> bool:
         """
         Update authentication state for a user.
-        
+
         Args:
             email: The user's email address
             authenticated: Whether the user is authenticated
-            
+
         Returns:
             True if update was successful
         """
@@ -262,13 +261,13 @@ class UserRepository:
             values = {"updated_at": datetime.utcnow()}
             if authenticated:
                 values["auth_date"] = datetime.utcnow()
-            
+
             stmt = update(User).where(User.email == email).values(**values)
             result = self.session.execute(stmt)
             self.session.commit()
-            
+
             return result.rowcount > 0
-            
+
         except SQLAlchemyError as e:
             self.session.rollback()
             logger.error(f"Error updating auth state for {email}: {e}")
@@ -277,7 +276,7 @@ class UserRepository:
     def get_all_users(self) -> List[User]:
         """
         Get all users with their related data.
-        
+
         Returns:
             List of all User objects
         """
@@ -297,10 +296,10 @@ class UserRepository:
     def get_recently_used_users(self, limit: int = 10) -> List[User]:
         """
         Get recently used users ordered by last_used timestamp.
-        
+
         Args:
             limit: Maximum number of users to return
-            
+
         Returns:
             List of User objects ordered by last_used DESC
         """
@@ -326,10 +325,10 @@ class UserRepository:
     def user_to_dict(self, user: User) -> Dict[str, Any]:
         """
         Convert a User object to a dictionary matching the old JSON format.
-        
+
         Args:
             user: The User object to convert
-            
+
         Returns:
             Dictionary representation of the user
         """
@@ -346,15 +345,13 @@ class UserRepository:
             "post_boot_randomized": user.post_boot_randomized,
             "needs_device_randomization": user.needs_device_randomization,
             "last_snapshot_timestamp": (
-                user.last_snapshot_timestamp.isoformat()
-                if user.last_snapshot_timestamp
-                else None
+                user.last_snapshot_timestamp.isoformat() if user.last_snapshot_timestamp else None
             ),
             "last_snapshot": user.last_snapshot,
             "kindle_version_name": user.kindle_version_name,
             "kindle_version_code": user.kindle_version_code,
         }
-        
+
         # Add emulator settings
         if user.emulator_settings:
             result["emulator_settings"] = {
@@ -371,7 +368,7 @@ class UserRepository:
                 ),
                 "appium_device_initialized": user.emulator_settings.appium_device_initialized,
             }
-        
+
         # Add device identifiers
         if user.device_identifiers:
             result["device_identifiers"] = {
@@ -382,7 +379,7 @@ class UserRepository:
                 "ro.product.name": user.device_identifiers.ro_product_name,
                 "android_id": user.device_identifiers.android_id,
             }
-        
+
         # Add library settings
         if user.library_settings:
             result["library_settings"] = {
@@ -390,7 +387,7 @@ class UserRepository:
                 "group_by_series": user.library_settings.group_by_series,
                 "actively_reading_title": user.library_settings.actively_reading_title,
             }
-        
+
         # Add reading settings
         if user.reading_settings:
             result["reading_settings"] = {
@@ -402,7 +399,7 @@ class UserRepository:
                 "popular_highlights": user.reading_settings.popular_highlights,
                 "highlight_menu": user.reading_settings.highlight_menu,
             }
-        
+
         # Add preferences
         if user.preferences:
             result["preferences"] = {
@@ -415,5 +412,5 @@ class UserRepository:
             }
         else:
             result["preferences"] = {}
-        
+
         return result

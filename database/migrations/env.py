@@ -1,4 +1,5 @@
 """Alembic environment configuration."""
+
 import os
 import sys
 from logging.config import fileConfig
@@ -76,7 +77,7 @@ def run_migrations_online() -> None:
     """
     configuration = config.get_section(config.config_ini_section)
     configuration["sqlalchemy.url"] = database_url
-    
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -86,9 +87,10 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         # Set the search path for the connection
         from sqlalchemy import text
+
         connection.execute(text(f"SET search_path TO {schema_name}, public"))
         connection.commit()
-        
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

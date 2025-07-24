@@ -47,29 +47,54 @@ This installs:
 
 ### 2. Set Up PostgreSQL
 
-Create the database and user:
+#### Local Development
+For local development, use the existing `sol_postgres` container on port 5496:
 
 ```sql
 CREATE DATABASE kindle_db;
-CREATE USER kindle_user WITH PASSWORD 'kindle_password';
-GRANT ALL PRIVILEGES ON DATABASE kindle_db TO kindle_user;
+CREATE USER local WITH PASSWORD 'local';
+GRANT ALL PRIVILEGES ON DATABASE kindle_db TO local;
 ```
+
+#### Staging/Production
+For staging and production environments, set up your remote PostgreSQL instance with appropriate credentials.
 
 ### 3. Configure Environment
 
-Add to your `.env` file:
+Add to your environment files:
 
+#### Local Development (`.env`)
 ```bash
-DATABASE_URL=postgresql://kindle_user:kindle_password@localhost:5432/kindle_db
+DATABASE_URL=postgresql://local:local@localhost:5496/kindle_db
 KINDLE_SCHEMA=kindle_automator
 USE_DATABASE_PROFILE_MANAGER=false  # Set to true when ready to switch
+```
+
+#### Staging (`.env.staging`)
+```bash
+DATABASE_URL=postgresql://user:password@staging-host:5432/kindle_db
+KINDLE_SCHEMA=kindle_automator
+```
+
+#### Production (`.env.prod`)
+```bash
+DATABASE_URL=postgresql://user:password@prod-host:5432/kindle_db
+KINDLE_SCHEMA=kindle_automator
 ```
 
 ### 4. Run Database Migrations
 
 ```bash
 cd /Users/sclay/projects/sindarin/kindle-automator
+
+# Local development
 alembic upgrade head
+
+# Staging
+DATABASE_URL=<staging-url> alembic upgrade head
+
+# Production
+DATABASE_URL=<prod-url> alembic upgrade head
 ```
 
 This creates all tables in the `kindle_automator` schema.
@@ -165,13 +190,24 @@ WHERE schemaname = 'kindle_automator';
 ### Manual Backup
 
 ```bash
-pg_dump -U kindle_user -d kindle_db -n kindle_automator > kindle_backup.sql
+# Local
+make db-backup
+
+# Staging
+make db-backup-staging
+
+# Production
+make db-backup-prod
 ```
 
 ### Restore from Backup
 
 ```bash
-psql -U kindle_user -d kindle_db < kindle_backup.sql
+# Local
+make db-restore FILE=backups/kindle_db_YYYYMMDD_HHMMSS.sql
+
+# For staging/production, use psql directly with DATABASE_URL
+psql $DATABASE_URL < kindle_backup.sql
 ```
 
 ### Automated Backups

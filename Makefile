@@ -69,4 +69,17 @@ include Makefile.database
 # Export database to JSON format
 db-export:
 	@echo "Exporting users from database to JSON format..."
-	@python scripts/export_users_to_json.py
+	@source ~/.virtualenvs/kindle-automator/bin/activate && \
+		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) python scripts/export_users_to_json.py
+
+# Export from staging database
+db-export-staging:
+	@echo "Exporting users from staging database to JSON format..."
+	@source ~/.virtualenvs/kindle-automator/bin/activate && \
+		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) python scripts/export_users_to_json.py
+
+# Export from production database
+db-export-prod:
+	@echo "Exporting users from production database to JSON format..."
+	@source ~/.virtualenvs/kindle-automator/bin/activate && \
+		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) python scripts/export_users_to_json.py

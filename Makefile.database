@@ -1,24 +1,33 @@
 # Database management commands for Kindle Automator
 
-# Initialize database in existing sol_postgres container
+# Determine environment file based on target
+ifdef STAGING
+	DB_ENV_FILE := .env.staging
+else ifdef PROD
+	DB_ENV_FILE := .env.prod
+else
+	DB_ENV_FILE := .env
+endif
+
+# Initialize database
 .PHONY: db-init
 db-init:
-	@echo "Initializing Kindle database in sol_postgres..."
-	@docker exec -i sol_postgres psql -p 5496 -U local -d sol_dev < database/init/01_create_database.sql
+	@echo "Initializing Kindle database..."
+	@./scripts/db_connect.sh --command init --env $(DB_ENV_FILE) --file database/init/01_create_database.sql
 
 # Run Alembic migrations
 .PHONY: db-migrate
 db-migrate:
 	@echo "Running database migrations..."
 	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		alembic upgrade head
+		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' $(DB_ENV_FILE) | xargs) alembic upgrade head
 
 # Migrate data from users.json to PostgreSQL
 .PHONY: db-import
 db-import:
 	@echo "Migrating users.json to PostgreSQL..."
 	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		python scripts/migrate_json_to_db.py
+		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' $(DB_ENV_FILE) | xargs) python scripts/migrate_json_to_db.py
 
 # Full database setup: init, migrate, import
 .PHONY: db-setup
@@ -29,13 +38,13 @@ db-setup: db-init db-migrate db-import
 .PHONY: db-connect
 db-connect:
 	@echo "Connecting to kindle_db..."
-	@docker exec -it sol_postgres psql -h localhost -U postgres -d kindle_db
+	@./scripts/db_connect.sh --command interactive --env $(DB_ENV_FILE)
 
 # Show database status
 .PHONY: db-status
 db-status:
 	@echo "Checking database status..."
-	@docker exec sol_postgres psql -h localhost -U postgres -d kindle_db -c "\
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "\
 		SELECT 'Users:' as table_name, COUNT(*) as count FROM kindle_automator.users \
 		UNION ALL \
 		SELECT 'Emulator Settings:', COUNT(*) FROM kindle_automator.emulator_settings \
@@ -53,7 +62,7 @@ db-status:
 db-backup:
 	@echo "Backing up kindle database..."
 	@mkdir -p backups
-	@docker exec sol_postgres pg_dump -h localhost -U postgres -d kindle_db -n kindle_automator > backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql
+	@./scripts/db_connect.sh --command dump --env $(DB_ENV_FILE) --args "backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
 	@echo "Backup saved to backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
 
 # Restore database from backup
@@ -64,7 +73,7 @@ db-restore:
 		exit 1; \
 	fi
 	@echo "Restoring database from $(FILE)..."
-	@docker exec -i sol_postgres psql -h localhost -U postgres -d kindle_db < $(FILE)
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --file $(FILE)
 
 # Drop and recreate database (DANGEROUS!)
 .PHONY: db-reset
@@ -72,7 +81,7 @@ db-reset:
 	@echo "WARNING: This will delete all data in kindle_db!"
 	@echo "Press Ctrl+C to cancel, or Enter to continue..."
 	@read confirm
-	@docker exec sol_postgres psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS kindle_db;"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "DROP DATABASE IF EXISTS kindle_db;"
 	@$(MAKE) db-init
 	@$(MAKE) db-migrate
 
@@ -80,8 +89,30 @@ db-reset:
 .PHONY: db-activity
 db-activity:
 	@echo "Recent user activity..."
-	@docker exec sol_postgres psql -h localhost -U postgres -d kindle_db -c "\
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "\
 		SELECT email, avd_name, last_used, auth_date \
 		FROM kindle_automator.users \
 		ORDER BY last_used DESC NULLS LAST \
 		LIMIT 10;"
+
+# Staging-specific targets
+.PHONY: db-status-staging db-backup-staging db-activity-staging
+db-status-staging:
+	@$(MAKE) db-status STAGING=1
+
+db-backup-staging:
+	@$(MAKE) db-backup STAGING=1
+
+db-activity-staging:
+	@$(MAKE) db-activity STAGING=1
+
+# Production-specific targets
+.PHONY: db-status-prod db-backup-prod db-activity-prod
+db-status-prod:
+	@$(MAKE) db-status PROD=1
+
+db-backup-prod:
+	@$(MAKE) db-backup PROD=1
+
+db-activity-prod:
+	@$(MAKE) db-activity PROD=1
