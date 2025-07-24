@@ -376,6 +376,50 @@ class AVDProfileManager:
         """List all profiles (alias for profiles_index)."""
         return self.profiles_index
 
+    def get_profiles_with_restart_flag(self) -> List[str]:
+        """Get list of emails for profiles with was_running_at_restart flag set."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_users_with_restart_flag()
+            return [user.email for user in users]
+
+    def clear_all_restart_flags(self) -> int:
+        """Clear all was_running_at_restart flags and return count cleared."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.clear_restart_flags()
+
+    def get_email_by_emulator_id(self, emulator_id: str) -> Optional[str]:
+        """Get email for a given emulator_id."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_emulator_id(emulator_id)
+            return user.email if user else None
+
+    def get_inactive_profiles(self, cutoff_datetime: datetime) -> List[Dict]:
+        """Get profiles that haven't been used since cutoff date and aren't in cold storage."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_inactive_users(cutoff_datetime)
+            return [repo.user_to_dict(user) for user in users]
+
+    def get_profiles_by_avd_names(self, avd_names: List[str]) -> Dict[str, Dict]:
+        """Get profiles that have one of the specified AVD names."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_users_with_avd_names(avd_names)
+            return {user.email: repo.user_to_dict(user) for user in users}
+
     def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
         """
         Get the emulator device ID for a given AVD name.

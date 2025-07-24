@@ -468,13 +468,8 @@ class VNCInstanceManager:
             avd_manager = AVDProfileManager.get_instance()
             running_emails = []
 
-            # Check each profile for the was_running_at_restart flag
-            # Get all profiles and check each one
-            profiles = avd_manager.list_profiles()
-            for email, profile in profiles.items():
-                was_running = avd_manager.get_user_field(email, "was_running_at_restart", False)
-                if was_running:
-                    running_emails.append(email)
+            # Get profiles with restart flag using targeted query
+            running_emails = avd_manager.get_profiles_with_restart_flag()
 
             return running_emails
         except Exception as e:
@@ -490,16 +485,8 @@ class VNCInstanceManager:
 
             avd_manager = AVDProfileManager.get_instance()
 
-            # Clear flags for all profiles
-            cleared_count = 0
-            profiles = avd_manager.list_profiles()
-            for profile in profiles:
-                email = profile.get("email")
-                if email and avd_manager.get_user_field(email, "was_running_at_restart", False):
-                    avd_manager.set_user_field(email, "was_running_at_restart", None)
-                    cleared_count += 1
-                    logger.debug(f"Cleared was_running_at_restart flag for {email}")
-
+            # Clear all restart flags using targeted query
+            cleared_count = avd_manager.clear_all_restart_flags()
             logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}", exc_info=True)

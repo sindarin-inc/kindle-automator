@@ -95,8 +95,31 @@ db-activity:
 		ORDER BY last_used DESC NULLS LAST \
 		LIMIT 10;"
 
+# Show all database data
+.PHONY: db-data
+db-data:
+	@echo "=== All Database Data ==="
+	@echo ""
+	@echo "USERS:"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.users ORDER BY id;"
+	@echo ""
+	@echo "EMULATOR SETTINGS:"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.emulator_settings ORDER BY user_id;"
+	@echo ""
+	@echo "DEVICE IDENTIFIERS:"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.device_identifiers ORDER BY user_id;"
+	@echo ""
+	@echo "LIBRARY SETTINGS:"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.library_settings ORDER BY user_id;"
+	@echo ""
+	@echo "READING SETTINGS:"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.reading_settings ORDER BY user_id;"
+	@echo ""
+	@echo "USER PREFERENCES:"
+	@./scripts/db_connect.sh --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.user_preferences ORDER BY user_id;"
+
 # Staging-specific targets
-.PHONY: db-status-staging db-backup-staging db-activity-staging
+.PHONY: db-status-staging db-backup-staging db-activity-staging db-data-staging
 db-status-staging:
 	@$(MAKE) db-status STAGING=1
 
@@ -106,8 +129,11 @@ db-backup-staging:
 db-activity-staging:
 	@$(MAKE) db-activity STAGING=1
 
+db-data-staging:
+	@$(MAKE) db-data STAGING=1
+
 # Production-specific targets
-.PHONY: db-status-prod db-backup-prod db-activity-prod
+.PHONY: db-status-prod db-backup-prod db-activity-prod db-data-prod
 db-status-prod:
 	@$(MAKE) db-status PROD=1
 
@@ -116,3 +142,6 @@ db-backup-prod:
 
 db-activity-prod:
 	@$(MAKE) db-activity PROD=1
+
+db-data-prod:
+	@$(MAKE) db-data PROD=1

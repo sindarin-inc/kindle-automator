@@ -414,3 +414,81 @@ class UserRepository:
             result["preferences"] = {}
 
         return result
+
+    def get_users_with_restart_flag(self) -> List[User]:
+        """Get users who have was_running_at_restart flag set to True."""
+        try:
+            stmt = (
+                select(User)
+                .where(User.was_running_at_restart == True)
+                .options(selectinload(User.emulator_settings))
+            )
+            return list(self.session.execute(stmt).scalars())
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting users with restart flag: {e}")
+            return []
+
+    def clear_restart_flags(self) -> int:
+        """Clear all was_running_at_restart flags and return count of updated records."""
+        try:
+            stmt = update(User).where(User.was_running_at_restart == True).values(was_running_at_restart=None)
+            result = self.session.execute(stmt)
+            self.session.commit()
+            return result.rowcount
+        except SQLAlchemyError as e:
+            logger.error(f"Database error clearing restart flags: {e}")
+            self.session.rollback()
+            return 0
+
+    def get_user_by_emulator_id(self, emulator_id: str) -> Optional[User]:
+        """Get user by emulator_id stored in preferences."""
+        try:
+            # Look for emulator_id in user preferences
+            stmt = (
+                select(User)
+                .join(UserPreference)
+                .where(UserPreference.preference_key == "emulator_id")
+                .where(UserPreference.preference_value == emulator_id)
+                .options(selectinload(User.emulator_settings), selectinload(User.preferences))
+            )
+            return self.session.execute(stmt).scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting user by emulator_id: {e}")
+            return None
+
+    def get_inactive_users(self, cutoff_datetime: datetime) -> List[User]:
+        """Get users who haven't been active since the cutoff date and aren't in cold storage."""
+        try:
+            # First, get users who have cold_storage_date set (to exclude them)
+            cold_storage_subquery = (
+                select(User.id)
+                .join(UserPreference)
+                .where(UserPreference.preference_key == "cold_storage_date")
+                .where(UserPreference.preference_value.is_not(None))
+            )
+
+            # Get users with last_used before cutoff and not in cold storage
+            stmt = (
+                select(User)
+                .where(User.last_used < cutoff_datetime)
+                .where(User.id.notin_(cold_storage_subquery))
+                .where(User.email != "seed_clone@amazon.com")  # Never archive seed clone
+                .options(selectinload(User.preferences))
+            )
+            return list(self.session.execute(stmt).scalars())
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting inactive users: {e}")
+            return []
+
+    def get_users_with_avd_names(self, avd_names: List[str]) -> List[User]:
+        """Get users who have one of the specified AVD names."""
+        try:
+            stmt = (
+                select(User)
+                .where(User.avd_name.in_(avd_names))
+                .options(selectinload(User.emulator_settings), selectinload(User.preferences))
+            )
+            return list(self.session.execute(stmt).scalars())
+        except SQLAlchemyError as e:
+            logger.error(f"Database error getting users by AVD names: {e}")
+            return []

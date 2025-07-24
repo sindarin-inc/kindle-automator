@@ -147,6 +147,136 @@ class LibraryHandler:
             store_page_source(self.driver, "pull_refresh_error")
             return False
 
+    def click_filter_button_and_count_books(self):
+        """Click the filter button and count the number of books shown in the filter modal.
+
+        Returns:
+            int: Number of books shown in the filter modal, or None if failed
+        """
+        try:
+            from views.library.interaction_strategies import FILTER_BUTTON_STRATEGIES
+
+            # Try to find and click the filter button
+            filter_button_clicked = False
+            for strategy, locator in FILTER_BUTTON_STRATEGIES:
+                try:
+                    filter_button = self.driver.find_element(strategy, locator)
+                    if filter_button.is_displayed():
+                        filter_button.click()
+                        logger.info("Successfully clicked filter button")
+                        filter_button_clicked = True
+                        break
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error clicking filter button with strategy {strategy}: {e}")
+
+            if not filter_button_clicked:
+                logger.warning("Could not find or click filter button")
+                return None
+
+            # Wait a moment for the filter modal to appear
+            time.sleep(1.0)
+
+            # Try to find the book count in the filter modal
+            # Look for text elements that might contain book count
+            try:
+                # Take a screenshot for debugging
+                timestamp = int(time.time())
+                screenshot_filename = f"filter_modal_{timestamp}.png"
+                screenshot_path = os.path.join(self.screenshots_dir, screenshot_filename)
+                self.driver.save_screenshot(screenshot_path)
+
+                # Also save page source
+                store_page_source(self.driver.page_source, f"filter_modal_{timestamp}")
+
+                # Look for the "Books" text element and its associated count in the filter modal
+                book_count = None
+                
+                # First try the structured approach - look for Books text and then its sibling count
+                try:
+                    # Find the Books text element
+                    books_text_element = self.driver.find_element(
+                        AppiumBy.XPATH, 
+                        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_text_view' and @text='Books']"
+                    )
+                    
+                    # Find its parent LinearLayout
+                    parent = books_text_element.find_element(AppiumBy.XPATH, "..")
+                    
+                    # Find the count TextView within the same parent
+                    count_element = parent.find_element(
+                        AppiumBy.XPATH, 
+                        ".//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_count']"
+                    )
+                    
+                    count_text = count_element.text
+                    if count_text:
+                        import re
+                        # Extract number from "(N)" format
+                        match = re.search(r"\((\d+)\)", count_text)
+                        if match:
+                            book_count = int(match.group(1))
+                            logger.info(f"Found book count in filter modal: {book_count}")
+                except Exception as e:
+                    logger.debug(f"Could not find book count using structured approach: {e}")
+                
+                # Fallback: look for all text elements
+                if book_count is None:
+                    all_text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
+                    
+                    for element in all_text_elements:
+                        try:
+                            text = element.text
+                            # Look specifically for "Books (N)" pattern
+                            if text and text.lower().startswith("books"):
+                                # Extract number from parentheses
+                                import re
+
+                                match = re.search(r"books\s*\((\d+)\)", text, re.IGNORECASE)
+                                if match:
+                                    book_count = int(match.group(1))
+                                    logger.info(
+                                        f"Found book count in filter modal: {book_count} (from text: {text})"
+                                    )
+                                    break
+                        except Exception as e:
+                            continue
+
+                # Close the filter modal by clicking the DONE button
+                try:
+                    # Try to find the DONE button (visible in the filter modal)
+                    done_button = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.TextView[@text='DONE']"
+                    )
+                    done_button.click()
+                    logger.info("Closed filter modal using DONE button")
+                except NoSuchElementException:
+                    try:
+                        # Try as a Button element
+                        done_button = self.driver.find_element(
+                            AppiumBy.XPATH, "//android.widget.Button[@text='DONE']"
+                        )
+                        done_button.click()
+                        logger.info("Closed filter modal using DONE button")
+                    except:
+                        # If no close button, tap outside the modal
+                        screen_size = self.driver.get_window_size()
+                        self.driver.tap([(screen_size["width"] // 10, screen_size["height"] // 10)])
+                        logger.info("Closed filter modal by tapping outside")
+
+                time.sleep(0.5)
+
+                return book_count
+
+            except Exception as e:
+                logger.error(f"Error counting books in filter modal: {e}", exc_info=True)
+                return None
+
+        except Exception as e:
+            logger.error(f"Error in click_filter_button_and_count_books: {e}", exc_info=True)
+            return None
+
     def _is_library_view_preferences_correctly_set(self):
         """Check if library view preferences are correctly set to list view with group_by_series=false.
 
@@ -1481,6 +1611,29 @@ class LibraryHandler:
             logger.info("Performing pull-to-refresh to get latest book list")
             if not self.pull_to_refresh():
                 logger.warning("Pull-to-refresh failed, continuing anyway...")
+
+            # After pull-to-refresh and All/Downloaded tab switching, capture filter book count
+            filter_book_count = self.click_filter_button_and_count_books()
+            if filter_book_count is not None:
+                logger.info(f"Captured filter book count: {filter_book_count}")
+                # Save to database
+                try:
+                    from server.utils.request_utils import get_sindarin_email
+
+                    sindarin_email = get_sindarin_email()
+                    if sindarin_email:
+                        self.driver.automator.profile_manager.save_style_setting(
+                            "filter_book_count", filter_book_count
+                        )
+                        logger.info(f"Saved filter book count to database: {filter_book_count}")
+
+                    # Send the filter book count in the callback if available
+                    if callback:
+                        callback(None, filter_book_count=filter_book_count)
+                except Exception as e:
+                    logger.error(f"Error saving filter book count: {e}", exc_info=True)
+            else:
+                logger.warning("Failed to capture filter book count")
 
             # Use the scroll handler's method to get all books
             # If callback is provided, pass it to the scroll handler for streaming

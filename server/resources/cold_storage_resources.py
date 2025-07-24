@@ -127,8 +127,7 @@ class ColdStorageStatusResource(Resource):
             logger.info(f"Found {len(eligible_list)} eligible profiles")
 
             logger.info("Processing individual profiles...")
-            for i, profile in enumerate(all_profiles):
-                email = profile["email"]
+            for i, (email, profile) in enumerate(all_profiles.items()):
 
                 if i % 10 == 0:
                     logger.info(f"Processing profile {i+1}/{len(all_profiles)}")

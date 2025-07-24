@@ -381,6 +381,13 @@ class BooksStreamResource(Resource):
                     all_books_retrieved_event.set()  # Signal completion of book retrieval
                     return
 
+                # Handle filter book count message
+                if kwargs.get("filter_book_count") is not None:
+                    filter_count_msg = {"filter_book_count": kwargs.get("filter_book_count")}
+                    processed_books_queue.put(filter_count_msg)
+                    logger.info(f"Queued filter book count message: {filter_count_msg}")
+                    return
+
                 if raw_books_batch:
                     try:
                         # Update activity to prevent idle timeout during long scrolls
@@ -471,8 +478,13 @@ class BooksStreamResource(Resource):
                             timeout=0.2
                         )  # Small timeout to remain responsive
                         if processed_batch:
-                            batch_num_sent += 1
-                            yield encode_message({"books": processed_batch, "batch_num": batch_num_sent})
+                            # Check if this is a filter book count message
+                            if isinstance(processed_batch, dict) and "filter_book_count" in processed_batch:
+                                yield encode_message(processed_batch)
+                            else:
+                                # Regular book batch
+                                batch_num_sent += 1
+                                yield encode_message({"books": processed_batch, "batch_num": batch_num_sent})
                         # No task_done needed for queue.Queue if not using join()
                     except queue.Empty:
                         # Queue is empty, check if book retrieval is done

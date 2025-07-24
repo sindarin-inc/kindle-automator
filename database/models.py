@@ -128,6 +128,8 @@ class LibrarySettings(Base):
     view_type: Mapped[Optional[str]] = mapped_column(String(20))
     group_by_series: Mapped[bool] = mapped_column(Boolean, default=False)
     actively_reading_title: Mapped[Optional[str]] = mapped_column(Text)
+    filter_book_count: Mapped[Optional[int]] = mapped_column(Integer)
+    scroll_book_count: Mapped[Optional[int]] = mapped_column(Integer)
 
     # Relationship
     user: Mapped["User"] = relationship(back_populates="library_settings")
