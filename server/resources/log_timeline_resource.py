@@ -41,9 +41,9 @@ class LogTimelineResource(Resource):
         """Initialize the log timeline resource.
 
         Args:
-            server_instance: The AutomationServer instance
+            server_instance: The AutomationServer instance (ignored, not used)
         """
-        self.server = server_instance
+        # Accept server_instance for backwards compatibility but don't use it
         self.logs_dir = Path("logs")
         # Regex pattern to parse log entries
         # Format: [LEVEL] [date time TZ] filepath:line message

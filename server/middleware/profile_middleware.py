@@ -7,6 +7,7 @@ from functools import wraps
 import flask
 from flask import Response, jsonify, request
 
+from server.core.automation_server import AutomationServer
 from server.utils.request_utils import get_sindarin_email
 from server.utils.staff_token_manager import validate_token
 
@@ -93,16 +94,8 @@ def ensure_user_profile_loaded(f):
             logger.debug("No sindarin_email provided in request, continuing without profile check")
             return f(*args, **kwargs)
 
-        # Check if a server instance exists (it should always be available after app startup)
-        from flask import current_app as app
-
-        # Use the already imported request object from the global scope
-
-        if not hasattr(app, "config") or "server_instance" not in app.config:
-            logger.error("Server instance not available in app.config", exc_info=True)
-            return jsonify({"error": "Server configuration error"}), 500
-
-        server = app.config["server_instance"]
+        # Get server instance using singleton
+        server = AutomationServer.get_instance()
 
         # Check if this email exists in profiles_index first
         # If not, register it immediately to avoid profile creation issues

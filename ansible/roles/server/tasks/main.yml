@@ -25,6 +25,25 @@
   with_items:
     - /opt/keys
 
+# Copy environment files
+- name: Copy .env.prod to /opt/kindle-automator/.env.prod
+  copy:
+    src: ../../../../.env.prod
+    dest: /opt/kindle-automator/.env.prod
+    owner: root
+    group: root
+    mode: 0644
+  when: "'staging' not in inventory_hostname"
+
+- name: Copy .env.staging to /opt/kindle-automator/.env.staging
+  copy:
+    src: ../../../../.env.staging
+    dest: /opt/kindle-automator/.env.staging
+    owner: root
+    group: root
+    mode: 0644
+  when: "'staging' in inventory_hostname"
+
 # Create public deploy key for GitHub
 - name: Copy public deploy key for GitHub
   copy:
@@ -33,68 +52,23 @@
     mode: "0400"
   register: deploy_key
 
-# Clean and re-clone repository
-- name: Check repository state
-  stat:
-    path: /opt/kindle-automator/requirements.txt
-  register: repo_files
+# Ensure repository directory exists
+- name: Create repository directory
+  file:
+    path: /opt/kindle-automator
+    state: directory
+    mode: "0755"
 
-# Backup .env.prod if it exists
-- name: Backup .env.prod
-  shell: |
-    if [ -f /opt/kindle-automator/.env.prod ]; then
-      cp /opt/kindle-automator/.env.prod /tmp/.env.prod.backup
-    fi
-  changed_when: false
-
-# Backup existing env and venv
-- name: Backup essential files
-  shell: |
-    mkdir -p /tmp/kindle-temp
-    if [ -d /opt/kindle-automator/venv ]; then
-      mv /opt/kindle-automator/venv /tmp/kindle-temp/
-    fi
-  changed_when: false
-
-# Clone repository to a temporary directory
-- name: Clone the repository to temp dir
+# Clone repository if it doesn't exist
+- name: Clone repository if not present
   git:
     repo: "{{ kindle_repo_url }}"
-    dest: /tmp/kindle-repo
+    dest: /opt/kindle-automator
     version: "{{ kindle_repo_branch | default('main') }}"
     key_file: /opt/keys/deploy_key
     accept_hostkey: yes
-  register: git_clone
-
-# Move repo contents to final destination
-- name: Move repository to destination
-  shell: |
-    # Delete existing directory contents (but not the directory itself)
-    rm -rf /opt/kindle-automator/*
-    rm -rf /opt/kindle-automator/.* 2>/dev/null || true
-
-    # Copy from temp repo to destination
-    cp -R /tmp/kindle-repo/. /opt/kindle-automator/
-
-    # Restore venv folder if it was backed up
-    if [ -d /tmp/kindle-temp/venv ]; then
-      rm -rf /opt/kindle-automator/venv 2>/dev/null || true
-      mv /tmp/kindle-temp/venv /opt/kindle-automator/
-    fi
-
-    # Clean up
-    rm -rf /tmp/kindle-repo
-    rm -rf /tmp/kindle-temp
-  changed_when: true
-
-# Restore .env.prod if backup exists
-- name: Restore .env.prod
-  shell: |
-    if [ -f /tmp/.env.prod.backup ]; then
-      cp /tmp/.env.prod.backup /opt/kindle-automator/.env.prod
-      rm /tmp/.env.prod.backup
-    fi
-  changed_when: false
+  args:
+    creates: /opt/kindle-automator/.git
 
 # Set up Python virtual environment
 - name: Create Python virtual environment
@@ -109,6 +83,7 @@
     executable: /opt/kindle-automator/venv/bin/pip
     state: present
 
+# Pull latest changes
 - name: Pull latest changes
   git:
     repo: "{{ kindle_repo_url }}"
@@ -155,15 +130,6 @@
     global: yes
     state: present
 
-# Install Appium UiAutomator2 driver
-- name: Install Appium UiAutomator2 driver
-  command: npx appium driver install uiautomator2
-  args:
-    creates: /usr/local/lib/node_modules/appium/node_modules/appium-uiautomator2-driver
-  register: uiautomator2_installed
-  ignore_errors: yes
-  changed_when: false
-
 # Create systemd service file
 - name: Create systemd service file
   template:
@@ -195,3 +161,19 @@
     dest: /etc/logrotate.d/kindle-automator
     mode: "0644"
   tags: logrotate
+
+# Disable apport crash reporting to prevent dialog popups
+- name: Check if apport is installed
+  stat:
+    path: /etc/default/apport
+  register: apport_config
+
+- name: Disable apport crash reporting
+  lineinfile:
+    path: /etc/default/apport
+    regexp: "^enabled="
+    line: "enabled=0"
+    backrefs: yes
+  when: apport_config.stat.exists
+  notify: stop apport
+# No continuous monitoring - crash dialogs will be handled during emulator launch

@@ -15,6 +15,7 @@ from typing import Dict, Optional
 
 from selenium.common.exceptions import InvalidSessionIdException
 
+from server.core.automation_server import AutomationServer
 from server.utils.vnc_instance_manager import VNCInstanceManager
 from views.core.app_state import AppState
 from views.state_machine import KindleStateMachine
@@ -42,8 +43,9 @@ class EmulatorShutdownManager:
     # Public helpers
     # ---------------------------------------------------------------------
 
-    def __init__(self, server_instance):
-        self.server = server_instance
+    def __init__(self, server_instance=None):
+        # Accept server_instance for backwards compatibility but use singleton
+        self.server = None
 
     # ------------------------------------------------------------------
     # External API ––– keep signature unchanged
@@ -92,7 +94,8 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         # 2. Obtain automator or fall back to orphan‑handling          ──────
         # ------------------------------------------------------------------
-        automator = self.server.automators.get(email)
+        server = AutomationServer.get_instance()
+        automator = server.automators.get(email)
         if automator is None:
             return self._handle_orphaned_emulator(email, summary)
 
@@ -146,7 +149,8 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         cleanup_automator_start = _time.time()
         self._cleanup_automator(email, automator, summary)
-        self.server.clear_current_book(email)
+        server = AutomationServer.get_instance()
+        server.clear_current_book(email)
         logger.info(f"Automator cleanup took {_time.time() - cleanup_automator_start:.1f}s for {email}")
 
         logger.info(f"Total shutdown took {_time.time() - start_time:.1f}s for {email}")
@@ -159,7 +163,8 @@ class EmulatorShutdownManager:
             preserve_reading_state,
         )
         summaries = []
-        for email in [e for e, a in self.server.automators.items() if a]:
+        server = AutomationServer.get_instance()
+        for email in [e for e, a in server.automators.items() if a]:
             summaries.append(self.shutdown_emulator(email, preserve_reading_state))
             time.sleep(1)  # Avoid resource contention between successive shutdowns.
         logger.info("Completed shutdown of %d emulators", len(summaries))
@@ -256,7 +261,8 @@ class EmulatorShutdownManager:
                 )
                 summary["placemark_sync_attempted"] = True
 
-            final_state = state_machine.transition_to_library(max_transitions=10, server=self.server)
+            server = AutomationServer.get_instance()
+            final_state = state_machine.transition_to_library(max_transitions=10, server=server)
             if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to Library view (%s)", email)
                 if was_reading and state_machine.library_handler:
@@ -323,7 +329,7 @@ class EmulatorShutdownManager:
                 from server.logging_config import store_page_source
 
                 store_page_source(state_machine.driver.page_source, "sync_failure_during_shutdown")
-                logger.error("Diagnostic page source saved for sync failure", exc_info=True)
+                logger.debug("Diagnostic page source saved for sync failure", exc_info=True)
             except Exception as e:
                 logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
 
@@ -342,6 +348,7 @@ class EmulatorShutdownManager:
             logger.error(
                 f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot", exc_info=True
             )
+            summary["snapshot_skipped_no_emulator"] = True
             return
         logger.info(f"Taking ADB snapshot of emulator {emulator_id} for {email}")
         snapshot_start_time = time.time()
@@ -409,6 +416,9 @@ class EmulatorShutdownManager:
     @staticmethod
     def _stop_vnc_xvfb(display_num: int, summary: Dict[str, bool]):
         """Terminate *x11vnc* and *Xvfb* processes tied to *display_num*."""
+        if platform.system() == "Darwin":
+            return  # Skip VNC/Xvfb cleanup on macOS
+
         from server.utils.port_utils import calculate_vnc_port
 
         vnc_port = calculate_vnc_port(display_num)
@@ -460,7 +470,8 @@ class EmulatorShutdownManager:
             logger.info(f"automator.cleanup() took {_time.time() - cleanup_start:.1f}s for {email}")
             summary["automator_cleaned"] = True
         # Clear reference even if cleanup errored.
-        self.server.automators[email] = None
+        server = AutomationServer.get_instance()
+        server.automators[email] = None
 
     # ------------------------------------------------------------------
     # Private helpers – generic utilities                               ──────
@@ -510,14 +521,10 @@ class EmulatorShutdownManager:
             except Exception as e:
                 logger.warning(f"Error checking AVD: {e}")
 
-            logger.info(f"Removing all ADB port forwards for {emulator_id}")
-            with contextlib.suppress(Exception):
-                subprocess.run(
-                    [f"adb -s {emulator_id} forward --remove-all"],
-                    shell=True,
-                    capture_output=True,
-                    timeout=5,
-                )
+            # Port forwards are persistent and tied to the user's instance ID
+            # We keep them in place for faster startup on next launch
+            # Only remove if explicitly cleaning up the instance permanently
+            logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
 
             logger.info(f"Killing uiautomator processes on {emulator_id} for email={email}")
             with contextlib.suppress(Exception):

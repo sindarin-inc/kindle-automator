@@ -5,10 +5,10 @@
   block:
     - name: Add Mezmo repository
       shell: |
-        set -o pipefail
         echo "deb https://assets.logdna.com stable main" | tee /etc/apt/sources.list.d/logdna.list
       args:
         creates: /etc/apt/sources.list.d/logdna.list
+        executable: /bin/bash
       changed_when: true
 
     - name: Download Mezmo GPG key

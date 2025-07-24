@@ -404,12 +404,16 @@ class UserActivityResource(Resource):
 
                 # Create compressed description based on endpoint
                 if "/open-book" in endpoint:
+                    title = "Unknown"
                     try:
                         params_dict = json.loads(params)
                         title = params_dict.get("title", "Unknown")
-                        desc = f'opened book "{title}"'
                     except:
-                        desc = "opened book"
+                        # Try to extract title from params string if JSON parsing fails
+                        title_match = re.search(r'"title":\s*"([^"]+)"', params)
+                        if title_match:
+                            title = title_match.group(1)
+                    desc = f"opened book ({title})"
                 elif "/navigate" in endpoint:
                     # First check if we have a navigate activity in request_map
                     nav_activity = request_map.get("/navigate")
@@ -445,8 +449,45 @@ class UserActivityResource(Resource):
 
                     # Don't default navigate to 1 - show the actual values from the request
 
+                    # Check if response body contains ocr_text
+                    ocr_length = None
+                    if body:
+                        # First check if body is truncated
+                        truncated_match = re.search(r"\.\.\. \(truncated, total (\d+) bytes\)", body)
+                        if truncated_match and '"ocr_text"' in body:
+                            # Response was truncated but contains OCR text
+                            # Extract the total size to use as OCR length approximation
+                            total_bytes = int(truncated_match.group(1))
+                            # Rough estimate: subtract JSON overhead
+                            ocr_length = max(0, total_bytes - 200)  # Approximate OCR length
+                            logger.debug(
+                                f"Response truncated, estimated OCR length from total bytes: {ocr_length}"
+                            )
+                        else:
+                            try:
+                                # Extract JSON from body (might have email prefix)
+                                json_start = body.find("{")
+                                if json_start != -1:
+                                    json_body = body[json_start:]
+                                    body_dict = json.loads(json_body)
+                                else:
+                                    body_dict = json.loads(body)
+
+                                if "ocr_text" in body_dict:
+                                    ocr_length = len(body_dict["ocr_text"])
+                                    logger.debug(
+                                        f"Found OCR text in navigation response, length: {ocr_length}"
+                                    )
+                            except Exception as e:
+                                logger.debug(
+                                    f"Failed to parse OCR from body: {e}, body preview: {body[:100]}"
+                                )
+
                     # Build description with parameters - always show both values
-                    desc = f"navigation request (navigate={navigate}, preview={preview})"
+                    if ocr_length is not None:
+                        desc = f"navigation request (navigate={navigate}, preview={preview}, ocr_length={ocr_length})"
+                    else:
+                        desc = f"navigation request (navigate={navigate}, preview={preview})"
                 elif "/books-stream" in endpoint:
                     desc = "requested book library"
                 elif endpoint.endswith("/auth-check"):

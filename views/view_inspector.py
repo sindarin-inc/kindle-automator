@@ -65,6 +65,24 @@ class ViewInspector:
         # Initialize device_id to None - will be set properly later
         self.automator = self.driver.automator
 
+    def _should_hide_keyboard(self):
+        """Check if keyboard hiding should be attempted based on emulator settings."""
+        try:
+            email = get_sindarin_email()
+            if not email:
+                return True  # Default to attempting keyboard hide if no email context
+
+            profile_manager = self.driver.automator.profile_manager
+            keyboard_disabled = profile_manager.get_user_field(
+                email, "keyboard_disabled", default=False, section="emulator_settings"
+            )
+            if keyboard_disabled:
+                logger.debug("Keyboard is disabled for this emulator, skipping hide_keyboard()")
+                return False
+        except Exception as check_err:
+            logger.debug(f"Error checking keyboard_disabled flag: {check_err}")
+        return True
+
     def ensure_app_foreground(self, force_restart=False):
         """Ensures the Kindle app is in the foreground
 
@@ -155,8 +173,8 @@ class ViewInspector:
 
             # Wait for the app to initialize with polling instead of fixed sleep
             start_time = time.time()
-            max_wait_time = 10  # 10 seconds max wait time
-            poll_interval = 0.2  # 200ms between checks
+            max_wait_time = 3  # 3 seconds max wait time
+            poll_interval = 0.1  # 100ms between checks
             app_ready = False
             notification_dialog_handled = False  # Track if we've already tried to handle notification dialog
 
@@ -264,12 +282,23 @@ class ViewInspector:
                     # Check for both com.amazon.kindle and com.amazon.kcp activities (both are valid Kindle activities)
                     # Also handle the Google Play review dialog which can appear over the Kindle app
                     # Also recognize the RemoteLicenseReleaseActivity (Download Limit dialog) as a valid activity
+                    # Also recognize permission dialogs as valid (the app is technically running behind them)
                     if (
                         current_activity.startswith("com.amazon")
                         or current_activity
                         == "com.google.android.finsky.inappreviewdialog.InAppReviewActivity"
+                        or current_activity
+                        == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                     ):
                         app_ready = True
+
+                        # If we see a permission dialog, break immediately as the app is ready
+                        if (
+                            current_activity
+                            == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
+                        ):
+                            logger.info("Permission dialog detected - app is ready")
+                            break
 
                         # Try to dismiss the Google Play review dialog if it's showing
                         if (
@@ -312,7 +341,7 @@ class ViewInspector:
                 time.sleep(poll_interval)
 
             if not app_ready:
-                logger.warning(f"Timed out waiting for app to initialize after {max_wait_time}s")
+                logger.debug(f"App not ready after {max_wait_time}s polling, proceeding anyway")
 
             logger.info("App brought to foreground")
             return True
@@ -472,6 +501,14 @@ class ViewInspector:
             try:
                 current_activity = self.driver.current_activity
                 logger.info(f"Current activity: {current_activity}")
+
+                # Fast path: If we're in permission dialog activity, return immediately
+                if (
+                    current_activity
+                    == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
+                ):
+                    logger.info("Permission dialog activity detected - fast return NOTIFICATION_PERMISSION")
+                    return AppView.NOTIFICATION_PERMISSION
 
                 # Check if we're on the Android dashboard/launcher
                 if current_activity and (
@@ -734,13 +771,14 @@ class ViewInspector:
                         captcha_input.click()
 
                         # Hide the keyboard after tapping
-                        try:
-                            self.driver.hide_keyboard()
-                            logger.info("   Successfully hid keyboard after focusing captcha field")
-                        except Exception as hide_err:
-                            logger.warning(
-                                f"   Could not hide keyboard after focusing captcha field: {hide_err}"
-                            )
+                        if self._should_hide_keyboard():
+                            try:
+                                self.driver.hide_keyboard()
+                                logger.info("   Successfully hid keyboard after focusing captcha field")
+                            except Exception as hide_err:
+                                logger.warning(
+                                    f"   Could not hide keyboard after focusing captcha field: {hide_err}"
+                                )
                 except Exception as tap_err:
                     logger.warning(f"   Error tapping captcha input field: {tap_err}")
 
@@ -983,13 +1021,16 @@ class ViewInspector:
                     has_focus = True
 
                     # Hide the keyboard if it's visible
-                    try:
-                        self.driver.hide_keyboard()
-                        logger.info(f"   Successfully hid keyboard for already focused {field_type} field")
-                    except Exception as hide_err:
-                        logger.warning(
-                            f"   Could not hide keyboard for already focused {field_type} field: {hide_err}"
-                        )
+                    if self._should_hide_keyboard():
+                        try:
+                            self.driver.hide_keyboard()
+                            logger.info(
+                                f"   Successfully hid keyboard for already focused {field_type} field"
+                            )
+                        except Exception as hide_err:
+                            logger.warning(
+                                f"   Could not hide keyboard for already focused {field_type} field: {hide_err}"
+                            )
             except NoSuchElementException:
                 # No focused element found, we'll need to tap
                 pass
@@ -1003,13 +1044,14 @@ class ViewInspector:
                     field_element.click()
 
                     # Hide the keyboard after tapping
-                    try:
-                        self.driver.hide_keyboard()
-                        logger.info(f"   Successfully hid keyboard after focusing {field_type} field")
-                    except Exception as hide_err:
-                        logger.warning(
-                            f"   Could not hide keyboard after focusing {field_type} field: {hide_err}"
-                        )
+                    if self._should_hide_keyboard():
+                        try:
+                            self.driver.hide_keyboard()
+                            logger.info(f"   Successfully hid keyboard after focusing {field_type} field")
+                        except Exception as hide_err:
+                            logger.warning(
+                                f"   Could not hide keyboard after focusing {field_type} field: {hide_err}"
+                            )
                 except Exception as tap_err:
                     logger.warning(f"   Error tapping {field_type} field: {tap_err}")
                     return False
@@ -1029,13 +1071,20 @@ class ViewInspector:
             from views.auth.view_strategies import TWO_FACTOR_VIEW_IDENTIFIERS
 
             two_factor_indicators = 0
+            otp_input_field = None
             for strategy, locator in TWO_FACTOR_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         two_factor_indicators += 1
+                        # Keep track of the OTP input field for focusing
+                        if locator == "auth-mfa-otpcode" or "auth-mfa-otpcode" in locator:
+                            otp_input_field = element
                         if two_factor_indicators >= 2:
                             logger.info("   Found Two-Step Verification screen")
+                            # Focus the OTP input field if we found it
+                            if otp_input_field:
+                                self._focus_input_field_if_needed(otp_input_field, "OTP")
                             return AppView.TWO_FACTOR
                 except NoSuchElementException:
                     continue

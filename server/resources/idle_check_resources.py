@@ -1,12 +1,16 @@
 """Idle check resources for monitoring and shutting down idle emulators."""
 
 import logging
+import platform
 import time
 from datetime import datetime, timedelta
 
 from flask import request
 from flask_restful import Resource
 
+from server.core.automation_server import AutomationServer
+from server.logging_config import IdleTimerContext
+from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
@@ -19,10 +23,14 @@ class IdleCheckResource(Resource):
         """Initialize the idle check resource.
 
         Args:
-            server_instance: The AutomationServer instance
+            server_instance: The AutomationServer instance (ignored, uses singleton)
         """
-        self.server = server_instance
-        self.idle_timeout_minutes = 30  # Default to 30 minutes
+        # Accept server_instance for backwards compatibility but use singleton
+        # Mac emulators get 24 hours (1440 minutes), Linux gets 30 minutes
+        if platform.system() == "Darwin":
+            self.idle_timeout_minutes = 1440  # 24 hours for Mac
+        else:
+            self.idle_timeout_minutes = 30  # 30 minutes for Linux
         super().__init__()
 
     def get(self):
@@ -59,105 +67,105 @@ class IdleCheckResource(Resource):
         Returns:
             Response with list of shut down emulators
         """
-        if timeout_minutes is None:
-            timeout_minutes = self.idle_timeout_minutes
+        with IdleTimerContext(__name__):
+            if timeout_minutes is None:
+                timeout_minutes = self.idle_timeout_minutes
 
-        current_time = time.time()
-        idle_threshold = current_time - (timeout_minutes * 60)
+            current_time = time.time()
+            idle_threshold = current_time - (timeout_minutes * 60)
 
-        shutdown_emails = []
-        active_emails = []
+            shutdown_emails = []
+            active_emails = []
 
-        logger.info(f"Checking for emulators idle for more than {timeout_minutes} minutes")
+            logger.info(f"Checking for emulators idle for more than {timeout_minutes} minutes")
 
-        # Check each automator for idle time
-        for email, automator in self.server.automators.items():
-            if automator is None:
-                continue
+            # Check each automator for idle time
+            server = AutomationServer.get_instance()
+            for email, automator in server.automators.items():
+                if automator is None:
+                    continue
 
-            # Get last activity time
-            last_activity = self.server.get_last_activity_time(email)
+                # Get last activity time
+                server = AutomationServer.get_instance()
+                last_activity = server.get_last_activity_time(email)
 
-            if last_activity is None:
-                # If no activity recorded, consider it as just started
-                logger.info(f"No activity recorded for {email}, considering it as active")
-                active_emails.append(email)
-                continue
+                if last_activity is None:
+                    # If no activity recorded, consider it as just started
+                    logger.info(f"No activity recorded for {email}, considering it as active")
+                    active_emails.append(email)
+                    continue
 
-            # Check if idle
-            if last_activity < idle_threshold:
-                idle_duration = (current_time - last_activity) / 60  # Convert to minutes
-                logger.info(
-                    f"Emulator for {email} has been idle for {idle_duration:.1f} minutes - shutting down"
-                )
-
-                # Use the shutdown manager directly instead of going through HTTP
-                try:
-                    # Import and use shutdown manager directly
-                    from server.utils.emulator_shutdown_manager import (
-                        EmulatorShutdownManager,
+                # Check if idle
+                if last_activity < idle_threshold:
+                    idle_duration = (current_time - last_activity) / 60  # Convert to minutes
+                    logger.info(
+                        f"Emulator for {email} has been idle for {idle_duration:.1f} minutes - shutting down"
                     )
 
-                    shutdown_manager = EmulatorShutdownManager(self.server)
-                    # Idle shutdowns should navigate to library and NOT mark for restart
-                    shutdown_summary = shutdown_manager.shutdown_emulator(
-                        email, preserve_reading_state=False, mark_for_restart=False
-                    )
+                    # Use the shutdown manager directly instead of going through HTTP
+                    try:
+                        server = AutomationServer.get_instance()
+                        shutdown_manager = EmulatorShutdownManager(server)
+                        # Idle shutdowns should navigate to library and NOT mark for restart
+                        shutdown_summary = shutdown_manager.shutdown_emulator(
+                            email, preserve_reading_state=False, mark_for_restart=False
+                        )
 
-                    # Check if shutdown was successful
-                    if any(shutdown_summary.values()):
+                        # Check if shutdown was successful
+                        if any(shutdown_summary.values()):
+                            shutdown_emails.append(
+                                {
+                                    "email": email,
+                                    "idle_minutes": round(idle_duration, 1),
+                                    "status": "shutdown",
+                                    "details": shutdown_summary,
+                                }
+                            )
+                        else:
+                            logger.warning(f"No active resources found to shut down for {email}")
+                            shutdown_emails.append(
+                                {
+                                    "email": email,
+                                    "idle_minutes": round(idle_duration, 1),
+                                    "status": "failed",
+                                    "error": "No active resources found",
+                                }
+                            )
+
+                    except Exception as e:
+                        logger.error(f"Error shutting down idle emulator for {email}: {e}", exc_info=True)
                         shutdown_emails.append(
                             {
                                 "email": email,
                                 "idle_minutes": round(idle_duration, 1),
-                                "status": "shutdown",
-                                "details": shutdown_summary,
+                                "status": "error",
+                                "error": str(e),
                             }
                         )
-                    else:
-                        logger.warning(f"No active resources found to shut down for {email}")
-                        shutdown_emails.append(
-                            {
-                                "email": email,
-                                "idle_minutes": round(idle_duration, 1),
-                                "status": "failed",
-                                "error": "No active resources found",
-                            }
-                        )
-
-                except Exception as e:
-                    logger.error(f"Error shutting down idle emulator for {email}: {e}", exc_info=True)
-                    shutdown_emails.append(
-                        {
-                            "email": email,
-                            "idle_minutes": round(idle_duration, 1),
-                            "status": "error",
-                            "error": str(e),
-                        }
+                else:
+                    active_duration = (current_time - last_activity) / 60
+                    logger.info(
+                        f"Emulator for {email} is active (last activity {active_duration:.1f} minutes ago)"
                     )
-            else:
-                active_duration = (current_time - last_activity) / 60
-                logger.info(
-                    f"Emulator for {email} is active (last activity {active_duration:.1f} minutes ago)"
-                )
-                active_emails.append({"email": email, "active_minutes": round(active_duration, 1)})
+                    active_emails.append({"email": email, "active_minutes": round(active_duration, 1)})
 
-        # Prepare summary
-        summary = {
-            "timestamp": datetime.now().isoformat(),
-            "idle_timeout_minutes": timeout_minutes,
-            "total_checked": len(self.server.automators),
-            "shut_down": len([s for s in shutdown_emails if s.get("status") == "shutdown"]),
-            "active": len(active_emails),
-            "failed": len([s for s in shutdown_emails if s.get("status") != "shutdown"]),
-            "shutdown_details": shutdown_emails,
-            "active_emulators": active_emails,
-        }
+            # Prepare summary
+            server = AutomationServer.get_instance()
+            summary = {
+                "timestamp": datetime.now().isoformat(),
+                "idle_timeout_minutes": timeout_minutes,
+                "total_checked": len(server.automators),
+                "shut_down": len([s for s in shutdown_emails if s.get("status") == "shutdown"]),
+                "active": len(active_emails),
+                "failed": len([s for s in shutdown_emails if s.get("status") != "shutdown"]),
+                "shutdown_details": shutdown_emails,
+                "active_emulators": active_emails,
+            }
 
-        logger.info(f"Idle check complete: {summary['shut_down']} shut down, {summary['active']} active")
+            logger.info(f"Idle check complete: {summary['shut_down']} shut down, {summary['active']} active")
 
-        # Audit VNC instances to clean up any that aren't actually running
-        vnc_manager = VNCInstanceManager.get_instance()
-        vnc_manager.audit_and_cleanup_stale_instances()
+            # Audit VNC instances to clean up any that aren't actually running
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_manager.audit_and_cleanup_stale_instances()
 
-        return summary, 200
+            return summary, 200

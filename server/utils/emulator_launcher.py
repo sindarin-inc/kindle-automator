@@ -99,6 +99,61 @@ class EmulatorLauncher:
 
         return running_ids
 
+    def _check_and_dismiss_crash_dialog(self, display_num: int) -> bool:
+        """
+        Check for Ubuntu crash dialog (apport) and dismiss it.
+
+        Args:
+            display_num: The X display number
+
+        Returns:
+            True if a crash dialog was found and dismissed, False otherwise
+        """
+        try:
+            # Check for crash dialog windows
+            result = subprocess.run(
+                ["xwininfo", "-root", "-tree"],
+                env={**os.environ, "DISPLAY": f":{display_num}"},
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                output = result.stdout.lower()
+                # Look for crash dialog indicators
+                if any(phrase in output for phrase in ["crash", "error", "closed unexpectedly", "apport"]):
+                    # Also check window dimensions - crash dialogs are typically around 562x422
+                    for line in result.stdout.split("\n"):
+                        if "562x422" in line or ("android emulator" in line.lower() and "x4" in line):
+                            email = get_sindarin_email()
+                            logger.error(
+                                f"Detected crash dialog on display :{display_num}, email: {email}",
+                                exc_info=True,
+                            )
+
+                            # Try to dismiss with Escape key
+                            dismiss_result = subprocess.run(
+                                ["xdotool", "key", "Escape"],
+                                env={**os.environ, "DISPLAY": f":{display_num}"},
+                                capture_output=True,
+                                timeout=3,
+                            )
+
+                            if dismiss_result.returncode == 0:
+                                logger.info(f"Dismissed crash dialog on display :{display_num}")
+                                time.sleep(1)  # Give it a moment to close
+                                return True
+                            else:
+                                logger.error(
+                                    f"Failed to dismiss crash dialog: {dismiss_result.stderr}", exc_info=True
+                                )
+
+        except Exception as e:
+            logger.debug(f"Error checking for crash dialog: {e}")
+
+        return False
+
     def _verify_emulator_running(self, emulator_id: str, email: str) -> bool:
         """
         Verify if a specific emulator is running using adb devices and has the correct AVD.
@@ -970,21 +1025,16 @@ class EmulatorLauncher:
                     "-gpu",
                     "swiftshader",
                 ] + common_args
-            elif self.host_arch == "arm64":
-                # For ARM Macs, use Rosetta to run x86_64 emulator
+            elif self.host_arch == "arm64" and platform.system() == "Darwin":
+                # For ARM Macs, use native ARM64 emulation
+                # The Android emulator will automatically use qemu-system-aarch64
                 emulator_cmd = [
-                    "arch",
-                    "-x86_64",
                     f"{self.android_home}/emulator/emulator",
                     "-no-metrics",
                     "-gpu",
                     "swiftshader_indirect",
-                    "-feature",
-                    "-HVF",  # Disable hardware virtualization
-                    "-feature",
-                    "-Gfxstream",  # Disable gfxstream for snapshot compatibility
                     "-accel",
-                    "off",
+                    "auto",  # Let emulator auto-detect the best acceleration method
                 ] + common_args
             else:
                 # For Intel Macs
@@ -1002,7 +1052,14 @@ class EmulatorLauncher:
                 ] + common_args
 
             # Create log files for debugging
-            log_dir = "/var/log/emulator"
+            if platform.system() == "Darwin":
+                # Use local logs directory on macOS
+                log_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "emulator"
+                )
+            else:
+                # Use system log directory on Linux
+                log_dir = "/var/log/emulator"
             os.makedirs(log_dir, exist_ok=True)
             stdout_log = os.path.join(log_dir, f"emulator_{avd_name}_stdout.log")
             stderr_log = os.path.join(log_dir, f"emulator_{avd_name}_stderr.log")
@@ -1047,6 +1104,21 @@ class EmulatorLauncher:
             # Check if emulator process is actually running
             if process.poll() is not None:
                 # Process already exited
+                logger.error(f"Emulator process exited immediately with code: {process.poll()}")
+
+                # Check for and dismiss crash dialog
+                if self._check_and_dismiss_crash_dialog(display_num):
+                    logger.info("Dismissed crash dialog, will retry emulator launch")
+
+                # Check the log files
+                with open(stdout_log, "r") as f:
+                    stdout_content = f.read()
+                    if stdout_content:
+                        logger.error(f"Emulator stdout: {stdout_content}")
+                with open(stderr_log, "r") as f:
+                    stderr_content = f.read()
+                    if stderr_content:
+                        logger.error(f"Emulator stderr: {stderr_content}")
                 exit_code = process.returncode
                 logger.error(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
                 logger.error(f"Check logs at {stdout_log} and {stderr_log}", exc_info=True)
@@ -1150,9 +1222,7 @@ class EmulatorLauncher:
                 pass
 
             # Randomize if: (1) created from seed and not randomized, OR (2) explicitly needs randomization (seed clone)
-            if (created_from_seed and not post_boot_randomized_check) or (
-                needs_device_randomization_check and not post_boot_randomized_check
-            ):
+            if not post_boot_randomized_check and (created_from_seed or needs_device_randomization_check):
                 try:
                     from server.utils.post_boot_randomizer import PostBootRandomizer
 
@@ -1243,17 +1313,12 @@ class EmulatorLauncher:
                     del self.running_emulators[avd_name]
                     return False
 
-                # Clean up all ports before killing emulator
-                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                # Clean up processes before killing emulator
+                logger.info(f"Cleaning up processes for emulator {emulator_id}")
                 try:
-                    # Remove all ADB port forwards
-                    subprocess.run(
-                        [f"adb -s {emulator_id} forward --remove-all"],
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        timeout=5,
-                    )
+                    # Port forwards are persistent and tied to the user's instance ID
+                    # We keep them in place for faster startup on next launch
+                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1327,17 +1392,12 @@ class EmulatorLauncher:
                     del self.running_emulators[email]
                     return False
 
-                # Clean up all ports before killing emulator
-                logger.info(f"Cleaning up ports for emulator {emulator_id}")
+                # Clean up processes before killing emulator
+                logger.info(f"Cleaning up processes for emulator {emulator_id}")
                 try:
-                    # Remove all ADB port forwards
-                    subprocess.run(
-                        [f"adb -s {emulator_id} forward --remove-all"],
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        timeout=5,
-                    )
+                    # Port forwards are persistent and tied to the user's instance ID
+                    # We keep them in place for faster startup on next launch
+                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1609,7 +1669,7 @@ class EmulatorLauncher:
         """Check if any emulator process is running."""
         try:
             ps_check = subprocess.run(
-                ["pgrep", "-f", "qemu-system-x86_64"], check=False, capture_output=True, text=True
+                ["pgrep", "-f", "qemu-system-"], check=False, capture_output=True, text=True
             )
             return ps_check.returncode == 0
         except Exception:

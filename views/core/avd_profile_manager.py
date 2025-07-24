@@ -5,6 +5,7 @@ This is a refactored version of AVDProfileManager that uses PostgreSQL
 instead of JSON files for data persistence. It maintains the same API
 but with atomic database operations and better concurrency support.
 """
+
 import logging
 import os
 import platform
@@ -31,7 +32,7 @@ _instance = None
 class AVDProfileManager:
     """
     Manages Android Virtual Device (AVD) profiles for different Kindle user accounts.
-    
+
     This version uses PostgreSQL for data persistence instead of JSON files.
     """
 
@@ -62,20 +63,18 @@ class AVDProfileManager:
         self.is_macos = platform.system() == "Darwin"
         self.is_dev_mode = os.environ.get("FLASK_ENV") == "development"
 
-        # Detect if we should use simplified mode (Mac dev environment)
-        self.use_simplified_mode = self.is_macos and self.is_dev_mode
-
         # Get Android home from environment or fallback to default
         self.android_home = os.environ.get("ANDROID_HOME", base_dir)
 
         # Use a different base directory for Mac development environments
-        if self.use_simplified_mode:
-            # Use project's user_data directory instead of home folder
+        if self.is_macos:
+            # Use project's user_data directory instead of Android SDK directory
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             base_dir = os.path.join(project_root, "user_data")
-            logger.info("Mac development environment detected - using simplified emulator mode")
-            logger.info(f"Using {base_dir} for profile storage instead of /opt/android-sdk")
-            logger.info("Will use any available emulator instead of managing profiles")
+            logger.info("Mac development environment detected")
+            logger.info(f"Using {base_dir} for profile storage")
+
+            # Profiles now stored in project's user_data directory
 
             # In macOS, the AVD directory is typically in the .android folder
             user_home = os.path.expanduser("~")
@@ -93,25 +92,21 @@ class AVDProfileManager:
         self.base_dir = base_dir
 
         # In the new structure, we store everything directly in user_data/
-        if self.use_simplified_mode:
+        if self.is_macos:
             self.profiles_dir = base_dir
             # Keep users_file for backward compatibility but it won't be used
             self.users_file = os.path.join(self.profiles_dir, "users.json")
         else:
-            # For non-simplified mode
+            # For non-Mac environments, keep the old directory structure
             self.profiles_dir = os.path.join(base_dir, "profiles")
             self.users_file = os.path.join(self.profiles_dir, "users.json")
 
         # Ensure directories exist
         os.makedirs(self.profiles_dir, exist_ok=True)
-        os.makedirs(self.avd_dir, exist_ok=True)
-
-        # Initialize managers
-        self.emulator_manager = EmulatorManager(
-            self.android_home, self.avd_dir, self.host_arch, self.use_simplified_mode
-        )
+        # Initialize component managers
+        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
+        self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch)
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
-        self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir, self.use_simplified_mode)
 
         # VNC related settings
         self.vnc_base_port = 6500
@@ -119,7 +114,7 @@ class AVDProfileManager:
 
         # Track restarting AVDs
         self.restarting_avds = set()
-        
+
         # Initialize profiles_index property for compatibility
         self._profiles_index_cache = None
         self._profiles_index_cache_time = 0
@@ -131,7 +126,7 @@ class AVDProfileManager:
     def _detect_host_architecture(self) -> str:
         """Detect the host system architecture."""
         machine = platform.machine().lower()
-        
+
         if machine in ["x86_64", "amd64"]:
             return "x86_64"
         elif machine in ["aarch64", "arm64"]:
@@ -144,37 +139,36 @@ class AVDProfileManager:
             logger.warning(f"Unknown architecture: {machine}, defaulting to x86_64")
             return "x86_64"
 
-
     def get_user_field(self, email: str, field: str, default=None, section: Optional[str] = None):
         """
         Get a specific field value for a user.
-        
+
         Args:
             email: User's email
             field: Field name to retrieve
             default: Default value if field doesn't exist
             section: Optional section name for nested fields
-            
+
         Returns:
             Field value or default
         """
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             user = repo.get_user_by_email(email)
-            
+
             if not user:
                 return default
-            
+
             # Handle section-based fields
             if section:
                 field_path = f"{section}.{field}"
             else:
                 field_path = field
-            
+
             # Parse the field path and get the value
             parts = field_path.split(".")
             obj = user
-            
+
             try:
                 for part in parts:
                     if hasattr(obj, part):
@@ -187,7 +181,7 @@ class AVDProfileManager:
                         return default
                     else:
                         return default
-                
+
                 return obj if obj is not None else default
             except AttributeError:
                 return default
@@ -195,7 +189,7 @@ class AVDProfileManager:
     def set_user_field(self, email: str, field: str, value, section: Optional[str] = None):
         """
         Set a specific field value for a user.
-        
+
         Args:
             email: User's email
             field: Field name to set
@@ -203,37 +197,37 @@ class AVDProfileManager:
             section: Optional section name for nested fields
         """
         with self.db_connection.get_session() as session:
-            
+
             repo = UserRepository(session)
-            
+
             # Ensure user exists
             user = repo.get_user_by_email(email)
             if not user:
                 logger.warning(f"User {email} not found, creating new user")
                 repo.create_user(email)
-            
+
             # Update the field
             if section:
                 field_path = f"{section}.{field}"
             else:
                 field_path = field
-            
+
             repo.update_user_field(email, field_path, value)
 
     def get_profile_for_email(self, email: str) -> Optional[Dict]:
         """
         Get the complete profile data for an email.
-        
+
         Returns:
             Profile dictionary in the same format as the old JSON structure
         """
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             user = repo.get_user_by_email(email)
-            
+
             if not user:
                 return None
-            
+
             return repo.user_to_dict(user)
 
     def get_avd_for_email(self, email: str) -> Optional[str]:
@@ -250,24 +244,21 @@ class AVDProfileManager:
             return repo.update_user_field(email, "avd_name", avd_name)
 
     def register_profile(
-        self, 
-        email: str, 
-        avd_name: str, 
-        vnc_instance: Optional[int] = None
+        self, email: str, avd_name: str, vnc_instance: Optional[int] = None
     ) -> Tuple[bool, str]:
         """
         Register a new profile or update existing one.
-        
+
         Returns:
             Tuple of (success, message)
         """
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
-            
+
             try:
                 # Create or update user
                 user, created = repo.get_or_create_user(email, avd_name)
-                
+
                 if created:
                     message = f"Registered new profile for {email} with AVD {avd_name}"
                 else:
@@ -277,10 +268,10 @@ class AVDProfileManager:
                         message = f"Updated AVD name for {email} to {avd_name}"
                     else:
                         message = f"Profile already exists for {email}"
-                
+
                 logger.info(message)
                 return True, message
-                
+
             except Exception as e:
                 logger.error(f"Error registering profile: {e}")
                 return False, str(e)
@@ -291,12 +282,7 @@ class AVDProfileManager:
             repo = UserRepository(session)
             return repo.update_auth_state(email, authenticated)
 
-    def _save_profile_status(
-        self, 
-        email: str, 
-        avd_name: str, 
-        emulator_id: Optional[str] = None
-    ) -> bool:
+    def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> bool:
         """Save profile status with last_used timestamp."""
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
@@ -306,118 +292,86 @@ class AVDProfileManager:
         """Update style preference for a user."""
         if not email:
             email = get_sindarin_email()
-        
+
         if not email:
             return {"error": "No email found"}
-        
+
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             success = repo.update_user_field(email, "styles_updated", is_updated)
-            
-            return {
-                "success": success,
-                "email": email,
-                "styles_updated": is_updated
-            }
 
-    def save_style_setting(
-        self, 
-        setting_name: str, 
-        setting_value, 
-        email: Optional[str] = None
-    ) -> Dict:
+            return {"success": success, "email": email, "styles_updated": is_updated}
+
+    def save_style_setting(self, setting_name: str, setting_value, email: Optional[str] = None) -> Dict:
         """Save a library style setting for a user."""
         if not email:
             email = get_sindarin_email()
-        
+
         if not email:
             return {"error": "No email found"}
-        
+
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
-            
+
             # Ensure user exists
             user = repo.get_user_by_email(email)
             if not user:
                 repo.create_user(email)
-            
-            # Update the library setting
-            success = repo.update_user_field(
-                email, 
-                f"library_settings.{setting_name}", 
-                setting_value
-            )
-            
-            return {
-                "success": success,
-                "email": email,
-                setting_name: setting_value
-            }
 
-    def save_reading_setting(
-        self, 
-        setting_name: str, 
-        setting_value, 
-        email: Optional[str] = None
-    ) -> Dict:
+            # Update the library setting
+            success = repo.update_user_field(email, f"library_settings.{setting_name}", setting_value)
+
+            return {"success": success, "email": email, setting_name: setting_value}
+
+    def save_reading_setting(self, setting_name: str, setting_value, email: Optional[str] = None) -> Dict:
         """Save a reading style setting for a user."""
         if not email:
             email = get_sindarin_email()
-        
+
         if not email:
             return {"error": "No email found"}
-        
+
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
-            
+
             # Ensure user exists
             user = repo.get_user_by_email(email)
             if not user:
                 repo.create_user(email)
-            
+
             # Update the reading setting
-            success = repo.update_user_field(
-                email, 
-                f"reading_settings.{setting_name}", 
-                setting_value
-            )
-            
-            return {
-                "success": success,
-                "email": email,
-                setting_name: setting_value
-            }
+            success = repo.update_user_field(email, f"reading_settings.{setting_name}", setting_value)
+
+            return {"success": success, "email": email, setting_name: setting_value}
 
     def get_all_profiles(self) -> Dict[str, Dict]:
         """Get all user profiles as a dictionary."""
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             users = repo.get_all_users()
-            
-            return {
-                user.email: repo.user_to_dict(user) 
-                for user in users
-            }
+
+            return {user.email: repo.user_to_dict(user) for user in users}
 
     def get_recently_used_profiles(self, limit: int = 10) -> List[Dict]:
         """Get recently used profiles ordered by last_used."""
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             users = repo.get_recently_used_users(limit)
-            
+
             return [repo.user_to_dict(user) for user in users]
-    
+
     @property
     def profiles_index(self) -> Dict[str, Dict]:
         """Property for backward compatibility with code expecting profiles_index."""
         # Cache for 5 seconds to avoid too many DB calls
         import time
+
         current_time = time.time()
         if self._profiles_index_cache is None or current_time - self._profiles_index_cache_time > 5:
             self._profiles_index_cache = self.get_all_profiles()
             self._profiles_index_cache_time = current_time
         return self._profiles_index_cache
-    
+
     def list_profiles(self) -> Dict[str, Dict]:
         """List all profiles (alias for profiles_index)."""
         return self.profiles_index
@@ -425,52 +379,53 @@ class AVDProfileManager:
     def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
         """
         Get the emulator device ID for a given AVD name.
-        
+
         Args:
             avd_name: Name of the AVD to find
-            
+
         Returns:
             Optional[str]: The emulator ID if found, None otherwise
         """
         # Use device_discovery to map running emulators
         running_emulators = self.device_discovery.map_running_emulators(self.get_all_profiles())
-        
+
         # Check if the AVD is in the running emulators
         if avd_name in running_emulators:
             return running_emulators[avd_name]
-        
+
         # Also check VNC instance manager for any stored emulator IDs
         for email, profile in self.get_all_profiles().items():
             if profile.get("avd_name") == avd_name:
                 try:
                     from server.utils.vnc_instance_manager import VNCInstanceManager
+
                     vnc_manager = VNCInstanceManager.get_instance()
                     emulator_id = vnc_manager.get_emulator_id(email)
                     if emulator_id:
                         return emulator_id
                 except Exception as e:
                     logger.warning(f"Error checking VNC instance for emulator ID: {e}")
-        
+
         return None
-    
+
     def get_current_profile(self) -> Optional[Dict]:
         """
         Get the current profile based on the request context email.
-        
+
         Returns:
             Optional[Dict]: Profile information for the current user or None
         """
         sindarin_email = get_sindarin_email()
-        
+
         if not sindarin_email:
             return None
-            
+
         return self.get_profile_for_email(sindarin_email)
-    
+
     def cleanup_stale_profiles(self, days_threshold: int = 30) -> int:
         """
         Clean up profiles that haven't been used in the specified number of days.
-        
+
         Returns:
             Number of profiles cleaned up
         """
@@ -506,14 +461,14 @@ class AVDProfileManager:
             repo = UserRepository(session)
             if repo.get_user_by_email(email):
                 return
-        
+
         # Create a standardized AVD name for this email
         normalized_avd_name = self.get_avd_name_from_email(email)
         logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
-        
+
         # Register the profile
         self.register_profile(email, normalized_avd_name)
-        
+
         # Try to find if this user's AVD is already running
         running_emulators = self.device_discovery.map_running_emulators(self.get_all_profiles())
         if normalized_avd_name in running_emulators:
@@ -546,7 +501,7 @@ class AVDProfileManager:
                 return result
             else:
                 logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
-        
+
         # Seed clone not ready or failed, use normal AVD creation
         logger.info("Using normal AVD creation")
         success, result = self.create_new_avd(email)
@@ -562,7 +517,7 @@ class AVDProfileManager:
         if not email:
             logger.warning("No email available to check styles_updated")
             return False
-        
+
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             user = repo.get_user_by_email(email)
@@ -575,7 +530,7 @@ class AVDProfileManager:
             if not email:
                 logger.warning("No email available to get style setting")
                 return default
-        
+
         return self.get_user_field(email, setting_name, default, section="library_settings")
 
     # save_reading_setting is already implemented above in the class
@@ -585,11 +540,11 @@ class AVDProfileManager:
     ) -> Tuple[bool, str]:
         """
         Switch to the profile for the given email.
-        
+
         Args:
             email: The email address to switch to
             force_new_emulator: If True, stop existing emulator and start fresh
-            
+
         Returns:
             Tuple[bool, str]: (success, message)
         """
@@ -597,46 +552,49 @@ class AVDProfileManager:
         if force_new_emulator:
             settings_to_reset = [
                 "hw_overlays_disabled",
-                "animations_disabled", 
+                "animations_disabled",
                 "sleep_disabled",
                 "status_bar_disabled",
                 "auto_updates_disabled",
             ]
             for setting in settings_to_reset:
                 self.set_user_field(email, setting, False, section="emulator_settings")
-        
-        # Simplified mode for Mac development
-        if self.use_simplified_mode:
-            return True, f"Tracking profile for {email} in simplified mode"
-        
-        # Get AVD name for this email
+
+        # No more simplified mode - always manage emulators properly
+
+        #
+        # Normal profile management mode below (for non-Mac or non-dev environments)
+        # Now with multi-emulator support
+        #
+
+        # Get AVD name for this email - this should be the first step
         avd_name = self.get_avd_for_email(email)
-        
+
         # Create AVD if needed
         if not avd_name:
             logger.info(f"No AVD found for {email}, creating new one")
             normalized_avd_name = self.get_avd_name_from_email(email)
             logger.info(f"Generated AVD name {normalized_avd_name} for {email}")
-            
+
             # Register profile
             self.register_profile(email, normalized_avd_name)
             logger.info(f"Registered AVD {normalized_avd_name} for email {email}")
-            
+
             # Create AVD
             avd_name = self._create_avd_with_seed_clone_fallback(email, normalized_avd_name)
-            
+
             # Update profile if AVD name changed
             if avd_name != normalized_avd_name:
                 self.register_profile(email, avd_name)
-        
+
         # Check if AVD exists
         avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
         avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
         avd_exists = os.path.exists(avd_path) and os.path.exists(avd_ini_path)
-        
+
         # Check for running emulator
         is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)
-        
+
         # Handle force new emulator
         if is_running and force_new_emulator:
             logger.info(f"Stopping emulator {emulator_id} for fresh start")
@@ -644,41 +602,70 @@ class AVDProfileManager:
                 logger.error(f"Failed to stop emulator {emulator_id}")
             is_running = False
             emulator_id = None
-        
+
         # Use existing emulator if running
         if is_running and not force_new_emulator:
             logger.info(f"Found running emulator {emulator_id} for profile {email}")
-            
+
             # Verify it's the correct AVD
             if found_avd_name != avd_name:
                 logger.warning(f"Found wrong AVD {found_avd_name}, expected {avd_name}")
                 return False, f"Cannot use another user's emulator for {email}"
-            
+
             self._save_profile_status(email, avd_name, emulator_id)
             return True, f"Switched to profile {email} with existing running emulator"
-        
-        # Handle ARM Mac
-        if self.host_arch == "arm64" and platform.system() == "Darwin":
-            logger.info("ARM Mac - tracking profile change without starting emulator")
-            self._save_profile_status(email, avd_name)
-            
-            if not avd_exists:
-                logger.warning(f"AVD {avd_name} doesn't exist. Run 'make register-avd' if needed.")
-            return True, f"Switched profile tracking to {email} (AVD: {avd_name})"
-        
-        # Create AVD if missing
+
+        # No more ARM Mac workarounds - we can launch emulators properly now
+
+        # Check if AVD exists before trying to start it
         if not avd_exists:
-            logger.warning(f"AVD {avd_name} doesn't exist. Creating it.")
-            success, result = self.create_new_avd(email)
-            if not success:
-                return False, f"Failed to create AVD: {result}"
-            avd_name = result
-        
+            logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
+
+            # Check if this user requires ALT_SYSTEM_IMAGE
+            if self.avd_creator.host_arch == "arm64":
+                ignore_seed_clone = True  # Use the MAC_SYSTEM_IMAGE
+            else:
+                ignore_seed_clone = email in self.avd_creator.ALT_IMAGE_TEST_EMAILS
+
+            # Check if we can use the seed clone for faster AVD creation
+            # Skip seed clone for ALT_IMAGE users since seed clone uses Android 30
+            if self.avd_creator.is_seed_clone_ready() and not ignore_seed_clone:
+                logger.info("Seed clone is ready - using fast AVD copy method")
+                success, result = self.avd_creator.copy_avd_from_seed_clone(email)
+                if success:
+                    avd_name = result
+                    logger.info(f"Successfully created AVD {avd_name} from seed clone for {email}")
+                else:
+                    logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
+                    # Fall back to normal AVD creation
+                    success, result = self.create_new_avd(email)
+                    if not success:
+                        logger.error(f"Failed to create AVD: {result}", exc_info=True)
+                        return False, f"Failed to create AVD for {email}: {result}"
+                    avd_name = result
+            else:
+                # Either seed clone not ready or user requires ALT_SYSTEM_IMAGE
+                if ignore_seed_clone:
+                    logger.info(
+                        f"User {email} requires ALT_SYSTEM_IMAGE (Android 36), using normal AVD creation"
+                    )
+                else:
+                    logger.info("Seed clone not ready, using normal AVD creation")
+                success, result = self.create_new_avd(email)
+                if not success:
+                    logger.error(f"Failed to create AVD: {result}", exc_info=True)
+                    return False, f"Failed to create AVD for {email}: {result}"
+                avd_name = result
+
+            # Update profile with new AVD
+            self.register_profile(email, avd_name)
+            logger.info(f"Created new AVD {avd_name} for {email}")
+
         # Start the emulator
         logger.info(f"Starting emulator for {email} with AVD {avd_name}")
         if not self.start_emulator(email):
             return False, "Failed to start emulator"
-        
+
         # Update profile status
         self._save_profile_status(email, avd_name)
         return True, f"Successfully switched to profile {email} with AVD {avd_name}"
@@ -687,7 +674,7 @@ class AVDProfileManager:
     def _load_profiles_index(self) -> Dict[str, Dict]:
         """Load all profiles - for compatibility with old code."""
         return self.get_all_profiles()
-    
+
     def _save_profiles_index(self) -> None:
         """Save profiles - no-op for database version as saves are automatic."""
         pass

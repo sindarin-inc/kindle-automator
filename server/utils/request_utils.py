@@ -133,7 +133,7 @@ def get_sindarin_email() -> Optional[str]:
     return email
 
 
-def get_automator_for_request(server):
+def get_automator_for_request(server=None):
     """Get the appropriate automator based on sindarin_email in the request.
 
     Args:
@@ -152,6 +152,11 @@ def get_automator_for_request(server):
         return None, None, (error, 400)
 
     # Get the appropriate automator
+    if server is None:
+        error = {"error": "Server instance required for get_automator_for_request"}
+        logger.error("No server instance provided to get_automator_for_request", exc_info=True)
+        return None, None, (error, 500)
+
     automator = server.automators.get(sindarin_email)
     if not automator:
         error = {"error": f"No automator found for {sindarin_email}"}

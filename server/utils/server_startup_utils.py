@@ -63,8 +63,9 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                     if "\tdevice" in line:
                         device_id = line.split("\t")[0]
                         logger.info(f"Cleaning up device {device_id}")
-                        # Remove all port forwards
-                        subprocess.run([f"adb -s {device_id} forward --remove-all"], shell=True, check=False)
+                        # Port forwards are persistent and tied to instance IDs
+                        # We keep them in place for faster startup
+                        logger.info(f"Keeping ADB port forwards for {device_id} to speed up startup")
                         # Kill any UiAutomator2 processes
                         subprocess.run(
                             [f"adb -s {device_id} shell pkill -f uiautomator"], shell=True, check=False
@@ -118,9 +119,6 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
                                 if platform.system() == "Darwin" and hasattr(automator, "device_id"):
                                     emulators_in_use[automator.device_id] = email
                                     logger.info(f"Marked emulator {automator.device_id} as in use by {email}")
-
-                                # Add a delay between restarts to avoid overwhelming the system
-                                time.sleep(5)
                             else:
                                 logger.error(f"✗ Failed to initialize driver for {email}", exc_info=True)
                                 failed_restarts.append(email)

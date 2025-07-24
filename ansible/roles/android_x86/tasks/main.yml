@@ -114,8 +114,9 @@
 
 - name: Accept all Android SDK licenses
   shell: |
-    set -o pipefail
     yes | {{ android_x86_android_home }}/cmdline-tools/latest/bin/sdkmanager --licenses
+  args:
+    executable: /bin/bash
   become: true
   environment:
     ANDROID_HOME: "{{ android_x86_android_home }}"

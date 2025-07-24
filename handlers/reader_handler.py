@@ -449,6 +449,50 @@ class ReaderHandler:
         if dialogs_handled > 0:
             logger.info(f"Handled {dialogs_handled} dialog(s) before waiting for reading view")
 
+        # Check for and dismiss "About this book" slideover early in the flow
+        # This dialog can appear immediately when opening certain books
+        try:
+            about_book_visible = False
+
+            for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                try:
+                    slideover = self.driver.find_element(strategy, locator)
+                    if slideover.is_displayed():
+                        about_book_visible = True
+                        logger.info("Found 'About this book' slideover immediately after opening book")
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if about_book_visible:
+                # Try tapping near the top of the screen to dismiss
+                window_size = self.driver.get_window_size()
+                center_x = window_size["width"] // 2
+                top_y = int(window_size["height"] * 0.05)  # Tap at 5% from the top
+                self.driver.tap([(center_x, top_y)])
+                logger.info("Tapped near top of screen to dismiss 'About this book' slideover")
+                time.sleep(1)
+
+                # Verify dismissal
+                still_visible = False
+                for strategy, locator in ABOUT_BOOK_SLIDEOVER_IDENTIFIERS:
+                    try:
+                        slideover = self.driver.find_element(strategy, locator)
+                        if slideover.is_displayed():
+                            still_visible = True
+                            break
+                    except NoSuchElementException:
+                        continue
+
+                if still_visible:
+                    logger.warning(
+                        "'About this book' slideover still visible after tap - will be handled later"
+                    )
+                else:
+                    logger.info("'About this book' slideover successfully dismissed early")
+        except Exception as e:
+            logger.error(f"Error checking for early 'About this book' slideover: {e}", exc_info=True)
+
         # Wait for the reading view to appear
         try:
             # Track time and capture page source periodically

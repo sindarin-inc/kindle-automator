@@ -10,19 +10,21 @@ from flask import request
 from flask_restful import Resource
 from selenium.common import exceptions as selenium_exceptions
 
+from server.core.automation_server import AutomationServer
 from server.logging_config import store_page_source
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import get_automator_for_request, get_sindarin_email
 from views.core.app_state import AppState
+from views.more.interaction_strategies import MORE_MENU_ITEM_STRATEGIES
 
 logger = logging.getLogger(__name__)
 
 
 class LogoutResource(Resource):
     def __init__(self, **kwargs):
-        self.server_instance = kwargs.get("server_instance")
+        # Accept server_instance for backwards compatibility but use singleton
         super().__init__()
 
     @ensure_user_profile_loaded
@@ -30,8 +32,8 @@ class LogoutResource(Resource):
     @handle_automator_response
     def _logout(self):
         """Sign out of the Kindle app"""
-        # Get server instance from the request context if not provided
-        server = self.server_instance or request.app.config.get("server_instance")
+        # Get server instance using singleton
+        server = AutomationServer.get_instance()
 
         automator, _, error_response = get_automator_for_request(server)
         if error_response:
@@ -44,29 +46,23 @@ class LogoutResource(Resource):
 
             # Navigate to MORE tab if not already there
             if current_state != AppState.MORE_SETTINGS:
-                logger.info("Navigating to MORE tab")
+                # First ensure we're in LIBRARY state using the state machine
+                # This handles any state transitions properly (including closing books from READING state)
+                if current_state not in [AppState.LIBRARY, AppState.HOME]:
+                    logger.info(f"Transitioning from {current_state} to LIBRARY first")
+                    result_state = automator.state_machine.transition_to_library(server=server)
+                    if result_state != AppState.LIBRARY:
+                        logger.error(f"Failed to transition to LIBRARY, current state: {result_state}")
+                        return {"error": f"Failed to reach library state: {result_state.name}"}, 500
+                    logger.info("Successfully transitioned to LIBRARY state")
 
-                # Try to click the MORE tab
-                from views.more.interaction_strategies import MORE_TAB_STRATEGIES
-
-                tab_found = False
-                for strategy, locator in MORE_TAB_STRATEGIES:
-                    try:
-                        more_tab = automator.driver.find_element(strategy, locator)
-                        if more_tab.is_displayed():
-                            more_tab.click()
-                            tab_found = True
-                            logger.info("Successfully clicked MORE tab")
-                            time.sleep(1)  # Wait for tab to load
-                            break
-                    except selenium_exceptions.NoSuchElementException:
-                        continue
-
-                if not tab_found:
-                    logger.error("Failed to find MORE tab", exc_info=True)
+                # Now navigate from LIBRARY to MORE_SETTINGS
+                logger.info("Navigating to MORE tab from LIBRARY")
+                if not automator.state_machine.library_handler.navigate_to_more_settings():
+                    logger.error("Failed to navigate to MORE settings", exc_info=True)
                     return {"error": "Failed to navigate to MORE tab"}, 500
 
-                # Update state after navigation
+                # Verify we reached MORE_SETTINGS
                 current_state = automator.state_machine.update_current_state()
                 if current_state != AppState.MORE_SETTINGS:
                     logger.error(
@@ -75,11 +71,10 @@ class LogoutResource(Resource):
                     return {
                         "error": f"Failed to reach MORE settings, current state: {current_state.name}"
                     }, 500
+                logger.info("Successfully reached MORE_SETTINGS state")
 
             # Now we're in MORE_SETTINGS, find and click Sign Out
             logger.info("Looking for Sign Out button")
-
-            from views.more.interaction_strategies import MORE_MENU_ITEM_STRATEGIES
 
             sign_out_clicked = False
             for strategy, locator in MORE_MENU_ITEM_STRATEGIES.get("sign_out", []):
@@ -228,7 +223,13 @@ class LogoutResource(Resource):
                 # Clear the current book tracking
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
+                    server = AutomationServer.get_instance()
                     server.clear_current_book(sindarin_email)
+
+                    # Clear auth_date since user has logged out
+                    if automator.profile_manager:
+                        automator.profile_manager.set_user_field(sindarin_email, "auth_date", None)
+                        logger.info(f"Cleared auth_date for {sindarin_email}")
 
                     # Clear emulator settings to force fresh initialization on next login
                     if automator.profile_manager:
@@ -250,7 +251,13 @@ class LogoutResource(Resource):
                 # Clear the current book tracking
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
+                    server = AutomationServer.get_instance()
                     server.clear_current_book(sindarin_email)
+
+                    # Clear auth_date since user has logged out
+                    if automator.profile_manager:
+                        automator.profile_manager.set_user_field(sindarin_email, "auth_date", None)
+                        logger.info(f"Cleared auth_date for {sindarin_email}")
 
                     # Clear emulator settings to force fresh initialization on next login
                     if automator.profile_manager:
@@ -272,6 +279,7 @@ class LogoutResource(Resource):
                 # Still clear the current book tracking as logout was attempted
                 sindarin_email = get_sindarin_email()
                 if sindarin_email:
+                    server = AutomationServer.get_instance()
                     server.clear_current_book(sindarin_email)
 
                     # Clear emulator settings to force fresh initialization on next login

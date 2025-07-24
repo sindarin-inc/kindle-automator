@@ -81,56 +81,13 @@ class Driver:
                     )
                     return None
 
-            # Check if we're on macOS
-            is_mac = platform.system() == "Darwin"
-
-            if is_mac:
-                # On macOS, allow flexible matching for Android Studio emulators
-                logger.debug(
-                    f"macOS detected for email={email}. "
-                    f"Allowing flexible emulator matching for Android Studio compatibility."
-                )
-
-                # Find any available emulator
-                try:
-                    result = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
-
-                    for line in result.stdout.split("\n"):
-                        if "\tdevice" in line and line.startswith("emulator"):
-                            device_id = line.split("\t")[0]
-
-                            # Verify this is actually a working emulator
-                            try:
-                                verify_result = subprocess.run(
-                                    ["adb", "-s", device_id, "shell", "getprop", "ro.product.model"],
-                                    capture_output=True,
-                                    text=True,
-                                    check=True,
-                                    timeout=5,
-                                )
-                                logger.info(
-                                    f"macOS: Found available emulator {device_id} for email={email}. "
-                                    f"Model: {verify_result.stdout.strip()}"
-                                )
-                                return device_id
-                            except Exception as e:
-                                logger.warning(f"macOS: Could not verify emulator {device_id}: {e}")
-                                continue
-
-                    logger.warning(f"macOS: No available emulators found for email={email}")
-                    return None
-
-                except Exception as e:
-                    logger.error(f"macOS: Error finding available emulator: {e}", exc_info=True)
-                    return None
-            else:
-                # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
-                # This prevents cross-user emulator access in production
-                logger.error(
-                    f"No specific device requested for email={email}. "
-                    f"Refusing to search for ANY available emulator to prevent cross-user access."
-                )
-                return None
+            # CRITICAL: Do NOT search for ANY available emulator when no specific device is requested
+            # This prevents cross-user emulator access in production
+            logger.error(
+                f"No specific device requested for email={email}. "
+                f"Refusing to search for ANY available emulator to prevent cross-user access."
+            )
+            return None
         except Exception as e:
             logger.error(f"Error getting emulator device ID: {e}", exc_info=True)
             return None
@@ -700,15 +657,28 @@ class Driver:
 
             # If we couldn't parse from filename, try using ADB
             if not version_name_match or not version_code:
+                # First check if the APK file exists
+                if not os.path.exists(apk_path):
+                    logger.warning(f"APK file not found at {apk_path}, skipping ADB version check")
+                    return (None, None)
+
                 logger.info(f"Using ADB to get version info from {apk_path}")
                 # Upload APK to device temporarily
                 temp_path = "/sdcard/temp_kindle.apk"
-                subprocess.run(
-                    ["adb", "-s", self.device_id, "push", apk_path, temp_path],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
+                try:
+                    result = subprocess.run(
+                        ["adb", "-s", self.device_id, "push", apk_path, temp_path],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Failed to push APK to device: {e}")
+                    logger.error(f"stdout: {e.stdout}")
+                    logger.error(f"stderr: {e.stderr}")
+                    # Don't fail completely if we can't get version info
+                    logger.warning("Continuing without APK version information")
+                    return (None, None)
 
                 # Use package manager to get info
                 result = subprocess.run(
@@ -1284,19 +1254,9 @@ class Driver:
                     # options.set_capability("appium:mjpegServerPort", allocated_ports["mjpegServerPort"])
                     self.appium_port = allocated_ports["appiumPort"]
 
-                    # Clean up any existing port forwards for this device to avoid conflicts
-                    logger.info(
-                        f"Cleaning up port forwards for {self.device_id} before initialization, using ports {allocated_ports}"
-                    )
-                    try:
-                        subprocess.run(
-                            f"adb -s {self.device_id} forward --remove-all",
-                            shell=True,
-                            check=False,
-                            timeout=5,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Error cleaning port forwards: {e}")
+                    # Port forwards are persistent and reused - no need to remove them
+                    # They're tied to the user's instance ID and will be the same on every run
+                    logger.info(f"Using allocated ports for {self.device_id}: {allocated_ports}")
                 else:
                     logger.error(f"No allocated ports found for {email}", exc_info=True)
                     return False
@@ -1495,20 +1455,10 @@ class Driver:
         """Quit the Appium driver"""
         logger.info(f"Quitting driver: {self.driver}")
 
-        # Clean up port forwards before quitting driver
+        # Keep port forwards in place - they're persistent and tied to instance IDs
+        # Only kill UiAutomator2 processes since the app session is ending
         if self.device_id:
-            logger.info(f"Cleaning up port forwards for device {self.device_id}")
-            try:
-                subprocess.run(
-                    f"adb -s {self.device_id} forward --remove-all",
-                    shell=True,
-                    check=False,
-                    capture_output=True,
-                    timeout=5,
-                )
-                logger.info(f"Successfully removed all port forwards for {self.device_id}")
-            except Exception as e:
-                logger.warning(f"Error removing port forwards during driver quit: {e}")
+            logger.info(f"Keeping port forwards for {self.device_id} for faster next startup")
 
             # Also kill any UiAutomator2 processes
             try:

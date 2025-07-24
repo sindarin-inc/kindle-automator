@@ -468,6 +468,8 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
                 # If OCR successful, just add the text to the result and don't include the image
                 # Don't include base64 or URL to save bandwidth and storage
                 result["ocr_text"] = ocr_text
+                # Log the length of the OCR text
+                logger.info(f"OCR text extracted successfully, length: {len(ocr_text)} characters")
                 # Always delete the image after successful OCR
                 delete_after = True
             else:

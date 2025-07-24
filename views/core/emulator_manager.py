@@ -21,11 +21,10 @@ class EmulatorManager:
     Handles starting, stopping, and monitoring emulator instances.
     """
 
-    def __init__(self, android_home, avd_dir, host_arch, use_simplified_mode=False):
+    def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
         self.avd_dir = avd_dir
         self.host_arch = host_arch
-        self.use_simplified_mode = use_simplified_mode
 
         self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
 
@@ -217,20 +216,6 @@ class EmulatorManager:
                 self._emulator_cache[email] = (emulator_id, avd_name, time.time())
                 logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
 
-                # For macOS simplified mode, also ensure the profile has the proper AVD name
-                if self.use_simplified_mode and avd_name:
-                    from views.core.avd_profile_manager import AVDProfileManager
-
-                    profile_manager = AVDProfileManager.get_instance()
-                    if email in profile_manager.profiles_index:
-                        profile = profile_manager.profiles_index[email]
-                        if not profile.get("avd_name"):
-                            profile["avd_name"] = avd_name
-                            profile_manager._save_profiles_index()
-                            logger.info(
-                                f"Updated profile with AVD name {avd_name} for {email} in simplified mode"
-                            )
-
                 # Check adb devices immediately after launch to see if it's detected
                 try:
                     devices_after = subprocess.run(
@@ -280,6 +265,11 @@ class EmulatorManager:
                     f"Timeout waiting for emulator to boot for {email} after 45 seconds and {check_count} checks",
                     exc_info=True,
                 )
+
+                # Check for crash dialog on timeout
+                if self.emulator_launcher._check_and_dismiss_crash_dialog(display_num):
+                    logger.warning("Found and dismissed crash dialog after emulator boot timeout")
+
                 return False
             else:
                 logger.error(f"Failed to launch emulator", exc_info=True)
@@ -338,6 +328,8 @@ class EmulatorManager:
                 (["pm", "disable-user", "com.android.vending"], "Disabling Play Store"),
                 # Disable YouTube (prevents background crashes)
                 (["pm", "disable-user", "com.google.android.youtube"], "Disabling YouTube"),
+                # Disable Gboard to prevent soft keyboard from appearing
+                (["pm", "disable-user", "com.google.android.inputmethod.latin"], "Disabling Gboard"),
                 # Disable auto app updates
                 (["settings", "put", "global", "auto_update_apps", "0"], "Disabling auto app updates"),
                 # Deny background execution for Play Services
@@ -385,11 +377,17 @@ class EmulatorManager:
             ]
 
             # Run each command
+            keyboard_disabled = False
             for cmd, description in optimization_commands:
                 try:
                     full_cmd = adb_prefix + cmd
                     logger.debug(f"{description}...")
                     result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5, check=False)
+
+                    # Check if Gboard was successfully disabled
+                    if "Disabling Gboard" in description and result.returncode == 0:
+                        keyboard_disabled = True
+                        logger.info("Gboard successfully disabled, keyboard_disabled flag set to True")
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
@@ -412,6 +410,9 @@ class EmulatorManager:
             profile_manager.set_user_field(
                 email, "memory_optimization_timestamp", int(time.time()), section="emulator_settings"
             )
+            # Store keyboard disabled state
+            if keyboard_disabled:
+                profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
 
             logger.info(f"Memory optimization settings applied successfully for {email}")
 
