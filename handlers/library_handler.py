@@ -151,7 +151,7 @@ class LibraryHandler:
         """Click the filter button and count the number of books shown in the filter modal.
 
         Returns:
-            int: Number of books shown in the filter modal, or None if failed
+            int: Sum of Read and Unread counts from the filter modal, or None if failed
         """
         try:
             from views.library.interaction_strategies import FILTER_BUTTON_STRATEGIES
@@ -178,8 +178,7 @@ class LibraryHandler:
             # Wait a moment for the filter modal to appear
             time.sleep(1.0)
 
-            # Try to find the book count in the filter modal
-            # Look for text elements that might contain book count
+            # Try to find the Read and Unread counts in the filter modal
             try:
                 # Take a screenshot for debugging
                 timestamp = int(time.time())
@@ -190,58 +189,97 @@ class LibraryHandler:
                 # Also save page source
                 store_page_source(self.driver.page_source, f"filter_modal_{timestamp}")
 
-                # Look for the "Books" text element and its associated count in the filter modal
-                book_count = None
-                
-                # First try the structured approach - look for Books text and then its sibling count
-                try:
-                    # Find the Books text element
-                    books_text_element = self.driver.find_element(
-                        AppiumBy.XPATH, 
-                        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_text_view' and @text='Books']"
-                    )
-                    
-                    # Find its parent LinearLayout
-                    parent = books_text_element.find_element(AppiumBy.XPATH, "..")
-                    
-                    # Find the count TextView within the same parent
-                    count_element = parent.find_element(
-                        AppiumBy.XPATH, 
-                        ".//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_count']"
-                    )
-                    
-                    count_text = count_element.text
-                    if count_text:
-                        import re
-                        # Extract number from "(N)" format
-                        match = re.search(r"\((\d+)\)", count_text)
-                        if match:
-                            book_count = int(match.group(1))
-                            logger.info(f"Found book count in filter modal: {book_count}")
-                except Exception as e:
-                    logger.debug(f"Could not find book count using structured approach: {e}")
-                
-                # Fallback: look for all text elements
-                if book_count is None:
-                    all_text_elements = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.TextView")
-                    
-                    for element in all_text_elements:
-                        try:
-                            text = element.text
-                            # Look specifically for "Books (N)" pattern
-                            if text and text.lower().startswith("books"):
-                                # Extract number from parentheses
-                                import re
+                # Extract Read and Unread counts
+                read_count = 0
+                unread_count = 0
 
-                                match = re.search(r"books\s*\((\d+)\)", text, re.IGNORECASE)
-                                if match:
-                                    book_count = int(match.group(1))
-                                    logger.info(
-                                        f"Found book count in filter modal: {book_count} (from text: {text})"
-                                    )
-                                    break
-                        except Exception as e:
-                            continue
+                # First try content-desc attributes
+                try:
+                    # Find the button with Read in content-desc
+                    read_button = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, 'red:')]"
+                    )
+                    content_desc = read_button.get_attribute("content-desc")
+                    if content_desc:
+                        import re
+
+                        match = re.search(r"red:\s*(\d+)", content_desc)
+                        if match:
+                            read_count = int(match.group(1))
+                            logger.info(f"Found Read count from content-desc: {read_count}")
+                except Exception as e:
+                    logger.debug(f"Could not find Read count from content-desc: {e}")
+
+                try:
+                    # Find the button with Unread in content-desc
+                    unread_button = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.Button[contains(@content-desc, 'Unread:')]"
+                    )
+                    content_desc = unread_button.get_attribute("content-desc")
+                    if content_desc:
+                        import re
+
+                        match = re.search(r"Unread:\s*(\d+)", content_desc)
+                        if match:
+                            unread_count = int(match.group(1))
+                            logger.info(f"Found Unread count from content-desc: {unread_count}")
+                except Exception as e:
+                    logger.debug(f"Could not find Unread count from content-desc: {e}")
+
+                # If that didn't work fully, try the structured approach
+                if read_count == 0:
+                    try:
+                        # Find the Read text element
+                        read_text_element = self.driver.find_element(
+                            AppiumBy.XPATH,
+                            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_text_view' and @text='Read']",
+                        )
+                        # Find its parent LinearLayout
+                        parent = read_text_element.find_element(AppiumBy.XPATH, "..")
+                        # Find the count TextView within the same parent
+                        count_element = parent.find_element(
+                            AppiumBy.XPATH,
+                            ".//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_count']",
+                        )
+                        count_text = count_element.text
+                        if count_text:
+                            import re
+
+                            match = re.search(r"\((\d+)\)", count_text)
+                            if match:
+                                read_count = int(match.group(1))
+                                logger.info(f"Found Read count from structure: {read_count}")
+                    except Exception as e:
+                        logger.debug(f"Could not find Read count using structured approach: {e}")
+
+                if unread_count == 0:
+                    try:
+                        # Find the Unread text element
+                        unread_text_element = self.driver.find_element(
+                            AppiumBy.XPATH,
+                            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_text_view' and @text='Unread']",
+                        )
+                        # Find its parent LinearLayout
+                        parent = unread_text_element.find_element(AppiumBy.XPATH, "..")
+                        # Find the count TextView within the same parent
+                        count_element = parent.find_element(
+                            AppiumBy.XPATH,
+                            ".//android.widget.TextView[@resource-id='com.amazon.kindle:id/checkable_item_count']",
+                        )
+                        count_text = count_element.text
+                        if count_text:
+                            import re
+
+                            match = re.search(r"\((\d+)\)", count_text)
+                            if match:
+                                unread_count = int(match.group(1))
+                                logger.info(f"Found Unread count from structure: {unread_count}")
+                    except Exception as e:
+                        logger.debug(f"Could not find Unread count using structured approach: {e}")
+
+                # Calculate total book count
+                book_count = read_count + unread_count
+                logger.info(f"Total book count (Read + Unread): {book_count} = {read_count} + {unread_count}")
 
                 # Close the filter modal by clicking the DONE button
                 try:
@@ -267,7 +305,7 @@ class LibraryHandler:
 
                 time.sleep(0.5)
 
-                return book_count
+                return book_count if book_count > 0 else None
 
             except Exception as e:
                 logger.error(f"Error counting books in filter modal: {e}", exc_info=True)
