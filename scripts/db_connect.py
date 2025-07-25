@@ -97,7 +97,9 @@ def get_connection_params(debug=False):
             "password": "local",  # Default password for local development
         }
         if debug:
-            print(f"Debug: Using local Docker connection - host={params['host']}, port={params['port']}, db={params['database']}")
+            print(
+                f"Debug: Using local Docker connection - host={params['host']}, port={params['port']}, db={params['database']}"
+            )
         return params
     else:
         if debug:
@@ -112,7 +114,7 @@ def get_connection_params(debug=False):
 
         # Strip quotes from DATABASE_URL
         database_url = database_url.strip('"')
-        
+
         if debug:
             # Mask password in debug output
             masked_url = database_url
@@ -121,7 +123,7 @@ def get_connection_params(debug=False):
                 at_pos = masked_url.find("@")
                 colon_pos = masked_url.rfind(":", start, at_pos)
                 if colon_pos > start:
-                    masked_url = masked_url[:colon_pos+1] + "****" + masked_url[at_pos:]
+                    masked_url = masked_url[: colon_pos + 1] + "****" + masked_url[at_pos:]
             print(f"Debug: Using DATABASE_URL = {masked_url}")
 
         # Parse DATABASE_URL
@@ -134,7 +136,9 @@ def get_connection_params(debug=False):
             "password": parsed.password,
         }
         if debug:
-            print(f"Debug: Parsed connection - host={params['host']}, port={params['port']}, db={params['database']}, user={params['user']}")
+            print(
+                f"Debug: Parsed connection - host={params['host']}, port={params['port']}, db={params['database']}, user={params['user']}"
+            )
         return params
 
 
@@ -146,22 +150,22 @@ def execute_query(query, debug=False):
         if debug:
             print(f"Debug: Attempting to connect to database...")
             print(f"Debug: Connection timeout set to 10 seconds")
-        
+
         # Add connection timeout and SSL mode handling
         connect_params = params.copy()
-        connect_params['connect_timeout'] = 10
-        
+        connect_params["connect_timeout"] = 10
+
         # Handle SSL mode from DATABASE_URL
-        if 'sslmode' not in connect_params:
+        if "sslmode" not in connect_params:
             # Check if it's in the database URL as a query parameter
             if not is_docker_running():
                 database_url = os.environ.get("DATABASE_URL", "").strip('"')
                 if "sslmode=" in database_url:
                     sslmode = database_url.split("sslmode=")[1].split("&")[0]
-                    connect_params['sslmode'] = sslmode
+                    connect_params["sslmode"] = sslmode
                     if debug:
                         print(f"Debug: SSL mode = {sslmode}")
-        
+
         conn = psycopg2.connect(**connect_params)
         conn.autocommit = True
         if debug:
@@ -207,7 +211,7 @@ def execute_query(query, debug=False):
             print(f"Debug:   port={params['port']}")
             print(f"Debug:   database={params['database']}")
             print(f"Debug:   user={params['user']}")
-            if 'sslmode' in connect_params:
+            if "sslmode" in connect_params:
                 print(f"Debug:   sslmode={connect_params['sslmode']}")
         sys.exit(1)
     except psycopg2.Error as e:
@@ -343,7 +347,7 @@ def main():
                                 at_pos = masked_url.find("@")
                                 colon_pos = masked_url.rfind(":", start, at_pos)
                                 if colon_pos > start:
-                                    masked_url = masked_url[:colon_pos+1] + "****" + masked_url[at_pos:]
+                                    masked_url = masked_url[: colon_pos + 1] + "****" + masked_url[at_pos:]
                             print(f"Debug: Set DATABASE_URL = {masked_url}")
     else:
         if debug:

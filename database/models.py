@@ -76,9 +76,7 @@ class EmulatorSettings(Base):
     __tablename__ = "emulator_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     hw_overlays_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     animations_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sleep_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -98,9 +96,7 @@ class DeviceIdentifiers(Base):
     __tablename__ = "device_identifiers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     hw_wifi_mac: Mapped[Optional[str]] = mapped_column(String(20))
     hw_ethernet_mac: Mapped[Optional[str]] = mapped_column(String(20))
     ro_serialno: Mapped[Optional[str]] = mapped_column(String(50))
@@ -118,9 +114,7 @@ class LibrarySettings(Base):
     __tablename__ = "library_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     view_type: Mapped[Optional[str]] = mapped_column(String(20))
     group_by_series: Mapped[bool] = mapped_column(Boolean, default=False)
     actively_reading_title: Mapped[Optional[str]] = mapped_column(Text)
@@ -137,9 +131,7 @@ class ReadingSettings(Base):
     __tablename__ = "reading_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     theme: Mapped[Optional[str]] = mapped_column(String(20))
     font_size: Mapped[Optional[str]] = mapped_column(String(20))
     real_time_highlighting: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -156,14 +148,10 @@ class UserPreference(Base):
     """Generic key-value preferences for a user."""
 
     __tablename__ = "user_preferences"
-    __table_args__ = (
-        UniqueConstraint("user_id", "preference_key", name="uq_user_preference"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "preference_key", name="uq_user_preference"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     preference_key: Mapped[str] = mapped_column(String(255), nullable=False)
     preference_value: Mapped[Optional[str]] = mapped_column(Text)
 

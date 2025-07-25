@@ -12,6 +12,12 @@ endif
 # Use virtual environment Python if available
 PYTHON := $(shell if [ -d venv ]; then echo venv/bin/python; else echo python3; fi)
 
+# Setup database privileges (requires POSTGRES_DOADMIN_DATABASE_URL)
+.PHONY: db-setup-privileges
+db-setup-privileges:
+	@echo "Setting up database privileges..."
+	@$(PYTHON) scripts/setup_db_privileges.py $(DB_ENV_FILE)
+
 # Initialize database
 .PHONY: db-init
 db-init:
@@ -32,9 +38,16 @@ db-import:
 	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
 		$(PYTHON) scripts/migrate_json_to_db.py
 
-# Full database setup: init, migrate, import
+# Full database setup: privileges (if needed), init, migrate, import
 .PHONY: db-setup
-db-setup: db-init db-migrate db-import
+db-setup:
+	@if [ -n "$$(grep -E '^POSTGRES_DOADMIN_DATABASE_URL=' $(DB_ENV_FILE) 2>/dev/null)" ]; then \
+		echo "Admin URL found, setting up privileges first..."; \
+		$(MAKE) db-setup-privileges DB_ENV_FILE=$(DB_ENV_FILE); \
+	fi
+	@$(MAKE) db-init DB_ENV_FILE=$(DB_ENV_FILE)
+	@$(MAKE) db-migrate DB_ENV_FILE=$(DB_ENV_FILE)
+	@$(MAKE) db-import DB_ENV_FILE=$(DB_ENV_FILE)
 	@echo "Database setup complete!"
 
 # Connect to database with psql
@@ -122,7 +135,10 @@ db-data:
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM user_preferences ORDER BY user_id;"
 
 # Staging-specific targets
-.PHONY: db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging
+.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging
+db-setup-privileges-staging:
+	@$(MAKE) db-setup-privileges STAGING=1
+
 db-init-staging:
 	@$(MAKE) db-init STAGING=1
 
@@ -142,7 +158,10 @@ db-data-staging:
 	@$(MAKE) db-data STAGING=1
 
 # Production-specific targets
-.PHONY: db-init-prod db-setup-prod db-status-prod db-backup-prod db-activity-prod db-data-prod
+.PHONY: db-setup-privileges-prod db-init-prod db-setup-prod db-status-prod db-backup-prod db-activity-prod db-data-prod
+db-setup-privileges-prod:
+	@$(MAKE) db-setup-privileges PROD=1
+
 db-init-prod:
 	@$(MAKE) db-init PROD=1
 
