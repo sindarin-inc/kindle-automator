@@ -146,7 +146,24 @@ def execute_query(query, debug=False):
     try:
         if debug:
             print(f"Debug: Attempting to connect to database...")
-        conn = psycopg2.connect(**params)
+            print(f"Debug: Connection timeout set to 10 seconds")
+        
+        # Add connection timeout and SSL mode handling
+        connect_params = params.copy()
+        connect_params['connect_timeout'] = 10
+        
+        # Handle SSL mode from DATABASE_URL
+        if 'sslmode' not in connect_params:
+            # Check if it's in the database URL as a query parameter
+            if not is_docker_running():
+                database_url = os.environ.get("DATABASE_URL", "").strip('"')
+                if "sslmode=" in database_url:
+                    sslmode = database_url.split("sslmode=")[1].split("&")[0]
+                    connect_params['sslmode'] = sslmode
+                    if debug:
+                        print(f"Debug: SSL mode = {sslmode}")
+        
+        conn = psycopg2.connect(**connect_params)
         conn.autocommit = True
         if debug:
             print(f"Debug: Connected successfully!")
@@ -183,6 +200,17 @@ def execute_query(query, debug=False):
             else:
                 print("Query executed successfully")
 
+    except psycopg2.OperationalError as e:
+        print(f"Database connection error: {e}")
+        if debug:
+            print(f"Debug: Connection failed with parameters:")
+            print(f"Debug:   host={params['host']}")
+            print(f"Debug:   port={params['port']}")
+            print(f"Debug:   database={params['database']}")
+            print(f"Debug:   user={params['user']}")
+            if 'sslmode' in connect_params:
+                print(f"Debug:   sslmode={connect_params['sslmode']}")
+        sys.exit(1)
     except psycopg2.Error as e:
         print(f"Database error: {e}")
         sys.exit(1)
