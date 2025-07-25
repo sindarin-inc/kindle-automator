@@ -1,4 +1,12 @@
-.PHONY: server test
+.PHONY: server test check-venv
+
+# Reusable virtualenv check
+check-venv:
+	@if [ -z "$$VIRTUAL_ENV" ]; then \
+		echo "ERROR: You must be in a virtualenv to run this command"; \
+		echo "Run: source ~/.virtualenvs/kindle-automator/bin/activate"; \
+		exit 1; \
+	fi
 
 run: server
 
@@ -8,13 +16,9 @@ claude-run:
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Monitor logs with: tail -f logs/server_output.log"
+	@echo "To stop the server and start a new server, run: make claude-run"
 
-deps:
-	@if [ -z "$$VIRTUAL_ENV" ]; then \
-		echo "ERROR: You must be in a virtualenv to run 'make deps'"; \
-		echo "Run: source ~/.virtualenvs/kindle-automator/bin/activate"; \
-		exit 1; \
-	fi
+deps: check-venv
 	uv pip install -r requirements.txt
 
 lint:
@@ -24,17 +28,16 @@ lint:
 	flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
 	
 # Start the Flask server
-server:
+server: check-venv
 	@echo "Starting Flask server..."
 	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server
 
 # Start an interactive shell with the environment setup
-shell:
+shell: check-venv
 	@echo "Starting interactive shell..."
 	@PYTHONPATH=$(shell pwd) python shell.py
 
-test:
-	# workon kindle-automator
+test: check-venv
 	@echo "Running tests..."
 	@PYTHONPATH=$(shell pwd) pytest tests
 
