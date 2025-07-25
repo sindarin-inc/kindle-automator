@@ -35,19 +35,37 @@ def ensure_local_db_exists():
     """Create local development database if it doesn't exist."""
     # Check if database already exists
     check_cmd = [
-        "docker", "exec", DOCKER_CONTAINER,
-        "psql", "-p", LOCAL_DB_PORT, "-U", LOCAL_DB_USER, "-d", "sol_dev",
-        "-tAc", f"SELECT 1 FROM pg_database WHERE datname = '{LOCAL_DB_NAME}'"
+        "docker",
+        "exec",
+        DOCKER_CONTAINER,
+        "psql",
+        "-p",
+        LOCAL_DB_PORT,
+        "-U",
+        LOCAL_DB_USER,
+        "-d",
+        "sol_dev",
+        "-tAc",
+        f"SELECT 1 FROM pg_database WHERE datname = '{LOCAL_DB_NAME}'",
     ]
-    
+
     result = subprocess.run(check_cmd, capture_output=True, text=True)
-    
+
     if result.stdout.strip() != "1":
         # Database doesn't exist, create it
         create_cmd = [
-            "docker", "exec", DOCKER_CONTAINER,
-            "psql", "-p", LOCAL_DB_PORT, "-U", LOCAL_DB_USER, "-d", "sol_dev",
-            "-c", f"CREATE DATABASE {LOCAL_DB_NAME}"
+            "docker",
+            "exec",
+            DOCKER_CONTAINER,
+            "psql",
+            "-p",
+            LOCAL_DB_PORT,
+            "-U",
+            LOCAL_DB_USER,
+            "-d",
+            "sol_dev",
+            "-c",
+            f"CREATE DATABASE {LOCAL_DB_NAME}",
         ]
         try:
             subprocess.run(create_cmd, check=True, capture_output=True, text=True)
@@ -247,6 +265,8 @@ def main():
                 line = line.strip()
                 if line and not line.startswith("#"):
                     key, value = line.split("=", 1)
+                    # Strip quotes from value
+                    value = value.strip('"')
                     os.environ[key] = value
 
     # Execute command
