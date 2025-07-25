@@ -560,10 +560,29 @@ class UserActivityResource(Resource):
                     desc = f"{activity.get('method', 'GET')} {self._strip_ansi_codes(endpoint)}"
 
                 # Check if request succeeded or failed
-                if "error" in body.lower() or "failed" in body.lower():
-                    status = "FAILED"
-                else:
-                    status = "OK"
+                # Parse the response to check actual success status
+                try:
+                    # Extract JSON part from body (remove email prefix if present)
+                    json_start = body.find("{")
+                    if json_start != -1:
+                        json_body = body[json_start:]
+                        body_dict = json.loads(json_body)
+                    else:
+                        body_dict = json.loads(body)
+
+                    # Check for explicit failure indicators in the response structure
+                    if body_dict.get("success") is False or "error" in body_dict:
+                        status = "FAILED"
+                    else:
+                        status = "OK"
+                except:
+                    # If we can't parse JSON, fall back to simple text check
+                    # but only in the first 100 chars to avoid false positives from content
+                    body_preview = body[:100].lower()
+                    if '"success":false' in body_preview or '"error":' in body_preview:
+                        status = "FAILED"
+                    else:
+                        status = "OK"
 
                 # Format the line
                 line = f"{time_str} - {desc} ({duration:.1f}s) [{status}]"
