@@ -738,3 +738,96 @@ class AVDProfileManager:
                 ("system-images;android-29;google_apis_playstore;x86_64", "x86_64"),
                 ("system-images;android-29;google_apis;x86_64", "x86_64"),
             ]
+
+    def recreate_profile_avd(
+        self, email: str, recreate_user: bool = True, recreate_seed: bool = True
+    ) -> Tuple[bool, str]:
+        """
+        Completely recreate AVD for a profile. This will:
+        1. Stop any running emulators (user and/or seed clone based on parameters)
+        2. Delete the user's AVD (if recreate_user=True)
+        3. Delete the seed clone AVD (if recreate_seed=True)
+        4. Clean up profile data (if recreate_user=True)
+        5. Clean up any existing automator
+
+        Args:
+            email: The user's email address
+            recreate_user: Whether to recreate the user's AVD (default True)
+            recreate_seed: Whether to recreate the seed clone AVD (default True for backwards compatibility)
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        actions = []
+        if recreate_user:
+            actions.append("user AVD")
+        if recreate_seed:
+            actions.append("seed clone")
+
+        logger.info(f"Recreating profile AVD for {email} - will recreate: {', '.join(actions)}")
+
+        try:
+            # Stop user's emulator if running (only if recreating user AVD)
+            if recreate_user:
+                user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
+                if user_emulator_id:
+                    logger.info(f"Stopping running emulator for {email}")
+                    self.emulator_manager.emulator_launcher.stop_emulator(email)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Stop seed clone emulator if running (only if recreating seed clone)
+            if recreate_seed:
+                seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
+                    AVDCreator.SEED_CLONE_EMAIL
+                )
+                if seed_emulator_id:
+                    logger.info("Stopping running seed clone emulator")
+                    self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Delete the user's AVD (only if recreate_user=True)
+            avd_name = None
+            if recreate_user:
+                avd_name = self.avd_creator.get_avd_name_from_email(email)
+                logger.info(f"Deleting user AVD: {avd_name}")
+                success, msg = self.avd_creator.delete_avd(email)
+                if not success:
+                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}", exc_info=True)
+                    raise Exception(f"Failed to delete user AVD: {msg}")
+
+            # Delete the seed clone AVD (only if recreate_seed=True)
+            seed_avd_name = None
+            if recreate_seed:
+                seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
+                logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
+                success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+                if not success:
+                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}", exc_info=True)
+                    raise Exception(f"Failed to delete seed clone AVD: {msg}")
+                elif "does not exist" in msg:
+                    logger.info(f"Seed clone AVD did not exist, proceeding with recreation")
+
+            # Clear any cached emulator data
+            if recreate_user and avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
+            if recreate_seed and seed_avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
+
+            # Remove the user from database (only if recreating user AVD)
+            if recreate_user:
+                with self.db_connection.get_session() as session:
+                    from database.repositories.user_repository import UserRepository
+
+                    repo = UserRepository(session)
+                    user = repo.get_user_by_email(email)
+                    if user:
+                        session.delete(user)
+                        session.commit()
+                        logger.info(f"Removed {email} from database")
+
+            logger.info(f"Successfully recreated {', '.join(actions)} for {email}")
+            return True, f"Successfully recreated: {', '.join(actions)}"
+
+        except Exception as e:
+            logger.error(f"Error recreating profile AVD for {email}: {e}", exc_info=True)
+            return False, f"Failed to recreate profile AVD: {str(e)}"
