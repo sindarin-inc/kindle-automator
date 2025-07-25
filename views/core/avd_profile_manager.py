@@ -197,7 +197,6 @@ class AVDProfileManager:
             section: Optional section name for nested fields
         """
         with self.db_connection.get_session() as session:
-
             repo = UserRepository(session)
 
             # Ensure user exists
