@@ -1,24 +1,24 @@
--- First connect to sol_dev to create kindle_db if needed
-\c sol_dev
-
--- Create kindle_db database if it doesn't exist
-SELECT 'CREATE DATABASE kindle_db'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'kindle_db')\gexec
-
--- Now connect to kindle_db
-\c kindle_db
+-- This script initializes the Kindle Automator database schema
+-- It assumes the database already exists (created with appropriate name for environment)
 
 -- Create schema if it doesn't exist
 CREATE SCHEMA IF NOT EXISTS kindle_automator;
 
--- Grant schema privileges to local user (the existing user)
-GRANT ALL ON SCHEMA kindle_automator TO local;
-GRANT ALL ON ALL TABLES IN SCHEMA kindle_automator TO local;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA kindle_automator TO local;
-
--- Set default privileges for future tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA kindle_automator 
-GRANT ALL ON TABLES TO local;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA kindle_automator 
-GRANT ALL ON SEQUENCES TO local;
+-- For local development with Docker, grant privileges to the local user
+-- For staging/production, the user from DATABASE_URL will already have appropriate permissions
+DO $$
+BEGIN
+    -- Check if 'local' user exists (indicating local development)
+    IF EXISTS (SELECT 1 FROM pg_user WHERE usename = 'local') THEN
+        GRANT ALL ON SCHEMA kindle_automator TO local;
+        GRANT ALL ON ALL TABLES IN SCHEMA kindle_automator TO local;
+        GRANT ALL ON ALL SEQUENCES IN SCHEMA kindle_automator TO local;
+        
+        -- Set default privileges for future tables
+        ALTER DEFAULT PRIVILEGES IN SCHEMA kindle_automator 
+        GRANT ALL ON TABLES TO local;
+        
+        ALTER DEFAULT PRIVILEGES IN SCHEMA kindle_automator 
+        GRANT ALL ON SEQUENCES TO local;
+    END IF;
+END $$;

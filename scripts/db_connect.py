@@ -16,8 +16,7 @@ from psycopg2.extras import RealDictCursor
 DOCKER_CONTAINER = "sol_postgres"
 LOCAL_DB_PORT = "5496"
 LOCAL_DB_USER = "local"
-LOCAL_DB_NAME = "sol_dev"
-KINDLE_DB_NAME = "kindle_db"
+LOCAL_DB_NAME = "kindle_dev"
 KINDLE_SCHEMA = "kindle_automator"
 
 
@@ -32,16 +31,45 @@ def is_docker_running():
         return False
 
 
-def get_connection_params(use_kindle_db=False):
+def ensure_local_db_exists():
+    """Create local development database if it doesn't exist."""
+    # Check if database already exists
+    check_cmd = [
+        "docker", "exec", DOCKER_CONTAINER,
+        "psql", "-p", LOCAL_DB_PORT, "-U", LOCAL_DB_USER, "-d", "sol_dev",
+        "-tAc", f"SELECT 1 FROM pg_database WHERE datname = '{LOCAL_DB_NAME}'"
+    ]
+    
+    result = subprocess.run(check_cmd, capture_output=True, text=True)
+    
+    if result.stdout.strip() != "1":
+        # Database doesn't exist, create it
+        create_cmd = [
+            "docker", "exec", DOCKER_CONTAINER,
+            "psql", "-p", LOCAL_DB_PORT, "-U", LOCAL_DB_USER, "-d", "sol_dev",
+            "-c", f"CREATE DATABASE {LOCAL_DB_NAME}"
+        ]
+        try:
+            subprocess.run(create_cmd, check=True, capture_output=True, text=True)
+            print(f"Created local database '{LOCAL_DB_NAME}'")
+        except subprocess.CalledProcessError as e:
+            # Database might already exist or other error
+            if "already exists" not in e.stderr:
+                print(f"Warning: Could not create database: {e.stderr}")
+                # Continue anyway - the connection will fail later if there's a real problem
+
+
+def get_connection_params():
     """Get database connection parameters."""
     if is_docker_running():
-        # Use Docker container
-        db_name = KINDLE_DB_NAME if use_kindle_db else LOCAL_DB_NAME
+        # Use Docker container for local development
+        # Ensure database exists first
+        ensure_local_db_exists()
         return {
             "host": "localhost",
             "port": LOCAL_DB_PORT,
             "user": LOCAL_DB_USER,
-            "database": db_name,
+            "database": LOCAL_DB_NAME,
             "password": "local",  # Default password for local development
         }
     else:
@@ -67,9 +95,9 @@ def get_connection_params(use_kindle_db=False):
         }
 
 
-def execute_query(query, use_kindle_db=False):
+def execute_query(query):
     """Execute a SQL query and return results."""
-    params = get_connection_params(use_kindle_db)
+    params = get_connection_params()
 
     try:
         conn = psycopg2.connect(**params)
@@ -115,7 +143,7 @@ def execute_query(query, use_kindle_db=False):
             conn.close()
 
 
-def execute_file(sql_file, use_kindle_db=False):
+def execute_file(sql_file):
     """Execute SQL from a file."""
     if not os.path.exists(sql_file):
         print(f"Error: SQL file not found: {sql_file}")
@@ -124,7 +152,7 @@ def execute_file(sql_file, use_kindle_db=False):
     with open(sql_file, "r") as f:
         sql_content = f.read()
 
-    params = get_connection_params(use_kindle_db)
+    params = get_connection_params()
 
     try:
         conn = psycopg2.connect(**params)
@@ -144,7 +172,7 @@ def execute_file(sql_file, use_kindle_db=False):
 
 def interactive_session():
     """Start an interactive database session."""
-    params = get_connection_params(use_kindle_db=True)
+    params = get_connection_params()
 
     if is_docker_running():
         # Use docker exec for interactive session
@@ -159,7 +187,7 @@ def interactive_session():
             "-U",
             LOCAL_DB_USER,
             "-d",
-            KINDLE_DB_NAME,
+            LOCAL_DB_NAME,
         ]
         subprocess.run(cmd)
     else:
@@ -170,7 +198,7 @@ def interactive_session():
 
 def dump_database(output_file):
     """Dump the database schema."""
-    params = get_connection_params(use_kindle_db=True)
+    params = get_connection_params()
 
     if is_docker_running():
         cmd = [
@@ -183,7 +211,7 @@ def dump_database(output_file):
             "-U",
             LOCAL_DB_USER,
             "-d",
-            KINDLE_DB_NAME,
+            LOCAL_DB_NAME,
             "-n",
             KINDLE_SCHEMA,
         ]
@@ -224,16 +252,16 @@ def main():
     # Execute command
     if args.command == "init":
         if args.file:
-            execute_file(args.file, use_kindle_db=False)
+            execute_file(args.file)
         else:
             print("Error: --file required for init command")
             sys.exit(1)
 
     elif args.command == "query":
         if args.args:
-            execute_query(args.args, use_kindle_db=True)
+            execute_query(args.args)
         elif args.file:
-            execute_file(args.file, use_kindle_db=True)
+            execute_file(args.file)
         else:
             print("Error: --args or --file required for query command")
             sys.exit(1)
