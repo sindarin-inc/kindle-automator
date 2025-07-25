@@ -69,12 +69,22 @@ def get_avd_system_image(avd_name: str, avd_base_dir: str = "/opt/android-sdk") 
         return None, None
 
     try:
+        # First try to read as a proper INI file
         config = configparser.ConfigParser()
-        config.read(config_path)
-
-        # Get image.sysdir.1 value
-        # Example: "system-images/android-30/google_apis/x86_64/"
-        sysdir = config.get("DEFAULT", "image.sysdir.1", fallback=None)
+        try:
+            config.read(config_path)
+            # Get image.sysdir.1 value from DEFAULT section
+            sysdir = config.get("DEFAULT", "image.sysdir.1", fallback=None)
+        except configparser.MissingSectionHeaderError:
+            # If no section headers, read file manually and look for the key
+            logger.info(f"Config file has no section headers, parsing manually: {config_path}")
+            sysdir = None
+            with open(config_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("image.sysdir.1="):
+                        sysdir = line.split("=", 1)[1]
+                        break
 
         if not sysdir:
             logger.warning(f"No image.sysdir.1 found in {config_path}")
