@@ -53,6 +53,9 @@ def get_connection_params(use_kindle_db=False):
             )
             sys.exit(1)
 
+        # Strip quotes from DATABASE_URL
+        database_url = database_url.strip('"')
+
         # Parse DATABASE_URL
         parsed = urlparse(database_url)
         return {
