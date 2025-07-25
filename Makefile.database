@@ -22,15 +22,15 @@ db-init:
 .PHONY: db-migrate
 db-migrate:
 	@echo "Running database migrations..."
-	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' $(DB_ENV_FILE) | xargs) alembic upgrade head
+	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
+		$(PYTHON) -m alembic upgrade head
 
 # Migrate data from users.json to PostgreSQL
 .PHONY: db-import
 db-import:
 	@echo "Migrating users.json to PostgreSQL..."
-	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' $(DB_ENV_FILE) | xargs) python scripts/migrate_json_to_db.py
+	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
+		$(PYTHON) scripts/migrate_json_to_db.py
 
 # Full database setup: init, migrate, import
 .PHONY: db-setup
