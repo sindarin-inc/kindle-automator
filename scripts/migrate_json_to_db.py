@@ -289,7 +289,9 @@ def main():
         os.chdir(project_root)
         # Use python -m alembic to ensure we use the right Python environment
         python_cmd = sys.executable
-        result = subprocess.run([python_cmd, "-m", "alembic", "upgrade", "head"], capture_output=True, text=True)
+        result = subprocess.run(
+            [python_cmd, "-m", "alembic", "upgrade", "head"], capture_output=True, text=True
+        )
         if result.returncode != 0:
             logger.error(f"Failed to run migrations: {result.stderr}")
             return

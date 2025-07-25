@@ -831,3 +831,264 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error recreating profile AVD for {email}: {e}", exc_info=True)
             return False, f"Failed to recreate profile AVD: {str(e)}"
+
+    def _start_emulator_and_create_snapshot(
+        self, email: str, prepare_kindle: bool = False
+    ) -> Tuple[bool, str]:
+        """
+        Helper method to start an emulator, wait for it to be ready, create a snapshot, and stop it.
+
+        Args:
+            email: Email of the emulator to start
+            prepare_kindle: If True, install Kindle APK and navigate to Library before snapshot
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        # Start the emulator
+        logger.info(f"Starting emulator for {email}")
+        if not self.emulator_manager.start_emulator_with_retries(email):
+            return False, "Failed to start emulator"
+
+        # Wait for emulator to be ready
+        logger.info("Waiting for emulator to be ready...")
+
+        # Use the existing launcher from emulator_manager to maintain cache consistency
+        launcher = self.emulator_manager.emulator_launcher
+
+        # Wait up to 2 minutes for emulator to be ready
+        for i in range(24):  # 24 * 5 seconds = 2 minutes
+            if launcher.is_emulator_ready(email):
+                logger.info("Emulator is ready")
+                break
+            time.sleep(5)
+        else:
+            return False, "Emulator failed to become ready"
+
+        # If prepare_kindle is True, install Kindle and navigate to Library
+        if prepare_kindle:
+            logger.info("Installing Kindle APK and navigating to Library view...")
+
+            # Import necessary modules
+            from automator import KindleAutomator
+            from driver import Driver
+            from server.utils.appium_driver import AppiumDriver
+            from server.utils.request_utils import email_override
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            # Use email_override to ensure all operations use seed@clone.local
+            with email_override(email):  # email is seed@clone.local here
+                # Get the allocated VNC instance and ports for this email
+                vnc_manager = VNCInstanceManager.get_instance()
+                instance = vnc_manager.get_instance_for_profile(email)
+
+                if not instance:
+                    return False, "Failed to get VNC instance for seed clone"
+
+                # Create a temporary automator instance
+                automator = KindleAutomator()
+                automator.profile_manager = self
+                # Add emulator_manager reference needed by view inspector
+                automator.emulator_manager = self.emulator_manager
+
+                # Create and initialize driver
+                driver_instance = Driver()
+                driver_instance.automator = automator
+
+                # Set the appium port from the VNC instance
+                driver_instance.appium_port = instance.get("appium_port", 4723)
+
+                # Ensure Appium is running for this instance
+                appium_driver = AppiumDriver.get_instance()
+                if not appium_driver.start_appium_for_profile(email):
+                    return False, "Failed to start Appium for Kindle preparation"
+
+                try:
+                    # Initialize the driver (this will install Kindle if needed)
+                    logger.info("Initializing driver to install Kindle APK...")
+                    if not driver_instance.initialize():
+                        return False, "Failed to initialize driver for Kindle installation"
+
+                    # Set up all the cross-references that normally happen during initialization
+                    # Get the device_id from the driver and propagate it
+                    if hasattr(driver_instance, "device_id") and driver_instance.device_id:
+                        automator.device_id = driver_instance.device_id
+                        logger.info(f"Set device_id on automator: {automator.device_id}")
+
+                    # For seed clone, we don't want to launch the app
+                    logger.info("Kindle APK installed successfully. Skipping app launch for seed clone.")
+
+                    # Navigate to Android home screen instead
+                    logger.info("Navigating to Android home screen...")
+                    device_id = driver_instance.device_id
+                    if device_id:
+                        # Press home button to go to Android dashboard
+                        subprocess.run(
+                            ["adb", "-s", device_id, "shell", "input", "keyevent", "KEYCODE_HOME"],
+                            check=True,
+                            capture_output=True,
+                        )
+                        logger.info("Successfully navigated to Android home screen")
+
+                finally:
+                    # Clean up driver and Appium but keep app running
+                    if hasattr(driver_instance, "driver") and driver_instance.driver:
+                        driver_instance.driver.quit()
+                    appium_driver.stop_appium_for_profile(email)
+
+                    # Give the app and system time to complete background processes
+                    logger.info(
+                        "Waiting 1 minute for background processes (Play Store updates, etc.) to complete..."
+                    )
+                    logger.info("This ensures the seed clone is fully prepared for copying")
+                    logger.info("1-minute wait period complete, proceeding with shutdown")
+
+        # Check if this is the seed clone
+        if email == AVDCreator.SEED_CLONE_EMAIL:
+            # For seed clone, just stop the emulator normally without snapshot
+            logger.info(f"Stopping seed clone emulator normally (no snapshot)")
+            launcher.stop_emulator(email)
+            return True, "Seed clone prepared successfully"
+        else:
+            # Take snapshot (always saves to default)
+            logger.info(f"Creating snapshot for {email}")
+            if launcher.save_snapshot(email):
+                logger.info(f"Successfully created snapshot for {email}")
+                # Stop the emulator
+                launcher.stop_emulator(email)
+                return True, "Snapshot created successfully"
+            else:
+                return False, "Failed to create snapshot"
+
+    def ensure_seed_clone_ready(self) -> Tuple[bool, str]:
+        """
+        Ensure the seed clone AVD is ready for use. This includes:
+        1. Creating the seed clone AVD if it doesn't exist
+        2. Starting it and waiting for it to be ready
+        3. Installing Kindle and letting it settle for 10 minutes
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            seed_email = AVDCreator.SEED_CLONE_EMAIL
+
+            # Check if seed clone already exists
+            if self.avd_creator.has_seed_clone():
+                logger.info("Seed clone AVD already exists")
+                return True, "Seed clone is ready"
+
+            # Seed clone doesn't exist at all, create it
+            logger.info("Creating seed clone AVD for fast user initialization")
+            success, avd_name = self.avd_creator.create_seed_clone_avd()
+            if not success:
+                return False, f"Failed to create seed clone AVD: {avd_name}"
+
+            # Register the seed clone in profiles
+            self.register_profile(seed_email, avd_name)
+
+            # Start emulator and create snapshot
+            success, message = self._start_emulator_and_create_snapshot(seed_email, prepare_kindle=True)
+            if success:
+                return True, "Seed clone is now ready"
+            else:
+                return False, f"Failed to prepare seed clone: {message}"
+
+        except Exception as e:
+            logger.error(f"Error ensuring seed clone ready: {e}", exc_info=True)
+            return False, str(e)
+
+    def update_seed_clone_snapshot(self) -> Tuple[bool, str]:
+        """
+        Update the seed clone AVD's snapshot. This is useful after fixing snapshot
+        functionality or making changes to the base configuration.
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        try:
+            seed_email = AVDCreator.SEED_CLONE_EMAIL
+
+            # Check if seed clone exists
+            if not self.avd_creator.has_seed_clone():
+                return False, "Seed clone AVD does not exist"
+
+            # Check if emulator is running for seed clone
+            is_running, emulator_id, avd_name = self.find_running_emulator_for_email(seed_email)
+
+            if not is_running:
+                logger.info("Starting seed clone emulator to create snapshot")
+                # Start the emulator
+                success, message = self.switch_profile_and_start_emulator(seed_email)
+                if not success:
+                    return False, f"Failed to start seed clone emulator: {message}"
+
+                # Wait for it to be ready
+                logger.info("Waiting for seed clone emulator to be ready...")
+                time.sleep(10)
+
+            # Save the snapshot
+            logger.info("Saving snapshot for seed clone AVD")
+            from server.utils.emulator_launcher import EmulatorLauncher
+
+            launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+
+            if launcher.save_snapshot(seed_email):
+                # Update the timestamp
+                self.set_user_field(seed_email, "last_snapshot_timestamp", datetime.utcnow())
+                return True, "Successfully updated seed clone snapshot"
+            else:
+                return False, "Failed to save seed clone snapshot"
+
+        except Exception as e:
+            logger.error(f"Error updating seed clone snapshot: {e}", exc_info=True)
+            return False, str(e)
+
+    def clear_emulator_settings(self, email: str) -> bool:
+        """
+        Clear all emulator settings for a user.
+
+        This includes settings like:
+        - appium_device_initialized
+        - animations_disabled
+        - hw_overlays_disabled
+        - sleep_disabled
+        - status_bar_disabled
+        - auto_updates_disabled
+
+        Args:
+            email: Email address of the user
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with self.db_connection.get_session() as session:
+                repo = UserRepository(session)
+                user = repo.get_user_by_email(email)
+
+                if not user:
+                    logger.warning(f"Cannot clear emulator settings: email {email} not found")
+                    return False
+
+                # Clear all emulator settings by setting them to their defaults
+                if user.emulator_settings:
+                    user.emulator_settings.hw_overlays_disabled = False
+                    user.emulator_settings.animations_disabled = False
+                    user.emulator_settings.sleep_disabled = False
+                    user.emulator_settings.status_bar_disabled = False
+                    user.emulator_settings.auto_updates_disabled = False
+                    user.emulator_settings.memory_optimizations_applied = False
+                    user.emulator_settings.memory_optimization_timestamp = None
+                    user.emulator_settings.appium_device_initialized = False
+
+                    session.commit()
+                    logger.info(f"Cleared all emulator settings for {email}")
+                else:
+                    logger.info(f"No emulator settings to clear for {email}")
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Error clearing emulator settings for {email}: {e}", exc_info=True)
+            return False
