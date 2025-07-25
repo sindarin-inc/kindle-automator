@@ -43,6 +43,8 @@ class User(Base):
     last_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
     kindle_version_name: Mapped[Optional[str]] = mapped_column(String(50))
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
+    android_version: Mapped[Optional[str]] = mapped_column(String(10))
+    system_image: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False

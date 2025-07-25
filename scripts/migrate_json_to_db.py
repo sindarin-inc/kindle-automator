@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Migrate users.json data to PostgreSQL database."""
+import configparser
 import json
 import logging
 import os
@@ -54,6 +55,51 @@ def load_users_json(file_path: str) -> dict:
         return {}
 
 
+def get_avd_system_image(avd_name: str, avd_base_dir: str = "/opt/android-sdk") -> tuple[str, str]:
+    """
+    Extract system image info from AVD config file.
+
+    Returns:
+        tuple: (android_version, system_image) or (None, None) if not found
+    """
+    config_path = os.path.join(avd_base_dir, "avd", f"{avd_name}.avd", "config.ini")
+
+    if not os.path.exists(config_path):
+        logger.warning(f"Config file not found: {config_path}")
+        return None, None
+
+    try:
+        config = configparser.ConfigParser()
+        config.read(config_path)
+
+        # Get image.sysdir.1 value
+        # Example: "system-images/android-30/google_apis/x86_64/"
+        sysdir = config.get("DEFAULT", "image.sysdir.1", fallback=None)
+
+        if not sysdir:
+            logger.warning(f"No image.sysdir.1 found in {config_path}")
+            return None, None
+
+        # Parse the system image info
+        # Convert path format to sdkmanager format
+        # "system-images/android-30/google_apis/x86_64/" -> "system-images;android-30;google_apis;x86_64"
+        sysdir = sysdir.rstrip("/")  # Remove trailing slash
+        parts = sysdir.split("/")
+
+        if len(parts) >= 4:
+            system_image = ";".join(parts)
+            # Extract android version from "android-30" -> "30"
+            android_version = parts[1].replace("android-", "")
+            return android_version, system_image
+        else:
+            logger.warning(f"Unexpected sysdir format: {sysdir}")
+            return None, None
+
+    except Exception as e:
+        logger.error(f"Error reading config file {config_path}: {e}")
+        return None, None
+
+
 def migrate_user_data(email: str, user_data: dict, repo: UserRepository) -> bool:
     """Migrate a single user's data to the database."""
     try:
@@ -94,6 +140,15 @@ def migrate_user_data(email: str, user_data: dict, repo: UserRepository) -> bool
         # Update timestamp fields
         if "last_snapshot_timestamp" in user_data and user_data["last_snapshot_timestamp"]:
             user.last_snapshot_timestamp = datetime.fromisoformat(user_data["last_snapshot_timestamp"])
+
+        # Get system image info from AVD config if AVD name is available
+        avd_name = user_data.get("avd_name") or user.avd_name
+        if avd_name:
+            android_version, system_image = get_avd_system_image(avd_name)
+            if android_version and system_image:
+                user.android_version = android_version
+                user.system_image = system_image
+                logger.info(f"Found system image for {email}: Android {android_version}")
 
         # Update emulator settings
         if "emulator_settings" in user_data:
