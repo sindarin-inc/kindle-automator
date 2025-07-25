@@ -330,6 +330,21 @@ class EmulatorManager:
                 (["pm", "disable-user", "com.google.android.youtube"], "Disabling YouTube"),
                 # Disable Gboard to prevent soft keyboard from appearing
                 (["pm", "disable-user", "com.google.android.inputmethod.latin"], "Disabling Gboard"),
+                # Configure system to think hardware keyboard is connected
+                (
+                    ["settings", "put", "secure", "show_ime_with_hard_keyboard", "0"],
+                    "Hide IME with hardware keyboard",
+                ),
+                (["settings", "put", "secure", "default_input_method", "null"], "Clear default input method"),
+                # Disable voice input settings
+                (
+                    ["settings", "put", "secure", "voice_interaction_service", ""],
+                    "Disable voice interaction service",
+                ),
+                (
+                    ["settings", "put", "secure", "voice_recognition_service", ""],
+                    "Disable voice recognition service",
+                ),
                 # Disable auto app updates
                 (["settings", "put", "global", "auto_update_apps", "0"], "Disabling auto app updates"),
                 # Deny background execution for Play Services
@@ -384,10 +399,20 @@ class EmulatorManager:
                     logger.debug(f"{description}...")
                     result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5, check=False)
 
-                    # Check if Gboard was successfully disabled
-                    if "Disabling Gboard" in description and result.returncode == 0:
+                    # Check if keyboard-related commands were successful
+                    if (
+                        any(
+                            keyword in description
+                            for keyword in [
+                                "Disabling Gboard",
+                                "Hide IME with hardware keyboard",
+                                "Clear default input method",
+                            ]
+                        )
+                        and result.returncode == 0
+                    ):
                         keyboard_disabled = True
-                        logger.info("Gboard successfully disabled, keyboard_disabled flag set to True")
+                        logger.info(f"Keyboard configuration successful: {description}")
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
