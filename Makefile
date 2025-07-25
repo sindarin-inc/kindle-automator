@@ -66,6 +66,12 @@ ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging
 
+# Firewall management
+firewall:
+	@echo "Updating firewall rules on all servers..."
+	cd ansible && ansible-playbook -i inventory.ini provision.yml -t firewall
+	@echo "Firewall rules updated successfully!"
+
 # Include database commands
 include Makefile.database
 

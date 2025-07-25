@@ -1,0 +1,28 @@
+---
+postgres_version: "15"
+postgres_port: 5432
+postgres_root_user: postgres
+postgres_root_password: "{{ vault_postgres_root_password | default('change_me_in_production') }}"
+
+# Database and user configurations
+postgres_databases:
+  - name: "kindle-prod"
+    user: "kindle-prod"
+    password: "AVNS_DSXUYbFYNe5713LCji2"
+  - name: "kindle-staging"
+    user: "kindle-staging" 
+    password: "AVNS_SMJdIGuWcSNOJR67bCX"
+
+# Performance settings
+postgres_max_connections: 200
+postgres_shared_buffers: "256MB"
+postgres_effective_cache_size: "1GB"
+postgres_maintenance_work_mem: "64MB"
+postgres_checkpoint_completion_target: 0.9
+postgres_wal_buffers: "16MB"
+postgres_default_statistics_target: 100
+postgres_random_page_cost: 1.1
+postgres_effective_io_concurrency: 200
+postgres_work_mem: "4MB"
+postgres_min_wal_size: "1GB"
+postgres_max_wal_size: "4GB"

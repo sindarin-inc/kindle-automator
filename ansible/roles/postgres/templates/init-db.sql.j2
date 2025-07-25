@@ -1,0 +1,20 @@
+-- Create databases and users for each environment
+{% for db in postgres_databases %}
+-- Create user {{ db.user }}
+CREATE USER "{{ db.user }}" WITH PASSWORD '{{ db.password }}';
+
+-- Create database {{ db.name }}
+CREATE DATABASE "{{ db.name }}" OWNER "{{ db.user }}";
+
+-- Grant all privileges on database to user
+GRANT ALL PRIVILEGES ON DATABASE "{{ db.name }}" TO "{{ db.user }}";
+
+-- Connect to the database and set up schema permissions
+\c "{{ db.name }}"
+GRANT ALL ON SCHEMA public TO "{{ db.user }}";
+GRANT CREATE ON SCHEMA public TO "{{ db.user }}";
+
+{% endfor %}
+
+-- Switch back to postgres database
+\c postgres
