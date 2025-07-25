@@ -9,11 +9,14 @@ else
 	DB_ENV_FILE := .env
 endif
 
+# Use virtual environment Python if available
+PYTHON := $(shell if [ -d venv ]; then echo venv/bin/python; else echo python3; fi)
+
 # Initialize database
 .PHONY: db-init
 db-init:
 	@echo "Initializing Kindle database..."
-	@./scripts/db_connect.py --command init --env $(DB_ENV_FILE) --file database/init/01_create_database.sql
+	@$(PYTHON) scripts/db_connect.py --command init --env $(DB_ENV_FILE) --file database/init/01_create_database.sql
 
 # Run Alembic migrations
 .PHONY: db-migrate
@@ -38,13 +41,13 @@ db-setup: db-init db-migrate db-import
 .PHONY: db-connect
 db-connect:
 	@echo "Connecting to kindle_db..."
-	@./scripts/db_connect.py --command interactive --env $(DB_ENV_FILE)
+	@$(PYTHON) scripts/db_connect.py --command interactive --env $(DB_ENV_FILE)
 
 # Show database status
 .PHONY: db-status
 db-status:
 	@echo "Checking database status..."
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
 		SELECT 'Users:' as table_name, COUNT(*) as count FROM kindle_automator.users \
 		UNION ALL \
 		SELECT 'Emulator Settings:', COUNT(*) FROM kindle_automator.emulator_settings \
@@ -62,7 +65,7 @@ db-status:
 db-backup:
 	@echo "Backing up kindle database..."
 	@mkdir -p backups
-	@./scripts/db_connect.py --command dump --env $(DB_ENV_FILE) --args "backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
+	@$(PYTHON) scripts/db_connect.py --command dump --env $(DB_ENV_FILE) --args "backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
 	@echo "Backup saved to backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
 
 # Restore database from backup
@@ -73,7 +76,7 @@ db-restore:
 		exit 1; \
 	fi
 	@echo "Restoring database from $(FILE)..."
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --file $(FILE)
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --file $(FILE)
 
 # Drop and recreate database (DANGEROUS!)
 .PHONY: db-reset
@@ -81,7 +84,7 @@ db-reset:
 	@echo "WARNING: This will delete all data in kindle_db!"
 	@echo "Press Ctrl+C to cancel, or Enter to continue..."
 	@read confirm
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "DROP DATABASE IF EXISTS kindle_db;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "DROP DATABASE IF EXISTS kindle_db;"
 	@$(MAKE) db-init
 	@$(MAKE) db-migrate
 
@@ -89,7 +92,7 @@ db-reset:
 .PHONY: db-activity
 db-activity:
 	@echo "Recent user activity..."
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
 		SELECT email, avd_name, last_used, auth_date \
 		FROM kindle_automator.users \
 		ORDER BY last_used DESC NULLS LAST \
@@ -101,22 +104,22 @@ db-data:
 	@echo "=== All Database Data ==="
 	@echo ""
 	@echo "USERS:"
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.users ORDER BY id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.users ORDER BY id;"
 	@echo ""
 	@echo "EMULATOR SETTINGS:"
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.emulator_settings ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.emulator_settings ORDER BY user_id;"
 	@echo ""
 	@echo "DEVICE IDENTIFIERS:"
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.device_identifiers ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.device_identifiers ORDER BY user_id;"
 	@echo ""
 	@echo "LIBRARY SETTINGS:"
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.library_settings ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.library_settings ORDER BY user_id;"
 	@echo ""
 	@echo "READING SETTINGS:"
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.reading_settings ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.reading_settings ORDER BY user_id;"
 	@echo ""
 	@echo "USER PREFERENCES:"
-	@./scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.user_preferences ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.user_preferences ORDER BY user_id;"
 
 # Staging-specific targets
 .PHONY: db-status-staging db-backup-staging db-activity-staging db-data-staging
