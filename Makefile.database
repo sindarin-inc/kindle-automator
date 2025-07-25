@@ -10,7 +10,18 @@ else
 endif
 
 # Use virtual environment Python if available
-PYTHON := $(shell if [ -d venv ]; then echo venv/bin/python; else echo python3; fi)
+# First check if we're in any virtualenv (works with virtualenvwrapper, venv, etc)
+# Then fallback to local venv directory, then system python3
+PYTHON := $(shell if [ -n "$$VIRTUAL_ENV" ]; then echo python; elif [ -d venv ]; then echo venv/bin/python; else echo python3; fi)
+
+# Check if we're in a virtual environment
+.PHONY: check-env
+check-env:
+	@if [ -z "$$VIRTUAL_ENV" ] && [ ! -d venv ]; then \
+		echo "ERROR: You must be in a virtual environment to run database commands"; \
+		echo "Activate your virtualenv or create one with: python3 -m venv venv && source venv/bin/activate"; \
+		exit 1; \
+	fi
 
 # Setup database privileges (requires POSTGRES_DOADMIN_DATABASE_URL)
 .PHONY: db-setup-privileges
@@ -113,7 +124,7 @@ db-activity:
 
 # Show all database data
 .PHONY: db-data
-db-data:
+db-data: check-env
 	@echo "=== All Database Data ==="
 	@echo ""
 	@echo "USERS:"
