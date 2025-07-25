@@ -48,17 +48,17 @@ db-connect:
 db-status:
 	@echo "Checking database status..."
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) $(if $(DEBUG),--debug) --args "\
-		SELECT 'Users:' as table_name, COUNT(*) as count FROM kindle_automator.users \
+		SELECT 'Users:' as table_name, COUNT(*) as count FROM users \
 		UNION ALL \
-		SELECT 'Emulator Settings:', COUNT(*) FROM kindle_automator.emulator_settings \
+		SELECT 'Emulator Settings:', COUNT(*) FROM emulator_settings \
 		UNION ALL \
-		SELECT 'Device Identifiers:', COUNT(*) FROM kindle_automator.device_identifiers \
+		SELECT 'Device Identifiers:', COUNT(*) FROM device_identifiers \
 		UNION ALL \
-		SELECT 'Library Settings:', COUNT(*) FROM kindle_automator.library_settings \
+		SELECT 'Library Settings:', COUNT(*) FROM library_settings \
 		UNION ALL \
-		SELECT 'Reading Settings:', COUNT(*) FROM kindle_automator.reading_settings \
+		SELECT 'Reading Settings:', COUNT(*) FROM reading_settings \
 		UNION ALL \
-		SELECT 'User Preferences:', COUNT(*) FROM kindle_automator.user_preferences;"
+		SELECT 'User Preferences:', COUNT(*) FROM user_preferences;"
 
 # Backup database
 .PHONY: db-backup
@@ -94,7 +94,7 @@ db-activity:
 	@echo "Recent user activity..."
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
 		SELECT email, avd_name, last_used, auth_date \
-		FROM kindle_automator.users \
+		FROM users \
 		ORDER BY last_used DESC NULLS LAST \
 		LIMIT 10;"
 
@@ -104,22 +104,22 @@ db-data:
 	@echo "=== All Database Data ==="
 	@echo ""
 	@echo "USERS:"
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.users ORDER BY id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM users ORDER BY id;"
 	@echo ""
 	@echo "EMULATOR SETTINGS:"
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.emulator_settings ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM emulator_settings ORDER BY user_id;"
 	@echo ""
 	@echo "DEVICE IDENTIFIERS:"
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.device_identifiers ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM device_identifiers ORDER BY user_id;"
 	@echo ""
 	@echo "LIBRARY SETTINGS:"
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.library_settings ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM library_settings ORDER BY user_id;"
 	@echo ""
 	@echo "READING SETTINGS:"
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.reading_settings ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM reading_settings ORDER BY user_id;"
 	@echo ""
 	@echo "USER PREFERENCES:"
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM kindle_automator.user_preferences ORDER BY user_id;"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM user_preferences ORDER BY user_id;"
 
 # Staging-specific targets
 .PHONY: db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging

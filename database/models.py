@@ -27,7 +27,6 @@ class User(Base):
     """User model representing a Kindle account profile."""
 
     __tablename__ = "users"
-    __table_args__ = {"schema": "kindle_automator"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
@@ -75,11 +74,10 @@ class EmulatorSettings(Base):
     """Emulator settings for a user."""
 
     __tablename__ = "emulator_settings"
-    __table_args__ = {"schema": "kindle_automator"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("kindle_automator.users.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     hw_overlays_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     animations_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -98,11 +96,10 @@ class DeviceIdentifiers(Base):
     """Device identifiers for a user's AVD."""
 
     __tablename__ = "device_identifiers"
-    __table_args__ = {"schema": "kindle_automator"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("kindle_automator.users.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     hw_wifi_mac: Mapped[Optional[str]] = mapped_column(String(20))
     hw_ethernet_mac: Mapped[Optional[str]] = mapped_column(String(20))
@@ -119,11 +116,10 @@ class LibrarySettings(Base):
     """Library display settings for a user."""
 
     __tablename__ = "library_settings"
-    __table_args__ = {"schema": "kindle_automator"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("kindle_automator.users.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     view_type: Mapped[Optional[str]] = mapped_column(String(20))
     group_by_series: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -139,11 +135,10 @@ class ReadingSettings(Base):
     """Reading display settings for a user."""
 
     __tablename__ = "reading_settings"
-    __table_args__ = {"schema": "kindle_automator"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("kindle_automator.users.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     theme: Mapped[Optional[str]] = mapped_column(String(20))
     font_size: Mapped[Optional[str]] = mapped_column(String(20))
@@ -163,12 +158,11 @@ class UserPreference(Base):
     __tablename__ = "user_preferences"
     __table_args__ = (
         UniqueConstraint("user_id", "preference_key", name="uq_user_preference"),
-        {"schema": "kindle_automator"},
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("kindle_automator.users.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     preference_key: Mapped[str] = mapped_column(String(255), nullable=False)
     preference_value: Mapped[Optional[str]] = mapped_column(Text)

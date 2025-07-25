@@ -25,8 +25,8 @@ database_url = os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
-# Get the schema name from environment
-schema_name = os.getenv("KINDLE_SCHEMA", "kindle_automator")
+# Use public schema
+schema_name = "public"
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -61,7 +61,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        version_table_schema=schema_name,
     )
 
     with context.begin_transaction():
@@ -85,22 +84,15 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        # Set the search path for the connection
-        from sqlalchemy import text
-
-        connection.execute(text(f"SET search_path TO {schema_name}, public"))
-        connection.commit()
+        # We're using public schema, so no need to set search path
 
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            version_table_schema=schema_name,
-            include_schemas=True,
+            include_schemas=False,
         )
 
         with context.begin_transaction():
-            # Create schema if it doesn't exist
-            connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
             context.run_migrations()
 
 

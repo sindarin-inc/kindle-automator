@@ -22,7 +22,6 @@ DOCKER_CONTAINER = "sol_postgres"
 LOCAL_DB_PORT = "5496"
 LOCAL_DB_USER = "local"
 LOCAL_DB_NAME = "kindle_dev"
-KINDLE_SCHEMA = "kindle_automator"
 
 
 def is_docker_running():
@@ -273,7 +272,7 @@ def interactive_session():
 
 
 def dump_database(output_file):
-    """Dump the database schema."""
+    """Dump the database."""
     params = get_connection_params()
 
     if is_docker_running():
@@ -288,14 +287,12 @@ def dump_database(output_file):
             LOCAL_DB_USER,
             "-d",
             LOCAL_DB_NAME,
-            "-n",
-            KINDLE_SCHEMA,
         ]
         with open(output_file, "w") as f:
             subprocess.run(cmd, stdout=f, check=True)
     else:
         database_url = os.environ.get("DATABASE_URL")
-        cmd = ["pg_dump", database_url, "-n", KINDLE_SCHEMA]
+        cmd = ["pg_dump", database_url]
         with open(output_file, "w") as f:
             subprocess.run(cmd, stdout=f, check=True)
 

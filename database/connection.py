@@ -18,7 +18,7 @@ class DatabaseConnection:
 
     def __init__(self):
         self.database_url = os.getenv("DATABASE_URL")
-        self.schema_name = os.getenv("KINDLE_SCHEMA", "kindle_automator")
+        self.schema_name = "public"
         self.engine = None
         self.SessionLocal = None
         self._initialized = False
@@ -56,11 +56,7 @@ class DatabaseConnection:
                 future=True,
             )
 
-        # Set up search_path for the schema
-        @event.listens_for(self.engine, "connect")
-        def set_search_path(dbapi_conn, connection_record):
-            with dbapi_conn.cursor() as cursor:
-                cursor.execute(f"SET search_path TO {self.schema_name}, public")
+        # No need to set search_path since we're using public schema
 
         # Create session factory
         self.SessionLocal = sessionmaker(
@@ -74,14 +70,8 @@ class DatabaseConnection:
         logger.info(f"Database connection initialized with schema: {self.schema_name}")
 
     def create_schema(self):
-        """Create the schema if it doesn't exist."""
-        if not self._initialized:
-            self.initialize()
-
-        with self.engine.connect() as conn:
-            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema_name}"))
-            conn.commit()
-            logger.info(f"Schema {self.schema_name} created or already exists")
+        """No longer needed - using public schema."""
+        pass
 
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:
