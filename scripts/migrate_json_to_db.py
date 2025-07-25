@@ -20,6 +20,13 @@ load_dotenv(env_path)
 
 # Now import database modules after environment is loaded
 from database.connection import DatabaseConnection
+from database.models import (
+    DeviceIdentifiers,
+    EmulatorSettings,
+    LibrarySettings,
+    ReadingSettings,
+    UserPreference,
+)
 from database.repositories.user_repository import UserRepository
 
 # Create a new database connection instance
@@ -58,12 +65,13 @@ def migrate_user_data(email: str, user_data: dict, repo: UserRepository) -> bool
         else:
             logger.info(f"Updating existing user: {email}")
 
-        # Update basic user fields
+        # Instead of multiple individual updates, collect all updates and do them in one go
+        # First, update the user object directly
         if "last_used" in user_data and user_data["last_used"]:
-            repo.update_user_field(email, "last_used", datetime.fromtimestamp(user_data["last_used"]))
+            user.last_used = datetime.fromtimestamp(user_data["last_used"])
 
         if "auth_date" in user_data and user_data["auth_date"]:
-            repo.update_user_field(email, "auth_date", datetime.fromisoformat(user_data["auth_date"]))
+            user.auth_date = datetime.fromisoformat(user_data["auth_date"])
 
         # Update boolean fields
         bool_fields = [
@@ -75,31 +83,33 @@ def migrate_user_data(email: str, user_data: dict, repo: UserRepository) -> bool
         ]
         for field in bool_fields:
             if field in user_data:
-                repo.update_user_field(email, field, user_data[field])
+                setattr(user, field, user_data[field])
 
         # Update string fields
         string_fields = ["timezone", "kindle_version_name", "kindle_version_code", "last_snapshot"]
         for field in string_fields:
             if field in user_data and user_data[field]:
-                repo.update_user_field(email, field, user_data[field])
+                setattr(user, field, user_data[field])
 
         # Update timestamp fields
         if "last_snapshot_timestamp" in user_data and user_data["last_snapshot_timestamp"]:
-            repo.update_user_field(
-                email, "last_snapshot_timestamp", datetime.fromisoformat(user_data["last_snapshot_timestamp"])
-            )
+            user.last_snapshot_timestamp = datetime.fromisoformat(user_data["last_snapshot_timestamp"])
 
         # Update emulator settings
         if "emulator_settings" in user_data:
             settings = user_data["emulator_settings"]
+            if not user.emulator_settings:
+                user.emulator_settings = EmulatorSettings(user=user)
             for key, value in settings.items():
                 if key == "memory_optimization_timestamp" and value:
                     value = datetime.fromtimestamp(value)
-                repo.update_user_field(email, f"emulator_settings.{key}", value)
+                setattr(user.emulator_settings, key, value)
 
         # Update device identifiers
         if "device_identifiers" in user_data:
             identifiers = user_data["device_identifiers"]
+            if not user.device_identifiers:
+                user.device_identifiers = DeviceIdentifiers(user=user)
             # Map the JSON keys to database field names
             field_mapping = {
                 "hw.wifi.mac": "hw_wifi_mac",
@@ -111,29 +121,46 @@ def migrate_user_data(email: str, user_data: dict, repo: UserRepository) -> bool
             }
             for json_key, db_field in field_mapping.items():
                 if json_key in identifiers:
-                    repo.update_user_field(email, f"device_identifiers.{db_field}", identifiers[json_key])
+                    setattr(user.device_identifiers, db_field, identifiers[json_key])
 
         # Update library settings
         if "library_settings" in user_data:
             settings = user_data["library_settings"]
+            if not user.library_settings:
+                user.library_settings = LibrarySettings(user=user)
             for key, value in settings.items():
-                repo.update_user_field(email, f"library_settings.{key}", value)
+                setattr(user.library_settings, key, value)
 
         # Update reading settings
         if "reading_settings" in user_data:
             settings = user_data["reading_settings"]
+            if not user.reading_settings:
+                user.reading_settings = ReadingSettings(user=user)
             for key, value in settings.items():
-                repo.update_user_field(email, f"reading_settings.{key}", value)
+                setattr(user.reading_settings, key, value)
 
         # Update preferences
         if "preferences" in user_data and user_data["preferences"]:
             for key, value in user_data["preferences"].items():
-                repo.update_user_field(email, f"preferences.{key}", value)
+                # Find existing preference
+                pref = next((p for p in user.preferences if p.preference_key == key), None)
+                if pref:
+                    pref.preference_value = json.dumps(value) if not isinstance(value, str) else value
+                else:
+                    new_pref = UserPreference(
+                        user=user,
+                        preference_key=key,
+                        preference_value=json.dumps(value) if not isinstance(value, str) else value,
+                    )
+                    repo.session.add(new_pref)
 
+        # Single commit for all changes
+        repo.session.commit()
         logger.info(f"Successfully migrated user: {email}")
         return True
 
     except Exception as e:
+        repo.session.rollback()
         logger.error(f"Error migrating user {email}: {e}", exc_info=True)
         return False
 
