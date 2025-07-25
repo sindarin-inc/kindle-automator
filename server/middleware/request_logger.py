@@ -159,6 +159,14 @@ class RequestBodyLogger:
                 f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
             )
             return response
+            
+        # Skip logging for streaming responses (SSE, etc.)
+        content_type = response.headers.get('Content-Type', '')
+        if 'text/event-stream' in content_type or response.is_streamed:
+            logger.info(
+                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Streaming response ({content_type}){RESET}"
+            )
+            return response
 
         # Store original response data
         original_data = response.get_data()
