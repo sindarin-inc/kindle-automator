@@ -77,20 +77,27 @@ def ensure_local_db_exists():
                 # Continue anyway - the connection will fail later if there's a real problem
 
 
-def get_connection_params():
+def get_connection_params(debug=False):
     """Get database connection parameters."""
     if is_docker_running():
+        if debug:
+            print(f"Debug: Docker container '{DOCKER_CONTAINER}' is running")
         # Use Docker container for local development
         # Ensure database exists first
         ensure_local_db_exists()
-        return {
+        params = {
             "host": "localhost",
             "port": LOCAL_DB_PORT,
             "user": LOCAL_DB_USER,
             "database": LOCAL_DB_NAME,
             "password": "local",  # Default password for local development
         }
+        if debug:
+            print(f"Debug: Using local Docker connection - host={params['host']}, port={params['port']}, db={params['database']}")
+        return params
     else:
+        if debug:
+            print(f"Debug: Docker container '{DOCKER_CONTAINER}' not running, using DATABASE_URL")
         # Use DATABASE_URL from environment
         database_url = os.environ.get("DATABASE_URL")
         if not database_url:
@@ -101,25 +108,43 @@ def get_connection_params():
 
         # Strip quotes from DATABASE_URL
         database_url = database_url.strip('"')
+        
+        if debug:
+            # Mask password in debug output
+            masked_url = database_url
+            if "@" in masked_url and ":" in masked_url:
+                start = masked_url.find("://") + 3
+                at_pos = masked_url.find("@")
+                colon_pos = masked_url.rfind(":", start, at_pos)
+                if colon_pos > start:
+                    masked_url = masked_url[:colon_pos+1] + "****" + masked_url[at_pos:]
+            print(f"Debug: Using DATABASE_URL = {masked_url}")
 
         # Parse DATABASE_URL
         parsed = urlparse(database_url)
-        return {
+        params = {
             "host": parsed.hostname,
             "port": parsed.port or 5432,
             "user": parsed.username,
             "database": parsed.path[1:] if parsed.path else None,
             "password": parsed.password,
         }
+        if debug:
+            print(f"Debug: Parsed connection - host={params['host']}, port={params['port']}, db={params['database']}, user={params['user']}")
+        return params
 
 
-def execute_query(query):
+def execute_query(query, debug=False):
     """Execute a SQL query and return results."""
-    params = get_connection_params()
+    params = get_connection_params(debug)
 
     try:
+        if debug:
+            print(f"Debug: Attempting to connect to database...")
         conn = psycopg2.connect(**params)
         conn.autocommit = True
+        if debug:
+            print(f"Debug: Connected successfully!")
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query)
@@ -161,7 +186,7 @@ def execute_query(query):
             conn.close()
 
 
-def execute_file(sql_file):
+def execute_file(sql_file, debug=False):
     """Execute SQL from a file."""
     if not os.path.exists(sql_file):
         print(f"Error: SQL file not found: {sql_file}")
@@ -170,7 +195,7 @@ def execute_file(sql_file):
     with open(sql_file, "r") as f:
         sql_content = f.read()
 
-    params = get_connection_params()
+    params = get_connection_params(debug)
 
     try:
         conn = psycopg2.connect(**params)
@@ -255,33 +280,58 @@ def main():
     parser.add_argument("--env", default=".env", help="Environment file to load")
     parser.add_argument("--file", help="SQL file to execute")
     parser.add_argument("--args", help="Arguments for the command")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
 
     args = parser.parse_args()
 
+    # Enable debug mode
+    debug = args.debug
+
+    if debug:
+        print(f"Debug: Command = {args.command}")
+        print(f"Debug: Environment file = {args.env}")
+        print(f"Debug: File exists = {os.path.exists(args.env)}")
+
     # Load environment file if it exists
     if os.path.exists(args.env):
+        if debug:
+            print(f"Debug: Loading environment from {args.env}")
         with open(args.env) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    key, value = line.split("=", 1)
-                    # Strip quotes from value
-                    value = value.strip('"')
-                    os.environ[key] = value
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        # Strip quotes from value
+                        value = value.strip('"')
+                        os.environ[key] = value
+                        if debug and key == "DATABASE_URL":
+                            # Mask password in debug output
+                            masked_url = value
+                            if "@" in masked_url and ":" in masked_url:
+                                start = masked_url.find("://") + 3
+                                at_pos = masked_url.find("@")
+                                colon_pos = masked_url.rfind(":", start, at_pos)
+                                if colon_pos > start:
+                                    masked_url = masked_url[:colon_pos+1] + "****" + masked_url[at_pos:]
+                            print(f"Debug: Set DATABASE_URL = {masked_url}")
+    else:
+        if debug:
+            print(f"Debug: Environment file {args.env} not found")
 
     # Execute command
     if args.command == "init":
         if args.file:
-            execute_file(args.file)
+            execute_file(args.file, debug)
         else:
             print("Error: --file required for init command")
             sys.exit(1)
 
     elif args.command == "query":
         if args.args:
-            execute_query(args.args)
+            execute_query(args.args, debug)
         elif args.file:
-            execute_file(args.file)
+            execute_file(args.file, debug)
         else:
             print("Error: --args or --file required for query command")
             sys.exit(1)

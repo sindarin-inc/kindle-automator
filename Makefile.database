@@ -47,7 +47,7 @@ db-connect:
 .PHONY: db-status
 db-status:
 	@echo "Checking database status..."
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) $(if $(DEBUG),--debug) --args "\
 		SELECT 'Users:' as table_name, COUNT(*) as count FROM kindle_automator.users \
 		UNION ALL \
 		SELECT 'Emulator Settings:', COUNT(*) FROM kindle_automator.emulator_settings \
