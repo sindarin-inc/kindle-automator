@@ -9,6 +9,11 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+# Debug: Script started
+if "--debug" in sys.argv:
+    print("Debug: Script started", file=sys.stderr)
+    sys.stderr.flush()
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
