@@ -39,17 +39,13 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
         sa.PrimaryKeyConstraint("id"),
-        schema="kindle_automator",
     )
+    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
     op.create_index(
-        op.f("ix_kindle_automator_users_email"), "users", ["email"], unique=True, schema="kindle_automator"
-    )
-    op.create_index(
-        op.f("ix_kindle_automator_users_last_used"),
+        op.f("ix_users_last_used"),
         "users",
         ["last_used"],
         unique=False,
-        schema="kindle_automator",
     )
 
     # Create emulator_settings table
@@ -65,9 +61,8 @@ def upgrade() -> None:
         sa.Column("memory_optimizations_applied", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("memory_optimization_timestamp", sa.DateTime(), nullable=True),
         sa.Column("appium_device_initialized", sa.Boolean(), nullable=False, server_default="false"),
-        sa.ForeignKeyConstraint(["user_id"], ["kindle_automator.users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        schema="kindle_automator",
     )
 
     # Create device_identifiers table
@@ -81,9 +76,8 @@ def upgrade() -> None:
         sa.Column("ro_build_id", sa.String(length=50), nullable=True),
         sa.Column("ro_product_name", sa.String(length=100), nullable=True),
         sa.Column("android_id", sa.String(length=50), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["kindle_automator.users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        schema="kindle_automator",
     )
 
     # Create library_settings table
@@ -94,9 +88,8 @@ def upgrade() -> None:
         sa.Column("view_type", sa.String(length=20), nullable=True),
         sa.Column("group_by_series", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("actively_reading_title", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["kindle_automator.users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        schema="kindle_automator",
     )
 
     # Create reading_settings table
@@ -111,9 +104,8 @@ def upgrade() -> None:
         sa.Column("page_turn_animation", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("popular_highlights", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("highlight_menu", sa.Boolean(), nullable=False, server_default="false"),
-        sa.ForeignKeyConstraint(["user_id"], ["kindle_automator.users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        schema="kindle_automator",
     )
 
     # Create user_preferences table
@@ -123,19 +115,18 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("preference_key", sa.String(length=255), nullable=False),
         sa.Column("preference_value", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["user_id"], ["kindle_automator.users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "preference_key", name="uq_user_preference"),
-        schema="kindle_automator",
     )
 
 
 def downgrade() -> None:
-    op.drop_table("user_preferences", schema="kindle_automator")
-    op.drop_table("reading_settings", schema="kindle_automator")
-    op.drop_table("library_settings", schema="kindle_automator")
-    op.drop_table("device_identifiers", schema="kindle_automator")
-    op.drop_table("emulator_settings", schema="kindle_automator")
-    op.drop_index(op.f("ix_kindle_automator_users_last_used"), table_name="users", schema="kindle_automator")
-    op.drop_index(op.f("ix_kindle_automator_users_email"), table_name="users", schema="kindle_automator")
-    op.drop_table("users", schema="kindle_automator")
+    op.drop_table("user_preferences")
+    op.drop_table("reading_settings")
+    op.drop_table("library_settings")
+    op.drop_table("device_identifiers")
+    op.drop_table("emulator_settings")
+    op.drop_index(op.f("ix_users_last_used"), table_name="users")
+    op.drop_index(op.f("ix_users_email"), table_name="users")
+    op.drop_table("users")

@@ -21,20 +21,18 @@ def upgrade() -> None:
     op.add_column(
         "library_settings",
         sa.Column("filter_book_count", sa.Integer(), nullable=True),
-        schema="kindle_automator",
     )
 
     # Add scroll_book_count column
     op.add_column(
         "library_settings",
         sa.Column("scroll_book_count", sa.Integer(), nullable=True),
-        schema="kindle_automator",
     )
 
 
 def downgrade() -> None:
     # Remove scroll_book_count column
-    op.drop_column("library_settings", "scroll_book_count", schema="kindle_automator")
+    op.drop_column("library_settings", "scroll_book_count")
 
     # Remove filter_book_count column
-    op.drop_column("library_settings", "filter_book_count", schema="kindle_automator")
+    op.drop_column("library_settings", "filter_book_count")
