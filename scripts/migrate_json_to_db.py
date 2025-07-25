@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -139,8 +140,37 @@ def migrate_user_data(email: str, user_data: dict, repo: UserRepository) -> bool
 
 def main():
     """Main migration function."""
-    # Determine the users.json file path
-    users_file = os.path.join(project_root, "user_data", "users.json")
+
+    # Determine the users.json file path based on environment
+    # Check multiple possible locations for users.json
+    possible_paths = [
+        # Mac development environment path
+        os.path.join(project_root, "user_data", "users.json"),
+        # Production/staging path (AVD profile manager location)
+        "/opt/android-sdk/profiles/users.json",
+        # Alternative production path
+        "/opt/android-sdk/user_data/users.json",
+    ]
+
+    users_file = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            users_file = path
+            break
+
+    if not users_file:
+        logger.error(f"Could not find users.json in any of these locations: {possible_paths}")
+        logger.info("Checking what files exist in /opt/android-sdk/...")
+
+        # List directories in /opt/android-sdk to help debug
+        if os.path.exists("/opt/android-sdk"):
+            for root, dirs, files in os.walk("/opt/android-sdk"):
+                if "users.json" in files:
+                    logger.info(f"Found users.json at: {os.path.join(root, 'users.json')}")
+                # Only go 2 levels deep
+                if root.count(os.sep) - "/opt/android-sdk".count(os.sep) >= 2:
+                    dirs[:] = []
+        return
 
     logger.info(f"Starting migration from {users_file}")
 
@@ -163,7 +193,13 @@ def main():
     # Run migrations to create tables
     logger.info("Running database migrations...")
     try:
-        os.system("cd /Users/sclay/projects/sindarin/kindle-automator && alembic upgrade head")
+        # Change to project root and run alembic
+        os.chdir(project_root)
+        result = subprocess.run(["alembic", "upgrade", "head"], capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"Failed to run migrations: {result.stderr}")
+            return
+        logger.info("Database migrations completed successfully")
     except Exception as e:
         logger.error(f"Failed to run migrations: {e}")
         return

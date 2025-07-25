@@ -135,7 +135,7 @@ db-data:
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM user_preferences ORDER BY user_id;"
 
 # Staging-specific targets
-.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging
+.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging db-import-staging
 db-setup-privileges-staging:
 	@$(MAKE) db-setup-privileges STAGING=1
 
@@ -156,6 +156,9 @@ db-activity-staging:
 
 db-data-staging:
 	@$(MAKE) db-data STAGING=1
+
+db-import-staging:
+	@$(MAKE) db-import STAGING=1
 
 # Production-specific targets
 .PHONY: db-setup-privileges-prod db-init-prod db-setup-prod db-status-prod db-backup-prod db-activity-prod db-data-prod
