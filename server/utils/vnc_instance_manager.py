@@ -1,18 +1,16 @@
-import json
+"""VNC Instance Manager that uses the database instead of JSON files."""
+
 import logging
 import os
 import platform
-import random
 import subprocess
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional
 
+from database.repositories.vnc_instance_repository import VNCInstanceRepository
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
-
-# Default path to VNC instance mapping file
-# Use the same path as in EmulatorLauncher - in the Android SDK profiles directory
-import os
 
 DEFAULT_ANDROID_SDK = "/opt/android-sdk"
 if platform.system() == "Darwin":
@@ -23,17 +21,6 @@ if os.environ.get("ANDROID_HOME"):
 else:
     ANDROID_HOME = DEFAULT_ANDROID_SDK
 
-# Use user_data directory for macOS/Darwin systems
-is_macos = platform.system() == "Darwin"
-if is_macos:
-    # Use project's user_data directory instead of Android SDK profiles
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    PROFILES_DIR = os.path.join(project_root, "user_data")
-else:
-    PROFILES_DIR = os.path.join(ANDROID_HOME, "profiles")
-
-VNC_INSTANCE_MAP_PATH = os.path.join(PROFILES_DIR, "vnc_instance_map.json")
-
 # Singleton instance
 _instance = None
 
@@ -41,6 +28,7 @@ _instance = None
 class VNCInstanceManager:
     """
     Manages multiple VNC instances and assigns them to user profiles.
+    Uses the database for persistence instead of JSON files.
     Implements the singleton pattern to ensure only one instance exists.
     """
 
@@ -54,141 +42,83 @@ class VNCInstanceManager:
         """
         global _instance
         if _instance is None:
-            _instance = cls(VNC_INSTANCE_MAP_PATH)
+            _instance = cls()
         return _instance
 
-    def __init__(self, map_path: str = VNC_INSTANCE_MAP_PATH):
+    def __init__(self):
         """
         Initialize the VNC instance manager.
         Note: You should use get_instance() instead of creating instances directly.
-
-        Args:
-            map_path: Path to the VNC instance mapping JSON file
         """
         # Check if this is being called directly or through get_instance()
         global _instance
         if _instance is not None and _instance is not self:
             logger.warning("VNCInstanceManager initialized directly. Use get_instance() instead.")
 
-        self.map_path = map_path
-        self.instances = []
-
-        # Ensure profiles directory exists
-        os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
-
-        # Determine if we're on macOS/Darwin
+        self._repository = None
         self.is_macos = platform.system() == "Darwin"
+        self._initialized = False
 
-        # Load VNC instances or create new ones with email-based assignments
-        self.load_instances()
+    @property
+    def repository(self):
+        """Lazy-load the repository to ensure database is ready."""
+        if self._repository is None:
+            self._repository = VNCInstanceRepository()
+        return self._repository
+
+    def _ensure_initialized(self):
+        """Ensure the manager is fully initialized."""
+        if not self._initialized:
+            # Reset Appium states on startup
+            self.reset_appium_states_on_startup()
+            self._initialized = True
 
     def load_instances(self) -> bool:
         """
-        Load VNC instance mappings from the JSON file.
+        Compatibility method - database instances are always available.
 
         Returns:
-            bool: True if instances were loaded successfully, False otherwise
+            bool: Always returns True
         """
-        try:
-            if os.path.exists(self.map_path):
-                with open(self.map_path, "r") as f:
-                    data = json.load(f)
-                    self.instances = data.get("instances", [])
-                    # Ensure we have a valid instances list
-                    if not isinstance(self.instances, list):
-                        logger.warning(
-                            f"Invalid instances format in {self.map_path}, resetting to empty list"
-                        )
-                        self.instances = []
-
-                    # Log info about loaded instances
-                    active_instances = [i for i in self.instances if i.get("assigned_profile") is not None]
-                    logger.info(f"Loaded {len(self.instances)} VNC instances, {len(active_instances)} active")
-                    return True
-            else:
-                # Create an empty list for development environments
-                logger.info(f"VNC instance map not found at {self.map_path}, creating empty instance list")
-                self.instances = self._create_default_instances()
-                self.save_instances()
-                return True
-        except Exception as e:
-            logger.error(f"Error loading VNC instances: {e}", exc_info=True)
-            self.instances = self._create_default_instances()
-            return False
-
-    def _create_default_instances(self) -> List[Dict]:
-        """
-        Create an empty list for VNC instances that will be populated dynamically.
-
-        Returns:
-            List[Dict]: Empty list for VNC instances
-        """
-        # Return an empty list - instances will be created dynamically as needed
-        return []
+        return True
 
     def _create_new_instance(self) -> Dict:
         """
         Create a new VNC instance with the next available ID.
 
         Returns:
-            Dict: Newly created VNC instance
+            Dict: Newly created VNC instance as a dictionary
         """
-        # Determine next available ID from existing instances
-        next_id = 1
-        if self.instances:
-            existing_ids = [instance["id"] for instance in self.instances]
-            next_id = max(existing_ids) + 1
+        next_id = self.repository.get_next_available_id()
 
         # Calculate ports based on instance ID
         from server.utils.port_utils import PortConfig, calculate_emulator_ports
 
         ports = calculate_emulator_ports(next_id)
-        emulator_port = ports["emulator_port"]
-        vnc_port = ports["vnc_port"]
-        appium_port = ports["appium_port"]
 
-        # Get additional Appium-related ports
-        appium_system_port = ports.get("system_port", PortConfig.SYSTEM_BASE_PORT + next_id)
-        appium_chromedriver_port = ports.get("chromedriver_port", PortConfig.CHROMEDRIVER_BASE_PORT + next_id)
-        appium_mjpeg_server_port = PortConfig.MJPEG_BASE_PORT + next_id
+        # Create instance in database
+        instance = self.repository.create_instance(
+            display=next_id,
+            vnc_port=ports["vnc_port"],
+            appium_port=ports["appium_port"],
+            emulator_port=ports["emulator_port"],
+            appium_system_port=ports.get("system_port", PortConfig.SYSTEM_BASE_PORT + next_id),
+            appium_chromedriver_port=ports.get(
+                "chromedriver_port", PortConfig.CHROMEDRIVER_BASE_PORT + next_id
+            ),
+            appium_mjpeg_server_port=PortConfig.MJPEG_BASE_PORT + next_id,
+        )
 
-        # Create a new instance with the next available ID
-        return {
-            "id": next_id,
-            "display": next_id,
-            "vnc_port": vnc_port,
-            "appium_port": appium_port,
-            "emulator_port": emulator_port,
-            "emulator_id": None,
-            "assigned_profile": None,
-            # New fields for Appium process tracking
-            "appium_pid": None,
-            "appium_running": False,
-            "appium_last_health_check": None,
-            # Additional Appium-related ports
-            "appium_system_port": appium_system_port,
-            "appium_chromedriver_port": appium_chromedriver_port,
-            "appium_mjpeg_server_port": appium_mjpeg_server_port,
-        }
+        return self._instance_to_dict(instance)
 
     def save_instances(self) -> bool:
         """
-        Save VNC instance mappings to the JSON file.
+        Compatibility method - database changes are automatically persisted.
 
         Returns:
-            bool: True if instances were saved successfully, False otherwise
+            bool: Always returns True
         """
-        try:
-            # Ensure directory exists before saving
-            os.makedirs(os.path.dirname(self.map_path), exist_ok=True)
-
-            data = {"instances": self.instances, "version": 1}
-            with open(self.map_path, "w") as f:
-                json.dump(data, f, indent=2)
-            return True
-        except Exception as e:
-            logger.error(f"Error saving VNC instances: {e}", exc_info=True)
-            return False
+        return True
 
     def get_instance_for_profile(self, email: str) -> Optional[Dict]:
         """
@@ -200,15 +130,9 @@ class VNCInstanceManager:
         Returns:
             Optional[Dict]: VNC instance dictionary or None if not assigned
         """
-        # Look directly for the email in assigned_profile
-        # logger.info(f"Looking for VNC instance for profile {email} in {self.instances}")
-        for instance in self.instances:
-            assigned_profile = instance.get("assigned_profile")
-            if assigned_profile == email:
-                return instance
-
-        # logger.info(f"No VNC instance found for email {email}")
-        return None
+        self._ensure_initialized()
+        instance = self.repository.get_instance_by_profile(email)
+        return self._instance_to_dict(instance) if instance else None
 
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:
         """
@@ -229,45 +153,36 @@ class VNCInstanceManager:
 
         # Try to assign the specified instance if provided
         if instance_id is not None:
-            for instance in self.instances:
-                if instance["id"] == instance_id:
-                    if instance["assigned_profile"] is None:
-                        # Use the email directly as the assigned_profile value
-                        instance["assigned_profile"] = email
-                        self.save_instances()
+            instance = self.repository.get_instance_by_id(instance_id)
+            if instance:
+                if instance.assigned_profile is None:
+                    if self.repository.assign_instance_to_profile(instance_id, email):
                         logger.info(f"Assigned VNC instance {instance_id} to email {email}")
-
-                        # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
-
-                        return instance
-                    else:
-                        logger.warning(
-                            f"VNC instance {instance_id} is already assigned to {instance['assigned_profile']}"
-                        )
-                        return None
-
-            logger.warning(f"VNC instance {instance_id} not found")
-            return None
+                        return self._instance_to_dict(self.repository.get_instance_by_id(instance_id))
+                else:
+                    logger.warning(
+                        f"VNC instance {instance_id} is already assigned to {instance.assigned_profile}"
+                    )
+                    return None
+            else:
+                logger.warning(f"VNC instance {instance_id} not found")
+                return None
 
         # Find an available instance to assign
-        for instance in self.instances:
-            if instance["assigned_profile"] is None:
-                # Found an available instance - use the email directly
-                instance["assigned_profile"] = email
-                self.save_instances()
-                logger.info(f"Assigned VNC instance {instance['id']} to email {email}")
-                return instance
+        unassigned = self.repository.get_unassigned_instances()
+        if unassigned:
+            instance = unassigned[0]
+            if self.repository.assign_instance_to_profile(instance.id, email):
+                logger.info(f"Assigned VNC instance {instance.id} to email {email}")
+                return self._instance_to_dict(self.repository.get_instance_by_id(instance.id))
 
         # No available instances, create a new one
-        new_instance = self._create_new_instance()
-        new_instance["assigned_profile"] = email
-        self.instances.append(new_instance)
-        self.save_instances()
-        logger.info(f"Created and assigned new VNC instance {new_instance['id']} to email {email}")
+        new_instance_dict = self._create_new_instance()
+        if self.repository.assign_instance_to_profile(new_instance_dict["id"], email):
+            logger.info(f"Created and assigned new VNC instance {new_instance_dict['id']} to email {email}")
+            return self._instance_to_dict(self.repository.get_instance_by_id(new_instance_dict["id"]))
 
-        # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
-
-        return new_instance
+        return None
 
     def release_instance_from_profile(self, email: str) -> bool:
         """
@@ -279,49 +194,29 @@ class VNCInstanceManager:
         Returns:
             bool: True if an instance was released, False otherwise
         """
-        # Get the assigned instance for this profile
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            instance_id = instance.get("id")
-            assigned_profile = instance.get("assigned_profile")
+        instance = self.repository.get_instance_by_profile(email)
+        if not instance:
+            logger.info(f"No VNC instance found assigned to profile {email}")
+            return False
 
-            # Log if assigned_profile is not None and is not the same as the email
-            if assigned_profile is not None and assigned_profile != email:
-                logger.info(
-                    f"Assigned profile {assigned_profile} is not the same as the email {email}, this is a bug"
-                )
+        instance_id = instance.id
 
-            try:
-                # Stop WebSocket proxy if running
-                from server.utils.websocket_proxy_manager import WebSocketProxyManager
+        try:
+            # Stop WebSocket proxy if running
+            from server.utils.websocket_proxy_manager import WebSocketProxyManager
 
-                ws_proxy_manager = WebSocketProxyManager.get_instance()
-                if ws_proxy_manager.is_proxy_running(email):
-                    logger.info(f"Stopping WebSocket proxy for {email} during cleanup")
-                    ws_proxy_manager.stop_proxy(email)
-            except Exception as e:
-                logger.error(f"Error stopping WebSocket proxy during cleanup: {e}", exc_info=True)
+            ws_proxy_manager = WebSocketProxyManager.get_instance()
+            if ws_proxy_manager.is_proxy_running(email):
+                logger.info(f"Stopping WebSocket proxy for {email} during cleanup")
+                ws_proxy_manager.stop_proxy(email)
+        except Exception as e:
+            logger.error(f"Error stopping WebSocket proxy during cleanup: {e}", exc_info=True)
 
-            # Clear Appium-related fields
-            instance["appium_pid"] = None
-            instance["appium_running"] = False
-            instance["appium_last_health_check"] = None
-
-            # Clear emulator_id - this is important to prevent stale references
-            if instance.get("emulator_id"):
-                logger.info(f"Clearing emulator_id {instance['emulator_id']} for {email}")
-            instance["emulator_id"] = None
-
-            instance["assigned_profile"] = None
-            self.save_instances()
+        # Release instance in database
+        if self.repository.release_instance_from_profile(email):
             logger.info(f"Released VNC instance {instance_id} from profile {email}")
-
-            # No need to sync with EmulatorLauncher - it now uses this singleton instance directly
-
             return True
 
-        # No instance found
-        logger.info(f"No VNC instance found assigned to profile {email}")
         return False
 
     def get_vnc_port(self, email: str) -> Optional[int]:
@@ -334,18 +229,8 @@ class VNCInstanceManager:
         Returns:
             Optional[int]: The VNC port or None if no instance is assigned
         """
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            # Return stored vnc_port if available
-            if "vnc_port" in instance:
-                return instance["vnc_port"]
-
-            # Calculate port from ID if vnc_port is not available
-            instance_id = instance.get("id")
-            if instance_id:
-                return self.calculate_vnc_port(instance_id)
-
-        return None
+        instance = self.repository.get_instance_by_profile(email)
+        return instance.vnc_port if instance else None
 
     def get_x_display(self, email: str) -> Optional[int]:
         """
@@ -357,11 +242,8 @@ class VNCInstanceManager:
         Returns:
             Optional[int]: The X display number or None if no instance is assigned
         """
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            # The display number is typically the same as the instance ID
-            return instance.get("display", instance.get("id"))
-        return None
+        instance = self.repository.get_instance_by_profile(email)
+        return instance.display if instance else None
 
     def get_appium_port(self, email: str) -> Optional[int]:
         """
@@ -373,21 +255,10 @@ class VNCInstanceManager:
         Returns:
             Optional[int]: The Appium port or None if no instance is assigned
         """
-        instance = self.get_instance_for_profile(email)
+        instance = self.repository.get_instance_by_profile(email)
         if instance:
-            # Return stored appium_port if available
-            if "appium_port" in instance:
-                logger.info(f"Using VNC instance appium port {instance['appium_port']} for {email}")
-                return instance["appium_port"]
-
-            # Calculate port from ID if appium_port is not available
-            instance_id = instance.get("id")
-            if instance_id:
-                calculated_port = self.calculate_appium_port(instance_id)
-                logger.info(
-                    f"Calculated appium port {calculated_port} from instance ID {instance_id} for {email}"
-                )
-                return calculated_port
+            logger.info(f"Using VNC instance appium port {instance.appium_port} for {email}")
+            return instance.appium_port
 
         logger.info(f"No VNC instance found for {email}, no appium port available")
         return None
@@ -402,10 +273,8 @@ class VNCInstanceManager:
         Returns:
             Optional[str]: The emulator ID or None if not assigned
         """
-        instance = self.get_instance_for_profile(email)
-        if instance and "emulator_id" in instance:
-            return instance["emulator_id"]
-        return None
+        instance = self.repository.get_instance_by_profile(email)
+        return instance.emulator_id if instance else None
 
     def set_emulator_id(self, email: str, emulator_id: str) -> bool:
         """
@@ -418,12 +287,7 @@ class VNCInstanceManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        instance = self.get_instance_for_profile(email)
-        if instance:
-            instance["emulator_id"] = emulator_id
-            self.save_instances()
-            return True
-        return False
+        return self.repository.update_emulator_id(email, emulator_id)
 
     def mark_running_for_deployment(self, email: str, should_restart: bool = True) -> bool:
         """
@@ -466,12 +330,7 @@ class VNCInstanceManager:
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
-            running_emails = []
-
-            # Get profiles with restart flag using targeted query
-            running_emails = avd_manager.get_profiles_with_restart_flag()
-
-            return running_emails
+            return avd_manager.get_profiles_with_restart_flag()
         except Exception as e:
             logger.error(f"Error getting running at restart emails: {e}", exc_info=True)
             return []
@@ -484,8 +343,6 @@ class VNCInstanceManager:
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
-
-            # Clear all restart flags using targeted query
             cleared_count = avd_manager.clear_all_restart_flags()
             logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
         except Exception as e:
@@ -497,16 +354,9 @@ class VNCInstanceManager:
         This ensures clean state after unexpected shutdowns.
         """
         try:
-            reset_count = 0
-            for instance in self.instances:  # instances is a list, not a dict
-                if instance.get("appium_running", False):
-                    instance["appium_running"] = False
-                    instance["appium_pid"] = None
-                    reset_count += 1
-                    logger.info(f"Reset appium_running state for instance {instance['id']}")
-
+            # Don't call _ensure_initialized here to avoid recursion
+            reset_count = self.repository.reset_all_appium_states()
             if reset_count > 0:
-                self.save_instances()
                 logger.info(f"Reset {reset_count} appium_running states on startup")
             else:
                 logger.info("No appium_running states needed resetting")
@@ -520,7 +370,9 @@ class VNCInstanceManager:
         Returns:
             List[Dict]: List of all VNC instances
         """
-        return self.instances.copy()
+        self._ensure_initialized()
+        instances = self.repository.get_all_instances()
+        return [self._instance_to_dict(inst) for inst in instances]
 
     def get_assigned_instances(self) -> List[Dict]:
         """
@@ -529,7 +381,8 @@ class VNCInstanceManager:
         Returns:
             List[Dict]: List of assigned VNC instances
         """
-        return [instance for instance in self.instances if instance.get("assigned_profile") is not None]
+        instances = self.repository.get_assigned_instances()
+        return [self._instance_to_dict(inst) for inst in instances]
 
     def clear_emulator_id_for_profile(self, email: str) -> bool:
         """
@@ -541,35 +394,80 @@ class VNCInstanceManager:
         Returns:
             bool: True if cleared successfully, False otherwise
         """
-        instance = self.get_instance_for_profile(email)
-        if instance and instance.get("emulator_id"):
-            logger.info(f"Clearing emulator_id {instance['emulator_id']} for profile {email}")
-            instance["emulator_id"] = None
-            self.save_instances()
-            return True
+        instance = self.repository.get_instance_by_profile(email)
+        if instance and instance.emulator_id:
+            logger.info(f"Clearing emulator_id {instance.emulator_id} for profile {email}")
+            return self.repository.update_emulator_id(email, None)
         return False
 
     def audit_and_cleanup_stale_instances(self) -> None:
         """Audit assigned VNC instances and clean up any that aren't actually running."""
-        assigned_instances = self.get_assigned_instances()
+        assigned_instances = self.repository.get_assigned_instances()
         if assigned_instances:
             logger.info(f"Auditing {len(assigned_instances)} assigned VNC instances")
-            for instance in assigned_instances:
-                email = instance.get("assigned_profile")
-                emulator_id = instance.get("emulator_id")
-                if email and emulator_id:
-                    # Check if emulator is still running via adb devices
-                    try:
-                        result = subprocess.run(
-                            [f"{ANDROID_HOME}/platform-tools/adb", "devices"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                        )
-                        if result.returncode == 0 and emulator_id not in result.stdout:
-                            logger.info(
-                                f"VNC instance for {email} has stale emulator_id {emulator_id}, releasing"
-                            )
-                            self.release_instance_from_profile(email)
-                    except Exception as e:
-                        logger.error(f"Error checking emulator status for {email}: {e}", exc_info=True)
+
+            # Get list of active emulator IDs
+            try:
+                result = subprocess.run(
+                    [f"{ANDROID_HOME}/platform-tools/adb", "devices"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    # Parse active emulator IDs from adb output
+                    lines = result.stdout.strip().split("\n")[1:]  # Skip header
+                    active_emulator_ids = []
+                    for line in lines:
+                        if line.strip():
+                            device_id = line.split()[0]
+                            active_emulator_ids.append(device_id)
+
+                    # Clear stale emulator IDs
+                    cleared = self.repository.clear_stale_emulator_ids(active_emulator_ids)
+                    if cleared > 0:
+                        logger.info(f"Cleared {cleared} stale emulator IDs")
+            except Exception as e:
+                logger.error(f"Error auditing emulator instances: {e}", exc_info=True)
+
+    def _instance_to_dict(self, instance) -> Dict:
+        """Convert a VNCInstance model to a dictionary matching the old JSON format."""
+        if not instance:
+            return None
+
+        return {
+            "id": instance.id,
+            "display": instance.display,
+            "vnc_port": instance.vnc_port,
+            "appium_port": instance.appium_port,
+            "emulator_port": instance.emulator_port,
+            "emulator_id": instance.emulator_id,
+            "assigned_profile": instance.assigned_profile,
+            "appium_pid": instance.appium_pid,
+            "appium_running": instance.appium_running,
+            "appium_last_health_check": (
+                instance.appium_last_health_check.timestamp() if instance.appium_last_health_check else None
+            ),
+            "appium_system_port": instance.appium_system_port,
+            "appium_chromedriver_port": instance.appium_chromedriver_port,
+            "appium_mjpeg_server_port": instance.appium_mjpeg_server_port,
+        }
+
+    @property
+    def instances(self) -> List[Dict]:
+        """Property for backward compatibility - returns all instances as dicts."""
+        return self.get_all_instances()
+
+    def calculate_vnc_port(self, instance_id: int) -> int:
+        """Calculate VNC port from instance ID for backward compatibility."""
+        from server.utils.port_utils import calculate_emulator_ports
+
+        ports = calculate_emulator_ports(instance_id)
+        return ports["vnc_port"]
+
+    def calculate_appium_port(self, instance_id: int) -> int:
+        """Calculate Appium port from instance ID for backward compatibility."""
+        from server.utils.port_utils import calculate_emulator_ports
+
+        ports = calculate_emulator_ports(instance_id)
+        return ports["appium_port"]

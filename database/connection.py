@@ -28,6 +28,10 @@ class DatabaseConnection:
         if self._initialized:
             return
 
+        # Try to get DATABASE_URL again in case it wasn't available when __init__ was called
+        if not self.database_url:
+            self.database_url = os.getenv("DATABASE_URL")
+
         if not self.database_url:
             raise ValueError("DATABASE_URL environment variable is not set")
 

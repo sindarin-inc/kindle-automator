@@ -159,3 +159,35 @@ class UserPreference(Base):
 
     # Relationship
     user: Mapped["User"] = relationship(back_populates="preferences")
+
+
+class VNCInstance(Base):
+    """VNC instance representing a virtual display and associated ports."""
+
+    __tablename__ = "vnc_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    display: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    vnc_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    appium_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    emulator_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    emulator_id: Mapped[Optional[str]] = mapped_column(String(50))
+    assigned_profile: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    appium_pid: Mapped[Optional[int]] = mapped_column(Integer)
+    appium_running: Mapped[bool] = mapped_column(Boolean, default=False)
+    appium_last_health_check: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    appium_system_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    appium_chromedriver_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    appium_mjpeg_server_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    # Index for quick lookup by assigned profile
+    __table_args__ = (Index("idx_vnc_assigned_profile", "assigned_profile"),)
+
+    def __repr__(self) -> str:
+        return (
+            f"<VNCInstance(id={self.id}, display={self.display}, assigned_profile={self.assigned_profile})>"
+        )
