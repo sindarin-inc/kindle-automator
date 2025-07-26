@@ -26,11 +26,11 @@ class IdleCheckResource(Resource):
             server_instance: The AutomationServer instance (ignored, uses singleton)
         """
         # Accept server_instance for backwards compatibility but use singleton
-        # Mac emulators get 24 hours (1440 minutes), Linux gets 30 minutes
+        # Mac emulators get 24 hours (1440 minutes), Linux gets 10 minutes
         if platform.system() == "Darwin":
             self.idle_timeout_minutes = 1440  # 24 hours for Mac
         else:
-            self.idle_timeout_minutes = 30  # 30 minutes for Linux
+            self.idle_timeout_minutes = 10  # 10 minutes for Linux
         super().__init__()
 
     def get(self):

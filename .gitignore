@@ -181,3 +181,4 @@ fixtures/dumps/*.xml
 **/.claude/settings.local.json
 scripts/*.sh
 apks
+backups
