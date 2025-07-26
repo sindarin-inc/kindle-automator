@@ -755,8 +755,11 @@ class EmulatorLauncher:
                     )
                 return False
 
+            from server.utils.network_utils import get_server_ip
+
+            server_ip = get_server_ip()
             logger.info(
-                f"Started VNC server for :{display_num}: {ansi.YELLOW}vnc://kindle.sindarin.com:{vnc_port}{ansi.RESET}"
+                f"Started VNC server for :{display_num}: {ansi.YELLOW}vnc://{server_ip}:{vnc_port}{ansi.RESET}"
             )
 
             return True
