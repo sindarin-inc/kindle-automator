@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import platform
 import signal
 import subprocess
 import time
@@ -459,9 +460,20 @@ def main():
 
     # Initialize APScheduler for idle checks and cold storage
     scheduler = BackgroundScheduler(daemon=True)
+
+    # Different idle check schedules for Mac vs Linux
+    if platform.system() == "Darwin":
+        # Mac: run twice a day at 6 AM and 6 PM
+        idle_cron_trigger = CronTrigger(hour="6,18", minute=0)
+        idle_schedule_desc = "twice daily at 6:00 AM and 6:00 PM"
+    else:
+        # Linux: run every 5 minutes
+        idle_cron_trigger = CronTrigger(minute="*/5")
+        idle_schedule_desc = "every 5 minutes"
+
     scheduler.add_job(
         func=run_idle_check,
-        trigger=CronTrigger(minute="0,15,30,45"),
+        trigger=idle_cron_trigger,
         id="idle_check",
         name="Idle Emulator Check",
         replace_existing=True,
@@ -476,7 +488,7 @@ def main():
     )
     scheduler.start()
     app.scheduler = scheduler
-    logger.info("Started APScheduler for idle checks (at :00, :15, :30, :45 each hour)")
+    logger.info(f"Started APScheduler for idle checks ({idle_schedule_desc})")
     logger.info("Started APScheduler for cold storage checks (daily at 3:00 AM)")
 
     # Run the server directly, regardless of development mode
