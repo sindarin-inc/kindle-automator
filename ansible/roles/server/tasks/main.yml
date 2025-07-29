@@ -109,11 +109,12 @@
   register: git_pull
   tags: deps, pull
 
-# Install dependencies using uv
-- name: Install Python dependencies
+# Create uv virtual environment and install dependencies
+- name: Install Python dependencies with uv
   shell: |
     cd /opt/kindle-automator
-    uv pip install --system -r requirements.txt
+    uv venv --python 3.12
+    uv pip install -r requirements.txt
   args:
     executable: /bin/bash
   tags: deps

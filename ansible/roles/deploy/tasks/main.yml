@@ -22,7 +22,7 @@
 - name: Update Python dependencies if requirements.txt changed
   shell: |
     cd /opt/kindle-automator
-    uv pip install --system -r requirements.txt
+    uv pip install -r requirements.txt
   args:
     executable: /bin/bash
   when: git_pull.changed
