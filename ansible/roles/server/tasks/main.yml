@@ -59,6 +59,12 @@
     state: directory
     mode: "0755"
 
+# Check if repository exists
+- name: Check if repository exists
+  stat:
+    path: /opt/kindle-automator/.git
+  register: repo_exists
+
 # Clone repository if it doesn't exist
 - name: Clone repository if not present
   git:
@@ -67,21 +73,29 @@
     version: "{{ kindle_repo_branch | default('main') }}"
     key_file: /opt/keys/deploy_key
     accept_hostkey: yes
-  args:
-    creates: /opt/kindle-automator/.git
+  when: not repo_exists.stat.exists
 
-# Set up Python virtual environment
-- name: Create Python virtual environment
-  command: python3 -m venv /opt/kindle-automator/venv
-  args:
-    creates: /opt/kindle-automator/venv/bin/activate
+# Check if uv is already installed
+- name: Check if uv exists
+  stat:
+    path: /usr/local/bin/uv
+  register: uv_exists
 
-# Install uv package manager
-- name: Install uv package manager
-  pip:
-    name: uv
-    executable: /opt/kindle-automator/venv/bin/pip
-    state: present
+# Install uv package manager globally
+- name: Download and install uv
+  shell: |
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  args:
+    creates: /root/.cargo/bin/uv
+  when: not uv_exists.stat.exists
+
+# Add uv to system PATH
+- name: Create uv symlink in /usr/local/bin
+  file:
+    src: /root/.cargo/bin/uv
+    dest: /usr/local/bin/uv
+    state: link
+  when: not uv_exists.stat.exists
 
 # Pull latest changes
 - name: Pull latest changes
@@ -95,12 +109,11 @@
   register: git_pull
   tags: deps, pull
 
-# Install dependencies
+# Install dependencies using uv
 - name: Install Python dependencies
   shell: |
-    source /opt/kindle-automator/venv/bin/activate
     cd /opt/kindle-automator
-    uv pip install -r requirements.txt
+    uv pip install --system -r requirements.txt
   args:
     executable: /bin/bash
   tags: deps

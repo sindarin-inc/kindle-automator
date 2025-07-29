@@ -164,7 +164,7 @@ class UserActivityResource(Resource):
             "launch_time_end": r"Emulator (emulator-\d+) launched successfully",
             "appium_start": r"Starting Appium server for",
             "appium_fail": r"Failed to start Appium server",
-            "request": r"REQUEST \[(\w+) ([^\]]+)\].*?: (.+)$",
+            "request": r"REQUEST \[(\w+) ([^\]]+)\].*?(?:\[UA: ([^\]]+)\])?\s*: (.+)$",
             "response": r"RESPONSE \[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
         }
 
@@ -273,7 +273,12 @@ class UserActivityResource(Resource):
                     elif event_type == "request":
                         activity["method"] = match.group(1)
                         activity["endpoint"] = match.group(2)
-                        activity["params"] = self._strip_ansi_codes(match.group(3))
+                        # User agent is optional (group 3), params is group 4
+                        if match.group(3):  # User agent was captured
+                            activity["user_agent"] = match.group(3)
+                            activity["params"] = self._strip_ansi_codes(match.group(4))
+                        else:  # No user agent, params is group 3
+                            activity["params"] = self._strip_ansi_codes(match.group(3))
                         activity["action"] = "api_request"
                         # Skip if this is a navigate request (handled by specific pattern)
                         if "/navigate" in activity["endpoint"] and any(
@@ -584,8 +589,23 @@ class UserActivityResource(Resource):
                     else:
                         status = "OK"
 
+                # Check if we have user agent info from the request
+                user_agent_info = ""
+                if endpoint in request_map and "user_agent" in request_map[endpoint]:
+                    user_agent = request_map[endpoint]["user_agent"]
+                    # Shorten common user agents for readability
+                    if "okhttp" in user_agent.lower():
+                        user_agent_info = " [Android]"
+                    elif "cfnetwork" in user_agent.lower() or "darwin" in user_agent.lower():
+                        user_agent_info = " [iOS]"
+                    elif user_agent:
+                        # Show first 20 chars of unknown user agents
+                        user_agent_info = (
+                            f" [UA: {user_agent[:20]}...]" if len(user_agent) > 20 else f" [UA: {user_agent}]"
+                        )
+
                 # Format the line
-                line = f"{time_str} - {desc} ({duration:.1f}s) [{status}]"
+                line = f"{time_str} - {desc}{user_agent_info} ({duration:.1f}s) [{status}]"
 
                 # Add truncated response if it's an error
                 if status == "FAILED":

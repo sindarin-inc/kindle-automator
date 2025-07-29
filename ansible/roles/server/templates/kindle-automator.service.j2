@@ -5,15 +5,15 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/opt/kindle-automator
-Environment="PATH=/opt/kindle-automator/venv/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+Environment="PATH=/usr/local/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 Environment="ANDROID_HOME=/opt/android-sdk"
 Environment="ANDROID_SDK_ROOT=/opt/android-sdk"
 Environment="FLASK_ENV=production"
 Environment="ENVIRONMENT={% if 'staging' in inventory_hostname %}staging{% else %}prod{% endif %}"
 Environment="PYTHONPATH=/opt/kindle-automator"
-ExecStart=/opt/kindle-automator/venv/bin/python -m server.server
+ExecStart=/usr/local/bin/uv run python -m server.server
 # Run graceful shutdown before stopping the service
-ExecStop=/opt/kindle-automator/venv/bin/python /opt/kindle-automator/scripts/graceful_shutdown.py
+ExecStop=/usr/local/bin/uv run python /opt/kindle-automator/scripts/graceful_shutdown.py
 # Add timeout settings for proper service termination
 TimeoutStartSec=60s
 # Allow up to 3 minutes for graceful shutdown
