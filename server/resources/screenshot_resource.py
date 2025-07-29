@@ -140,18 +140,10 @@ class ScreenshotResource(Resource):
             # Prepare the response data
             response_data = {}
 
-            # Skip screenshot in LIBRARY state unless explicitly requested with save=1
-            current_state = automator.state_machine.current_state
-            if current_state == AppState.LIBRARY and not save:
-                logger.info("Skipping screenshot in LIBRARY state since it's not needed")
-                response_data["message"] = "Screenshot skipped in LIBRARY state"
-            else:
-                # Process the screenshot (either base64 encode, add URL, or perform OCR)
-                screenshot_path = get_image_path(image_id)
-                screenshot_data = process_screenshot_response(
-                    image_id, screenshot_path, use_base64, perform_ocr
-                )
-                response_data.update(screenshot_data)
+            # Process the screenshot (either base64 encode, add URL, or perform OCR)
+            screenshot_path = get_image_path(image_id)
+            screenshot_data = process_screenshot_response(image_id, screenshot_path, use_base64, perform_ocr)
+            response_data.update(screenshot_data)
 
             # If xml=1, get and save the page source XML
             if include_xml:
