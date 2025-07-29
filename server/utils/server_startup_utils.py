@@ -13,7 +13,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
-def auto_restart_emulators_after_startup(server, delay: float = 3.0):
+def auto_restart_emulators_after_startup(server):
     """
     Schedule the auto-restart of emulators from previous session after server startup.
     This function starts a background thread that waits for the server to be ready
@@ -21,17 +21,12 @@ def auto_restart_emulators_after_startup(server, delay: float = 3.0):
 
     Args:
         server: The AutomationServer instance
-        delay: How long to wait after server starts before attempting restarts (seconds)
     """
 
     def _restart_emulators():
         """Background thread function to restart emulators."""
         from server.utils.request_utils import email_override
         from server.utils.vnc_instance_manager import VNCInstanceManager
-
-        # Wait for server to be fully ready
-        logger.info(f"Waiting {delay} seconds for server to be fully ready before restarting emulators...")
-        time.sleep(delay)
 
         logger.info("=== Beginning session restoration check ===")
         vnc_manager = VNCInstanceManager.get_instance()
