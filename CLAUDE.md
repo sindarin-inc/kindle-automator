@@ -11,6 +11,7 @@
 
 ## Commands
 
+- **Running Python scripts**: Use `uv run` to execute any Python script (e.g., `uv run python script.py`, `uv run pytest tests/`)
 - `make claude-run`: Start the Flask server in the background. It will auto-kill other running servers.
   - **Port conflict handling**: If `make claude-run` fails with "Port 4098 is in use", just run it again - it auto-kills the conflicting server
 - `make deps`: Install dependencies using uv

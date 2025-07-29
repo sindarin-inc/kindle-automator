@@ -1,45 +1,36 @@
-.PHONY: server test check-venv
-
-# Reusable virtualenv check
-check-venv:
-	@if [ -z "$$VIRTUAL_ENV" ]; then \
-		echo "ERROR: You must be in a virtualenv to run this command"; \
-		echo "Run: source ~/.virtualenvs/kindle-automator/bin/activate"; \
-		exit 1; \
-	fi
+.PHONY: server test
 
 run: server
 
 claude-run: 
 	@echo "Starting Flask server in background..."
-	@bash -c 'source ~/.virtualenvs/kindle-automator/bin/activate && (FLASK_ENV=development PYTHONPATH=$$(pwd) python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Monitor logs with: tail -f logs/server_output.log"
 	@echo "To stop the server and start a new server, run: make claude-run"
 
-deps: check-venv
+deps:
 	uv pip install -r requirements.txt
 
 lint:
-    # workon kindle-automator
-	isort --profile black .
-	black --line-length 110 .
-	flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
+	uv run isort --profile black .
+	uv run black --line-length 110 .
+	uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
 	
 # Start the Flask server
-server: check-venv
+server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run python -m server.server
 
 # Start an interactive shell with the environment setup
-shell: check-venv
+shell:
 	@echo "Starting interactive shell..."
-	@PYTHONPATH=$(shell pwd) python shell.py
+	@PYTHONPATH=$(shell pwd) uv run python shell.py
 
-test: check-venv
+test:
 	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) pytest tests
+	@PYTHONPATH=$(shell pwd) uv run pytest tests
 
 # Ansible
 
@@ -78,17 +69,14 @@ include Makefile.database
 # Export database to JSON format
 db-export:
 	@echo "Exporting users from database to JSON format..."
-	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) python scripts/export_users_to_json.py
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) uv run python scripts/export_users_to_json.py
 
 # Export from staging database
 db-export-staging:
 	@echo "Exporting users from staging database to JSON format..."
-	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) python scripts/export_users_to_json.py
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) uv run python scripts/export_users_to_json.py
 
 # Export from production database
 db-export-prod:
 	@echo "Exporting users from production database to JSON format..."
-	@source ~/.virtualenvs/kindle-automator/bin/activate && \
-		$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) python scripts/export_users_to_json.py
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/export_users_to_json.py
