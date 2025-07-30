@@ -9,8 +9,10 @@
     # - { role: storagebox, tags: storage }
     - { role: nginx, tags: nginx }
     - { role: mezmo, tags: mezmo }
-    - { role: android_x86, tags: [android-x86, android] }
-    - { role: scrcpy, tags: scrcpy }
-    - { role: rfbproxy, tags: rfbproxy }
-    - { role: vnc_server, tags: vnc }
-    - { role: server, tags: server }
+    - { role: firewall, tags: firewall }
+    - { role: postgres, tags: postgres, when: "'db' in group_names" }
+    - { role: android_x86, tags: [android-x86, android], when: "'db' not in group_names" }
+    - { role: scrcpy, tags: scrcpy, when: "'db' not in group_names" }
+    - { role: rfbproxy, tags: rfbproxy, when: "'db' not in group_names" }
+    - { role: vnc_server, tags: vnc, when: "'db' not in group_names" }
+    - { role: server, tags: server, when: "'db' not in group_names" }

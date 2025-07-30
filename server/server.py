@@ -456,7 +456,7 @@ def main():
     # Schedule emulator restart after server is ready using background thread
     from server.utils.server_startup_utils import auto_restart_emulators_after_startup
 
-    auto_restart_emulators_after_startup(server, delay=3.0)
+    auto_restart_emulators_after_startup(server)
 
     # Initialize APScheduler for idle checks and cold storage
     scheduler = BackgroundScheduler(daemon=True)

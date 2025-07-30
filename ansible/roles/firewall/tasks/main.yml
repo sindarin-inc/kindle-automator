@@ -1,0 +1,69 @@
+---
+- name: Install UFW firewall
+  apt:
+    name: ufw
+    state: present
+    update_cache: yes
+
+- name: Set UFW defaults
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: 'incoming', policy: 'deny' }
+    - { direction: 'outgoing', policy: 'allow' }
+
+- name: Allow SSH from anywhere (be careful!)
+  ufw:
+    rule: allow
+    port: 22
+    proto: tcp
+
+- name: Allow HTTP traffic
+  ufw:
+    rule: allow
+    port: 80
+    proto: tcp
+  when: "'db' not in group_names"
+
+- name: Allow HTTPS traffic
+  ufw:
+    rule: allow
+    port: 443
+    proto: tcp
+  when: "'db' not in group_names"
+
+- name: Allow Flask server port
+  ufw:
+    rule: allow
+    port: 4098
+    proto: tcp
+  when: "'db' not in group_names"
+
+- name: Allow PostgreSQL from inventory servers
+  ufw:
+    rule: allow
+    port: 5432
+    proto: tcp
+    src: "{{ hostvars[item]['ansible_host'] }}"
+  loop: "{{ groups['all'] }}"
+  when: 
+    - "'db' in group_names"
+    - item != inventory_hostname
+    - hostvars[item]['ansible_host'] is defined
+
+- name: Allow PostgreSQL from localhost
+  ufw:
+    rule: allow
+    port: 5432
+    proto: tcp
+    src: 127.0.0.1
+  when: "'db' in group_names"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+    
+- name: Reload UFW
+  command: ufw reload
+  changed_when: false

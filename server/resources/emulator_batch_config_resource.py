@@ -62,8 +62,7 @@ class EmulatorBatchConfigResource(Resource):
             skipped_count = 0
             failed_count = 0
 
-            for profile in all_profiles:
-                email = profile.get("email")
+            for email, profile in all_profiles.items():
                 avd_name = profile.get("avd_name")
                 emulator_id = profile.get("emulator_id")
 
@@ -292,12 +291,8 @@ class EmulatorBatchConfigResource(Resource):
         try:
             # Check if there's an existing automator for this profile
             # First, find the email for this emulator_id
-            email = None
             server = AutomationServer.get_instance()
-            for profile in server.profile_manager.list_profiles():
-                if profile.get("emulator_id") == emulator_id:
-                    email = profile.get("email")
-                    break
+            email = server.profile_manager.get_email_by_emulator_id(emulator_id)
 
             server = AutomationServer.get_instance()
             if email and email in server.automators:

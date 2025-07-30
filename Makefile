@@ -4,39 +4,33 @@ run: server
 
 claude-run: 
 	@echo "Starting Flask server in background..."
-	@bash -c 'source ~/.virtualenvs/kindle-automator/bin/activate && (FLASK_ENV=development PYTHONPATH=$$(pwd) python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Monitor logs with: tail -f logs/server_output.log"
+	@echo "To stop the server and start a new server, run: make claude-run"
 
 deps:
-	@if [ -z "$$VIRTUAL_ENV" ]; then \
-		echo "ERROR: You must be in a virtualenv to run 'make deps'"; \
-		echo "Run: source ~/.virtualenvs/kindle-automator/bin/activate"; \
-		exit 1; \
-	fi
 	uv pip install -r requirements.txt
 
 lint:
-    # workon kindle-automator
-	isort --profile black .
-	black --line-length 110 .
-	flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
+	uv run isort --profile black .
+	uv run black --line-length 110 .
+	uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
 	
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) python -m server.server
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run python -m server.server
 
 # Start an interactive shell with the environment setup
 shell:
 	@echo "Starting interactive shell..."
-	@PYTHONPATH=$(shell pwd) python shell.py
+	@PYTHONPATH=$(shell pwd) uv run python shell.py
 
 test:
-	# workon kindle-automator
 	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) pytest tests
+	@PYTHONPATH=$(shell pwd) uv run pytest tests
 
 # Ansible
 
@@ -62,3 +56,27 @@ ssh3: ssh-3
 ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging
+
+# Firewall management
+firewall:
+	@echo "Updating firewall rules on all servers..."
+	cd ansible && ansible-playbook -i inventory.ini provision.yml -t firewall
+	@echo "Firewall rules updated successfully!"
+
+# Include database commands
+include Makefile.database
+
+# Export database to JSON format
+db-export:
+	@echo "Exporting users from database to JSON format..."
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) uv run python scripts/export_users_to_json.py
+
+# Export from staging database
+db-export-staging:
+	@echo "Exporting users from staging database to JSON format..."
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) uv run python scripts/export_users_to_json.py
+
+# Export from production database
+db-export-prod:
+	@echo "Exporting users from production database to JSON format..."
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/export_users_to_json.py

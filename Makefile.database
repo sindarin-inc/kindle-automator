@@ -1,0 +1,184 @@
+# Database management commands for Kindle Automator
+
+# Determine environment file based on target
+ifdef STAGING
+	DB_ENV_FILE := .env.staging
+else ifdef PROD
+	DB_ENV_FILE := .env.prod
+else
+	DB_ENV_FILE := .env
+endif
+
+# Use uv run for Python execution
+PYTHON := uv run python
+
+# Setup database privileges (requires POSTGRES_DOADMIN_DATABASE_URL)
+.PHONY: db-setup-privileges
+db-setup-privileges:
+	@echo "Setting up database privileges..."
+	@$(PYTHON) scripts/setup_db_privileges.py $(DB_ENV_FILE)
+
+# Initialize database
+.PHONY: db-init
+db-init:
+	@echo "Initializing Kindle database..."
+	@$(PYTHON) scripts/db_connect.py --command init --env $(DB_ENV_FILE) --file database/init/01_create_database.sql
+
+# Run Alembic migrations
+.PHONY: db-migrate
+db-migrate:
+	@echo "Running database migrations..."
+	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
+		$(PYTHON) -m alembic upgrade head
+
+# Migrate data from users.json to PostgreSQL
+.PHONY: db-import
+db-import:
+	@echo "Migrating users.json to PostgreSQL..."
+	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
+		$(PYTHON) scripts/migrate_json_to_db.py
+
+# Full database setup: privileges (if needed), init, migrate, import
+.PHONY: db-setup
+db-setup:
+	@if [ -n "$$(grep -E '^POSTGRES_DOADMIN_DATABASE_URL=' $(DB_ENV_FILE) 2>/dev/null)" ]; then \
+		echo "Admin URL found, setting up privileges first..."; \
+		$(MAKE) db-setup-privileges DB_ENV_FILE=$(DB_ENV_FILE); \
+	fi
+	@$(MAKE) db-init DB_ENV_FILE=$(DB_ENV_FILE)
+	@$(MAKE) db-migrate DB_ENV_FILE=$(DB_ENV_FILE)
+	@$(MAKE) db-import DB_ENV_FILE=$(DB_ENV_FILE)
+	@echo "Database setup complete!"
+
+# Connect to database with psql
+.PHONY: db-connect
+db-connect:
+	@echo "Connecting to kindle_db..."
+	@$(PYTHON) scripts/db_connect.py --command interactive --env $(DB_ENV_FILE)
+
+# Show database status
+.PHONY: db-status
+db-status:
+	@echo "Checking database status..."
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) $(if $(DEBUG),--debug) --args "\
+		SELECT 'Users:' as table_name, COUNT(*) as count FROM users \
+		UNION ALL \
+		SELECT 'Emulator Settings:', COUNT(*) FROM emulator_settings \
+		UNION ALL \
+		SELECT 'Device Identifiers:', COUNT(*) FROM device_identifiers \
+		UNION ALL \
+		SELECT 'Library Settings:', COUNT(*) FROM library_settings \
+		UNION ALL \
+		SELECT 'Reading Settings:', COUNT(*) FROM reading_settings \
+		UNION ALL \
+		SELECT 'User Preferences:', COUNT(*) FROM user_preferences;"
+
+# Backup database
+.PHONY: db-backup
+db-backup:
+	@echo "Backing up kindle database..."
+	@mkdir -p backups
+	@$(PYTHON) scripts/db_connect.py --command dump --env $(DB_ENV_FILE) --args "backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
+	@echo "Backup saved to backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
+
+# Restore database from backup
+.PHONY: db-restore
+db-restore:
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make db-restore FILE=backups/kindle_db_YYYYMMDD_HHMMSS.sql"; \
+		exit 1; \
+	fi
+	@echo "Restoring database from $(FILE)..."
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --file $(FILE)
+
+# Drop and recreate database (DANGEROUS!)
+.PHONY: db-reset
+db-reset:
+	@echo "WARNING: This will delete all data in kindle_db!"
+	@echo "Press Ctrl+C to cancel, or Enter to continue..."
+	@read confirm
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "DROP DATABASE IF EXISTS kindle_db;"
+	@$(MAKE) db-init
+	@$(MAKE) db-migrate
+
+# Show recent user activity
+.PHONY: db-activity
+db-activity:
+	@echo "Recent user activity..."
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "\
+		SELECT email, avd_name, last_used, auth_date \
+		FROM users \
+		ORDER BY last_used DESC NULLS LAST \
+		LIMIT 10;"
+
+# Show all database data
+.PHONY: db-data
+db-data:
+	@echo "=== All Database Data ==="
+	@echo ""
+	@echo "USERS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM users ORDER BY id;"
+	@echo ""
+	@echo "EMULATOR SETTINGS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM emulator_settings ORDER BY user_id;"
+	@echo ""
+	@echo "DEVICE IDENTIFIERS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM device_identifiers ORDER BY user_id;"
+	@echo ""
+	@echo "LIBRARY SETTINGS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM library_settings ORDER BY user_id;"
+	@echo ""
+	@echo "READING SETTINGS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM reading_settings ORDER BY user_id;"
+	@echo ""
+	@echo "USER PREFERENCES:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM user_preferences ORDER BY user_id;"
+
+# Staging-specific targets
+.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging db-import-staging
+db-setup-privileges-staging:
+	@$(MAKE) db-setup-privileges STAGING=1
+
+db-init-staging:
+	@$(MAKE) db-init STAGING=1
+
+db-setup-staging:
+	@$(MAKE) db-setup STAGING=1
+
+db-status-staging:
+	@$(MAKE) db-status STAGING=1
+
+db-backup-staging:
+	@$(MAKE) db-backup STAGING=1
+
+db-activity-staging:
+	@$(MAKE) db-activity STAGING=1
+
+db-data-staging:
+	@$(MAKE) db-data STAGING=1
+
+db-import-staging:
+	@$(MAKE) db-import STAGING=1
+
+# Production-specific targets
+.PHONY: db-setup-privileges-prod db-init-prod db-setup-prod db-status-prod db-backup-prod db-activity-prod db-data-prod
+db-setup-privileges-prod:
+	@$(MAKE) db-setup-privileges PROD=1
+
+db-init-prod:
+	@$(MAKE) db-init PROD=1
+
+db-setup-prod:
+	@$(MAKE) db-setup PROD=1
+
+db-status-prod:
+	@$(MAKE) db-status PROD=1
+
+db-backup-prod:
+	@$(MAKE) db-backup PROD=1
+
+db-activity-prod:
+	@$(MAKE) db-activity PROD=1
+
+db-data-prod:
+	@$(MAKE) db-data PROD=1

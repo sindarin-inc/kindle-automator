@@ -409,56 +409,27 @@ class ColdStorageManager:
         """Get list of profiles eligible for cold storage based on last usage"""
         from views.core.avd_profile_manager import AVDProfileManager
 
-        eligible_profiles = []
         profile_manager = AVDProfileManager.get_instance()
         cutoff_date = datetime.now() - timedelta(days=days_inactive)
 
-        all_profiles = profile_manager.list_profiles()
+        # Use targeted query to get inactive profiles
+        eligible_profiles = []
+        inactive_profiles = profile_manager.get_inactive_profiles(cutoff_date)
 
-        for profile in all_profiles:
-            email = profile["email"]
+        for profile in inactive_profiles:
+            email = profile.get("email")
 
-            # Special case: never archive the seed clone AVD
-            if email == AVDCreator.SEED_CLONE_EMAIL:
-                continue
-
-            cold_storage_date = profile_manager.get_user_field(email, "cold_storage_date")
-            if cold_storage_date:
-                continue
-
-            # Check for last_used timestamp (Unix timestamp)
-            last_used = profile_manager.get_user_field(email, "last_used")
-            if last_used:
-                try:
-                    # Convert Unix timestamp to datetime
-                    last_used_dt = datetime.fromtimestamp(last_used)
-                    if last_used_dt < cutoff_date:
-                        avd_name = profile["avd_name"]
-                        avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
-                        if os.path.exists(avd_path):
-                            eligible_profiles.append(email)
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Invalid last_used timestamp for {email}: {last_used}")
-                    # Invalid timestamp, consider it eligible
-                    avd_name = profile.get("avd_name")
-                    if avd_name:
-                        avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
-                        if os.path.exists(avd_path):
-                            eligible_profiles.append(email)
-            else:
-                # If no last_used timestamp, consider it eligible (very old profile)
-                avd_name = profile.get("avd_name")
-                if avd_name:
-                    avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
-                    if os.path.exists(avd_path):
-                        logger.info(f"Profile {email} has no last_used timestamp, considering it eligible")
-                        eligible_profiles.append(email)
-                    else:
-                        logger.debug(
-                            f"Profile {email} has no last_used timestamp but AVD doesn't exist at {avd_path}"
-                        )
+            # The query already filtered out seed clone and cold storage profiles
+            # Just check if AVD exists
+            avd_name = profile.get("avd_name")
+            if avd_name:
+                avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
+                if os.path.exists(avd_path):
+                    eligible_profiles.append(email)
                 else:
-                    logger.debug(f"Profile {email} has no last_used timestamp and no AVD name")
+                    logger.debug(f"Profile {email} eligible but AVD doesn't exist at {avd_path}")
+            else:
+                logger.debug(f"Profile {email} has no last_used timestamp and no AVD name")
 
         return eligible_profiles
 

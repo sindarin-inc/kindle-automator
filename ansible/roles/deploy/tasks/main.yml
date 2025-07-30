@@ -21,7 +21,6 @@
 # Update Python dependencies if requirements.txt changed
 - name: Update Python dependencies if requirements.txt changed
   shell: |
-    source /opt/kindle-automator/venv/bin/activate
     cd /opt/kindle-automator
     uv pip install -r requirements.txt
   args:

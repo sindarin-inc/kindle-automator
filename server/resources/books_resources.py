@@ -6,7 +6,7 @@ import os
 import time
 import traceback
 
-from flask import Response, request
+from flask import Response, request, stream_with_context
 from flask_restful import Resource
 
 from server.core.automation_server import AutomationServer
@@ -381,6 +381,13 @@ class BooksStreamResource(Resource):
                     all_books_retrieved_event.set()  # Signal completion of book retrieval
                     return
 
+                # Handle filter book count message
+                if kwargs.get("filter_book_count") is not None:
+                    filter_count_msg = {"filter_book_count": kwargs.get("filter_book_count")}
+                    processed_books_queue.put(filter_count_msg)
+                    logger.info(f"Queued filter book count message: {filter_count_msg}")
+                    return
+
                 if raw_books_batch:
                     try:
                         # Update activity to prevent idle timeout during long scrolls
@@ -448,6 +455,7 @@ class BooksStreamResource(Resource):
             try:
 
                 def encode_message(msg_dict):
+                    # Always use JSONL format (newline-delimited JSON)
                     return (json.dumps(msg_dict) + "\n").encode("utf-8")
 
                 # Update activity at the start of streaming
@@ -459,6 +467,40 @@ class BooksStreamResource(Resource):
                 )
 
                 batch_num_sent = 0
+                # Add a small initial delay to allow filter count to be captured
+                # The filter modal takes several seconds to open, capture counts, and close
+                initial_wait_time = 0
+                max_initial_wait = 10.0  # Maximum 10 seconds to wait for filter count
+
+                logger.info(f"Starting initial wait for filter count (max {max_initial_wait}s)")
+                while initial_wait_time < max_initial_wait:
+                    try:
+                        # Check if filter count is available
+                        processed_batch = processed_books_queue.get(timeout=0.5)
+                        if (
+                            processed_batch
+                            and isinstance(processed_batch, dict)
+                            and "filter_book_count" in processed_batch
+                        ):
+                            # Found filter count, send it immediately
+                            yield encode_message(processed_batch)
+                            logger.info(f"Sent filter book count in SSE stream: {processed_batch}")
+                            break
+                        else:
+                            # Not filter count, put it back and break
+                            logger.debug(
+                                f"Received non-filter batch during initial wait: {type(processed_batch)}"
+                            )
+                            processed_books_queue.put(processed_batch)
+                            break
+                    except queue.Empty:
+                        initial_wait_time += 0.5
+                        if initial_wait_time >= max_initial_wait:
+                            logger.info("No filter count received in initial wait period")
+                            break
+                        elif initial_wait_time % 2 == 0:
+                            logger.debug(f"Still waiting for filter count... {initial_wait_time}s elapsed")
+
                 while True:
                     if error_message:
                         logger.info(f"Error signaled: {error_message}. Yielding error.")
@@ -471,8 +513,14 @@ class BooksStreamResource(Resource):
                             timeout=0.2
                         )  # Small timeout to remain responsive
                         if processed_batch:
-                            batch_num_sent += 1
-                            yield encode_message({"books": processed_batch, "batch_num": batch_num_sent})
+                            # Check if this is a filter book count message
+                            if isinstance(processed_batch, dict) and "filter_book_count" in processed_batch:
+                                yield encode_message(processed_batch)
+                                logger.info(f"Sent filter book count in main loop: {processed_batch}")
+                            else:
+                                # Regular book batch
+                                batch_num_sent += 1
+                                yield encode_message({"books": processed_batch, "batch_num": batch_num_sent})
                         # No task_done needed for queue.Queue if not using join()
                     except queue.Empty:
                         # Queue is empty, check if book retrieval is done
@@ -500,9 +548,6 @@ class BooksStreamResource(Resource):
                     )
                     yield encode_message({"done": True, "total_books": total_books_from_handler})
 
-                yield encode_message({"complete": True})
-                logger.info("SSE stream complete message sent")
-
             except Exception as e:
                 error_trace = traceback.format_exc()
                 logger.error(f"Error in generate_stream generator: {e}", exc_info=True)
@@ -510,15 +555,17 @@ class BooksStreamResource(Resource):
                 # Ensure this also yields an error if the generator itself has an issue
                 yield encode_message({"error": str(e), "trace": error_trace})
 
-        # Return the streaming response with proper configuration
-        return Response(
-            generate_stream(),
-            mimetype="text/plain",
-            direct_passthrough=True,
+        # Return the streaming response with text/event-stream for browser compatibility
+        # but still using JSONL format (no data: prefix)
+        response = Response(
+            stream_with_context(generate_stream()),
+            mimetype="text/event-stream",
             headers={
+                "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
-                "Cache-Control": "no-cache, no-transform",
-                "Content-Type": "text/plain",
-                "Transfer-Encoding": "chunked",
+                "Content-Type": "text/event-stream; charset=utf-8",
+                "Access-Control-Allow-Origin": "*",
             },
         )
+        response.implicit_sequence_conversion = False
+        return response

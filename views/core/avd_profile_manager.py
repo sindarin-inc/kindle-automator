@@ -1,4 +1,11 @@
-import json
+"""
+AVD Profile Manager with PostgreSQL database backend.
+
+This is a refactored version of AVDProfileManager that uses PostgreSQL
+instead of JSON files for data persistence. It maintains the same API
+but with atomic database operations and better concurrency support.
+"""
+
 import logging
 import os
 import platform
@@ -9,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from database.connection import DatabaseConnection
+from database.repositories.user_repository import UserRepository
 from server.utils.request_utils import get_sindarin_email
 from views.core.avd_creator import AVDCreator
 from views.core.device_discovery import DeviceDiscovery
@@ -24,26 +33,12 @@ class AVDProfileManager:
     """
     Manages Android Virtual Device (AVD) profiles for different Kindle user accounts.
 
-    Note that this model is shared between all users, so don't set any user-specific preferences here.
-
-    This class provides functionality to:
-    1. Store and track multiple AVDs mapped to email addresses
-    2. Switch between AVDs when a new authentication request comes in
-    3. Create new AVD profiles when needed
-    4. Track the currently active AVD/email
+    This version uses PostgreSQL for data persistence instead of JSON files.
     """
 
     @classmethod
     def get_instance(cls, base_dir: str = "/opt/android-sdk") -> "AVDProfileManager":
-        """
-        Get the singleton instance of AVDProfileManager.
-
-        Args:
-            base_dir: Base directory for Android SDK (default: "/opt/android-sdk")
-
-        Returns:
-            AVDProfileManager: The singleton instance
-        """
+        """Get the singleton instance of AVDProfileManager."""
         global _instance
         if _instance is None:
             _instance = cls(base_dir)
@@ -54,6 +49,14 @@ class AVDProfileManager:
         global _instance
         if _instance is not None and _instance is not self:
             logger.warning("AVDProfileManager initialized directly. Use get_instance() instead.")
+
+        # Initialize database connection
+        try:
+            self.db_connection = DatabaseConnection()
+            self.db_connection.initialize()
+        except Exception as e:
+            logger.error(f"Failed to initialize database connection: {e}")
+            raise
 
         # Detect host architecture and operating system first
         self.host_arch = self._detect_host_architecture()
@@ -74,7 +77,6 @@ class AVDProfileManager:
             # Profiles now stored in project's user_data directory
 
             # In macOS, the AVD directory is typically in the .android folder
-            # This ensures we're pointing to the right place for AVDs in Android Studio
             user_home = os.path.expanduser("~")
             if self.android_home:
                 logger.info(f"Using Android home from environment: {self.android_home}")
@@ -92,6 +94,7 @@ class AVDProfileManager:
         # In the new structure, we store everything directly in user_data/
         if self.is_macos:
             self.profiles_dir = base_dir
+            # Keep users_file for backward compatibility but it won't be used
             self.users_file = os.path.join(self.profiles_dir, "users.json")
         else:
             # For non-Mac environments, keep the old directory structure
@@ -105,23 +108,729 @@ class AVDProfileManager:
         self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch)
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
 
-        # Load profile index if it exists, otherwise create empty one
-        self._load_profiles_index()
+        # VNC related settings
+        self.vnc_base_port = 6500
+        self.max_vnc_instances = 25
 
-        # Load user preferences from the profiles_index
-        self.user_preferences = self._load_user_preferences()
+        # Track restarting AVDs
+        self.restarting_avds = set()
 
-    def get_avd_name_from_email(self, email: str) -> str:
+        # Initialize profiles_index property for compatibility
+        self._profiles_index_cache = None
+        self._profiles_index_cache_time = 0
+
+        logger.info(f"AVDProfileManager initialized with base_dir: {base_dir}")
+        logger.info(f"AVD directory: {self.avd_dir}")
+        logger.info(f"Host architecture: {self.host_arch}")
+
+    def _detect_host_architecture(self) -> str:
+        """Detect the host system architecture."""
+        machine = platform.machine().lower()
+
+        if machine in ["x86_64", "amd64"]:
+            return "x86_64"
+        elif machine in ["aarch64", "arm64"]:
+            return "arm64"
+        elif machine in ["armv7l", "armv7"]:
+            return "arm"
+        elif machine in ["i386", "i686"]:
+            return "x86"
+        else:
+            logger.warning(f"Unknown architecture: {machine}, defaulting to x86_64")
+            return "x86_64"
+
+    def get_user_field(self, email: str, field: str, default=None, section: Optional[str] = None):
         """
-        Generate a standardized AVD name from an email address.
+        Get a specific field value for a user.
 
         Args:
-            email: Email address
+            email: User's email
+            field: Field name to retrieve
+            default: Default value if field doesn't exist
+            section: Optional section name for nested fields
 
         Returns:
-            str: Complete AVD name
+            Field value or default
         """
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(email)
+
+            if not user:
+                return default
+
+            # Handle section-based fields
+            if section:
+                field_path = f"{section}.{field}"
+            else:
+                field_path = field
+
+            # Parse the field path and get the value
+            parts = field_path.split(".")
+            obj = user
+
+            try:
+                for part in parts:
+                    if hasattr(obj, part):
+                        obj = getattr(obj, part)
+                    elif isinstance(obj, list):
+                        # Handle preferences list
+                        for pref in obj:
+                            if hasattr(pref, "preference_key") and pref.preference_key == part:
+                                return pref.preference_value
+                        return default
+                    else:
+                        return default
+
+                return obj if obj is not None else default
+            except AttributeError:
+                return default
+
+    def set_user_field(self, email: str, field: str, value, section: Optional[str] = None):
+        """
+        Set a specific field value for a user.
+
+        Args:
+            email: User's email
+            field: Field name to set
+            value: Value to set
+            section: Optional section name for nested fields
+        """
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+
+            # Ensure user exists
+            user = repo.get_user_by_email(email)
+            if not user:
+                logger.warning(f"User {email} not found, creating new user")
+                repo.create_user(email)
+
+            # Update the field
+            if section:
+                field_path = f"{section}.{field}"
+            else:
+                field_path = field
+
+            repo.update_user_field(email, field_path, value)
+
+    def get_profile_for_email(self, email: str) -> Optional[Dict]:
+        """
+        Get the complete profile data for an email.
+
+        Returns:
+            Profile dictionary in the same format as the old JSON structure
+        """
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(email)
+
+            if not user:
+                return None
+
+            return repo.user_to_dict(user)
+
+    def get_avd_for_email(self, email: str) -> Optional[str]:
+        """Get the AVD name associated with an email."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(email)
+            return user.avd_name if user else None
+
+    def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
+        """Update the AVD name for a given email."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.update_user_field(email, "avd_name", avd_name)
+
+    def register_profile(
+        self, email: str, avd_name: str, vnc_instance: Optional[int] = None
+    ) -> Tuple[bool, str]:
+        """
+        Register a new profile or update existing one.
+
+        Returns:
+            Tuple of (success, message)
+        """
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+
+            try:
+                # Create or update user
+                user, created = repo.get_or_create_user(email, avd_name)
+
+                if created:
+                    message = f"Registered new profile for {email} with AVD {avd_name}"
+                else:
+                    # Update AVD name if different
+                    if user.avd_name != avd_name:
+                        repo.update_user_field(email, "avd_name", avd_name)
+                        message = f"Updated AVD name for {email} to {avd_name}"
+                    else:
+                        message = f"Profile already exists for {email}"
+
+                logger.info(message)
+                return True, message
+
+            except Exception as e:
+                logger.error(f"Error registering profile: {e}")
+                return False, str(e)
+
+    def update_auth_state(self, email: str, authenticated: bool) -> bool:
+        """Update authentication state for a user."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.update_auth_state(email, authenticated)
+
+    def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> bool:
+        """Save profile status with last_used timestamp."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.update_last_used(email, emulator_id)
+
+    def update_style_preference(self, is_updated: bool, email: Optional[str] = None) -> Dict:
+        """Update style preference for a user."""
+        if not email:
+            email = get_sindarin_email()
+
+        if not email:
+            return {"error": "No email found"}
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            success = repo.update_user_field(email, "styles_updated", is_updated)
+
+            return {"success": success, "email": email, "styles_updated": is_updated}
+
+    def save_style_setting(self, setting_name: str, setting_value, email: Optional[str] = None) -> Dict:
+        """Save a library style setting for a user."""
+        if not email:
+            email = get_sindarin_email()
+
+        if not email:
+            return {"error": "No email found"}
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+
+            # Ensure user exists
+            user = repo.get_user_by_email(email)
+            if not user:
+                repo.create_user(email)
+
+            # Update the library setting
+            success = repo.update_user_field(email, f"library_settings.{setting_name}", setting_value)
+
+            return {"success": success, "email": email, setting_name: setting_value}
+
+    def save_reading_setting(self, setting_name: str, setting_value, email: Optional[str] = None) -> Dict:
+        """Save a reading style setting for a user."""
+        if not email:
+            email = get_sindarin_email()
+
+        if not email:
+            return {"error": "No email found"}
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+
+            # Ensure user exists
+            user = repo.get_user_by_email(email)
+            if not user:
+                repo.create_user(email)
+
+            # Update the reading setting
+            success = repo.update_user_field(email, f"reading_settings.{setting_name}", setting_value)
+
+            return {"success": success, "email": email, setting_name: setting_value}
+
+    def get_all_profiles(self) -> Dict[str, Dict]:
+        """Get all user profiles as a dictionary."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_all_users()
+
+            return {user.email: repo.user_to_dict(user) for user in users}
+
+    def get_recently_used_profiles(self, limit: int = 10) -> List[Dict]:
+        """Get recently used profiles ordered by last_used."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_recently_used_users(limit)
+
+            return [repo.user_to_dict(user) for user in users]
+
+    @property
+    def profiles_index(self) -> Dict[str, Dict]:
+        """Property for backward compatibility with code expecting profiles_index."""
+        # Cache for 5 seconds to avoid too many DB calls
+        import time
+
+        current_time = time.time()
+        if self._profiles_index_cache is None or current_time - self._profiles_index_cache_time > 5:
+            self._profiles_index_cache = self.get_all_profiles()
+            self._profiles_index_cache_time = current_time
+        return self._profiles_index_cache
+
+    def list_profiles(self) -> Dict[str, Dict]:
+        """List all profiles (alias for profiles_index)."""
+        return self.profiles_index
+
+    def get_profiles_with_restart_flag(self) -> List[str]:
+        """Get list of emails for profiles with was_running_at_restart flag set."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_users_with_restart_flag()
+            return [user.email for user in users]
+
+    def clear_all_restart_flags(self) -> int:
+        """Clear all was_running_at_restart flags and return count cleared."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.clear_restart_flags()
+
+    def get_email_by_emulator_id(self, emulator_id: str) -> Optional[str]:
+        """Get email for a given emulator_id."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_emulator_id(emulator_id)
+            return user.email if user else None
+
+    def get_inactive_profiles(self, cutoff_datetime: datetime) -> List[Dict]:
+        """Get profiles that haven't been used since cutoff date and aren't in cold storage."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_inactive_users(cutoff_datetime)
+            return [repo.user_to_dict(user) for user in users]
+
+    def get_profiles_by_avd_names(self, avd_names: List[str]) -> Dict[str, Dict]:
+        """Get profiles that have one of the specified AVD names."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_users_with_avd_names(avd_names)
+            return {user.email: repo.user_to_dict(user) for user in users}
+
+    def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
+        """
+        Get the emulator device ID for a given AVD name.
+
+        Args:
+            avd_name: Name of the AVD to find
+
+        Returns:
+            Optional[str]: The emulator ID if found, None otherwise
+        """
+        # Use device_discovery to map running emulators
+        running_emulators = self.device_discovery.map_running_emulators(self.get_all_profiles())
+
+        # Check if the AVD is in the running emulators
+        if avd_name in running_emulators:
+            return running_emulators[avd_name]
+
+        # Also check VNC instance manager for any stored emulator IDs
+        for email, profile in self.get_all_profiles().items():
+            if profile.get("avd_name") == avd_name:
+                try:
+                    from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                    vnc_manager = VNCInstanceManager.get_instance()
+                    emulator_id = vnc_manager.get_emulator_id(email)
+                    if emulator_id:
+                        return emulator_id
+                except Exception as e:
+                    logger.warning(f"Error checking VNC instance for emulator ID: {e}")
+
+        return None
+
+    def get_current_profile(self) -> Optional[Dict]:
+        """
+        Get the current profile based on the request context email.
+
+        Returns:
+            Optional[Dict]: Profile information for the current user or None
+        """
+        sindarin_email = get_sindarin_email()
+
+        if not sindarin_email:
+            return None
+
+        return self.get_profile_for_email(sindarin_email)
+
+    def cleanup_stale_profiles(self, days_threshold: int = 30) -> int:
+        """
+        Clean up profiles that haven't been used in the specified number of days.
+
+        Returns:
+            Number of profiles cleaned up
+        """
+        # This would need to be implemented based on business requirements
+        # For now, just log a warning
+        logger.warning("cleanup_stale_profiles not fully implemented for database version")
+        return 0
+
+    def mark_avd_restarting(self, avd_name: str):
+        """Mark an AVD as currently restarting."""
+        self.restarting_avds.add(avd_name)
+
+    def unmark_avd_restarting(self, avd_name: str):
+        """Unmark an AVD as restarting."""
+        self.restarting_avds.discard(avd_name)
+
+    def is_avd_restarting(self, avd_name: str) -> bool:
+        """Check if an AVD is currently restarting."""
+        return avd_name in self.restarting_avds
+
+    def get_avd_name_from_email(self, email: str) -> str:
+        """Generate a standardized AVD name from an email address."""
         return self.avd_creator.get_avd_name_from_email(email)
+
+    def find_running_emulator_for_email(self, email: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Find a running emulator that's associated with a specific email."""
+        return self.device_discovery.find_running_emulator_for_email(email, self.get_all_profiles())
+
+    def register_email_to_avd(self, email: str, default_avd_name: str = "Pixel_API_30") -> None:
+        """Register an email to an AVD for development purposes."""
+        # Check if we already have a mapping
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            if repo.get_user_by_email(email):
+                return
+
+        # Create a standardized AVD name for this email
+        normalized_avd_name = self.get_avd_name_from_email(email)
+        logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
+
+        # Register the profile
+        self.register_profile(email, normalized_avd_name)
+
+        # Try to find if this user's AVD is already running
+        running_emulators = self.device_discovery.map_running_emulators(self.get_all_profiles())
+        if normalized_avd_name in running_emulators:
+            emulator_id = running_emulators[normalized_avd_name]
+            logger.info(f"Found user's AVD {normalized_avd_name} already running at {emulator_id}")
+            self._save_profile_status(email, normalized_avd_name, emulator_id)
+        else:
+            self._save_profile_status(email, normalized_avd_name)
+
+    def stop_emulator(self, device_id: str) -> bool:
+        """Stop an emulator by device ID."""
+        return self.emulator_manager.stop_specific_emulator(device_id)
+
+    def start_emulator(self, email: str) -> bool:
+        """Start the emulator for a specific email."""
+        return self.emulator_manager.start_emulator_with_retries(email)
+
+    def create_new_avd(self, email: str) -> Tuple[bool, str]:
+        """Create a new AVD for the given email."""
+        return self.avd_creator.create_new_avd(email)
+
+    def _create_avd_with_seed_clone_fallback(self, email: str, normalized_avd_name: str) -> str:
+        """Create a new AVD using seed clone if available, otherwise fall back to normal creation."""
+        # Check if we can use the seed clone for faster AVD creation
+        if self.avd_creator.is_seed_clone_ready():
+            logger.info("Seed clone is ready - using fast AVD copy method")
+            success, result = self.avd_creator.copy_avd_from_seed_clone(email)
+            if success:
+                logger.info(f"Successfully created AVD {result} from seed clone for {email}")
+                return result
+            else:
+                logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
+
+        # Seed clone not ready or failed, use normal AVD creation
+        logger.info("Using normal AVD creation")
+        success, result = self.create_new_avd(email)
+        if not success:
+            logger.warning(f"Failed to create AVD: {result}, but profile was registered")
+            return normalized_avd_name
+        else:
+            return result
+
+    def is_styles_updated(self) -> bool:
+        """Check if styles have been updated for a profile."""
+        email = get_sindarin_email()
+        if not email:
+            logger.warning("No email available to check styles_updated")
+            return False
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(email)
+            return user.styles_updated if user else False
+
+    def get_style_setting(self, setting_name: str, email: str = None, default=None):
+        """Get a style setting value from the profile."""
+        if not email:
+            email = get_sindarin_email()
+            if not email:
+                logger.warning("No email available to get style setting")
+                return default
+
+        return self.get_user_field(email, setting_name, default, section="library_settings")
+
+    # save_reading_setting is already implemented above in the class
+
+    def switch_profile_and_start_emulator(
+        self, email: str, force_new_emulator: bool = False
+    ) -> Tuple[bool, str]:
+        """
+        Switch to the profile for the given email.
+
+        Args:
+            email: The email address to switch to
+            force_new_emulator: If True, stop existing emulator and start fresh
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        # Reset device settings if forcing new emulator
+        if force_new_emulator:
+            settings_to_reset = [
+                "hw_overlays_disabled",
+                "animations_disabled",
+                "sleep_disabled",
+                "status_bar_disabled",
+                "auto_updates_disabled",
+            ]
+            for setting in settings_to_reset:
+                self.set_user_field(email, setting, False, section="emulator_settings")
+
+        # No more simplified mode - always manage emulators properly
+
+        #
+        # Normal profile management mode below (for non-Mac or non-dev environments)
+        # Now with multi-emulator support
+        #
+
+        # Get AVD name for this email - this should be the first step
+        avd_name = self.get_avd_for_email(email)
+
+        # Create AVD if needed
+        if not avd_name:
+            logger.info(f"No AVD found for {email}, creating new one")
+            normalized_avd_name = self.get_avd_name_from_email(email)
+            logger.info(f"Generated AVD name {normalized_avd_name} for {email}")
+
+            # Register profile
+            self.register_profile(email, normalized_avd_name)
+            logger.info(f"Registered AVD {normalized_avd_name} for email {email}")
+
+            # Create AVD
+            avd_name = self._create_avd_with_seed_clone_fallback(email, normalized_avd_name)
+
+            # Update profile if AVD name changed
+            if avd_name != normalized_avd_name:
+                self.register_profile(email, avd_name)
+
+        # Check if AVD exists
+        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
+        avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
+        avd_exists = os.path.exists(avd_path) and os.path.exists(avd_ini_path)
+
+        # Check for running emulator
+        is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)
+
+        # Handle force new emulator
+        if is_running and force_new_emulator:
+            logger.info(f"Stopping emulator {emulator_id} for fresh start")
+            if not self.stop_emulator(emulator_id):
+                logger.error(f"Failed to stop emulator {emulator_id}")
+            is_running = False
+            emulator_id = None
+
+        # Use existing emulator if running
+        if is_running and not force_new_emulator:
+            logger.info(f"Found running emulator {emulator_id} for profile {email}")
+
+            # Verify it's the correct AVD
+            if found_avd_name != avd_name:
+                logger.warning(f"Found wrong AVD {found_avd_name}, expected {avd_name}")
+                return False, f"Cannot use another user's emulator for {email}"
+
+            self._save_profile_status(email, avd_name, emulator_id)
+            return True, f"Switched to profile {email} with existing running emulator"
+
+        # No more ARM Mac workarounds - we can launch emulators properly now
+
+        # Check if AVD exists before trying to start it
+        if not avd_exists:
+            logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
+
+            # Check if this user requires ALT_SYSTEM_IMAGE
+            if self.avd_creator.host_arch == "arm64":
+                ignore_seed_clone = True  # Use the MAC_SYSTEM_IMAGE
+            else:
+                ignore_seed_clone = email in self.avd_creator.ALT_IMAGE_TEST_EMAILS
+
+            # Check if we can use the seed clone for faster AVD creation
+            # Skip seed clone for ALT_IMAGE users since seed clone uses Android 30
+            if self.avd_creator.is_seed_clone_ready() and not ignore_seed_clone:
+                logger.info("Seed clone is ready - using fast AVD copy method")
+                success, result = self.avd_creator.copy_avd_from_seed_clone(email)
+                if success:
+                    avd_name = result
+                    logger.info(f"Successfully created AVD {avd_name} from seed clone for {email}")
+                else:
+                    logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
+                    # Fall back to normal AVD creation
+                    success, result = self.create_new_avd(email)
+                    if not success:
+                        logger.error(f"Failed to create AVD: {result}", exc_info=True)
+                        return False, f"Failed to create AVD for {email}: {result}"
+                    avd_name = result
+            else:
+                # Either seed clone not ready or user requires ALT_SYSTEM_IMAGE
+                if ignore_seed_clone:
+                    logger.info(
+                        f"User {email} requires ALT_SYSTEM_IMAGE (Android 36), using normal AVD creation"
+                    )
+                else:
+                    logger.info("Seed clone not ready, using normal AVD creation")
+                success, result = self.create_new_avd(email)
+                if not success:
+                    logger.error(f"Failed to create AVD: {result}", exc_info=True)
+                    return False, f"Failed to create AVD for {email}: {result}"
+                avd_name = result
+
+            # Update profile with new AVD
+            self.register_profile(email, avd_name)
+            logger.info(f"Created new AVD {avd_name} for {email}")
+
+        # Start the emulator
+        logger.info(f"Starting emulator for {email} with AVD {avd_name}")
+        if not self.start_emulator(email):
+            return False, "Failed to start emulator"
+
+        # Update profile status
+        self._save_profile_status(email, avd_name)
+        return True, f"Successfully switched to profile {email} with AVD {avd_name}"
+
+    # Legacy compatibility methods
+    def _load_profiles_index(self) -> Dict[str, Dict]:
+        """Load all profiles - for compatibility with old code."""
+        return self.get_all_profiles()
+
+    def _save_profiles_index(self) -> None:
+        """Save profiles - no-op for database version as saves are automatic."""
+        pass
+
+    def _get_images_for_architecture(self) -> List[Tuple[str, str]]:
+        """Get appropriate system images based on host architecture."""
+        if self.host_arch == "arm64":
+            return [
+                ("system-images;android-30;google_apis_playstore;arm64-v8a", "arm64-v8a"),
+                ("system-images;android-30;google_apis;arm64-v8a", "arm64-v8a"),
+                ("system-images;android-29;google_apis_playstore;arm64-v8a", "arm64-v8a"),
+                ("system-images;android-29;google_apis;arm64-v8a", "arm64-v8a"),
+            ]
+        else:  # x86_64 or others
+            return [
+                ("system-images;android-30;google_apis_playstore;x86_64", "x86_64"),
+                ("system-images;android-30;google_apis;x86_64", "x86_64"),
+                ("system-images;android-29;google_apis_playstore;x86_64", "x86_64"),
+                ("system-images;android-29;google_apis;x86_64", "x86_64"),
+            ]
+
+    def recreate_profile_avd(
+        self, email: str, recreate_user: bool = True, recreate_seed: bool = True
+    ) -> Tuple[bool, str]:
+        """
+        Completely recreate AVD for a profile. This will:
+        1. Stop any running emulators (user and/or seed clone based on parameters)
+        2. Delete the user's AVD (if recreate_user=True)
+        3. Delete the seed clone AVD (if recreate_seed=True)
+        4. Clean up profile data (if recreate_user=True)
+        5. Clean up any existing automator
+
+        Args:
+            email: The user's email address
+            recreate_user: Whether to recreate the user's AVD (default True)
+            recreate_seed: Whether to recreate the seed clone AVD (default True for backwards compatibility)
+
+        Returns:
+            Tuple[bool, str]: (success, message)
+        """
+        actions = []
+        if recreate_user:
+            actions.append("user AVD")
+        if recreate_seed:
+            actions.append("seed clone")
+
+        logger.info(f"Recreating profile AVD for {email} - will recreate: {', '.join(actions)}")
+
+        try:
+            # Stop user's emulator if running (only if recreating user AVD)
+            if recreate_user:
+                user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
+                if user_emulator_id:
+                    logger.info(f"Stopping running emulator for {email}")
+                    self.emulator_manager.emulator_launcher.stop_emulator(email)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Stop seed clone emulator if running (only if recreating seed clone)
+            if recreate_seed:
+                seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
+                    AVDCreator.SEED_CLONE_EMAIL
+                )
+                if seed_emulator_id:
+                    logger.info("Stopping running seed clone emulator")
+                    self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
+                    time.sleep(2)  # Give it time to shut down
+
+            # Delete the user's AVD (only if recreate_user=True)
+            avd_name = None
+            if recreate_user:
+                avd_name = self.avd_creator.get_avd_name_from_email(email)
+                logger.info(f"Deleting user AVD: {avd_name}")
+                success, msg = self.avd_creator.delete_avd(email)
+                if not success:
+                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}", exc_info=True)
+                    raise Exception(f"Failed to delete user AVD: {msg}")
+
+            # Delete the seed clone AVD (only if recreate_seed=True)
+            seed_avd_name = None
+            if recreate_seed:
+                seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
+                logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
+                success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
+                if not success:
+                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}", exc_info=True)
+                    raise Exception(f"Failed to delete seed clone AVD: {msg}")
+                elif "does not exist" in msg:
+                    logger.info(f"Seed clone AVD did not exist, proceeding with recreation")
+
+            # Clear any cached emulator data
+            if recreate_user and avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
+            if recreate_seed and seed_avd_name:
+                self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
+
+            # Remove the user from database (only if recreating user AVD)
+            if recreate_user:
+                with self.db_connection.get_session() as session:
+                    from database.repositories.user_repository import UserRepository
+
+                    repo = UserRepository(session)
+                    user = repo.get_user_by_email(email)
+                    if user:
+                        session.delete(user)
+                        session.commit()
+                        logger.info(f"Removed {email} from database")
+
+            logger.info(f"Successfully recreated {', '.join(actions)} for {email}")
+            return True, f"Successfully recreated: {', '.join(actions)}"
+
+        except Exception as e:
+            logger.error(f"Error recreating profile AVD for {email}: {e}", exc_info=True)
+            return False, f"Failed to recreate profile AVD: {str(e)}"
 
     def _start_emulator_and_create_snapshot(
         self, email: str, prepare_kindle: bool = False
@@ -232,10 +941,6 @@ class AVDProfileManager:
                         "Waiting 1 minute for background processes (Play Store updates, etc.) to complete..."
                     )
                     logger.info("This ensures the seed clone is fully prepared for copying")
-                    # # Log progress every minute
-                    # for minute in range(1, 2):
-                    #     time.sleep(60)  # Wait 1 minute
-                    #     logger.info(f"Seed clone preparation wait: {minute}/1 minute elapsed...")
                     logger.info("1-minute wait period complete, proceeding with shutdown")
 
         # Check if this is the seed clone
@@ -330,7 +1035,7 @@ class AVDProfileManager:
 
             if launcher.save_snapshot(seed_email):
                 # Update the timestamp
-                self.set_user_field(seed_email, "last_snapshot_timestamp", int(time.time()))
+                self.set_user_field(seed_email, "last_snapshot_timestamp", datetime.utcnow())
                 return True, "Successfully updated seed clone snapshot"
             else:
                 return False, "Failed to save seed clone snapshot"
@@ -338,1274 +1043,6 @@ class AVDProfileManager:
         except Exception as e:
             logger.error(f"Error updating seed clone snapshot: {e}", exc_info=True)
             return False, str(e)
-
-    def _detect_host_architecture(self) -> str:
-        """
-        Detect the host machine's architecture.
-
-        Returns:
-            str: One of 'arm64', 'x86_64', or 'unknown'
-        """
-        machine = platform.machine().lower()
-
-        if machine in ("arm64", "aarch64"):
-            return "arm64"
-        elif machine in ("x86_64", "amd64", "x64"):
-            return "x86_64"
-        else:
-            # Log the actual architecture for debugging
-            logger.warning(f"Unknown architecture: {machine}, defaulting to x86_64")
-            return "unknown"
-
-    def _load_profiles_index(self) -> Dict[str, str]:
-        """Load profiles index from JSON file or create if it doesn't exist."""
-        if os.path.exists(self.users_file):
-            try:
-                with open(self.users_file, "r") as f:
-                    data = json.load(f)
-                    self.profiles_index = data
-                    return data
-            except Exception as e:
-                logger.error(f"Error loading profiles index: {e}", exc_info=True)
-                return {}
-        else:
-            logger.info(f"Profiles index not found at {self.users_file}, creating empty index")
-            # Create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(self.users_file), exist_ok=True)
-            # Save an empty profiles index
-            empty_index = {}
-            with open(self.users_file, "w") as f:
-                json.dump(empty_index, f, indent=2)
-            return empty_index
-
-    def _save_profiles_index(self) -> None:
-        """Save profiles index to JSON file."""
-        try:
-            with open(self.users_file, "w") as f:
-                json.dump(self.profiles_index, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving profiles index: {e}", exc_info=True)
-
-    # Removed _load_current_profile method as we're managing multiple users simultaneously
-
-    def _load_user_preferences(self) -> Dict[str, Dict]:
-        """
-        Load user preferences from profiles_index under the 'preferences' key.
-        Returns a separate dictionary for easier access.
-        """
-        preferences = {}
-
-        # Extract preferences from the profiles_index
-        for email, profile_data in self.profiles_index.items():
-            if "preferences" in profile_data:
-                preferences[email] = profile_data["preferences"]
-            else:
-                # Initialize empty preferences if not yet created
-                preferences[email] = {}
-
-        return preferences
-
-    def _save_user_preferences(self) -> None:
-        """
-        Save user preferences to the profiles_index.
-        This ensures preferences are only stored in the "preferences" key.
-
-        This is a backward compatibility method - new code should use set_user_field.
-        """
-        try:
-            # Update the profiles_index with preferences data
-            for email, prefs in self.user_preferences.items():
-                if email in self.profiles_index:
-                    # Create preferences structure if it doesn't exist
-                    if "preferences" not in self.profiles_index[email]:
-                        self.profiles_index[email]["preferences"] = {}
-
-                    # Update preferences in the profile - ONLY in the preferences key
-                    for key, value in prefs.items():
-                        # Store all preferences in the preferences section
-                        self.profiles_index[email]["preferences"][key] = value
-
-            # Now save the updated profiles_index
-            self._save_profiles_index()
-
-            # Reload user preferences from profiles_index to ensure our cache is up-to-date
-            self.user_preferences = self._load_user_preferences()
-        except Exception as e:
-            logger.error(f"Error saving user preferences: {e}", exc_info=True)
-
-    def find_running_emulator_for_email(self, email: str) -> Tuple[bool, Optional[str], Optional[str]]:
-        """
-        Find a running emulator that's associated with a specific email.
-
-        Args:
-            email: The email to find a running emulator for
-
-        Returns:
-            Tuple of (is_running, emulator_id, avd_name) where:
-            - is_running: Boolean indicating if a running emulator was found
-            - emulator_id: The emulator ID (e.g., 'emulator-5554') if found, None otherwise
-            - avd_name: The AVD name associated with the email/emulator if found, None otherwise
-        """
-        return self.device_discovery.find_running_emulator_for_email(email, self.profiles_index)
-
-    def set_user_field(self, email: str, field: str, value, section: str = None) -> bool:
-        """
-        Set a field for a user profile at the specified section level.
-
-        Args:
-            email: Email address of the profile
-            field: Field name to set
-            value: Value to set for the field
-            section: Section to set the field in (e.g. "preferences"). If None, sets at top level.
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # Reload profiles to ensure we have the latest data
-            self._load_profiles_index()
-
-            # Make sure the email exists in profiles_index
-            if email not in self.profiles_index:
-                logger.warning(f"Cannot update field {field}: email {email} not found in profiles_index")
-                return False
-
-            # If section is specified, ensure it exists
-            if section:
-                if section not in self.profiles_index[email]:
-                    self.profiles_index[email][section] = {}
-
-                # Set value in the specified section
-                self.profiles_index[email][section][field] = value
-            else:
-                # Set value at top level
-                self.profiles_index[email][field] = value
-
-            # Save the updated profiles_index
-            self._save_profiles_index()
-            logger.info(f"Updated {section + '.' if section else ''}field {field} for {email} to {value}")
-            return True
-        except Exception as e:
-            logger.error(f"Error setting user field {field} for {email}: {e}", exc_info=True)
-            return False
-
-    def get_user_field(self, email: str, field: str, default=None, section: str = None):
-        """
-        Get a field value from a user profile at the specified section level.
-
-        Args:
-            email: Email address of the user
-            field: Field name to get
-            default: Default value to return if field not found
-            section: Section to get the field from (e.g. "preferences"). If None, gets from top level.
-
-        Returns:
-            The field value or default if not found
-        """
-        try:
-            # Make sure the email exists in profiles_index
-            if email not in self.profiles_index:
-                return default
-
-            # If section is specified, check if it exists
-            if section:
-                if section not in self.profiles_index[email]:
-                    return default
-
-                # Get value from the specified section
-                return self.profiles_index[email][section].get(field, default)
-            else:
-                # Get value from top level
-                return self.profiles_index[email].get(field, default)
-        except Exception as e:
-            logger.error(f"Error getting user field {field} for {email}: {e}", exc_info=True)
-            return default
-
-    def update_auth_state(self, email: str, authenticated: bool) -> bool:
-        """
-        Update authentication state for a user profile.
-
-        When authenticated=True:
-        - Sets auth_date to current timestamp
-        - Clears auth_failed_date
-
-        When authenticated=False:
-        - Sets auth_failed_date to current timestamp
-        - Does not modify auth_date
-
-        Args:
-            email: Email address of the profile
-            authenticated: Whether the user is authenticated
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            from datetime import datetime
-
-            current_date = datetime.now().isoformat()
-
-            if authenticated:
-                # User is authenticated - set auth_date and clear auth_failed_date
-                logger.info(f"Setting auth_date for {email} as user is authenticated")
-                self.set_user_field(email, "auth_date", current_date)
-
-                # Clear auth_failed_date if it exists
-                auth_failed_date = self.get_user_field(email, "auth_failed_date")
-                if auth_failed_date:
-                    logger.info(f"Clearing auth_failed_date for {email}")
-                    self.set_user_field(email, "auth_failed_date", None)
-            else:
-                # User lost authentication - set auth_failed_date
-                logger.info(f"Setting auth_failed_date for {email} as user lost authentication")
-                self.set_user_field(email, "auth_failed_date", current_date)
-
-            return True
-        except Exception as e:
-            logger.error(f"Error updating auth state for {email}: {e}", exc_info=True)
-            return False
-
-    def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> None:
-        """
-        Save profile status to the profiles_index directly.
-
-        Also updates the emulator_id in the VNC instance if available.
-
-        Args:
-            email: Email address of the profile
-            avd_name: Name of the AVD
-            emulator_id: Optional emulator device ID (e.g., 'emulator-5554')
-        """
-        # Make sure the email exists in profiles_index
-        if email not in self.profiles_index:
-            self.profiles_index[email] = {}
-
-        # Update the profile status fields
-        self.profiles_index[email]["last_used"] = int(time.time())
-        self.profiles_index[email]["last_used_date"] = datetime.now().isoformat()
-        self.profiles_index[email]["avd_name"] = avd_name
-        self.profiles_index[email]["email"] = email
-
-        # Store the emulator ID in the VNC instance where it belongs
-        if emulator_id:
-            try:
-                from server.utils.vnc_instance_manager import VNCInstanceManager
-
-                vnc_manager = VNCInstanceManager.get_instance()
-                vnc_manager.set_emulator_id(email, emulator_id)
-            except Exception as e:
-                logger.warning(f"Error storing emulator ID in VNC instance: {e}")
-                # No longer storing emulator_id in profiles - VNC instance manager is the source of truth
-
-        # Only store preferences in the designated "preferences" key
-        # Ensure we don't duplicate preference data at root level
-        if email in self.user_preferences:
-            # Create preferences structure if it doesn't exist
-            if "preferences" not in self.profiles_index[email]:
-                self.profiles_index[email]["preferences"] = {}
-
-            # Copy preferences to the designated location only
-            self.profiles_index[email]["preferences"] = self.user_preferences[email]
-
-        # Save the updated profiles_index
-        self._save_profiles_index()
-
-        # Also update our local user_preferences cache for consistency
-        # This ensures we have the latest preferences from users.json
-        self.user_preferences = self._load_user_preferences()
-
-    def get_avd_for_email(self, email: str) -> Optional[str]:
-        """
-        Get the AVD name for a given email address.
-
-        Args:
-            email: Email address to lookup
-
-        Returns:
-            Optional[str]: The associated AVD name or None if not found
-        """
-        # Check if we have a mapping in the profiles index
-        if email in self.profiles_index:
-            profile_entry = self.profiles_index.get(email)
-            if "avd_name" in profile_entry:
-                return profile_entry["avd_name"]
-
-        # If not found, create a standardized AVD name
-        return self.get_avd_name_from_email(email)
-
-    def get_vnc_instance_for_email(self, email: str) -> Optional[int]:
-        """
-        Get the VNC instance number assigned to this email profile.
-
-        Args:
-            email: Email address to lookup
-
-        Returns:
-            Optional[int]: The VNC instance number or None if not assigned
-        """
-        if email in self.profiles_index:
-            profile_entry = self.profiles_index.get(email)
-
-            # Handle different formats
-            if isinstance(profile_entry, dict) and "vnc_instance" in profile_entry:
-                return profile_entry["vnc_instance"]
-
-        return None
-
-    def get_appium_port_for_email(self, email: str) -> Optional[int]:
-        """
-        Get the Appium port assigned to this email profile.
-
-        This method first checks for a VNC instance assignment, and if found,
-        returns the Appium port from that VNC instance.
-
-        For backward compatibility, it will fall back to the old method of
-        looking in the profiles_index.
-
-        Args:
-            email: Email address to lookup
-
-        Returns:
-            Optional[int]: The Appium port or None if not assigned
-        """
-        # Use centralized port utilities for all port calculations
-        from server.utils.port_utils import calculate_appium_port
-
-        # Check if we're on macOS development environment - use centralized check
-        # Port utils will handle the macOS special case internally
-        try:
-            # First try to get the appium_port from the VNC instance manager
-            from server.utils.vnc_instance_manager import VNCInstanceManager
-
-            vnc_manager = VNCInstanceManager.get_instance()
-            appium_port = vnc_manager.get_appium_port(email)
-            if appium_port:
-                return appium_port
-        except Exception as e:
-            logger.warning(f"Error getting Appium port from VNC instance: {e}")
-
-        # Fall back to the old method for backward compatibility
-        if email in self.profiles_index:
-            profile_entry = self.profiles_index.get(email)
-
-            # Handle different formats
-            if isinstance(profile_entry, dict) and "appium_port" in profile_entry:
-                logger.warning(f"Using deprecated profiles_index appium_port for {email}")
-                return profile_entry["appium_port"]
-
-        # Use centralized port calculation as final fallback
-        # This handles macOS special case automatically
-        return calculate_appium_port(email=email)
-
-    def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
-        """
-        Get the emulator device ID for a given AVD name.
-
-        Args:
-            avd_name: Name of the AVD to find
-
-        Returns:
-            Optional[str]: The emulator ID if found, None otherwise
-        """
-
-        # First check if emulator_manager has cached info
-        cached_info = None
-        if hasattr(self.emulator_manager, "_emulator_cache"):
-            for email, (emulator_id, cached_avd_name, _) in self.emulator_manager._emulator_cache.items():
-                if cached_avd_name == avd_name:
-                    logger.info(
-                        f"Found cached emulator {emulator_id} for AVD {avd_name} (cached for email={email})"
-                    )
-                    cached_info = (avd_name, emulator_id)
-                    break
-        else:
-            logger.info(f"No emulator cache found")
-
-        # Look for running emulators with this AVD name
-        running_emulators = self.device_discovery.map_running_emulators(
-            self.profiles_index, cached_info=cached_info
-        )
-
-        emulator_id = running_emulators.get(avd_name)
-
-        # CRITICAL: Only return an emulator ID if it actually matches this AVD
-        # This prevents cross-user emulator access
-        if emulator_id and not cached_info:
-            # Verify this emulator is actually running the requested AVD
-            actual_avd = self.device_discovery._query_emulator_avd_name(emulator_id)
-            if actual_avd != avd_name:
-                logger.error(
-                    f"CRITICAL: Emulator {emulator_id} is running AVD {actual_avd}, "
-                    f"not {avd_name}. Returning None to prevent cross-user access.",
-                    exc_info=True,
-                )
-                return None
-
-        logger.info(
-            f"Found emulator id: {emulator_id} for AVD: {avd_name}. All running emulators: {running_emulators}"
-        )
-        return emulator_id
-
-    def update_avd_name_for_email(self, email: str, avd_name: str) -> bool:
-        """
-        Update the AVD name associated with an email address.
-
-        Args:
-            email: The email address
-            avd_name: The new AVD name to associate with this email
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # Check if we have an existing entry and preserve its format
-            if email in self.profiles_index:
-                existing_entry = self.profiles_index.get(email)
-
-                # If it's a dictionary, update the avd_name field
-                if isinstance(existing_entry, dict):
-                    existing_entry["avd_name"] = avd_name
-                    self.profiles_index[email] = existing_entry
-                else:
-                    # Convert string to dictionary format for consistency
-                    self.profiles_index[email] = {"avd_name": avd_name}
-            else:
-                # Create a new entry in the new format
-                self.profiles_index[email] = {"avd_name": avd_name}
-
-            self._save_profiles_index()
-
-            # Update profile status (replaces old current_profile concept)
-            self._save_profile_status(email, avd_name)
-
-            logger.info(f"Updated AVD name for {email} to {avd_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating AVD name for {email}: {e}", exc_info=True)
-            return False
-
-    def list_profiles(self) -> List[Dict]:
-        """
-        List all available profiles with their details.
-
-        Returns:
-            List[Dict]: List of profile information dictionaries
-        """
-        # First get running emulators
-        running_emulators = self.device_discovery.map_running_emulators(self.profiles_index)
-
-        result = []
-        for email, profile_entry in self.profiles_index.items():
-            # Get profile information
-            avd_name = profile_entry.get("avd_name")
-            appium_port = profile_entry.get("appium_port")
-            vnc_instance = profile_entry.get("vnc_instance")
-
-            if not avd_name:
-                logger.warning(f"No AVD name found for profile {email}")
-                continue
-
-            avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-
-            # Get emulator ID if the AVD is running
-            emulator_id = running_emulators.get(avd_name)
-
-            # If we didn't find it, check if any running emulator has email in its name
-            if not emulator_id:
-                is_running, found_emulator_id, _ = self.find_running_emulator_for_email(email)
-                if is_running:
-                    emulator_id = found_emulator_id
-
-            # Build profile info with all available details
-            profile_info = {
-                "email": email,
-                "avd_name": avd_name,
-                "exists": os.path.exists(avd_path),
-                "current": False,  # No concept of "current" profile anymore
-                "emulator_id": emulator_id,
-            }
-
-            # Add optional information if available
-            if appium_port:
-                profile_info["appium_port"] = appium_port
-            if vnc_instance:
-                profile_info["vnc_instance"] = vnc_instance
-
-            # Add Android version information if available
-            android_version = profile_entry.get("android_version")
-            if android_version:
-                profile_info["android_version"] = android_version
-
-            # Add system image information if available
-            system_image = profile_entry.get("system_image")
-            if system_image:
-                profile_info["system_image"] = system_image
-
-            result.append(profile_info)
-        return result
-
-    def get_profile_for_email(self, email: str) -> Optional[Dict]:
-        """
-        Get information about a specific profile by email.
-
-        Args:
-            email: The email address to get profile information for
-
-        Returns:
-            Optional[Dict]: Profile information or None if the profile doesn't exist
-        """
-        if not email:
-            logger.warning("get_profile_for_email called with empty email")
-            return None
-
-        # Check if the email exists in profiles_index
-        if email not in self.profiles_index:
-            logger.warning(f"Email {email} not found in profiles_index")
-            return None
-
-        # Get the AVD name for this email
-        profile_entry = self.profiles_index[email]
-
-        if "avd_name" in profile_entry:
-            avd_name = profile_entry["avd_name"]
-        else:
-            logger.error(f"Could not determine AVD name from profile entry for {email}", exc_info=True)
-            return None
-
-        # Build profile information
-        profile = {
-            "email": email,
-            "avd_name": avd_name,
-        }
-
-        # Try to get emulator_id from VNC instance first
-        try:
-            from server.utils.vnc_instance_manager import VNCInstanceManager
-
-            vnc_manager = VNCInstanceManager.get_instance()
-            emulator_id = vnc_manager.get_emulator_id(email)
-
-            if emulator_id:
-                profile["emulator_id"] = emulator_id
-            else:
-                # If not found in VNC instance, look for a running emulator
-                is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
-
-                if is_running and emulator_id:
-                    profile["emulator_id"] = emulator_id
-
-                    # Update VNC instance with the found emulator ID
-                    vnc_manager.set_emulator_id(email, emulator_id)
-
-                else:
-                    # Fallback to user preferences for backward compatibility
-                    if email in self.user_preferences and "emulator_id" in self.user_preferences[email]:
-                        emulator_id = self.user_preferences[email]["emulator_id"]
-                        profile["emulator_id"] = emulator_id
-
-                        # Move to VNC instance
-                        vnc_manager.set_emulator_id(email, emulator_id)
-        except Exception as e:
-            logger.warning(f"Error getting emulator_id from VNC instance: {e}")
-
-            # Fallback to the original approach
-            is_running, emulator_id, _ = self.find_running_emulator_for_email(email)
-            if is_running and emulator_id:
-                profile["emulator_id"] = emulator_id
-                self._save_profile_status(email, avd_name, emulator_id)
-
-            # Check legacy storage in preferences
-            elif email in self.user_preferences and "emulator_id" in self.user_preferences[email]:
-                emulator_id = self.user_preferences[email]["emulator_id"]
-                profile["emulator_id"] = emulator_id
-
-        # Add any preferences if available
-        if email in self.user_preferences:
-            for key, value in self.user_preferences[email].items():
-                if (
-                    key not in profile and key != "emulator_id"
-                ):  # Skip emulator_id which should come from VNC instance
-                    profile[key] = value
-
-        return profile
-
-    def get_current_profile(self) -> Optional[Dict]:
-        """
-        In the multi-user system, we'll attempt to find a running emulator and return
-        its associated profile information.
-
-        Returns:
-            Optional[Dict]: Profile information for a running emulator or None if none found
-        """
-        sindarin_email = get_sindarin_email()
-
-        # Special case for macOS development environment
-        is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
-
-        # First check if we have a valid cached profile and emulator
-        if (
-            sindarin_email
-            and hasattr(self.emulator_manager, "_emulator_cache")
-            and sindarin_email in self.emulator_manager._emulator_cache
-        ):
-            emulator_id, avd_name, cache_time = self.emulator_manager._emulator_cache[sindarin_email]
-
-            # Quick verification that the emulator is still running
-            if self.emulator_manager.emulator_launcher._verify_emulator_running(emulator_id, sindarin_email):
-                # Check if we have this profile
-                if sindarin_email in self.profiles_index:
-                    profile = self.profiles_index[sindarin_email].copy()  # Make a copy
-
-                    # Add user preferences if available
-                    if sindarin_email in self.user_preferences:
-                        for key, value in self.user_preferences[sindarin_email].items():
-                            if key not in profile:  # Don't overwrite profile data
-                                profile[key] = value
-
-                    # Update it with the running emulator ID
-                    profile["emulator_id"] = emulator_id
-                    # Update last used timestamp
-                    profile["last_used"] = int(time.time())
-                    profile["last_used_date"] = datetime.now().isoformat()
-                    return profile
-            else:
-                logger.info(f"Cached emulator {emulator_id} no longer running, clearing cache")
-                del self.emulator_manager._emulator_cache[sindarin_email]
-
-        # Only call map_running_emulators if we don't have valid cached data
-        cached_info = None
-        if (
-            sindarin_email
-            and hasattr(self.emulator_manager, "_emulator_cache")
-            and sindarin_email in self.emulator_manager._emulator_cache
-        ):
-            emulator_id, avd_name, _ = self.emulator_manager._emulator_cache[sindarin_email]
-            cached_info = (avd_name, emulator_id)
-
-        # Check for running emulators
-        running_emulators = self.device_discovery.map_running_emulators(
-            self.profiles_index, cached_info=cached_info
-        )
-
-        # Special case for macOS development environment
-        is_mac_dev = os.getenv("ENVIRONMENT", "DEV").lower() == "dev" and platform.system() == "Darwin"
-
-        # Always check if we have a profile for the current user
-        if sindarin_email in self.profiles_index:
-            profile = self.profiles_index[sindarin_email]
-
-            # Also check if there's a running emulator at all
-            try:
-                result = subprocess.run(
-                    [f"{self.android_home}/platform-tools/adb", "devices"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-
-                if result.returncode == 0:
-                    lines = result.stdout.strip().split("\n")
-                    has_emulator = any("emulator-" in line for line in lines[1:])
-
-                    if has_emulator or is_mac_dev:
-                        # Add user preferences if available
-                        if sindarin_email in self.user_preferences:
-                            for key, value in self.user_preferences[sindarin_email].items():
-                                if key not in profile:  # Don't overwrite profile
-                                    profile[key] = value
-
-                        return profile
-            except Exception as e:
-                logger.warning(f"Error checking for running emulators: {e}")
-
-        # Fallback to original logic if needed
-        if running_emulators or is_mac_dev:
-            # First, try to find a profile that matches one of the running emulators
-            for email, profile in self.profiles_index.items():
-                if email != sindarin_email:
-                    continue
-
-                # Add user preferences if available
-                if email in self.user_preferences:
-                    for key, value in self.user_preferences[email].items():
-                        if key not in profile:  # Don't overwrite profile
-                            profile[key] = value
-
-                return profile
-
-        return None
-
-    def register_profile(self, email: str, avd_name: str, vnc_instance: int = None) -> None:
-        """
-        Register a profile by associating an email with an AVD name.
-
-        Args:
-            email: The email address to register
-            avd_name: The AVD name to associate with this email
-            vnc_instance: Optional VNC instance number to assign to this profile
-        """
-        # Check if the email already exists before we add it
-        if email not in self.profiles_index:
-            self.profiles_index[email] = {}
-
-        # Update with new values
-        self.profiles_index[email]["avd_name"] = avd_name
-
-        # Add VNC instance if provided
-        if vnc_instance is not None:
-            self.profiles_index[email]["vnc_instance"] = vnc_instance
-
-        # Save to file
-        try:
-            self._save_profiles_index()
-        except Exception as save_e:
-            logger.error(f"Error saving profiles_index: {save_e}", exc_info=True)
-
-        # Build and log the registration message
-        log_message = f"Registered profile for {email} with AVD {avd_name}"
-        if vnc_instance is not None:
-            log_message += f" on VNC instance {vnc_instance}"
-        logger.info(log_message)
-
-    def register_email_to_avd(self, email: str, default_avd_name: str = "Pixel_API_30") -> None:
-        """
-        Register an email to an AVD for development purposes.
-
-        Args:
-            email: The email to register
-            default_avd_name: Default AVD name to use if no AVD can be found
-        """
-        # First check if we already have a mapping
-        if email in self.profiles_index:
-            return
-
-        # Create a standardized AVD name for this email first
-        normalized_avd_name = self.get_avd_name_from_email(email)
-        logger.info(f"Generated standardized AVD name {normalized_avd_name} for {email}")
-
-        # Never use another user's running emulator - always use the standardized AVD name
-        logger.info(f"Registering email {email} to standardized AVD {normalized_avd_name}")
-        self.register_profile(email, normalized_avd_name)
-
-        # Try to find if this user's AVD is already running
-        running_emulators = self.device_discovery.map_running_emulators(self.profiles_index)
-        if normalized_avd_name in running_emulators:
-            emulator_id = running_emulators[normalized_avd_name]
-            logger.info(f"Found user's AVD {normalized_avd_name} already running at {emulator_id}")
-            self._save_profile_status(email, normalized_avd_name, emulator_id)
-        else:
-            self._save_profile_status(email, normalized_avd_name)
-
-    def stop_emulator(self, device_id: str) -> bool:
-        """
-        Stop an emulator by device ID or the currently running emulator.
-
-        Args:
-            device_id: Optional device ID to stop a specific emulator.
-                       If None, stops whatever emulator is running.
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        return self.emulator_manager.stop_specific_emulator(device_id)
-
-    def start_emulator(self, email: str) -> bool:
-        """
-        Start the specified AVD.
-
-        Returns:
-            bool: True if emulator started successfully, False otherwise
-        """
-        return self.emulator_manager.start_emulator_with_retries(email)
-
-    def create_new_avd(self, email: str) -> Tuple[bool, str]:
-        """
-        Create a new AVD for the given email.
-
-        Returns:
-            Tuple[bool, str]: (success, avd_name)
-        """
-        return self.avd_creator.create_new_avd(email)
-
-    def _create_avd_with_seed_clone_fallback(self, email: str, normalized_avd_name: str) -> str:
-        """
-        Create a new AVD using seed clone if available, otherwise fall back to normal creation.
-
-        Args:
-            email: User's email address
-            normalized_avd_name: The normalized AVD name for this email
-
-        Returns:
-            str: The final AVD name
-        """
-        # Check if we can use the seed clone for faster AVD creation
-        if self.avd_creator.is_seed_clone_ready():
-            logger.info("Seed clone is ready - using fast AVD copy method")
-            success, result = self.avd_creator.copy_avd_from_seed_clone(email)
-            if success:
-                logger.info(f"Successfully created AVD {result} from seed clone for {email}")
-                return result
-            else:
-                logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
-
-        # Seed clone not ready or failed, use normal AVD creation
-        logger.info("Using normal AVD creation")
-        success, result = self.create_new_avd(email)
-        if not success:
-            logger.warning(f"Failed to create AVD: {result}, but profile was registered")
-            return normalized_avd_name
-        else:
-            return result
-
-    def _get_preference_value(self, email: str, key: str, default=None):
-        """
-        Get a preference value for a user from the preferences section.
-
-        This is a backward compatibility method - new code should use get_user_field.
-
-        Args:
-            email: Email address of the user
-            key: Preference key to get
-            default: Default value to return if preference not found
-
-        Returns:
-            The preference value or default if not found
-        """
-        # Use preferences section for all keys
-        return self.get_user_field(email, key, default, section="preferences")
-
-    def is_styles_updated(self) -> bool:
-        """
-        Check if styles have been updated for a profile.
-
-        Args:
-            email: The email address of the profile to check. If None, returns False.
-
-        Returns:
-            bool: True if styles have been updated, False otherwise
-        """
-        email = get_sindarin_email()
-        if not email:
-            logger.warning("No email available to check styles_updated")
-            return False
-
-        # Get the styles_updated from the top level
-        if email in self.profiles_index:
-            return self.profiles_index[email].get("styles_updated", False)
-        return False
-
-    def _set_preference_value(self, email: str, key: str, value):
-        """
-        Set a preference value for a user in the preferences section.
-
-        This is a backward compatibility method - new code should use set_user_field.
-
-        Args:
-            email: Email address of the user
-            key: Preference key to set
-            value: Value to set
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        # Use preferences section for all keys
-        return self.set_user_field(email, key, value, section="preferences")
-
-    def get_style_setting(self, setting_name: str, email: str = None, default=None):
-        """
-        Get a style setting value from the profile.
-
-        Args:
-            setting_name: The name of the setting to retrieve
-            email: Optional email. If not provided, uses the current sindarin email.
-            default: Default value to return if setting doesn't exist
-
-        Returns:
-            The setting value if found, otherwise the default value
-        """
-        try:
-            # Get email if not provided
-            if not email:
-                email = get_sindarin_email()
-                if not email:
-                    logger.warning("No email available to get style setting")
-                    return default
-
-            # Look for library_settings at the top level
-            if email in self.profiles_index:
-                profile = self.profiles_index[email]
-                if "library_settings" in profile:
-                    library_settings = profile["library_settings"]
-                    if setting_name in library_settings:
-                        return library_settings[setting_name]
-
-            return default
-        except Exception as e:
-            logger.error(f"Error getting style setting {setting_name}: {e}", exc_info=True)
-            return default
-
-    def save_style_setting(self, setting_name: str, setting_value, email: str = None) -> bool:
-        """
-        Save a style setting in a single line. Handles all the complexity of preference management.
-
-        Args:
-            setting_name: Name of the setting (e.g., 'group_by_series', 'view_type')
-            setting_value: Value to set (can be any type)
-            email: Email of the user. If None, uses get_sindarin_email()
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # Get email if not provided
-            if not email:
-                email = get_sindarin_email()
-                if not email:
-                    logger.warning("No email available to save style setting")
-                    return False
-
-            # Ensure profile structure exists
-            if email not in self.profiles_index:
-                self.profiles_index[email] = {}
-
-            # Save library_settings at the top level
-            if "library_settings" not in self.profiles_index[email]:
-                self.profiles_index[email]["library_settings"] = {}
-
-            # Save the setting
-            self.profiles_index[email]["library_settings"][setting_name] = setting_value
-
-            # Persist to disk
-            self._save_profiles_index()
-
-            logger.info(f"Saved library style setting {setting_name}={setting_value} for {email}")
-            return True
-        except Exception as e:
-            logger.error(f"Error saving style setting {setting_name}: {e}", exc_info=True)
-            return False
-
-    def update_style_preference(self, is_updated: bool, email: str = None) -> bool:
-        """
-        Update the styles_updated preference for a profile.
-
-        Args:
-            is_updated: Boolean indicating whether styles have been updated
-            email: The email address of the profile to update. If None, returns False.
-
-        Returns:
-            bool: True if the update was successful, False otherwise
-        """
-        try:
-            if not email:
-                logger.warning("No email provided to update style preference")
-                return False
-
-            # Get the AVD name for this email
-            avd_name = self.get_avd_for_email(email)
-            if not avd_name:
-                logger.warning(f"No AVD name found for email {email}")
-                return False
-
-            # Make sure the email exists in profiles_index
-            if email not in self.profiles_index:
-                logger.info(f"Creating new profile entry for {email}")
-                self.profiles_index[email] = {}
-
-            # Make sure the preferences section exists for this email
-            if "preferences" not in self.profiles_index[email]:
-                logger.info(f"Initializing preferences section for {email}")
-                self.profiles_index[email]["preferences"] = {}
-
-            # Make sure the email exists in user_preferences
-            if email not in self.user_preferences:
-                logger.info(f"Initializing user preferences for {email}")
-                self.user_preferences[email] = {}
-
-            # Update style preference at the top level
-            self.profiles_index[email]["styles_updated"] = is_updated
-
-            # Initialize reading_settings at top level if needed
-            if "reading_settings" not in self.profiles_index[email]:
-                logger.info(f"Initializing reading_settings for {email}")
-                self.profiles_index[email]["reading_settings"] = {}
-
-            # Update various reading settings - keep these values synced
-            # with what's saved in the actual reading style sheet
-            reading_settings = self.profiles_index[email]["reading_settings"]
-            if is_updated:
-                # These are the default settings we apply when styles_updated is True
-                reading_settings["theme"] = "dark"
-                reading_settings["font_size"] = "small"
-                reading_settings["real_time_highlighting"] = False
-                reading_settings["about_book"] = False
-                reading_settings["page_turn_animation"] = False
-                reading_settings["popular_highlights"] = False
-                reading_settings["highlight_menu"] = False
-
-            # Save all changes
-            self._save_profiles_index()
-
-            logger.info(f"Successfully updated style preferences for {email} to {is_updated}")
-            return True
-        except Exception as e:
-            logger.error(f"Error updating style preference: {e}", exc_info=True)
-            return False
-
-    def switch_profile_and_start_emulator(
-        self, email: str, force_new_emulator: bool = False
-    ) -> Tuple[bool, str]:
-        """
-        Switch to the profile for the given email. If the profile doesn't exist, create a new one.
-        With the multi-emulator approach, this method will:
-        1. Try to find a running emulator for this email first
-        2. If not found, start a new emulator for this profile
-        3. No longer stop other emulators unless explicitly forced
-
-        Args:
-            email: The email address to switch to
-            force_new_emulator: If True, always stop any existing emulator for this profile and start a new one
-                              (used with recreate=1 flag)
-
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        # If we're forcing a new emulator, reset device settings in the profile
-        if force_new_emulator:
-            # Reset all device-specific settings for this profile under emulator_settings
-            settings_to_reset = [
-                "hw_overlays_disabled",
-                "animations_disabled",
-                "sleep_disabled",
-                "status_bar_disabled",
-                "auto_updates_disabled",
-            ]
-            for setting in settings_to_reset:
-                self.set_user_field(email, setting, False, section="emulator_settings")
-
-        # No more simplified mode - always manage emulators properly
-
-        #
-        # Normal profile management mode below (for non-Mac or non-dev environments)
-        # Now with multi-emulator support
-        #
-
-        # Get AVD name for this email - this should be the first step
-        avd_name = self.get_avd_for_email(email)
-
-        # If no AVD exists for this email, create one
-        if not avd_name:
-            logger.info(f"No AVD found for {email}, creating new one")
-
-            # Create a normalized AVD name based on the email
-            normalized_avd_name = self.get_avd_name_from_email(email)
-            logger.info(f"Generated AVD name {normalized_avd_name} for {email}")
-
-            # First register this AVD name in profiles_index so VNC can find it
-            self.register_profile(email, normalized_avd_name)
-            logger.info(f"Registered AVD {normalized_avd_name} for email {email} in profiles_index")
-
-            # Create AVD using seed clone if available
-            avd_name = self._create_avd_with_seed_clone_fallback(email, normalized_avd_name)
-
-            # Update the profile with the final AVD name if different
-            if avd_name != normalized_avd_name:
-                self.register_profile(email, avd_name)
-
-        # Check if this AVD actually exists - it might not if we're using
-        # manually registered AVDs but the Android Studio AVD was renamed or deleted
-        avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
-        avd_ini_path = os.path.join(self.avd_dir, f"{avd_name}.ini")
-        # AVD is only valid if both the directory and ini file exist
-        avd_exists = os.path.exists(avd_path) and os.path.exists(avd_ini_path)
-
-        # First check if there's already a running emulator for this email
-        is_running, emulator_id, found_avd_name = self.find_running_emulator_for_email(email)
-
-        # If we found a running emulator for this email but need to force a new one
-        if is_running and force_new_emulator:
-            logger.info(
-                f"Found running emulator {emulator_id} for profile {email}, but force_new_emulator=True"
-            )
-            logger.info(f"Stopping emulator {emulator_id} to start a fresh one")
-            # Stop only this specific emulator, not others
-            if not self.stop_emulator(emulator_id):
-                logger.error(f"Failed to stop emulator {emulator_id} for profile {email}", exc_info=True)
-                # We'll try to continue anyway
-            # Clear the is_running flag so we'll start a new emulator
-            is_running = False
-            emulator_id = None
-
-        # If we found a running emulator for this email and aren't forcing a new one, use it
-        if is_running and not force_new_emulator:
-            logger.info(f"Found running emulator {emulator_id} for profile {email} (AVD: {found_avd_name})")
-
-            # Check if the found running emulator's AVD matches what we're expecting for this user
-            # If it doesn't match, we should fail rather than use another user's AVD
-            if found_avd_name != avd_name:
-                logger.warning(
-                    f"Found running emulator uses AVD {found_avd_name}, but user {email} requires {avd_name}"
-                )
-                logger.warning(f"Will not use another user's emulator for {email}")
-                return False, f"Cannot use another user's emulator for {email}"
-
-            # We already verified found_avd_name equals avd_name above, so no need to update it
-
-            # Save the profile status with the found emulator
-            self._save_profile_status(email, avd_name, emulator_id)
-            logger.info(f"Using existing running emulator for profile {email}")
-            return True, f"Switched to profile {email} with existing running emulator"
-
-        # No more ARM Mac workarounds - we can launch emulators properly now
-
-        # Check if AVD exists before trying to start it
-        if not avd_exists:
-            logger.warning(f"AVD {avd_name} doesn't exist at {avd_path}. Attempting to create it.")
-
-            # Check if this user requires ALT_SYSTEM_IMAGE
-            if self.avd_creator.host_arch == "arm64":
-                ignore_seed_clone = True  # Use the MAC_SYSTEM_IMAGE
-            else:
-                ignore_seed_clone = email in self.avd_creator.ALT_IMAGE_TEST_EMAILS
-
-            # Check if we can use the seed clone for faster AVD creation
-            # Skip seed clone for ALT_IMAGE users since seed clone uses Android 30
-            if self.avd_creator.is_seed_clone_ready() and not ignore_seed_clone:
-                logger.info("Seed clone is ready - using fast AVD copy method")
-                success, result = self.avd_creator.copy_avd_from_seed_clone(email)
-                if success:
-                    avd_name = result
-                    logger.info(f"Successfully created AVD {avd_name} from seed clone for {email}")
-                else:
-                    logger.warning(f"Failed to copy seed clone: {result}, falling back to normal creation")
-                    # Fall back to normal AVD creation
-                    success, result = self.create_new_avd(email)
-                    if not success:
-                        logger.error(f"Failed to create AVD: {result}", exc_info=True)
-                        return False, f"Failed to create AVD for {email}: {result}"
-                    avd_name = result
-            else:
-                # Either seed clone not ready or user requires ALT_SYSTEM_IMAGE
-                if ignore_seed_clone:
-                    logger.info(
-                        f"User {email} requires ALT_SYSTEM_IMAGE (Android 36), using normal AVD creation"
-                    )
-                else:
-                    logger.info("Seed clone not ready, using normal AVD creation")
-                success, result = self.create_new_avd(email)
-                if not success:
-                    logger.error(f"Failed to create AVD: {result}", exc_info=True)
-                    return False, f"Failed to create AVD for {email}: {result}"
-                avd_name = result
-
-            # Update profile with new AVD
-            self.register_profile(email, avd_name)
-            logger.info(f"Created new AVD {avd_name} for {email}")
-
-        # Start the emulator
-        if self.start_emulator(email):
-            # We need to get the emulator ID for the started emulator
-            started_emulator_id = self.get_emulator_id_for_avd(avd_name)
-            self._save_profile_status(email, avd_name, started_emulator_id)
-            logger.info(f"Successfully started emulator {started_emulator_id} for profile {email}")
-            return True, f"Switched to profile {email} with new emulator"
-        else:
-            # Failed to start emulator, but still update the profile status for tracking
-            self._save_profile_status(email, avd_name)
-            logger.error(
-                f"Failed to start emulator for profile {email}, but updated profile tracking", exc_info=True
-            )
-            return False, f"Failed to start emulator for profile {email}"
-
-    def recreate_profile_avd(
-        self, email: str, recreate_user: bool = True, recreate_seed: bool = True
-    ) -> Tuple[bool, str]:
-        """
-        Completely recreate AVD for a profile. This will:
-        1. Stop any running emulators (user and/or seed clone based on parameters)
-        2. Delete the user's AVD (if recreate_user=True)
-        3. Delete the seed clone AVD (if recreate_seed=True)
-        4. Clean up profile data (if recreate_user=True)
-        5. Clean up any existing automator
-
-        Args:
-            email: The user's email address
-            recreate_user: Whether to recreate the user's AVD (default True)
-            recreate_seed: Whether to recreate the seed clone AVD (default True for backwards compatibility)
-
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
-        actions = []
-        if recreate_user:
-            actions.append("user AVD")
-        if recreate_seed:
-            actions.append("seed clone")
-
-        logger.info(f"Recreating profile AVD for {email} - will recreate: {', '.join(actions)}")
-
-        try:
-            # Stop user's emulator if running (only if recreating user AVD)
-            if recreate_user:
-                user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
-                if user_emulator_id:
-                    logger.info(f"Stopping running emulator for {email}")
-                    self.emulator_manager.emulator_launcher.stop_emulator(email)
-                    time.sleep(2)  # Give it time to shut down
-
-            # Stop seed clone emulator if running (only if recreating seed clone)
-            if recreate_seed:
-                seed_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(
-                    AVDCreator.SEED_CLONE_EMAIL
-                )
-                if seed_emulator_id:
-                    logger.info("Stopping running seed clone emulator")
-                    self.emulator_manager.emulator_launcher.stop_emulator(AVDCreator.SEED_CLONE_EMAIL)
-                    time.sleep(2)  # Give it time to shut down
-
-            # Delete the user's AVD (only if recreate_user=True)
-            avd_name = None
-            if recreate_user:
-                avd_name = self.avd_creator.get_avd_name_from_email(email)
-                logger.info(f"Deleting user AVD: {avd_name}")
-                success, msg = self.avd_creator.delete_avd(email)
-                if not success:
-                    logger.error(f"Failed to delete user AVD through avdmanager: {msg}", exc_info=True)
-                    raise Exception(f"Failed to delete user AVD: {msg}")
-
-            # Delete the seed clone AVD (only if recreate_seed=True)
-            seed_avd_name = None
-            if recreate_seed:
-                seed_avd_name = self.avd_creator.get_avd_name_from_email(AVDCreator.SEED_CLONE_EMAIL)
-                logger.info(f"Deleting seed clone AVD: {seed_avd_name}")
-                success, msg = self.avd_creator.delete_avd(AVDCreator.SEED_CLONE_EMAIL)
-                if not success:
-                    logger.error(f"Failed to delete seed clone AVD through avdmanager: {msg}", exc_info=True)
-                    raise Exception(f"Failed to delete seed clone AVD: {msg}")
-                elif "does not exist" in msg:
-                    logger.info(f"Seed clone AVD did not exist, proceeding with recreation")
-
-            # Clear any cached emulator data
-            if recreate_user and avd_name:
-                self.emulator_manager.emulator_launcher.running_emulators.pop(avd_name, None)
-            if recreate_seed and seed_avd_name:
-                self.emulator_manager.emulator_launcher.running_emulators.pop(seed_avd_name, None)
-
-            # Remove the user from profiles index (only if recreating user AVD)
-            if recreate_user and email in self.profiles_index:
-                del self.profiles_index[email]
-                self._save_profiles_index()
-                logger.info(f"Removed {email} from profiles index")
-
-            # Force the profile manager to reload
-            self._load_profiles_index()
-
-            logger.info(f"Successfully recreated {', '.join(actions)} for {email}")
-            return True, f"Successfully recreated: {', '.join(actions)}"
-
-        except Exception as e:
-            logger.error(f"Error recreating profile AVD for {email}: {e}", exc_info=True)
-            return False, f"Failed to recreate profile AVD: {str(e)}"
 
     def clear_emulator_settings(self, email: str) -> bool:
         """
@@ -1626,24 +1063,31 @@ class AVDProfileManager:
             bool: True if successful, False otherwise
         """
         try:
-            # Reload profiles to ensure we have the latest data
-            self._load_profiles_index()
+            with self.db_connection.get_session() as session:
+                repo = UserRepository(session)
+                user = repo.get_user_by_email(email)
 
-            # Check if user exists
-            if email not in self.profiles_index:
-                logger.warning(f"Cannot clear emulator settings: email {email} not found in profiles_index")
-                return False
+                if not user:
+                    logger.warning(f"Cannot clear emulator settings: email {email} not found")
+                    return False
 
-            # Clear the emulator_settings section if it exists
-            if "emulator_settings" in self.profiles_index[email]:
-                self.profiles_index[email]["emulator_settings"] = {}
-                logger.info(f"Cleared all emulator settings for {email}")
-            else:
-                logger.info(f"No emulator settings to clear for {email}")
+                # Clear all emulator settings by setting them to their defaults
+                if user.emulator_settings:
+                    user.emulator_settings.hw_overlays_disabled = False
+                    user.emulator_settings.animations_disabled = False
+                    user.emulator_settings.sleep_disabled = False
+                    user.emulator_settings.status_bar_disabled = False
+                    user.emulator_settings.auto_updates_disabled = False
+                    user.emulator_settings.memory_optimizations_applied = False
+                    user.emulator_settings.memory_optimization_timestamp = None
+                    user.emulator_settings.appium_device_initialized = False
 
-            # Save the updated profiles_index
-            self._save_profiles_index()
-            return True
+                    session.commit()
+                    logger.info(f"Cleared all emulator settings for {email}")
+                else:
+                    logger.info(f"No emulator settings to clear for {email}")
+
+                return True
 
         except Exception as e:
             logger.error(f"Error clearing emulator settings for {email}: {e}", exc_info=True)

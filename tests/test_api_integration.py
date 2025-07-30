@@ -1,6 +1,7 @@
+import json
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Generator
 
 import pytest
 import requests
@@ -73,6 +74,17 @@ class TestKindleAPIIntegration:
 
         # This should never be reached, but just in case
         return response
+
+    def _parse_streaming_response(self, response: requests.Response) -> Generator[Dict[str, Any], None, None]:
+        """Parse newline-delimited JSON streaming response."""
+        for line in response.iter_lines():
+            if line:
+                try:
+                    message = json.loads(line.decode("utf-8"))
+                    print(f"[STREAM] Received message: {json.dumps(message, sort_keys=True)}")
+                    yield message
+                except json.JSONDecodeError as e:
+                    print(f"[STREAM] Failed to parse line: {line}, error: {e}")
 
     @pytest.mark.timeout(120)
     def test_open_random_book(self):
@@ -183,6 +195,98 @@ class TestKindleAPIIntegration:
             "shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
         )
         assert shutdown_response.status_code == 200
+
+    @pytest.mark.timeout(60)
+    def test_books_stream(self):
+        """Test /books-stream endpoint for streaming functionality."""
+        # For local testing, override the base URL
+        if "localhost" in API_BASE_URL or "127.0.0.1" in API_BASE_URL:
+            # For local testing, use the direct endpoint without /kindle prefix
+            url = "http://localhost:4098/books-stream"
+            params = {"sindarin_email": "sam@solreader.com"}
+        else:
+            url = f"{self.base_url}/books-stream"
+            params = self.default_params.copy()
+
+        # Test 1: Test mode streaming
+        print("\n[TEST] Starting test mode streaming...")
+        test_params = params.copy()
+        test_params["test"] = "1"
+
+        try:
+            response = self.session.get(url, params=test_params, stream=True, timeout=30)
+            response.raise_for_status()
+
+            messages = list(self._parse_streaming_response(response))
+            print(f"[TEST] Received total of {len(messages)} messages in test mode")
+
+            # Validate test mode messages
+            assert len(messages) >= 10, f"Expected at least 10 messages, got {len(messages)}"
+
+            # Check for expected message structure
+            has_test_started = any(msg.get("status") == "test_started" for msg in messages)
+            has_test_messages = any("test_message" in msg for msg in messages)
+            has_test_complete = any(msg.get("test_complete") == True for msg in messages)
+
+            assert has_test_started, "Missing test_started message"
+            assert has_test_messages, "Missing test_message messages"
+            assert has_test_complete, "Missing test_complete message"
+
+            print("[TEST] Test mode validation passed!")
+
+        except requests.exceptions.RequestException as e:
+            pytest.fail(f"Test mode streaming failed: {e}")
+
+        # Test 2: Normal mode streaming
+        print("\n[TEST] Starting normal mode streaming...")
+        try:
+            response = self.session.get(url, params=params, stream=True, timeout=30)
+            response.raise_for_status()
+
+            messages = []
+            for message in self._parse_streaming_response(response):
+                messages.append(message)
+                # Stop after getting done message or error
+                if message.get("done") or message.get("error"):
+                    print("[TEST] Received done/error message, stopping stream")
+                    break
+                # Also stop after reasonable number of messages to prevent hanging
+                if len(messages) > 50:
+                    print("[TEST] Reached message limit, stopping stream")
+                    break
+
+            print(f"[TEST] Received total of {len(messages)} messages in normal mode")
+
+            # Check for expected streaming response format
+            assert len(messages) > 0, "No messages received from stream"
+
+            # Should have either books or error response
+            has_books = any("books" in msg for msg in messages)
+            has_error = any("error" in msg for msg in messages)
+            has_done = any(msg.get("done") == True for msg in messages)
+            has_status = any("status" in msg for msg in messages)
+            has_filter_count = any("filter_book_count" in msg for msg in messages)
+
+            print(
+                f"[TEST] Message types found: books={has_books}, error={has_error}, done={has_done}, status={has_status}, filter_count={has_filter_count}"
+            )
+
+            assert (
+                has_books or has_error or has_status
+            ), "Stream should contain books, error, or status messages"
+
+            if has_books:
+                # If we got books, should also have done message
+                assert has_done, "Stream with books should have done message"
+
+            print("[TEST] Normal mode validation passed!")
+
+        except requests.exceptions.RequestException as e:
+            # This might fail if no emulator is running, which is acceptable
+            if response.status_code in [401, 404]:
+                print(f"[TEST] Expected error response: {response.status_code}")
+            else:
+                pytest.fail(f"Normal mode streaming failed: {e}")
 
 
 if __name__ == "__main__":

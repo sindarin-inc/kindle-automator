@@ -12,6 +12,7 @@
       - libglu1-mesa-dev
       - openjdk-17-jdk
       - ffmpeg        # Required for extracting frames from scrcpy video captures
+      - libxcb-cursor0  # Required for Qt 6.5.0+ platform plugin in Android emulator
     state: present
     update_cache: true
   become: true
