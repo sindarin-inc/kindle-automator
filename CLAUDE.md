@@ -1,5 +1,9 @@
 # Kindle Automator Project Guide
 
+## Testing
+
+- **Local testing email**: Always use `sam@solreader.com` when testing API endpoints locally
+
 ## Issue References
 
 - When you see references to KINDLE-AUTOMATOR-[A-Z0-9]+ (e.g., KINDLE-AUTOMATOR-8), use the Sentry MCP tools to look up the issue details

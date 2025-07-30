@@ -8,6 +8,8 @@ from typing import Dict, Optional
 
 import pytz
 
+from server.utils.ansi_colors import GREEN, MAGENTA, RESET, YELLOW
+
 # Remove circular import - DynamicEmailHandler will get email from flask.g only
 
 logger = logging.getLogger(__name__)
@@ -80,7 +82,7 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
 
         # Use the same formatter as the main logger
         formatter = RelativePathFormatter(
-            "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
+            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)44s:%(lineno)-4d{RESET} %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
         file_handler.setFormatter(formatter)
@@ -339,9 +341,21 @@ def setup_logger():
     with open(log_file, "w") as f:
         f.truncate(0)
 
-    # Create the formatter
-    formatter = RelativePathFormatter(
-        "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
+    # Create formatter - check if we should strip colors from console output
+    if os.environ.get("NO_COLOR_CONSOLE"):
+        console_formatter = RelativePathFormatter(
+            "[%(levelname)5.5s] [%(asctime)s] %(pathname)44s:%(lineno)-4d %(message)s",
+            datefmt="%-m-%-d-%y %H:%M:%S %Z",
+        )
+    else:
+        console_formatter = RelativePathFormatter(
+            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)44s:%(lineno)-4d{RESET} %(message)s",
+            datefmt="%-m-%-d-%y %H:%M:%S %Z",
+        )
+
+    # File formatters always have colors
+    file_formatter = RelativePathFormatter(
+        f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)44s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
 
@@ -356,24 +370,24 @@ def setup_logger():
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    # Add console handler
+    # Add console handler with color formatter
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.DEBUG)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(console_formatter)
     console_handler.addFilter(custom_filter)
     root_logger.addHandler(console_handler)
 
-    # Add file handler for main log
+    # Add file handler for main log with no-color formatter
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(file_formatter)
     file_handler.addFilter(custom_filter)
     root_logger.addHandler(file_handler)
 
-    # Add dynamic email handler for user-specific logs
+    # Add dynamic email handler for user-specific logs with no-color formatter
     _email_handler = DynamicEmailHandler()
     _email_handler.setLevel(logging.DEBUG)
-    _email_handler.setFormatter(formatter)
+    _email_handler.setFormatter(file_formatter)
     _email_handler.addFilter(custom_filter)
     root_logger.addHandler(_email_handler)
 

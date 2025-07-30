@@ -1,10 +1,17 @@
-.PHONY: server test
+.PHONY: server test init
 
 run: server
 
+init:
+	@echo "Setting up virtual environment with uv..."
+	@uv venv
+	@echo "Installing dependencies..."
+	@uv pip install -r requirements.txt
+	@echo "Setup complete! You can now run 'make server' or 'make claude-run'"
+
 claude-run: 
 	@echo "Starting Flask server in background..."
-	@bash -c '(FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Monitor logs with: tail -f logs/server_output.log"

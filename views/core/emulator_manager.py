@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import time
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from server.utils.emulator_launcher import EmulatorLauncher
@@ -433,7 +434,7 @@ class EmulatorManager:
                 email, "memory_optimizations_applied", True, section="emulator_settings"
             )
             profile_manager.set_user_field(
-                email, "memory_optimization_timestamp", int(time.time()), section="emulator_settings"
+                email, "memory_optimization_timestamp", datetime.now(timezone.utc), section="emulator_settings"
             )
             # Store keyboard disabled state
             if keyboard_disabled:

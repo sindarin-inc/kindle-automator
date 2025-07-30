@@ -11,6 +11,7 @@ from flask import make_response, request
 from flask_restful import Resource
 
 from server.logging_config import logger
+from server.utils.text_utils import strip_ansi_codes
 
 
 class UserActivityResource(Resource):
@@ -75,18 +76,6 @@ class UserActivityResource(Resource):
                 response = make_response(f"Error generating timeline: {str(e)}")
                 response.headers["Content-Type"] = "text/plain; charset=utf-8"
                 return response
-
-    def _strip_ansi_codes(self, text):
-        """Remove ANSI color codes from text."""
-        if text is None:
-            return ""
-        # Remove ANSI escape sequences (ESC[...m format)
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        text = ansi_escape.sub("", text)
-        # Remove escaped ANSI codes (when stored as \u001b in logs)
-        text = re.sub(r"\\u001b\[[0-9;]*m", "", text)
-        text = re.sub(r"\u001b\[[0-9;]*m", "", text)
-        return text
 
     def _parse_user_activities(self, user_email):
         """Parse log files to extract user activities."""
@@ -179,7 +168,7 @@ class UserActivityResource(Resource):
                 continue
 
             # Strip ANSI codes from the line for pattern matching
-            clean_line = self._strip_ansi_codes(line)
+            clean_line = strip_ansi_codes(line)
 
             # Extract timestamp - try multiple formats
             timestamp = None
@@ -278,9 +267,9 @@ class UserActivityResource(Resource):
                         # User agent is optional (group 3), params is group 4
                         if match.group(3):  # User agent was captured
                             activity["user_agent"] = match.group(3)
-                            activity["params"] = self._strip_ansi_codes(match.group(4))
+                            activity["params"] = strip_ansi_codes(match.group(4))
                         else:  # No user agent, params is group 3
-                            activity["params"] = self._strip_ansi_codes(match.group(3))
+                            activity["params"] = strip_ansi_codes(match.group(3))
                         activity["action"] = "api_request"
                         # Skip if this is a navigate request (handled by specific pattern)
                         if "/navigate" in activity["endpoint"] and any(
@@ -295,11 +284,11 @@ class UserActivityResource(Resource):
                         # Check if elapsed time was captured (group 3)
                         if match.group(3) is not None:  # This is the elapsed time
                             activity["duration"] = float(match.group(3))
-                            activity["body"] = self._strip_ansi_codes(match.group(4))
+                            activity["body"] = strip_ansi_codes(match.group(4))
                         else:
                             # No elapsed time in the log, use the last group as body
                             # When no elapsed time, group 4 is the body
-                            activity["body"] = self._strip_ansi_codes(match.group(4))
+                            activity["body"] = strip_ansi_codes(match.group(4))
                             # Fall back to calculating duration
                             if (
                                 current_activity
@@ -564,7 +553,7 @@ class UserActivityResource(Resource):
                 elif "/logs/timeline" in endpoint:
                     desc = "retrieved activity timeline"
                 else:
-                    desc = f"{activity.get('method', 'GET')} {self._strip_ansi_codes(endpoint)}"
+                    desc = f"{activity.get('method', 'GET')} {strip_ansi_codes(endpoint)}"
 
                 # Check if request succeeded or failed
                 # Parse the response to check actual success status
