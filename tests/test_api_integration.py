@@ -58,7 +58,9 @@ class TestKindleAPIIntegration:
                                 token_end = len(cookie_header)
                             full_token = cookie_header[token_start:token_end]
                             self.session.cookies.set("staff_token", full_token)
-                            print(f"[TEST] Fetched staff token from cookie: {full_token[:10]}... (full length={len(full_token)})")
+                            print(
+                                f"[TEST] Fetched staff token from cookie: {full_token[:10]}... (full length={len(full_token)})"
+                            )
                         else:
                             print("[TEST] No staff token found in Set-Cookie header")
                 else:
@@ -89,7 +91,7 @@ class TestKindleAPIIntegration:
                     print(f"[DEBUG] Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
                 else:
                     print(f"[DEBUG] Cookies: {cookies_dict}")
-                
+
                 if method == "GET":
                     response = self.session.get(url, params=request_params, timeout=120)
                 elif method == "POST":
@@ -311,7 +313,7 @@ class TestKindleAPIIntegration:
             all_pages_books.extend(data[books_key])
 
             # Check if there's a next page
-            if "next" in data and data["next"]:
+            if "next" in data and data["next"] and data["next"] != "null":
                 next_url = data["next"]
                 print(f"[TEST] Found next page URL: {next_url}")
                 page += 1
@@ -320,7 +322,8 @@ class TestKindleAPIIntegration:
                 break
 
             # Safety check to prevent infinite loops
-            if page > 10:
+            # With 51 books at 2 per page, we could have up to 26 pages
+            if page > 30:
                 pytest.fail("Too many pages, possible infinite loop")
 
         print(f"[TEST] Pagination test passed! Got {len(all_pages_books)} books across {page} pages")

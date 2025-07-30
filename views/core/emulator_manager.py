@@ -434,7 +434,10 @@ class EmulatorManager:
                 email, "memory_optimizations_applied", True, section="emulator_settings"
             )
             profile_manager.set_user_field(
-                email, "memory_optimization_timestamp", datetime.now(timezone.utc), section="emulator_settings"
+                email,
+                "memory_optimization_timestamp",
+                datetime.now(timezone.utc),
+                section="emulator_settings",
             )
             # Store keyboard disabled state
             if keyboard_disabled:
