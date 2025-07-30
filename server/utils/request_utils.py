@@ -266,10 +266,11 @@ def get_formatted_vnc_url(
     import time
     from urllib.parse import urlparse
 
+    from server.utils.network_utils import get_server_ip
     from server.utils.vnc_instance_manager import VNCInstanceManager
 
-    # Get VNC hostname from environment variable or use default
-    hostname = os.environ.get("VNC_HOST", "kindle.sindarin.com")
+    # Get the server IP address dynamically
+    hostname = get_server_ip()
 
     # If no email provided, try to get from request
     # This ensures emails aren't mixed up across concurrent requests
