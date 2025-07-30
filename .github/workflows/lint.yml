@@ -26,26 +26,14 @@ jobs:
         with:
           version: "latest"
 
-      - name: Create virtual environment
-        run: uv venv
-
       - name: Install dependencies
-        run: |
-          source .venv/bin/activate
-          uv pip install -r requirements.txt
+        run: uv pip install -r requirements.txt
 
       - name: Run isort
-        run: |
-          source .venv/bin/activate
-          isort --profile black --check-only .
+        run: uv run isort --profile black --check-only .
 
       - name: Run black
-        run: |
-          source .venv/bin/activate
-          black --line-length 110 --check .
+        run: uv run black --line-length 110 --check .
 
       - name: Run flake8
-        run: |
-          source .venv/bin/activate
-          # Match the exact command from make lint
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv
+        run: uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
