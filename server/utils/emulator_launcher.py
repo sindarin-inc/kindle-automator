@@ -1026,7 +1026,7 @@ class EmulatorLauncher:
                     "-feature",
                     "-Gfxstream",  # Disable gfxstream to use legacy renderer for snapshot compatibility
                     "-gpu",
-                    "swiftshader",
+                    "swiftshader_indirect",  # Use indirect mode to fix Vulkan allocation errors
                 ] + common_args
             elif self.host_arch == "arm64" and platform.system() == "Darwin":
                 # For ARM Macs, use native ARM64 emulation
