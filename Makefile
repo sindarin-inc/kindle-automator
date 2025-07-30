@@ -23,7 +23,7 @@ deps:
 lint:
 	uv run isort --profile black .
 	uv run black --line-length 110 .
-	uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
+	uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,.venv
 	
 # Start the Flask server
 server:
