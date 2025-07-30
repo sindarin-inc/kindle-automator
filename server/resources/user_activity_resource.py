@@ -78,6 +78,8 @@ class UserActivityResource(Resource):
 
     def _strip_ansi_codes(self, text):
         """Remove ANSI color codes from text."""
+        if text is None:
+            return ""
         # Remove ANSI escape sequences (ESC[...m format)
         ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
         text = ansi_escape.sub("", text)
