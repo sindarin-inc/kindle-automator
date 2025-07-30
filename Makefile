@@ -56,6 +56,8 @@ ssh3: ssh-3
 ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging
+ssh-db:
+	ssh -i ansible/keys/kindle.key root@46.62.136.6
 
 # Firewall management
 firewall:

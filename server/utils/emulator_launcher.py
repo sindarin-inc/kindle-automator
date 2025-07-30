@@ -916,9 +916,9 @@ class EmulatorLauncher:
             env["ANDROID_AVD_HOME"] = self.avd_dir
             env["ANDROID_HOME"] = self.android_home
             # Add LD_LIBRARY_PATH to fix OpenGL/Vulkan library loading issues
-            env["LD_LIBRARY_PATH"] = (
-                f"{self.android_home}/emulator/lib64/gles_swiftshader:{self.android_home}/emulator/lib64"
-            )
+            env[
+                "LD_LIBRARY_PATH"
+            ] = f"{self.android_home}/emulator/lib64/gles_swiftshader:{self.android_home}/emulator/lib64"
 
             # Launch emulator first so the window is available for xwininfo to find
             # VNC server will be started after the emulator is launched

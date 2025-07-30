@@ -173,6 +173,7 @@ ansible/roles/android_x86/files/*
 ansible/roles/android_arm/files/*
 ansible/roles/waydroid/files/*
 ansible/.env.ansible.yml
+**/ansible.env.yml
 deploy_key
 venv
 fixtures/dumps/*_[0-9]*\.xml
