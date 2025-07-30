@@ -368,7 +368,7 @@ class BooksStreamResource(Resource):
             # Callback function that will receive raw books_batch from the library handler
             # This callback will process books synchronously (screenshot, covers) for the current stable view
             def book_processing_callback(raw_books_batch, **kwargs):
-                nonlocal error_message, total_books_from_handler, successful_covers_accumulator
+                nonlocal error_message, total_books_from_handler
 
                 if kwargs.get("error"):
                     logger.info(f"Callback received error: {kwargs.get('error')}")

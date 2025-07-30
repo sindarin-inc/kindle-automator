@@ -39,7 +39,6 @@ class ColdStorageManager:
 
     def __init__(self):
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("ColdStorageManager initialized directly. Use get_instance() instead.")
 

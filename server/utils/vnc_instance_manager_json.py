@@ -66,7 +66,6 @@ class VNCInstanceManager:
             map_path: Path to the VNC instance mapping JSON file
         """
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("VNCInstanceManager initialized directly. Use get_instance() instead.")
 

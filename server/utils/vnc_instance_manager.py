@@ -51,7 +51,6 @@ class VNCInstanceManager:
         Note: You should use get_instance() instead of creating instances directly.
         """
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("VNCInstanceManager initialized directly. Use get_instance() instead.")
 
