@@ -915,6 +915,10 @@ class EmulatorLauncher:
             env["ANDROID_SDK_ROOT"] = self.android_home
             env["ANDROID_AVD_HOME"] = self.avd_dir
             env["ANDROID_HOME"] = self.android_home
+            # Add LD_LIBRARY_PATH to fix OpenGL/Vulkan library loading issues
+            env[
+                "LD_LIBRARY_PATH"
+            ] = f"{self.android_home}/emulator/lib64/gles_swiftshader:{self.android_home}/emulator/lib64"
 
             # Launch emulator first so the window is available for xwininfo to find
             # VNC server will be started after the emulator is launched
@@ -1026,7 +1030,7 @@ class EmulatorLauncher:
                     "-feature",
                     "-Gfxstream",  # Disable gfxstream to use legacy renderer for snapshot compatibility
                     "-gpu",
-                    "swiftshader",
+                    "swiftshader_indirect",  # Use indirect mode to fix Vulkan allocation errors
                 ] + common_args
             elif self.host_arch == "arm64" and platform.system() == "Darwin":
                 # For ARM Macs, use native ARM64 emulation
