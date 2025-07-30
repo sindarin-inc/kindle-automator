@@ -12,7 +12,7 @@ import platform
 import shutil
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -1034,7 +1034,7 @@ class AVDProfileManager:
 
             if launcher.save_snapshot(seed_email):
                 # Update the timestamp
-                self.set_user_field(seed_email, "last_snapshot_timestamp", datetime.utcnow())
+                self.set_user_field(seed_email, "last_snapshot_timestamp", datetime.now(timezone.utc))
                 return True, "Successfully updated seed clone snapshot"
             else:
                 return False, "Failed to save seed clone snapshot"

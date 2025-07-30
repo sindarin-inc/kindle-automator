@@ -37,6 +37,7 @@ class TestKindleAPIIntegration:
         # Set Authorization header for API authentication
         if WEB_AUTH_TOKEN:
             self.session.headers.update({"Authorization": f"Tolkien {WEB_AUTH_TOKEN}"})
+            print(f"[TEST] Using Knox token for samuel@ofbrooklyn.com (staff user)")
 
         # Set staff auth cookie for user_email override
         if "localhost" in API_BASE_URL or "127.0.0.1" in API_BASE_URL:
@@ -46,9 +47,20 @@ class TestKindleAPIIntegration:
                 flask_staff_auth_response = requests.get("http://localhost:4098/staff-auth?auth=true")
                 if flask_staff_auth_response.status_code == 200:
                     auth_data = flask_staff_auth_response.json()
-                    if auth_data.get("authenticated") and auth_data.get("token"):
-                        self.session.cookies.set("staff_token", auth_data["token"])
-                        print(f"[TEST] Fetched staff token: {auth_data['token'][:10]}...")
+                    if auth_data.get("authenticated"):
+                        # Extract the full token from the Set-Cookie header
+                        cookie_header = flask_staff_auth_response.headers.get("Set-Cookie", "")
+                        if "staff_token=" in cookie_header:
+                            # Extract token value from cookie header
+                            token_start = cookie_header.find("staff_token=") + len("staff_token=")
+                            token_end = cookie_header.find(";", token_start)
+                            if token_end == -1:
+                                token_end = len(cookie_header)
+                            full_token = cookie_header[token_start:token_end]
+                            self.session.cookies.set("staff_token", full_token)
+                            print(f"[TEST] Fetched staff token from cookie: {full_token[:10]}... (full length={len(full_token)})")
+                        else:
+                            print("[TEST] No staff token found in Set-Cookie header")
                 else:
                     print(f"[TEST] Failed to fetch staff token: {flask_staff_auth_response.status_code}")
             except Exception as e:
@@ -70,7 +82,13 @@ class TestKindleAPIIntegration:
                 print(f"\n[DEBUG] Request to {url}")
                 print(f"[DEBUG] Params: {request_params}")
                 print(f"[DEBUG] Headers: {dict(self.session.headers)}")
-                print(f"[DEBUG] Cookies: {dict(self.session.cookies)}")
+                # Debug cookies - show full staff_token
+                cookies_dict = dict(self.session.cookies)
+                if "staff_token" in cookies_dict:
+                    token = cookies_dict["staff_token"]
+                    print(f"[DEBUG] Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
+                else:
+                    print(f"[DEBUG] Cookies: {cookies_dict}")
                 
                 if method == "GET":
                     response = self.session.get(url, params=request_params, timeout=120)

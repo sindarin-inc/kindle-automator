@@ -10,7 +10,7 @@ import signal
 import subprocess
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from selenium.common.exceptions import InvalidSessionIdException
@@ -370,7 +370,7 @@ class EmulatorShutdownManager:
         with contextlib.suppress(Exception):
             from views.core.avd_profile_manager import AVDProfileManager
 
-            ts = datetime.now().isoformat()
+            ts = datetime.now(timezone.utc)
             avd_mgr = AVDProfileManager.get_instance()
             avd_mgr.set_user_field(email, "last_snapshot_timestamp", ts)
             avd_mgr.set_user_field(email, "last_snapshot", None)
