@@ -110,13 +110,12 @@ class DatabaseConnection:
 db_connection = DatabaseConnection()
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db():
     """
-    Dependency function for getting database sessions in Flask routes.
+    Get a database session context manager.
 
-    Usage in Flask:
+    Usage:
         with get_db() as session:
             # Use session
     """
-    with db_connection.get_session() as session:
-        yield session
+    return db_connection.get_session()
