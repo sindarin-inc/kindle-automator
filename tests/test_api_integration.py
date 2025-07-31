@@ -147,7 +147,7 @@ class TestKindleAPIIntegration:
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
-        
+
         # Handle last read dialog response
         if data.get("last_read_dialog") and data.get("dialog_text"):
             # Verify dialog-specific fields
@@ -155,7 +155,9 @@ class TestKindleAPIIntegration:
             assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
         else:
             # Normal navigation response
-            assert "ocr_text" in data or "text" in data or "content" in data, f"Response missing OCR text: {data}"
+            assert (
+                "ocr_text" in data or "text" in data or "content" in data
+            ), f"Response missing OCR text: {data}"
             # Verify we got actual text back
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
@@ -190,7 +192,7 @@ class TestKindleAPIIntegration:
         open_response = self._make_request("kindle/open-random-book")
         assert open_response.status_code == 200
         open_data = open_response.json()
-        
+
         # Verify open response (handle both last-read dialog and normal book open)
         if open_data.get("last_read_dialog") and open_data.get("dialog_text"):
             assert "message" in open_data
@@ -203,7 +205,7 @@ class TestKindleAPIIntegration:
         nav_response = self._make_request("kindle/navigate", {"action": "preview", "preview": "true"})
         assert nav_response.status_code == 200
         nav_data = nav_response.json()
-        
+
         # Verify navigate response (handle both last-read dialog and normal navigation)
         if nav_data.get("last_read_dialog") and nav_data.get("dialog_text"):
             assert "message" in nav_data
