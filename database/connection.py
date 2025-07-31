@@ -108,7 +108,9 @@ class DatabaseConnection:
         # Can be disabled by setting SQL_LOGGING=false or SQL_LOGGING=0
         sql_logging_enabled = os.getenv("SQL_LOGGING", "true").lower() not in ["false", "0", "no", "off"]
 
-        if (is_development or os.getenv("ENVIRONMENT", "").lower() == "dev") and sql_logging_enabled:
+        # Enable SQL logging for development and staging environments
+        environment = os.getenv("ENVIRONMENT", "").lower()
+        if (is_development or environment in ["dev", "staging"]) and sql_logging_enabled:
             self._setup_query_logging()
             logger.info("SQL query logging enabled (set SQL_LOGGING=false to disable)")
 
