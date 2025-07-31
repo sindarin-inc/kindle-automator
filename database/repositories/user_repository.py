@@ -383,6 +383,7 @@ class UserRepository:
                     else None
                 ),
                 "appium_device_initialized": user.emulator_settings.appium_device_initialized,
+                "keyboard_disabled": user.emulator_settings.keyboard_disabled,
             }
 
         # Add device identifiers

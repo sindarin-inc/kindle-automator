@@ -339,7 +339,7 @@ def setup_logger():
     # Clear the log files
     server_log_file = "logs/server.log"
     debug_log_file = "logs/debug_server.log"
-    
+
     with open(server_log_file, "w") as f:
         f.truncate(0)
     with open(debug_log_file, "w") as f:
@@ -387,7 +387,7 @@ def setup_logger():
     server_file_handler.setFormatter(file_formatter)
     server_file_handler.addFilter(custom_filter)
     root_logger.addHandler(server_file_handler)
-    
+
     # Add file handler for debug_server.log (DEBUG level)
     debug_file_handler = logging.FileHandler(debug_log_file)
     debug_file_handler.setLevel(logging.DEBUG)

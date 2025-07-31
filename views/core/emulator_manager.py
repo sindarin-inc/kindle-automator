@@ -444,7 +444,9 @@ class EmulatorManager:
             logger.debug(f"keyboard_disabled flag is: {keyboard_disabled}")
             if keyboard_disabled:
                 logger.info(f"Setting keyboard_disabled=True in profile for {email}")
-                success = profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
+                success = profile_manager.set_user_field(
+                    email, "keyboard_disabled", True, section="emulator_settings"
+                )
                 logger.debug(f"keyboard_disabled flag set result: {success}")
             else:
                 logger.warning(f"keyboard_disabled flag is False, not setting in profile for {email}")
