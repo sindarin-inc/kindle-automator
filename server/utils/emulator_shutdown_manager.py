@@ -378,13 +378,16 @@ class EmulatorShutdownManager:
 
             # Clear the dirty snapshot flag since we just saved a fresh snapshot
             try:
-                user_repo = UserRepository()
-                user = user_repo.get_by_email(email)
-                if user and user.snapshot_dirty:
-                    user.snapshot_dirty = False
-                    user.snapshot_dirty_since = None
-                    user_repo.update(user)
-                    logger.info(f"Cleared snapshot dirty flag for {email} after successful snapshot")
+                from database.connection import get_db
+
+                with get_db() as session:
+                    user_repo = UserRepository(session)
+                    user = user_repo.get_user_by_email(email)
+                    if user and user.snapshot_dirty:
+                        user.snapshot_dirty = False
+                        user.snapshot_dirty_since = None
+                        session.commit()
+                        logger.info(f"Cleared snapshot dirty flag for {email} after successful snapshot")
             except Exception as e:
                 logger.error(f"Error clearing snapshot dirty flag: {e}", exc_info=True)
 

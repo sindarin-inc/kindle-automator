@@ -110,14 +110,16 @@ class NavigationResource(Resource):
     def _mark_snapshot_dirty(self, sindarin_email):
         """Mark the snapshot as dirty since the user navigated."""
         try:
+            from database.connection import get_db
             from database.repositories.user_repository import UserRepository
 
-            user_repo = UserRepository()
-            user = user_repo.get_by_email(sindarin_email)
-            if user and not user.snapshot_dirty:
-                user.snapshot_dirty = True
-                user.snapshot_dirty_since = datetime.now(timezone.utc)
-                user_repo.update(user)
-                logger.info(f"Marked snapshot as dirty for {sindarin_email}")
+            with get_db() as session:
+                user_repo = UserRepository(session)
+                user = user_repo.get_user_by_email(sindarin_email)
+                if user and not user.snapshot_dirty:
+                    user.snapshot_dirty = True
+                    user.snapshot_dirty_since = datetime.now(timezone.utc)
+                    session.commit()
+                    logger.info(f"Marked snapshot as dirty for {sindarin_email}")
         except Exception as e:
             logger.error(f"Error marking snapshot as dirty for {sindarin_email}: {e}", exc_info=True)
