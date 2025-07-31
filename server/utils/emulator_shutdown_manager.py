@@ -164,7 +164,8 @@ class EmulatorShutdownManager:
         )
         summaries = []
         server = AutomationServer.get_instance()
-        for email in [e for e, a in server.automators.items() if a]:
+        # Create a list copy to avoid dictionary modification during iteration
+        for email in [e for e, a in list(server.automators.items()) if a]:
             summaries.append(self.shutdown_emulator(email, preserve_reading_state))
             time.sleep(1)  # Avoid resource contention between successive shutdowns.
         logger.info("Completed shutdown of %d emulators", len(summaries))

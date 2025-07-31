@@ -366,7 +366,8 @@ def cleanup_resources():
     running_emails = []
     logger.info(f"Checking {len(server.automators)} automators for running emulators...")
 
-    for email, automator in server.automators.items():
+    # Create a list copy to avoid dictionary modification during iteration
+    for email, automator in list(server.automators.items()):
         if automator and automator.emulator_manager.is_emulator_running(email):
             try:
                 logger.info(f"✓ Marking {email} as running at restart for deployment recovery")

@@ -81,7 +81,9 @@ class IdleCheckResource(Resource):
 
             # Check each automator for idle time
             server = AutomationServer.get_instance()
-            for email, automator in server.automators.items():
+            # Create a list copy to avoid dictionary modification during iteration
+            automator_items = list(server.automators.items())
+            for email, automator in automator_items:
                 if automator is None:
                     continue
 
