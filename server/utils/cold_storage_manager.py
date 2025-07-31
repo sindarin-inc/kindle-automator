@@ -518,8 +518,15 @@ class ColdStorageManager:
             logger.warning(f"Cannot archive seed clone AVD")
             return False, {"error": "Cannot archive seed clone AVD"}
 
-        # Check if profile exists
-        if email not in profile_manager.profiles_index:
+        # Check if profile exists in database
+        from database.connection import DatabaseConnection
+        from database.repositories.user_repository import UserRepository
+
+        with DatabaseConnection().get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(email)
+
+        if not user:
             logger.warning(f"Profile not found for email {email}")
             return False, {"error": "Profile not found"}
 
