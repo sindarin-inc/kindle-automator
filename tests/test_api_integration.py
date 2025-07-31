@@ -107,142 +107,6 @@ class TestKindleAPIIntegration:
                     print(f"[STREAM] Failed to parse line: {line}, error: {e}")
 
     @pytest.mark.timeout(120)
-    def test_open_random_book(self):
-        """Test /kindle/open-random-book endpoint."""
-        response = self._make_request("kindle/open-random-book")
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        data = response.json()
-        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-
-        # Handle last read dialog response
-        if data.get("last_read_dialog") and data.get("dialog_text"):
-            # Verify dialog-specific fields
-            assert "message" in data, f"Response missing message field: {data}"
-            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
-        else:
-            # Normal book open response
-            assert "ocr_text" in data, f"Response missing OCR text: {data}"
-            # Verify we got actual text back
-            assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
-
-        # Store book info for subsequent tests
-        self.__class__.opened_book = data
-
-    @pytest.mark.timeout(120)
-    def test_navigate_with_preview(self):
-        """Test /kindle/navigate endpoint with preview."""
-        # First ensure a book is open
-        if not hasattr(self.__class__, "opened_book"):
-            self.test_open_random_book()
-            time.sleep(2)  # Give time for book to load
-
-        # Skip if no book was opened
-        if not hasattr(self.__class__, "opened_book"):
-            pytest.skip("No book available to navigate")
-
-        params = {"action": "preview", "preview": "true"}
-        response = self._make_request("kindle/navigate", params)
-
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        data = response.json()
-
-        # Handle last read dialog response
-        if data.get("last_read_dialog") and data.get("dialog_text"):
-            # Verify dialog-specific fields
-            assert "message" in data, f"Response missing message field: {data}"
-            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
-        else:
-            # Normal navigation response
-            assert (
-                "ocr_text" in data or "text" in data or "content" in data
-            ), f"Response missing OCR text: {data}"
-            # Verify we got actual text back
-            text_field = data.get("ocr_text") or data.get("text") or data.get("content")
-            assert len(text_field) > 0, "OCR text should not be empty"
-
-    @pytest.mark.timeout(120)
-    def _test_shutdown(self):
-        """Test /kindle/shutdown endpoint."""
-        try:
-            response = self._make_request("shutdown", method="POST")
-        except requests.exceptions.ReadTimeout:
-            # Don't skip - let the test fail
-            raise
-
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        data = response.json()
-        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-
-        # Verify shutdown was acknowledged
-        if "success" in data:
-            assert data["success"] is True, f"Shutdown failed: {data}"
-        elif "status" in data:
-            assert data["status"] in [
-                "success",
-                "ok",
-                "completed",
-            ], f"Unexpected status: {data}"
-
-    def test_endpoints_sequence(self):
-        """Test the full sequence of endpoints."""
-        # Open book
-        open_response = self._make_request("kindle/open-random-book")
-        assert open_response.status_code == 200
-        open_data = open_response.json()
-
-        # Verify open response (handle both last-read dialog and normal book open)
-        if open_data.get("last_read_dialog") and open_data.get("dialog_text"):
-            assert "message" in open_data
-            assert len(open_data["dialog_text"]) > 0
-        else:
-            assert "ocr_text" in open_data
-            assert len(open_data["ocr_text"]) > 0
-
-        # Navigate with preview
-        nav_response = self._make_request("kindle/navigate", {"action": "preview", "preview": "true"})
-        assert nav_response.status_code == 200
-        nav_data = nav_response.json()
-
-        # Verify navigate response (handle both last-read dialog and normal navigation)
-        if nav_data.get("last_read_dialog") and nav_data.get("dialog_text"):
-            assert "message" in nav_data
-            assert len(nav_data["dialog_text"]) > 0
-        else:
-            assert any(key in nav_data for key in ["ocr_text", "text", "content"])
-            text_field = nav_data.get("ocr_text") or nav_data.get("text") or nav_data.get("content")
-            assert len(text_field) > 0
-
-        # Shutdown
-        shutdown_response = self._make_request("kindle/shutdown", method="POST")
-        assert shutdown_response.status_code == 200
-
-    @pytest.mark.expensive
-    def test_recreate(self):
-        """Ensure that recreation/creating a new AVD works"""
-        response = self._make_request(
-            "kindle/auth",
-            method="GET",
-            params={
-                "user_email": "recreate@solreader.com",
-                "recreate": "1",
-            },
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-        assert data["success"] is True, f"Recreation failed: {data}"
-        assert data["authenticated"] is False, f"Recreation failed: {data}"
-
-        # Shutdown
-        shutdown_response = self._make_request(
-            "kindle/shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
-        )
-        assert shutdown_response.status_code == 200
-
-    @pytest.mark.timeout(120)
     def test_books_endpoint(self):
         """Test /books endpoint with sync, pagination, and streaming functionality."""
         # Always use the web-app proxy for testing
@@ -420,6 +284,142 @@ class TestKindleAPIIntegration:
                 print(f"[TEST] Expected error response: {response.status_code}")
             else:
                 pytest.fail(f"Streaming mode failed: {e}")
+
+    @pytest.mark.timeout(120)
+    def test_open_random_book(self):
+        """Test /kindle/open-random-book endpoint."""
+        response = self._make_request("kindle/open-random-book")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
+
+        # Handle last read dialog response
+        if data.get("last_read_dialog") and data.get("dialog_text"):
+            # Verify dialog-specific fields
+            assert "message" in data, f"Response missing message field: {data}"
+            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
+        else:
+            # Normal book open response
+            assert "ocr_text" in data, f"Response missing OCR text: {data}"
+            # Verify we got actual text back
+            assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
+
+        # Store book info for subsequent tests
+        self.__class__.opened_book = data
+
+    @pytest.mark.timeout(120)
+    def test_navigate_with_preview(self):
+        """Test /kindle/navigate endpoint with preview."""
+        # First ensure a book is open
+        if not hasattr(self.__class__, "opened_book"):
+            self.test_open_random_book()
+            time.sleep(2)  # Give time for book to load
+
+        # Skip if no book was opened
+        if not hasattr(self.__class__, "opened_book"):
+            pytest.skip("No book available to navigate")
+
+        params = {"action": "preview", "preview": "true"}
+        response = self._make_request("kindle/navigate", params)
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+
+        # Handle last read dialog response
+        if data.get("last_read_dialog") and data.get("dialog_text"):
+            # Verify dialog-specific fields
+            assert "message" in data, f"Response missing message field: {data}"
+            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
+        else:
+            # Normal navigation response
+            assert (
+                "ocr_text" in data or "text" in data or "content" in data
+            ), f"Response missing OCR text: {data}"
+            # Verify we got actual text back
+            text_field = data.get("ocr_text") or data.get("text") or data.get("content")
+            assert len(text_field) > 0, "OCR text should not be empty"
+
+    @pytest.mark.timeout(120)
+    def _test_shutdown(self):
+        """Test /kindle/shutdown endpoint."""
+        try:
+            response = self._make_request("shutdown", method="POST")
+        except requests.exceptions.ReadTimeout:
+            # Don't skip - let the test fail
+            raise
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
+
+        # Verify shutdown was acknowledged
+        if "success" in data:
+            assert data["success"] is True, f"Shutdown failed: {data}"
+        elif "status" in data:
+            assert data["status"] in [
+                "success",
+                "ok",
+                "completed",
+            ], f"Unexpected status: {data}"
+
+    def test_endpoints_sequence(self):
+        """Test the full sequence of endpoints."""
+        # Open book
+        open_response = self._make_request("kindle/open-random-book")
+        assert open_response.status_code == 200
+        open_data = open_response.json()
+
+        # Verify open response (handle both last-read dialog and normal book open)
+        if open_data.get("last_read_dialog") and open_data.get("dialog_text"):
+            assert "message" in open_data
+            assert len(open_data["dialog_text"]) > 0
+        else:
+            assert "ocr_text" in open_data
+            assert len(open_data["ocr_text"]) > 0
+
+        # Navigate with preview
+        nav_response = self._make_request("kindle/navigate", {"action": "preview", "preview": "true"})
+        assert nav_response.status_code == 200
+        nav_data = nav_response.json()
+
+        # Verify navigate response (handle both last-read dialog and normal navigation)
+        if nav_data.get("last_read_dialog") and nav_data.get("dialog_text"):
+            assert "message" in nav_data
+            assert len(nav_data["dialog_text"]) > 0
+        else:
+            assert any(key in nav_data for key in ["ocr_text", "text", "content"])
+            text_field = nav_data.get("ocr_text") or nav_data.get("text") or nav_data.get("content")
+            assert len(text_field) > 0
+
+        # Shutdown
+        shutdown_response = self._make_request("kindle/shutdown", method="POST")
+        assert shutdown_response.status_code == 200
+
+    @pytest.mark.expensive
+    def test_recreate(self):
+        """Ensure that recreation/creating a new AVD works"""
+        response = self._make_request(
+            "kindle/auth",
+            method="GET",
+            params={
+                "user_email": "recreate@solreader.com",
+                "recreate": "1",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
+        assert data["success"] is True, f"Recreation failed: {data}"
+        assert data["authenticated"] is False, f"Recreation failed: {data}"
+
+        # Shutdown
+        shutdown_response = self._make_request(
+            "kindle/shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
+        )
+        assert shutdown_response.status_code == 200
 
 
 if __name__ == "__main__":
