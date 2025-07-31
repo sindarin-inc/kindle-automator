@@ -3,6 +3,15 @@
 ## Testing
 
 - **Local testing email**: Always use `sam@solreader.com` when testing API endpoints locally
+- **Staff token generation**: To test with different user emails (e.g., `recreate@solreader.com`):
+  ```bash
+  # Generate token and use it inline
+  TOKEN=$(curl -s -X GET "http://localhost:4098/staff-auth?auth=1" | jq -r '.token')
+  
+  # Use the token in requests
+  curl -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1" \
+    -H "Cookie: staff_token=$TOKEN"
+  ```
 
 ## Issue References
 
@@ -76,3 +85,5 @@ tail -n 20 logs/server_output.log
 
 - Don't make test files unless directed to
 - If you need to use ssh for prod or staging, read the Makefile to see how `make ssh` and `make ssh-staging` work so you can make a non-interactive ssh command prefix for what you want to do on prod or staging
+- **Never kill emulators or servers directly**: Always use `make claude-run` to restart the server (it auto-kills existing servers) or the `/shutdown` API endpoint to gracefully shutdown emulators
+- **Always pass sindarin_email parameter**: When using staff authentication, include `sindarin_email` parameter in each request body/params to properly identify the user context

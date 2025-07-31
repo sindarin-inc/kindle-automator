@@ -995,9 +995,21 @@ class EmulatorLauncher:
                 avd_manager = AVDProfileManager.get_instance()
                 device_identifiers = avd_manager.get_user_field(email, "device_identifiers")
                 if device_identifiers:
-                    prop_args = get_emulator_prop_args(device_identifiers)
-                    common_args.extend(prop_args)
-                    logger.info(f"Added randomized device identifier props: {prop_args}")
+                    # Convert DeviceIdentifiers model to dictionary
+                    identifiers_dict = {
+                        "hw.wifi.mac": device_identifiers.hw_wifi_mac,
+                        "hw.ethernet.mac": device_identifiers.hw_ethernet_mac,
+                        "ro.serialno": device_identifiers.ro_serialno,
+                        "ro.build.id": device_identifiers.ro_build_id,
+                        "ro.product.name": device_identifiers.ro_product_name,
+                        "android_id": device_identifiers.android_id,
+                    }
+                    # Filter out None values
+                    identifiers_dict = {k: v for k, v in identifiers_dict.items() if v is not None}
+                    if identifiers_dict:
+                        prop_args = get_emulator_prop_args(identifiers_dict)
+                        common_args.extend(prop_args)
+                        logger.info(f"Added randomized device identifier props: {prop_args}")
             except Exception as e:
                 logger.warning(f"Could not add device identifier props: {e}")
                 # Continue without randomized identifiers
@@ -1009,6 +1021,11 @@ class EmulatorLauncher:
                 if not post_boot_randomized:
                     force_cold_boot_for_randomization = True
                     logger.info(f"Forcing cold boot for {email} to apply device randomization")
+
+            # Also force cold boot for newly created AVDs (no snapshot timestamp)
+            if not last_snapshot_timestamp:
+                force_cold_boot_for_randomization = True
+                logger.info(f"Forcing cold boot for {email} - newly created AVD with no snapshot history")
 
             # Check if snapshot is dirty
             snapshot_is_dirty = False

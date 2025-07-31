@@ -620,7 +620,20 @@ class AVDCreator:
                 avd_manager.set_user_field(email, "created_from_seed_clone", True)
                 # Store randomized identifiers in user profile for consistent use
                 if randomized_identifiers:
-                    avd_manager.set_user_field(email, "device_identifiers", randomized_identifiers)
+                    # Set each device identifier field individually
+                    for key, value in randomized_identifiers.items():
+                        # Convert key format from config.ini style to database field names
+                        field_map = {
+                            "hw.wifi.mac": "hw_wifi_mac",
+                            "hw.ethernet.mac": "hw_ethernet_mac",
+                            "ro.serialno": "ro_serialno",
+                            "ro.build.id": "ro_build_id",
+                            "ro.product.name": "ro_product_name",
+                            "android_id": "android_id",
+                        }
+                        if key in field_map:
+                            db_field = field_map[key]
+                            avd_manager.set_user_field(email, db_field, value, section="device_identifiers")
                 # Clear post_boot_randomized flag to ensure randomization happens on first boot
                 avd_manager.set_user_field(email, "post_boot_randomized", False)
                 # Set Android version - seed clone always uses main SYSTEM_IMAGE (Android 36)
