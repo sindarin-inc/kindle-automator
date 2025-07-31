@@ -87,3 +87,14 @@ tail -n 20 logs/server_output.log
 - If you need to use ssh for prod or staging, read the Makefile to see how `make ssh` and `make ssh-staging` work so you can make a non-interactive ssh command prefix for what you want to do on prod or staging
 - **Never kill emulators or servers directly**: Always use `make claude-run` to restart the server (it auto-kills existing servers) or the `/shutdown` API endpoint to gracefully shutdown emulators
 - **Always pass sindarin_email parameter**: When using staff authentication, include `sindarin_email` parameter in each request body/params to properly identify the user context
+
+## SQL Query Logging
+
+In development mode (`FLASK_ENV=development`), all SQL queries are logged with:
+- **Colorization**: SELECT queries in yellow, UPDATE queries in teal
+- **Timing**: Shows execution time for each query
+- **Full values**: Parameters are rendered with actual values
+- **To disable**: Set `SQL_LOGGING=false` before starting the server
+  ```bash
+  SQL_LOGGING=false make claude-run
+  ```
