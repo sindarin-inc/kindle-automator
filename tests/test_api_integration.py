@@ -147,11 +147,18 @@ class TestKindleAPIIntegration:
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
-        assert "ocr_text" in data or "text" in data or "content" in data, f"Response missing OCR text: {data}"
-
-        # Verify we got actual text back
-        text_field = data.get("ocr_text")
-        assert len(text_field) > 0, "OCR text should not be empty"
+        
+        # Handle last read dialog response
+        if data.get("last_read_dialog") and data.get("dialog_text"):
+            # Verify dialog-specific fields
+            assert "message" in data, f"Response missing message field: {data}"
+            assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
+        else:
+            # Normal navigation response
+            assert "ocr_text" in data or "text" in data or "content" in data, f"Response missing OCR text: {data}"
+            # Verify we got actual text back
+            text_field = data.get("ocr_text") or data.get("text") or data.get("content")
+            assert len(text_field) > 0, "OCR text should not be empty"
 
     @pytest.mark.timeout(120)
     def _test_shutdown(self):
@@ -182,12 +189,29 @@ class TestKindleAPIIntegration:
         # Open book
         open_response = self._make_request("kindle/open-random-book")
         assert open_response.status_code == 200
+        open_data = open_response.json()
+        
+        # Verify open response (handle both last-read dialog and normal book open)
+        if open_data.get("last_read_dialog") and open_data.get("dialog_text"):
+            assert "message" in open_data
+            assert len(open_data["dialog_text"]) > 0
+        else:
+            assert "ocr_text" in open_data
+            assert len(open_data["ocr_text"]) > 0
 
         # Navigate with preview
         nav_response = self._make_request("kindle/navigate", {"action": "preview", "preview": "true"})
         assert nav_response.status_code == 200
         nav_data = nav_response.json()
-        assert any(key in nav_data for key in ["ocr_text", "text", "content"])
+        
+        # Verify navigate response (handle both last-read dialog and normal navigation)
+        if nav_data.get("last_read_dialog") and nav_data.get("dialog_text"):
+            assert "message" in nav_data
+            assert len(nav_data["dialog_text"]) > 0
+        else:
+            assert any(key in nav_data for key in ["ocr_text", "text", "content"])
+            text_field = nav_data.get("ocr_text") or nav_data.get("text") or nav_data.get("content")
+            assert len(text_field) > 0
 
         # Shutdown
         shutdown_response = self._make_request("kindle/shutdown", method="POST")
@@ -221,7 +245,7 @@ class TestKindleAPIIntegration:
         """Test /books endpoint with sync, pagination, and streaming functionality."""
         # Always use the web-app proxy for testing
         url = f"{self.base_url}/kindle/books"
-        params = {}
+        params = self.default_params.copy()
 
         # Test 1: Non-streaming mode (sync=false or not specified)
         print("\n[TEST] Testing non-streaming mode (sync=false)...")
@@ -309,7 +333,7 @@ class TestKindleAPIIntegration:
         print("\n[TEST] Testing streaming mode (sync=true)...")
         # Use the dedicated streaming endpoint for sync=true
         stream_url = f"{self.base_url}/kindle/books-stream"
-        stream_params = params.copy()
+        stream_params = self.default_params.copy()
         stream_params["sync"] = "true"
 
         try:
