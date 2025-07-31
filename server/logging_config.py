@@ -233,23 +233,33 @@ class RelativePathFormatter(logging.Formatter):
 
         # Truncate long paths from the left, keeping the filename
         max_length = 22  # Half of the original 44 characters
-        if len(record.pathname) > max_length:
+        original_path = record.pathname
+
+        if len(original_path) > max_length:
             # Find the last slash
-            last_slash = record.pathname.rfind("/")
+            last_slash = original_path.rfind("/")
             if last_slash > 0:
-                filename = record.pathname[last_slash + 1 :]
+                filename = original_path[last_slash + 1 :]
                 # If filename itself is too long, just truncate it
-                if len(filename) >= max_length:
-                    record.pathname = "..." + filename[-(max_length - 3) :]
+                if len(filename) >= max_length - 3:  # -3 for "..."
+                    truncated = "..." + filename[-(max_length - 3) :]
                 else:
                     # Calculate how much of the path we can show
-                    remaining_space = max_length - len(filename) - 4  # -4 for ".../""
-                    if remaining_space > 0:
+                    # We want: "..." + path_part + "/" + filename = exactly max_length
+                    available_for_path = max_length - len(filename) - 4  # -4 for ".../"
+                    if available_for_path > 0:
                         # Show some of the directory path
-                        path_part = record.pathname[:last_slash]
-                        record.pathname = "..." + path_part[-remaining_space:] + "/" + filename
+                        path_part = original_path[:last_slash]
+                        truncated = "..." + path_part[-available_for_path:] + "/" + filename
                     else:
-                        record.pathname = ".../" + filename
+                        truncated = ".../" + filename
+
+                # Ensure the truncated path is exactly max_length characters
+                if len(truncated) > max_length:
+                    # If still too long, just take the last max_length chars
+                    record.pathname = "..." + truncated[-(max_length - 3) :]
+                else:
+                    record.pathname = truncated
 
         return super().format(record)
 
