@@ -41,6 +41,8 @@ class User(Base):
     needs_device_randomization: Mapped[bool] = mapped_column(Boolean, default=False)
     last_snapshot_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
+    snapshot_dirty: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    snapshot_dirty_since: Mapped[Optional[datetime]] = mapped_column(DateTime)
     kindle_version_name: Mapped[Optional[str]] = mapped_column(String(50))
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
     android_version: Mapped[Optional[str]] = mapped_column(String(10))

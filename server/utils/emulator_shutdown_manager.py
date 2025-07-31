@@ -368,12 +368,26 @@ class EmulatorShutdownManager:
     def _update_snapshot_timestamp(email: str):
         """Persist the default_boot snapshot timestamp to the user's AVD profile."""
         with contextlib.suppress(Exception):
+            from database.repositories.user_repository import UserRepository
             from views.core.avd_profile_manager import AVDProfileManager
 
             ts = datetime.now(timezone.utc)
             avd_mgr = AVDProfileManager.get_instance()
             avd_mgr.set_user_field(email, "last_snapshot_timestamp", ts)
             avd_mgr.set_user_field(email, "last_snapshot", None)
+
+            # Clear the dirty snapshot flag since we just saved a fresh snapshot
+            try:
+                user_repo = UserRepository()
+                user = user_repo.get_by_email(email)
+                if user and user.snapshot_dirty:
+                    user.snapshot_dirty = False
+                    user.snapshot_dirty_since = None
+                    user_repo.update(user)
+                    logger.info(f"Cleared snapshot dirty flag for {email} after successful snapshot")
+            except Exception as e:
+                logger.error(f"Error clearing snapshot dirty flag: {e}", exc_info=True)
+
             logger.info("Updated default_boot snapshot timestamp to %s for %s", ts, email)
 
     # ------------------- stop emulator + processes ------------------ #

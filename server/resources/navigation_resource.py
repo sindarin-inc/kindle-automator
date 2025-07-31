@@ -1,6 +1,7 @@
 """Navigation resource for page navigation in books."""
 
 import logging
+from datetime import datetime, timezone
 
 from flask import request
 from flask_restful import Resource
@@ -60,6 +61,9 @@ class NavigationResource(Resource):
         # Log the navigation parameters
         logger.info(f"Navigation params: {params}")
 
+        # Mark snapshot as dirty since user navigated
+        self._mark_snapshot_dirty(sindarin_email)
+
         # Delegate to the handler
         return nav_handler.navigate(
             navigate_count=params["navigate_count"],
@@ -102,3 +106,18 @@ class NavigationResource(Resource):
 
         # Call the internal implementation
         return self._navigate_impl(direction)
+
+    def _mark_snapshot_dirty(self, sindarin_email):
+        """Mark the snapshot as dirty since the user navigated."""
+        try:
+            from database.repositories.user_repository import UserRepository
+
+            user_repo = UserRepository()
+            user = user_repo.get_by_email(sindarin_email)
+            if user and not user.snapshot_dirty:
+                user.snapshot_dirty = True
+                user.snapshot_dirty_since = datetime.now(timezone.utc)
+                user_repo.update(user)
+                logger.info(f"Marked snapshot as dirty for {sindarin_email}")
+        except Exception as e:
+            logger.error(f"Error marking snapshot as dirty for {sindarin_email}: {e}", exc_info=True)

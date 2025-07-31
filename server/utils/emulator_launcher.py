@@ -1010,10 +1010,29 @@ class EmulatorLauncher:
                     force_cold_boot_for_randomization = True
                     logger.info(f"Forcing cold boot for {email} to apply device randomization")
 
+            # Check if snapshot is dirty
+            snapshot_is_dirty = False
+            try:
+                from database.repositories.user_repository import UserRepository
+
+                user_repo = UserRepository()
+                user = user_repo.get_by_email(email)
+                if user and user.snapshot_dirty:
+                    snapshot_is_dirty = True
+                    logger.warning(
+                        f"Snapshot is marked as dirty for {email} (dirty since {user.snapshot_dirty_since}). "
+                        "Will force cold boot to avoid loading stale state."
+                    )
+            except Exception as e:
+                logger.error(f"Error checking snapshot dirty status: {e}", exc_info=True)
+
             # Add snapshot or cold boot args
-            if cold_boot or force_cold_boot_for_randomization:
+            if cold_boot or force_cold_boot_for_randomization or snapshot_is_dirty:
                 common_args.extend(["-no-snapshot-load"])
-                logger.info(f"Starting emulator for {email} with cold boot (no snapshot)")
+                if snapshot_is_dirty:
+                    logger.info(f"Starting emulator for {email} with cold boot due to dirty snapshot")
+                else:
+                    logger.info(f"Starting emulator for {email} with cold boot (no snapshot)")
             else:
                 # Load from default_boot snapshot if it exists
                 common_args.extend(["-snapshot", "default_boot"])
