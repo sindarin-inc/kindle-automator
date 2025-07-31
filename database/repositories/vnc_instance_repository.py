@@ -1,7 +1,7 @@
 """Repository for VNC instance database operations."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import and_, func, select, update
@@ -87,7 +87,7 @@ class VNCInstanceRepository:
             stmt = (
                 update(VNCInstance)
                 .where(and_(VNCInstance.id == instance_id, VNCInstance.assigned_profile.is_(None)))
-                .values(assigned_profile=email, updated_at=datetime.utcnow())
+                .values(assigned_profile=email, updated_at=datetime.now(timezone.utc))
             )
             result = session.execute(stmt)
             session.commit()
@@ -105,7 +105,7 @@ class VNCInstanceRepository:
                     appium_pid=None,
                     appium_running=False,
                     appium_last_health_check=None,
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
             )
             result = session.execute(stmt)
@@ -118,7 +118,7 @@ class VNCInstanceRepository:
             stmt = (
                 update(VNCInstance)
                 .where(VNCInstance.assigned_profile == email)
-                .values(emulator_id=emulator_id, updated_at=datetime.utcnow())
+                .values(emulator_id=emulator_id, updated_at=datetime.now(timezone.utc))
             )
             result = session.execute(stmt)
             session.commit()
@@ -136,7 +136,7 @@ class VNCInstanceRepository:
             values = {
                 "appium_running": appium_running,
                 "appium_pid": appium_pid,
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(timezone.utc),
             }
             if appium_last_health_check is not None:
                 values["appium_last_health_check"] = appium_last_health_check
@@ -155,7 +155,7 @@ class VNCInstanceRepository:
                 .values(
                     appium_running=False,
                     appium_pid=None,
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
             )
             result = session.execute(stmt)
@@ -193,7 +193,7 @@ class VNCInstanceRepository:
                         VNCInstance.emulator_id.notin_(active_emulator_ids) if active_emulator_ids else True,
                     )
                 )
-                .values(emulator_id=None, updated_at=datetime.utcnow())
+                .values(emulator_id=None, updated_at=datetime.now(timezone.utc))
             )
             result = session.execute(stmt)
             session.commit()

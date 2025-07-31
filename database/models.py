@@ -89,6 +89,7 @@ class EmulatorSettings(Base):
     memory_optimizations_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     memory_optimization_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
     appium_device_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
+    keyboard_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationship
     user: Mapped["User"] = relationship(back_populates="emulator_settings")

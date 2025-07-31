@@ -336,9 +336,13 @@ def setup_logger():
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
-    # Clear the log file
-    log_file = "logs/server.log"
-    with open(log_file, "w") as f:
+    # Clear the log files
+    server_log_file = "logs/server.log"
+    debug_log_file = "logs/debug_server.log"
+    
+    with open(server_log_file, "w") as f:
+        f.truncate(0)
+    with open(debug_log_file, "w") as f:
         f.truncate(0)
 
     # Create formatter - check if we should strip colors from console output
@@ -370,19 +374,26 @@ def setup_logger():
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    # Add console handler with color formatter
+    # Add console handler with color formatter (INFO level)
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(console_formatter)
     console_handler.addFilter(custom_filter)
     root_logger.addHandler(console_handler)
 
-    # Add file handler for main log with no-color formatter
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(file_formatter)
-    file_handler.addFilter(custom_filter)
-    root_logger.addHandler(file_handler)
+    # Add file handler for main server.log (INFO level)
+    server_file_handler = logging.FileHandler(server_log_file)
+    server_file_handler.setLevel(logging.INFO)
+    server_file_handler.setFormatter(file_formatter)
+    server_file_handler.addFilter(custom_filter)
+    root_logger.addHandler(server_file_handler)
+    
+    # Add file handler for debug_server.log (DEBUG level)
+    debug_file_handler = logging.FileHandler(debug_log_file)
+    debug_file_handler.setLevel(logging.DEBUG)
+    debug_file_handler.setFormatter(file_formatter)
+    debug_file_handler.addFilter(custom_filter)
+    root_logger.addHandler(debug_file_handler)
 
     # Add dynamic email handler for user-specific logs with no-color formatter
     _email_handler = DynamicEmailHandler()

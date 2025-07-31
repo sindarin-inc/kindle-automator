@@ -211,11 +211,11 @@ class EmulatorManager:
             )
 
             if success:
-                logger.info(f"Emulator {emulator_id} launched successfully on display :{display_num}")
+                logger.debug(f"Emulator {emulator_id} launched successfully on display :{display_num}")
 
                 # Cache the emulator info to avoid repeated ADB queries
                 self._emulator_cache[email] = (emulator_id, avd_name, time.time())
-                logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
+                logger.debug(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
 
                 # Check adb devices immediately after launch to see if it's detected
                 try:
@@ -226,11 +226,11 @@ class EmulatorManager:
                         text=True,
                         timeout=3,
                     )
-                    logger.info(f"ADB devices immediately after launch: {devices_after.stdout.strip()}")
+                    logger.debug(f"ADB devices immediately after launch: {devices_after.stdout.strip()}")
 
                     # Check if our emulator ID appears in the output
                     if emulator_id in devices_after.stdout:
-                        logger.info(f"Emulator {emulator_id} is visible to ADB immediately after launch")
+                        logger.debug(f"Emulator {emulator_id} is visible to ADB immediately after launch")
                     else:
                         logger.warning(
                             f"Emulator {emulator_id} is NOT visible to ADB immediately after launch"
@@ -239,7 +239,7 @@ class EmulatorManager:
                     logger.error(f"Error checking ADB devices after launch: {e}", exc_info=True)
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
-                logger.info("Waiting for emulator to boot...")
+                logger.debug("Waiting for emulator to boot...")
                 deadline = time.time() + 45  # 45 seconds timeout
 
                 # Active polling approach - check every second and log consistently
@@ -254,7 +254,7 @@ class EmulatorManager:
                         last_check_time = current_time
 
                         # Log each check with timestamp
-                        logger.info(f"Checking if emulator is ready for {email} (check #{check_count})")
+                        logger.debug(f"Checking if emulator is ready for {email} (check #{check_count})")
 
                         # Check if emulator is ready through the launcher
                         if self.emulator_launcher.is_emulator_ready(email):
@@ -414,6 +414,7 @@ class EmulatorManager:
                     ):
                         keyboard_disabled = True
                         logger.info(f"Keyboard configuration successful: {description}")
+                        logger.debug(f"Setting keyboard_disabled=True after: {description}")
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
@@ -440,8 +441,13 @@ class EmulatorManager:
                 section="emulator_settings",
             )
             # Store keyboard disabled state
+            logger.debug(f"keyboard_disabled flag is: {keyboard_disabled}")
             if keyboard_disabled:
-                profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
+                logger.info(f"Setting keyboard_disabled=True in profile for {email}")
+                success = profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
+                logger.debug(f"keyboard_disabled flag set result: {success}")
+            else:
+                logger.warning(f"keyboard_disabled flag is False, not setting in profile for {email}")
 
             logger.info(f"Memory optimization settings applied successfully for {email}")
 

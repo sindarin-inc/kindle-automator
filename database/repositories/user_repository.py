@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select, update
@@ -136,7 +136,7 @@ class UserRepository:
             stmt = (
                 update(User)
                 .where(User.email == email)
-                .values({field: value, "updated_at": datetime.utcnow()})
+                .values({field: value, "updated_at": datetime.now(timezone.utc)})
             )
             result = self.session.execute(stmt)
             self.session.commit()
@@ -168,22 +168,38 @@ class UserRepository:
             if section == "emulator_settings":
                 if not user.emulator_settings:
                     user.emulator_settings = EmulatorSettings(user=user)
-                setattr(user.emulator_settings, field, value)
+                try:
+                    setattr(user.emulator_settings, field, value)
+                except AttributeError as e:
+                    logger.error(f"Field '{field}' does not exist in EmulatorSettings model: {e}")
+                    return False
 
             elif section == "device_identifiers":
                 if not user.device_identifiers:
                     user.device_identifiers = DeviceIdentifiers(user=user)
-                setattr(user.device_identifiers, field, value)
+                try:
+                    setattr(user.device_identifiers, field, value)
+                except AttributeError as e:
+                    logger.error(f"Field '{field}' does not exist in DeviceIdentifiers model: {e}")
+                    return False
 
             elif section == "library_settings":
                 if not user.library_settings:
                     user.library_settings = LibrarySettings(user=user)
-                setattr(user.library_settings, field, value)
+                try:
+                    setattr(user.library_settings, field, value)
+                except AttributeError as e:
+                    logger.error(f"Field '{field}' does not exist in LibrarySettings model: {e}")
+                    return False
 
             elif section == "reading_settings":
                 if not user.reading_settings:
                     user.reading_settings = ReadingSettings(user=user)
-                setattr(user.reading_settings, field, value)
+                try:
+                    setattr(user.reading_settings, field, value)
+                except AttributeError as e:
+                    logger.error(f"Field '{field}' does not exist in ReadingSettings model: {e}")
+                    return False
 
             elif section == "preferences":
                 self._update_preference(user, field, value)
@@ -192,7 +208,7 @@ class UserRepository:
                 logger.error(f"Unknown section: {section}")
                 return False
 
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now(timezone.utc)
             user.version += 1
             self.session.commit()
             return True
@@ -229,7 +245,7 @@ class UserRepository:
             True if update was successful
         """
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             stmt = update(User).where(User.email == email).values(last_used=now, updated_at=now)
             result = self.session.execute(stmt)
             self.session.commit()
@@ -258,9 +274,9 @@ class UserRepository:
             True if update was successful
         """
         try:
-            values = {"updated_at": datetime.utcnow()}
+            values = {"updated_at": datetime.now(timezone.utc)}
             if authenticated:
-                values["auth_date"] = datetime.utcnow()
+                values["auth_date"] = datetime.now(timezone.utc)
 
             stmt = update(User).where(User.email == email).values(**values)
             result = self.session.execute(stmt)
