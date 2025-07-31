@@ -1453,14 +1453,14 @@ class EmulatorLauncher:
                         logger.debug(
                             f"Cached emulator {emulator_id} for AVD {avd_name} not found in adb devices, removing from cache"
                         )
-                        del self.running_emulators[avd_name]
+                        self.running_emulators.pop(avd_name, None)
                 except Exception as adb_e:
                     logger.warning(f"Error running adb devices: {adb_e}", exc_info=True)
                     # Fall back to our regular verify method if adb command fails
                     if self._verify_emulator_running(emulator_id, email):
                         return emulator_id, display_num
                     else:
-                        del self.running_emulators[avd_name]
+                        self.running_emulators.pop(avd_name, None)
         except Exception as e:
             logger.warning(f"Error checking running emulator via adb: {e}", exc_info=True)
 

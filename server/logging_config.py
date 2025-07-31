@@ -82,7 +82,7 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
 
         # Use the same formatter as the main logger
         formatter = RelativePathFormatter(
-            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)44s:%(lineno)-4d{RESET} %(message)s",
+            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
         file_handler.setFormatter(formatter)
@@ -231,6 +231,26 @@ class RelativePathFormatter(logging.Formatter):
         if record.pathname.startswith(project_root):
             record.pathname = os.path.relpath(record.pathname, project_root)
 
+        # Truncate long paths from the left, keeping the filename
+        max_length = 22  # Half of the original 44 characters
+        if len(record.pathname) > max_length:
+            # Find the last slash
+            last_slash = record.pathname.rfind("/")
+            if last_slash > 0:
+                filename = record.pathname[last_slash + 1 :]
+                # If filename itself is too long, just truncate it
+                if len(filename) >= max_length:
+                    record.pathname = "..." + filename[-(max_length - 3) :]
+                else:
+                    # Calculate how much of the path we can show
+                    remaining_space = max_length - len(filename) - 4  # -4 for ".../""
+                    if remaining_space > 0:
+                        # Show some of the directory path
+                        path_part = record.pathname[:last_slash]
+                        record.pathname = "..." + path_part[-remaining_space:] + "/" + filename
+                    else:
+                        record.pathname = ".../" + filename
+
         return super().format(record)
 
 
@@ -273,7 +293,7 @@ def get_idle_timer_handler():
 
     # Use the same formatter as the main logger
     formatter = RelativePathFormatter(
-        "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
+        f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
     file_handler.setFormatter(formatter)
@@ -348,18 +368,18 @@ def setup_logger():
     # Create formatter - check if we should strip colors from console output
     if os.environ.get("NO_COLOR_CONSOLE"):
         console_formatter = RelativePathFormatter(
-            "[%(levelname)5.5s] [%(asctime)s] %(pathname)44s:%(lineno)-4d %(message)s",
+            "[%(levelname)5.5s] [%(asctime)s] %(pathname)22s:%(lineno)-4d %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
     else:
         console_formatter = RelativePathFormatter(
-            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)44s:%(lineno)-4d{RESET} %(message)s",
+            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
 
     # File formatters always have colors
     file_formatter = RelativePathFormatter(
-        f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)44s:%(lineno)-4d{RESET} %(message)s",
+        f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
 

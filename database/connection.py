@@ -12,11 +12,20 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
 
-from server.utils.ansi_colors import BRIGHT_CYAN, BRIGHT_GREEN, DIM_GRAY, RESET, YELLOW
+from server.utils.ansi_colors import (
+    BRIGHT_CYAN,
+    BRIGHT_GREEN,
+    DIM_GRAY,
+    GRAY,
+    RED,
+    RESET,
+    YELLOW,
+)
 
 logger = logging.getLogger(__name__)
 
 # Global flag to track if query logging is already set up
+# Reset to False to ensure new color scheme is picked up on restart
 _query_logging_initialized = False
 
 
@@ -98,7 +107,7 @@ class DatabaseConnection:
         # Add query logging for development environment
         # Can be disabled by setting SQL_LOGGING=false or SQL_LOGGING=0
         sql_logging_enabled = os.getenv("SQL_LOGGING", "true").lower() not in ["false", "0", "no", "off"]
-        
+
         if (is_development or os.getenv("ENVIRONMENT", "").lower() == "dev") and sql_logging_enabled:
             self._setup_query_logging()
             logger.info("SQL query logging enabled (set SQL_LOGGING=false to disable)")
@@ -113,11 +122,11 @@ class DatabaseConnection:
     def _setup_query_logging(self):
         """Set up SQL query logging with timing for development environment."""
         global _query_logging_initialized
-        
+
         # Only set up logging once globally
         if _query_logging_initialized:
             return
-            
+
         _query_logging_initialized = True
         query_times = {}
 
@@ -137,7 +146,7 @@ class DatabaseConnection:
                 # SQLAlchemy passes parameters differently for different dialects
                 # For PostgreSQL with psycopg2, we need to handle both dict and tuple formats
                 try:
-                    if hasattr(parameters, 'keys'):  # Dict-like object
+                    if hasattr(parameters, "keys"):  # Dict-like object
                         # Handle named parameters
                         for key, value in parameters.items():
                             placeholder = f"%({key})s"
@@ -180,7 +189,7 @@ class DatabaseConnection:
                     # If rendering fails, just use the original query
                     logger.debug(f"Failed to render query parameters: {e}")
                     rendered_query = statement
-            
+
             # Format the query
             formatted_query = format_sql_query(rendered_query)
 
@@ -194,11 +203,14 @@ class DatabaseConnection:
             else:
                 query_color = DIM_GRAY
 
-            # Format timing
-            if total_time > 0.1:  # Slow query (> 100ms)
-                time_str = f"{BRIGHT_GREEN}{total_time*1000:.1f}ms{RESET}"
-            else:
-                time_str = f"{DIM_GRAY}{total_time*1000:.1f}ms{RESET}"
+            # Format timing with color based on performance
+            time_ms = total_time * 1000
+            if time_ms > 20:  # Red for queries > 20ms
+                time_str = f"{RED}{time_ms:.1f}ms{RESET}"
+            elif time_ms > 10:  # Light gray for queries > 10ms
+                time_str = f"{GRAY}{time_ms:.1f}ms{RESET}"
+            else:  # Dim gray for fast queries
+                time_str = f"{DIM_GRAY}{time_ms:.1f}ms{RESET}"
 
             # Log the query
             logger.info(f"[SQL {time_str}] {query_color}{formatted_query}{RESET}")
