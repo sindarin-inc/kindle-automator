@@ -88,7 +88,7 @@ class EmulatorLauncher:
                         status = parts[1].strip()
                         if status != "offline":
                             running_ids.add(parts[0].strip())
-                            logger.info(f"Found running emulator: {parts[0].strip()} with status: {status}")
+                            logger.debug(f"Found running emulator: {parts[0].strip()} with status: {status}")
                         else:
                             logger.warning(f"Emulator {parts[0].strip()} found but status is offline")
             else:
@@ -141,7 +141,7 @@ class EmulatorLauncher:
                             )
 
                             if dismiss_result.returncode == 0:
-                                logger.info(f"Dismissed crash dialog on display :{display_num}")
+                                logger.debug(f"Dismissed crash dialog on display :{display_num}")
                                 time.sleep(1)  # Give it a moment to close
                                 return True
                             else:
@@ -424,7 +424,7 @@ class EmulatorLauncher:
             # Check if this profile already has a display assigned through VNCInstanceManager
             display = self.vnc_manager.get_x_display(email)
             if display:
-                logger.info(f"Profile {email} already assigned to display :{display}")
+                logger.debug(f"Profile {email} already assigned to display :{display}")
                 return display
 
             # Assign an instance in VNCInstanceManager
@@ -443,108 +443,26 @@ class EmulatorLauncher:
 
     def _extract_avd_name_from_email(self, email: str) -> Optional[str]:
         """
-        Extract the AVD name for a given email from the profiles index.
-        If not found, create it immediately to ensure it exists.
-        Handles both standard emails and normalized emails (where @ is replaced with _).
+        Extract the AVD name for a given email using the database.
 
         Args:
-            email: The email address or normalized email format
+            email: The email address
 
         Returns:
             The AVD name or None if it couldn't be determined
         """
         try:
-            profiles_dir = os.path.join(self.android_home, "profiles")
-            users_file_path = os.path.join(profiles_dir, "users.json")
+            from views.core.avd_profile_manager import AVDProfileManager
 
-            # First check if this email already has an entry in profiles_index
-            if os.path.exists(users_file_path):
-                try:
-                    with open(users_file_path, "r") as f:
-                        content = f.read().strip()
-                        if content:  # Only parse if file has content
-                            users = json.loads(content)
-                        else:
-                            users = {}
+            avd_manager = AVDProfileManager.get_instance()
+            # First try to get the AVD from the database
+            avd_name = avd_manager.get_avd_for_email(email)
 
-                    if email in users:
-                        user_entry = users.get(email)
-                        avd_name = user_entry.get("avd_name")
-                        return avd_name
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON in {users_file_path}, treating as empty")
-                    users = {}
-                except Exception as e:
-                    logger.warning(f"Error reading {users_file_path}: {e}")
-                    users = {}
+            if not avd_name:
+                # If not in database, generate the standard AVD name
+                avd_name = avd_manager.get_avd_name_from_email(email)
+                logger.debug(f"Generated AVD name for {email}: {avd_name}")
 
-            # No existing entry, detect email format and create appropriate AVD name
-            is_normalized = (
-                "@" not in email
-                and "_" in email
-                and (email.endswith("_com") or email.endswith("_org") or email.endswith("_io"))
-            )
-
-            # Handle normalized vs. standard email formats
-            if is_normalized:
-                # Already normalized email format - just add prefix if needed
-                avd_name = f"KindleAVD_{email}" if not email.startswith("KindleAVD_") else email
-            else:
-                # Standard email format - normalize it
-                email_parts = email.split("@")
-                if len(email_parts) != 2:
-                    logger.warning(f"Invalid email format: {email}")
-                    return None
-
-                username, domain = email_parts
-                # Replace dots with underscores in both username and domain
-                username = username.replace(".", "_")
-                domain = domain.replace(".", "_")
-                avd_name = f"KindleAVD_{username}_{domain}"
-
-            # Register this profile in profiles_index
-            try:
-                # Ensure profiles directory exists
-                os.makedirs(profiles_dir, exist_ok=True)
-
-                # Create or load profiles_index
-                users = None
-                json_error = False
-
-                if os.path.exists(users_file_path):
-                    try:
-                        with open(users_file_path, "r") as f:
-                            content = f.read().strip()
-                            if content:
-                                users = json.loads(content)
-                            else:
-                                # Empty file - safe to treat as empty dict
-                                users = {}
-                    except (json.JSONDecodeError, Exception) as e:
-                        logger.error(
-                            f"Error reading {users_file_path}, NOT updating file to prevent data loss: {e}",
-                            exc_info=True,
-                        )
-                        json_error = True
-                else:
-                    # File doesn't exist - safe to create new
-                    users = {}
-
-                # Only update file if we successfully loaded it or it's new
-                if not json_error and users is not None:
-                    # Add or update the entry for this email
-                    users[email] = {"avd_name": avd_name}
-
-                    # Save to file
-                    with open(users_file_path, "w") as f:
-                        json.dump(users, f, indent=2)
-                else:
-                    logger.warning(f"Skipping users.json update due to read error - returning AVD name only")
-            except Exception as e:
-                logger.warning(f"Error updating users.json: {e}", exc_info=True)
-
-            # Return the AVD name
-            logger.info(f"Registered profile for {email} with AVD {avd_name} in users.json")
             return avd_name
 
         except Exception as e:
@@ -616,7 +534,7 @@ class EmulatorLauncher:
                     logger.error(f"Failed to start Xvfb for display :{display_num}", exc_info=True)
                     return False
                 else:
-                    logger.info(f"Started Xvfb for display :{display_num}")
+                    logger.debug(f"Started Xvfb for display :{display_num}")
 
             # Check if x11vnc is running for this display
             vnc_check = subprocess.run(
@@ -813,7 +731,7 @@ class EmulatorLauncher:
             if ram_updated:
                 with open(config_path, "w") as f:
                     f.writelines(lines)
-                logger.info(f"Successfully upgraded RAM for {avd_name}")
+                logger.debug(f"Successfully upgraded RAM for {avd_name}")
 
             return True
 
@@ -874,7 +792,7 @@ class EmulatorLauncher:
 
                         vnc_manager = VNCInstanceManager.get_instance()
                         vnc_manager.set_emulator_id(email, emulator_id)
-                        logger.info(f"Updated VNC instance with emulator ID {emulator_id} for {email}")
+                        logger.debug(f"Updated VNC instance with emulator ID {emulator_id} for {email}")
                     except Exception as e:
                         logger.warning(f"Failed to update VNC instance with emulator ID: {e}", exc_info=True)
 
@@ -1009,7 +927,7 @@ class EmulatorLauncher:
                     if identifiers_dict:
                         prop_args = get_emulator_prop_args(identifiers_dict)
                         common_args.extend(prop_args)
-                        logger.info(f"Added randomized device identifier props: {prop_args}")
+                        logger.debug(f"Added randomized device identifier props: {prop_args}")
             except Exception as e:
                 logger.warning(f"Could not add device identifier props: {e}")
                 # Continue without randomized identifiers
@@ -1113,7 +1031,7 @@ class EmulatorLauncher:
             logger.info(
                 f"Starting emulator for AVD {avd_name} (email {email}) on display :{display_num} and port {emulator_port}"
             )
-            logger.info(f"Emulator command: {' '.join(emulator_cmd)}")
+            logger.debug(f"Emulator command: {' '.join(emulator_cmd)}")
             # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
@@ -1363,7 +1281,7 @@ class EmulatorLauncher:
                 try:
                     # Port forwards are persistent and tied to the user's instance ID
                     # We keep them in place for faster startup on next launch
-                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
+                    logger.debug(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1442,7 +1360,7 @@ class EmulatorLauncher:
                 try:
                     # Port forwards are persistent and tied to the user's instance ID
                     # We keep them in place for faster startup on next launch
-                    logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
+                    logger.debug(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
                     # Kill any UiAutomator2 processes
                     subprocess.run(
                         [f"adb -s {emulator_id} shell pkill -f uiautomator"],
@@ -1700,7 +1618,7 @@ class EmulatorLauncher:
                 text=True,
                 timeout=3,
             )
-            logger.info(f"Direct adb devices check: {devices_result.stdout.strip()}")
+            logger.debug(f"Direct adb devices check: {devices_result.stdout.strip()}")
 
             # If expected_emulator_id is in the output but not recognized, log this discrepancy
             if expected_emulator_id and expected_emulator_id in devices_result.stdout:
@@ -1732,7 +1650,7 @@ class EmulatorLauncher:
             )
 
             if emulator_id not in device_result.stdout:
-                logger.info(f"Emulator {emulator_id} not found in adb devices output")
+                logger.debug(f"Emulator {emulator_id} not found in adb devices output")
                 return None
 
             # Parse device status
@@ -1757,7 +1675,7 @@ class EmulatorLauncher:
         elif device_status == "device":
             return True
         else:
-            logger.info(f"Emulator is in unexpected state: {device_status}")
+            logger.debug(f"Emulator is in unexpected state: {device_status}")
             return False
 
     def _is_boot_completed(self, emulator_id: str) -> bool:
@@ -1881,7 +1799,7 @@ class EmulatorLauncher:
         if not self._can_query_package_path(emulator_id):
             return False
 
-        logger.info(f"Package manager is ready on {emulator_id}")
+        logger.debug(f"Package manager is ready on {emulator_id}")
         return True
 
     def _can_list_packages(self, emulator_id: str) -> bool:
@@ -1962,7 +1880,7 @@ class EmulatorLauncher:
                 avd_name = self._extract_avd_name_from_email(email)
                 if avd_name and avd_name in self.running_emulators:
                     emulator_id, _ = self.running_emulators[avd_name]
-                    logger.info(f"Using cached emulator ID {emulator_id} for snapshot")
+                    logger.debug(f"Using cached emulator ID {emulator_id} for snapshot")
                 else:
                     logger.error(f"SNAPSHOT FAILURE: No running emulator found for {email}", exc_info=True)
                     return False
@@ -2046,7 +1964,7 @@ class EmulatorLauncher:
             telnet_commands = f"avd snapshot save default_boot\nquit\n"
 
             # Execute the command
-            logger.info(f"Executing telnet snapshot command on port {console_port} for {email}")
+            logger.debug(f"Executing telnet snapshot command on port {console_port} for {email}")
             result = subprocess.run(
                 ["telnet", "localhost", str(console_port)],
                 input=telnet_commands,
@@ -2151,7 +2069,7 @@ class EmulatorLauncher:
             snapshots_dir = os.path.join(avd_path, "snapshots")
 
             if not os.path.exists(snapshots_dir):
-                logger.info(f"No snapshots directory found for {email} at {snapshots_dir}")
+                logger.debug(f"No snapshots directory found for {email} at {snapshots_dir}")
                 return []
 
             # List all subdirectories in the snapshots directory
@@ -2161,7 +2079,7 @@ class EmulatorLauncher:
                 if os.path.isdir(snapshot_path):
                     snapshots.append(entry)
 
-            logger.info(f"Found {len(snapshots)} snapshots for {email}: {snapshots}")
+            logger.debug(f"Found {len(snapshots)} snapshots for {email}: {snapshots}")
             return snapshots
 
         except Exception as e:
@@ -2227,7 +2145,7 @@ class EmulatorLauncher:
                         import shutil
 
                         shutil.rmtree(snapshot_path)
-                        logger.info(f"Deleted snapshot: {snapshot_name}")
+                        logger.debug(f"Deleted snapshot: {snapshot_name}")
                         deleted_count += 1
                     else:
                         logger.warning(f"Snapshot not found at expected path: {snapshot_path}")

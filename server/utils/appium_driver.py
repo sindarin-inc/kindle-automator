@@ -191,7 +191,6 @@ class AppiumDriver:
         """
         instance = self.vnc_manager.get_instance_for_profile(email)
         if not instance:
-            logger.warning(f"No instance found for profile {email}")
             return False
 
         # Try to stop the process gracefully

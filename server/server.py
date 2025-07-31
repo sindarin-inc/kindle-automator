@@ -394,24 +394,21 @@ def cleanup_resources():
 
     for email in running_emails:
         try:
-            logger.info(f"Stopping Appium server for {email}")
             appium_driver.stop_appium_for_profile(email)
         except Exception as e:
             logger.warning(f"Error stopping Appium for {email} during shutdown: {e}", exc_info=True)
 
     # Kill any remaining Appium processes (legacy cleanup)
     try:
-        logger.info("Cleaning up any remaining Appium processes")
         server.kill_existing_process("appium")
     except Exception as e:
         logger.warning(f"Error killing remaining Appium processes: {e}", exc_info=True)
 
     # Port forwards are persistent and tied to instance IDs
     # We keep them in place for faster startup on next server start
-    logger.info("Keeping ADB port forwards in place for faster restart")
 
-    logger.info(f"=== Graceful shutdown complete ===")
     logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")
+    logger.info(f"=== Graceful shutdown complete ===")
 
 
 def signal_handler(sig, frame):

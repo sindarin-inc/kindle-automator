@@ -982,7 +982,7 @@ class Driver:
             # Test if driver is still connected
             try:
                 self.driver.current_activity
-                logger.info(
+                logger.debug(
                     f"Driver already initialized and connected, id: {self.device_id}, instance: {self.driver} {self}"
                 )
                 return True  # Return early if driver is already connected
@@ -1011,7 +1011,7 @@ class Driver:
                     exc_info=True,
                 )
                 return False
-            logger.info(f"Found VNC instance for {email}: {vnc_instance}")
+            logger.debug(f"Found VNC instance for {email}: {vnc_instance}")
         except Exception as e:
             logger.warning(f"Error checking VNC instance: {e}")
 
@@ -1172,7 +1172,7 @@ class Driver:
 
         # Initialize driver with retry logic
         for attempt in range(1, 2):
-            logger.info(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/2)...")
+            logger.debug(f"Attempting to initialize driver to {self.device_id} (attempt {attempt}/2)...")
 
             options = UiAutomator2Options()
             options.platform_name = "Android"
@@ -1256,7 +1256,7 @@ class Driver:
 
                     # Port forwards are persistent and reused - no need to remove them
                     # They're tied to the user's instance ID and will be the same on every run
-                    logger.info(f"Using allocated ports for {self.device_id}: {allocated_ports}")
+                    logger.debug(f"Using allocated ports for {self.device_id}: {allocated_ports}")
                 else:
                     logger.error(f"No allocated ports found for {email}", exc_info=True)
                     return False
@@ -1274,7 +1274,7 @@ class Driver:
             ):
                 # Skip device initialization for faster startup on subsequent connections
                 options.set_capability("appium:skipDeviceInitialization", True)
-                logger.info(f"Skipping Appium device initialization for {email} (already initialized)")
+                logger.debug(f"Skipping Appium device initialization for {email} (already initialized)")
             else:
                 logger.info(f"Will perform full Appium device initialization for {email}")
 
@@ -1296,7 +1296,7 @@ class Driver:
             retry_delay = 1
 
             for attempt in range(max_retries):
-                logger.info(
+                logger.debug(
                     f"Checking Appium server (127.0.0.1:{self.appium_port}) status (attempt {attempt+1}/{max_retries})..."
                 )
                 status_response = requests.get(f"http://127.0.0.1:{self.appium_port}/status", timeout=5)
@@ -1332,7 +1332,7 @@ class Driver:
 
             # Initialize driver with the options using the specific port
             # Ensure we have a valid appium port - use centralized default as fallback
-            logger.info(f"Connecting to Appium on port {self.appium_port} for device {self.device_id}")
+            logger.debug(f"Connecting to Appium on port {self.appium_port} for device {self.device_id}")
 
             try:
                 self.driver = webdriver.Remote(f"http://127.0.0.1:{self.appium_port}", options=options)
@@ -1358,7 +1358,7 @@ class Driver:
                         email, "appium_device_initialized", False, section="emulator_settings"
                     ):
                         self._update_profile_setting("appium_device_initialized", True)
-                        logger.info(f"Marked Appium device as initialized for {email}")
+                        logger.debug(f"Marked Appium device as initialized for {email}")
 
                     return True
                 except concurrent.futures.TimeoutError:

@@ -108,7 +108,7 @@ class AuthenticationHandler:
                                 f"Found {field_type} field with strategy: {strategy}={locator}, tapping it"
                             )
                             field.click()
-                            logger.info(f"Successfully tapped the {field_type} input field")
+                            logger.debug(f"Tapped the {field_type} input field")
                             focused_field = field
                             break
                     except Exception as tap_err:
@@ -135,7 +135,7 @@ class AuthenticationHandler:
                 if not keyboard_disabled:
                     try:
                         self.driver.hide_keyboard()
-                        logger.info("Successfully hid the keyboard")
+                        logger.debug("Hid the keyboard")
                     except Exception as hide_err:
                         logger.warning(f"Could not hide keyboard: {hide_err}")
 
@@ -319,7 +319,7 @@ class AuthenticationHandler:
                         )
 
                         if updated_state_name == "LIBRARY":
-                            logger.info("Successfully navigated to LIBRARY state")
+                            logger.debug("Navigated to LIBRARY state")
                             state_name = "LIBRARY"
                         # Check if we navigated to empty library with sign-in button
                         elif updated_state_name == "LIBRARY_SIGN_IN":
@@ -365,7 +365,7 @@ class AuthenticationHandler:
 
                     permissions_handler = PermissionsHandler(self.driver)
                     if permissions_handler.handle_notifications_permission(should_allow=True):
-                        logger.info("Successfully handled notification permission")
+                        logger.debug("Handled notification permission")
                         # Update state after handling permission
                         time.sleep(1)
                         # Get state machine from driver's automator
@@ -559,7 +559,7 @@ class AuthenticationHandler:
 
             # Check if we've reached a key target state
             if state_name == "SIGN_IN":
-                logger.info("Successfully reached sign-in screen")
+                logger.debug("Reached sign-in screen")
 
                 # Tap the email address input field and then hide the keyboard
                 try:
@@ -571,7 +571,7 @@ class AuthenticationHandler:
                                     f"Found email field with strategy: {strategy}={locator}, tapping it"
                                 )
                                 email_field.click()
-                                logger.info("Successfully tapped the email input field")
+                                logger.debug("Tapped the email input field")
 
                                 # Hide the keyboard after tapping (if not disabled)
                                 keyboard_disabled = False
@@ -595,7 +595,7 @@ class AuthenticationHandler:
                                 if not keyboard_disabled:
                                     try:
                                         self.driver.hide_keyboard()
-                                        logger.info("Successfully hid the keyboard")
+                                        logger.debug("Hid the keyboard")
                                     except Exception as hide_err:
                                         logger.warning(f"Could not hide keyboard: {hide_err}")
 
@@ -699,7 +699,7 @@ class AuthenticationHandler:
 
                 # Handle based on the state we're now in
                 if state_name == "SIGN_IN":
-                    logger.info("Successfully navigated to SIGN_IN state")
+                    logger.debug("Navigated to SIGN_IN state")
 
                     # Focus the email field if needed
                     self._focus_input_field_if_needed(EMAIL_FIELD_STRATEGIES, "email")
@@ -711,7 +711,7 @@ class AuthenticationHandler:
                         "vnc_url": formatted_vnc_url,
                     }
                 elif state_name in ["LIBRARY", "HOME"]:
-                    logger.info(f"Successfully navigated to {state_name} state")
+                    logger.debug(f"Navigated to {state_name} state")
                     return {
                         "state": state_name,
                         "authenticated": True,
@@ -1054,7 +1054,7 @@ class AuthenticationHandler:
                 logger.info(f"Login verification result: {result}")
 
                 if result == LoginVerificationState.SUCCESS:
-                    logger.info("Successfully verified library view")
+                    logger.debug("Verified library view")
                     return True
                 elif result == LoginVerificationState.CAPTCHA:
                     # Handle CAPTCHA immediately
