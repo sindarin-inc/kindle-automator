@@ -152,7 +152,7 @@ def ensure_user_profile_loaded(f):
                         "message": f"Could not restore AVD for {sindarin_email} from cold storage",
                     }, 500
         else:
-            logger.info(f"Skipping cold storage check on macOS dev environment for {sindarin_email}")
+            logger.debug(f"Skipping cold storage check on macOS dev environment for {sindarin_email}")
 
         # Check if AVD file path exists
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")

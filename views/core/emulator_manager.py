@@ -195,7 +195,7 @@ class EmulatorManager:
                     text=True,
                     timeout=3,
                 )
-                logger.info(f"ADB devices before launch: {devices_before.stdout.strip()}")
+                logger.debug(f"ADB devices before launch: {devices_before.stdout.strip()}")
             except Exception as e:
                 logger.error(f"Error checking ADB devices before launch: {e}", exc_info=True)
 

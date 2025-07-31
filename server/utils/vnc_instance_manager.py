@@ -355,10 +355,6 @@ class VNCInstanceManager:
         try:
             # Don't call _ensure_initialized here to avoid recursion
             reset_count = self.repository.reset_all_appium_states()
-            if reset_count > 0:
-                logger.info(f"Reset {reset_count} appium_running states on startup")
-            else:
-                logger.info("No appium_running states needed resetting")
         except Exception as e:
             logger.error(f"Error resetting appium states on startup: {e}", exc_info=True)
 

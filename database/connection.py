@@ -71,7 +71,7 @@ class DatabaseConnection:
         )
 
         self._initialized = True
-        logger.info(f"Database connection initialized with schema: {self.schema_name}")
+        logger.debug(f"Database connection initialized with schema: {self.schema_name}")
 
     def create_schema(self):
         """No longer needed - using public schema."""
