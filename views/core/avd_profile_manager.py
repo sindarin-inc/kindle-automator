@@ -185,7 +185,7 @@ class AVDProfileManager:
             except AttributeError:
                 return default
 
-    def set_user_field(self, email: str, field: str, value, section: Optional[str] = None):
+    def set_user_field(self, email: str, field: str, value, section: Optional[str] = None) -> bool:
         """
         Set a specific field value for a user.
 
@@ -194,23 +194,30 @@ class AVDProfileManager:
             field: Field name to set
             value: Value to set
             section: Optional section name for nested fields
+
+        Returns:
+            bool: True if update was successful, False otherwise
         """
-        with self.db_connection.get_session() as session:
-            repo = UserRepository(session)
+        try:
+            with self.db_connection.get_session() as session:
+                repo = UserRepository(session)
 
-            # Ensure user exists
-            user = repo.get_user_by_email(email)
-            if not user:
-                logger.warning(f"User {email} not found, creating new user")
-                repo.create_user(email)
+                # Ensure user exists
+                user = repo.get_user_by_email(email)
+                if not user:
+                    logger.warning(f"User {email} not found, creating new user")
+                    repo.create_user(email)
 
-            # Update the field
-            if section:
-                field_path = f"{section}.{field}"
-            else:
-                field_path = field
+                # Update the field
+                if section:
+                    field_path = f"{section}.{field}"
+                else:
+                    field_path = field
 
-            repo.update_user_field(email, field_path, value)
+                return repo.update_user_field(email, field_path, value)
+        except Exception as e:
+            logger.error(f"Failed to set user field {field} for {email}: {e}")
+            return False
 
     def get_profile_for_email(self, email: str) -> Optional[Dict]:
         """

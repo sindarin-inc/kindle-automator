@@ -140,7 +140,7 @@ class KindleAutomator:
                 or current_activity
                 == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
             ):
-                logger.warning("App is not in foreground after initialization, trying to launch it")
+                logger.info("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
                     # Verify we're back in the app
                     current_activity = self.driver.current_activity
@@ -285,7 +285,7 @@ class KindleAutomator:
                         and current_activity
                         != "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                     ):
-                        logger.warning("App is not in Kindle foreground, trying to relaunch")
+                        logger.info("App is not in Kindle foreground, trying to relaunch")
                         # Capture page source before relaunching to see what's on screen
                         try:
                             from server.logging_config import store_page_source

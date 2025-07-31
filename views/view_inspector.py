@@ -70,12 +70,14 @@ class ViewInspector:
         try:
             email = get_sindarin_email()
             if not email:
+                logger.debug("No email context, defaulting to hide keyboard")
                 return True  # Default to attempting keyboard hide if no email context
 
             profile_manager = self.driver.automator.profile_manager
             keyboard_disabled = profile_manager.get_user_field(
                 email, "keyboard_disabled", default=False, section="emulator_settings"
             )
+            logger.debug(f"Checking keyboard_disabled for {email}: {keyboard_disabled}")
             if keyboard_disabled:
                 logger.debug("Keyboard is disabled for this emulator, skipping hide_keyboard()")
                 return False

@@ -573,12 +573,31 @@ class AuthenticationHandler:
                                 email_field.click()
                                 logger.info("Successfully tapped the email input field")
 
-                                # Hide the keyboard after tapping
+                                # Hide the keyboard after tapping (if not disabled)
+                                keyboard_disabled = False
                                 try:
-                                    self.driver.hide_keyboard()
-                                    logger.info("Successfully hid the keyboard")
-                                except Exception as hide_err:
-                                    logger.warning(f"Could not hide keyboard: {hide_err}")
+                                    email = get_sindarin_email()
+                                    if email:
+                                        profile_manager = self.driver.automator.profile_manager
+                                        keyboard_disabled = profile_manager.get_user_field(
+                                            email,
+                                            "keyboard_disabled",
+                                            default=False,
+                                            section="emulator_settings",
+                                        )
+                                        if keyboard_disabled:
+                                            logger.debug(
+                                                "Keyboard is disabled for this emulator, skipping hide_keyboard()"
+                                            )
+                                except Exception as check_err:
+                                    logger.debug(f"Error checking keyboard_disabled flag: {check_err}")
+
+                                if not keyboard_disabled:
+                                    try:
+                                        self.driver.hide_keyboard()
+                                        logger.info("Successfully hid the keyboard")
+                                    except Exception as hide_err:
+                                        logger.warning(f"Could not hide keyboard: {hide_err}")
 
                                 break
                         except Exception as tap_err:
