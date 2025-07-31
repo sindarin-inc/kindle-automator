@@ -1,6 +1,6 @@
 """SQLAlchemy 2.0 ORM models for Kindle Automator."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -47,9 +47,14 @@ class User(Base):
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
     android_version: Mapped[Optional[str]] = mapped_column(String(10))
     system_image: Mapped[Optional[str]] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
@@ -182,9 +187,14 @@ class VNCInstance(Base):
     appium_system_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_chromedriver_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_mjpeg_server_port: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     # Index for quick lookup by assigned profile

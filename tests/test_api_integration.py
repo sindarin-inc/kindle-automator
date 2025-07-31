@@ -45,19 +45,23 @@ class TestKindleAPIIntegration:
             print(f"[TEST] Using staff token from environment variable")
 
     def _make_request(
-        self, endpoint: str, params: Dict[str, Any] = None, method: str = "GET"
+        self,
+        endpoint: str,
+        params: Dict[str, Any] = None,
+        method: str = "GET",
+        timeout: int = 120,
+        max_retries: int = 3,
     ) -> requests.Response:
         """Helper to make API requests with retry logic for 503 errors."""
         url = f"{self.base_url}/{endpoint}"
         request_params = {**self.default_params, **(params or {})}
 
-        max_retries = 3
         retry_delay = 10  # seconds
 
         for attempt in range(max_retries):
             try:
                 # Debug: print request details
-                print(f"\n[DEBUG] Request to {url}")
+                print(f"\n[DEBUG] Request attempt {attempt + 1}/{max_retries} to {url}")
                 print(f"[DEBUG] Params: {request_params}")
                 print(f"[DEBUG] Headers: {dict(self.session.headers)}")
                 # Debug cookies - show full staff_token
@@ -69,9 +73,9 @@ class TestKindleAPIIntegration:
                     print(f"[DEBUG] Cookies: {cookies_dict}")
 
                 if method == "GET":
-                    response = self.session.get(url, params=request_params, timeout=120)
+                    response = self.session.get(url, params=request_params, timeout=timeout)
                 elif method == "POST":
-                    response = self.session.post(url, params=request_params, timeout=120)
+                    response = self.session.post(url, params=request_params, timeout=timeout)
 
                 # If we get a 503 and haven't exhausted retries, wait and retry
                 if response.status_code == 503 and attempt < max_retries - 1:
@@ -401,6 +405,10 @@ class TestKindleAPIIntegration:
     @pytest.mark.expensive
     def test_recreate(self):
         """Ensure that recreation/creating a new AVD works"""
+        print("\n[TEST_RECREATE] Starting test_recreate")
+        print("[TEST_RECREATE] Making auth request with recreate=1")
+
+        # Use a longer timeout for recreate operations and disable retries
         response = self._make_request(
             "kindle/auth",
             method="GET",
@@ -408,18 +416,25 @@ class TestKindleAPIIntegration:
                 "user_email": "recreate@solreader.com",
                 "recreate": "1",
             },
+            timeout=120,  # 2 minutes timeout
+            max_retries=1,  # No retries - recreate is expensive and should only run once
         )
+        print(f"[TEST_RECREATE] Auth response status: {response.status_code}")
         assert response.status_code == 200
         data = response.json()
+        print(f"[TEST_RECREATE] Auth response data: {data}")
         assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
         assert data["success"] is True, f"Recreation failed: {data}"
         assert data["authenticated"] is False, f"Recreation failed: {data}"
 
         # Shutdown
+        print("[TEST_RECREATE] Making shutdown request")
         shutdown_response = self._make_request(
             "kindle/shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
         )
+        print(f"[TEST_RECREATE] Shutdown response status: {shutdown_response.status_code}")
         assert shutdown_response.status_code == 200
+        print("[TEST_RECREATE] Test completed successfully")
 
 
 if __name__ == "__main__":

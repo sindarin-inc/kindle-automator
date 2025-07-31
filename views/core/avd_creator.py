@@ -283,14 +283,14 @@ class AVDCreator:
             # "system-images;android-30;google_apis;x86_64" -> "system-images/android-30/google_apis/x86_64/"
             sysdir = system_image.replace(";", "/") + "/"
 
-            logger.info(f"Using {cpu_arch} architecture for {self.host_arch} host")
+            logger.debug(f"Using {cpu_arch} architecture for {self.host_arch} host")
 
             # Special handling for cloud linux servers
             if self.host_arch == "x86_64" and os.path.exists("/etc/os-release"):
                 # This is likely a Linux server
-                logger.info("Detected Linux x86_64 host - using standard x86_64 configuration")
+                logger.debug("Detected Linux x86_64 host - using standard x86_64 configuration")
 
-            logger.info(
+            logger.debug(
                 f"Configuring AVD {avd_name} for {self.host_arch} host with {cpu_arch} CPU architecture"
             )
 
@@ -393,7 +393,7 @@ class AVDCreator:
             with open(config_path, "w") as f:
                 f.writelines(new_config_lines)
 
-            logger.info(f"Updated AVD configuration for {avd_name}")
+            logger.debug(f"Updated AVD configuration for {avd_name}")
 
         except Exception as e:
             logger.error(f"Error configuring AVD: {e}", exc_info=True)
@@ -407,7 +407,7 @@ class AVDCreator:
         seed_clone_name = self.get_seed_clone_avd_name()
         avd_path = os.path.join(self.avd_dir, f"{seed_clone_name}.avd")
         exists = os.path.exists(avd_path)
-        logger.info(f"Checking seed clone at {avd_path}: exists={exists}")
+        logger.debug(f"Checking seed clone at {avd_path}: exists={exists}")
         return exists
 
     def has_seed_clone_snapshot(self) -> bool:
