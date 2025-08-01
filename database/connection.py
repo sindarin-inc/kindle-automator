@@ -159,7 +159,8 @@ class DatabaseConnection:
                                     rendered_value = "NULL"
                                 elif isinstance(value, str):
                                     # Escape single quotes in strings
-                                    rendered_value = f"'{value.replace('\'', '\'\'')}'"
+                                    escaped_value = value.replace("'", "''")
+                                    rendered_value = f"'{escaped_value}'"
                                 elif isinstance(value, (int, float)):
                                     rendered_value = str(value)
                                 elif isinstance(value, (list, tuple)):
@@ -181,7 +182,8 @@ class DatabaseConnection:
                                 if value is None:
                                     rendered_value = "NULL"
                                 elif isinstance(value, str):
-                                    rendered_value = f"'{value.replace('\'', '\'\'')}'"
+                                    escaped_value = value.replace("'", "''")
+                                    rendered_value = f"'{escaped_value}'"
                                 elif isinstance(value, (int, float)):
                                     rendered_value = str(value)
                                 else:
