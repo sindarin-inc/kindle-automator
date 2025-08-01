@@ -422,6 +422,21 @@ class VNCInstanceManager:
                     cleared = self.repository.clear_stale_emulator_ids(active_emulator_ids)
                     if cleared > 0:
                         logger.info(f"Cleared {cleared} stale emulator IDs")
+
+                    # Release instances that have assigned_profile but no emulator_id
+                    stale_count = 0
+                    for instance in assigned_instances:
+                        if instance.assigned_profile and not instance.emulator_id:
+                            logger.info(
+                                f"Releasing stale VNC instance for {instance.assigned_profile} "
+                                f"(no emulator_id found)"
+                            )
+                            if self.repository.release_instance_from_profile(instance.assigned_profile):
+                                stale_count += 1
+
+                    if stale_count > 0:
+                        logger.info(f"Released {stale_count} stale VNC instance assignments")
+
             except Exception as e:
                 logger.error(f"Error auditing emulator instances: {e}", exc_info=True)
 
