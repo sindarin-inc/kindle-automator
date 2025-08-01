@@ -2,8 +2,8 @@
 
 import logging
 import os
-from datetime import datetime
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from flask_restful import Resource
 
@@ -12,6 +12,20 @@ from server.utils.request_utils import get_sindarin_email
 from views.core.avd_profile_manager import AVDProfileManager
 
 logger = logging.getLogger(__name__)
+
+
+def serialize_datetime_recursive(obj: Any) -> Any:
+    """Recursively convert datetime objects to ISO format strings in nested structures."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: serialize_datetime_recursive(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_datetime_recursive(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(serialize_datetime_recursive(item) for item in obj)
+    else:
+        return obj
 
 
 class SnapshotCheckResource(Resource):
@@ -55,11 +69,12 @@ class SnapshotCheckResource(Resource):
                 user = repo.get_user_by_email(sindarin_email)
 
             if not user:
-                return {
+                response_data = {
                     "email": sindarin_email,
                     "has_profile": False,
                     "message": "No profile exists for this user",
-                }, 200
+                }
+                return serialize_datetime_recursive(response_data), 200
 
             # Get emulator launcher from the correct automator for this user
             emulator_launcher = None
@@ -102,7 +117,7 @@ class SnapshotCheckResource(Resource):
             # Check if emulator is currently running
             is_running = self._check_if_running(sindarin_email)
 
-            return {
+            response_data = {
                 "email": sindarin_email,
                 "has_profile": True,
                 "avd_name": avd_name,
@@ -111,8 +126,11 @@ class SnapshotCheckResource(Resource):
                 "profile_data": profile_data,
                 "avd_config": avd_config,
                 "boot_prediction": boot_prediction,
-                "timestamp": datetime.now().isoformat(),
-            }, 200
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            # Recursively serialize all datetime objects in the response
+            return serialize_datetime_recursive(response_data), 200
 
         except Exception as e:
             logger.error(f"Error checking snapshot status: {e}", exc_info=True)
@@ -173,7 +191,12 @@ class SnapshotCheckResource(Resource):
         return snapshot_info
 
     def _get_profile_snapshot_data(self, email: str, profile_manager: AVDProfileManager) -> Dict[str, any]:
-        """Get snapshot-related data from user profile."""
+        """Get snapshot-related data from user profile.
+
+        Note: Datetime fields from the database model (last_snapshot_timestamp, auth_date, etc.)
+        are returned as datetime objects. They will be serialized to ISO format strings by
+        serialize_datetime_recursive() before the API response.
+        """
         return {
             "last_snapshot_timestamp": profile_manager.get_user_field(email, "last_snapshot_timestamp"),
             "created_from_seed_clone": profile_manager.get_user_field(
