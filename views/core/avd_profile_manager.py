@@ -104,7 +104,7 @@ class AVDProfileManager:
         os.makedirs(self.profiles_dir, exist_ok=True)
         # Initialize component managers
         self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
-        self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch)
+        self.emulator_manager = EmulatorManager.get_instance()
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
 
         # VNC related settings

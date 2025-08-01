@@ -132,11 +132,7 @@ class ColdStorageManager:
             # Check if the emulator is actually running
             from views.core.emulator_manager import EmulatorManager
 
-            emulator_manager = EmulatorManager(
-                android_home=os.environ.get("ANDROID_HOME", "/opt/android-sdk"),
-                avd_dir=self.avd_base_path,
-                host_arch="x86_64",  # Default, will be determined by the manager
-            )
+            emulator_manager = EmulatorManager.get_instance()
 
             if emulator_manager.is_emulator_running(email):
                 logger.warning(f"Cannot archive AVD for {email} - emulator {emulator_id} is still running")

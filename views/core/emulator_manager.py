@@ -12,22 +12,74 @@ from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
 
+# Singleton instance
+_instance = None
+
 
 class EmulatorManager:
     """
     Manages the lifecycle of Android emulators.
 
-    Note that this model is shared between all users, so don't set any user-specific preferences here.
+    This is a singleton class shared between all users. User-specific state
+    is stored in VNCInstanceManager instead.
 
     Handles starting, stopping, and monitoring emulator instances.
     """
 
-    def __init__(self, android_home, avd_dir, host_arch):
-        self.android_home = android_home
-        self.avd_dir = avd_dir
-        self.host_arch = host_arch
+    @classmethod
+    def get_instance(cls):
+        """
+        Get the singleton instance of EmulatorManager.
 
-        self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
+        Returns:
+            EmulatorManager: The singleton instance
+        """
+        global _instance
+        if _instance is None:
+            _instance = cls()
+        return _instance
+
+    def __init__(self):
+        # Check if this is being called directly or through get_instance()
+        if _instance is not None and _instance is not self:
+            logger.warning("EmulatorManager initialized directly. Use get_instance() instead.")
+
+        # Determine android_home
+        if os.environ.get("ANDROID_HOME"):
+            self.android_home = os.environ.get("ANDROID_HOME")
+        elif platform.system() == "Darwin":
+            self.android_home = os.path.expanduser("~/Library/Android/sdk")
+        else:
+            self.android_home = "/opt/android-sdk"
+
+        # Determine avd_dir
+        self.avd_dir = os.path.expanduser("~/.android/avd")
+
+        # Detect host architecture
+        self.host_arch = self._detect_host_architecture()
+
+        logger.debug(f"EmulatorManager initialized with:")
+        logger.debug(f"  android_home: {self.android_home}")
+        logger.debug(f"  avd_dir: {self.avd_dir}")
+        logger.debug(f"  host_arch: {self.host_arch}")
+
+        self.emulator_launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+
+    def _detect_host_architecture(self) -> str:
+        """Detect the host system architecture."""
+        machine = platform.machine().lower()
+
+        if machine in ["x86_64", "amd64"]:
+            return "x86_64"
+        elif machine in ["aarch64", "arm64"]:
+            return "arm64"
+        elif machine in ["armv7l", "armv7"]:
+            return "arm"
+        elif machine in ["i386", "i686"]:
+            return "x86"
+        else:
+            logger.warning(f"Unknown architecture: {machine}, defaulting to x86_64")
+            return "x86_64"
 
     def is_emulator_running(self, email: str) -> bool:
         """Check if an emulator is currently running for a specific email."""
