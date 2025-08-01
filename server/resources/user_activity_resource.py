@@ -139,7 +139,7 @@ class UserActivityResource(Resource):
         patterns = {
             "open_book": r'REQUEST \[GET /open-book\].*?"title":\s*"([^"]+)"',
             "books_stream": r"REQUEST \[GET /books-stream\]",
-            "books_stream_response": r"RESPONSE \[GET /books-stream\]",
+            "books_stream_response": r"RESPONSE\s+\d+\s+\[GET /books-stream\]",
             "navigate": r"REQUEST \[GET /navigate\].*?: (\{[^}]+\})",
             "book_opened": r"Opening book:\s*(.+?)$",
             "book_already_open": r"Already reading book.*?:\s*(.+?),",
@@ -150,13 +150,14 @@ class UserActivityResource(Resource):
             "book_download": r"Book is not downloaded yet, initiating download",
             "search_book": r"Proceeding to search for \'(.+?)\'",
             "book_found": r"Successfully found book \'(.+?)\' using search",
-            "response_time": r"RESPONSE \[GET /([^\]]+?)(?:\s+[\d.]+s)?\].*?User:\s*([^|]+)",
+            "response_time": r"RESPONSE\s+\d+\s+\[GET /([^\]]+?)(?:\s+[\d.]+s)?\].*?User:\s*([^|]+)",
             "launch_time_start": r"Launching emulator for (.+?)$",
             "launch_time_end": r"Emulator (emulator-\d+) launched successfully",
             "appium_start": r"Starting Appium server for",
             "appium_fail": r"Failed to start Appium server",
             "request": r"REQUEST \[(\w+) ([^\]]+)\].*?(?:\[UA: ([^\]]+)\])?\s*: (.+)$",
-            "response": r"RESPONSE \[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
+            "response": r"RESPONSE\s+(\d+)\s+\[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
+            "streaming_response": r"RESPONSE\s+(\d+)\s+\[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: Streaming response",
         }
 
         current_activity = None
@@ -279,16 +280,17 @@ class UserActivityResource(Resource):
                         ):
                             continue
                     elif event_type == "response":
-                        activity["method"] = match.group(1)
-                        activity["endpoint"] = match.group(2)
-                        # Check if elapsed time was captured (group 3)
-                        if match.group(3) is not None:  # This is the elapsed time
-                            activity["duration"] = float(match.group(3))
-                            activity["body"] = strip_ansi_codes(match.group(4))
+                        activity["status_code"] = int(match.group(1))
+                        activity["method"] = match.group(2)
+                        activity["endpoint"] = match.group(3)
+                        # Check if elapsed time was captured (group 4)
+                        if match.group(4) is not None:  # This is the elapsed time
+                            activity["duration"] = float(match.group(4))
+                            activity["body"] = strip_ansi_codes(match.group(5))
                         else:
                             # No elapsed time in the log, use the last group as body
-                            # When no elapsed time, group 4 is the body
-                            activity["body"] = strip_ansi_codes(match.group(4))
+                            # When no elapsed time, group 5 is the body
+                            activity["body"] = strip_ansi_codes(match.group(5))
                             # Fall back to calculating duration
                             if (
                                 current_activity
@@ -298,6 +300,27 @@ class UserActivityResource(Resource):
                                 duration = (timestamp - current_activity["timestamp_obj"]).total_seconds()
                                 activity["duration"] = duration
                         activity["action"] = "api_response"
+                        # Always get request params if available
+                        if current_activity and current_activity.get("endpoint") == activity["endpoint"]:
+                            activity["request_params"] = current_activity.get("params", "")
+                    elif event_type == "streaming_response":
+                        activity["status_code"] = int(match.group(1))
+                        activity["method"] = match.group(2)
+                        activity["endpoint"] = match.group(3)
+                        # Check if elapsed time was captured (group 4)
+                        if match.group(4) is not None:  # This is the elapsed time
+                            activity["duration"] = float(match.group(4))
+                        else:
+                            # Fall back to calculating duration
+                            if (
+                                current_activity
+                                and current_activity.get("action") == "api_request"
+                                and current_activity.get("endpoint") == activity["endpoint"]
+                            ):
+                                duration = (timestamp - current_activity["timestamp_obj"]).total_seconds()
+                                activity["duration"] = duration
+                        activity["action"] = "api_response"
+                        activity["body"] = "Streaming response"
                         # Always get request params if available
                         if current_activity and current_activity.get("endpoint") == activity["endpoint"]:
                             activity["request_params"] = current_activity.get("params", "")
@@ -595,8 +618,12 @@ class UserActivityResource(Resource):
                             f" [UA: {user_agent[:20]}...]" if len(user_agent) > 20 else f" [UA: {user_agent}]"
                         )
 
-                # Format the line
-                line = f"{time_str} - {desc}{user_agent_info} ({duration:.1f}s) [{status}]"
+                # Format the line with status code
+                status_code = activity.get("status_code", "")
+                if status_code:
+                    line = f"{time_str} - {desc}{user_agent_info} ({duration:.1f}s) [{status_code} {status}]"
+                else:
+                    line = f"{time_str} - {desc}{user_agent_info} ({duration:.1f}s) [{status}]"
 
                 # Add truncated response if it's an error
                 if status == "FAILED":
