@@ -306,9 +306,9 @@ class RelativePathFormatter(logging.Formatter):
                 # Split at the filename:lineno boundary including the RESET code
                 prefix = match.group(1)
                 message = formatted[len(prefix) :]
-                
+
                 # Check if the message already contains ANSI codes (like SQL logs)
-                if '\033[' in message:
+                if "\033[" in message:
                     # Message already has colors, don't add level color
                     formatted = prefix + message
                 else:
@@ -321,9 +321,9 @@ class RelativePathFormatter(logging.Formatter):
                     prefix_len = len(match.group(1))
                     prefix = formatted[:prefix_len]
                     message = formatted[prefix_len:]
-                    
+
                     # Check if the message already contains ANSI codes
-                    if '\033[' in message:
+                    if "\033[" in message:
                         # Message already has colors, don't add level color
                         formatted = prefix + message
                     else:
