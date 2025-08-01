@@ -5,6 +5,13 @@
     state: present
     update_cache: yes
 
+- name: Disable IPv6 in UFW to avoid ip6tables issues
+  lineinfile:
+    path: /etc/default/ufw
+    regexp: '^IPV6='
+    line: 'IPV6=no'
+    backup: yes
+
 - name: Set UFW defaults
   ufw:
     direction: "{{ item.direction }}"
@@ -40,25 +47,7 @@
     proto: tcp
   when: "'db' not in group_names"
 
-- name: Allow PostgreSQL from inventory servers
-  ufw:
-    rule: allow
-    port: 5432
-    proto: tcp
-    src: "{{ hostvars[item]['ansible_host'] }}"
-  loop: "{{ groups['all'] }}"
-  when: 
-    - "'db' in group_names"
-    - item != inventory_hostname
-    - hostvars[item]['ansible_host'] is defined
-
-- name: Allow PostgreSQL from localhost
-  ufw:
-    rule: allow
-    port: 5432
-    proto: tcp
-    src: 127.0.0.1
-  when: "'db' in group_names"
+# PostgreSQL firewall rules are now handled in the postgres role
 
 - name: Enable UFW
   ufw:

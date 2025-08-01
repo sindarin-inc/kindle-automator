@@ -81,9 +81,12 @@ def ensure_local_db_exists():
                 # Continue anyway - the connection will fail later if there's a real problem
 
 
-def get_connection_params(debug=False):
+def get_connection_params(debug=False, env_file=".env"):
     """Get database connection parameters."""
-    if is_docker_running():
+    # Always use remote for staging/prod environments
+    is_staging_or_prod = ".env.staging" in env_file or ".env.prod" in env_file
+
+    if is_docker_running() and not is_staging_or_prod:
         if debug:
             print(f"Debug: Docker container '{DOCKER_CONTAINER}' is running")
         # Use Docker container for local development
@@ -142,9 +145,9 @@ def get_connection_params(debug=False):
         return params
 
 
-def execute_query(query, debug=False):
+def execute_query(query, debug=False, env_file=".env"):
     """Execute a SQL query and return results."""
-    params = get_connection_params(debug)
+    params = get_connection_params(debug, env_file)
 
     try:
         if debug:
@@ -222,7 +225,7 @@ def execute_query(query, debug=False):
             conn.close()
 
 
-def execute_file(sql_file, debug=False):
+def execute_file(sql_file, debug=False, env_file=".env"):
     """Execute SQL from a file."""
     if not os.path.exists(sql_file):
         print(f"Error: SQL file not found: {sql_file}")
@@ -231,7 +234,7 @@ def execute_file(sql_file, debug=False):
     with open(sql_file, "r") as f:
         sql_content = f.read()
 
-    params = get_connection_params(debug)
+    params = get_connection_params(debug, env_file)
 
     try:
         conn = psycopg2.connect(**params)
@@ -249,11 +252,12 @@ def execute_file(sql_file, debug=False):
             conn.close()
 
 
-def interactive_session():
+def interactive_session(env_file=".env"):
     """Start an interactive database session."""
-    params = get_connection_params()
+    params = get_connection_params(env_file=env_file)
 
-    if is_docker_running():
+    is_staging_or_prod = ".env.staging" in env_file or ".env.prod" in env_file
+    if is_docker_running() and not is_staging_or_prod:
         # Use docker exec for interactive session
         cmd = [
             "docker",
@@ -275,11 +279,12 @@ def interactive_session():
         subprocess.run(["psql", database_url])
 
 
-def dump_database(output_file):
+def dump_database(output_file, env_file=".env"):
     """Dump the database."""
-    params = get_connection_params()
+    params = get_connection_params(env_file=env_file)
 
-    if is_docker_running():
+    is_staging_or_prod = ".env.staging" in env_file or ".env.prod" in env_file
+    if is_docker_running() and not is_staging_or_prod:
         cmd = [
             "docker",
             "exec",
@@ -356,26 +361,26 @@ def main():
     # Execute command
     if args.command == "init":
         if args.file:
-            execute_file(args.file, debug)
+            execute_file(args.file, debug, args.env)
         else:
             print("Error: --file required for init command")
             sys.exit(1)
 
     elif args.command == "query":
         if args.args:
-            execute_query(args.args, debug)
+            execute_query(args.args, debug, args.env)
         elif args.file:
-            execute_file(args.file, debug)
+            execute_file(args.file, debug, args.env)
         else:
             print("Error: --args or --file required for query command")
             sys.exit(1)
 
     elif args.command == "interactive":
-        interactive_session()
+        interactive_session(args.env)
 
     elif args.command == "dump":
         if args.args:
-            dump_database(args.args)
+            dump_database(args.args, args.env)
         else:
             print("Error: --args (output file) required for dump command")
             sys.exit(1)
