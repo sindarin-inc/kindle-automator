@@ -196,19 +196,34 @@ class EmulatorShutdownManager:
         emulator_id = vnc_instance["emulator_id"]
         logger.info("Found orphaned emulator %s for %s", emulator_id, email)
         with contextlib.suppress(Exception):
-            from views.core.avd_profile_manager import AVDProfileManager
+            # Try to get the user-specific automator first
+            from server.core.automation_server import AutomationServer
 
-            pm = AVDProfileManager.get_instance()
-            if pm.emulator_manager and pm.emulator_manager.emulator_launcher:
-                stopped = pm.emulator_manager.emulator_launcher.stop_emulator(email)
+            server = AutomationServer.get_instance()
+            automator = server.automators.get(email) if server else None
+
+            if automator and hasattr(automator, "emulator_manager"):
+                # Use the user-specific emulator launcher
+                stopped = automator.emulator_manager.emulator_launcher.stop_emulator(email)
                 summary["emulator_stopped"] = stopped
-                if not stopped:
-                    # Force kill using the port extracted from ``emulator_id``.
-                    port = emulator_id.split("-")[1] if emulator_id.startswith("emulator-") else None
-                    if port:
-                        self._force_kill_emulator_process(port)
-                        summary["emulator_stopped"] = True
-                vnc_manager.clear_emulator_id_for_profile(email)
+            else:
+                # Fallback to shared profile manager only if no user-specific automator
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                pm = AVDProfileManager.get_instance()
+                if pm.emulator_manager and pm.emulator_manager.emulator_launcher:
+                    stopped = pm.emulator_manager.emulator_launcher.stop_emulator(email)
+                    summary["emulator_stopped"] = stopped
+                else:
+                    stopped = False
+
+            if not stopped:
+                # Force kill using the port extracted from ``emulator_id``.
+                port = emulator_id.split("-")[1] if emulator_id.startswith("emulator-") else None
+                if port:
+                    self._force_kill_emulator_process(port)
+                    summary["emulator_stopped"] = True
+            vnc_manager.clear_emulator_id_for_profile(email)
         # Release VNC regardless of stop result.
         with contextlib.suppress(Exception):
             if vnc_manager.release_instance_from_profile(email):

@@ -61,15 +61,21 @@ class SnapshotCheckResource(Resource):
                     "message": "No profile exists for this user",
                 }, 200
 
-            # Get emulator launcher to check snapshot existence
+            # Get emulator launcher from the correct automator for this user
             emulator_launcher = None
             server = AutomationServer.get_instance()
             if server and hasattr(server, "automators"):
-                # Try to get launcher from any automator or create one
-                for automator in server.automators.values():
-                    if automator and hasattr(automator, "emulator_manager"):
-                        emulator_launcher = automator.emulator_manager.emulator_launcher
-                        break
+                # Get the specific automator for this user
+                automator = server.automators.get(sindarin_email)
+                if automator and hasattr(automator, "emulator_manager"):
+                    emulator_launcher = automator.emulator_manager.emulator_launcher
+                else:
+                    # Fallback: create a temporary emulator launcher if no automator exists
+                    from server.utils.emulator_launcher import EmulatorLauncher
+
+                    android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
+                    avd_dir = os.path.join(android_home, "avd")
+                    emulator_launcher = EmulatorLauncher(android_home, avd_dir, "x86_64")
 
             # Extract AVD name
             avd_name = self._extract_avd_name_from_email(sindarin_email)
