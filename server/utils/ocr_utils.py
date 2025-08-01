@@ -376,16 +376,16 @@ def is_ocr_requested():
     """Check if OCR is requested in query parameters or JSON body.
 
     Returns:
-        Boolean indicating whether OCR was requested (defaults to True)
+        Boolean indicating whether OCR was requested (defaults to False)
     """
-    # Check URL query parameters first - default to "1" if not specified
-    ocr_param = request.args.get("ocr", "1")
+    # Check URL query parameters first - default to "0" if not specified
+    ocr_param = request.args.get("ocr", "0")
     text_param = request.args.get("text", "0")
     preview_param = request.args.get("preview", "0")
 
-    # OCR is disabled only if explicitly set to "0" or "false"
+    # OCR is enabled only if explicitly set to "1" or "true"
     perform_ocr = (
-        ocr_param not in ("0", "false") or text_param in ("1", "true") or preview_param in ("1", "true")
+        ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
     )
 
     logger.debug(
