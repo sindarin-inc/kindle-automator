@@ -59,7 +59,7 @@
     owner: root
     group: root
     mode: 0644
-  when: "'kindle' in inventory_hostname"
+  when: "'staging' not in inventory_hostname and 'kindle' in inventory_hostname"
   tags: env
 
 - name: Copy .env.staging to /opt/kindle-automator/.env.staging
