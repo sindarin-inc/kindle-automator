@@ -108,6 +108,66 @@ class EmulatorLauncher:
 
         Returns:
             True if a crash dialog was found and dismissed, False otherwise
+
+        A healthy emulator looks like this:
+
+            root@kindle-automator-1:/opt/kindle-automator ‹main›# export DISPLAY=:2 && xprop -id 0x800007
+            _NET_WM_ICON_NAME(UTF8_STRING) =
+            _NET_WM_ICON(CARDINAL) =        Icon (128 x 128):
+                    (not shown)
+
+            XdndAware(ATOM) = BITMAP
+            WM_NAME(STRING) = "Android Emulator - KindleAVD_phil_rigden-online_com:5556"
+            _NET_WM_NAME(UTF8_STRING) = "Android Emulator - KindleAVD_phil_rigden-online_com:5556"
+            _MOTIF_WM_HINTS(_MOTIF_WM_HINTS) = 0x1, 0x6, 0x0, 0x0, 0x0
+            _NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_NORMAL
+            _XEMBED_INFO(_XEMBED_INFO) = 0x0, 0x1
+            WM_CLIENT_LEADER(WINDOW): window id # 0x800009
+            WM_HINTS(WM_HINTS):
+                            Client accepts input or input focus: True
+                            window id # of group leader: 0x800009
+            WM_CLIENT_MACHINE(STRING) = "kindle-automator-1"
+            _NET_WM_PID(CARDINAL) = 984743
+            _NET_WM_SYNC_REQUEST_COUNTER(CARDINAL) = 8388616
+            WM_CLASS(STRING) = "qemu-system-x86_64", "Emulator"
+            WM_PROTOCOLS(ATOM): protocols  WM_DELETE_WINDOW, WM_TAKE_FOCUS, _NET_WM_PING, _NET_WM_SYNC_REQUEST
+            WM_NORMAL_HINTS(WM_SIZE_HINTS):
+                            user specified location: 100, 100
+                            user specified size: 393 by 699
+                            program specified minimum size: 200 by 200
+                            window gravity: Static
+
+        A crash dialog looks like this:
+
+            root@kindle-automator-staging:/opt/kindle-automator ‹sam/database›# export DISPLAY=:1 && xprop -id 0x800007
+            _NET_WM_USER_TIME(CARDINAL) = 1810295461
+            _NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL
+            WM_TRANSIENT_FOR(WINDOW): window id # 0x800009
+            _NET_WM_ICON(CARDINAL) =        Icon (128 x 128):
+                    (not shown)
+
+            _NET_WM_ICON_NAME(UTF8_STRING) =
+            XdndAware(ATOM) = BITMAP
+            WM_NAME(STRING) = "Android Emulator"
+            _NET_WM_NAME(UTF8_STRING) = "Android Emulator"
+            _MOTIF_WM_HINTS(_MOTIF_WM_HINTS) = 0x3, 0x26, 0x1e, 0x0, 0x0
+            _NET_WM_WINDOW_TYPE(ATOM) = _NET_WM_WINDOW_TYPE_DIALOG, _NET_WM_WINDOW_TYPE_NORMAL
+            _XEMBED_INFO(_XEMBED_INFO) = 0x0, 0x1
+            WM_CLIENT_LEADER(WINDOW): window id # 0x800009
+            WM_HINTS(WM_HINTS):
+                            Client accepts input or input focus: True
+                            window id # of group leader: 0x800009
+            WM_CLIENT_MACHINE(STRING) = "kindle-automator-staging"
+            _NET_WM_PID(CARDINAL) = 2310470
+            _NET_WM_SYNC_REQUEST_COUNTER(CARDINAL) = 8388616
+            WM_CLASS(STRING) = "qemu-system-x86_64", "Emulator"
+            WM_PROTOCOLS(ATOM): protocols  WM_DELETE_WINDOW, WM_TAKE_FOCUS, _NET_WM_PING, _NET_WM_SYNC_REQUEST
+            WM_NORMAL_HINTS(WM_SIZE_HINTS):
+                            user specified location: 249, 709
+                            user specified size: 562 by 422
+                            program specified minimum size: 562 by 422
+                            program specified maximum size: 32767 by 422
+                            window gravity: Static
         """
         try:
             logger.debug(f"Checking for crash dialog on display :{display_num}")
@@ -122,17 +182,21 @@ class EmulatorLauncher:
             )
 
             if result.returncode == 0:
-                output = result.stdout.lower()
-                # Look for crash dialog indicators
-                if any(phrase in output for phrase in ["crash", "error", "closed unexpectedly", "apport"]):
-                    # Also check window dimensions - crash dialogs are typically around 562x422
-                    for line in result.stdout.split("\n"):
-                        if "562x422" in line or ("android emulator" in line.lower() and "x4" in line):
+                # Look for Android Emulator crash dialog:
+                # - Title is "Android Emulator" (without AVD name/port suffix)
+                # - Size is exactly 562x422
+                # - Window class is qemu-system-x86_64
+                for line in result.stdout.split("\n"):
+                    # Check for the specific crash dialog pattern
+                    if '"Android Emulator"' in line and "562x422" in line:
+                        # Make sure it's not a normal emulator window (which would have AVD name in title)
+                        if "KindleAVD" not in line and ":5" not in line:
                             email = get_sindarin_email()
                             logger.error(
-                                f"Detected crash dialog on display :{display_num}, email: {email}",
+                                f"Detected Android Emulator crash dialog on display :{display_num}, email: {email}",
                                 exc_info=True,
                             )
+                            logger.info(f"Crash dialog window: {line.strip()}")
 
                             # Try to dismiss with Escape key
                             dismiss_result = subprocess.run(
@@ -143,7 +207,9 @@ class EmulatorLauncher:
                             )
 
                             if dismiss_result.returncode == 0:
-                                logger.debug(f"Dismissed crash dialog on display :{display_num}")
+                                logger.info(
+                                    f"Sent Escape key to dismiss crash dialog on display :{display_num}"
+                                )
                                 time.sleep(1)  # Give it a moment to close
                                 return True
                             else:
@@ -1085,10 +1151,10 @@ class EmulatorLauncher:
             poll_result = process.poll()
             if poll_result is not None:
                 # Process already exited
-                logger.error(f"Emulator process exited immediately with code: {poll_result}")
-                logger.error(f"Working directory: /tmp")
-                logger.error(f"AVD path exists: {os.path.exists(avd_path)}")
-                logger.error(
+                logger.warning(f"Emulator process exited immediately with code: {poll_result}")
+                logger.debug(f"Working directory: /tmp")
+                logger.debug(f"AVD path exists: {os.path.exists(avd_path)}")
+                logger.debug(
                     f"Emulator binary exists: {os.path.exists(os.path.join(self.android_home, 'emulator', 'emulator'))}"
                 )
 
@@ -1100,27 +1166,27 @@ class EmulatorLauncher:
                 with open(stdout_log, "r") as f:
                     stdout_content = f.read()
                     if stdout_content:
-                        logger.error(f"Emulator stdout: {stdout_content}")
+                        logger.debug(f"Emulator stdout: {stdout_content}")
                 with open(stderr_log, "r") as f:
                     stderr_content = f.read()
                     if stderr_content:
-                        logger.error(f"Emulator stderr: {stderr_content}")
+                        logger.debug(f"Emulator stderr: {stderr_content}")
                 exit_code = process.returncode
-                logger.error(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
-                logger.error(f"Check logs at {stdout_log} and {stderr_log}", exc_info=True)
+                logger.debug(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
+                logger.debug(f"Check logs at {stdout_log} and {stderr_log}", exc_info=True)
                 # Read and log stdout
                 stdout_content = ""
                 try:
                     with open(stdout_log, "r") as f:
                         stdout_content = f.read()
-                    logger.error(f"Emulator stdout ({stdout_log}):\n{stdout_content}", exc_info=True)
+                    logger.debug(f"Emulator stdout ({stdout_log}):\n{stdout_content}", exc_info=True)
                 except Exception as e:
                     logger.warning(f"Failed to read emulator stdout log {stdout_log}: {e}", exc_info=True)
                 # Read and log stderr
                 try:
                     with open(stderr_log, "r") as f:
                         stderr_content = f.read()
-                    logger.error(f"Emulator stderr ({stderr_log}):\n{stderr_content}", exc_info=True)
+                    logger.debug(f"Emulator stderr ({stderr_log}):\n{stderr_content}", exc_info=True)
                 except Exception as e:
                     logger.warning(f"Failed to read emulator stderr log {stderr_log}: {e}", exc_info=True)
 
