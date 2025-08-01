@@ -74,6 +74,7 @@ class User(Base):
     preferences: Mapped[list["UserPreference"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    vnc_instance: Mapped[Optional["VNCInstance"]] = relationship(back_populates="user", uselist=False)
 
     def __repr__(self) -> str:
         return f"<User(email={self.email}, avd_name={self.avd_name})>"
@@ -180,7 +181,9 @@ class VNCInstance(Base):
     appium_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     emulator_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     emulator_id: Mapped[Optional[str]] = mapped_column(String(50))
-    assigned_profile: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    assigned_profile: Mapped[Optional[str]] = mapped_column(
+        String(255), ForeignKey("users.email", ondelete="SET NULL"), index=True
+    )
     appium_pid: Mapped[Optional[int]] = mapped_column(Integer)
     appium_running: Mapped[bool] = mapped_column(Boolean, default=False)
     appium_last_health_check: Mapped[Optional[datetime]] = mapped_column(DateTime)
@@ -196,6 +199,9 @@ class VNCInstance(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    # Relationship
+    user: Mapped[Optional["User"]] = relationship(back_populates="vnc_instance")
 
     # Index for quick lookup by assigned profile
     __table_args__ = (Index("idx_vnc_assigned_profile", "assigned_profile"),)
