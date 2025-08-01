@@ -112,7 +112,7 @@ class DatabaseConnection:
         environment = os.getenv("ENVIRONMENT", "").lower()
         if (is_development or environment in ["dev", "staging"]) and sql_logging_enabled:
             self._setup_query_logging()
-            logger.info("SQL query logging enabled (set SQL_LOGGING=false to disable)")
+            logger.debug("SQL query logging enabled (set SQL_LOGGING=false to disable)")
 
         self._initialized = True
         logger.debug(f"Database connection initialized with schema: {self.schema_name}")
@@ -214,8 +214,8 @@ class DatabaseConnection:
             else:  # Dim gray for fast queries
                 time_str = f"{DIM_GRAY}{time_ms:.1f}ms{RESET}"
 
-            # Log the query
-            logger.info(f"[SQL {time_str}] {query_color}{formatted_query}{RESET}")
+            # Log the query at debug level
+            logger.debug(f"[SQL {time_str}] {query_color}{formatted_query}{RESET}")
 
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:

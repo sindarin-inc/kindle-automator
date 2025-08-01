@@ -578,30 +578,36 @@ class UserActivityResource(Resource):
                 else:
                     desc = f"{activity.get('method', 'GET')} {strip_ansi_codes(endpoint)}"
 
-                # Check if request succeeded or failed
-                # Parse the response to check actual success status
-                try:
-                    # Extract JSON part from body (remove email prefix if present)
-                    json_start = body.find("{")
-                    if json_start != -1:
-                        json_body = body[json_start:]
-                        body_dict = json.loads(json_body)
-                    else:
-                        body_dict = json.loads(body)
+                # Check if request succeeded or failed based on HTTP status code first
+                status_code = activity.get("status_code", 200)
 
-                    # Check for explicit failure indicators in the response structure
-                    if body_dict.get("success") is False or "error" in body_dict:
-                        status = "FAILED"
-                    else:
-                        status = "OK"
-                except:
-                    # If we can't parse JSON, fall back to simple text check
-                    # but only in the first 100 chars to avoid false positives from content
-                    body_preview = body[:100].lower()
-                    if '"success":false' in body_preview or '"error":' in body_preview:
-                        status = "FAILED"
-                    else:
-                        status = "OK"
+                # Consider 4xx and 5xx as failures
+                if status_code >= 400:
+                    status = "FAILED"
+                else:
+                    # For 2xx and 3xx, also check response body for application-level errors
+                    try:
+                        # Extract JSON part from body (remove email prefix if present)
+                        json_start = body.find("{")
+                        if json_start != -1:
+                            json_body = body[json_start:]
+                            body_dict = json.loads(json_body)
+                        else:
+                            body_dict = json.loads(body)
+
+                        # Check for explicit failure indicators in the response structure
+                        if body_dict.get("success") is False or "error" in body_dict:
+                            status = "FAILED"
+                        else:
+                            status = "OK"
+                    except:
+                        # If we can't parse JSON, fall back to simple text check
+                        # but only in the first 100 chars to avoid false positives from content
+                        body_preview = body[:100].lower()
+                        if '"success":false' in body_preview or '"error":' in body_preview:
+                            status = "FAILED"
+                        else:
+                            status = "OK"
 
                 # Check if we have user agent info from the request
                 user_agent_info = ""
