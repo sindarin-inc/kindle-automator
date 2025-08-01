@@ -29,10 +29,6 @@ class EmulatorManager:
 
         self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
 
-        # Cache for emulator state to avoid repeated ADB queries
-        # Maps email to (emulator_id, avd_name, last_check_time)
-        self._emulator_cache = {}
-
     def is_emulator_running(self, email: str) -> bool:
         """Check if an emulator is currently running for a specific email."""
         try:
@@ -79,30 +75,16 @@ class EmulatorManager:
         """
         success = self._stop_specific_emulator(emulator_id)
         if success:
-            # Clear cache for this emulator
-            email_to_release = None
-            for email, (cached_id, _, _) in list(self._emulator_cache.items()):
-                if cached_id == emulator_id:
-                    del self._emulator_cache[email]
-                    logger.info(f"Cleared cache for emulator {emulator_id} (email: {email})")
-                    email_to_release = email
-                    break
-
             # Release the VNC instance assignment
             vnc_manager = VNCInstanceManager.get_instance()
 
-            # If we found an email in the cache, use it
-            if email_to_release:
-                vnc_manager.release_instance_from_profile(email_to_release)
-                logger.info(f"Released VNC instance for {email_to_release}")
-            else:
-                # Otherwise, find the email by looking through all instances
-                for instance in vnc_manager.instances:
-                    if instance.get("emulator_id") == emulator_id and instance.get("assigned_profile"):
-                        email_to_release = instance.get("assigned_profile")
-                        vnc_manager.release_instance_from_profile(email_to_release)
-                        logger.info(f"Released VNC instance for {email_to_release}")
-                        break
+            # Find the email by looking through all instances
+            for instance in vnc_manager.instances:
+                if instance.get("emulator_id") == emulator_id and instance.get("assigned_profile"):
+                    email_to_release = instance.get("assigned_profile")
+                    vnc_manager.release_instance_from_profile(email_to_release)
+                    logger.info(f"Released VNC instance for {email_to_release}")
+                    break
 
         return success
 
@@ -159,18 +141,20 @@ class EmulatorManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            # Check if we have cached emulator info for this email
-            if email in self._emulator_cache:
-                emulator_id, avd_name, cache_time = self._emulator_cache[email]
-                logger.info(f"Found cached emulator info for {email}: {emulator_id}, {avd_name}")
+            # Check if we have emulator info in VNC instance manager for this email
+            vnc_manager = VNCInstanceManager.get_instance()
+            emulator_id = vnc_manager.get_emulator_id(email)
 
-                # Verify the cached emulator is still running
+            if emulator_id:
+                logger.info(f"Found emulator info for {email}: {emulator_id}")
+
+                # Verify the emulator is still running
                 if self.emulator_launcher._verify_emulator_running(emulator_id, email):
-                    logger.info(f"Cached emulator {emulator_id} is still running for {email}")
+                    logger.info(f"Emulator {emulator_id} is still running for {email}")
                     return True
                 else:
-                    logger.info(f"Cached emulator {emulator_id} is no longer running, removing from cache")
-                    del self._emulator_cache[email]
+                    logger.info(f"Emulator {emulator_id} is no longer running, clearing from VNC instance")
+                    vnc_manager.set_emulator_id(email, None)
 
             # First check for stale cache entries and clean them before launching
             avd_name = self.emulator_launcher._extract_avd_name_from_email(email)
@@ -213,9 +197,9 @@ class EmulatorManager:
             if success:
                 logger.debug(f"Emulator {emulator_id} launched successfully on display :{display_num}")
 
-                # Cache the emulator info to avoid repeated ADB queries
-                self._emulator_cache[email] = (emulator_id, avd_name, time.time())
-                logger.debug(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
+                # Store the emulator ID in VNC instance manager
+                vnc_manager.set_emulator_id(email, emulator_id)
+                logger.debug(f"Stored emulator info for {email}: {emulator_id}")
 
                 # Check adb devices immediately after launch to see if it's detected
                 try:

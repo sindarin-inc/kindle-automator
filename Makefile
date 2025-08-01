@@ -115,3 +115,10 @@ db-export-staging:
 db-export-prod:
 	@echo "Exporting users from production database to JSON format..."
 	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/export_users_to_json.py
+
+# Test multi-user operations
+test-multi-user:
+	@echo "Running multi-user test..."
+	@echo "Make sure the server is running with 'make claude-run' first!"
+	@echo ""
+	uv run python tests/test_multi_user.py
