@@ -16,6 +16,7 @@ from server.utils.ansi_colors import (
     BRIGHT_CYAN,
     BRIGHT_GREEN,
     DIM_GRAY,
+    DIM_YELLOW,
     GRAY,
     RED,
     RESET,
@@ -197,7 +198,7 @@ class DatabaseConnection:
 
             # Determine color based on query type
             if statement.upper().startswith("SELECT"):
-                query_color = YELLOW
+                query_color = DIM_YELLOW
             elif statement.upper().startswith("UPDATE"):
                 query_color = BRIGHT_CYAN
             elif statement.upper().startswith(("INSERT", "DELETE")):

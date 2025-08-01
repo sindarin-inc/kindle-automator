@@ -8,7 +8,16 @@ from typing import Dict, Optional
 
 import pytz
 
-from server.utils.ansi_colors import GREEN, MAGENTA, RESET, YELLOW
+from server.utils.ansi_colors import (
+    BRIGHT_YELLOW,
+    GRAY,
+    GREEN,
+    MAGENTA,
+    RED,
+    RESET,
+    WHITE,
+    YELLOW,
+)
 
 # Remove circular import - DynamicEmailHandler will get email from flask.g only
 
@@ -82,7 +91,7 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
 
         # Use the same formatter as the main logger
         formatter = RelativePathFormatter(
-            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
+            f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
         file_handler.setFormatter(formatter)
@@ -211,6 +220,15 @@ class RelativePathFormatter(logging.Formatter):
         super().__init__(*args, **kwargs)
         self.pst_tz = pytz.timezone("US/Pacific")
 
+        # Define log level colors
+        self.level_colors = {
+            logging.DEBUG: GRAY,
+            logging.INFO: WHITE,  # White (no color code needed for default)
+            logging.WARNING: BRIGHT_YELLOW,
+            logging.ERROR: RED,
+            logging.CRITICAL: RED,
+        }
+
     def formatTime(self, record, datefmt=None):
         """Override formatTime to use PT timezone"""
         # Convert the timestamp to PT timezone
@@ -261,7 +279,57 @@ class RelativePathFormatter(logging.Formatter):
                 else:
                     record.pathname = truncated
 
-        return super().format(record)
+        # Get the formatted message from parent first
+        formatted = super().format(record)
+
+        # Get the color for this level
+        level_color = self.level_colors.get(record.levelno, "")
+
+        if level_color and level_color != WHITE:
+            # Apply color to both the level name and the message
+            # The format is: [LEVEL] [timestamp] filename:lineno message
+
+            # Color the level name in brackets
+            level_pattern = f"[{record.levelname:5.5s}]"
+            colored_level = f"{level_color}[{record.levelname:5.5s}]{RESET}"
+            formatted = formatted.replace(level_pattern, colored_level, 1)
+
+            # Also color the message part (after filename:lineno)
+            import re
+
+            # Look for the pattern that includes ANSI codes
+            # The format has colors: filename.py:123[RESET] message
+            # We need to find where the message starts after all the formatting
+            match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
+
+            if match:
+                # Split at the filename:lineno boundary including the RESET code
+                prefix = match.group(1)
+                message = formatted[len(prefix) :]
+                
+                # Check if the message already contains ANSI codes (like SQL logs)
+                if '\033[' in message:
+                    # Message already has colors, don't add level color
+                    formatted = prefix + message
+                else:
+                    # Apply color to the message part
+                    formatted = prefix + level_color + message + RESET
+            else:
+                # Fallback: try without ANSI codes
+                match = re.search(r"(.*\.py:\d+\s+)", formatted)
+                if match:
+                    prefix_len = len(match.group(1))
+                    prefix = formatted[:prefix_len]
+                    message = formatted[prefix_len:]
+                    
+                    # Check if the message already contains ANSI codes
+                    if '\033[' in message:
+                        # Message already has colors, don't add level color
+                        formatted = prefix + message
+                    else:
+                        formatted = prefix + level_color + message + RESET
+
+        return formatted
 
 
 # Global reference to the dynamic email handler
@@ -303,7 +371,7 @@ def get_idle_timer_handler():
 
     # Use the same formatter as the main logger
     formatter = RelativePathFormatter(
-        f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
+        f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
     file_handler.setFormatter(formatter)
@@ -383,13 +451,13 @@ def setup_logger():
         )
     else:
         console_formatter = RelativePathFormatter(
-            f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
+            f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
 
     # File formatters always have colors
     file_formatter = RelativePathFormatter(
-        f"{MAGENTA}[%(levelname)5.5s]{RESET} {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
+        f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
 
