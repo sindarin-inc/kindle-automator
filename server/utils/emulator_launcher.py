@@ -110,6 +110,8 @@ class EmulatorLauncher:
             True if a crash dialog was found and dismissed, False otherwise
         """
         try:
+            logger.debug(f"Checking for crash dialog on display :{display_num}")
+
             # Check for crash dialog windows
             result = subprocess.run(
                 ["xwininfo", "-root", "-tree"],
@@ -750,6 +752,19 @@ class EmulatorLauncher:
         try:
             logger.debug(f"Launching emulator for {email}")
 
+            # Log system resources
+            try:
+                import psutil
+
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+                memory = psutil.virtual_memory()
+                disk = psutil.disk_usage("/")
+                logger.info(
+                    f"System resources - CPU: {cpu_percent}%, Memory: {memory.percent}% used ({memory.used // 1024**3}GB/{memory.total // 1024**3}GB), Disk: {disk.percent}% used"
+                )
+            except Exception as e:
+                logger.debug(f"Could not get system resources: {e}")
+
             # Check if AVD exists
             avd_name = self._extract_avd_name_from_email(email)
             avd_path = os.path.join(self.avd_dir, f"{avd_name}.avd")
@@ -820,6 +835,14 @@ class EmulatorLauncher:
 
             # Calculate emulator ID based on port
             emulator_id = f"emulator-{emulator_port}"
+
+            # Check for and dismiss any existing crash dialogs BEFORE launching
+            logger.info(f"Checking for existing crash dialogs on display :{display_num} before launch")
+            if self._check_and_dismiss_crash_dialog(display_num):
+                logger.info(
+                    f"Dismissed existing crash dialog on display :{display_num}, continuing with launch"
+                )
+                time.sleep(2)  # Give dialog time to close
 
             # Set up environment variables
             env = os.environ.copy()
@@ -1024,7 +1047,8 @@ class EmulatorLauncher:
                 f"Starting emulator for AVD {avd_name} (email {email}) on display :{display_num} and port {emulator_port}"
             )
             logger.debug(f"Emulator command: {' '.join(emulator_cmd)}")
-            # logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
+            logger.info(f"Emulator environment: DISPLAY={env.get('DISPLAY')}, PATH={env.get('PATH')}")
+            logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
                 process = subprocess.Popen(
@@ -1057,9 +1081,16 @@ class EmulatorLauncher:
                 self._ensure_vnc_running(display_num, email=email)
 
             # Check if emulator process is actually running
-            if process.poll() is not None:
+            time.sleep(0.5)  # Give process a moment to start
+            poll_result = process.poll()
+            if poll_result is not None:
                 # Process already exited
-                logger.error(f"Emulator process exited immediately with code: {process.poll()}")
+                logger.error(f"Emulator process exited immediately with code: {poll_result}")
+                logger.error(f"Working directory: /tmp")
+                logger.error(f"AVD path exists: {os.path.exists(avd_path)}")
+                logger.error(
+                    f"Emulator binary exists: {os.path.exists(os.path.join(self.android_home, 'emulator', 'emulator'))}"
+                )
 
                 # Check for and dismiss crash dialog
                 if self._check_and_dismiss_crash_dialog(display_num):

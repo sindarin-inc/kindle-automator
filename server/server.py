@@ -301,12 +301,34 @@ def check_and_restart_adb_server():
 def run_idle_check():
     """Run idle check using the IdleCheckResource directly."""
     try:
+        # Log health status before idle check
+        logger.info("=== Periodic Health Check ===")
+        try:
+            import psutil
+
+            cpu = psutil.cpu_percent(interval=0.1)
+            mem = psutil.virtual_memory()
+            disk = psutil.disk_usage("/")
+            logger.info(
+                f"System: CPU {cpu}%, Memory {mem.percent}% ({mem.used // 1024**3}GB/{mem.total // 1024**3}GB), Disk {disk.percent}%"
+            )
+
+            # Count running emulators
+            from server.utils.emulator_launcher import EmulatorLauncher
+
+            launcher = EmulatorLauncher.get_instance()
+            running_count = len(launcher.get_running_emulators())
+            logger.info(f"Running emulators: {running_count}")
+        except Exception as e:
+            logger.debug(f"Could not log health status: {e}")
+
         idle_check = IdleCheckResource(server_instance=server)
         result, status_code = idle_check.get()
 
         if status_code == 200:
             shut_down = result.get("shut_down", 0)
             active = result.get("active", 0)
+            logger.info(f"Idle check complete: {shut_down} shut down, {active} active")
         else:
             logger.warning(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
