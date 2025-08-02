@@ -36,7 +36,9 @@ class AVDCreator:
     ]
 
     # List of email addresses that should get 8GB RAM instead of 5GB
-    HIGH_MEMORY_EMAILS = []
+    HIGH_MEMORY_EMAILS = [
+        "phil@rigden-online.com",
+    ]
 
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
