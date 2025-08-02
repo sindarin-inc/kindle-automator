@@ -1,75 +1,20 @@
 """Utility functions for staff authentication."""
 
-import hashlib
-import json
 import logging
-import os
-import secrets
-import time
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
+
+from database.connection import DatabaseConnection
+from database.repositories.staff_token_repository import StaffTokenRepository
 
 logger = logging.getLogger(__name__)
 
-# Path to the tokens file
-# Store in the AVD profiles directory for persistence across deployments
-# In production this is /opt/android-sdk/profiles
-# In development (Mac) this is {project_root}/user_data
-if os.environ.get("FLASK_ENV") == "development" and os.uname().sysname == "Darwin":
-    # Mac development environment
-    project_root = Path(__file__).resolve().parent.parent.parent
-    TOKENS_FILE = os.path.join(project_root, "user_data", "staff_tokens.json")
-else:
-    # Production environment
-    TOKENS_FILE = "/opt/android-sdk/profiles/staff_tokens.json"
-
-
-def generate_token() -> str:
-    """Generate a secure random token for staff authentication."""
-    return secrets.token_hex(32)
-
-
-def _load_tokens() -> Dict[str, Dict]:
-    """Load the tokens from disk."""
-    if not os.path.exists(TOKENS_FILE):
-        # Create the parent directory if it doesn't exist
-        os.makedirs(os.path.dirname(TOKENS_FILE), exist_ok=True)
-        return {}
-
-    try:
-        with open(TOKENS_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        logger.warning(f"Failed to load tokens from {TOKENS_FILE}, returning empty dict")
-        return {}
-
-
-def _save_tokens(tokens: Dict[str, Dict]) -> bool:
-    """Save the tokens to disk."""
-    try:
-        # Create the parent directory if it doesn't exist
-        os.makedirs(os.path.dirname(TOKENS_FILE), exist_ok=True)
-
-        with open(TOKENS_FILE, "w") as f:
-            json.dump(tokens, f, indent=2)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to save tokens to {TOKENS_FILE}: {e}", exc_info=True)
-        return False
-
 
 def create_staff_token() -> str:
-    """Create a new staff token and save it to disk."""
-    token = generate_token()
-    tokens = _load_tokens()
-
-    # Add the new token with creation timestamp
-    tokens[token] = {
-        "created_at": int(time.time()),
-    }
-
-    _save_tokens(tokens)
-    return token
+    """Create a new staff token and save it to database."""
+    with DatabaseConnection().get_session() as session:
+        repo = StaffTokenRepository(session)
+        token = repo.create_token()
+        return token.token
 
 
 def validate_token(token: str) -> bool:
@@ -77,28 +22,31 @@ def validate_token(token: str) -> bool:
     if not token:
         return False
 
-    tokens = _load_tokens()
-    return token in tokens
+    with DatabaseConnection().get_session() as session:
+        repo = StaffTokenRepository(session)
+        return repo.validate_token(token)
 
 
 def get_all_tokens() -> List[Dict]:
     """Get all tokens with their metadata."""
-    tokens = _load_tokens()
-    result = []
+    with DatabaseConnection().get_session() as session:
+        repo = StaffTokenRepository(session)
+        tokens = repo.get_all_tokens()
 
-    for token, metadata in tokens.items():
-        # Add token to metadata for convenience
-        token_info = {"token": token, **metadata}
-        result.append(token_info)
+        result = []
+        for token in tokens:
+            token_info = {
+                "token": token.token,
+                "created_at": int(token.created_at.timestamp()),
+                "last_used": int(token.last_used.timestamp()) if token.last_used else None,
+            }
+            result.append(token_info)
 
-    return result
+        return result
 
 
 def revoke_token(token: str) -> bool:
     """Revoke a staff token."""
-    tokens = _load_tokens()
-    if token in tokens:
-        del tokens[token]
-        _save_tokens(tokens)
-        return True
-    return False
+    with DatabaseConnection().get_session() as session:
+        repo = StaffTokenRepository(session)
+        return repo.revoke_token(token)

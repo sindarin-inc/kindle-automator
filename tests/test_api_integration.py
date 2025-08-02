@@ -65,17 +65,25 @@ class TestKindleAPIIntegration:
                 print(f"[DEBUG] Params: {request_params}")
                 print(f"[DEBUG] Headers: {dict(self.session.headers)}")
                 # Debug cookies - show full staff_token
-                cookies_dict = dict(self.session.cookies)
-                if "staff_token" in cookies_dict:
-                    token = cookies_dict["staff_token"]
-                    print(f"[DEBUG] Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
-                else:
-                    print(f"[DEBUG] Cookies: {cookies_dict}")
+                try:
+                    cookies_dict = dict(self.session.cookies)
+                    if "staff_token" in cookies_dict:
+                        token = cookies_dict["staff_token"]
+                        print(f"[DEBUG] Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
+                    else:
+                        print(f"[DEBUG] Cookies: {cookies_dict}")
+                except Exception as e:
+                    # Handle cookie conflicts gracefully
+                    print(f"[DEBUG] Cookie info unavailable: {e}")
 
                 if method == "GET":
                     response = self.session.get(url, params=request_params, timeout=timeout)
                 elif method == "POST":
                     response = self.session.post(url, params=request_params, timeout=timeout)
+                elif method == "DELETE":
+                    response = self.session.delete(url, params=request_params, timeout=timeout)
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
 
                 # If we get a 503 and haven't exhausted retries, wait and retry
                 if response.status_code == 503 and attempt < max_retries - 1:
@@ -346,6 +354,88 @@ class TestKindleAPIIntegration:
             assert len(text_field) > 0, "OCR text should not be empty"
 
     @pytest.mark.timeout(120)
+    def test_staff_token_authentication(self):
+        """Test staff token creation, validation, and user impersonation."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+
+        # Clear any existing staff token
+        self.session.cookies.clear()
+
+        print("\n[TEST] Testing staff authentication workflow...")
+
+        # Test 1: Try to impersonate without staff token (should fail)
+        print("[TEST] 1. Testing impersonation without staff token (should fail)...")
+        response = self._make_request("kindle/auth", {"user_email": "test@example.com"}, max_retries=1)
+        assert response.status_code == 403, f"Expected 403 without staff token, got {response.status_code}"
+        data = response.json()
+        assert "error" in data, "Response should contain error"
+        assert "staff" in data["error"].lower(), f"Error should mention staff auth: {data}"
+        print(f"[TEST] ✓ Correctly rejected: {data['error']}")
+
+        # Test 2: Create a new staff token
+        print("\n[TEST] 2. Creating new staff token...")
+        response = self._make_request("kindle/staff-auth", {"auth": "1"}, max_retries=1)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["authenticated"] is True, f"Authentication failed: {data}"
+        assert "token" in data, "Response should contain token"
+
+        # Extract the full token from cookies (since response only shows truncated version)
+        staff_token = None
+        for cookie in response.cookies:
+            if cookie.name == "staff_token":
+                staff_token = cookie.value
+                break
+        assert staff_token is not None, "No staff_token cookie received"
+        assert len(staff_token) == 64, f"Token should be 64 chars, got {len(staff_token)}"
+        print(f"[TEST] ✓ Staff token created: {staff_token[:8]}...{staff_token[-8:]}")
+
+        # Test 3: Use the token to impersonate a user
+        print("\n[TEST] 3. Testing user impersonation with staff token...")
+        # Clear cookies first to avoid conflicts
+        self.session.cookies.clear()
+        self.session.cookies.set("staff_token", staff_token)
+        response = self._make_request("kindle/auth", {"user_email": "test@example.com"}, max_retries=1)
+        assert response.status_code == 200, f"Expected 200 with staff token, got {response.status_code}"
+        data = response.json()
+        assert "success" in data or "authenticated" in data, f"Response missing expected fields: {data}"
+        print(f"[TEST] ✓ Successfully impersonated user: {data}")
+
+        # Test 4: Verify the token validates correctly
+        print("\n[TEST] 4. Verifying staff token validation...")
+        response = self._make_request("kindle/staff-auth", max_retries=1)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert data["authenticated"] is True, f"Token validation failed: {data}"
+        assert "Valid staff token" in data["message"], f"Unexpected message: {data}"
+        print(f"[TEST] ✓ Token validated: {data['message']}")
+
+        # Test 5: Revoke the token
+        print("\n[TEST] 5. Revoking staff token...")
+        response = self._make_request("kindle/staff-auth", method="DELETE", max_retries=1)
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert data["success"] is True, f"Token revocation failed: {data}"
+        print(f"[TEST] ✓ Token revoked: {data['message']}")
+
+        # Test 6: Verify revoked token no longer works
+        print("\n[TEST] 6. Verifying revoked token is rejected...")
+        # Keep the revoked token in cookies
+        response = self._make_request("kindle/auth", {"user_email": "test@example.com"}, max_retries=1)
+        assert response.status_code == 403, f"Expected 403 with revoked token, got {response.status_code}"
+        data = response.json()
+        assert "error" in data, "Response should contain error"
+        assert (
+            "invalid" in data["error"].lower() or "revoked" in data["error"].lower()
+        ), f"Error should mention invalid/revoked token: {data}"
+        print(f"[TEST] ✓ Revoked token correctly rejected: {data['error']}")
+
+        # Restore original session state
+        self.session.cookies = original_cookies
+        print("\n[TEST] Staff token authentication workflow completed successfully!")
+
+    @pytest.mark.timeout(120)
     def _test_shutdown(self):
         """Test /kindle/shutdown endpoint."""
         try:
@@ -397,6 +487,9 @@ class TestKindleAPIIntegration:
             assert any(key in nav_data for key in ["ocr_text", "text", "content"])
             text_field = nav_data.get("ocr_text") or nav_data.get("text") or nav_data.get("content")
             assert len(text_field) > 0
+
+        # Test staff authentication while emulator is running
+        self.test_staff_token_authentication()
 
         # Shutdown
         shutdown_response = self._make_request("kindle/shutdown", method="POST")

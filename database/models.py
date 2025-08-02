@@ -210,3 +210,21 @@ class VNCInstance(Base):
         return (
             f"<VNCInstance(id={self.id}, display={self.display}, assigned_profile={self.assigned_profile})>"
         )
+
+
+class StaffToken(Base):
+    """Staff authentication token."""
+
+    __tablename__ = "staff_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    def __repr__(self) -> str:
+        return f"<StaffToken(id={self.id}, token={self.token[:8]}..., revoked={self.revoked})>"

@@ -384,9 +384,7 @@ def is_ocr_requested():
     preview_param = request.args.get("preview", "0")
 
     # OCR is enabled only if explicitly set to "1" or "true"
-    perform_ocr = (
-        ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
-    )
+    perform_ocr = ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
 
     logger.debug(
         f"is_ocr_requested check - query params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}"
