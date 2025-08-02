@@ -33,6 +33,7 @@ class AVDCreator:
         "dan.andrei91@gmail.com",
         "canyonet@aol.com",
         "hlbruce79@gmail.com",
+        "phil@rigden-online.com",
     ]
 
     # List of email addresses that should get 8GB RAM instead of 5GB
