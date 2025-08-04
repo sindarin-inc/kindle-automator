@@ -644,8 +644,8 @@ class NavigationResourceHandler:
         # Check if base64 parameter is provided
         params["use_base64"] = is_base64_requested()
 
-        # Check if OCR is requested via query params - this will respect ocr=0 overrides
-        params["perform_ocr"] = is_ocr_requested()
+        # Check if OCR is requested via query params - default to True for navigate
+        params["perform_ocr"] = is_ocr_requested(default=True)
 
         # If OCR is requested, force base64 encoding
         if params["perform_ocr"] and not params["use_base64"]:

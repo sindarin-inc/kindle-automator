@@ -372,19 +372,30 @@ def is_base64_requested():
     return use_base64
 
 
-def is_ocr_requested():
+def is_ocr_requested(default=False):
     """Check if OCR is requested in query parameters or JSON body.
 
+    Args:
+        default: Boolean indicating the default value if no OCR parameter is specified
+
     Returns:
-        Boolean indicating whether OCR was requested (defaults to False)
+        Boolean indicating whether OCR was requested
     """
-    # Check URL query parameters first - default to "0" if not specified
-    ocr_param = request.args.get("ocr", "0")
+    # Check URL query parameters first - default based on the provided default
+    default_value = "1" if default else "0"
+    ocr_param = request.args.get("ocr", default_value)
     text_param = request.args.get("text", "0")
     preview_param = request.args.get("preview", "0")
 
-    # OCR is enabled only if explicitly set to "1" or "true"
-    perform_ocr = ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
+    # OCR is enabled if set to "1" or "true", or if using default and not explicitly disabled
+    if default:
+        perform_ocr = (
+            ocr_param not in ("0", "false") or text_param in ("1", "true") or preview_param in ("1", "true")
+        )
+    else:
+        perform_ocr = (
+            ocr_param in ("1", "true") or text_param in ("1", "true") or preview_param in ("1", "true")
+        )
 
     logger.debug(
         f"is_ocr_requested check - query params 'ocr': {ocr_param}, 'text': {text_param}, 'preview': {preview_param}, result: {perform_ocr}"

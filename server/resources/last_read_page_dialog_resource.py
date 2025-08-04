@@ -63,8 +63,8 @@ class LastReadPageDialogResource(Resource):
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
-        # Check if OCR is requested
-        perform_ocr = is_ocr_requested()
+        # Check if OCR is requested - default to True for dialog handling
+        perform_ocr = is_ocr_requested(default=True)
         if perform_ocr:
             logger.info("OCR requested, will process image with OCR")
             if not use_base64:

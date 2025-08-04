@@ -45,8 +45,8 @@ class BookOpenResource(Resource):
         # Check if base64 parameter is provided
         use_base64 = is_base64_requested()
 
-        # Check if OCR is requested
-        perform_ocr = is_ocr_requested()
+        # Check if OCR is requested - default to True for open-book
+        perform_ocr = is_ocr_requested(default=True)
         if perform_ocr:
             if not use_base64:
                 # Force base64 encoding for OCR
