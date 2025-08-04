@@ -18,6 +18,7 @@ load_dotenv()
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:4096")
 TEST_USER_EMAIL = os.environ.get("TEST_USER_EMAIL", "sam@solreader.com")
+RECREATE_USER_EMAIL = os.environ.get("RECREATE_USER_EMAIL", "recreate@solreader.com")
 STAFF_AUTH_TOKEN = os.environ.get("INTEGRATION_TEST_STAFF_AUTH_TOKEN")
 WEB_AUTH_TOKEN = os.environ.get("WEB_INTEGRATION_TEST_AUTH_TOKEN")
 STAGING = "1"
@@ -366,7 +367,7 @@ class TestKindleAPIIntegration:
 
         # Test 1: Try to impersonate without staff token (should fail)
         print("[TEST] 1. Testing impersonation without staff token (should fail)...")
-        response = self._make_request("kindle/auth", {"user_email": "test@example.com"}, max_retries=1)
+        response = self._make_request("kindle/auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
         assert response.status_code == 403, f"Expected 403 without staff token, got {response.status_code}"
         data = response.json()
         assert "error" in data, "Response should contain error"
@@ -396,7 +397,7 @@ class TestKindleAPIIntegration:
         # Clear cookies first to avoid conflicts
         self.session.cookies.clear()
         self.session.cookies.set("staff_token", staff_token)
-        response = self._make_request("kindle/auth", {"user_email": "test@example.com"}, max_retries=1)
+        response = self._make_request("kindle/auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
         assert response.status_code == 200, f"Expected 200 with staff token, got {response.status_code}"
         data = response.json()
         assert "success" in data or "authenticated" in data, f"Response missing expected fields: {data}"
@@ -422,7 +423,7 @@ class TestKindleAPIIntegration:
         # Test 6: Verify revoked token no longer works
         print("\n[TEST] 6. Verifying revoked token is rejected...")
         # Keep the revoked token in cookies
-        response = self._make_request("kindle/auth", {"user_email": "test@example.com"}, max_retries=1)
+        response = self._make_request("kindle/auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
         assert response.status_code == 403, f"Expected 403 with revoked token, got {response.status_code}"
         data = response.json()
         assert "error" in data, "Response should contain error"
@@ -488,9 +489,6 @@ class TestKindleAPIIntegration:
             text_field = nav_data.get("ocr_text") or nav_data.get("text") or nav_data.get("content")
             assert len(text_field) > 0
 
-        # Test staff authentication while emulator is running
-        self.test_staff_token_authentication()
-
         # Shutdown
         shutdown_response = self._make_request("kindle/shutdown", method="POST")
         assert shutdown_response.status_code == 200
@@ -506,7 +504,7 @@ class TestKindleAPIIntegration:
             "kindle/auth",
             method="GET",
             params={
-                "user_email": "recreate@solreader.com",
+                "user_email": RECREATE_USER_EMAIL,
                 "recreate": "1",
             },
             timeout=120,  # 2 minutes timeout
@@ -523,7 +521,7 @@ class TestKindleAPIIntegration:
         # Shutdown
         print("[TEST_RECREATE] Making shutdown request")
         shutdown_response = self._make_request(
-            "kindle/shutdown", method="POST", params={"user_email": "recreate@solreader.com"}
+            "kindle/shutdown", method="POST", params={"user_email": RECREATE_USER_EMAIL}
         )
         print(f"[TEST_RECREATE] Shutdown response status: {shutdown_response.status_code}")
         assert shutdown_response.status_code == 200

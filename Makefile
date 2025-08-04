@@ -39,6 +39,8 @@ test:
 	@echo "Running tests..."
 	@PYTHONPATH=$(shell pwd) uv run pytest tests
 
+test-all: test
+
 # Generate staff authentication token for testing
 test-staff-auth:
 	@echo "Generating staff authentication token..."
