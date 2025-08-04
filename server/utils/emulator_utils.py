@@ -2,6 +2,7 @@
 
 import logging
 import os
+import platform
 from typing import Optional
 
 from server.core.automation_server import AutomationServer
@@ -9,6 +10,38 @@ from server.utils.emulator_launcher import EmulatorLauncher
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
+
+
+def get_android_home() -> str:
+    """
+    Get the Android SDK home directory based on environment.
+
+    Returns:
+        str: Path to Android SDK
+    """
+    if os.environ.get("ANDROID_HOME"):
+        return os.environ.get("ANDROID_HOME")
+    elif platform.system() == "Darwin":
+        return os.path.expanduser("~/Library/Android/sdk")
+    else:
+        return "/opt/android-sdk"
+
+
+def get_avd_dir() -> str:
+    """
+    Get the AVD directory based on environment.
+
+    Returns:
+        str: Path to AVD directory
+    """
+    android_home = get_android_home()
+
+    # Mac development environment
+    if platform.system() == "Darwin" and os.environ.get("FLASK_ENV") == "development":
+        return os.path.expanduser("~/.android/avd")
+    else:
+        # Production/staging environment
+        return os.path.join(android_home, "avd")
 
 
 def get_emulator_launcher_for_user(email: str) -> Optional[EmulatorLauncher]:
@@ -34,8 +67,8 @@ def get_emulator_launcher_for_user(email: str) -> Optional[EmulatorLauncher]:
     # Fallback: create a new launcher instance for this operation
     # This ensures we don't use another user's launcher
     logger.warning(f"No automator found for {email}, creating temporary emulator launcher")
-    android_home = os.environ.get("ANDROID_HOME", "/opt/android-sdk")
-    avd_dir = os.path.join(android_home, "avd")
+    android_home = get_android_home()
+    avd_dir = get_avd_dir()
 
     # Try to detect architecture from profile manager
     host_arch = "x86_64"  # default

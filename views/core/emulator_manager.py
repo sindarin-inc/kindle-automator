@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from server.utils.emulator_launcher import EmulatorLauncher
+from server.utils.emulator_utils import get_android_home, get_avd_dir
 from server.utils.request_utils import get_sindarin_email
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
@@ -44,16 +45,9 @@ class EmulatorManager:
         if _instance is not None and _instance is not self:
             logger.warning("EmulatorManager initialized directly. Use get_instance() instead.")
 
-        # Determine android_home
-        if os.environ.get("ANDROID_HOME"):
-            self.android_home = os.environ.get("ANDROID_HOME")
-        elif platform.system() == "Darwin":
-            self.android_home = os.path.expanduser("~/Library/Android/sdk")
-        else:
-            self.android_home = "/opt/android-sdk"
-
-        # Determine avd_dir
-        self.avd_dir = os.path.expanduser("~/.android/avd")
+        # Use centralized path determination
+        self.android_home = get_android_home()
+        self.avd_dir = get_avd_dir()
 
         # Detect host architecture
         self.host_arch = self._detect_host_architecture()
