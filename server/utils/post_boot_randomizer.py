@@ -180,7 +180,7 @@ class PostBootRandomizer:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
 
                     if result.returncode != 0:
-                        logger.error(f"Failed to set property {prop_name}: {result.stderr}", exc_info=True)
+                        logger.warning(f"Failed to set property {prop_name}: {result.stderr}", exc_info=True)
                         success = False
                     else:
                         # Verify it was set
