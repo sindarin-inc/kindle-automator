@@ -11,6 +11,7 @@ from flask_restful import Resource
 from server.core.automation_server import AutomationServer
 from server.logging_config import IdleTimerContext
 from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
+from server.utils.request_utils import email_override
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
@@ -109,9 +110,11 @@ class IdleCheckResource(Resource):
                         server = AutomationServer.get_instance()
                         shutdown_manager = EmulatorShutdownManager(server)
                         # Idle shutdowns should navigate to library and NOT mark for restart
-                        shutdown_summary = shutdown_manager.shutdown_emulator(
-                            email, preserve_reading_state=False, mark_for_restart=False
-                        )
+                        # Set email context for shutdown operations
+                        with email_override(email):
+                            shutdown_summary = shutdown_manager.shutdown_emulator(
+                                email, preserve_reading_state=False, mark_for_restart=False
+                            )
 
                         # Check if shutdown was successful
                         if any(shutdown_summary.values()):
