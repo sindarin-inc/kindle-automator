@@ -15,6 +15,7 @@ from typing import Dict, Optional
 
 from selenium.common.exceptions import InvalidSessionIdException
 
+from handlers.about_book_popover_handler import AboutBookPopoverHandler
 from server.core.automation_server import AutomationServer
 from server.utils.vnc_instance_manager import VNCInstanceManager
 from views.core.app_state import AppState
@@ -300,6 +301,14 @@ class EmulatorShutdownManager:
     ) -> None:
         """Navigate from any state into the Library view and optionally sync progress."""
         try:
+            # Check for and dismiss About Book popover before navigation
+            if state_machine.driver:
+                about_book_handler = AboutBookPopoverHandler(state_machine.driver)
+                if about_book_handler.is_popover_present():
+                    logger.info(f"About Book popover detected during shutdown for {email} - dismissing it")
+                    about_book_handler.dismiss_popover()
+                    time.sleep(0.5)
+
             current_state = state_machine._get_current_state()
             was_reading = current_state == AppState.READING
             logger.info(f"Current state before shutdown: {current_state.name} for {email}")
