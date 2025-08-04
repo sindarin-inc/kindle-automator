@@ -26,20 +26,18 @@ class SecureAdminIndexView(AdminIndexView):
 
     def is_accessible(self):
         """Check if current user can access the admin panel."""
-        # Check for staff token
+        # Always require staff token authentication
         staff_token = request.cookies.get("staff_token")
-        if staff_token:
-            # Import here to avoid circular imports
-            from database.connection import get_db
-            from database.models import StaffToken
+        if not staff_token:
+            return False
 
-            with get_db() as session:
-                token = session.query(StaffToken).filter_by(token=staff_token, revoked=False).first()
-                if token:
-                    return True
+        # Import here to avoid circular imports
+        from database.connection import get_db
+        from database.models import StaffToken
 
-        # In development, allow access by default if no token provided
-        return os.getenv("FLASK_ENV") == "development" and not staff_token
+        with get_db() as session:
+            token = session.query(StaffToken).filter_by(token=staff_token, revoked=False).first()
+            return token is not None
 
     def inaccessible_callback(self, name, **kwargs):
         """Redirect to login page when access is denied."""
@@ -57,20 +55,18 @@ class SecureModelView(ModelView):
 
     def is_accessible(self):
         """Check if current user can access this view."""
-        # Check for staff token
+        # Always require staff token authentication
         staff_token = request.cookies.get("staff_token")
-        if staff_token:
-            # Import here to avoid circular imports
-            from database.connection import get_db
-            from database.models import StaffToken
+        if not staff_token:
+            return False
 
-            with get_db() as session:
-                token = session.query(StaffToken).filter_by(token=staff_token, revoked=False).first()
-                if token:
-                    return True
+        # Import here to avoid circular imports
+        from database.connection import get_db
+        from database.models import StaffToken
 
-        # In development, allow access by default if no token provided
-        return os.getenv("FLASK_ENV") == "development" and not staff_token
+        with get_db() as session:
+            token = session.query(StaffToken).filter_by(token=staff_token, revoked=False).first()
+            return token is not None
 
     def inaccessible_callback(self, name, **kwargs):
         """Redirect to login page when access is denied."""

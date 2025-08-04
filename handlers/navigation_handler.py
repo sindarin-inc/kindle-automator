@@ -15,6 +15,7 @@ from typing import Dict, Optional, Tuple, Union
 
 from flask import request
 
+from handlers.about_book_popover_handler import AboutBookPopoverHandler
 from server.middleware.response_handler import get_image_path
 from server.utils.ocr_utils import (
     KindleOCR,
@@ -81,7 +82,15 @@ class NavigationResourceHandler:
             f"book_title={book_title}"
         )
 
-        # First check for the 'last read page' dialog which indicates we're in reading view
+        # First check for and dismiss the About Book popover if present
+        about_book_handler = AboutBookPopoverHandler(self.automator.driver)
+        if about_book_handler.is_popover_present():
+            logger.info("About Book popover detected at start of navigation - dismissing it")
+            about_book_handler.dismiss_popover()
+            # Small delay to let the popover dismiss animation complete
+            time.sleep(0.5)
+
+        # Then check for the 'last read page' dialog which indicates we're in reading view
         dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
         if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
             # Dialog found, return it to the client instead of navigating

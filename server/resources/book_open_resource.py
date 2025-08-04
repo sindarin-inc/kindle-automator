@@ -8,6 +8,7 @@ import urllib.parse
 from flask import request
 from flask_restful import Resource
 
+from handlers.about_book_popover_handler import AboutBookPopoverHandler
 from handlers.navigation_handler import NavigationResourceHandler
 from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
@@ -66,6 +67,14 @@ class BookOpenResource(Resource):
 
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
+            # Check for and dismiss the About Book popover if present
+            about_book_handler = AboutBookPopoverHandler(automator.driver)
+            if about_book_handler.is_popover_present():
+                logger.info("About Book popover detected - dismissing it")
+                about_book_handler.dismiss_popover()
+                # Small delay to let the popover dismiss animation complete
+                time.sleep(0.5)
+
             # Check for the 'last read page' dialog without auto-accepting
             nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
             dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)

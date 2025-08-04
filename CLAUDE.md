@@ -6,13 +6,17 @@
 - **Staff token generation**: To test with different user emails (e.g., `recreate@solreader.com`):
 
   ```bash
-  # Generate token and use it inline
-  TOKEN=$(curl -s -X GET "http://localhost:4098/staff-auth?auth=1" | jq -r '.token')
-
-  # Use the token in requests
+  # Method 1: Use cookie jar (RECOMMENDED - gets full token automatically)
+  curl -s -c cookies.txt -X GET "http://localhost:4098/staff-auth?auth=1" > /dev/null
+  curl -b cookies.txt -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1"
+  
+  # Method 2: Extract token from Set-Cookie header
+  TOKEN=$(curl -s -i -X GET "http://localhost:4098/staff-auth?auth=1" | grep -i 'set-cookie: staff_token=' | sed 's/.*staff_token=\([^;]*\).*/\1/')
   curl -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1" \
     -H "Cookie: staff_token=$TOKEN"
   ```
+  
+  **Note**: The `/staff-auth?auth=1` endpoint returns a truncated token in the JSON response for security reasons. The full token is only available in the Set-Cookie header.
 
 ## Issue References
 
