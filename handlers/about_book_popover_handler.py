@@ -1,13 +1,15 @@
 import logging
 from typing import Any, Dict, Optional
 
-from handlers.base_handler import BaseHandler
-
 logger = logging.getLogger(__name__)
 
 
-class AboutBookPopoverHandler(BaseHandler):
+class AboutBookPopoverHandler:
     """Handles the 'About the Book' popover that appears in various reading contexts."""
+    
+    def __init__(self, driver):
+        """Initialize with the driver instance."""
+        self.driver = driver
 
     def dismiss_popover(self) -> Optional[Dict[str, Any]]:
         """
