@@ -218,7 +218,7 @@ class DatabaseConnection:
                 time_str = f"{DIM_GRAY}{time_ms:.1f}ms{RESET}"
 
             # Log the query at debug level
-            logger.debug(f"[SQL {time_str}] {query_color}{formatted_query}{RESET}")
+            logger.debug(f"{DIM_GRAY}[SQL {time_str}{DIM_GRAY}] {query_color}{formatted_query}{RESET}")
 
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:
