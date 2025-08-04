@@ -85,14 +85,16 @@
 - name: Download and install uv
   shell: |
     curl -LsSf https://astral.sh/uv/install.sh | sh
+  environment:
+    UV_INSTALL_DIR: /root/.local/bin
   args:
-    creates: /root/.cargo/bin/uv
+    creates: /root/.local/bin/uv
   when: not uv_exists.stat.exists
 
 # Add uv to system PATH
 - name: Create uv symlink in /usr/local/bin
   file:
-    src: /root/.cargo/bin/uv
+    src: /root/.local/bin/uv
     dest: /usr/local/bin/uv
     state: link
   when: not uv_exists.stat.exists

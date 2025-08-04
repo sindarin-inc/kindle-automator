@@ -53,6 +53,12 @@ class AuthCheckResource(Resource):
             # Check authentication fields
             auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
             auth_failed_date = profile_manager.get_user_field(sindarin_email, "auth_failed_date")
+            
+            # Convert datetime objects to ISO format strings for JSON serialization
+            if auth_date and isinstance(auth_date, datetime):
+                auth_date = auth_date.isoformat()
+            if auth_failed_date and isinstance(auth_failed_date, datetime):
+                auth_failed_date = auth_failed_date.isoformat()
 
             # Determine authentication state
             if auth_failed_date:
