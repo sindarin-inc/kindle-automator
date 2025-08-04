@@ -138,6 +138,9 @@ db-data:
 	@echo ""
 	@echo "VNC INSTANCES:"
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM vnc_instances ORDER BY id;"
+	@echo ""
+	@echo "STAFF TOKENS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT id, token, created_at, last_used, revoked, revoked_at FROM staff_tokens ORDER BY created_at DESC;"
 
 # Staging-specific targets
 .PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging db-import-staging
