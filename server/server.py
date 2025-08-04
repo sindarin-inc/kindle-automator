@@ -84,8 +84,8 @@ api = Api(app)
 # Initialize database connection
 db_connection.initialize()
 
-# Initialize Flask-Admin if in development mode
-if IS_DEVELOPMENT and os.getenv("ENABLE_ADMIN", "true").lower() == "true":
+# Initialize Flask-Admin (available in all environments with staff auth)
+if os.getenv("ENABLE_ADMIN", "true").lower() == "true":
     from sqlalchemy.orm import scoped_session
 
     from server.admin import init_admin

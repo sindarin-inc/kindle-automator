@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 class AboutBookPopoverHandler:
     """Handles the 'About the Book' popover that appears in various reading contexts."""
-    
+
     def __init__(self, driver):
         """Initialize with the driver instance."""
         self.driver = driver
