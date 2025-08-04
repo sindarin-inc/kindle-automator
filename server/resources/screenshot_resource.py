@@ -47,7 +47,7 @@ class ScreenshotResource(Resource):
         # Check if OCR is requested via 'text' or 'ocr' parameter
         ocr_param = request.args.get("ocr", "0")
         text_param = request.args.get("text", "0")
-        is_ocr = is_ocr_requested()
+        is_ocr = is_ocr_requested(default=False)
         logger.info(
             f"OCR debug - ocr param: {ocr_param}, text param: {text_param}, is_ocr_requested(): {is_ocr}"
         )

@@ -51,7 +51,6 @@ class AVDProfileManager:
 
     def __init__(self, base_dir: str = "/opt/android-sdk"):
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("AVDProfileManager initialized directly. Use get_instance() instead.")
 

@@ -1,4 +1,8 @@
 ---
+# Include firewall configuration
+- include_tasks: firewall.yml
+  tags: [postgres, firewall]
+
 - name: Create PostgreSQL base directory
   file:
     path: /opt/postgres
@@ -74,3 +78,5 @@
     host: localhost
     delay: 5
     timeout: 60
+
+# Firewall configuration is now handled in firewall.yml

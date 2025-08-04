@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to Python path
@@ -139,7 +139,7 @@ class ConcurrentAccessTester:
                         return f"Thread {thread_id}: Updated last_used for {email}"
                     else:  # Complex update
                         repo.update_user_field(
-                            email, f"preferences.thread_{thread_id}", datetime.utcnow().isoformat()
+                            email, f"preferences.thread_{thread_id}", datetime.now(timezone.utc).isoformat()
                         )
                         return f"Thread {thread_id}: Added preference for {email}"
             except Exception as e:

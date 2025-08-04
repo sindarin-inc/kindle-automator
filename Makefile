@@ -1,10 +1,17 @@
-.PHONY: server test
+.PHONY: server test init
 
 run: server
 
+init:
+	@echo "Setting up virtual environment with uv..."
+	@uv venv
+	@echo "Installing dependencies..."
+	@uv pip install -r requirements.txt
+	@echo "Setup complete! You can now run 'make server' or 'make claude-run'"
+
 claude-run: 
 	@echo "Starting Flask server in background..."
-	@bash -c '(FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Monitor logs with: tail -f logs/server_output.log"
@@ -16,7 +23,7 @@ deps:
 lint:
 	uv run isort --profile black .
 	uv run black --line-length 110 .
-	uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv
+	uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=venv,.venv
 	
 # Start the Flask server
 server:
@@ -31,6 +38,34 @@ shell:
 test:
 	@echo "Running tests..."
 	@PYTHONPATH=$(shell pwd) uv run pytest tests
+
+test-all: test
+
+# Generate staff authentication token for testing
+test-staff-auth:
+	@echo "Generating staff authentication token..."
+	@TOKEN=$$(curl -s http://localhost:4098/staff-auth?auth=true -c - | grep staff_token | awk '{print $$7}'); \
+	if [ -n "$$TOKEN" ]; then \
+		echo "Staff token generated: $$TOKEN"; \
+		echo "Add to .env: INTEGRATION_TEST_STAFF_AUTH_TOKEN=$$TOKEN"; \
+	else \
+		echo "Failed to generate staff token"; \
+		echo "Make sure the Flask server is running: make server"; \
+		exit 1; \
+	fi
+
+# Generate web authentication token for testing  
+test-web-auth:
+	@echo "Generating Knox authentication token for samuel@ofbrooklyn.com..."
+	@cd ../web-app && TOKEN=$$(docker exec sol_web ./manage.py generate_dev_knox_token samuel@ofbrooklyn.com | grep "Knox token generated:" | awk '{print $$4}'); \
+	if [ -n "$$TOKEN" ]; then \
+		echo "Knox token generated: $$TOKEN"; \
+		echo "Add to .env: WEB_INTEGRATION_TEST_AUTH_TOKEN=$$TOKEN"; \
+	else \
+		echo "Failed to generate Knox token"; \
+		echo "Make sure the web-app Docker container is running"; \
+		exit 1; \
+	fi
 
 # Ansible
 
@@ -56,6 +91,8 @@ ssh3: ssh-3
 ssh-staging:
 	ssh -i ansible/keys/kindle.key root@65.108.197.86
 staging-ssh: ssh-staging
+ssh-db:
+	ssh -i ansible/keys/kindle.key root@46.62.136.6
 
 # Firewall management
 firewall:
@@ -80,3 +117,10 @@ db-export-staging:
 db-export-prod:
 	@echo "Exporting users from production database to JSON format..."
 	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/export_users_to_json.py
+
+# Test multi-user operations
+test-multi-user:
+	@echo "Running multi-user test..."
+	@echo "Make sure the server is running with 'make claude-run' first!"
+	@echo ""
+	uv run python tests/test_multi_user.py

@@ -8,6 +8,17 @@ from typing import Dict, Optional
 
 import pytz
 
+from server.utils.ansi_colors import (
+    BRIGHT_YELLOW,
+    GRAY,
+    GREEN,
+    MAGENTA,
+    RED,
+    RESET,
+    WHITE,
+    YELLOW,
+)
+
 # Remove circular import - DynamicEmailHandler will get email from flask.g only
 
 logger = logging.getLogger(__name__)
@@ -80,7 +91,7 @@ def get_email_logger(email: str) -> Optional[logging.Logger]:
 
         # Use the same formatter as the main logger
         formatter = RelativePathFormatter(
-            "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
+            f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
             datefmt="%-m-%-d-%y %H:%M:%S %Z",
         )
         file_handler.setFormatter(formatter)
@@ -209,6 +220,15 @@ class RelativePathFormatter(logging.Formatter):
         super().__init__(*args, **kwargs)
         self.pst_tz = pytz.timezone("US/Pacific")
 
+        # Define log level colors
+        self.level_colors = {
+            logging.DEBUG: GRAY,
+            logging.INFO: WHITE,  # White (no color code needed for default)
+            logging.WARNING: BRIGHT_YELLOW,
+            logging.ERROR: RED,
+            logging.CRITICAL: RED,
+        }
+
     def formatTime(self, record, datefmt=None):
         """Override formatTime to use PT timezone"""
         # Convert the timestamp to PT timezone
@@ -229,7 +249,87 @@ class RelativePathFormatter(logging.Formatter):
         if record.pathname.startswith(project_root):
             record.pathname = os.path.relpath(record.pathname, project_root)
 
-        return super().format(record)
+        # Truncate long paths from the left, keeping the filename
+        max_length = 22  # Half of the original 44 characters
+        original_path = record.pathname
+
+        if len(original_path) > max_length:
+            # Find the last slash
+            last_slash = original_path.rfind("/")
+            if last_slash > 0:
+                filename = original_path[last_slash + 1 :]
+                # If filename itself is too long, just truncate it
+                if len(filename) >= max_length - 3:  # -3 for "..."
+                    truncated = "..." + filename[-(max_length - 3) :]
+                else:
+                    # Calculate how much of the path we can show
+                    # We want: "..." + path_part + "/" + filename = exactly max_length
+                    available_for_path = max_length - len(filename) - 4  # -4 for ".../"
+                    if available_for_path > 0:
+                        # Show some of the directory path
+                        path_part = original_path[:last_slash]
+                        truncated = "..." + path_part[-available_for_path:] + "/" + filename
+                    else:
+                        truncated = ".../" + filename
+
+                # Ensure the truncated path is exactly max_length characters
+                if len(truncated) > max_length:
+                    # If still too long, just take the last max_length chars
+                    record.pathname = "..." + truncated[-(max_length - 3) :]
+                else:
+                    record.pathname = truncated
+
+        # Get the formatted message from parent first
+        formatted = super().format(record)
+
+        # Get the color for this level
+        level_color = self.level_colors.get(record.levelno, "")
+
+        if level_color and level_color != WHITE:
+            # Apply color to both the level name and the message
+            # The format is: [LEVEL] [timestamp] filename:lineno message
+
+            # Color the level name in brackets
+            level_pattern = f"[{record.levelname:5.5s}]"
+            colored_level = f"{level_color}[{record.levelname:5.5s}]{RESET}"
+            formatted = formatted.replace(level_pattern, colored_level, 1)
+
+            # Also color the message part (after filename:lineno)
+            import re
+
+            # Look for the pattern that includes ANSI codes
+            # The format has colors: filename.py:123[RESET] message
+            # We need to find where the message starts after all the formatting
+            match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
+
+            if match:
+                # Split at the filename:lineno boundary including the RESET code
+                prefix = match.group(1)
+                message = formatted[len(prefix) :]
+
+                # Check if the message already contains ANSI codes (like SQL logs)
+                if "\033[" in message:
+                    # Message already has colors, don't add level color
+                    formatted = prefix + message
+                else:
+                    # Apply color to the message part
+                    formatted = prefix + level_color + message + RESET
+            else:
+                # Fallback: try without ANSI codes
+                match = re.search(r"(.*\.py:\d+\s+)", formatted)
+                if match:
+                    prefix_len = len(match.group(1))
+                    prefix = formatted[:prefix_len]
+                    message = formatted[prefix_len:]
+
+                    # Check if the message already contains ANSI codes
+                    if "\033[" in message:
+                        # Message already has colors, don't add level color
+                        formatted = prefix + message
+                    else:
+                        formatted = prefix + level_color + message + RESET
+
+        return formatted
 
 
 # Global reference to the dynamic email handler
@@ -271,7 +371,7 @@ def get_idle_timer_handler():
 
     # Use the same formatter as the main logger
     formatter = RelativePathFormatter(
-        "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
+        f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
     file_handler.setFormatter(formatter)
@@ -334,14 +434,30 @@ def setup_logger():
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
-    # Clear the log file
-    log_file = "logs/server.log"
-    with open(log_file, "w") as f:
+    # Clear the log files
+    server_log_file = "logs/server.log"
+    debug_log_file = "logs/debug_server.log"
+
+    with open(server_log_file, "w") as f:
+        f.truncate(0)
+    with open(debug_log_file, "w") as f:
         f.truncate(0)
 
-    # Create the formatter
-    formatter = RelativePathFormatter(
-        "\033[35m[%(levelname)5.5s]\033[0m \033[32m[%(asctime)s]\033[0m \033[33m%(pathname)44s:%(lineno)-4d\033[0m %(message)s",
+    # Create formatter - check if we should strip colors from console output
+    if os.environ.get("NO_COLOR_CONSOLE"):
+        console_formatter = RelativePathFormatter(
+            "[%(levelname)5.5s] [%(asctime)s] %(pathname)22s:%(lineno)-4d %(message)s",
+            datefmt="%-m-%-d-%y %H:%M:%S %Z",
+        )
+    else:
+        console_formatter = RelativePathFormatter(
+            f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
+            datefmt="%-m-%-d-%y %H:%M:%S %Z",
+        )
+
+    # File formatters always have colors
+    file_formatter = RelativePathFormatter(
+        f"[%(levelname)5.5s] {GREEN}[%(asctime)s]{RESET} {YELLOW}%(pathname)22s:%(lineno)-4d{RESET} %(message)s",
         datefmt="%-m-%-d-%y %H:%M:%S %Z",
     )
 
@@ -356,24 +472,31 @@ def setup_logger():
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
-    # Add console handler
+    # Add console handler with color formatter (INFO level)
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
-    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
     console_handler.addFilter(custom_filter)
     root_logger.addHandler(console_handler)
 
-    # Add file handler for main log
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    file_handler.addFilter(custom_filter)
-    root_logger.addHandler(file_handler)
+    # Add file handler for main server.log (INFO level)
+    server_file_handler = logging.FileHandler(server_log_file)
+    server_file_handler.setLevel(logging.INFO)
+    server_file_handler.setFormatter(file_formatter)
+    server_file_handler.addFilter(custom_filter)
+    root_logger.addHandler(server_file_handler)
 
-    # Add dynamic email handler for user-specific logs
+    # Add file handler for debug_server.log (DEBUG level)
+    debug_file_handler = logging.FileHandler(debug_log_file)
+    debug_file_handler.setLevel(logging.DEBUG)
+    debug_file_handler.setFormatter(file_formatter)
+    debug_file_handler.addFilter(custom_filter)
+    root_logger.addHandler(debug_file_handler)
+
+    # Add dynamic email handler for user-specific logs with no-color formatter
     _email_handler = DynamicEmailHandler()
     _email_handler.setLevel(logging.DEBUG)
-    _email_handler.setFormatter(formatter)
+    _email_handler.setFormatter(file_formatter)
     _email_handler.addFilter(custom_filter)
     root_logger.addHandler(_email_handler)
 

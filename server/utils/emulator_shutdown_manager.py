@@ -10,7 +10,7 @@ import signal
 import subprocess
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from selenium.common.exceptions import InvalidSessionIdException
@@ -164,7 +164,8 @@ class EmulatorShutdownManager:
         )
         summaries = []
         server = AutomationServer.get_instance()
-        for email in [e for e, a in server.automators.items() if a]:
+        # Create a list copy to avoid dictionary modification during iteration
+        for email in [e for e, a in list(server.automators.items()) if a]:
             summaries.append(self.shutdown_emulator(email, preserve_reading_state))
             time.sleep(1)  # Avoid resource contention between successive shutdowns.
         logger.info("Completed shutdown of %d emulators", len(summaries))
@@ -173,6 +174,39 @@ class EmulatorShutdownManager:
     # ------------------------------------------------------------------
     # Private helpers – orchestration                                   ──────
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _log_shutdown_failure(
+        email: str,
+        failure_type: str,
+        error_message: Optional[str] = None,
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
+        emulator_id: Optional[str] = None,
+        snapshot_attempted: bool = False,
+        placemark_sync_attempted: bool = False,
+    ) -> None:
+        """Log a shutdown failure to the database for tracking."""
+        try:
+            from database.connection import get_db
+            from database.models import EmulatorShutdownFailure
+
+            with get_db() as session:
+                failure = EmulatorShutdownFailure(
+                    user_email=email,
+                    failure_type=failure_type,
+                    error_message=error_message,
+                    stdout=stdout,
+                    stderr=stderr,
+                    emulator_id=emulator_id,
+                    snapshot_attempted=snapshot_attempted,
+                    placemark_sync_attempted=placemark_sync_attempted,
+                )
+                session.add(failure)
+                session.commit()
+                logger.info(f"Logged shutdown failure for {email}: {failure_type}")
+        except Exception as e:
+            logger.error(f"Failed to log shutdown failure to database: {e}", exc_info=True)
 
     @staticmethod
     def _mark_for_restart(email: str, mark_for_restart: Optional[bool]):
@@ -195,19 +229,34 @@ class EmulatorShutdownManager:
         emulator_id = vnc_instance["emulator_id"]
         logger.info("Found orphaned emulator %s for %s", emulator_id, email)
         with contextlib.suppress(Exception):
-            from views.core.avd_profile_manager import AVDProfileManager
+            # Try to get the user-specific automator first
+            from server.core.automation_server import AutomationServer
 
-            pm = AVDProfileManager.get_instance()
-            if pm.emulator_manager and pm.emulator_manager.emulator_launcher:
-                stopped = pm.emulator_manager.emulator_launcher.stop_emulator(email)
+            server = AutomationServer.get_instance()
+            automator = server.automators.get(email) if server else None
+
+            if automator and hasattr(automator, "emulator_manager"):
+                # Use the user-specific emulator launcher
+                stopped = automator.emulator_manager.emulator_launcher.stop_emulator(email)
                 summary["emulator_stopped"] = stopped
-                if not stopped:
-                    # Force kill using the port extracted from ``emulator_id``.
-                    port = emulator_id.split("-")[1] if emulator_id.startswith("emulator-") else None
-                    if port:
-                        self._force_kill_emulator_process(port)
-                        summary["emulator_stopped"] = True
-                vnc_manager.clear_emulator_id_for_profile(email)
+            else:
+                # Fallback to shared profile manager only if no user-specific automator
+                from views.core.avd_profile_manager import AVDProfileManager
+
+                pm = AVDProfileManager.get_instance()
+                if pm.emulator_manager and pm.emulator_manager.emulator_launcher:
+                    stopped = pm.emulator_manager.emulator_launcher.stop_emulator(email)
+                    summary["emulator_stopped"] = stopped
+                else:
+                    stopped = False
+
+            if not stopped:
+                # Force kill using the port extracted from ``emulator_id``.
+                port = emulator_id.split("-")[1] if emulator_id.startswith("emulator-") else None
+                if port:
+                    self._force_kill_emulator_process(port)
+                    summary["emulator_stopped"] = True
+            vnc_manager.clear_emulator_id_for_profile(email)
         # Release VNC regardless of stop result.
         with contextlib.suppress(Exception):
             if vnc_manager.release_instance_from_profile(email):
@@ -275,6 +324,12 @@ class EmulatorShutdownManager:
                         exc_info=True,
                     )
                     summary["placemark_sync_success"] = False
+                    self._log_shutdown_failure(
+                        email=email,
+                        failure_type="placemark_sync_failed",
+                        error_message="No library handler available for sync",
+                        placemark_sync_attempted=True,
+                    )
                 time.sleep(1)  # Give Kindle a moment to flush state.
             else:
                 logger.warning(
@@ -288,6 +343,12 @@ class EmulatorShutdownManager:
                         exc_info=True,
                     )
                     summary["placemark_sync_success"] = False
+                    self._log_shutdown_failure(
+                        email=email,
+                        failure_type="placemark_sync_failed",
+                        error_message=f"Failed to transition to Library, ended in state: {final_state.name}",
+                        placemark_sync_attempted=True,
+                    )
         except Exception as exc:
             logger.error(f"Error while parking emulator {email} into Library: {exc}", exc_info=True)
             logger.error(
@@ -296,6 +357,13 @@ class EmulatorShutdownManager:
             )
             if summary.get("placemark_sync_attempted"):
                 summary["placemark_sync_success"] = False
+                self._log_shutdown_failure(
+                    email=email,
+                    failure_type="placemark_sync_failed",
+                    error_message=str(exc),
+                    stderr=traceback.format_exc(),
+                    placemark_sync_attempted=True,
+                )
 
     @staticmethod
     def _sync_from_more_tab(state_machine: KindleStateMachine) -> bool:
@@ -307,6 +375,13 @@ class EmulatorShutdownManager:
         lh = state_machine.library_handler
         if not lh:
             logger.warning("No library handler available for sync - cannot sync placemarks")
+            email = getattr(state_machine.driver, "email", "unknown")
+            EmulatorShutdownManager._log_shutdown_failure(
+                email=email,
+                failure_type="placemark_sync_failed",
+                error_message="No library handler available for sync",
+                placemark_sync_attempted=True,
+            )
             return False
 
         logger.info("Attempting to sync placemarks before shutdown...")
@@ -316,6 +391,13 @@ class EmulatorShutdownManager:
             logger.error(
                 "Failed to navigate to More tab for sync - placemarks may not be synced!", exc_info=True
             )
+            email = getattr(state_machine.driver, "email", "unknown")
+            EmulatorShutdownManager._log_shutdown_failure(
+                email=email,
+                failure_type="placemark_sync_failed",
+                error_message="Failed to navigate to More tab for sync",
+                placemark_sync_attempted=True,
+            )
             return False
 
         # Attempt sync
@@ -324,6 +406,7 @@ class EmulatorShutdownManager:
             logger.info("Successfully synced reading progress/placemarks before shutdown")
         else:
             logger.error("SYNC FAILED during shutdown - user's placemarks may not be saved!", exc_info=True)
+            email = getattr(state_machine.driver, "email", "unknown")
             # Store diagnostic information
             try:
                 from server.logging_config import store_page_source
@@ -332,6 +415,13 @@ class EmulatorShutdownManager:
                 logger.debug("Diagnostic page source saved for sync failure", exc_info=True)
             except Exception as e:
                 logger.error(f"Failed to save diagnostic information: {e}", exc_info=True)
+
+            EmulatorShutdownManager._log_shutdown_failure(
+                email=email,
+                failure_type="placemark_sync_failed",
+                error_message="Sync failed in more tab",
+                placemark_sync_attempted=True,
+            )
 
         # Always try to navigate back to library
         if not lh.navigate_from_more_to_library():
@@ -349,6 +439,12 @@ class EmulatorShutdownManager:
                 f"SNAPSHOT FAILURE: No emulator ID found for {email} - cannot take snapshot", exc_info=True
             )
             summary["snapshot_skipped_no_emulator"] = True
+            self._log_shutdown_failure(
+                email=email,
+                failure_type="snapshot_failed",
+                error_message="No emulator ID found - cannot take snapshot",
+                snapshot_attempted=True,
+            )
             return
         logger.info(f"Taking ADB snapshot of emulator {emulator_id} for {email}")
         snapshot_start_time = time.time()
@@ -363,17 +459,41 @@ class EmulatorShutdownManager:
                 f"SNAPSHOT FAILURE: Failed to save snapshot for {email} - user's reading position may be lost! "
                 f"This will cause cold boot on next launch."
             )
+            self._log_shutdown_failure(
+                email=email,
+                failure_type="snapshot_failed",
+                error_message="Failed to save snapshot",
+                emulator_id=emulator_id,
+                snapshot_attempted=True,
+            )
 
     @staticmethod
     def _update_snapshot_timestamp(email: str):
         """Persist the default_boot snapshot timestamp to the user's AVD profile."""
         with contextlib.suppress(Exception):
+            from database.repositories.user_repository import UserRepository
             from views.core.avd_profile_manager import AVDProfileManager
 
-            ts = datetime.now().isoformat()
+            ts = datetime.now(timezone.utc)
             avd_mgr = AVDProfileManager.get_instance()
             avd_mgr.set_user_field(email, "last_snapshot_timestamp", ts)
             avd_mgr.set_user_field(email, "last_snapshot", None)
+
+            # Clear the dirty snapshot flag since we just saved a fresh snapshot
+            try:
+                from database.connection import get_db
+
+                with get_db() as session:
+                    user_repo = UserRepository(session)
+                    user = user_repo.get_user_by_email(email)
+                    if user and user.snapshot_dirty:
+                        user.snapshot_dirty = False
+                        user.snapshot_dirty_since = None
+                        session.commit()
+                        logger.info(f"Cleared snapshot dirty flag for {email} after successful snapshot")
+            except Exception as e:
+                logger.error(f"Error clearing snapshot dirty flag: {e}", exc_info=True)
+
             logger.info("Updated default_boot snapshot timestamp to %s for %s", ts, email)
 
     # ------------------- stop emulator + processes ------------------ #

@@ -240,7 +240,7 @@ class ReaderHandler:
                 )
                 if first_device_layout:
                     first_device_layout.click()
-                    logger.info("Successfully clicked first device layout directly")
+                    logger.debug("Clicked first device layout directly")
                     first_device_tapped = True
                     time.sleep(1)  # Short wait for UI to update
             except Exception as e:
@@ -380,7 +380,7 @@ class ReaderHandler:
         if is_item_removed_dialog_visible(self.driver):
             logger.info("Item Removed dialog detected immediately - handling it")
             if handle_item_removed_dialog(self.driver):
-                logger.info("Successfully handled Item Removed dialog immediately")
+                logger.debug("Handled Item Removed dialog immediately")
                 # After handling this, check if we're now looking at the Download Limit dialog
                 # This can happen when the book is removed and when trying to re-open, hits download limit
                 time.sleep(1)  # Short wait to ensure UI is updated
@@ -390,7 +390,7 @@ class ReaderHandler:
                 if self._check_for_download_limit_dialog():
                     logger.info("Download Limit dialog detected after Item Removed dialog - handling it")
                     if self.handle_download_limit_dialog():
-                        logger.info("Successfully handled Download Limit dialog after Item Removed dialog")
+                        logger.debug("Handled Download Limit dialog after Item Removed dialog")
                         # Now wait for reading view after handling both dialogs
                         return True
                     else:
@@ -410,7 +410,7 @@ class ReaderHandler:
         if download_limit_found:
             logger.info("Download Limit dialog detected immediately - handling it")
             if self.handle_download_limit_dialog():
-                logger.info("Successfully handled Download Limit dialog immediately")
+                logger.debug("Handled Download Limit dialog immediately")
                 # Continue to reading view handling below
             else:
                 logger.error("Failed to handle Download Limit dialog detected immediately", exc_info=True)
@@ -650,7 +650,7 @@ class ReaderHandler:
             if result == "download_limit" and not download_limit_found:
                 logger.info("Download Limit dialog detected - handling it")
                 if self.handle_download_limit_dialog():
-                    logger.info("Successfully handled Download Limit dialog, waiting for reading view")
+                    logger.debug("Handled Download Limit dialog, waiting for reading view")
                     # Now wait for the reading view after handling the dialog
                     try:
                         # Track time for second wait
@@ -922,7 +922,7 @@ class ReaderHandler:
         # Check for and handle tutorial message
         try:
             if self.check_and_handle_tutorial_message():
-                logger.info("Successfully handled tutorial message")
+                logger.debug("Handled tutorial message")
         except Exception as e:
             logger.error(f"Error checking/handling tutorial message: {e}", exc_info=True)
 
@@ -1119,7 +1119,7 @@ class ReaderHandler:
                 if not profile_manager.is_styles_updated():
                     logger.info("First-time reading with this profile, updating reading styles...")
                     if style_handler.update_reading_style(show_placemark=show_placemark):
-                        logger.info("Successfully updated reading styles")
+                        logger.debug("Updated reading styles")
                     else:
                         logger.warning("Failed to update reading styles")
                 else:
@@ -1220,7 +1220,7 @@ class ReaderHandler:
             result_path = take_adb_screenshot(device_id, screenshot_path)
 
             if result_path:
-                logger.info(f"Successfully saved page screenshot to {result_path}")
+                logger.debug(f"Saved page screenshot to {result_path}")
                 return True
             else:
                 logger.error("Failed to capture page screenshot", exc_info=True)
@@ -1386,7 +1386,7 @@ class ReaderHandler:
                 # Still continue to return the OCR text
 
             if ocr_text:
-                logger.info("Successfully previewed next page and extracted OCR text")
+                logger.debug("Previewed next page and extracted OCR text")
                 return True, ocr_text
             else:
                 logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
@@ -1424,7 +1424,7 @@ class ReaderHandler:
                 # Still continue to return the OCR text
 
             if ocr_text:
-                logger.info("Successfully previewed previous page and extracted OCR text")
+                logger.debug("Previewed previous page and extracted OCR text")
                 return True, ocr_text
             else:
                 logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
@@ -1734,7 +1734,7 @@ class ReaderHandler:
             if is_item_removed_dialog_visible(self.driver):
                 logger.info("Item Removed dialog detected - handling it")
                 if handle_item_removed_dialog(self.driver):
-                    logger.info("Successfully handled Item Removed dialog")
+                    logger.debug("Handled Item Removed dialog")
                     # After handling this, we'll be back in library view, so return True
                     return True
                 else:
@@ -1743,7 +1743,7 @@ class ReaderHandler:
 
             # Check for and dismiss the comic book view
             if self.handle_comic_book_view():
-                logger.info("Successfully dismissed comic book view during navigation")
+                logger.debug("Dismissed comic book view during navigation")
                 # Refresh page source for logging
                 filepath = store_page_source(self.driver.page_source, "after_comic_book_dismiss")
                 logger.info(f"Stored page source after comic book dismissal at: {filepath}")
@@ -1835,7 +1835,7 @@ class ReaderHandler:
             dialog_handler = DialogHandler(self.driver)
 
             if dialog_handler.check_for_viewing_full_screen_dialog():
-                logger.info("Successfully handled 'Viewing full screen' dialog")
+                logger.debug("Handled 'Viewing full screen' dialog")
                 time.sleep(0.5)  # Brief wait for dialog dismissal animation
 
             # Check for and handle "Go to that location/page?" dialog
@@ -1877,7 +1877,7 @@ class ReaderHandler:
                                     "Goodreads dialog still visible after clicking NOT NOW", exc_info=True
                                 )
                             else:
-                                logger.info("Successfully dismissed Goodreads dialog")
+                                logger.debug("Dismissed Goodreads dialog")
                         except NoSuchElementException:
                             logger.info("Successfully dismissed Goodreads dialog")
 
@@ -1908,7 +1908,7 @@ class ReaderHandler:
                     if still_visible:
                         logger.error("Word Wise dialog still visible after clicking NO THANKS", exc_info=True)
                     else:
-                        logger.info("Successfully dismissed Word Wise dialog")
+                        logger.debug("Dismissed Word Wise dialog")
 
                 else:
                     logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
@@ -2144,7 +2144,7 @@ class ReaderHandler:
                     continue
 
             if not reading_view:
-                logger.info("Successfully exited reading view using system back button")
+                logger.debug("Exited reading view using system back button")
                 return True
         except Exception as e:
             logger.error(f"Error using system back button: {e}", exc_info=True)
@@ -2215,7 +2215,7 @@ class ReaderHandler:
                     logger.warning("Comic book view is still visible after clicking X button")
                     return False
                 else:
-                    logger.info("Successfully dismissed comic book view")
+                    logger.debug("Dismissed comic book view")
                     return True
             except Exception as e:
                 logger.error(f"Error verifying comic book view dismissal: {e}", exc_info=True)
@@ -2297,7 +2297,7 @@ class ReaderHandler:
                             logger.warning("Tutorial message still visible after double tap")
                             return False
                         else:
-                            logger.info("Successfully dismissed tutorial message")
+                            logger.debug("Dismissed tutorial message")
                             return True
                     else:
                         # User wants style dialog or hasn't set preference

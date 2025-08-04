@@ -22,6 +22,7 @@ from selenium.common import exceptions as selenium_exceptions
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
+from database.connection import db_connection
 from handlers.navigation_handler import NavigationResourceHandler
 from handlers.test_fixtures_handler import TestFixturesHandler
 from server.core.automation_server import AutomationServer
@@ -79,6 +80,19 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
 app = Flask(__name__)
 api = Api(app)
+
+# Initialize database connection
+db_connection.initialize()
+
+# Initialize Flask-Admin if in development mode
+if IS_DEVELOPMENT and os.getenv("ENABLE_ADMIN", "true").lower() == "true":
+    from sqlalchemy.orm import scoped_session
+
+    from server.admin import init_admin
+
+    # Create a scoped session for Flask-Admin
+    db_session = scoped_session(db_connection.SessionLocal)
+    admin = init_admin(app, db_session)
 
 # Initialize Sentry
 SENTRY_DSN = os.getenv("SENTRY_DSN")
@@ -301,12 +315,34 @@ def check_and_restart_adb_server():
 def run_idle_check():
     """Run idle check using the IdleCheckResource directly."""
     try:
+        # Log health status before idle check
+        logger.info("=== Periodic Health Check ===")
+        try:
+            import psutil
+
+            cpu = psutil.cpu_percent(interval=0.1)
+            mem = psutil.virtual_memory()
+            disk = psutil.disk_usage("/")
+            logger.info(
+                f"System: CPU {cpu}%, Memory {mem.percent}% ({mem.used // 1024**3}GB/{mem.total // 1024**3}GB), Disk {disk.percent}%"
+            )
+
+            # Count running emulators
+            from server.utils.emulator_launcher import EmulatorLauncher
+
+            launcher = EmulatorLauncher.get_instance()
+            running_count = len(launcher.get_running_emulators())
+            logger.info(f"Running emulators: {running_count}")
+        except Exception as e:
+            logger.debug(f"Could not log health status: {e}")
+
         idle_check = IdleCheckResource(server_instance=server)
         result, status_code = idle_check.get()
 
         if status_code == 200:
             shut_down = result.get("shut_down", 0)
             active = result.get("active", 0)
+            logger.info(f"Idle check complete: {shut_down} shut down, {active} active")
         else:
             logger.warning(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
@@ -366,7 +402,8 @@ def cleanup_resources():
     running_emails = []
     logger.info(f"Checking {len(server.automators)} automators for running emulators...")
 
-    for email, automator in server.automators.items():
+    # Create a list copy to avoid dictionary modification during iteration
+    for email, automator in list(server.automators.items()):
         if automator and automator.emulator_manager.is_emulator_running(email):
             try:
                 logger.info(f"✓ Marking {email} as running at restart for deployment recovery")
@@ -394,24 +431,21 @@ def cleanup_resources():
 
     for email in running_emails:
         try:
-            logger.info(f"Stopping Appium server for {email}")
             appium_driver.stop_appium_for_profile(email)
         except Exception as e:
             logger.warning(f"Error stopping Appium for {email} during shutdown: {e}", exc_info=True)
 
     # Kill any remaining Appium processes (legacy cleanup)
     try:
-        logger.info("Cleaning up any remaining Appium processes")
         server.kill_existing_process("appium")
     except Exception as e:
         logger.warning(f"Error killing remaining Appium processes: {e}", exc_info=True)
 
     # Port forwards are persistent and tied to instance IDs
     # We keep them in place for faster startup on next server start
-    logger.info("Keeping ADB port forwards in place for faster restart")
 
-    logger.info(f"=== Graceful shutdown complete ===")
     logger.info(f"Marked {len(running_emails)} emulators for restart on next boot")
+    logger.info(f"=== Graceful shutdown complete ===")
 
 
 def signal_handler(sig, frame):

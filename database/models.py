@@ -1,6 +1,6 @@
 """SQLAlchemy 2.0 ORM models for Kindle Automator."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -41,13 +41,20 @@ class User(Base):
     needs_device_randomization: Mapped[bool] = mapped_column(Boolean, default=False)
     last_snapshot_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
+    snapshot_dirty: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    snapshot_dirty_since: Mapped[Optional[datetime]] = mapped_column(DateTime)
     kindle_version_name: Mapped[Optional[str]] = mapped_column(String(50))
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
     android_version: Mapped[Optional[str]] = mapped_column(String(10))
     system_image: Mapped[Optional[str]] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
@@ -67,6 +74,7 @@ class User(Base):
     preferences: Mapped[list["UserPreference"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    vnc_instance: Mapped[Optional["VNCInstance"]] = relationship(back_populates="user", uselist=False)
 
     def __repr__(self) -> str:
         return f"<User(email={self.email}, avd_name={self.avd_name})>"
@@ -87,6 +95,7 @@ class EmulatorSettings(Base):
     memory_optimizations_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     memory_optimization_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
     appium_device_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
+    keyboard_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationship
     user: Mapped["User"] = relationship(back_populates="emulator_settings")
@@ -172,17 +181,27 @@ class VNCInstance(Base):
     appium_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     emulator_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
     emulator_id: Mapped[Optional[str]] = mapped_column(String(50))
-    assigned_profile: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    assigned_profile: Mapped[Optional[str]] = mapped_column(
+        String(255), ForeignKey("users.email", ondelete="SET NULL"), index=True
+    )
     appium_pid: Mapped[Optional[int]] = mapped_column(Integer)
     appium_running: Mapped[bool] = mapped_column(Boolean, default=False)
     appium_last_health_check: Mapped[Optional[datetime]] = mapped_column(DateTime)
     appium_system_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_chromedriver_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_mjpeg_server_port: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # Relationship
+    user: Mapped[Optional["User"]] = relationship(back_populates="vnc_instance")
 
     # Index for quick lookup by assigned profile
     __table_args__ = (Index("idx_vnc_assigned_profile", "assigned_profile"),)
@@ -191,3 +210,43 @@ class VNCInstance(Base):
         return (
             f"<VNCInstance(id={self.id}, display={self.display}, assigned_profile={self.assigned_profile})>"
         )
+
+
+class StaffToken(Base):
+    """Staff authentication token."""
+
+    __tablename__ = "staff_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    def __repr__(self) -> str:
+        return f"<StaffToken(id={self.id}, token={self.token[:8]}..., revoked={self.revoked})>"
+
+
+class EmulatorShutdownFailure(Base):
+    """Tracks emulator shutdown failures, particularly snapshot/placemark sync failures."""
+
+    __tablename__ = "emulator_shutdown_failures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    failure_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    stdout: Mapped[Optional[str]] = mapped_column(Text)
+    stderr: Mapped[Optional[str]] = mapped_column(Text)
+    emulator_id: Mapped[Optional[str]] = mapped_column(String(50))
+    snapshot_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    placemark_sync_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<EmulatorShutdownFailure(id={self.id}, user_email={self.user_email}, failure_type={self.failure_type})>"

@@ -169,7 +169,7 @@ class DeviceDiscovery:
                 if avd_name and avd_name != "OK":
                     return avd_name
             else:
-                logger.warning(
+                logger.debug(
                     f"Failed to query AVD name: returncode={result.returncode}, stdout='{result.stdout}', stderr='{result.stderr}'"
                 )
 

@@ -142,7 +142,8 @@ class AutomationServer:
 
         if platform.system() == "Darwin" and emulator_id:  # macOS development environment
             # Check if any other profile is using this emulator
-            for other_email, other_automator in self.automators.items():
+            # Create a list copy to avoid dictionary modification during iteration
+            for other_email, other_automator in list(self.automators.items()):
                 if other_email != email and other_automator and hasattr(other_automator, "device_id"):
                     if other_automator.device_id == emulator_id:
                         # Check if the other automator is actually active

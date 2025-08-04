@@ -51,7 +51,6 @@ class VNCInstanceManager:
         Note: You should use get_instance() instead of creating instances directly.
         """
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("VNCInstanceManager initialized directly. Use get_instance() instead.")
 
@@ -356,10 +355,6 @@ class VNCInstanceManager:
         try:
             # Don't call _ensure_initialized here to avoid recursion
             reset_count = self.repository.reset_all_appium_states()
-            if reset_count > 0:
-                logger.info(f"Reset {reset_count} appium_running states on startup")
-            else:
-                logger.info("No appium_running states needed resetting")
         except Exception as e:
             logger.error(f"Error resetting appium states on startup: {e}", exc_info=True)
 
@@ -427,6 +422,21 @@ class VNCInstanceManager:
                     cleared = self.repository.clear_stale_emulator_ids(active_emulator_ids)
                     if cleared > 0:
                         logger.info(f"Cleared {cleared} stale emulator IDs")
+
+                    # Release instances that have assigned_profile but no emulator_id
+                    stale_count = 0
+                    for instance in assigned_instances:
+                        if instance.assigned_profile and not instance.emulator_id:
+                            logger.info(
+                                f"Releasing stale VNC instance for {instance.assigned_profile} "
+                                f"(no emulator_id found)"
+                            )
+                            if self.repository.release_instance_from_profile(instance.assigned_profile):
+                                stale_count += 1
+
+                    if stale_count > 0:
+                        logger.info(f"Released {stale_count} stale VNC instance assignments")
+
             except Exception as e:
                 logger.error(f"Error auditing emulator instances: {e}", exc_info=True)
 

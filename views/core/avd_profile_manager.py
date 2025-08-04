@@ -12,7 +12,7 @@ import platform
 import shutil
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -46,7 +46,6 @@ class AVDProfileManager:
 
     def __init__(self, base_dir: str = "/opt/android-sdk"):
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("AVDProfileManager initialized directly. Use get_instance() instead.")
 
@@ -105,7 +104,7 @@ class AVDProfileManager:
         os.makedirs(self.profiles_dir, exist_ok=True)
         # Initialize component managers
         self.device_discovery = DeviceDiscovery(self.android_home, self.avd_dir)
-        self.emulator_manager = EmulatorManager(self.android_home, self.avd_dir, self.host_arch)
+        self.emulator_manager = EmulatorManager.get_instance()
         self.avd_creator = AVDCreator(self.android_home, self.avd_dir, self.host_arch)
 
         # VNC related settings
@@ -186,7 +185,7 @@ class AVDProfileManager:
             except AttributeError:
                 return default
 
-    def set_user_field(self, email: str, field: str, value, section: Optional[str] = None):
+    def set_user_field(self, email: str, field: str, value, section: Optional[str] = None) -> bool:
         """
         Set a specific field value for a user.
 
@@ -195,23 +194,30 @@ class AVDProfileManager:
             field: Field name to set
             value: Value to set
             section: Optional section name for nested fields
+
+        Returns:
+            bool: True if update was successful, False otherwise
         """
-        with self.db_connection.get_session() as session:
-            repo = UserRepository(session)
+        try:
+            with self.db_connection.get_session() as session:
+                repo = UserRepository(session)
 
-            # Ensure user exists
-            user = repo.get_user_by_email(email)
-            if not user:
-                logger.warning(f"User {email} not found, creating new user")
-                repo.create_user(email)
+                # Ensure user exists
+                user = repo.get_user_by_email(email)
+                if not user:
+                    logger.warning(f"User {email} not found, creating new user")
+                    repo.create_user(email)
 
-            # Update the field
-            if section:
-                field_path = f"{section}.{field}"
-            else:
-                field_path = field
+                # Update the field
+                if section:
+                    field_path = f"{section}.{field}"
+                else:
+                    field_path = field
 
-            repo.update_user_field(email, field_path, value)
+                return repo.update_user_field(email, field_path, value)
+        except Exception as e:
+            logger.error(f"Failed to set user field {field} for {email}: {e}")
+            return False
 
     def get_profile_for_email(self, email: str) -> Optional[Dict]:
         """
@@ -1035,7 +1041,7 @@ class AVDProfileManager:
 
             if launcher.save_snapshot(seed_email):
                 # Update the timestamp
-                self.set_user_field(seed_email, "last_snapshot_timestamp", datetime.utcnow())
+                self.set_user_field(seed_email, "last_snapshot_timestamp", datetime.now(timezone.utc))
                 return True, "Successfully updated seed clone snapshot"
             else:
                 return False, "Failed to save seed clone snapshot"

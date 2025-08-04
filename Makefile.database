@@ -57,8 +57,8 @@ db-connect:
 	@$(PYTHON) scripts/db_connect.py --command interactive --env $(DB_ENV_FILE)
 
 # Show database status
-.PHONY: db-status
-db-status:
+.PHONY: db-status db-stats
+db-status db-stats:
 	@echo "Checking database status..."
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) $(if $(DEBUG),--debug) --args "\
 		SELECT 'Users:' as table_name, COUNT(*) as count FROM users \
@@ -71,7 +71,13 @@ db-status:
 		UNION ALL \
 		SELECT 'Reading Settings:', COUNT(*) FROM reading_settings \
 		UNION ALL \
-		SELECT 'User Preferences:', COUNT(*) FROM user_preferences;"
+		SELECT 'User Preferences:', COUNT(*) FROM user_preferences \
+		UNION ALL \
+		SELECT 'VNC Instances:', COUNT(*) FROM vnc_instances \
+		UNION ALL \
+		SELECT 'Staff Tokens:', COUNT(*) FROM staff_tokens \
+		UNION ALL \
+		SELECT 'Emulator Shutdown Failures:', COUNT(*) FROM emulator_shutdown_failures;"
 
 # Backup database
 .PHONY: db-backup
@@ -133,9 +139,18 @@ db-data:
 	@echo ""
 	@echo "USER PREFERENCES:"
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM user_preferences ORDER BY user_id;"
+	@echo ""
+	@echo "VNC INSTANCES:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM vnc_instances ORDER BY id;"
+	@echo ""
+	@echo "STAFF TOKENS:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT id, token, created_at, last_used, revoked, revoked_at FROM staff_tokens ORDER BY created_at DESC;"
+	@echo ""
+	@echo "EMULATOR SHUTDOWN FAILURES:"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM emulator_shutdown_failures ORDER BY created_at DESC LIMIT 50;"
 
 # Staging-specific targets
-.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-backup-staging db-activity-staging db-data-staging db-import-staging
+.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-stats-staging db-backup-staging db-activity-staging db-data-staging db-import-staging
 db-setup-privileges-staging:
 	@$(MAKE) db-setup-privileges STAGING=1
 
@@ -145,7 +160,7 @@ db-init-staging:
 db-setup-staging:
 	@$(MAKE) db-setup STAGING=1
 
-db-status-staging:
+db-status-staging db-stats-staging:
 	@$(MAKE) db-status STAGING=1
 
 db-backup-staging:
@@ -161,7 +176,7 @@ db-import-staging:
 	@$(MAKE) db-import STAGING=1
 
 # Production-specific targets
-.PHONY: db-setup-privileges-prod db-init-prod db-setup-prod db-status-prod db-backup-prod db-activity-prod db-data-prod
+.PHONY: db-setup-privileges-prod db-init-prod db-setup-prod db-status-prod db-stats-prod db-backup-prod db-activity-prod db-data-prod
 db-setup-privileges-prod:
 	@$(MAKE) db-setup-privileges PROD=1
 
@@ -171,7 +186,7 @@ db-init-prod:
 db-setup-prod:
 	@$(MAKE) db-setup PROD=1
 
-db-status-prod:
+db-status-prod db-stats-prod:
 	@$(MAKE) db-status PROD=1
 
 db-backup-prod:

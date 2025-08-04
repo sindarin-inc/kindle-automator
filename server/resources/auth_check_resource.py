@@ -33,8 +33,15 @@ class AuthCheckResource(Resource):
             # Get the profile manager instance
             profile_manager = AVDProfileManager.get_instance()
 
-            # Check if profile exists
-            if sindarin_email not in profile_manager.profiles_index:
+            # Check if profile exists in database
+            from database.connection import DatabaseConnection
+            from database.repositories.user_repository import UserRepository
+
+            with DatabaseConnection().get_session() as session:
+                repo = UserRepository(session)
+                user = repo.get_user_by_email(sindarin_email)
+
+            if not user:
                 # No profile = never authenticated
                 return {
                     "authenticated": False,
@@ -46,6 +53,12 @@ class AuthCheckResource(Resource):
             # Check authentication fields
             auth_date = profile_manager.get_user_field(sindarin_email, "auth_date")
             auth_failed_date = profile_manager.get_user_field(sindarin_email, "auth_failed_date")
+
+            # Convert datetime objects to ISO format strings for JSON serialization
+            if auth_date and isinstance(auth_date, datetime):
+                auth_date = auth_date.isoformat()
+            if auth_failed_date and isinstance(auth_failed_date, datetime):
+                auth_failed_date = auth_failed_date.isoformat()
 
             # Determine authentication state
             if auth_failed_date:

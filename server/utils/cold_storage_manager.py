@@ -39,7 +39,6 @@ class ColdStorageManager:
 
     def __init__(self):
         # Check if this is being called directly or through get_instance()
-        global _instance
         if _instance is not None and _instance is not self:
             logger.warning("ColdStorageManager initialized directly. Use get_instance() instead.")
 
@@ -133,11 +132,7 @@ class ColdStorageManager:
             # Check if the emulator is actually running
             from views.core.emulator_manager import EmulatorManager
 
-            emulator_manager = EmulatorManager(
-                android_home=os.environ.get("ANDROID_HOME", "/opt/android-sdk"),
-                avd_dir=self.avd_base_path,
-                host_arch="x86_64",  # Default, will be determined by the manager
-            )
+            emulator_manager = EmulatorManager.get_instance()
 
             if emulator_manager.is_emulator_running(email):
                 logger.warning(f"Cannot archive AVD for {email} - emulator {emulator_id} is still running")
@@ -519,8 +514,15 @@ class ColdStorageManager:
             logger.warning(f"Cannot archive seed clone AVD")
             return False, {"error": "Cannot archive seed clone AVD"}
 
-        # Check if profile exists
-        if email not in profile_manager.profiles_index:
+        # Check if profile exists in database
+        from database.connection import DatabaseConnection
+        from database.repositories.user_repository import UserRepository
+
+        with DatabaseConnection().get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(email)
+
+        if not user:
             logger.warning(f"Profile not found for email {email}")
             return False, {"error": "Profile not found"}
 

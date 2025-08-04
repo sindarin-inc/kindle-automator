@@ -81,7 +81,24 @@ class NavigationResourceHandler:
             f"book_title={book_title}"
         )
 
-        # First check if we're in reading view using lightweight check
+        # First check for the 'last read page' dialog which indicates we're in reading view
+        dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+        if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
+            # Dialog found, return it to the client instead of navigating
+            logger.info(
+                "Found 'last read page' dialog at start of navigation - returning to client for decision"
+            )
+
+            response_data = {
+                "success": True,
+                "last_read_dialog": True,
+                "dialog_text": dialog_result.get("dialog_text"),
+                "message": "Last read page dialog detected",
+            }
+
+            return response_data, 200
+
+        # Check if we're in reading view using lightweight check
         if not self.automator.state_machine.is_reading_view():
             logger.warning("Not in reading view - checking if we need to reopen book")
 
@@ -178,25 +195,6 @@ class NavigationResourceHandler:
                 # No book title provided, can't recover
                 logger.error("Not in reading view and no book_title provided to reopen", exc_info=True)
                 return {"error": "Not in reading view. Please provide title parameter to reopen book."}, 400
-
-        # First, check for the 'last read page' dialog before any navigation
-        dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
-        if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
-            # Dialog found, return it to the client instead of handling it
-            logger.info("Found 'last read page' dialog - returning to client for decision")
-
-            # We don't need screenshots or page source
-
-            # Build response with dialog info
-            response_data = {
-                "success": True,
-                "last_read_dialog": True,
-                "dialog_text": dialog_result.get("dialog_text"),
-                "message": "Last read page dialog detected",
-            }
-            # No screenshot data to add
-
-            return response_data, 200
 
         # If navigate_count is 0 and no preview is requested, just return current page info
         if navigate_count == 0 and preview_count == 0:
@@ -646,8 +644,8 @@ class NavigationResourceHandler:
         # Check if base64 parameter is provided
         params["use_base64"] = is_base64_requested()
 
-        # Check if OCR is requested via query params - this will respect ocr=0 overrides
-        params["perform_ocr"] = is_ocr_requested()
+        # Check if OCR is requested via query params - default to True for navigate
+        params["perform_ocr"] = is_ocr_requested(default=True)
 
         # If OCR is requested, force base64 encoding
         if params["perform_ocr"] and not params["use_base64"]:
