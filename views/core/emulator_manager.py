@@ -6,8 +6,8 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+from server.utils.android_path_utils import get_android_home, get_avd_dir
 from server.utils.emulator_launcher import EmulatorLauncher
-from server.utils.emulator_utils import get_android_home, get_avd_dir
 from server.utils.request_utils import get_sindarin_email
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
