@@ -130,7 +130,29 @@ Now you are ready to proceed with the automation setup and run the scripts.
     
     **Note**: Amazon credentials (email and password) must be provided in the /auth API request, and captcha solutions (if needed) must be provided to the /captcha endpoint. These are not read from environment variables or configuration files. The system will automatically initialize when needed, but you must authenticate with the /auth endpoint before accessing other features.
 
-11. **Run the Script**:
+11. **Running Tests**:
+    To run the integration tests, you need to generate authentication tokens first:
+
+    ```sh
+    # Generate staff authentication token
+    make test-staff-auth
+    
+    # Generate web authentication token (see ../web-app/CLAUDE.md for details)
+    make test-web-auth
+    ```
+
+    After generating the tokens, add them to your `.env` file:
+    ```
+    INTEGRATION_TEST_STAFF_AUTH_TOKEN=<your-staff-token>
+    WEB_INTEGRATION_TEST_AUTH_TOKEN=<your-web-token>
+    ```
+
+    Then run the tests:
+    ```sh
+    make test
+    ```
+
+12. **Run the Script**:
     After setting up the virtual environment, installing dependencies, and configuring your environment, you can run the automation script using:
 
     ```sh

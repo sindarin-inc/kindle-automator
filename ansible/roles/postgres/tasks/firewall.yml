@@ -1,0 +1,110 @@
+---
+# Firewall configuration for PostgreSQL with Docker
+# This properly integrates UFW with Docker's iptables rules
+
+- name: Install UFW if not present
+  apt:
+    name: ufw
+    state: present
+    update_cache: yes
+
+- name: Disable IPv6 in UFW to avoid ip6tables issues
+  lineinfile:
+    path: /etc/default/ufw
+    regexp: '^IPV6='
+    line: 'IPV6=no'
+    backup: yes
+
+- name: Configure UFW defaults
+  ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: 'incoming', policy: 'deny' }
+    - { direction: 'outgoing', policy: 'allow' }
+    - { direction: 'routed', policy: 'allow' }  # Important for Docker
+
+- name: Allow SSH (critical - don't lock ourselves out)
+  ufw:
+    rule: allow
+    port: 22
+    proto: tcp
+
+- name: Build list of allowed IPs from inventory
+  set_fact:
+    postgres_allowed_ips: >-
+      {{
+        ['127.0.0.1'] +
+        groups['prod'] | map('extract', hostvars, 'ansible_host') | list +
+        groups['staging'] | map('extract', hostvars, 'ansible_host') | list
+      }}
+
+- name: Allow PostgreSQL from authorized servers via UFW
+  ufw:
+    rule: allow
+    port: 5432
+    proto: tcp
+    src: "{{ item }}"
+    comment: "PostgreSQL from {{ item }}"
+  loop: "{{ postgres_allowed_ips }}"
+
+- name: Enable UFW (with logging)
+  ufw:
+    state: enabled
+    logging: 'on'
+
+# Fix Docker's DOCKER-USER chain to work properly with our rules
+- name: Remove Docker's default RETURN rule from DOCKER-USER chain
+  iptables:
+    chain: DOCKER-USER
+    jump: RETURN
+    state: absent
+  ignore_errors: yes
+
+- name: Configure Docker firewall rules for PostgreSQL
+  block:
+    - name: Allow PostgreSQL from authorized servers in DOCKER-USER chain
+      iptables:
+        chain: DOCKER-USER
+        protocol: tcp
+        source: "{{ item }}"
+        destination_port: 5432
+        jump: RETURN
+        comment: "Allow PostgreSQL from {{ item }}"
+        state: present
+      loop: "{{ postgres_allowed_ips }}"
+
+    - name: Block all other PostgreSQL connections in DOCKER-USER chain
+      iptables:
+        chain: DOCKER-USER
+        protocol: tcp
+        destination_port: 5432
+        jump: DROP
+        comment: "Block all other PostgreSQL connections"
+        state: present
+
+    # This must come AFTER our PostgreSQL rules
+    - name: Add default RETURN rule at end of DOCKER-USER chain
+      iptables:
+        chain: DOCKER-USER
+        jump: RETURN
+        state: present
+
+- name: Save iptables rules persistently
+  shell: |
+    if command -v netfilter-persistent > /dev/null; then
+      netfilter-persistent save
+    elif command -v iptables-save > /dev/null; then
+      mkdir -p /etc/iptables
+      iptables-save > /etc/iptables/rules.v4
+    fi
+  changed_when: false
+
+# Ensure rules persist after reboot
+- name: Install iptables-persistent for rule persistence
+  apt:
+    name: iptables-persistent
+    state: present
+  when: ansible_os_family == "Debian"
+
+# UFW and iptables configuration is complete at this point

@@ -1,5 +1,19 @@
 # Kindle Automator Project Guide
 
+## Testing
+
+- **Local testing email**: Always use `sam@solreader.com` when testing API endpoints locally
+- **Staff token generation**: To test with different user emails (e.g., `recreate@solreader.com`):
+
+  ```bash
+  # Generate token and use it inline
+  TOKEN=$(curl -s -X GET "http://localhost:4098/staff-auth?auth=1" | jq -r '.token')
+
+  # Use the token in requests
+  curl -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1" \
+    -H "Cookie: staff_token=$TOKEN"
+  ```
+
 ## Issue References
 
 - When you see references to KINDLE-AUTOMATOR-[A-Z0-9]+ (e.g., KINDLE-AUTOMATOR-8), use the Sentry MCP tools to look up the issue details
@@ -11,7 +25,9 @@
 
 ## Commands
 
+- **Running Python scripts**: Use `uv run` to execute any Python script (e.g., `uv run python script.py`, `uv run pytest tests/`)
 - `make claude-run`: Start the Flask server in the background. It will auto-kill other running servers.
+  - **Port conflict handling**: If `make claude-run` fails with "Port 4098 is in use", just run it again - it auto-kills the conflicting server
 - `make deps`: Install dependencies using uv
 - `make lint`: Run isort, black, and flake8
 - `make test-*`: Run various API endpoint tests (e.g. `make test-init`, `make test-books`)
@@ -29,6 +45,9 @@ curl -s http://localhost:4098/emulators/active
 
 # Monitor server logs in real-time
 tail -f logs/server_output.log
+
+# Monitor DEBUG-level server logs + sql queries in real-time
+tail -f logs/debug_server.log
 
 # Or just check the last 20 lines
 tail -n 20 logs/server_output.log
@@ -59,6 +78,11 @@ tail -n 20 logs/server_output.log
 - **Comments**: Don't add comments that are simply addressing the prompt, only add them if the comments clear up confusion
 - **Linting**: Run `make lint` after making code changes to ensure formatting compliance
 
+## Linting & Formatting
+
+- Run formatting tools: `make lint`
+- **Important**: Always run `make lint` after changing Python code to ensure proper formatting and import sorting
+
 ## Project Structure
 
 - **server/**: Flask REST API (server.py is the entrypoint)
@@ -70,3 +94,17 @@ tail -n 20 logs/server_output.log
 
 - Don't make test files unless directed to
 - If you need to use ssh for prod or staging, read the Makefile to see how `make ssh` and `make ssh-staging` work so you can make a non-interactive ssh command prefix for what you want to do on prod or staging
+- **Never kill emulators or servers directly**: Always use `make claude-run` to restart the server (it auto-kills existing servers) or the `/shutdown` API endpoint to gracefully shutdown emulators
+- **Always pass sindarin_email parameter**: When using staff authentication, include `sindarin_email` parameter in each request body/params to properly identify the user context
+
+## SQL Query Logging
+
+In development mode (`FLASK_ENV=development`), all SQL queries are logged with:
+
+- **Colorization**: SELECT queries in yellow, UPDATE queries in teal
+- **Timing**: Shows execution time for each query
+- **Full values**: Parameters are rendered with actual values
+- **To disable**: Set `SQL_LOGGING=false` before starting the server
+  ```bash
+  SQL_LOGGING=false make claude-run
+  ```

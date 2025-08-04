@@ -7,6 +7,7 @@ from io import BytesIO
 
 import sentry_sdk
 from flask import Response, current_app, g, request
+from user_agents import parse
 
 # Removed set_current_request_email import as it's no longer needed
 from server.utils.ansi_colors import (
@@ -15,6 +16,7 @@ from server.utils.ansi_colors import (
     DIM_YELLOW,
     GREEN,
     MAGENTA,
+    RED,
     RESET,
 )
 from server.utils.request_utils import get_sindarin_email
@@ -24,6 +26,67 @@ logger = logging.getLogger(__name__)
 
 class RequestBodyLogger:
     """Middleware for logging Flask request and response bodies."""
+
+    @staticmethod
+    def get_ua_identifier(ua_string):
+        """Parse user agent string and return a short identifier."""
+        if not ua_string:
+            return "unknown"
+
+        try:
+            ua = parse(ua_string)
+
+            # For mobile devices
+            if ua.is_mobile:
+                if ua.os.family == "iOS":
+                    return "ios"
+                elif ua.os.family == "Android":
+                    return "android"
+
+            # For desktop browsers
+            if ua.is_pc:
+                browser = ua.browser.family.lower() if ua.browser.family else ""
+                os_family = ua.os.family.lower() if ua.os.family else ""
+
+                if "edge" in browser:
+                    return "edge"
+                elif "safari" in browser and "mac" in os_family:
+                    return "safari"
+                elif "chrome" in browser:
+                    if "mac" in os_family:
+                        return "chrome-mac"
+                    elif "windows" in os_family:
+                        return "chrome-win"
+                    elif "linux" in os_family:
+                        return "chrome-linux"
+                    else:
+                        return "chrome"
+                elif "firefox" in browser:
+                    if "mac" in os_family:
+                        return "firefox-mac"
+                    elif "windows" in os_family:
+                        return "firefox-win"
+                    elif "linux" in os_family:
+                        return "firefox-linux"
+                    else:
+                        return "firefox"
+
+            # For bots/crawlers
+            if ua.is_bot:
+                return "bot"
+
+            # For specific libraries
+            if "python-requests" in ua_string:
+                return "python-requests"
+            elif "python-httpx" in ua_string:
+                return "python-httpx"
+            elif "curl" in ua_string.lower():
+                return "curl"
+
+            # Default fallback
+            return "unknown"
+        except Exception:
+            return "unknown"
 
     @staticmethod
     def sanitize_sensitive_data(data):
@@ -78,6 +141,11 @@ class RequestBodyLogger:
             email = request_email or "not_authenticated"
             user_info = f" {GREEN}[User: {email}]{RESET}"
 
+        # Get user agent
+        user_agent = request.headers.get("User-Agent", "")
+        ua_identifier = RequestBodyLogger.get_ua_identifier(user_agent)
+        user_agent_info = f" {BLUE}[UA: {ua_identifier}]{RESET}"
+
         # For GET requests, use query parameters as the body
         if request.method == "GET" and request.args:
             request_data = RequestBodyLogger.sanitize_sensitive_data(dict(request.args))
@@ -115,22 +183,24 @@ class RequestBodyLogger:
                 json_str = json.dumps(request_data, default=str)
                 if len(json_str) > 5000:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{json_str}{RESET}"
                     )
             elif isinstance(request_data, str) and len(request_data) > 5000:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data[:5000]}{RESET}... (truncated, total {len(request_data)} bytes)"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{request_data[:5000]}{RESET}... (truncated, total {len(request_data)} bytes)"
                 )
             else:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: {DIM_YELLOW}{request_data}{RESET}"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{request_data}{RESET}"
                 )
         else:
-            logger.info(f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}: No body")
+            logger.info(
+                f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: No body"
+            )
 
     @staticmethod
     def log_response(response):
@@ -154,9 +224,27 @@ class RequestBodyLogger:
             email = request_email or "not_authenticated"
             user_info = f" {GREEN}[User: {email}]{RESET}"
 
+        # Format status code with color
+        status_code = response.status_code
+        if 200 <= status_code < 300:
+            status_color = GREEN
+        elif 400 <= status_code < 500:
+            status_color = BLUE
+        else:  # 500+ and other codes
+            status_color = RED
+        status_info = f" {status_color}{status_code}{RESET}"
+
         if response.direct_passthrough:
             logger.info(
-                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
+                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
+            )
+            return response
+
+        # Skip logging for streaming responses (SSE, etc.)
+        content_type = response.headers.get("Content-Type", "")
+        if "text/event-stream" in content_type or response.is_streamed:
+            logger.info(
+                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Streaming response ({content_type}){RESET}"
             )
             return response
 
@@ -176,34 +264,34 @@ class RequestBodyLogger:
                     json_str = json.dumps(sanitized_data, default=str)
                     if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
                     if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
                 if len(response_text) > 5000:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
+                        f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
+                        f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
                     )
         except UnicodeDecodeError:
             logger.info(
-                f"RESPONSE [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
+                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
             )
 
         return response

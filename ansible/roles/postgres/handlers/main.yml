@@ -1,0 +1,9 @@
+---
+- name: restart postgres
+  community.docker.docker_compose_v2:
+    project_src: /opt/postgres
+    state: restarted
+
+- name: reload ufw
+  command: /usr/sbin/ufw reload
+  changed_when: false

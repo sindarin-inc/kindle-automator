@@ -39,7 +39,6 @@ class KindleAutomator:
 
         if self.driver:
             if skip_driver_quit:
-                logger.info("Skipping driver.quit() as requested (emulator already stopped)")
                 self.driver = None
                 self.device_id = None
             else:
@@ -48,32 +47,23 @@ class KindleAutomator:
                     # We need to find the Driver instance that contains this Appium driver
                     if hasattr(self, "_driver_instance"):
                         # If we stored a reference to the Driver instance
-                        logger.info("Calling quit on Driver instance")
                         quit_start = _time.time()
                         self._driver_instance.quit()
-                        logger.info(f"Driver quit took {_time.time() - quit_start:.1f}s")
                     else:
                         # Otherwise, try to quit the Appium driver directly
-                        logger.info("Calling quit on Appium driver directly")
                         quit_start = _time.time()
                         self.driver.quit()
-                        logger.info(f"Appium driver quit took {_time.time() - quit_start:.1f}s")
                 except Exception as e:
                     logger.warning(f"Error during driver cleanup: {e}", exc_info=True)
-                    logger.info(f"Driver cleanup error after {_time.time() - cleanup_start:.1f}s")
                 finally:
                     finally_start = _time.time()
                     self.driver = None
                     self.device_id = None
-                    logger.info(f"Finally block took {_time.time() - finally_start:.1f}s")
-
-        logger.info(f"Total automator.cleanup() took {_time.time() - cleanup_start:.1f}s")
 
     def initialize_driver(self):
         """Initialize the Appium driver and Kindle app."""
         # Check if we're already in initialization to prevent infinite recursion
         if hasattr(self, "_initializing_driver") and self._initializing_driver:
-            logger.error("Already initializing driver, avoiding infinite recursion", exc_info=True)
             return False
 
         self._initializing_driver = True
@@ -140,7 +130,7 @@ class KindleAutomator:
                 or current_activity
                 == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
             ):
-                logger.warning("App is not in foreground after initialization, trying to launch it")
+                logger.info("App is not in foreground after initialization, trying to launch it")
                 if self.state_machine.view_inspector.ensure_app_foreground():
                     # Verify we're back in the app
                     current_activity = self.driver.current_activity
@@ -285,7 +275,7 @@ class KindleAutomator:
                         and current_activity
                         != "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                     ):
-                        logger.warning("App is not in Kindle foreground, trying to relaunch")
+                        logger.info("App is not in Kindle foreground, trying to relaunch")
                         # Capture page source before relaunching to see what's on screen
                         try:
                             from server.logging_config import store_page_source

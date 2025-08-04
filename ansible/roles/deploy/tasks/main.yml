@@ -21,12 +21,26 @@
 # Update Python dependencies if requirements.txt changed
 - name: Update Python dependencies if requirements.txt changed
   shell: |
-    source /opt/kindle-automator/venv/bin/activate
     cd /opt/kindle-automator
     uv pip install -r requirements.txt
   args:
     executable: /bin/bash
   when: git_pull.changed
+
+# Run database migrations
+- name: Run database migrations
+  shell: |
+    cd /opt/kindle-automator
+    ENVIRONMENT="{% if 'staging' in inventory_hostname %}staging{% else %}prod{% endif %}" uv run alembic upgrade head
+  args:
+    executable: /bin/bash
+  register: db_migration
+  changed_when: "'Running upgrade' in db_migration.stdout"
+
+- name: Display migration output
+  debug:
+    msg: "{{ db_migration.stdout_lines }}"
+  when: db_migration.changed
 
 # Always trigger handlers to restart service
 - name: Restart kindle-automator service

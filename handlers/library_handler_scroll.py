@@ -396,6 +396,20 @@ class LibraryHandlerScroll:
                 # Send completion notification via callback if available
                 if callback:
                     callback(None, done=True, total_books=len(books_list))
+
+                # Save scroll book count to database
+                try:
+                    from server.utils.request_utils import get_sindarin_email
+
+                    sindarin_email = get_sindarin_email()
+                    if sindarin_email:
+                        self.driver.automator.profile_manager.save_style_setting(
+                            "scroll_book_count", len(books_list)
+                        )
+                        logger.info(f"Saved scroll book count to database: {len(books_list)}")
+                except Exception as e:
+                    logger.error(f"Error saving scroll book count: {e}", exc_info=True)
+
                 return False
         except Exception as e:
             logger.error(f"Error during double-check for titles: {e}", exc_info=True)
@@ -622,6 +636,7 @@ class LibraryHandlerScroll:
                 "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/*[@content-desc]",
             )
 
+            logger.info(f"Found {len(book_containers)} book containers with content-desc")
             if book_containers:
                 containers = book_containers
             else:
@@ -629,6 +644,7 @@ class LibraryHandlerScroll:
                 title_elements = self.driver.find_elements(
                     AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                 )
+                logger.info(f"Found {len(title_elements)} title elements as fallback")
 
                 # Convert these title elements to containers
                 containers = self._convert_title_elements(title_elements)
@@ -879,6 +895,20 @@ class LibraryHandlerScroll:
                         # Send completion notification via callback if available
                         if callback:
                             callback(None, done=True, total_books=len(books))
+
+                        # Save scroll book count to database
+                        try:
+                            from server.utils.request_utils import get_sindarin_email
+
+                            sindarin_email = get_sindarin_email()
+                            if sindarin_email:
+                                self.driver.automator.profile_manager.save_style_setting(
+                                    "scroll_book_count", len(books)
+                                )
+                                logger.info(f"Saved scroll book count to database: {len(books)}")
+                        except Exception as e:
+                            logger.error(f"Error saving scroll book count: {e}", exc_info=True)
+
                         break
                     else:
                         logger.info(

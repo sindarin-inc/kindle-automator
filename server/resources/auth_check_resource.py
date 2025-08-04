@@ -33,8 +33,15 @@ class AuthCheckResource(Resource):
             # Get the profile manager instance
             profile_manager = AVDProfileManager.get_instance()
 
-            # Check if profile exists
-            if sindarin_email not in profile_manager.profiles_index:
+            # Check if profile exists in database
+            from database.connection import DatabaseConnection
+            from database.repositories.user_repository import UserRepository
+
+            with DatabaseConnection().get_session() as session:
+                repo = UserRepository(session)
+                user = repo.get_user_by_email(sindarin_email)
+
+            if not user:
                 # No profile = never authenticated
                 return {
                     "authenticated": False,

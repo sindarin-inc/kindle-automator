@@ -142,7 +142,8 @@ class AutomationServer:
 
         if platform.system() == "Darwin" and emulator_id:  # macOS development environment
             # Check if any other profile is using this emulator
-            for other_email, other_automator in self.automators.items():
+            # Create a list copy to avoid dictionary modification during iteration
+            for other_email, other_automator in list(self.automators.items()):
                 if other_email != email and other_automator and hasattr(other_automator, "device_id"):
                     if other_automator.device_id == emulator_id:
                         # Check if the other automator is actually active
@@ -299,10 +300,10 @@ class AutomationServer:
                     os.kill(int(pid), signal.SIGTERM)
                     logger.info(f"Killed existing flask process with PID {pid}")
 
-                    # Wait for port to be released (up to 5 seconds)
+                    # Wait for port to be released (up to 20 seconds)
                     import time
 
-                    for i in range(50):  # 50 * 0.1s = 5s max
+                    for i in range(200):  # 200 * 0.1s = 20s max
                         try:
                             # Check if port is still in use
                             subprocess.check_output(["lsof", "-t", "-i:4098"], stderr=subprocess.DEVNULL)
@@ -312,7 +313,7 @@ class AutomationServer:
                             logger.info(f"Port 4098 is now free after {(i+1)*0.1:.1f}s")
                             break
                     else:
-                        logger.warning("Port 4098 still in use after 5 seconds")
+                        logger.warning("Port 4098 still in use after 20 seconds")
             except subprocess.CalledProcessError:
                 logger.info("No existing flask process found")
             except Exception as e:

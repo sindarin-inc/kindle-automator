@@ -28,7 +28,8 @@ class ActiveEmulatorsResource(Resource):
             active_emails = []
 
             server = AutomationServer.get_instance()
-            for email, automator in server.automators.items():
+            # Create a list copy to avoid dictionary modification during iteration
+            for email, automator in list(server.automators.items()):
                 if automator is not None:
                     # Check if the automator has a running emulator
                     has_emulator = False

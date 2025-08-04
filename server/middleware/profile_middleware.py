@@ -97,21 +97,29 @@ def ensure_user_profile_loaded(f):
         # Get server instance using singleton
         server = AutomationServer.get_instance()
 
-        # Check if this email exists in profiles_index first
+        # Check if this user exists in the database
         # If not, register it immediately to avoid profile creation issues
-        profiles_index = server.profile_manager.profiles_index
+        from database.connection import DatabaseConnection
+        from database.repositories.user_repository import UserRepository
 
-        if sindarin_email not in profiles_index:
+        with DatabaseConnection().get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(sindarin_email)
+
+        if not user:
             # Create standardized AVD name for this email
             normalized_avd_name = server.profile_manager.get_avd_name_from_email(sindarin_email)
             logger.info(f"Registering {sindarin_email} with AVD {normalized_avd_name}")
 
-            # Register this profile to ensure it's in profiles_index
-            server.profile_manager.register_profile(sindarin_email, normalized_avd_name)
+            # Register this profile to ensure it's in the database
+            success, message = server.profile_manager.register_profile(sindarin_email, normalized_avd_name)
 
-            # Verify it was added correctly
-            if sindarin_email not in server.profile_manager.profiles_index:
-                logger.error(f"Failed to register {sindarin_email} in profiles_index", exc_info=True)
+            if not success:
+                logger.error(f"Failed to register {sindarin_email}: {message}")
+                return {
+                    "error": "Failed to register profile",
+                    "message": f"Could not register profile for {sindarin_email}: {message}",
+                }, 500
 
         # Now check if this profile exists by looking for an AVD
         avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
@@ -144,7 +152,7 @@ def ensure_user_profile_loaded(f):
                         "message": f"Could not restore AVD for {sindarin_email} from cold storage",
                     }, 500
         else:
-            logger.info(f"Skipping cold storage check on macOS dev environment for {sindarin_email}")
+            logger.debug(f"Skipping cold storage check on macOS dev environment for {sindarin_email}")
 
         # Check if AVD file path exists
         avd_path = os.path.join(server.profile_manager.avd_dir, f"{avd_name}.avd")

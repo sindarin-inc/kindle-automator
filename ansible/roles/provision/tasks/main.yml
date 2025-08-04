@@ -7,9 +7,30 @@
       - ca-certificates
       - curl
       - software-properties-common
-      - docker.io
+      - gnupg
+      - lsb-release
       - zsh
     state: present
+
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: Install Docker CE
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
 
 - name: Start Docker service
   service:
@@ -38,7 +59,7 @@
     owner: root
     group: root
     mode: 0644
-  when: "'kindle' in inventory_hostname"
+  when: "'staging' not in inventory_hostname and 'kindle' in inventory_hostname"
   tags: env
 
 - name: Copy .env.staging to /opt/kindle-automator/.env.staging

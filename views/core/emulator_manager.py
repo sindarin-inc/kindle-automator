@@ -3,34 +3,77 @@ import os
 import platform
 import subprocess
 import time
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+from server.utils.android_path_utils import get_android_home, get_avd_dir
 from server.utils.emulator_launcher import EmulatorLauncher
 from server.utils.request_utils import get_sindarin_email
 from server.utils.vnc_instance_manager import VNCInstanceManager
 
 logger = logging.getLogger(__name__)
 
+# Singleton instance
+_instance = None
+
 
 class EmulatorManager:
     """
     Manages the lifecycle of Android emulators.
 
-    Note that this model is shared between all users, so don't set any user-specific preferences here.
+    This is a singleton class shared between all users. User-specific state
+    is stored in VNCInstanceManager instead.
 
     Handles starting, stopping, and monitoring emulator instances.
     """
 
-    def __init__(self, android_home, avd_dir, host_arch):
-        self.android_home = android_home
-        self.avd_dir = avd_dir
-        self.host_arch = host_arch
+    @classmethod
+    def get_instance(cls):
+        """
+        Get the singleton instance of EmulatorManager.
 
-        self.emulator_launcher = EmulatorLauncher(android_home, avd_dir, host_arch)
+        Returns:
+            EmulatorManager: The singleton instance
+        """
+        global _instance
+        if _instance is None:
+            _instance = cls()
+        return _instance
 
-        # Cache for emulator state to avoid repeated ADB queries
-        # Maps email to (emulator_id, avd_name, last_check_time)
-        self._emulator_cache = {}
+    def __init__(self):
+        # Check if this is being called directly or through get_instance()
+        if _instance is not None and _instance is not self:
+            logger.warning("EmulatorManager initialized directly. Use get_instance() instead.")
+
+        # Use centralized path determination
+        self.android_home = get_android_home()
+        self.avd_dir = get_avd_dir()
+
+        # Detect host architecture
+        self.host_arch = self._detect_host_architecture()
+
+        logger.debug(f"EmulatorManager initialized with:")
+        logger.debug(f"  android_home: {self.android_home}")
+        logger.debug(f"  avd_dir: {self.avd_dir}")
+        logger.debug(f"  host_arch: {self.host_arch}")
+
+        self.emulator_launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+
+    def _detect_host_architecture(self) -> str:
+        """Detect the host system architecture."""
+        machine = platform.machine().lower()
+
+        if machine in ["x86_64", "amd64"]:
+            return "x86_64"
+        elif machine in ["aarch64", "arm64"]:
+            return "arm64"
+        elif machine in ["armv7l", "armv7"]:
+            return "arm"
+        elif machine in ["i386", "i686"]:
+            return "x86"
+        else:
+            logger.warning(f"Unknown architecture: {machine}, defaulting to x86_64")
+            return "x86_64"
 
     def is_emulator_running(self, email: str) -> bool:
         """Check if an emulator is currently running for a specific email."""
@@ -78,30 +121,16 @@ class EmulatorManager:
         """
         success = self._stop_specific_emulator(emulator_id)
         if success:
-            # Clear cache for this emulator
-            email_to_release = None
-            for email, (cached_id, _, _) in list(self._emulator_cache.items()):
-                if cached_id == emulator_id:
-                    del self._emulator_cache[email]
-                    logger.info(f"Cleared cache for emulator {emulator_id} (email: {email})")
-                    email_to_release = email
-                    break
-
             # Release the VNC instance assignment
             vnc_manager = VNCInstanceManager.get_instance()
 
-            # If we found an email in the cache, use it
-            if email_to_release:
-                vnc_manager.release_instance_from_profile(email_to_release)
-                logger.info(f"Released VNC instance for {email_to_release}")
-            else:
-                # Otherwise, find the email by looking through all instances
-                for instance in vnc_manager.instances:
-                    if instance.get("emulator_id") == emulator_id and instance.get("assigned_profile"):
-                        email_to_release = instance.get("assigned_profile")
-                        vnc_manager.release_instance_from_profile(email_to_release)
-                        logger.info(f"Released VNC instance for {email_to_release}")
-                        break
+            # Find the email by looking through all instances
+            for instance in vnc_manager.instances:
+                if instance.get("emulator_id") == emulator_id and instance.get("assigned_profile"):
+                    email_to_release = instance.get("assigned_profile")
+                    vnc_manager.release_instance_from_profile(email_to_release)
+                    logger.info(f"Released VNC instance for {email_to_release}")
+                    break
 
         return success
 
@@ -158,18 +187,20 @@ class EmulatorManager:
             bool: True if emulator started successfully, False otherwise
         """
         try:
-            # Check if we have cached emulator info for this email
-            if email in self._emulator_cache:
-                emulator_id, avd_name, cache_time = self._emulator_cache[email]
-                logger.info(f"Found cached emulator info for {email}: {emulator_id}, {avd_name}")
+            # Check if we have emulator info in VNC instance manager for this email
+            vnc_manager = VNCInstanceManager.get_instance()
+            emulator_id = vnc_manager.get_emulator_id(email)
 
-                # Verify the cached emulator is still running
+            if emulator_id:
+                logger.info(f"Found emulator info for {email}: {emulator_id}")
+
+                # Verify the emulator is still running
                 if self.emulator_launcher._verify_emulator_running(emulator_id, email):
-                    logger.info(f"Cached emulator {emulator_id} is still running for {email}")
+                    logger.info(f"Emulator {emulator_id} is still running for {email}")
                     return True
                 else:
-                    logger.info(f"Cached emulator {emulator_id} is no longer running, removing from cache")
-                    del self._emulator_cache[email]
+                    logger.info(f"Emulator {emulator_id} is no longer running, clearing from VNC instance")
+                    vnc_manager.set_emulator_id(email, None)
 
             # First check for stale cache entries and clean them before launching
             avd_name = self.emulator_launcher._extract_avd_name_from_email(email)
@@ -194,7 +225,7 @@ class EmulatorManager:
                     text=True,
                     timeout=3,
                 )
-                logger.info(f"ADB devices before launch: {devices_before.stdout.strip()}")
+                logger.debug(f"ADB devices before launch: {devices_before.stdout.strip()}")
             except Exception as e:
                 logger.error(f"Error checking ADB devices before launch: {e}", exc_info=True)
 
@@ -210,11 +241,11 @@ class EmulatorManager:
             )
 
             if success:
-                logger.info(f"Emulator {emulator_id} launched successfully on display :{display_num}")
+                logger.debug(f"Emulator {emulator_id} launched successfully on display :{display_num}")
 
-                # Cache the emulator info to avoid repeated ADB queries
-                self._emulator_cache[email] = (emulator_id, avd_name, time.time())
-                logger.info(f"Cached emulator info for {email}: {emulator_id}, {avd_name}")
+                # Store the emulator ID in VNC instance manager
+                vnc_manager.set_emulator_id(email, emulator_id)
+                logger.debug(f"Stored emulator info for {email}: {emulator_id}")
 
                 # Check adb devices immediately after launch to see if it's detected
                 try:
@@ -225,11 +256,11 @@ class EmulatorManager:
                         text=True,
                         timeout=3,
                     )
-                    logger.info(f"ADB devices immediately after launch: {devices_after.stdout.strip()}")
+                    logger.debug(f"ADB devices immediately after launch: {devices_after.stdout.strip()}")
 
                     # Check if our emulator ID appears in the output
                     if emulator_id in devices_after.stdout:
-                        logger.info(f"Emulator {emulator_id} is visible to ADB immediately after launch")
+                        logger.debug(f"Emulator {emulator_id} is visible to ADB immediately after launch")
                     else:
                         logger.warning(
                             f"Emulator {emulator_id} is NOT visible to ADB immediately after launch"
@@ -238,7 +269,7 @@ class EmulatorManager:
                     logger.error(f"Error checking ADB devices after launch: {e}", exc_info=True)
 
                 # Wait for emulator to boot with active polling (should take ~7-8 seconds)
-                logger.info("Waiting for emulator to boot...")
+                logger.debug("Waiting for emulator to boot...")
                 deadline = time.time() + 45  # 45 seconds timeout
 
                 # Active polling approach - check every second and log consistently
@@ -253,7 +284,7 @@ class EmulatorManager:
                         last_check_time = current_time
 
                         # Log each check with timestamp
-                        logger.info(f"Checking if emulator is ready for {email} (check #{check_count})")
+                        logger.debug(f"Checking if emulator is ready for {email} (check #{check_count})")
 
                         # Check if emulator is ready through the launcher
                         if self.emulator_launcher.is_emulator_ready(email):
@@ -330,6 +361,21 @@ class EmulatorManager:
                 (["pm", "disable-user", "com.google.android.youtube"], "Disabling YouTube"),
                 # Disable Gboard to prevent soft keyboard from appearing
                 (["pm", "disable-user", "com.google.android.inputmethod.latin"], "Disabling Gboard"),
+                # Configure system to think hardware keyboard is connected
+                (
+                    ["settings", "put", "secure", "show_ime_with_hard_keyboard", "0"],
+                    "Hide IME with hardware keyboard",
+                ),
+                (["settings", "put", "secure", "default_input_method", "null"], "Clear default input method"),
+                # Disable voice input settings
+                (
+                    ["settings", "put", "secure", "voice_interaction_service", ""],
+                    "Disable voice interaction service",
+                ),
+                (
+                    ["settings", "put", "secure", "voice_recognition_service", ""],
+                    "Disable voice recognition service",
+                ),
                 # Disable auto app updates
                 (["settings", "put", "global", "auto_update_apps", "0"], "Disabling auto app updates"),
                 # Deny background execution for Play Services
@@ -384,10 +430,21 @@ class EmulatorManager:
                     logger.debug(f"{description}...")
                     result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5, check=False)
 
-                    # Check if Gboard was successfully disabled
-                    if "Disabling Gboard" in description and result.returncode == 0:
+                    # Check if keyboard-related commands were successful
+                    if (
+                        any(
+                            keyword in description
+                            for keyword in [
+                                "Disabling Gboard",
+                                "Hide IME with hardware keyboard",
+                                "Clear default input method",
+                            ]
+                        )
+                        and result.returncode == 0
+                    ):
                         keyboard_disabled = True
-                        logger.info("Gboard successfully disabled, keyboard_disabled flag set to True")
+                        logger.info(f"Keyboard configuration successful: {description}")
+                        logger.debug(f"Setting keyboard_disabled=True after: {description}")
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
@@ -408,11 +465,21 @@ class EmulatorManager:
                 email, "memory_optimizations_applied", True, section="emulator_settings"
             )
             profile_manager.set_user_field(
-                email, "memory_optimization_timestamp", int(time.time()), section="emulator_settings"
+                email,
+                "memory_optimization_timestamp",
+                datetime.now(timezone.utc),
+                section="emulator_settings",
             )
             # Store keyboard disabled state
+            logger.debug(f"keyboard_disabled flag is: {keyboard_disabled}")
             if keyboard_disabled:
-                profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
+                logger.info(f"Setting keyboard_disabled=True in profile for {email}")
+                success = profile_manager.set_user_field(
+                    email, "keyboard_disabled", True, section="emulator_settings"
+                )
+                logger.debug(f"keyboard_disabled flag set result: {success}")
+            else:
+                logger.warning(f"keyboard_disabled flag is False, not setting in profile for {email}")
 
             logger.info(f"Memory optimization settings applied successfully for {email}")
 

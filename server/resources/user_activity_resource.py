@@ -11,6 +11,7 @@ from flask import make_response, request
 from flask_restful import Resource
 
 from server.logging_config import logger
+from server.utils.text_utils import strip_ansi_codes
 
 
 class UserActivityResource(Resource):
@@ -76,18 +77,6 @@ class UserActivityResource(Resource):
                 response.headers["Content-Type"] = "text/plain; charset=utf-8"
                 return response
 
-    def _strip_ansi_codes(self, text):
-        """Remove ANSI color codes from text."""
-        if text is None:
-            return ""
-        # Remove ANSI escape sequences (ESC[...m format)
-        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-        text = ansi_escape.sub("", text)
-        # Remove escaped ANSI codes (when stored as \u001b in logs)
-        text = re.sub(r"\\u001b\[[0-9;]*m", "", text)
-        text = re.sub(r"\u001b\[[0-9;]*m", "", text)
-        return text
-
     def _parse_user_activities(self, user_email):
         """Parse log files to extract user activities."""
         activities = []
@@ -150,7 +139,7 @@ class UserActivityResource(Resource):
         patterns = {
             "open_book": r'REQUEST \[GET /open-book\].*?"title":\s*"([^"]+)"',
             "books_stream": r"REQUEST \[GET /books-stream\]",
-            "books_stream_response": r"RESPONSE \[GET /books-stream\]",
+            "books_stream_response": r"RESPONSE\s+\d+\s+\[GET /books-stream\]",
             "navigate": r"REQUEST \[GET /navigate\].*?: (\{[^}]+\})",
             "book_opened": r"Opening book:\s*(.+?)$",
             "book_already_open": r"Already reading book.*?:\s*(.+?),",
@@ -161,13 +150,14 @@ class UserActivityResource(Resource):
             "book_download": r"Book is not downloaded yet, initiating download",
             "search_book": r"Proceeding to search for \'(.+?)\'",
             "book_found": r"Successfully found book \'(.+?)\' using search",
-            "response_time": r"RESPONSE \[GET /([^\]]+?)(?:\s+[\d.]+s)?\].*?User:\s*([^|]+)",
+            "response_time": r"RESPONSE\s+\d+\s+\[GET /([^\]]+?)(?:\s+[\d.]+s)?\].*?User:\s*([^|]+)",
             "launch_time_start": r"Launching emulator for (.+?)$",
             "launch_time_end": r"Emulator (emulator-\d+) launched successfully",
             "appium_start": r"Starting Appium server for",
             "appium_fail": r"Failed to start Appium server",
-            "request": r"REQUEST \[(\w+) ([^\]]+)\].*?: (.+)$",
-            "response": r"RESPONSE \[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
+            "request": r"REQUEST \[(\w+) ([^\]]+)\].*?(?:\[UA: ([^\]]+)\])?\s*: (.+)$",
+            "response": r"RESPONSE\s+(\d+)\s+\[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: (.+)$",
+            "streaming_response": r"RESPONSE\s+(\d+)\s+\[(\w+) ([^\]]+?)(?:\s+([\d.]+)s)?\].*?: Streaming response",
         }
 
         current_activity = None
@@ -179,7 +169,7 @@ class UserActivityResource(Resource):
                 continue
 
             # Strip ANSI codes from the line for pattern matching
-            clean_line = self._strip_ansi_codes(line)
+            clean_line = strip_ansi_codes(line)
 
             # Extract timestamp - try multiple formats
             timestamp = None
@@ -275,7 +265,12 @@ class UserActivityResource(Resource):
                     elif event_type == "request":
                         activity["method"] = match.group(1)
                         activity["endpoint"] = match.group(2)
-                        activity["params"] = self._strip_ansi_codes(match.group(3))
+                        # User agent is optional (group 3), params is group 4
+                        if match.group(3):  # User agent was captured
+                            activity["user_agent"] = match.group(3)
+                            activity["params"] = strip_ansi_codes(match.group(4))
+                        else:  # No user agent, params is group 3
+                            activity["params"] = strip_ansi_codes(match.group(3))
                         activity["action"] = "api_request"
                         # Skip if this is a navigate request (handled by specific pattern)
                         if "/navigate" in activity["endpoint"] and any(
@@ -285,16 +280,17 @@ class UserActivityResource(Resource):
                         ):
                             continue
                     elif event_type == "response":
-                        activity["method"] = match.group(1)
-                        activity["endpoint"] = match.group(2)
-                        # Check if elapsed time was captured (group 3)
-                        if match.group(3) is not None:  # This is the elapsed time
-                            activity["duration"] = float(match.group(3))
-                            activity["body"] = self._strip_ansi_codes(match.group(4))
+                        activity["status_code"] = int(match.group(1))
+                        activity["method"] = match.group(2)
+                        activity["endpoint"] = match.group(3)
+                        # Check if elapsed time was captured (group 4)
+                        if match.group(4) is not None:  # This is the elapsed time
+                            activity["duration"] = float(match.group(4))
+                            activity["body"] = strip_ansi_codes(match.group(5))
                         else:
                             # No elapsed time in the log, use the last group as body
-                            # When no elapsed time, group 4 is the body
-                            activity["body"] = self._strip_ansi_codes(match.group(4))
+                            # When no elapsed time, group 5 is the body
+                            activity["body"] = strip_ansi_codes(match.group(5))
                             # Fall back to calculating duration
                             if (
                                 current_activity
@@ -304,6 +300,27 @@ class UserActivityResource(Resource):
                                 duration = (timestamp - current_activity["timestamp_obj"]).total_seconds()
                                 activity["duration"] = duration
                         activity["action"] = "api_response"
+                        # Always get request params if available
+                        if current_activity and current_activity.get("endpoint") == activity["endpoint"]:
+                            activity["request_params"] = current_activity.get("params", "")
+                    elif event_type == "streaming_response":
+                        activity["status_code"] = int(match.group(1))
+                        activity["method"] = match.group(2)
+                        activity["endpoint"] = match.group(3)
+                        # Check if elapsed time was captured (group 4)
+                        if match.group(4) is not None:  # This is the elapsed time
+                            activity["duration"] = float(match.group(4))
+                        else:
+                            # Fall back to calculating duration
+                            if (
+                                current_activity
+                                and current_activity.get("action") == "api_request"
+                                and current_activity.get("endpoint") == activity["endpoint"]
+                            ):
+                                duration = (timestamp - current_activity["timestamp_obj"]).total_seconds()
+                                activity["duration"] = duration
+                        activity["action"] = "api_response"
+                        activity["body"] = "Streaming response"
                         # Always get request params if available
                         if current_activity and current_activity.get("endpoint") == activity["endpoint"]:
                             activity["request_params"] = current_activity.get("params", "")
@@ -559,16 +576,60 @@ class UserActivityResource(Resource):
                 elif "/logs/timeline" in endpoint:
                     desc = "retrieved activity timeline"
                 else:
-                    desc = f"{activity.get('method', 'GET')} {self._strip_ansi_codes(endpoint)}"
+                    desc = f"{activity.get('method', 'GET')} {strip_ansi_codes(endpoint)}"
 
-                # Check if request succeeded or failed
-                if "error" in body.lower() or "failed" in body.lower():
+                # Check if request succeeded or failed based on HTTP status code first
+                status_code = activity.get("status_code", 200)
+
+                # Consider 4xx and 5xx as failures
+                if status_code >= 400:
                     status = "FAILED"
                 else:
-                    status = "OK"
+                    # For 2xx and 3xx, also check response body for application-level errors
+                    try:
+                        # Extract JSON part from body (remove email prefix if present)
+                        json_start = body.find("{")
+                        if json_start != -1:
+                            json_body = body[json_start:]
+                            body_dict = json.loads(json_body)
+                        else:
+                            body_dict = json.loads(body)
 
-                # Format the line
-                line = f"{time_str} - {desc} ({duration:.1f}s) [{status}]"
+                        # Check for explicit failure indicators in the response structure
+                        if body_dict.get("success") is False or "error" in body_dict:
+                            status = "FAILED"
+                        else:
+                            status = "OK"
+                    except:
+                        # If we can't parse JSON, fall back to simple text check
+                        # but only in the first 100 chars to avoid false positives from content
+                        body_preview = body[:100].lower()
+                        if '"success":false' in body_preview or '"error":' in body_preview:
+                            status = "FAILED"
+                        else:
+                            status = "OK"
+
+                # Check if we have user agent info from the request
+                user_agent_info = ""
+                if endpoint in request_map and "user_agent" in request_map[endpoint]:
+                    user_agent = request_map[endpoint]["user_agent"]
+                    # Shorten common user agents for readability
+                    if "okhttp" in user_agent.lower():
+                        user_agent_info = " [Android]"
+                    elif "cfnetwork" in user_agent.lower() or "darwin" in user_agent.lower():
+                        user_agent_info = " [iOS]"
+                    elif user_agent:
+                        # Show first 20 chars of unknown user agents
+                        user_agent_info = (
+                            f" [UA: {user_agent[:20]}...]" if len(user_agent) > 20 else f" [UA: {user_agent}]"
+                        )
+
+                # Format the line with status code
+                status_code = activity.get("status_code", "")
+                if status_code:
+                    line = f"{time_str} - {desc}{user_agent_info} ({duration:.1f}s) [{status_code} {status}]"
+                else:
+                    line = f"{time_str} - {desc}{user_agent_info} ({duration:.1f}s) [{status}]"
 
                 # Add truncated response if it's an error
                 if status == "FAILED":

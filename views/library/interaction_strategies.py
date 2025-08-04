@@ -119,3 +119,13 @@ UNABLE_TO_DOWNLOAD_DIALOG_BUTTONS = [
     (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/button1']"),
     (AppiumBy.ID, "android:id/button1"),  # TRY AGAIN button
 ]
+
+# Filter button strategies
+FILTER_BUTTON_STRATEGIES = [
+    (AppiumBy.ID, "com.amazon.kindle:id/refine_menu_button_container"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.Button[@resource-id='com.amazon.kindle:id/refine_menu_button_container']",
+    ),
+    (AppiumBy.XPATH, "//android.widget.Button[@content-desc='Filter ']"),
+]
