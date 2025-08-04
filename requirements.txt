@@ -21,3 +21,4 @@ psycopg2-binary==2.9.10
 alembic==1.14.0
 user-agents==2.2.0
 psutil==7.0.0
+Flask-Admin==1.6.1

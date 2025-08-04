@@ -22,6 +22,7 @@ from selenium.common import exceptions as selenium_exceptions
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
+from database.connection import db_connection
 from handlers.navigation_handler import NavigationResourceHandler
 from handlers.test_fixtures_handler import TestFixturesHandler
 from server.core.automation_server import AutomationServer
@@ -79,6 +80,19 @@ IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
 app = Flask(__name__)
 api = Api(app)
+
+# Initialize database connection
+db_connection.initialize()
+
+# Initialize Flask-Admin if in development mode
+if IS_DEVELOPMENT and os.getenv("ENABLE_ADMIN", "true").lower() == "true":
+    from sqlalchemy.orm import scoped_session
+
+    from server.admin import init_admin
+
+    # Create a scoped session for Flask-Admin
+    db_session = scoped_session(db_connection.SessionLocal)
+    admin = init_admin(app, db_session)
 
 # Initialize Sentry
 SENTRY_DSN = os.getenv("SENTRY_DSN")

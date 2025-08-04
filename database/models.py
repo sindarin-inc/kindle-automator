@@ -228,3 +228,25 @@ class StaffToken(Base):
 
     def __repr__(self) -> str:
         return f"<StaffToken(id={self.id}, token={self.token[:8]}..., revoked={self.revoked})>"
+
+
+class EmulatorShutdownFailure(Base):
+    """Tracks emulator shutdown failures, particularly snapshot/placemark sync failures."""
+
+    __tablename__ = "emulator_shutdown_failures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    failure_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    stdout: Mapped[Optional[str]] = mapped_column(Text)
+    stderr: Mapped[Optional[str]] = mapped_column(Text)
+    emulator_id: Mapped[Optional[str]] = mapped_column(String(50))
+    snapshot_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    placemark_sync_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<EmulatorShutdownFailure(id={self.id}, user_email={self.user_email}, failure_type={self.failure_type})>"
