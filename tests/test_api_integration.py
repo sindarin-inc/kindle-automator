@@ -298,6 +298,51 @@ class TestKindleAPIIntegration:
             else:
                 pytest.fail(f"Streaming mode failed: {e}")
 
+    @pytest.mark.timeout(30)
+    def test_auth_check(self):
+        """Test /kindle/auth-check endpoint with known and unknown users."""
+        # Test 1: Check known user (sam@solreader.com)
+        print(f"\n[TEST] Testing auth-check for known user: {TEST_USER_EMAIL}")
+        auth_response = self._make_request("kindle/auth-check")
+        assert (
+            auth_response.status_code == 200
+        ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
+
+        auth_data = auth_response.json()
+        assert "authenticated" in auth_data, f"Auth response missing authenticated field: {auth_data}"
+        assert "status" in auth_data, f"Auth response missing status field: {auth_data}"
+        assert "email" in auth_data, f"Auth response missing email field: {auth_data}"
+        assert auth_data["email"] == TEST_USER_EMAIL, f"Wrong email in response: {auth_data['email']}"
+
+        # Known user should be authenticated
+        print(f"[TEST] Auth check result: {auth_data['status']} for {auth_data['email']}")
+        if auth_data.get("auth_date"):
+            print(f"[TEST] Authenticated at: {auth_data['auth_date']}")
+
+        # Test 2: Check unknown user (no-auth@solreader.com)
+        unknown_email = "no-auth@solreader.com"
+        print(f"\n[TEST] Testing auth-check for unknown user: {unknown_email}")
+
+        # Override the default params for this request
+        unknown_params = {"user_email": unknown_email, "staging": STAGING}
+        auth_response = self._make_request("kindle/auth-check", params=unknown_params)
+        assert (
+            auth_response.status_code == 200
+        ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
+
+        auth_data = auth_response.json()
+        assert "authenticated" in auth_data, f"Auth response missing authenticated field: {auth_data}"
+        assert "status" in auth_data, f"Auth response missing status field: {auth_data}"
+        assert "email" in auth_data, f"Auth response missing email field: {auth_data}"
+        assert auth_data["email"] == unknown_email, f"Wrong email in response: {auth_data['email']}"
+
+        # Unknown user should not be authenticated
+        assert auth_data["authenticated"] is False, f"Unknown user should not be authenticated: {auth_data}"
+        assert (
+            auth_data["status"] == "never_authenticated"
+        ), f"Unknown user should have never_authenticated status: {auth_data['status']}"
+        print(f"[TEST] Auth check result: {auth_data['status']} for {auth_data['email']} (as expected)")
+
     @pytest.mark.timeout(120)
     def test_open_random_book(self):
         """Test /kindle/open-random-book endpoint."""
