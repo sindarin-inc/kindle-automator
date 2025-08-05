@@ -12,9 +12,26 @@ sys.path.insert(0, str(project_root))
 
 from dotenv import load_dotenv
 
-# Load environment variables BEFORE importing database modules
-env_path = project_root / ".env"
-load_dotenv(env_path)
+# Load environment variables based on DOTENV_FILE or ENVIRONMENT
+if os.getenv("DOTENV_FILE"):
+    env_path = project_root / os.getenv("DOTENV_FILE")
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+elif os.getenv("ENVIRONMENT"):
+    environment = os.getenv("ENVIRONMENT").lower()
+    if environment == "prod":
+        env_path = project_root / ".env.prod"
+    elif environment == "staging":
+        env_path = project_root / ".env.staging"
+    else:
+        env_path = project_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+else:
+    # Default to .env if nothing is set
+    env_path = project_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
 
 # Now import database modules after environment is loaded
 from database.connection import DatabaseConnection

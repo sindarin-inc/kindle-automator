@@ -8,11 +8,29 @@ from datetime import datetime, timezone
 # Add parent directory to path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Load environment variables if DOTENV_FILE is set
+# Load environment variables based on DOTENV_FILE or ENVIRONMENT
 from dotenv import load_dotenv
 
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Check for DOTENV_FILE first, then ENVIRONMENT
 if os.getenv("DOTENV_FILE"):
-    env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.getenv("DOTENV_FILE"))
+    env_file = os.path.join(base_dir, os.getenv("DOTENV_FILE"))
+    if os.path.exists(env_file):
+        load_dotenv(env_file, override=True)
+elif os.getenv("ENVIRONMENT"):
+    environment = os.getenv("ENVIRONMENT").lower()
+    if environment == "prod":
+        env_file = os.path.join(base_dir, ".env.prod")
+    elif environment == "staging":
+        env_file = os.path.join(base_dir, ".env.staging")
+    else:
+        env_file = os.path.join(base_dir, ".env")
+    if os.path.exists(env_file):
+        load_dotenv(env_file, override=True)
+else:
+    # Default to .env if nothing is set
+    env_file = os.path.join(base_dir, ".env")
     if os.path.exists(env_file):
         load_dotenv(env_file, override=True)
 

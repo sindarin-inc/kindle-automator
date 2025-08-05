@@ -1,7 +1,17 @@
 # Database management commands for Kindle Automator
 
-# Determine environment file based on target
-ifdef STAGING
+# Determine environment file based on ENVIRONMENT or DOTENV_FILE
+ifdef DOTENV_FILE
+	DB_ENV_FILE := $(DOTENV_FILE)
+else ifdef ENVIRONMENT
+	ifeq ($(ENVIRONMENT),prod)
+		DB_ENV_FILE := .env.prod
+	else ifeq ($(ENVIRONMENT),staging)
+		DB_ENV_FILE := .env.staging
+	else
+		DB_ENV_FILE := .env
+	endif
+else ifdef STAGING
 	DB_ENV_FILE := .env.staging
 else ifdef PROD
 	DB_ENV_FILE := .env.prod
@@ -9,8 +19,8 @@ else
 	DB_ENV_FILE := .env
 endif
 
-# Use uv run dotenv run for Python execution (loads .env automatically)
-PYTHON := uv run dotenv run python
+# Use uv run python (scripts will handle env loading)
+PYTHON := DOTENV_FILE=$(DB_ENV_FILE) uv run python
 
 # Setup database privileges (requires POSTGRES_DOADMIN_DATABASE_URL)
 .PHONY: db-setup-privileges
@@ -28,13 +38,13 @@ db-init:
 .PHONY: db-migrate
 db-migrate:
 	@echo "Running database migrations..."
-	@DOTENV_FILE=$(DB_ENV_FILE) uv run dotenv run python -m alembic upgrade head
+	@DOTENV_FILE=$(DB_ENV_FILE) uv run python -m alembic upgrade head
 
 # Migrate data from users.json to PostgreSQL
 .PHONY: db-import
 db-import:
 	@echo "Migrating users.json to PostgreSQL..."
-	@DOTENV_FILE=$(DB_ENV_FILE) uv run dotenv run python scripts/migrate_json_to_db.py
+	@DOTENV_FILE=$(DB_ENV_FILE) uv run python scripts/migrate_json_to_db.py
 
 # Full database setup: privileges (if needed), init, migrate, import
 .PHONY: db-setup

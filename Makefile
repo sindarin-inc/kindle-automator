@@ -112,6 +112,8 @@ db-export:
 	@echo "Exporting users from database to JSON format..."
 	@uv run python scripts/export_users_to_json.py
 
+# db-stats and db-data are defined in Makefile.database
+
 # Test multi-user operations
 test-multi-user:
 	@echo "Running multi-user test..."
