@@ -424,3 +424,66 @@ class VNCInstanceManager:
 
         ports = calculate_emulator_ports(instance_id)
         return ports["appium_port"]
+
+    def audit_and_cleanup_stale_instances(self):
+        """
+        Audit VNC instances and clean up any that don't have running emulators.
+        This ensures the VNC instance table stays accurate and doesn't hold stale entries.
+        """
+        logger.debug("Starting VNC instance audit to clean up stale entries")
+
+        # Get all instances for this server
+        all_instances = self.repository.get_all_instances()
+
+        # Get list of actually running emulators
+        running_emulators = []
+        try:
+            result = subprocess.run(
+                [f"{ANDROID_HOME}/platform-tools/adb", "devices"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                # Parse adb devices output
+                for line in result.stdout.strip().split("\n")[1:]:  # Skip header
+                    if "\t" in line:
+                        device_id = line.split("\t")[0]
+                        if device_id.startswith("emulator-"):
+                            running_emulators.append(device_id)
+
+            logger.info(f"Found {len(running_emulators)} running emulators: {running_emulators}")
+        except Exception as e:
+            logger.error(f"Error getting running emulators: {e}")
+            return
+
+        # Check each instance with an emulator_id
+        cleaned_count = 0
+        for instance in all_instances:
+            if instance.emulator_id and instance.emulator_id not in running_emulators:
+                logger.warning(
+                    f"Clearing stale emulator_id {instance.emulator_id} from VNC instance {instance.id} "
+                    f"(display :{instance.display}, port {instance.emulator_port}, profile {instance.assigned_profile})"
+                )
+
+                # Clear the emulator_id since it's not actually running
+                self.repository.update_emulator_id(instance.assigned_profile, None)
+                cleaned_count += 1
+
+                # If this instance has no profile assigned, it's truly orphaned
+                if not instance.assigned_profile:
+                    logger.info(
+                        f"VNC instance {instance.id} has no profile and no running emulator - available for use"
+                    )
+
+        # Also check for emulator IDs in the table that shouldn't be there
+        stale_count = self.repository.clear_stale_emulator_ids(running_emulators)
+        if stale_count > 0:
+            logger.info(f"Cleared {stale_count} additional stale emulator IDs from VNC instances")
+            cleaned_count += stale_count
+
+        if cleaned_count > 0:
+            logger.info(f"VNC instance audit complete: cleaned {cleaned_count} stale entries")
+        else:
+            logger.debug("VNC instance audit complete: no stale entries found")
