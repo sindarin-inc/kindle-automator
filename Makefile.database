@@ -9,8 +9,8 @@ else
 	DB_ENV_FILE := .env
 endif
 
-# Use uv run for Python execution
-PYTHON := uv run python
+# Use uv run dotenv run for Python execution (loads .env automatically)
+PYTHON := uv run dotenv run python
 
 # Setup database privileges (requires POSTGRES_DOADMIN_DATABASE_URL)
 .PHONY: db-setup-privileges
@@ -28,15 +28,13 @@ db-init:
 .PHONY: db-migrate
 db-migrate:
 	@echo "Running database migrations..."
-	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
-		$(PYTHON) -m alembic upgrade head
+	@DOTENV_FILE=$(DB_ENV_FILE) uv run dotenv run python -m alembic upgrade head
 
 # Migrate data from users.json to PostgreSQL
 .PHONY: db-import
 db-import:
 	@echo "Migrating users.json to PostgreSQL..."
-	@DATABASE_URL=$$(grep -E '^DATABASE_URL=' $(DB_ENV_FILE) | cut -d= -f2- | tr -d '"') \
-		$(PYTHON) scripts/migrate_json_to_db.py
+	@DOTENV_FILE=$(DB_ENV_FILE) uv run dotenv run python scripts/migrate_json_to_db.py
 
 # Full database setup: privileges (if needed), init, migrate, import
 .PHONY: db-setup

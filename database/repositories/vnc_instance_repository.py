@@ -1,6 +1,7 @@
 """Repository for VNC instance database operations."""
 
 import logging
+import socket
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -18,38 +19,58 @@ class VNCInstanceRepository:
 
     def __init__(self):
         """Initialize the repository."""
-        pass
+        self.server_name = socket.gethostname()
 
     def get_all_instances(self) -> List[VNCInstance]:
-        """Get all VNC instances."""
+        """Get all VNC instances for the current server."""
         with db_connection.get_session() as session:
-            stmt = select(VNCInstance).order_by(VNCInstance.id)
+            stmt = (
+                select(VNCInstance)
+                .where(VNCInstance.server_name == self.server_name)
+                .order_by(VNCInstance.id)
+            )
             return list(session.scalars(stmt).all())
 
     def get_instance_by_id(self, instance_id: int) -> Optional[VNCInstance]:
-        """Get a VNC instance by ID."""
+        """Get a VNC instance by ID on the current server."""
         with db_connection.get_session() as session:
-            stmt = select(VNCInstance).where(VNCInstance.id == instance_id)
+            stmt = select(VNCInstance).where(
+                and_(VNCInstance.id == instance_id, VNCInstance.server_name == self.server_name)
+            )
             return session.scalar(stmt)
 
     def get_instance_by_profile(self, email: str) -> Optional[VNCInstance]:
-        """Get the VNC instance assigned to a specific profile."""
+        """Get the VNC instance assigned to a specific profile on the current server."""
         with db_connection.get_session() as session:
-            stmt = select(VNCInstance).where(VNCInstance.assigned_profile == email)
+            stmt = select(VNCInstance).where(
+                and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+            )
             return session.scalar(stmt)
 
     def get_assigned_instances(self) -> List[VNCInstance]:
-        """Get all VNC instances that are assigned to profiles."""
+        """Get all VNC instances that are assigned to profiles on the current server."""
         with db_connection.get_session() as session:
             stmt = (
-                select(VNCInstance).where(VNCInstance.assigned_profile.isnot(None)).order_by(VNCInstance.id)
+                select(VNCInstance)
+                .where(
+                    and_(
+                        VNCInstance.assigned_profile.isnot(None), VNCInstance.server_name == self.server_name
+                    )
+                )
+                .order_by(VNCInstance.id)
             )
             return list(session.scalars(stmt).all())
 
     def get_unassigned_instances(self) -> List[VNCInstance]:
-        """Get all VNC instances that are not assigned to any profile."""
+        """Get all VNC instances that are not assigned to any profile on the current server."""
         with db_connection.get_session() as session:
-            stmt = select(VNCInstance).where(VNCInstance.assigned_profile.is_(None)).order_by(VNCInstance.id)
+            stmt = (
+                select(VNCInstance)
+                .where(
+                    and_(VNCInstance.assigned_profile.is_(None), VNCInstance.server_name == self.server_name)
+                )
+                .order_by(VNCInstance.id)
+            )
             return list(session.scalars(stmt).all())
 
     def create_instance(
@@ -63,9 +84,10 @@ class VNCInstanceRepository:
         appium_mjpeg_server_port: int,
         assigned_profile: Optional[str] = None,
     ) -> VNCInstance:
-        """Create a new VNC instance."""
+        """Create a new VNC instance for the current server."""
         with db_connection.get_session() as session:
             instance = VNCInstance(
+                server_name=self.server_name,
                 display=display,
                 vnc_port=vnc_port,
                 appium_port=appium_port,
@@ -82,11 +104,17 @@ class VNCInstanceRepository:
             return instance
 
     def assign_instance_to_profile(self, instance_id: int, email: str) -> bool:
-        """Assign a VNC instance to a profile."""
+        """Assign a VNC instance to a profile on the current server."""
         with db_connection.get_session() as session:
             stmt = (
                 update(VNCInstance)
-                .where(and_(VNCInstance.id == instance_id, VNCInstance.assigned_profile.is_(None)))
+                .where(
+                    and_(
+                        VNCInstance.id == instance_id,
+                        VNCInstance.assigned_profile.is_(None),
+                        VNCInstance.server_name == self.server_name,
+                    )
+                )
                 .values(assigned_profile=email, updated_at=datetime.now(timezone.utc))
             )
             result = session.execute(stmt)
@@ -94,11 +122,13 @@ class VNCInstanceRepository:
             return result.rowcount > 0
 
     def release_instance_from_profile(self, email: str) -> bool:
-        """Release the VNC instance assigned to a profile."""
+        """Release the VNC instance assigned to a profile on the current server."""
         with db_connection.get_session() as session:
             stmt = (
                 update(VNCInstance)
-                .where(VNCInstance.assigned_profile == email)
+                .where(
+                    and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+                )
                 .values(
                     assigned_profile=None,
                     emulator_id=None,
@@ -113,11 +143,13 @@ class VNCInstanceRepository:
             return result.rowcount > 0
 
     def update_emulator_id(self, email: str, emulator_id: Optional[str]) -> bool:
-        """Update the emulator ID for a profile's assigned instance."""
+        """Update the emulator ID for a profile's assigned instance on the current server."""
         with db_connection.get_session() as session:
             stmt = (
                 update(VNCInstance)
-                .where(VNCInstance.assigned_profile == email)
+                .where(
+                    and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+                )
                 .values(emulator_id=emulator_id, updated_at=datetime.now(timezone.utc))
             )
             result = session.execute(stmt)
@@ -131,7 +163,7 @@ class VNCInstanceRepository:
         appium_pid: Optional[int] = None,
         appium_last_health_check: Optional[datetime] = None,
     ) -> bool:
-        """Update Appium status for a profile's assigned instance."""
+        """Update Appium status for a profile's assigned instance on the current server."""
         with db_connection.get_session() as session:
             values = {
                 "appium_running": appium_running,
@@ -141,17 +173,23 @@ class VNCInstanceRepository:
             if appium_last_health_check is not None:
                 values["appium_last_health_check"] = appium_last_health_check
 
-            stmt = update(VNCInstance).where(VNCInstance.assigned_profile == email).values(**values)
+            stmt = (
+                update(VNCInstance)
+                .where(
+                    and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+                )
+                .values(**values)
+            )
             result = session.execute(stmt)
             session.commit()
             return result.rowcount > 0
 
     def reset_all_appium_states(self) -> int:
-        """Reset all appium_running states to false. Returns count of reset instances."""
+        """Reset all appium_running states to false on the current server. Returns count of reset instances."""
         with db_connection.get_session() as session:
             stmt = (
                 update(VNCInstance)
-                .where(VNCInstance.appium_running == True)
+                .where(and_(VNCInstance.appium_running == True, VNCInstance.server_name == self.server_name))
                 .values(
                     appium_running=False,
                     appium_pid=None,
@@ -163,17 +201,18 @@ class VNCInstanceRepository:
             return result.rowcount
 
     def get_next_available_id(self) -> int:
-        """Get the next available instance ID."""
+        """Get the next available instance ID for the current server."""
         with db_connection.get_session() as session:
-            stmt = select(func.max(VNCInstance.id))
-            max_id = session.scalar(stmt)
-            return (max_id or 0) + 1
+            stmt = select(func.max(VNCInstance.display)).where(VNCInstance.server_name == self.server_name)
+            max_display = session.scalar(stmt)
+            return (max_display or 0) + 1
 
     def bulk_create_instances(self, instances_data: List[dict]) -> List[VNCInstance]:
-        """Bulk create multiple VNC instances."""
+        """Bulk create multiple VNC instances for the current server."""
         with db_connection.get_session() as session:
             instances = []
             for data in instances_data:
+                data["server_name"] = self.server_name
                 instance = VNCInstance(**data)
                 instances.append(instance)
                 session.add(instance)
@@ -183,7 +222,7 @@ class VNCInstanceRepository:
             return instances
 
     def clear_stale_emulator_ids(self, active_emulator_ids: List[str]) -> int:
-        """Clear emulator IDs that are not in the active list."""
+        """Clear emulator IDs that are not in the active list on the current server."""
         with db_connection.get_session() as session:
             stmt = (
                 update(VNCInstance)
@@ -191,6 +230,7 @@ class VNCInstanceRepository:
                     and_(
                         VNCInstance.emulator_id.isnot(None),
                         VNCInstance.emulator_id.notin_(active_emulator_ids) if active_emulator_ids else True,
+                        VNCInstance.server_name == self.server_name,
                     )
                 )
                 .values(emulator_id=None, updated_at=datetime.now(timezone.utc))
@@ -200,22 +240,24 @@ class VNCInstanceRepository:
             return result.rowcount
 
     def get_instance_by_emulator_id(self, emulator_id: str) -> Optional[VNCInstance]:
-        """Get a VNC instance by emulator ID."""
+        """Get a VNC instance by emulator ID on the current server."""
         with db_connection.get_session() as session:
-            stmt = select(VNCInstance).where(VNCInstance.emulator_id == emulator_id)
+            stmt = select(VNCInstance).where(
+                and_(VNCInstance.emulator_id == emulator_id, VNCInstance.server_name == self.server_name)
+            )
             return session.scalar(stmt)
 
     def count_instances(self) -> int:
-        """Get total count of VNC instances."""
+        """Get total count of VNC instances on the current server."""
         with db_connection.get_session() as session:
-            stmt = select(func.count(VNCInstance.id))
+            stmt = select(func.count(VNCInstance.id)).where(VNCInstance.server_name == self.server_name)
             return session.scalar(stmt) or 0
 
     def delete_instance(self, instance_id: int) -> bool:
-        """Delete a VNC instance by ID."""
+        """Delete a VNC instance by ID on the current server."""
         with db_connection.get_session() as session:
             instance = session.get(VNCInstance, instance_id)
-            if instance:
+            if instance and instance.server_name == self.server_name:
                 session.delete(instance)
                 session.commit()
                 return True

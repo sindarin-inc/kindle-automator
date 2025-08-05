@@ -176,10 +176,11 @@ class VNCInstance(Base):
     __tablename__ = "vnc_instances"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    display: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
-    vnc_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
-    appium_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
-    emulator_port: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    server_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    display: Mapped[int] = mapped_column(Integer, nullable=False)
+    vnc_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    appium_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    emulator_port: Mapped[int] = mapped_column(Integer, nullable=False)
     emulator_id: Mapped[Optional[str]] = mapped_column(String(50))
     assigned_profile: Mapped[Optional[str]] = mapped_column(
         String(255), ForeignKey("users.email", ondelete="SET NULL"), index=True
@@ -203,13 +204,25 @@ class VNCInstance(Base):
     # Relationship
     user: Mapped[Optional["User"]] = relationship(back_populates="vnc_instance")
 
-    # Index for quick lookup by assigned profile
-    __table_args__ = (Index("idx_vnc_assigned_profile", "assigned_profile"),)
+    # Table constraints and indexes
+    __table_args__ = (
+        UniqueConstraint("server_name", "display", name="uq_vnc_server_display"),
+        UniqueConstraint("server_name", "vnc_port", name="uq_vnc_server_vnc_port"),
+        UniqueConstraint("server_name", "appium_port", name="uq_vnc_server_appium_port"),
+        UniqueConstraint("server_name", "emulator_port", name="uq_vnc_server_emulator_port"),
+        UniqueConstraint("server_name", "appium_system_port", name="uq_vnc_server_appium_system_port"),
+        UniqueConstraint(
+            "server_name", "appium_chromedriver_port", name="uq_vnc_server_appium_chromedriver_port"
+        ),
+        UniqueConstraint(
+            "server_name", "appium_mjpeg_server_port", name="uq_vnc_server_appium_mjpeg_server_port"
+        ),
+        Index("idx_vnc_assigned_profile", "assigned_profile"),
+        Index("idx_vnc_server_name", "server_name"),
+    )
 
     def __repr__(self) -> str:
-        return (
-            f"<VNCInstance(id={self.id}, display={self.display}, assigned_profile={self.assigned_profile})>"
-        )
+        return f"<VNCInstance(id={self.id}, server_name={self.server_name}, display={self.display}, assigned_profile={self.assigned_profile})>"
 
 
 class StaffToken(Base):
