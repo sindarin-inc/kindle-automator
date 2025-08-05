@@ -153,8 +153,8 @@ class ColdStorageManager:
 
                 logger.info(f"Successfully stopped emulator {emulator_id} for {email}")
 
-                # Clear the VNC instance mapping for this email
-                vnc_manager.clear_emulator_id_for_profile(email)
+                # Release the entire VNC instance since AVD is going to cold storage
+                vnc_manager.release_instance_from_profile(email)
 
         avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
         ini_path = os.path.join(self.avd_base_path, f"{avd_name}.ini")

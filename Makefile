@@ -103,6 +103,18 @@ firewall:
 # Include database commands
 include Makefile.database
 
+# Display VNC instances table
+db-vnc:
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) uv run python scripts/show_vnc_table.py
+
+# Display VNC instances table from staging
+db-vnc-staging:
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) uv run python scripts/show_vnc_table.py
+
+# Display VNC instances table from production  
+db-vnc-prod:
+	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/show_vnc_table.py
+
 # Export database to JSON format
 db-export:
 	@echo "Exporting users from database to JSON format..."

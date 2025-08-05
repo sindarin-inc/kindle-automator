@@ -257,12 +257,16 @@ class EmulatorShutdownManager:
                 if port:
                     self._force_kill_emulator_process(port)
                     summary["emulator_stopped"] = True
-            vnc_manager.clear_emulator_id_for_profile(email)
-        # Release VNC regardless of stop result.
-        with contextlib.suppress(Exception):
+
+        try:
             if vnc_manager.release_instance_from_profile(email):
                 summary["vnc_stopped"] = True
                 summary["websocket_stopped"] = True
+                logger.info(f"Released VNC instance for {email}")
+            else:
+                logger.warning(f"No VNC instance found to release for {email}")
+        except Exception as e:
+            logger.error(f"Error releasing VNC instance for {email}: {e}", exc_info=True)
         return summary
 
     # -------------------- UI preparation + snapshot ----------------- #
@@ -518,9 +522,6 @@ class EmulatorShutdownManager:
         finally:
             stopped = launcher.stop_emulator(email)
             summary["emulator_stopped"] = stopped
-            if stopped:
-                with contextlib.suppress(Exception):
-                    VNCInstanceManager.get_instance().clear_emulator_id_for_profile(email)
         return display_num
 
     # ---------------------- resource cleanup ----------------------- #

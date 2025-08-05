@@ -199,8 +199,7 @@ class EmulatorManager:
                     logger.info(f"Emulator {emulator_id} is still running for {email}")
                     return True
                 else:
-                    logger.info(f"Emulator {emulator_id} is no longer running, clearing from VNC instance")
-                    vnc_manager.set_emulator_id(email, None)
+                    logger.info(f"Emulator {emulator_id} is no longer running, will restart")
 
             # First check for stale cache entries and clean them before launching
             avd_name = self.emulator_launcher._extract_avd_name_from_email(email)

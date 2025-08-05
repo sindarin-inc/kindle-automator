@@ -278,14 +278,18 @@ class VNCInstanceManager:
     def set_emulator_id(self, email: str, emulator_id: str) -> bool:
         """
         Set the emulator ID for a profile's assigned instance.
+        Should only be called when an emulator successfully starts.
 
         Args:
             email: Email address of the profile
-            emulator_id: The emulator ID to set
+            emulator_id: The emulator ID to set (e.g., 'emulator-5554')
 
         Returns:
             bool: True if successful, False otherwise
         """
+        if not emulator_id or not emulator_id.startswith("emulator-"):
+            logger.error(f"Invalid emulator_id format: {emulator_id}")
+            return False
         return self.repository.update_emulator_id(email, emulator_id)
 
     def mark_running_for_deployment(self, email: str, should_restart: bool = True) -> bool:
@@ -378,67 +382,6 @@ class VNCInstanceManager:
         """
         instances = self.repository.get_assigned_instances()
         return [self._instance_to_dict(inst) for inst in instances]
-
-    def clear_emulator_id_for_profile(self, email: str) -> bool:
-        """
-        Clear the emulator_id for a specific profile's VNC instance.
-
-        Args:
-            email: Email address of the profile
-
-        Returns:
-            bool: True if cleared successfully, False otherwise
-        """
-        instance = self.repository.get_instance_by_profile(email)
-        if instance and instance.emulator_id:
-            logger.info(f"Clearing emulator_id {instance.emulator_id} for profile {email}")
-            return self.repository.update_emulator_id(email, None)
-        return False
-
-    def audit_and_cleanup_stale_instances(self) -> None:
-        """Audit assigned VNC instances and clean up any that aren't actually running."""
-        assigned_instances = self.repository.get_assigned_instances()
-        if assigned_instances:
-            logger.info(f"Auditing {len(assigned_instances)} assigned VNC instances")
-
-            # Get list of active emulator IDs
-            try:
-                result = subprocess.run(
-                    [f"{ANDROID_HOME}/platform-tools/adb", "devices"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if result.returncode == 0:
-                    # Parse active emulator IDs from adb output
-                    lines = result.stdout.strip().split("\n")[1:]  # Skip header
-                    active_emulator_ids = []
-                    for line in lines:
-                        if line.strip():
-                            device_id = line.split()[0]
-                            active_emulator_ids.append(device_id)
-
-                    # Clear stale emulator IDs
-                    cleared = self.repository.clear_stale_emulator_ids(active_emulator_ids)
-                    if cleared > 0:
-                        logger.info(f"Cleared {cleared} stale emulator IDs")
-
-                    # Release instances that have assigned_profile but no emulator_id
-                    stale_count = 0
-                    for instance in assigned_instances:
-                        if instance.assigned_profile and not instance.emulator_id:
-                            logger.info(
-                                f"Releasing stale VNC instance for {instance.assigned_profile} "
-                                f"(no emulator_id found)"
-                            )
-                            if self.repository.release_instance_from_profile(instance.assigned_profile):
-                                stale_count += 1
-
-                    if stale_count > 0:
-                        logger.info(f"Released {stale_count} stale VNC instance assignments")
-
-            except Exception as e:
-                logger.error(f"Error auditing emulator instances: {e}", exc_info=True)
 
     def _instance_to_dict(self, instance) -> Dict:
         """Convert a VNCInstance model to a dictionary matching the old JSON format."""
