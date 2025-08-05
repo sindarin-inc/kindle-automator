@@ -20,6 +20,9 @@ class VNCInstanceRepository:
     def __init__(self):
         """Initialize the repository."""
         self.server_name = socket.gethostname()
+        logger.info(
+            f"VncInstanceRepository initialized with server_name='{self.server_name}' from socket.gethostname()"
+        )
 
     def get_all_instances(self) -> List[VNCInstance]:
         """Get all VNC instances for the current server."""
@@ -85,6 +88,7 @@ class VNCInstanceRepository:
         assigned_profile: Optional[str] = None,
     ) -> VNCInstance:
         """Create a new VNC instance for the current server."""
+        logger.info(f"Creating VNC instance with server_name='{self.server_name}' for display={display}")
         with db_connection.get_session() as session:
             instance = VNCInstance(
                 server_name=self.server_name,
@@ -209,10 +213,16 @@ class VNCInstanceRepository:
 
     def bulk_create_instances(self, instances_data: List[dict]) -> List[VNCInstance]:
         """Bulk create multiple VNC instances for the current server."""
+        logger.info(
+            f"Bulk creating {len(instances_data)} VNC instances with server_name='{self.server_name}'"
+        )
         with db_connection.get_session() as session:
             instances = []
             for data in instances_data:
                 data["server_name"] = self.server_name
+                logger.debug(
+                    f"Setting server_name='{self.server_name}' for display={data.get('display', 'unknown')}"
+                )
                 instance = VNCInstance(**data)
                 instances.append(instance)
                 session.add(instance)
