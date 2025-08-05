@@ -13,14 +13,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from database.models import Base
 
-# Load environment variables based on ENVIRONMENT setting
-environment = os.getenv("ENVIRONMENT", "dev").lower()
-if environment == "prod":
-    env_file = os.path.join(os.path.dirname(__file__), "../../.env.prod")
-elif environment == "staging":
-    env_file = os.path.join(os.path.dirname(__file__), "../../.env.staging")
+# Load environment variables based on DOTENV_FILE or ENVIRONMENT setting
+if os.getenv("DOTENV_FILE"):
+    env_file = os.path.join(os.path.dirname(__file__), "../..", os.getenv("DOTENV_FILE"))
 else:
-    env_file = os.path.join(os.path.dirname(__file__), "../../.env")
+    environment = os.getenv("ENVIRONMENT", "dev").lower()
+    if environment == "prod":
+        env_file = os.path.join(os.path.dirname(__file__), "../../.env.prod")
+    elif environment == "staging":
+        env_file = os.path.join(os.path.dirname(__file__), "../../.env.staging")
+    else:
+        env_file = os.path.join(os.path.dirname(__file__), "../../.env")
 
 if os.path.exists(env_file):
     load_dotenv(env_file, override=True)

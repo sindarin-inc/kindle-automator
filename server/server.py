@@ -64,7 +64,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
 
 # Load .env files with secrets
-if ENVIRONMENT.lower() == "prod":
+if os.getenv("DOTENV_FILE"):
+    env_file = os.path.join(BASE_DIR, os.getenv("DOTENV_FILE"))
+    logger.info(f"Loading environment variables from {env_file} (via DOTENV_FILE)")
+    load_dotenv(env_file, override=True)
+elif ENVIRONMENT.lower() == "prod":
     logger.info(f"Loading prod environment variables from {os.path.join(BASE_DIR, '.env.prod')}")
     load_dotenv(os.path.join(BASE_DIR, ".env.prod"), override=True)
 elif ENVIRONMENT.lower() == "staging":

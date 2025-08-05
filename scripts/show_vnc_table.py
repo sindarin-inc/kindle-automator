@@ -8,6 +8,14 @@ from datetime import datetime, timezone
 # Add parent directory to path to import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Load environment variables if DOTENV_FILE is set
+from dotenv import load_dotenv
+
+if os.getenv("DOTENV_FILE"):
+    env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.getenv("DOTENV_FILE"))
+    if os.path.exists(env_file):
+        load_dotenv(env_file, override=True)
+
 from database.connection import db_connection
 from database.models import VNCInstance
 

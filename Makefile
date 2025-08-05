@@ -103,32 +103,14 @@ firewall:
 # Include database commands
 include Makefile.database
 
-# Display VNC instances table
+# Display VNC instances table (auto-detects environment from ENVIRONMENT or DOTENV_FILE)
 db-vnc:
-	@uv run dotenv run python scripts/show_vnc_table.py
+	@uv run python scripts/show_vnc_table.py
 
-# Display VNC instances table from staging
-db-vnc-staging:
-	@DOTENV_FILE=.env.staging uv run dotenv run python scripts/show_vnc_table.py
-
-# Display VNC instances table from production  
-db-vnc-prod:
-	@DOTENV_FILE=.env.prod uv run dotenv run python scripts/show_vnc_table.py
-
-# Export database to JSON format
+# Export database to JSON format (auto-detects environment from ENVIRONMENT or DOTENV_FILE)
 db-export:
 	@echo "Exporting users from database to JSON format..."
-	@uv run dotenv run python scripts/export_users_to_json.py
-
-# Export from staging database
-db-export-staging:
-	@echo "Exporting users from staging database to JSON format..."
-	@DOTENV_FILE=.env.staging uv run dotenv run python scripts/export_users_to_json.py
-
-# Export from production database
-db-export-prod:
-	@echo "Exporting users from production database to JSON format..."
-	@DOTENV_FILE=.env.prod uv run dotenv run python scripts/export_users_to_json.py
+	@uv run python scripts/export_users_to_json.py
 
 # Test multi-user operations
 test-multi-user:
