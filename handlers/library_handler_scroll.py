@@ -18,7 +18,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
-from server.sindarin_context import sindarin_context
 from server.utils.ansi_colors import BRIGHT_CYAN, BRIGHT_GREEN, BRIGHT_YELLOW, RESET
 from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
@@ -53,9 +52,9 @@ class LibraryHandlerScroll:
         filter_book_count = None
         user_email = None
         try:
-            with sindarin_context() as sc:
-                filter_book_count = sc.db.get_value("filter_book_count")
-                user_email = sc.sindarin_email
+            profile_manager = self.driver.automator.profile_manager
+            filter_book_count = profile_manager.get_style_setting("filter_book_count")
+            user_email = profile_manager.sindarin_email
         except Exception:
             pass  # Silently ignore if we can't get the filter count or email
 
