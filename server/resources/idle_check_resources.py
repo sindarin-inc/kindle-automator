@@ -169,8 +169,4 @@ class IdleCheckResource(Resource):
 
             logger.info(f"Idle check complete: {summary['shut_down']} shut down, {summary['active']} active")
 
-            # Audit VNC instances to clean up any that aren't actually running
-            vnc_manager = VNCInstanceManager.get_instance()
-            vnc_manager.audit_and_cleanup_stale_instances()
-
             return summary, 200
