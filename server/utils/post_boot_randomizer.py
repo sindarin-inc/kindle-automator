@@ -36,7 +36,7 @@ class PostBootRandomizer:
             if not new_android_id:
                 new_android_id = generate_random_android_id()
 
-            logger.info(f"Randomizing Android ID to {new_android_id} on {emulator_id}")
+            logger.debug(f"Randomizing Android ID to {new_android_id} on {emulator_id}")
 
             # Wait for device to be fully online if needed
             import time
@@ -91,7 +91,7 @@ class PostBootRandomizer:
 
             settings_result = subprocess.run(settings_cmd, capture_output=True, text=True, timeout=5)
             if settings_result.returncode == 0:
-                logger.info(f"Successfully set Android ID via settings command")
+                logger.debug(f"Successfully set Android ID via settings command")
 
                 # Verify the change
                 verify_cmd = [
@@ -108,7 +108,7 @@ class PostBootRandomizer:
                 if verify_result.returncode == 0:
                     actual_id = verify_result.stdout.strip()
                     if actual_id == new_android_id:
-                        logger.info(f"Verified Android ID is now: {actual_id}")
+                        logger.debug(f"Verified Android ID is now: {actual_id}")
                         return True
                     else:
                         logger.warning(
@@ -118,7 +118,7 @@ class PostBootRandomizer:
                 logger.warning(f"Settings command failed: {settings_result.stderr}")
 
             # Method 2: Direct database manipulation (fallback for older Android versions)
-            logger.info("Trying direct database manipulation method")
+            logger.debug("Trying direct database manipulation method")
 
             # Update the settings database directly
             db_cmd = [
@@ -134,7 +134,7 @@ class PostBootRandomizer:
                 logger.error(f"Failed to update database: {db_result.stderr}", exc_info=True)
                 return False
 
-            logger.info(f"Successfully updated Android ID in database")
+            logger.debug(f"Successfully updated Android ID in database")
             return True
 
         except Exception as e:
@@ -153,7 +153,7 @@ class PostBootRandomizer:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"Setting system properties on {emulator_id}")
+            logger.debug(f"Setting system properties on {emulator_id}")
 
             # Ensure device is rooted
             root_cmd = [
@@ -223,7 +223,7 @@ class PostBootRandomizer:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"Clearing Google Play Services data on {emulator_id}")
+            logger.debug(f"Clearing Google Play Services data on {emulator_id}")
 
             # Clear Google Play Services data
             clear_cmd = [
@@ -241,7 +241,7 @@ class PostBootRandomizer:
                 logger.error(f"Failed to clear Google Play Services data: {result.stderr}", exc_info=True)
                 return False
 
-            logger.info("Successfully cleared Google Play Services data")
+            logger.debug("Successfully cleared Google Play Services data")
             return True
 
         except Exception as e:
@@ -282,7 +282,7 @@ class PostBootRandomizer:
             properties_to_set = {k: v for k, v in property_mappings.items() if v is not None}
 
             if properties_to_set:
-                logger.info(f"Setting system properties: {properties_to_set}")
+                logger.debug(f"Setting system properties: {properties_to_set}")
                 if not self.randomize_system_properties(emulator_id, properties_to_set):
                     logger.warning("Some system properties could not be set")
                     # Don't fail completely, as some properties might be read-only

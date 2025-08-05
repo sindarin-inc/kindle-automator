@@ -669,7 +669,7 @@ class EmulatorLauncher:
                             parts = emulator_window_line.split()
                             if parts and parts[0].startswith("0x"):
                                 window_id = parts[0]
-                                logger.info(
+                                logger.debug(
                                     f"Found emulator window ID: {window_id} after {time.time() - start_time:.2f}s"
                                 )
                                 break  # Exit the retry loop
@@ -1113,8 +1113,8 @@ class EmulatorLauncher:
                 f"Starting emulator for AVD {avd_name} (email {email}) on display :{display_num} and port {emulator_port}"
             )
             logger.debug(f"Emulator command: {' '.join(emulator_cmd)}")
-            logger.info(f"Emulator environment: DISPLAY={env.get('DISPLAY')}, PATH={env.get('PATH')}")
-            logger.info(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
+            logger.debug(f"Emulator environment: DISPLAY={env.get('DISPLAY')}, PATH={env.get('PATH')}")
+            logger.debug(f"Logging stdout to {stdout_log} and stderr to {stderr_log}")
 
             with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
                 process = subprocess.Popen(
@@ -1136,7 +1136,7 @@ class EmulatorLauncher:
 
                 vnc_manager = VNCInstanceManager.get_instance()
                 vnc_manager.set_emulator_id(email, emulator_id)
-                logger.info(f"Set emulator ID {emulator_id} for {email} in VNC instance manager")
+                logger.debug(f"Set emulator ID {emulator_id} for {email} in VNC instance manager")
             except Exception as e:
                 logger.warning(f"Error storing emulator ID in VNC instance: {e}", exc_info=True)
 
@@ -1172,7 +1172,7 @@ class EmulatorLauncher:
                     if stderr_content:
                         logger.debug(f"Emulator stderr: {stderr_content}")
                 exit_code = process.returncode
-                logger.debug(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
+                logger.warning(f"Emulator process exited immediately with code {exit_code}", exc_info=True)
                 logger.debug(f"Check logs at {stdout_log} and {stderr_log}", exc_info=True)
                 # Read and log stdout
                 stdout_content = ""
