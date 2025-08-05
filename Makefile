@@ -103,14 +103,17 @@ firewall:
 # Include database commands
 include Makefile.database
 
-# Display VNC instances table (auto-detects environment from ENVIRONMENT or DOTENV_FILE)
-db-vnc:
-	@uv run python scripts/show_vnc_table.py
+# Auto-detect environment file
+ENV_FILE := $(shell if [ -f .env ]; then echo .env; elif [ -f .env.staging ]; then echo .env.staging; elif [ -f .env.prod ]; then echo .env.prod; else echo .env; fi)
 
-# Export database to JSON format (auto-detects environment from ENVIRONMENT or DOTENV_FILE)
+# Display VNC instances table (auto-detects environment)
+db-vnc:
+	@uv run dotenv -f $(ENV_FILE) run python scripts/show_vnc_table.py
+
+# Export database to JSON format (auto-detects environment)
 db-export:
 	@echo "Exporting users from database to JSON format..."
-	@uv run python scripts/export_users_to_json.py
+	@uv run dotenv -f $(ENV_FILE) run python scripts/export_users_to_json.py
 
 # db-stats and db-data are defined in Makefile.database
 

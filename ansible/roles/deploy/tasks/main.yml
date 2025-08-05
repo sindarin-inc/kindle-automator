@@ -31,8 +31,7 @@
 - name: Run database migrations
   shell: |
     cd /opt/kindle-automator
-    export DOTENV_FILE=".env.{% if 'staging' in inventory_hostname %}staging{% else %}prod{% endif %}"
-    uv run python -m alembic upgrade head
+    ENVIRONMENT="{% if 'staging' in inventory_hostname %}staging{% else %}prod{% endif %}" uv run python -m alembic upgrade head
   args:
     executable: /bin/bash
   register: db_migration

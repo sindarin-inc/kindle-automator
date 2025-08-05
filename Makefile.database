@@ -1,26 +1,10 @@
 # Database management commands for Kindle Automator
 
-# Determine environment file based on ENVIRONMENT or DOTENV_FILE
-ifdef DOTENV_FILE
-	DB_ENV_FILE := $(DOTENV_FILE)
-else ifdef ENVIRONMENT
-	ifeq ($(ENVIRONMENT),prod)
-		DB_ENV_FILE := .env.prod
-	else ifeq ($(ENVIRONMENT),staging)
-		DB_ENV_FILE := .env.staging
-	else
-		DB_ENV_FILE := .env
-	endif
-else ifdef STAGING
-	DB_ENV_FILE := .env.staging
-else ifdef PROD
-	DB_ENV_FILE := .env.prod
-else
-	DB_ENV_FILE := .env
-endif
+# Auto-detect environment file
+DB_ENV_FILE := $(shell if [ -f .env ]; then echo .env; elif [ -f .env.staging ]; then echo .env.staging; elif [ -f .env.prod ]; then echo .env.prod; else echo .env; fi)
 
-# Use uv run python (scripts will handle env loading)
-PYTHON := DOTENV_FILE=$(DB_ENV_FILE) uv run python
+# Use dotenv run to load environment
+PYTHON := uv run dotenv -f $(DB_ENV_FILE) run python
 
 # Setup database privileges (requires POSTGRES_DOADMIN_DATABASE_URL)
 .PHONY: db-setup-privileges
@@ -38,13 +22,13 @@ db-init:
 .PHONY: db-migrate
 db-migrate:
 	@echo "Running database migrations..."
-	@DOTENV_FILE=$(DB_ENV_FILE) uv run python -m alembic upgrade head
+	@uv run dotenv -f $(DB_ENV_FILE) run python -m alembic upgrade head
 
 # Migrate data from users.json to PostgreSQL
 .PHONY: db-import
 db-import:
 	@echo "Migrating users.json to PostgreSQL..."
-	@DOTENV_FILE=$(DB_ENV_FILE) uv run python scripts/migrate_json_to_db.py
+	@uv run dotenv -f $(DB_ENV_FILE) run python scripts/migrate_json_to_db.py
 
 # Full database setup: privileges (if needed), init, migrate, import
 .PHONY: db-setup
@@ -157,51 +141,3 @@ db-data:
 	@echo "EMULATOR SHUTDOWN FAILURES:"
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM emulator_shutdown_failures ORDER BY created_at DESC LIMIT 50;"
 
-# Staging-specific targets
-.PHONY: db-setup-privileges-staging db-init-staging db-setup-staging db-status-staging db-stats-staging db-backup-staging db-activity-staging db-data-staging db-import-staging
-db-setup-privileges-staging:
-	@$(MAKE) db-setup-privileges STAGING=1
-
-db-init-staging:
-	@$(MAKE) db-init STAGING=1
-
-db-setup-staging:
-	@$(MAKE) db-setup STAGING=1
-
-db-status-staging db-stats-staging:
-	@$(MAKE) db-status STAGING=1
-
-db-backup-staging:
-	@$(MAKE) db-backup STAGING=1
-
-db-activity-staging:
-	@$(MAKE) db-activity STAGING=1
-
-db-data-staging:
-	@$(MAKE) db-data STAGING=1
-
-db-import-staging:
-	@$(MAKE) db-import STAGING=1
-
-# Production-specific targets
-.PHONY: db-setup-privileges-prod db-init-prod db-setup-prod db-status-prod db-stats-prod db-backup-prod db-activity-prod db-data-prod
-db-setup-privileges-prod:
-	@$(MAKE) db-setup-privileges PROD=1
-
-db-init-prod:
-	@$(MAKE) db-init PROD=1
-
-db-setup-prod:
-	@$(MAKE) db-setup PROD=1
-
-db-status-prod db-stats-prod:
-	@$(MAKE) db-status PROD=1
-
-db-backup-prod:
-	@$(MAKE) db-backup PROD=1
-
-db-activity-prod:
-	@$(MAKE) db-activity PROD=1
-
-db-data-prod:
-	@$(MAKE) db-data PROD=1
