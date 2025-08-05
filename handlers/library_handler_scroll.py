@@ -18,6 +18,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
+from server.sindarin_context import sindarin_context
+from server.utils.ansi_colors import BRIGHT_CYAN, BRIGHT_GREEN, BRIGHT_YELLOW, RESET
 from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
     BOOK_CONTAINER_RELATIONSHIPS,
@@ -47,6 +49,24 @@ class LibraryHandlerScroll:
             new_books: List of new book info dicts or titles found on this page
             total_found: Total number of unique books found so far
         """
+        # Get the filter book count and user email from the database if available
+        filter_book_count = None
+        user_email = None
+        try:
+            with sindarin_context() as sc:
+                filter_book_count = sc.db.get_value("filter_book_count")
+                user_email = sc.sindarin_email
+        except Exception:
+            pass  # Silently ignore if we can't get the filter count or email
+
+        # Build the page info string with colors
+        user_prefix = f"{BRIGHT_CYAN}[{user_email}]{RESET} " if user_email else ""
+        if filter_book_count:
+            expected_pages = math.ceil(filter_book_count / 10)  # Assuming ~10 books per page
+            page_info = f"{user_prefix}{BRIGHT_YELLOW}Page {page_number}/{expected_pages}:{RESET} Found {BRIGHT_GREEN}{len(new_books)}{RESET} new books, total {BRIGHT_GREEN}{total_found}/{filter_book_count}{RESET}"
+        else:
+            page_info = f"{user_prefix}{BRIGHT_YELLOW}Page {page_number}:{RESET} Found {BRIGHT_GREEN}{len(new_books)}{RESET} new books, total {BRIGHT_GREEN}{total_found}{RESET}"
+
         if new_books:
             separator = "\n\t\t\t"
             # Handle both book info dicts and plain title strings
@@ -63,11 +83,9 @@ class LibraryHandlerScroll:
                     # Fallback for plain string titles
                     book_entries.append(str(book))
             joined_entries = f"{separator}".join(book_entries)
-            logger.info(
-                f"Page {page_number}: Found {len(new_books)} new books, total {total_found}:{separator}{joined_entries}"
-            )
+            logger.info(f"{page_info}:{separator}{joined_entries}")
         else:
-            logger.info(f"Page {page_number}: Found {len(new_books)} new books, total {total_found}")
+            logger.info(page_info)
 
     def _extract_book_info(self, container):
         """Extract book metadata from a container element.
