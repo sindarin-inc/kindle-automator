@@ -10,13 +10,6 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from dotenv import load_dotenv
-
-# Load environment variables BEFORE importing database modules
-env_path = project_root / ".env"
-load_dotenv(env_path)
-
-# Now import database modules after environment is loaded
 from database.connection import DatabaseConnection
 from database.repositories.user_repository import UserRepository
 

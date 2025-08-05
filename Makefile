@@ -11,7 +11,7 @@ init:
 
 claude-run: 
 	@echo "Starting Flask server in background..."
-	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run dotenv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Monitor logs with: tail -f logs/server_output.log"
@@ -28,16 +28,16 @@ lint:
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run python -m server.server
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run dotenv run python -m server.server
 
 # Start an interactive shell with the environment setup
 shell:
 	@echo "Starting interactive shell..."
-	@PYTHONPATH=$(shell pwd) uv run python shell.py
+	@PYTHONPATH=$(shell pwd) uv run dotenv run python shell.py
 
 test:
 	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) uv run pytest tests
+	@PYTHONPATH=$(shell pwd) uv run dotenv run pytest tests
 
 test-all: test
 
@@ -103,36 +103,23 @@ firewall:
 # Include database commands
 include Makefile.database
 
-# Display VNC instances table
+# Auto-detect environment file
+ENV_FILE := $(shell if [ -f .env ]; then echo .env; elif [ -f .env.staging ]; then echo .env.staging; elif [ -f .env.prod ]; then echo .env.prod; else echo .env; fi)
+
+# Display VNC instances table (auto-detects environment)
 db-vnc:
-	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) uv run python scripts/show_vnc_table.py
+	@uv run dotenv -f $(ENV_FILE) run python scripts/show_vnc_table.py
 
-# Display VNC instances table from staging
-db-vnc-staging:
-	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) uv run python scripts/show_vnc_table.py
-
-# Display VNC instances table from production  
-db-vnc-prod:
-	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/show_vnc_table.py
-
-# Export database to JSON format
+# Export database to JSON format (auto-detects environment)
 db-export:
 	@echo "Exporting users from database to JSON format..."
-	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env | xargs) uv run python scripts/export_users_to_json.py
+	@uv run dotenv -f $(ENV_FILE) run python scripts/export_users_to_json.py
 
-# Export from staging database
-db-export-staging:
-	@echo "Exporting users from staging database to JSON format..."
-	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.staging | xargs) uv run python scripts/export_users_to_json.py
-
-# Export from production database
-db-export-prod:
-	@echo "Exporting users from production database to JSON format..."
-	@$(shell grep -E '^(DATABASE_URL|KINDLE_SCHEMA)=' .env.prod | xargs) uv run python scripts/export_users_to_json.py
+# db-stats and db-data are defined in Makefile.database
 
 # Test multi-user operations
 test-multi-user:
 	@echo "Running multi-user test..."
 	@echo "Make sure the server is running with 'make claude-run' first!"
 	@echo ""
-	uv run python tests/test_multi_user.py
+	uv run dotenv run python tests/test_multi_user.py
