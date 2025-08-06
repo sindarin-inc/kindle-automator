@@ -46,10 +46,13 @@ class LogTimelineResource(Resource):
         # Accept server_instance for backwards compatibility but don't use it
         self.logs_dir = Path("logs")
         # Regex pattern to parse log entries
-        # Format: [LEVEL] [date time TZ] filepath:line message
+        # Format: [LEVEL] [date time TZ] filepath:line [email] message
+        # The email part is optional for backward compatibility
         self.log_pattern = re.compile(
-            r"\[(\w+)\s*\]\s*\[(\d+-\d+-\d+\s+\d+:\d+:\d+\s+\w+)\]\s*([^:]+):(\d+)\s*(.+)"
+            r"\[(\w+)\s*\]\s*\[(\d+-\d+-\d+\s+\d+:\d+:\d+\s+\w+)\]\s*([^:]+):(\d+)\s*(?:\[([^]]+)\]\s*)?(.+)"
         )
+        # Pattern to strip ANSI escape codes
+        self.ansi_pattern = re.compile(r'\033\[[0-9;]+m')
         super().__init__()
 
     def get(self):
@@ -95,20 +98,41 @@ class LogTimelineResource(Resource):
 
             # If email filter is specified, only include that email's log
             if email_filter:
-                email_log = self.logs_dir / f"{email_filter}.log"
+                # Check in email_logs subdirectory
+                email_log = self.logs_dir / "email_logs" / f"{email_filter}.log"
                 if email_log.exists():
                     log_files.append(email_log)
 
-                # Add rotated email logs
+                # Also check in main logs directory for backward compatibility
+                email_log_main = self.logs_dir / f"{email_filter}.log"
+                if email_log_main.exists():
+                    log_files.append(email_log_main)
+
+                # Add rotated email logs from email_logs
+                for rotated_log in sorted((self.logs_dir / "email_logs").glob(f"{email_filter}.log.*")):
+                    log_files.append(rotated_log)
+                # Add rotated email logs from main dir
                 for rotated_log in sorted(self.logs_dir.glob(f"{email_filter}.log.*")):
                     log_files.append(rotated_log)
             else:
-                # Include all email-specific logs
+                # Include all email-specific logs from email_logs subdirectory
+                email_logs_dir = self.logs_dir / "email_logs"
+                if email_logs_dir.exists():
+                    for log_file in email_logs_dir.glob("*.log"):
+                        if "@" in log_file.name:
+                            log_files.append(log_file)
+
+                    # Add rotated email logs from email_logs
+                    for log_file in email_logs_dir.glob("*.log.*"):
+                        if "@" in log_file.name.split(".log")[0]:
+                            log_files.append(log_file)
+
+                # Also check main logs directory for backward compatibility
                 for log_file in self.logs_dir.glob("*.log"):
                     if log_file.name != "server.log" and "@" in log_file.name:
                         log_files.append(log_file)
 
-                # Add rotated email logs
+                # Add rotated email logs from main dir
                 for log_file in self.logs_dir.glob("*.log.*"):
                     if "@" in log_file.name.split(".log")[0]:
                         log_files.append(log_file)
@@ -166,7 +190,11 @@ class LogTimelineResource(Resource):
             List of parsed log entries
         """
         # Determine the source from the filename
-        source = "server" if log_file.name == "server.log" else log_file.stem
+        if log_file.name == "server.log" or "server.log" in str(log_file):
+            source = "server"
+        else:
+            # Remove .log extension and handle email_logs subdirectory
+            source = log_file.stem
 
         try:
             with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -194,8 +222,11 @@ class LogTimelineResource(Resource):
         current_entry = None
 
         for line in file_obj:
+            # Strip ANSI escape codes from the line
+            clean_line = self.ansi_pattern.sub('', line)
+            
             # Try to match the log pattern
-            match = self.log_pattern.match(line)
+            match = self.log_pattern.match(clean_line)
 
             if match:
                 # If we had a previous entry, add it
@@ -203,7 +234,7 @@ class LogTimelineResource(Resource):
                     entries.append(current_entry)
 
                 # Parse the new entry
-                level, timestamp_str, filepath, line_no, message = match.groups()
+                level, timestamp_str, filepath, line_no, email, message = match.groups()
 
                 # Check log level
                 if log_levels.get(level, 0) < min_level:
@@ -240,9 +271,13 @@ class LogTimelineResource(Resource):
                     "message": message.strip(),
                 }
 
-            elif current_entry and line.strip():
+                # Add email if present (new format)
+                if email:
+                    current_entry["user"] = email
+
+            elif current_entry and clean_line.strip():
                 # This is a continuation of the previous log entry (multi-line)
-                current_entry["message"] += "\n" + line.strip()
+                current_entry["message"] += "\n" + clean_line.strip()
 
         # Don't forget the last entry
         if current_entry and len(entries) < max_entries:

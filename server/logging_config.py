@@ -279,33 +279,74 @@ class RelativePathFormatter(logging.Formatter):
                 else:
                     record.pathname = truncated
 
+        # Get the user email for the current request/context
+        email = None
+        # Try Flask g.request_email (set in before_request)
+        try:
+            from flask import g
+
+            if hasattr(g, "request_email"):
+                email = g.request_email
+        except (ImportError, RuntimeError):
+            # Not in Flask context
+            pass
+
+        # If no email from g, try to get from request utils
+        if not email:
+            try:
+                from server.utils.request_utils import get_sindarin_email
+
+                email = get_sindarin_email()
+            except (ImportError, RuntimeError):
+                pass
+
         # Get the formatted message from parent first
         formatted = super().format(record)
+
+        # Insert the user email after file:line if we have one
+        if email:
+            import re
+
+            # The format is: [LEVEL] [timestamp] filename:lineno message
+            # We want to insert the email after the lineno and before the message
+            # Look for pattern: file.py:123 (with optional ANSI codes)
+            pattern = r"(.*\.py:\d+)(.*?\033\[0m)?(\s+)"
+            match = re.search(pattern, formatted)
+            if match:
+                before_msg = match.group(1)  # file.py:123
+                ansi_reset = match.group(2) or ""  # Optional ANSI reset
+                spacing = match.group(3)  # Spacing before message
+                after_msg = formatted[match.end() :]  # The rest (message)
+                # Insert [User: email] after file:line
+                formatted = f"{before_msg}{ansi_reset} {GREEN}[{email}]{RESET}{spacing}{after_msg}"
 
         # Get the color for this level
         level_color = self.level_colors.get(record.levelno, "")
 
         if level_color and level_color != WHITE:
             # Apply color to both the level name and the message
-            # The format is: [LEVEL] [timestamp] filename:lineno message
+            # The format is: [LEVEL] [timestamp] filename:lineno [email] message
 
             # Color the level name in brackets
             level_pattern = f"[{record.levelname:5.5s}]"
             colored_level = f"{level_color}[{record.levelname:5.5s}]{RESET}"
             formatted = formatted.replace(level_pattern, colored_level, 1)
 
-            # Also color the message part (after filename:lineno)
+            # Also color the message part (after email if present, or after filename:lineno)
             import re
 
-            # Look for the pattern that includes ANSI codes
-            # The format has colors: filename.py:123[RESET] message
-            # We need to find where the message starts after all the formatting
-            match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
+            # Look for the pattern that includes the email in brackets
+            if email:
+                # Pattern with email: filename.py:123 [email][RESET] message
+                match = re.search(rf"\[{re.escape(email)}\].*?\033\[0m\s*", formatted)
+            else:
+                # Pattern without email: filename.py:123[RESET] message
+                match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
 
             if match:
-                # Split at the filename:lineno boundary including the RESET code
-                prefix = match.group(1)
-                message = formatted[len(prefix) :]
+                # Split at the boundary
+                prefix = formatted[: match.end()]
+                message = formatted[match.end() :]
 
                 # Check if the message already contains ANSI codes (like SQL logs)
                 if "\033[" in message:
@@ -316,9 +357,13 @@ class RelativePathFormatter(logging.Formatter):
                     formatted = prefix + level_color + message + RESET
             else:
                 # Fallback: try without ANSI codes
-                match = re.search(r"(.*\.py:\d+\s+)", formatted)
+                if email:
+                    match = re.search(rf"\[{re.escape(email)}\]\s+", formatted)
+                else:
+                    match = re.search(r"(.*\.py:\d+\s+)", formatted)
+
                 if match:
-                    prefix_len = len(match.group(1))
+                    prefix_len = match.end()
                     prefix = formatted[:prefix_len]
                     message = formatted[prefix_len:]
 

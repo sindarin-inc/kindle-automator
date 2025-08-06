@@ -137,7 +137,8 @@ class UserActivityResource(Resource):
 
         # Patterns to extract key events - specific patterns must come before generic ones
         patterns = {
-            "open_book": r'REQUEST \[GET /open-book\].*?"title":\s*"([^"]+)"',
+            # Updated pattern to handle both old format and new format with email
+            "open_book": r'REQUEST \[GET /open-book\](?:\s+\[[^\]]+\])*.*?"title":\s*"([^"]+)"',
             "books_stream": r"REQUEST \[GET /books-stream\]",
             "books_stream_response": r"RESPONSE\s+\d+\s+\[GET /books-stream\]",
             "navigate": r"REQUEST \[GET /navigate\].*?: (\{[^}]+\})",

@@ -130,17 +130,6 @@ class RequestBodyLogger:
         """Log the request body."""
         request_data = None
 
-        # Get server instance from the Flask app
-        server_instance = current_app.config.get("server_instance", None)
-        user_info = ""
-
-        # Get the email from the request
-        request_email = get_sindarin_email()
-
-        if server_instance:
-            email = request_email or "not_authenticated"
-            user_info = f" {GREEN}[User: {email}]{RESET}"
-
         # Get user agent
         user_agent = request.headers.get("User-Agent", "")
         ua_identifier = RequestBodyLogger.get_ua_identifier(user_agent)
@@ -183,23 +172,23 @@ class RequestBodyLogger:
                 json_str = json.dumps(request_data, default=str)
                 if len(json_str) > 5000:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_agent_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{json_str}{RESET}"
+                        f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_agent_info}: {DIM_YELLOW}{json_str}{RESET}"
                     )
             elif isinstance(request_data, str) and len(request_data) > 5000:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{request_data[:5000]}{RESET}... (truncated, total {len(request_data)} bytes)"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_agent_info}: {DIM_YELLOW}{request_data[:5000]}{RESET}... (truncated, total {len(request_data)} bytes)"
                 )
             else:
                 logger.info(
-                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: {DIM_YELLOW}{request_data}{RESET}"
+                    f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_agent_info}: {DIM_YELLOW}{request_data}{RESET}"
                 )
         else:
             logger.info(
-                f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_info}{user_agent_info}: No body"
+                f"REQUEST [{request.method} {MAGENTA}{request.path}{RESET}]{user_agent_info}: No body"
             )
 
     @staticmethod
@@ -213,17 +202,6 @@ class RequestBodyLogger:
             elapsed = time.time() - g.request_start_time
             elapsed_time = f" {BLUE}{elapsed:.1f}s{RESET}"
 
-        # Get server instance from the Flask app
-        server_instance = current_app.config.get("server_instance", None)
-        user_info = ""
-
-        # Get the email from the request
-        request_email = get_sindarin_email()
-
-        if server_instance:
-            email = request_email or "not_authenticated"
-            user_info = f" {GREEN}[User: {email}]{RESET}"
-
         # Format status code with color
         status_code = response.status_code
         if 200 <= status_code < 300:
@@ -236,7 +214,7 @@ class RequestBodyLogger:
 
         if response.direct_passthrough:
             logger.info(
-                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
+                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
             )
             return response
 
@@ -244,7 +222,7 @@ class RequestBodyLogger:
         content_type = response.headers.get("Content-Type", "")
         if "text/event-stream" in content_type or response.is_streamed:
             logger.info(
-                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Streaming response ({content_type}){RESET}"
+                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}Streaming response ({content_type}){RESET}"
             )
             return response
 
@@ -264,34 +242,34 @@ class RequestBodyLogger:
                     json_str = json.dumps(sanitized_data, default=str)
                     if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str}{RESET}"
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
                     if len(json_str) > 5000:
                         logger.info(
-                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
                         )
                     else:
                         logger.info(
-                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{json_str}{RESET}"
+                            f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
                 if len(response_text) > 5000:
                     logger.info(
-                        f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
+                        f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
                     )
                 else:
                     logger.info(
-                        f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}{response_text}{RESET}"
+                        f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{response_text}{RESET}"
                     )
         except UnicodeDecodeError:
             logger.info(
-                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]{user_info}: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
+                f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
             )
 
         return response
