@@ -1754,80 +1754,72 @@ class ReaderHandler:
                 logger.info("Toolbar already visible - proceeding to close book")
                 return self._click_close_book_button()
 
-            # Check for and dismiss bottom sheet if present
-            bottom_sheet_visible, bottom_sheet = self._check_element_visibility(
-                BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
-            )
-            if bottom_sheet_visible:
-                logger.info("Found bottom sheet dialog - attempting to dismiss")
-                pill_visible, pill = self._check_element_visibility(
-                    [BOTTOM_SHEET_IDENTIFIERS[1]], "bottom sheet pill"
-                )
-                if pill_visible:
-                    pill.click()
-                    logger.info("Clicked bottom sheet pill to dismiss")
-                    time.sleep(1)
-
-                    # Verify dismissal
-                    still_visible, _ = self._check_element_visibility(
-                        BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
-                    )
-                    if still_visible:
-                        logger.error("Bottom sheet dialog is still visible after dismissal", exc_info=True)
-                        return False
-                    logger.info("Bottom sheet successfully dismissed")
-
-            # Check for and dismiss "About this book" slideover
+            # Check for and dismiss "About this book" slideover or bottom sheet
+            # These often appear together, so we'll handle them in a unified way
             about_book_visible, _ = self._check_element_visibility(
                 ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
             )
-            if about_book_visible:
-                logger.info("Found 'About this book' slideover - attempting to dismiss")
-                # Try finding the pill element to dismiss it
-                pill_visible, pill = self._check_element_visibility(
-                    [BOTTOM_SHEET_IDENTIFIERS[1]], "bottom sheet pill"
-                )
-                if pill_visible:
-                    pill.click()
-                    logger.info("Clicked pill to dismiss 'About this book' slideover")
-                    time.sleep(1)
-                else:
-                    # If pill not found, try tapping near the top of the screen to dismiss
-                    window_size = self.driver.get_window_size()
-                    center_x = window_size["width"] // 2
-                    top_y = int(window_size["height"] * 0.10)  # Tap at approx. 10% from the top
-                    self.driver.tap([(center_x, top_y)])
-                    logger.info("Tapped near top of screen to dismiss 'About this book' slideover")
-                    time.sleep(1)
+            bottom_sheet_visible, _ = self._check_element_visibility(
+                BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
+            )
 
-                # Verify dismissal
-                still_visible, _ = self._check_element_visibility(
-                    ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
+            if about_book_visible or bottom_sheet_visible:
+                logger.info(
+                    f"Found slideover/bottom sheet - about_book: {about_book_visible}, bottom_sheet: {bottom_sheet_visible}"
                 )
-                if still_visible:
-                    logger.info("Slideover still visible - trying another approach")
-                    # Try swiping down to dismiss
-                    window_size = self.driver.get_window_size()
-                    center_x = window_size["width"] // 2
-                    start_y = int(window_size["height"] * 0.3)
-                    end_y = int(window_size["height"] * 0.7)
-                    self.driver.swipe(center_x, start_y, center_x, end_y, 500)
-                    logger.info("Swiped down to dismiss 'About this book' slideover")
-                    time.sleep(1)
 
-                    # Final verification
-                    still_visible, _ = self._check_element_visibility(
+                # Try multiple dismissal approaches with retries
+                max_attempts = 3
+                for attempt in range(max_attempts):
+                    logger.info(f"Dismissal attempt {attempt + 1}/{max_attempts}")
+
+                    # First try: Click the pill if visible
+                    pill_visible, pill = self._check_element_visibility(
+                        [BOTTOM_SHEET_IDENTIFIERS[1]], "bottom sheet pill"
+                    )
+                    if pill_visible:
+                        pill.click()
+                        logger.info("Clicked bottom sheet pill to dismiss")
+                        time.sleep(1)
+
+                    # Second try: Swipe down from middle of screen
+                    if attempt >= 1:
+                        window_size = self.driver.get_window_size()
+                        center_x = window_size["width"] // 2
+                        start_y = int(window_size["height"] * 0.3)
+                        end_y = int(window_size["height"] * 0.7)
+                        self.driver.swipe(center_x, start_y, center_x, end_y, 500)
+                        logger.info("Swiped down to dismiss slideover")
+                        time.sleep(1)
+
+                    # Third try: Tap near top of screen
+                    if attempt >= 2:
+                        window_size = self.driver.get_window_size()
+                        center_x = window_size["width"] // 2
+                        top_y = int(window_size["height"] * 0.10)
+                        self.driver.tap([(center_x, top_y)])
+                        logger.info("Tapped near top of screen to dismiss")
+                        time.sleep(1)
+
+                    # Check if dismissed
+                    about_still_visible, _ = self._check_element_visibility(
                         ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
                     )
-                    if still_visible:
-                        logger.error(
-                            "'About this book' slideover is still visible after dismissal attempts",
-                            exc_info=True,
+                    bottom_still_visible, _ = self._check_element_visibility(
+                        BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
+                    )
+
+                    if not about_still_visible and not bottom_still_visible:
+                        logger.info("Successfully dismissed slideover/bottom sheet")
+                        break
+
+                    if attempt == max_attempts - 1:
+                        # On last attempt, log but don't fail - continue with navigation
+                        logger.warning(
+                            f"Could not fully dismiss slideover/bottom sheet after {max_attempts} attempts. "
+                            f"About book still visible: {about_still_visible}, Bottom sheet still visible: {bottom_still_visible}. "
+                            "Continuing with navigation anyway."
                         )
-                    else:
-                        logger.info("'About this book' slideover successfully dismissed")
-                else:
-                    logger.info("'About this book' slideover successfully dismissed")
 
             # Check for and dismiss full screen dialog using DialogHandler
             from views.common.dialog_handler import DialogHandler
