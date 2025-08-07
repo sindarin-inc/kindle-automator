@@ -271,6 +271,14 @@ class BooksStreamResource(Resource):
         # Store the request key for cancellation checking during state transitions
         stream_request_key = manager.request_key
         
+        # Set up cancellation check function for the state machine
+        def check_cancellation():
+            """Check if this stream request has been cancelled."""
+            return should_cancel(sindarin_email, stream_request_key)
+        
+        # Set the cancellation check on the state machine for interruptible operations
+        automator.state_machine.set_cancellation_check(check_cancellation)
+        
         # Check for cancellation before state check
         if should_cancel(sindarin_email, stream_request_key):
             logger.info(f"[{time.time():.3f}] Stream cancelled before state check for {sindarin_email}")
@@ -795,6 +803,8 @@ class BooksStreamResource(Resource):
                         f"Stream interrupted, clearing active request for books-stream: {sindarin_email}"
                     )
                 manager._clear_active_request()
+                # Clear the cancellation check from state machine
+                automator.state_machine.set_cancellation_check(None)
 
         # Return the streaming response with text/event-stream for browser compatibility
         # but still using JSONL format (no data: prefix)

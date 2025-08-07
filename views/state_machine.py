@@ -166,7 +166,10 @@ class KindleStateMachine:
                 if not self.view_inspector.ensure_app_foreground():
                     logger.error("Failed to bring app to foreground", exc_info=True)
                     return self.current_state
-                time.sleep(1)  # Wait for app to come to foreground
+                # Use interruptible sleep that checks for cancellation
+                if not self._interruptible_sleep(1):
+                    logger.info(f"[{time.time():.3f}] Transition cancelled during app foreground wait")
+                    return self.current_state
 
                 # Try to get the current state again
                 self.current_state = self._get_current_state()
@@ -226,7 +229,10 @@ class KindleStateMachine:
                             if self.current_state == AppState.UNKNOWN:
                                 if self.view_inspector.ensure_app_foreground():
                                     logger.debug("Brought app to foreground after handling dialog")
-                                    time.sleep(1)
+                                    # Use interruptible sleep that checks for cancellation
+                                    if not self._interruptible_sleep(1):
+                                        logger.info(f"[{time.time():.3f}] Transition cancelled during dialog handling wait")
+                                        return self.current_state
                                     self.current_state = self._get_current_state()
                             continue  # Continue the loop to re-check state
 
