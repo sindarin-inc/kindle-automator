@@ -163,7 +163,7 @@ class Driver:
                     email, setting_name, value, section="emulator_settings"
                 )
 
-                logger.info(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
+                logger.debug(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
             else:
                 logger.error(
                     f"Failed to update profile setting: {setting_name}={value} for {email}", exc_info=True
@@ -858,7 +858,7 @@ class Driver:
                     if houdini_check.returncode == 0:
                         logger.info("ARM translation (libhoudini) is available")
                     else:
-                        logger.warning("ARM translation (libhoudini) NOT found - ARM apps won't run!")
+                        logger.info("ARM translation (libhoudini) NOT found - ARM apps won't run!")
 
                 # Also check available storage
                 storage_check = subprocess.run(
@@ -868,7 +868,7 @@ class Driver:
                     check=False,
                 )
                 if storage_check.returncode == 0:
-                    logger.info(f"Device storage status:\n{storage_check.stdout}")
+                    logger.debug(f"Device storage status:\n{storage_check.stdout}")
             except Exception as e:
                 logger.warning(f"Could not check device info: {e}")
 
