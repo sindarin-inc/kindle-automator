@@ -32,6 +32,7 @@ class TestRequestDeduplication(unittest.TestCase):
         """Test successfully claiming a request."""
         mock_get_redis.return_value = self.redis_client
         self.redis_client.set.return_value = True  # Claim succeeds
+        self.redis_client.get.return_value = None  # No active request
 
         manager = RequestManager(self.user_email, self.path, self.method)
         result = manager.claim_request()
@@ -44,6 +45,7 @@ class TestRequestDeduplication(unittest.TestCase):
         """Test claiming a request that's already in progress."""
         mock_get_redis.return_value = self.redis_client
         self.redis_client.set.return_value = False  # Claim fails
+        self.redis_client.get.return_value = None  # No active request
 
         manager = RequestManager(self.user_email, self.path, self.method)
         result = manager.claim_request()
@@ -54,6 +56,8 @@ class TestRequestDeduplication(unittest.TestCase):
     def test_store_and_retrieve_response(self, mock_get_redis):
         """Test storing and retrieving a deduplicated response."""
         mock_get_redis.return_value = self.redis_client
+        # Mock get to return None initially (for _clear_active_request)
+        self.redis_client.get.return_value = None
 
         manager = RequestManager(self.user_email, self.path, self.method)
 
@@ -66,11 +70,17 @@ class TestRequestDeduplication(unittest.TestCase):
         calls = self.redis_client.set.call_args_list
         self.assertEqual(len(calls), 2)  # Result and status
 
-        # Test retrieval
+        # Test retrieval - reset the mock's side_effect for the wait
         self.redis_client.get.side_effect = [
             DeduplicationStatus.COMPLETED.value.encode(),  # Status
             pickle.dumps((response_data, status_code)),  # Result
+            # Add more None values for cleanup checks
+            None,
+            None,
+            None,
         ]
+        # Mock decr to return 0 (no more waiters)
+        self.redis_client.decr.return_value = 0
 
         result = manager.wait_for_deduplicated_response()
         self.assertIsNotNone(result)
@@ -268,7 +278,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
         executed = [r for r in results if r[0] == "executed"]
         deduplicated = [r for r in results if r[0] == "deduplicated"]
         timeouts = [r for r in results if r[0] == "timeout"]
-        
+
         self.assertEqual(len(executed), 1, f"Expected 1 executed, got {len(executed)}")
         # The rest should be deduplicated (timeouts indicate a problem)
         self.assertEqual(len(timeouts), 0, f"Got {len(timeouts)} timeouts - this suggests a timing issue")
