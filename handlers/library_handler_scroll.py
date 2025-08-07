@@ -654,7 +654,7 @@ class LibraryHandlerScroll:
                 "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/*[@content-desc]",
             )
 
-            logger.info(f"Found {len(book_containers)} book containers with content-desc")
+            logger.debug(f"Found {len(book_containers)} book containers with content-desc")
             if book_containers:
                 containers = book_containers
             else:
@@ -662,7 +662,7 @@ class LibraryHandlerScroll:
                 title_elements = self.driver.find_elements(
                     AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                 )
-                logger.info(f"Found {len(title_elements)} title elements as fallback")
+                logger.debug(f"Found {len(title_elements)} title elements as fallback")
 
                 # Convert these title elements to containers
                 containers = self._convert_title_elements(title_elements)
