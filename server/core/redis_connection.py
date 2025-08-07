@@ -42,24 +42,38 @@ class RedisConnection:
                     max_connections=50,
                     decode_responses=False,
                 )
+            elif redis_url.startswith("rediss://"):
+                # SSL/TLS connection (DigitalOcean Managed Redis uses this)
+                # Use direct Redis.from_url for SSL connections
+                self._client = redis.from_url(
+                    redis_url,
+                    max_connections=50,
+                    decode_responses=False,
+                    ssl_cert_reqs=None,  # Don't verify certificates for managed Redis
+                    socket_connect_timeout=5,
+                    retry_on_timeout=True,
+                )
+                # Skip the pool creation for SSL connections
+                pool = None
             else:
+                # Standard Redis connection without socket_keepalive_options on Linux
+                # to avoid the "Invalid argument" error
                 pool = redis.ConnectionPool.from_url(
                     redis_url,
                     max_connections=50,
-                    socket_keepalive=True,
-                    socket_keepalive_options={
-                        1: 1,  # TCP_KEEPIDLE
-                        2: 3,  # TCP_KEEPINTVL
-                        3: 5,  # TCP_KEEPCNT
-                    },
                     decode_responses=False,  # We'll handle encoding/decoding ourselves for pickle support
+                    socket_connect_timeout=5,
+                    retry_on_timeout=True,
                 )
 
-            self._client = redis.Redis(connection_pool=pool)
+            # Only create client from pool if we haven't already created it (SSL case)
+            if pool is not None:
+                self._client = redis.Redis(connection_pool=pool)
 
             # Test the connection
-            self._client.ping()
-            logger.info(f"Successfully connected to Redis at {redis_url}")
+            if self._client:
+                self._client.ping()
+                logger.info(f"Successfully connected to Redis at {redis_url}")
 
         except (ConnectionError, RedisError) as e:
             logger.error(f"Failed to connect to Redis at {redis_url}: {e}")
