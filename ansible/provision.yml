@@ -11,6 +11,7 @@
     - { role: mezmo, tags: mezmo }
     - { role: firewall, tags: firewall }
     - { role: postgres, tags: postgres, when: "'db' in group_names" }
+    - { role: redis, tags: redis }
     - { role: android_x86, tags: [android-x86, android], when: "'db' not in group_names" }
     - { role: scrcpy, tags: scrcpy, when: "'db' not in group_names" }
     - { role: rfbproxy, tags: rfbproxy, when: "'db' not in group_names" }

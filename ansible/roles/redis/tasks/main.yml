@@ -1,0 +1,44 @@
+---
+# Redis installation and configuration tasks
+
+- name: Install Redis server
+  apt:
+    name: redis-server
+    state: present
+    update_cache: yes
+  become: yes
+
+- name: Configure Redis for production
+  lineinfile:
+    path: /etc/redis/redis.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    backup: yes
+  with_items:
+    - { regexp: '^bind ', line: 'bind 127.0.0.1 ::1' }
+    - { regexp: '^protected-mode ', line: 'protected-mode yes' }
+    - { regexp: '^maxmemory ', line: 'maxmemory 256mb' }
+    - { regexp: '^maxmemory-policy ', line: 'maxmemory-policy allkeys-lru' }
+    - { regexp: '^save ', line: '# save' }  # Disable persistence for cache-only use
+    - { regexp: '^appendonly ', line: 'appendonly no' }
+  become: yes
+  notify: restart redis
+
+- name: Ensure Redis is started and enabled
+  systemd:
+    name: redis-server
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Wait for Redis to be ready
+  wait_for:
+    port: 6379
+    host: 127.0.0.1
+    delay: 2
+
+- name: Test Redis connection
+  command: redis-cli ping
+  register: redis_ping
+  changed_when: false
+  failed_when: redis_ping.stdout != "PONG"

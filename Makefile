@@ -41,6 +41,10 @@ test:
 
 test-all: test
 
+test-dedup:
+	@echo "Running deduplication integration tests..."
+	@python test_dedup_integration.py
+
 # Generate staff authentication token for testing
 test-staff-auth:
 	@echo "Generating staff authentication token..."

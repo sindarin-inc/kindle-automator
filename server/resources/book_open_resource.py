@@ -13,6 +13,7 @@ from handlers.navigation_handler import NavigationResourceHandler
 from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
 from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
@@ -434,6 +435,7 @@ class BookOpenResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @deduplicate_request
     def post(self):
         """Open a specific book via POST request."""
         data = request.get_json()
@@ -454,6 +456,7 @@ class BookOpenResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @deduplicate_request
     def get(self):
         """Open a specific book via GET request."""
         book_title = request.args.get("title")

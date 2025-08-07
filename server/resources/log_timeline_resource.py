@@ -52,7 +52,7 @@ class LogTimelineResource(Resource):
             r"\[(\w+)\s*\]\s*\[(\d+-\d+-\d+\s+\d+:\d+:\d+\s+\w+)\]\s*([^:]+):(\d+)\s*(?:\[([^]]+)\]\s*)?(.+)"
         )
         # Pattern to strip ANSI escape codes
-        self.ansi_pattern = re.compile(r'\033\[[0-9;]+m')
+        self.ansi_pattern = re.compile(r"\033\[[0-9;]+m")
         super().__init__()
 
     def get(self):
@@ -223,8 +223,8 @@ class LogTimelineResource(Resource):
 
         for line in file_obj:
             # Strip ANSI escape codes from the line
-            clean_line = self.ansi_pattern.sub('', line)
-            
+            clean_line = self.ansi_pattern.sub("", line)
+
             # Try to match the log pattern
             match = self.log_pattern.match(clean_line)
 

@@ -1,0 +1,126 @@
+"""Middleware for request deduplication and cancellation."""
+
+import functools
+import logging
+from typing import Any, Callable, Tuple
+
+from flask import Response, request
+
+from server.core.request_manager import RequestManager
+from server.utils.request_utils import get_sindarin_email
+
+logger = logging.getLogger(__name__)
+
+
+def deduplicate_request(func: Callable) -> Callable:
+    """
+    Decorator to handle request deduplication.
+
+    This decorator:
+    1. Checks if an identical request is already in progress
+    2. If so, waits for the result and returns it
+    3. If not, executes the function and caches the result
+    4. Handles cancellation for lower priority requests
+
+    Args:
+        func: The resource method to wrap
+
+    Returns:
+        Wrapped function with deduplication logic
+    """
+
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs) -> Tuple[Any, int]:
+        # Get user email
+        user_email = get_sindarin_email()
+        if not user_email:
+            # No email, can't deduplicate - just execute normally
+            logger.debug("No user email found, skipping deduplication")
+            return func(self, *args, **kwargs)
+
+        # Get request path and method
+        path = request.path if hasattr(request, "path") else "/"
+        method = request.method if hasattr(request, "method") else "GET"
+
+        logger.info(f"Deduplication middleware: Processing {method} {path} for {user_email}")
+
+        # Create request manager
+        manager = RequestManager(user_email, path, method)
+
+        # Try to claim the request
+        if manager.claim_request():
+            # We own this request - execute it
+            try:
+                logger.info(f"Executing request {manager.request_key} for {user_email}")
+                result = func(self, *args, **kwargs)
+
+                # Handle different response types
+                if isinstance(result, tuple) and len(result) == 2:
+                    response_data, status_code = result
+                elif isinstance(result, Response):
+                    # Don't cache streaming responses
+                    if result.direct_passthrough or result.is_streamed:
+                        return result
+                    response_data = result.get_data(as_text=True)
+                    status_code = result.status_code
+                else:
+                    response_data = result
+                    status_code = 200
+
+                # Store the response for waiting requests
+                manager.store_response(response_data, status_code)
+
+                return response_data, status_code
+
+            except Exception as e:
+                logger.error(f"Error executing request {manager.request_key}: {e}")
+                raise
+
+        else:
+            # Request is already in progress - wait for result
+            logger.info(f"Waiting for deduplicated response for {manager.request_key}")
+            result = manager.wait_for_deduplicated_response()
+
+            if result:
+                response_data, status_code = result
+                logger.info(f"Returning deduplicated response for {user_email}")
+                return response_data, status_code
+            else:
+                # Timeout or error waiting - execute normally as fallback
+                logger.warning(f"Failed to get deduplicated response, executing normally for {user_email}")
+                return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+def check_cancellation_periodically(func: Callable) -> Callable:
+    """
+    Decorator to periodically check for request cancellation during execution.
+
+    This is meant for long-running operations that need to check if they should stop.
+
+    Args:
+        func: The function to wrap
+
+    Returns:
+        Wrapped function that checks for cancellation
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Get user email from context
+        user_email = get_sindarin_email()
+        if not user_email:
+            # No email, can't check cancellation
+            return func(*args, **kwargs)
+
+        # Pass the user_email to the function if it accepts it
+        import inspect
+
+        sig = inspect.signature(func)
+        if "user_email" in sig.parameters:
+            kwargs["user_email"] = user_email
+
+        return func(*args, **kwargs)
+
+    return wrapper

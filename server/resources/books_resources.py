@@ -13,8 +13,10 @@ from server.core.automation_server import AutomationServer
 from server.logging_config import clear_email_context, set_email_context
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.middleware.response_handler import handle_automator_response
 from server.utils.appium_error_utils import is_appium_error
+from server.utils.cancellation_utils import CancellationChecker, should_cancel
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
     extract_book_covers_from_screen,
@@ -29,6 +31,7 @@ class BooksResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @handle_automator_response
+    @deduplicate_request
     def _get_books(self):
         """Get list of available books with metadata"""
         server = AutomationServer.get_instance()
@@ -365,10 +368,22 @@ class BooksStreamResource(Resource):
             total_books_from_handler = 0  # To store the total count from library_handler
             successful_covers_accumulator = {}  # Accumulate all successful covers (now a dict)
 
+            # Create cancellation checker for this request
+            cancellation_checker = CancellationChecker(sindarin_email, check_interval=3)
+
             # Callback function that will receive raw books_batch from the library handler
             # This callback will process books synchronously (screenshot, covers) for the current stable view
             def book_processing_callback(raw_books_batch, **kwargs):
                 nonlocal error_message, total_books_from_handler
+
+                # Check for cancellation before processing each batch
+                if cancellation_checker.check():
+                    logger.info(
+                        f"Book retrieval cancelled for {sindarin_email} due to higher priority request"
+                    )
+                    error_message = "Request cancelled by higher priority operation"
+                    all_books_retrieved_event.set()  # Signal to stop generate_stream loop
+                    return
 
                 if kwargs.get("error"):
                     logger.info(f"Callback received error: {kwargs.get('error')}")

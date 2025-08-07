@@ -19,6 +19,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
 from server.utils.ansi_colors import BRIGHT_CYAN, BRIGHT_GREEN, BRIGHT_YELLOW, RESET
+from server.utils.cancellation_utils import CancellationChecker
 from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
     BOOK_CONTAINER_RELATIONSHIPS,
@@ -809,8 +810,26 @@ class LibraryHandlerScroll:
             consecutive_identical_screen_iterations = 0
             IDENTICAL_SCREEN_THRESHOLD = 10
 
+            # Create cancellation checker if we have user context
+            cancellation_checker = None
+            try:
+                from server.utils.request_utils import get_sindarin_email
+
+                sindarin_email = get_sindarin_email()
+                if sindarin_email:
+                    cancellation_checker = CancellationChecker(sindarin_email, check_interval=5)
+            except Exception:
+                pass  # No user context available
+
             while True:
                 page_count += 1
+
+                # Check for cancellation at the start of each page
+                if cancellation_checker and cancellation_checker.check():
+                    logger.info("Library scrolling cancelled due to higher priority request")
+                    if callback:
+                        callback(None, error="Request cancelled by higher priority operation")
+                    return [] if not target_title else (None, None, None)
 
                 # Collect all visible containers
                 containers = self._collect_visible_containers()
