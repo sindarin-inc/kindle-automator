@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import redis
 
-from server.core.request_manager import RequestManager, WaitResult, DeduplicationStatus
+from server.core.request_manager import DeduplicationStatus, RequestManager, WaitResult
 from server.utils.cancellation_utils import (
     CancellationChecker,
     mark_cancelled,
@@ -270,7 +270,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
     @patch("server.core.request_manager.get_redis_client")
     def test_priority_waiting(self, mock_get_redis):
         """Test that lower priority requests wait for higher priority ones."""
-        
+
         # Use a real Redis-like mock that simulates atomic operations
         class RedisSimulator:
             def __init__(self):
@@ -311,15 +311,15 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
-        
+
         results = []
         timings = {}
-        
+
         def make_high_priority_request():
             """Simulate a high priority /open-book request."""
             start = time.time()
             manager = RequestManager("test@example.com", "/open-book", "POST")
-            
+
             if manager.claim_request():
                 # Simulate longer execution
                 time.sleep(0.3)
@@ -327,12 +327,12 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
                 elapsed = time.time() - start
                 results.append(("high", elapsed))
                 timings["high"] = elapsed
-                
+
         def make_low_priority_request():
             """Simulate a low priority /screenshot request."""
             start = time.time()
             manager = RequestManager("test@example.com", "/screenshot", "GET")
-            
+
             # This should wait for high priority to complete
             if not manager.claim_request():
                 # Should be waiting for higher priority
@@ -347,31 +347,31 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
                 # Shouldn't happen in this test
                 elapsed = time.time() - start
                 results.append(("low_immediate", elapsed))
-                
+
         # Start high priority request first
         t1 = threading.Thread(target=make_high_priority_request)
         t1.start()
-        
+
         # Give it a moment to claim the request
         time.sleep(0.05)
-        
+
         # Now start low priority request - it should wait
         t2 = threading.Thread(target=make_low_priority_request)
         t2.start()
-        
+
         # Wait for both to complete
         t1.join(timeout=2)
         t2.join(timeout=2)
-        
+
         # Verify both completed
         self.assertEqual(len(results), 2)
-        
+
         # Verify low priority waited for high priority
         # Low priority should take longer than high priority
         self.assertIn("high", timings)
         self.assertIn("low", timings)
         self.assertGreater(timings["low"], timings["high"])
-        
+
         # Low priority time should be roughly high priority time + its own execution
         # (0.3s for high + 0.1s for low = ~0.4s total)
         self.assertGreater(timings["low"], 0.35)
@@ -379,7 +379,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
     @patch("server.core.request_manager.get_redis_client")
     def test_priority_cancellation_and_waiting(self, mock_get_redis):
         """Test both cancellation (high cancels low) and waiting (low waits for high)."""
-        
+
         class RedisSimulator:
             def __init__(self):
                 self.store = {}
@@ -409,25 +409,25 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
-        
+
         # Test 1: High priority cancels running low priority
         low_manager = RequestManager("test@example.com", "/screenshot", "GET")
         self.assertTrue(low_manager.claim_request())
-        
+
         # Now a high priority request comes in
         high_manager = RequestManager("test@example.com", "/open-book", "POST")
         high_manager._check_and_cancel_lower_priority_requests()
-        
+
         # Verify low priority is marked as cancelled
         self.assertTrue(low_manager.is_cancelled())
-        
+
         # Clean up for next test
         redis_sim.store.clear()
-        
+
         # Test 2: Low priority waits for running high priority
         high_manager2 = RequestManager("test@example.com", "/open-book", "POST")
         self.assertTrue(high_manager2.claim_request())
-        
+
         # Low priority should detect it needs to wait
         low_manager2 = RequestManager("test@example.com", "/screenshot", "GET")
         self.assertTrue(low_manager2._should_wait_for_higher_priority())
@@ -435,7 +435,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
     @patch("server.core.request_manager.get_redis_client")
     def test_last_one_wins_for_random_book(self, mock_get_redis):
         """Test that newer /open-random-book requests cancel older ones."""
-        
+
         class RedisSimulator:
             def __init__(self):
                 self.store = {}
@@ -469,7 +469,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
-        
+
         # Create multiple /open-random-book requests
         # Each should cancel the previous one
         managers = []
@@ -478,12 +478,12 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
             self.assertTrue(manager.claim_request())
             managers.append(manager)
             time.sleep(0.01)  # Small delay to ensure different timestamps
-        
+
         # The first two should be cancelled, only the last one should be active
         self.assertTrue(managers[0].is_cancelled())
         self.assertTrue(managers[1].is_cancelled())
         self.assertFalse(managers[2].is_cancelled())
-        
+
         # Verify cancellation keys were set
         self.assertGreater(len(redis_sim.cancelled_requests), 0)
 

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class WaitResult(Enum):
     """Result of waiting for a higher priority request."""
+
     READY = "ready"  # Can proceed with execution
     CANCELLED = "cancelled"  # Request was cancelled while waiting
     TIMEOUT = "timeout"  # Timed out waiting
@@ -25,6 +26,7 @@ class WaitResult(Enum):
 
 class DeduplicationStatus(Enum):
     """Status of a deduplicated request."""
+
     COMPLETED = "completed"  # Request completed successfully
     ERROR = "error"  # Request encountered an error
     IN_PROGRESS = "in_progress"  # Request is still being processed
@@ -69,10 +71,11 @@ class RequestManager:
         # For last-one-wins endpoints, add timestamp to make each request unique
         if self.path in LAST_ONE_WINS_ENDPOINTS:
             import time
+
             signature = f"{self.user_email}:{self.path}:{self.method}:{time.time()}"
             request_hash = hashlib.md5(signature.encode()).hexdigest()
             return f"kindle:request:{request_hash}"
-        
+
         # Get query parameters, excluding certain ones
         params = {}
         try:
@@ -120,25 +123,27 @@ class RequestManager:
             if self.path in LAST_ONE_WINS_ENDPOINTS:
                 # Cancel any existing request for this endpoint
                 self._cancel_existing_same_endpoint_request()
-                
+
                 # Force claim this request (overwrite any existing)
                 self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
                 logger.info(f"Claimed request {self.request_key} for {self.user_email} (last-one-wins)")
-                
+
                 # Record this as the active request for the user
                 self._set_active_request()
                 return True
-            
+
             # Check if there's a higher priority request already running
             if self._should_wait_for_higher_priority():
                 logger.info(
                     f"Request {self.request_key} (priority {self.priority}) waiting for higher priority request"
                 )
                 return False  # Will trigger wait logic in middleware
-            
+
             # Normal deduplication logic
             # Try to atomically set the progress key
-            if self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, nx=True, ex=DEFAULT_TTL):
+            if self.redis_client.set(
+                progress_key, DeduplicationStatus.IN_PROGRESS.value, nx=True, ex=DEFAULT_TTL
+            ):
                 logger.info(f"Claimed request {self.request_key} for {self.user_email}")
 
                 # Check for lower priority active requests and cancel them
@@ -168,7 +173,7 @@ class RequestManager:
             if active_data:
                 active_request = json.loads(active_data)
                 active_priority = active_request.get("priority", 0)
-                
+
                 # If there's a higher priority request running, we should wait
                 if active_priority > self.priority:
                     logger.info(
@@ -195,7 +200,7 @@ class RequestManager:
             if active_data:
                 active_request = json.loads(active_data)
                 active_path = active_request.get("path")
-                
+
                 # If it's the same endpoint, cancel it
                 if active_path == self.path:
                     active_request_key = active_request.get("request_key")

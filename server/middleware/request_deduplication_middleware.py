@@ -89,13 +89,15 @@ def deduplicate_request(func: Callable) -> Callable:
                     return response_data, status_code
                 else:
                     # Timeout or error waiting - execute normally as fallback
-                    logger.warning(f"Failed to get deduplicated response, executing normally for {user_email}")
+                    logger.warning(
+                        f"Failed to get deduplicated response, executing normally for {user_email}"
+                    )
                     return func(self, *args, **kwargs)
             else:
                 # Must be waiting for higher priority request
                 logger.info(f"Waiting for higher priority request to complete before executing {path}")
                 wait_result = manager.wait_for_higher_priority_completion()
-                
+
                 if wait_result == WaitResult.READY:
                     # Higher priority request finished, now try to execute
                     logger.info(f"Higher priority request completed, now executing {path}")
