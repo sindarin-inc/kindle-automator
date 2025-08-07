@@ -323,21 +323,39 @@ class RequestManager:
         try:
             result_key = f"{self.request_key}:result"
             status_key = f"{self.request_key}:status"
+            waiters_key = f"{self.request_key}:waiters"
 
-            # Pickle the response data
-            pickled_data = pickle.dumps((response_data, status_code))
+            # Check if there are any waiters
+            waiters_count = self.redis_client.get(waiters_key)
+            has_waiters = waiters_count and int(waiters_count) > 0
 
-            # Store the result and status
-            self.redis_client.set(result_key, pickled_data, ex=DEFAULT_TTL)
-            self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=DEFAULT_TTL)
+            if has_waiters:
+                # There are waiters, store the response for them with a short TTL
+                # 10 seconds should be enough for waiters to retrieve it
+                short_ttl = 10
+                
+                # Pickle the response data
+                pickled_data = pickle.dumps((response_data, status_code))
 
-            logger.info(f"Stored response for {self.request_key}")
+                # Store the result and status with short TTL
+                self.redis_client.set(result_key, pickled_data, ex=short_ttl)
+                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=short_ttl)
+
+                logger.info(f"Stored response for {self.request_key} with {short_ttl}s TTL for {waiters_count} waiters")
+            else:
+                # No waiters, just mark as completed and clean up immediately
+                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=2)
+                logger.info(f"No waiters for {self.request_key}, marked as completed and will clean up")
+                
+                # Clean up immediately since there are no waiters
+                keys_to_delete = [
+                    f"{self.request_key}:progress",
+                    f"{self.request_key}:cancelled",
+                ]
+                self.redis_client.delete(*keys_to_delete)
 
             # Clear active request if it's ours
             self._clear_active_request()
-
-            # Don't cleanup here - let the waiters handle cleanup
-            # This avoids race condition where we cleanup before waiters increment the counter
 
         except Exception as e:
             logger.error(f"Error storing response: {e}")
