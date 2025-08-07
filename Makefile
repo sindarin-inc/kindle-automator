@@ -11,14 +11,46 @@ init:
 
 claude-run: 
 	@echo "Starting Flask server in background..."
+	@# Check if previous shutdown is still ongoing
+	@if [ -f logs/server_output.log ] && grep -q "=== Beginning graceful shutdown sequence ===" logs/server_output.log 2>/dev/null && ! grep -q "=== Graceful shutdown complete ===" logs/server_output.log 2>/dev/null; then \
+		echo "Waiting for previous shutdown to complete..."; \
+		timeout=60; \
+		elapsed=0; \
+		while [ $$elapsed -lt $$timeout ]; do \
+			if grep -q "=== Graceful shutdown complete ===" logs/server_output.log 2>/dev/null; then \
+				break; \
+			fi; \
+			echo "  Still shutting down previous instance... ($$elapsed seconds)"; \
+			sleep 2; \
+			elapsed=$$((elapsed + 2)); \
+		done; \
+	fi
+	@# Clear the log file before starting new server
+	@> logs/server_output.log
+	@# Start the server in background
 	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run dotenv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
-	@echo ""
-	@echo "IMPORTANT: Follow the log/server_output.log and look for === Session restoration complete === to know when the server is ready before making requests."
-	@echo ""
-	@echo "Monitor logs with: tail -f logs/server_output.log"
-	@echo "To stop the server and start a new server, run: make claude-run"
+	@echo "Waiting for session restoration to complete..."
+	@# Wait for session restoration to complete (with timeout of 120 seconds)
+	@timeout=120; \
+	elapsed=0; \
+	while [ $$elapsed -lt $$timeout ]; do \
+		if grep -q "=== Session restoration complete ===" logs/server_output.log 2>/dev/null; then \
+			echo ""; \
+			echo "✓ Server is ready! Session restoration complete."; \
+			echo ""; \
+			echo "Monitor logs with: tail -f logs/server_output.log"; \
+			echo "To stop the server and start a new server, run: make claude-run"; \
+			exit 0; \
+		fi; \
+		echo "  Waiting for session restoration... ($$elapsed seconds elapsed)"; \
+		sleep 3; \
+		elapsed=$$((elapsed + 3)); \
+	done; \
+	echo "Timeout waiting for session restoration after $$timeout seconds"; \
+	echo "Check logs/server_output.log for issues"; \
+	exit 1
 
 deps:
 	uv pip install -r requirements.txt
@@ -45,8 +77,8 @@ test:
 test-all: test
 
 test-dedup:
-	@echo "Running deduplication integration tests..."
-	@python test_dedup_integration.py
+	@echo "Running deduplication tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_request_deduplication.py -v
 
 # Generate staff authentication token for testing
 test-staff-auth:
