@@ -46,7 +46,7 @@ def store_page_source(source: str, prefix: str = "unknown", directory: str = "fi
     with open(filepath, "w") as f:
         f.write(source)
 
-    logger.info(f"Stored page source to {filepath}")
+    logger.debug(f"Stored page source to {filepath}")
     return filepath
 
 

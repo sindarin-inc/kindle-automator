@@ -189,7 +189,7 @@ class ViewInspector:
                         "com.android.permissioncontroller" in current_activity
                         and not notification_dialog_handled
                     ):
-                        logger.info("Detected permission dialog during app initialization")
+                        logger.debug("Detected permission dialog during app initialization")
                         notification_dialog_handled = True  # Mark as handled to avoid infinite loops
                         # Try to handle notification permission dialog
                         try:
@@ -203,7 +203,7 @@ class ViewInspector:
                                 try:
                                     element = self.driver.find_element(strategy, locator)
                                     if element.is_displayed():
-                                        logger.info(
+                                        logger.debug(
                                             f"Found notification dialog element: {strategy}={locator}"
                                         )
                                         is_notification_dialog = True
@@ -266,7 +266,7 @@ class ViewInspector:
                                         permissions_handler.handle_notifications_permission(
                                             should_allow=False
                                         )
-                                        logger.info("Used PermissionsHandler to dismiss notification dialog")
+                                        logger.debug("Used PermissionsHandler to dismiss notification dialog")
                                     except Exception as ph_e:
                                         logger.error(f"PermissionsHandler also failed: {ph_e}", exc_info=True)
                                         # As last resort, try pressing back button
@@ -299,7 +299,7 @@ class ViewInspector:
                             current_activity
                             == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                         ):
-                            logger.info("Permission dialog detected - app is ready")
+                            logger.debug("Permission dialog detected - app is ready")
                             break
 
                         # Try to dismiss the Google Play review dialog if it's showing
@@ -345,7 +345,7 @@ class ViewInspector:
             if not app_ready:
                 logger.debug(f"App not ready after {max_wait_time}s polling, proceeding anyway")
 
-            logger.info("App brought to foreground")
+            logger.debug("App brought to foreground")
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Error bringing app to foreground: {e}", exc_info=True)
@@ -360,7 +360,7 @@ class ViewInspector:
             time_since_check = time.time() - self._tab_check_time.get(tab_name, 0)
             if time_since_check < 0.5:
                 cached_result = getattr(self, cache_key)
-                logger.info(
+                logger.debug(
                     f"   Using cached {tab_name} tab selection from {time_since_check:.2f}s ago: {cached_result}"
                 )
                 return cached_result
@@ -402,7 +402,7 @@ class ViewInspector:
 
             # Store the page source
             filepath = store_page_source(source, "unknown_view")
-            logger.info(f"Stored unknown view page source at: {filepath}")
+            logger.debug(f"Stored unknown view page source at: {filepath}")
         except Exception as e:
             logger.error(f"Failed to get page source: {e.__class__.__name__}", exc_info=True)
 
@@ -412,7 +412,7 @@ class ViewInspector:
             try:
                 element = self.driver.find_element(strategy[0], strategy[1])
                 if success_message:
-                    logger.info(success_message)
+                    logger.debug(success_message)
                 return element
             except:
                 continue
@@ -424,7 +424,7 @@ class ViewInspector:
             for strategy, locator in VIEW_OPTIONS_MENU_STATE_STRATEGIES:
                 try:
                     self.driver.find_element(strategy, locator)
-                    logger.info(f"View options menu detected via {strategy}: {locator}")
+                    logger.debug(f"View options menu detected via {strategy}: {locator}")
                     return True
                 except Exception:
                     continue
@@ -497,19 +497,19 @@ class ViewInspector:
     def get_current_view(self):
         """Determine the current view based on visible elements."""
         try:
-            logger.info("Determining current view...")
+            logger.debug("Determining current view...")
 
             # First check if we're on the Android dashboard (not in Kindle app)
             try:
                 current_activity = self.driver.current_activity
-                logger.info(f"Current activity: {current_activity}")
+                logger.debug(f"Current activity: {current_activity}")
 
                 # Fast path: If we're in permission dialog activity, return immediately
                 if (
                     current_activity
                     == "com.android.permissioncontroller.permission.ui.GrantPermissionsActivity"
                 ):
-                    logger.info("Permission dialog activity detected - fast return NOTIFICATION_PERMISSION")
+                    logger.debug("Permission dialog activity detected - fast return NOTIFICATION_PERMISSION")
                     return AppView.NOTIFICATION_PERMISSION
 
                 # Check if we're on the Android dashboard/launcher
@@ -519,8 +519,8 @@ class ViewInspector:
                     logger.warning("Detected Android dashboard - Kindle app is not in foreground")
                     # Try to launch the Kindle app
                     if self.ensure_app_foreground():
-                        logger.info("Successfully launched Kindle app from dashboard")
-                        time.sleep(2)  # Give app time to initialize
+                        logger.debug("Successfully launched Kindle app from dashboard")
+                        time.sleep(0.25)  # Give app time to initialize
                         # Don't recurse, just continue with normal detection
                     else:
                         logger.error("Failed to launch Kindle app from dashboard", exc_info=True)
@@ -536,12 +536,12 @@ class ViewInspector:
                     time_since_check = time.time() - self._current_view_cache_time
                     if time_since_check < 1.0:
                         cached_view = self._current_view_cache
-                        logger.info(f"Using cached view from {time_since_check:.2f}s ago: {cached_view}")
+                        logger.debug(f"Using cached view from {time_since_check:.2f}s ago: {cached_view}")
                         return cached_view
 
                 # Check for HOME tab first since it's the most common state
                 if self._is_tab_selected("HOME"):
-                    logger.info("Found HOME tab selected, immediately returning HOME view")
+                    logger.debug("Found HOME tab selected, immediately returning HOME view")
                     # Cache this view detection
                     self._current_view_cache_time = time.time()
                     self._current_view_cache = AppView.HOME
@@ -560,13 +560,13 @@ class ViewInspector:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
                         app_not_responding_elements += 1
-                        logger.info(f"   Found app not responding element: {strategy}={locator}")
+                        logger.debug(f"   Found app not responding element: {strategy}={locator}")
                 except NoSuchElementException:
                     continue
 
             # If we found at least 2 elements of the app not responding dialog, we're confident
             if app_not_responding_elements >= 2:
-                logger.info("   App not responding dialog detected")
+                logger.debug("   App not responding dialog detected")
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "app_not_responding")
 
@@ -583,7 +583,7 @@ class ViewInspector:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
                         download_limit_elements += 1
-                        logger.info(f"   Found download limit dialog element: {strategy}={locator}")
+                        logger.debug(f"   Found download limit dialog element: {strategy}={locator}")
                 except NoSuchElementException:
                     continue
 
@@ -592,18 +592,18 @@ class ViewInspector:
                 current_activity = self.driver.current_activity
                 if "RemoteLicenseReleaseActivity" in current_activity:
                     download_limit_elements += 1
-                    logger.info(f"   Found RemoteLicenseReleaseActivity: {current_activity}")
+                    logger.debug(f"   Found RemoteLicenseReleaseActivity: {current_activity}")
             except Exception as e:
                 logger.debug(f"   Error checking current activity: {e}")
 
             # If we found at least 2 elements of the download limit dialog, we're confident
             if download_limit_elements >= 2:
-                logger.info("   Download limit reached dialog detected")
+                logger.debug("   Download limit reached dialog detected")
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "download_limit_dialog")
 
                 # Set this as reading state with a dialog, since it's related to book opening
-                logger.info("   Treating download limit dialog as part of reading state")
+                logger.debug("   Treating download limit dialog as part of reading state")
                 return AppView.READING
 
             # Check for "Viewing full screen" dialog early, especially if we're in StandAloneBookReaderActivity
@@ -615,8 +615,8 @@ class ViewInspector:
                         try:
                             element = self.driver.find_element(strategy, locator)
                             if element.is_displayed():
-                                logger.info(f"   Found viewing full screen dialog in {current_activity}")
-                                logger.info("   This is a reading view with full screen dialog overlay")
+                                logger.debug(f"   Found viewing full screen dialog in {current_activity}")
+                                logger.debug("   This is a reading view with full screen dialog overlay")
                                 return AppView.READING
                         except NoSuchElementException:
                             continue
@@ -625,7 +625,7 @@ class ViewInspector:
 
             # Check for Item Removed dialog which is a specific reading state dialog
             if is_item_removed_dialog_visible(self.driver):
-                logger.info("   Found Item Removed dialog - treating as reading view")
+                logger.debug("   Found Item Removed dialog - treating as reading view")
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "item_removed_dialog")
                 return AppView.READING
@@ -637,7 +637,7 @@ class ViewInspector:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
                         reading_view_elements_found += 1
-                        logger.info(f"   Found reading view element: {strategy}={locator}")
+                        logger.debug(f"   Found reading view element: {strategy}={locator}")
                 except NoSuchElementException:
                     continue
 
@@ -646,8 +646,8 @@ class ViewInspector:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
-                        logger.info(f"   Found 'About this book slideover' element: {strategy}={locator}")
-                        logger.info(
+                        logger.debug(f"   Found 'About this book slideover' element: {strategy}={locator}")
+                        logger.debug(
                             "   This indicates we're in reading view with the about book slideover open"
                         )
                         # Save page source for debugging
@@ -658,7 +658,7 @@ class ViewInspector:
 
             # If we found multiple reading view elements, we're definitely in reading view
             if reading_view_elements_found >= 2:
-                logger.info(
+                logger.debug(
                     f"   Found {reading_view_elements_found} reading view elements - confidently in reading view"
                 )
                 return AppView.READING
@@ -667,7 +667,7 @@ class ViewInspector:
             for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
                 try:
                     self.driver.find_element(strategy, locator)
-                    logger.info("   Found reading view full screen dialog")
+                    logger.debug("   Found reading view full screen dialog")
                     return AppView.READING
                 except NoSuchElementException:
                     continue
@@ -677,7 +677,7 @@ class ViewInspector:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed() and "Go to that location?" in element.text:
-                        logger.info("   Found 'Go to that location?' dialog - this indicates reading view")
+                        logger.debug("   Found 'Go to that location?' dialog - this indicates reading view")
                         return AppView.READING
                 except NoSuchElementException:
                     continue
@@ -689,7 +689,7 @@ class ViewInspector:
                     if element.is_displayed():
                         text = element.text
                         if ("You are currently on page" in text) or ("You are currently at location" in text):
-                            logger.info(
+                            logger.debug(
                                 "   Found 'last read page/location' dialog - this indicates reading view"
                             )
                             return AppView.READING
@@ -701,7 +701,7 @@ class ViewInspector:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed() and "Auto-update on Goodreads" in element.text:
-                        logger.info(
+                        logger.debug(
                             "   Found 'Auto-update on Goodreads' dialog - this indicates reading view"
                         )
                         return AppView.READING
@@ -716,7 +716,7 @@ class ViewInspector:
                 not_now_button = self.driver.find_element(*GOODREADS_NOT_NOW_BUTTON)
 
                 if not_now_button.is_displayed():
-                    logger.info(
+                    logger.debug(
                         "   Found 'NOT NOW' button for Goodreads dialog - this indicates reading view"
                     )
                     return AppView.READING
@@ -727,7 +727,7 @@ class ViewInspector:
             auth_view_result = self._is_auth_view()
             if auth_view_result:
                 # Store auth page source for debugging
-                logger.info("   Found auth view - storing page source for debugging")
+                logger.debug("   Found auth view - storing page source for debugging")
                 source = self.driver.page_source
                 store_page_source(source, "auth_view")
                 # If _is_auth_view returns AppView.TWO_FACTOR, use that
@@ -739,7 +739,7 @@ class ViewInspector:
             if self._try_find_element(
                 NOTIFICATION_DIALOG_IDENTIFIERS, "   Found notification permission dialog"
             ):
-                logger.info("   Found notification permission dialog")
+                logger.debug("   Found notification permission dialog")
                 return AppView.NOTIFICATION_PERMISSION
 
             # Check for puzzle screen first (more specific than captcha)
@@ -747,7 +747,7 @@ class ViewInspector:
             for strategy, locator in PUZZLE_REQUIRED_INDICATORS:
                 try:
                     self.driver.find_element(strategy, locator)
-                    logger.info("   Found puzzle authentication screen")
+                    logger.debug("   Found puzzle authentication screen")
                     return AppView.PUZZLE
                 except:
                     continue
@@ -761,7 +761,7 @@ class ViewInspector:
                 except:
                     continue
             if indicators_found >= 3:
-                logger.info("   Found captcha screen")
+                logger.debug("   Found captcha screen")
 
                 # Try to find and tap the captcha input field
                 try:
@@ -769,14 +769,14 @@ class ViewInspector:
                         AppiumBy.XPATH, "//android.widget.EditText[not(@password)]"
                     )
                     if captcha_input:
-                        logger.info("   Tapping captcha input field to focus it")
+                        logger.debug("   Tapping captcha input field to focus it")
                         captcha_input.click()
 
                         # Hide the keyboard after tapping
                         if self._should_hide_keyboard():
                             try:
                                 self.driver.hide_keyboard()
-                                logger.info("   Successfully hid keyboard after focusing captcha field")
+                                logger.debug("   Successfully hid keyboard after focusing captcha field")
                             except Exception as hide_err:
                                 logger.warning(
                                     f"   Could not hide keyboard after focusing captcha field: {hide_err}"
@@ -791,7 +791,7 @@ class ViewInspector:
             if self._try_find_element(
                 EMPTY_LIBRARY_IDENTIFIERS, "   Found empty library with sign-in button"
             ):
-                logger.info("   Found empty library with sign-in button")
+                logger.debug("   Found empty library with sign-in button")
                 return AppView.LIBRARY_SIGN_IN
 
             # Also check for more specific identifiers from XML
@@ -800,13 +800,13 @@ class ViewInspector:
                 container_strategy = EMPTY_LIBRARY_IDENTIFIERS[3]  # Using the empty_library_logged_out ID
                 container = self.driver.find_element(*container_strategy)
                 if container.is_displayed():
-                    logger.info("   Found empty library logged out container")
+                    logger.debug("   Found empty library logged out container")
                     # Try to find sign-in button within it
                     try:
                         button_strategy = EMPTY_LIBRARY_IDENTIFIERS[4]  # Using the empty_library_sign_in ID
                         button = self.driver.find_element(*button_strategy)
                         if button.is_displayed():
-                            logger.info("   Found sign-in button by ID")
+                            logger.debug("   Found sign-in button by ID")
                             return AppView.LIBRARY_SIGN_IN
                     except NoSuchElementException:
                         # Just check for text "It's a little empty here…" which suggests need to sign in
@@ -819,7 +819,7 @@ class ViewInspector:
                                 try:
                                     text = self.driver.find_element(strategy, locator)
                                     if text.is_displayed():
-                                        logger.info(f"   Found '{text.text}' text suggesting sign-in needed")
+                                        logger.debug(f"   Found '{text.text}' text suggesting sign-in needed")
                                         return AppView.LIBRARY_SIGN_IN
                                 except NoSuchElementException:
                                     continue
@@ -831,12 +831,12 @@ class ViewInspector:
 
             # Check if we're in search results interface (which is separate from library)
             if self._is_in_search_interface():
-                logger.info("   Detected search results interface, treating as SEARCH_RESULTS view")
+                logger.debug("   Detected search results interface, treating as SEARCH_RESULTS view")
                 return AppView.SEARCH_RESULTS
 
             # First check the more accurate tab selection because library_root_view exists for both tabs
             if self._is_tab_selected("LIBRARY"):
-                logger.info("   LIBRARY tab is selected, confirming we are in library view")
+                logger.debug("   LIBRARY tab is selected, confirming we are in library view")
                 # Cache this view detection
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.LIBRARY
@@ -845,7 +845,7 @@ class ViewInspector:
 
             # If LIBRARY tab is not selected, check if HOME tab is selected
             if self._is_tab_selected("HOME"):
-                logger.info("   HOME tab is selected, we are in home view not library view")
+                logger.debug("   HOME tab is selected, we are in home view not library view")
                 # Cache this view detection
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.HOME
@@ -869,48 +869,48 @@ class ViewInspector:
                     pass
 
             if self._is_tab_selected("LIBRARY"):
-                logger.info("Detected LIBRARY view")
+                logger.debug("Detected LIBRARY view")
                 return AppView.LIBRARY
 
             # Check for view options menu (part of library view)
             if self._is_view_options_menu_open():
-                logger.info("   Found view options menu - this is part of library view")
+                logger.debug("   Found view options menu - this is part of library view")
                 return AppView.LIBRARY
 
             # Check for Grid/List view dialog (part of library view)
             if self._is_grid_list_view_dialog_open():
-                logger.info("   Found Grid/List view dialog - this is part of library view")
+                logger.debug("   Found Grid/List view dialog - this is part of library view")
                 return AppView.LIBRARY
 
             # Check tab selection for HOME view
-            logger.info("   Checking tab selection...")
+            logger.debug("   Checking tab selection...")
             if self._is_tab_selected("HOME"):
-                logger.info("HOME tab is selected")
+                logger.debug("HOME tab is selected")
                 return AppView.HOME
 
             # Check for password view
-            logger.info("   Checking for password view...")
+            logger.debug("   Checking for password view...")
             for strategy, locator in PASSWORD_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
-                    logger.info(f"   Found password view element: {element.get_attribute('text')}")
+                    logger.debug(f"   Found password view element: {element.get_attribute('text')}")
                     return AppView.SIGN_IN_PASSWORD
                 except NoSuchElementException:
                     continue
 
             # Check for sign in view
-            logger.info("   Checking for sign in view...")
+            logger.debug("   Checking for sign in view...")
             for strategy, locator in EMAIL_VIEW_IDENTIFIERS:
                 try:
                     element = self.driver.find_element(strategy, locator)
-                    logger.info(f"   Found sign in view element: {element.get_attribute('text')}")
+                    logger.debug(f"   Found sign in view element: {element.get_attribute('text')}")
                     return AppView.SIGN_IN
                 except NoSuchElementException:
                     continue
 
             # Check if we're in MORE tab/settings view
             if self._is_tab_selected("MORE"):
-                logger.info("   MORE tab is selected, confirming we are in more settings view")
+                logger.debug("   MORE tab is selected, confirming we are in more settings view")
                 # Cache this view detection
                 self._current_view_cache_time = time.time()
                 self._current_view_cache = AppView.MORE_SETTINGS
@@ -921,13 +921,13 @@ class ViewInspector:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
-                        logger.info(f"   Found MORE_SETTINGS element: {strategy}={locator}")
+                        logger.debug(f"   Found MORE_SETTINGS element: {strategy}={locator}")
                         return AppView.MORE_SETTINGS
                 except NoSuchElementException:
                     continue
 
             # Check for general app indicators
-            logger.info("   Checking for general app indicators...")
+            logger.debug("   Checking for general app indicators...")
             if self._try_find_element(
                 LIBRARY_VIEW_IDENTIFIERS,
                 "   Found library root view - in app but can't determine exact view",
@@ -944,7 +944,7 @@ class ViewInspector:
             try:
                 current_activity = self.driver.current_activity
                 if current_activity and "AlertActivity" in current_activity:
-                    logger.info(f"Detected AlertActivity: {current_activity}, checking for known dialogs")
+                    logger.debug(f"Detected AlertActivity: {current_activity}, checking for known dialogs")
 
                     # Import and use dialog handler
                     from views.common.dialog_handler import DialogHandler
@@ -954,7 +954,7 @@ class ViewInspector:
                     # Check for and handle dialogs without requiring book title
                     handled, dialog_type = dialog_handler.check_all_dialogs(None, "in UNKNOWN view")
                     if handled:
-                        logger.info(f"Successfully handled {dialog_type} dialog in AlertActivity")
+                        logger.debug(f"Successfully handled {dialog_type} dialog in AlertActivity")
                         # Still return UNKNOWN, but the dialog has been handled
             except Exception as activity_error:
                 logger.debug(f"Error checking current activity: {activity_error}")
@@ -977,7 +977,7 @@ class ViewInspector:
                 success = False
                 if hasattr(self, "automator") and self.automator and hasattr(self.automator, "device_id"):
                     device_id = self.automator.device_id
-                    logger.info("Attempting secure screenshot for error view...")
+                    logger.debug("Attempting secure screenshot for error view...")
                     # Get current state if available
                     current_state = None
                     if hasattr(self.automator, "state_machine") and self.automator.state_machine:
@@ -986,7 +986,7 @@ class ViewInspector:
                         device_id=device_id, output_path=screenshot_path, current_state=current_state
                     )
                     if secure_path:
-                        logger.info(f"Saved secure screenshot of error view to {secure_path}")
+                        logger.debug(f"Saved secure screenshot of error view to {secure_path}")
                         success = True
                     else:
                         logger.warning("Secure screenshot failed, falling back to standard method")
@@ -994,7 +994,7 @@ class ViewInspector:
                 # Fall back to standard method if secure screenshot failed or not available
                 if not success:
                     self.driver.save_screenshot(screenshot_path)
-                    logger.info(f"Saved screenshot of error state to {screenshot_path}")
+                    logger.debug(f"Saved screenshot of error state to {screenshot_path}")
             except Exception as screenshot_error:
                 logger.error(f"Failed to save error screenshot: {screenshot_error}", exc_info=True)
             return AppView.UNKNOWN
@@ -1019,14 +1019,14 @@ class ViewInspector:
                 if focused_element and focused_element.get_attribute(
                     "resource-id"
                 ) == field_element.get_attribute("resource-id"):
-                    logger.info(f"   {field_type.capitalize()} field already has focus, no need to tap")
+                    logger.debug(f"   {field_type.capitalize()} field already has focus, no need to tap")
                     has_focus = True
 
                     # Hide the keyboard if it's visible
                     if self._should_hide_keyboard():
                         try:
                             self.driver.hide_keyboard()
-                            logger.info(
+                            logger.debug(
                                 f"   Successfully hid keyboard for already focused {field_type} field"
                             )
                         except Exception as hide_err:
@@ -1049,7 +1049,7 @@ class ViewInspector:
                     if self._should_hide_keyboard():
                         try:
                             self.driver.hide_keyboard()
-                            logger.info(f"   Successfully hid keyboard after focusing {field_type} field")
+                            logger.debug(f"   Successfully hid keyboard after focusing {field_type} field")
                         except Exception as hide_err:
                             logger.warning(
                                 f"   Could not hide keyboard after focusing {field_type} field: {hide_err}"
@@ -1083,7 +1083,7 @@ class ViewInspector:
                         if locator == "auth-mfa-otpcode" or "auth-mfa-otpcode" in locator:
                             otp_input_field = element
                         if two_factor_indicators >= 2:
-                            logger.info("   Found Two-Step Verification screen")
+                            logger.debug("   Found Two-Step Verification screen")
                             # Focus the OTP input field if we found it
                             if otp_input_field:
                                 self._focus_input_field_if_needed(otp_input_field, "OTP")
@@ -1096,7 +1096,7 @@ class ViewInspector:
                 try:
                     element = self.driver.find_element(*strategy)
                     if element:
-                        logger.info("   Found email input field - on auth view")
+                        logger.debug("   Found email input field - on auth view")
                         self._focus_input_field_if_needed(element, "email")
                         return True
                 except NoSuchElementException:
@@ -1107,7 +1107,7 @@ class ViewInspector:
                 try:
                     element = self.driver.find_element(*strategy)
                     if element:
-                        logger.info("   Found password input field - on auth view")
+                        logger.debug("   Found password input field - on auth view")
                         self._focus_input_field_if_needed(element, "password")
                         return True
                 except NoSuchElementException:
@@ -1117,7 +1117,7 @@ class ViewInspector:
             for strategy in SIGN_IN_RADIO_BUTTON_STRATEGIES:
                 try:
                     if self.driver.find_element(*strategy):
-                        logger.info("   Found sign-in radio button - on auth view")
+                        logger.debug("   Found sign-in radio button - on auth view")
                         return True
                 except NoSuchElementException:
                     continue
@@ -1144,7 +1144,7 @@ class ViewInspector:
                 search_query = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
                 if search_query and search_query.is_displayed():
                     search_indicators += 1
-                    logger.info("Found search query input field")
+                    logger.debug("Found search query input field")
             except NoSuchElementException:
                 pass
 
@@ -1155,7 +1155,7 @@ class ViewInspector:
                 )
                 if search_results and search_results.is_displayed():
                     search_indicators += 1
-                    logger.info("Found search results recycler view")
+                    logger.debug("Found search results recycler view")
             except NoSuchElementException:
                 pass
 
@@ -1166,7 +1166,7 @@ class ViewInspector:
                 )
                 if up_button and up_button.is_displayed():
                     search_indicators += 1
-                    logger.info("Found Navigate up button in search view")
+                    logger.debug("Found Navigate up button in search view")
             except NoSuchElementException:
                 pass
 
@@ -1177,7 +1177,7 @@ class ViewInspector:
                 )
                 if in_library_header and in_library_header.is_displayed():
                     search_indicators += 2  # Strong indicator, count as 2
-                    logger.info("Found 'In your library' section header in search results")
+                    logger.debug("Found 'In your library' section header in search results")
             except NoSuchElementException:
                 try:
                     # Alternative way to find the header by text
@@ -1186,7 +1186,7 @@ class ViewInspector:
                     )
                     if in_library_text and in_library_text.is_displayed():
                         search_indicators += 2  # Strong indicator, count as 2
-                        logger.info("Found 'In your library' text in search results")
+                        logger.debug("Found 'In your library' text in search results")
                 except NoSuchElementException:
                     pass
 
@@ -1197,7 +1197,7 @@ class ViewInspector:
                 )
                 if store_results_header and store_results_header.is_displayed():
                     search_indicators += 2  # Strong indicator, count as 2
-                    logger.info("Found 'Results from Kindle' section header in search results")
+                    logger.debug("Found 'Results from Kindle' section header in search results")
             except NoSuchElementException:
                 try:
                     # Alternative way to find the header by text
@@ -1206,14 +1206,14 @@ class ViewInspector:
                     )
                     if store_results_text and store_results_text.is_displayed():
                         search_indicators += 2  # Strong indicator, count as 2
-                        logger.info("Found 'Results from Kindle' text in search results")
+                        logger.debug("Found 'Results from Kindle' text in search results")
                 except NoSuchElementException:
                     pass
 
             # We need at least 2 indicators to be confident we're in search view
             is_search = search_indicators >= 2
             if is_search:
-                logger.info(f"Detected search interface with {search_indicators} indicators")
+                logger.debug(f"Detected search interface with {search_indicators} indicators")
             return is_search
 
         except Exception as e:

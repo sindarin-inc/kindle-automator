@@ -28,7 +28,7 @@ class RedisConnection:
     def _initialize_client(self):
         """Initialize Redis client with connection pool."""
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6479/0")
-        logger.info(f"Initializing Redis connection to {redis_url}")
+        logger.debug(f"Initializing Redis connection to {redis_url}")
 
         try:
             # For macOS, we need to use the direct connection method instead of from_url
@@ -73,7 +73,7 @@ class RedisConnection:
             # Test the connection
             if self._client:
                 self._client.ping()
-                logger.info(f"Successfully connected to Redis at {redis_url}")
+                logger.debug(f"Successfully connected to Redis at {redis_url}")
 
         except (ConnectionError, RedisError) as e:
             logger.error(f"Failed to connect to Redis at {redis_url}: {e}")

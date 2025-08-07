@@ -86,7 +86,7 @@ class UserRepository:
 
             self.session.commit()
             self.session.refresh(user)
-            logger.info(f"Created new user: {email}")
+            logger.debug(f"Created new user: {email}")
             return user
         except IntegrityError as e:
             self.session.rollback()
@@ -251,7 +251,7 @@ class UserRepository:
             self.session.commit()
 
             if result.rowcount > 0:
-                logger.info(f"Updated last_used for {email}")
+                logger.debug(f"Updated last_used for {email}")
                 if emulator_id:
                     logger.debug(f"Emulator ID: {emulator_id}")
                 return True

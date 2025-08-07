@@ -80,7 +80,7 @@ class ReaderHandler:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
-                        logger.info(f"Found Download Limit dialog title with #{idx}: {strategy}={locator}")
+                        logger.debug(f"Found Download Limit dialog title with #{idx}: {strategy}={locator}")
                         # Take page source for diagnostics
                         store_page_source(self.driver.page_source, "download_limit_dialog_detected")
                         return True
@@ -94,7 +94,7 @@ class ReaderHandler:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
-                        logger.info(f"Found Download Limit error text #{idx}: {strategy}={locator}")
+                        logger.debug(f"Found Download Limit error text #{idx}: {strategy}={locator}")
                         store_page_source(self.driver.page_source, "download_limit_error_text_detected")
                         return True
                 except NoSuchElementException:
@@ -124,7 +124,7 @@ class ReaderHandler:
                         button = None
 
                 if device_list and button:
-                    logger.info("Found Download Limit dialog via device list + button combination")
+                    logger.debug("Found Download Limit dialog via device list + button combination")
                     store_page_source(self.driver.page_source, "download_limit_combo_detected")
                     return True
             except Exception as e:
@@ -138,7 +138,7 @@ class ReaderHandler:
             try:
                 current_activity = self.driver.current_activity
                 if "RemoteLicenseReleaseActivity" in current_activity:
-                    logger.info(f"Found Download Limit dialog via activity name: {current_activity}")
+                    logger.debug(f"Found Download Limit dialog via activity name: {current_activity}")
                     store_page_source(self.driver.page_source, "download_limit_activity_detected")
                     return True
             except Exception as e:
@@ -170,7 +170,7 @@ class ReaderHandler:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         dialog_found = True
-                        logger.info(
+                        logger.debug(
                             f"Found Download Limit dialog with identifier #{idx}: {strategy}={locator}"
                         )
                         break
@@ -186,7 +186,7 @@ class ReaderHandler:
                         element = self.driver.find_element(strategy, locator)
                         if element and element.is_displayed():
                             dialog_found = True
-                            logger.info(f"Found Download Limit via error text #{idx}: {strategy}={locator}")
+                            logger.debug(f"Found Download Limit via error text #{idx}: {strategy}={locator}")
                             break
                     except NoSuchElementException:
                         pass
@@ -217,14 +217,14 @@ class ReaderHandler:
 
                     if device_list and button:
                         dialog_found = True
-                        logger.info(
+                        logger.debug(
                             "Found Download Limit dialog by identifying device list and button together"
                         )
                 except Exception as e:
                     logger.debug(f"Error during combined device list + button check: {e}")
 
             if not dialog_found:
-                logger.info("Download Limit Reached dialog not found after trying all approaches")
+                logger.debug("Download Limit Reached dialog not found after trying all approaches")
                 self.driver.save_screenshot("screenshots/download_limit_not_found.png")
                 return False
 
@@ -258,7 +258,7 @@ class ReaderHandler:
 
                     # Perform tap
                     self.driver.tap([(x, y)])
-                    logger.info(f"Used coordinate tap at ({x}, {y}) for first device")
+                    logger.debug(f"Used coordinate tap at ({x}, {y}) for first device")
                     first_device_tapped = True
                     time.sleep(1)
                 except Exception as e2:
@@ -275,7 +275,7 @@ class ReaderHandler:
             button_enabled = False
             enable_wait_time = 2  # seconds
 
-            logger.info(f"Waiting up to {enable_wait_time}s for button to become enabled")
+            logger.debug(f"Waiting up to {enable_wait_time}s for button to become enabled")
             while time.time() - start_time < enable_wait_time and not button_enabled:
                 try:
                     button = self.driver.find_element(
@@ -285,7 +285,7 @@ class ReaderHandler:
                         enabled_attr = button.get_attribute("enabled")
                         if enabled_attr == "true":
                             button_enabled = True
-                            logger.info(f"Button is now enabled")
+                            logger.debug(f"Button is now enabled")
                             break
                 except Exception:
                     pass
@@ -338,9 +338,9 @@ class ReaderHandler:
                     dialog_still_visible = True
                     logger.warning("Download Limit dialog still visible after attempts")
                 else:
-                    logger.info("Dialog no longer visible - successfully handled")
+                    logger.debug("Dialog no longer visible - successfully handled")
             except NoSuchElementException:
-                logger.info("Dialog title element not found - dialog may have closed")
+                logger.debug("Dialog title element not found - dialog may have closed")
 
             if dialog_still_visible and not remove_button_tapped:
                 logger.error("Could not handle the Download Limit dialog", exc_info=True)
@@ -371,14 +371,14 @@ class ReaderHandler:
         Returns:
             bool: True if reading view was successfully handled, False otherwise.
         """
-        logger.info(f"Starting reading flow for book: {book_title}")
+        logger.debug(f"Starting reading flow for book: {book_title}")
 
         # First, check immediately for special dialogs that need handling before waiting for anything else
         # This addresses the issue where we could miss detecting them during transitions
 
         # Check for Item Removed dialog first
         if is_item_removed_dialog_visible(self.driver):
-            logger.info("Item Removed dialog detected immediately - handling it")
+            logger.debug("Item Removed dialog detected immediately - handling it")
             if handle_item_removed_dialog(self.driver):
                 logger.debug("Handled Item Removed dialog immediately")
                 # After handling this, check if we're now looking at the Download Limit dialog
@@ -388,7 +388,7 @@ class ReaderHandler:
                 # After Item Removed dialog closes, we're back in library view and the book may be clicked again
                 # Check if Download Limit dialog appears immediately after
                 if self._check_for_download_limit_dialog():
-                    logger.info("Download Limit dialog detected after Item Removed dialog - handling it")
+                    logger.debug("Download Limit dialog detected after Item Removed dialog - handling it")
                     if self.handle_download_limit_dialog():
                         logger.debug("Handled Download Limit dialog after Item Removed dialog")
                         # Now wait for reading view after handling both dialogs
@@ -408,7 +408,7 @@ class ReaderHandler:
         # Check for download limit dialog
         download_limit_found = self._check_for_download_limit_dialog()
         if download_limit_found:
-            logger.info("Download Limit dialog detected immediately - handling it")
+            logger.debug("Download Limit dialog detected immediately - handling it")
             if self.handle_download_limit_dialog():
                 logger.debug("Handled Download Limit dialog immediately")
                 # Continue to reading view handling below
@@ -430,14 +430,14 @@ class ReaderHandler:
 
             # Check for Read and Listen dialog
             if dialog_handler.check_for_read_and_listen_dialog():
-                logger.info("Read and Listen dialog detected and handled")
+                logger.debug("Read and Listen dialog detected and handled")
                 dialog_found = True
                 dialogs_handled += 1
                 time.sleep(0.5)  # Brief wait for dialog dismissal
 
             # Check for Viewing full screen dialog
             if dialog_handler.check_for_viewing_full_screen_dialog():
-                logger.info("Viewing full screen dialog detected and handled")
+                logger.debug("Viewing full screen dialog detected and handled")
                 dialog_found = True
                 dialogs_handled += 1
                 time.sleep(0.5)  # Brief wait for dialog dismissal
@@ -447,7 +447,7 @@ class ReaderHandler:
                 break
 
         if dialogs_handled > 0:
-            logger.info(f"Handled {dialogs_handled} dialog(s) before waiting for reading view")
+            logger.debug(f"Handled {dialogs_handled} dialog(s) before waiting for reading view")
 
         # Check for and dismiss "About this book" slideover early in the flow
         # This dialog can appear immediately when opening certain books
@@ -459,7 +459,7 @@ class ReaderHandler:
                     slideover = self.driver.find_element(strategy, locator)
                     if slideover.is_displayed():
                         about_book_visible = True
-                        logger.info("Found 'About this book' slideover immediately after opening book")
+                        logger.debug("Found 'About this book' slideover immediately after opening book")
                         break
                 except NoSuchElementException:
                     continue
@@ -470,7 +470,7 @@ class ReaderHandler:
                 center_x = window_size["width"] // 2
                 top_y = int(window_size["height"] * 0.05)  # Tap at 5% from the top
                 self.driver.tap([(center_x, top_y)])
-                logger.info("Tapped near top of screen to dismiss 'About this book' slideover")
+                logger.debug("Tapped near top of screen to dismiss 'About this book' slideover")
                 time.sleep(1)
 
                 # Verify dismissal
@@ -489,7 +489,7 @@ class ReaderHandler:
                         "'About this book' slideover still visible after tap - will be handled later"
                     )
                 else:
-                    logger.info("'About this book' slideover successfully dismissed early")
+                    logger.debug("'About this book' slideover successfully dismissed early")
         except Exception as e:
             logger.error(f"Error checking for early 'About this book' slideover: {e}", exc_info=True)
 
@@ -501,7 +501,7 @@ class ReaderHandler:
             capture_count = 0
 
             # Capture initial state
-            logger.info("Capturing initial state before waiting for reading view")
+            logger.debug("Capturing initial state before waiting for reading view")
             store_page_source(self.driver.page_source, "before_reading_view_wait")
 
             # Custom wait condition to check for any of the reading view identifiers,
@@ -516,7 +516,7 @@ class ReaderHandler:
                 if elapsed_since_last >= 1.0:
                     capture_count += 1
                     elapsed = current_time - start_time
-                    logger.info(f"Waiting for reading view to appear... {elapsed:.1f}s elapsed")
+                    logger.debug(f"Waiting for reading view to appear... {elapsed:.1f}s elapsed")
                     store_page_source(
                         driver.page_source, f"waiting_for_reading_view_{capture_count}_{int(elapsed)}s"
                     )
@@ -528,7 +528,7 @@ class ReaderHandler:
                     try:
                         element = driver.find_element(strategy, locator)
                         if element and element.is_displayed():
-                            logger.info(
+                            logger.debug(
                                 f"Download Limit dialog detected with identifier #{idx}: {strategy}={locator}"
                             )
                             return "download_limit"
@@ -543,7 +543,7 @@ class ReaderHandler:
                         try:
                             element = driver.find_element(strategy, locator)
                             if element and element.is_displayed():
-                                logger.info(f"Download Limit dialog detected via error text #{idx}")
+                                logger.debug(f"Download Limit dialog detected via error text #{idx}")
                                 return "download_limit"
                         except NoSuchElementException:
                             pass
@@ -576,7 +576,7 @@ class ReaderHandler:
                             pass
 
                     if device_list and remove_button:
-                        logger.info("Download Limit dialog detected via device list + button combination")
+                        logger.debug("Download Limit dialog detected via device list + button combination")
                         return "download_limit"
                 except Exception as e:
                     logger.debug(f"Error checking for device list + button: {e}")
@@ -598,7 +598,7 @@ class ReaderHandler:
                         AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Go to that')]"
                     )
                     if last_read and last_read.is_displayed():
-                        logger.info(f"Last Read dialog detected during open_book: {last_read.text}")
+                        logger.debug(f"Last Read dialog detected during open_book: {last_read.text}")
                         # We'll treat this as a reading_view since we have handling for it later
                         return "reading_view"
                 except NoSuchElementException:
@@ -609,7 +609,7 @@ class ReaderHandler:
                     try:
                         element = driver.find_element(strategy, locator)
                         if element and element.is_displayed():
-                            logger.info(
+                            logger.debug(
                                 f"Word Wise dialog detected with identifier #{idx}: {strategy}={locator}"
                             )
                             return "word_wise"
@@ -623,7 +623,7 @@ class ReaderHandler:
                     try:
                         element = driver.find_element(strategy, locator)
                         if element and element.is_displayed():
-                            logger.info(
+                            logger.debug(
                                 f"Goodreads auto-update dialog detected with identifier #{idx}: {strategy}={locator}"
                             )
                             return "goodreads"
@@ -642,13 +642,13 @@ class ReaderHandler:
                 )  # Wait up to 6 seconds
             else:
                 # We already handled the download limit dialog, just wait for reading view
-                logger.info("Skipping wait since download limit dialog was already handled")
+                logger.debug("Skipping wait since download limit dialog was already handled")
                 # Set result to avoid undefined variable
                 result = "reading_view"
 
             # Handle download limit dialog if it appeared and wasn't already handled
             if result == "download_limit" and not download_limit_found:
-                logger.info("Download Limit dialog detected - handling it")
+                logger.debug("Download Limit dialog detected - handling it")
                 if self.handle_download_limit_dialog():
                     logger.debug("Handled Download Limit dialog, waiting for reading view")
                     # Now wait for the reading view after handling the dialog
@@ -666,7 +666,7 @@ class ReaderHandler:
                             if current_time - wait_last_capture_time >= 1.0:
                                 wait_capture_count += 1
                                 elapsed = current_time - wait_start_time
-                                logger.info(
+                                logger.debug(
                                     f"Waiting for reading view after download limit... {elapsed:.1f}s elapsed"
                                 )
                                 store_page_source(
@@ -689,12 +689,12 @@ class ReaderHandler:
                             WebDriverWait(self.driver, 5).until(
                                 reading_view_present
                             )  # Shorter timeout for download after limit handling
-                            logger.info("Reading view detected after handling download limit")
+                            logger.debug("Reading view detected after handling download limit")
                         except TimeoutException:
                             # If we timeout waiting for the reading view, we might be back at the library
                             # Let's check if we're back in the library view
                             store_page_source(self.driver.page_source, "after_download_limit_timeout")
-                            logger.info(
+                            logger.debug(
                                 "Checking if we're back at the library view after download limit handling..."
                             )
 
@@ -721,10 +721,10 @@ class ReaderHandler:
                                         pass
 
                                 if library_view:
-                                    logger.info(
+                                    logger.debug(
                                         "We're back at the library view after handling download limit"
                                     )
-                                    logger.info("Attempting to open the book again...")
+                                    logger.debug("Attempting to open the book again...")
 
                                     # Retry finding and clicking the book one more time
                                     # Without causing a circular reference, we'll handle this in a special way
@@ -736,7 +736,7 @@ class ReaderHandler:
                                         library_handler = self.driver.automator.state_machine.library_handler
                                         # Use find_book instead of open_book to avoid circular reference
                                         if library_handler.find_book(book_title):
-                                            logger.info(
+                                            logger.debug(
                                                 "Successfully clicked on book again after download limit handling"
                                             )
                                         else:
@@ -755,7 +755,7 @@ class ReaderHandler:
                                     # Now wait for reading view again
                                     try:
                                         WebDriverWait(self.driver, 15).until(reading_view_present)
-                                        logger.info("Reading view detected after reopening book")
+                                        logger.debug("Reading view detected after reopening book")
                                         return True
                                     except TimeoutException:
                                         logger.error(
@@ -790,7 +790,7 @@ class ReaderHandler:
 
             # Handle Word Wise dialog if it appeared
             elif result == "word_wise":
-                logger.info("Word Wise dialog detected - handling it")
+                logger.debug("Word Wise dialog detected - handling it")
                 store_page_source(self.driver.page_source, "word_wise_dialog_detected")
 
                 # Find and click the "NO THANKS" button
@@ -817,7 +817,7 @@ class ReaderHandler:
                                     return False
 
                                 WebDriverWait(self.driver, 10).until(reading_view_present_after_word_wise)
-                                logger.info("Reading view detected after dismissing Word Wise dialog")
+                                logger.debug("Reading view detected after dismissing Word Wise dialog")
                                 store_page_source(self.driver.page_source, "word_wise_dialog_dismissed")
                                 break
                             except TimeoutException:
@@ -836,7 +836,7 @@ class ReaderHandler:
 
             # Handle Goodreads dialog if it appeared
             elif result == "goodreads":
-                logger.info("Goodreads auto-update dialog detected - handling it")
+                logger.debug("Goodreads auto-update dialog detected - handling it")
                 store_page_source(self.driver.page_source, "goodreads_dialog_detected")
 
                 try:
@@ -863,7 +863,7 @@ class ReaderHandler:
                                 return False
 
                             WebDriverWait(self.driver, 10).until(reading_view_present_after_goodreads)
-                            logger.info("Reading view detected after dismissing Goodreads dialog")
+                            logger.debug("Reading view detected after dismissing Goodreads dialog")
                             store_page_source(self.driver.page_source, "goodreads_dialog_dismissed")
                         except TimeoutException:
                             logger.error(
@@ -880,7 +880,7 @@ class ReaderHandler:
 
             # Capture final state for debugging
             final_elapsed = time.time() - start_time
-            logger.info(f"Timeout occurred after {final_elapsed:.1f}s total wait time")
+            logger.debug(f"Timeout occurred after {final_elapsed:.1f}s total wait time")
             store_page_source(self.driver.page_source, f"timeout_final_state_{int(final_elapsed)}s")
 
             # Check if we're unexpectedly still in the library view
@@ -932,7 +932,7 @@ class ReaderHandler:
             try:
                 bottom_sheet = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[0])
                 if bottom_sheet.is_displayed():
-                    logger.info("Found bottom sheet dialog - attempting to dismiss")
+                    logger.debug("Found bottom sheet dialog - attempting to dismiss")
                     try:
                         pill = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
                         if pill.is_displayed():
@@ -948,20 +948,19 @@ class ReaderHandler:
                                     )
                                     return False
                                 else:
-                                    logger.info("Bottom sheet successfully dismissed")
+                                    logger.debug("Bottom sheet successfully dismissed")
                             except NoSuchElementException:
-                                logger.info("Bottom sheet successfully dismissed")
+                                logger.debug("Bottom sheet successfully dismissed")
 
                             filepath = store_page_source(self.driver.page_source, "bottom_sheet_dismissed")
-                            logger.info(f"Stored bottom sheet dismissed page source at: {filepath}")
                         else:
-                            logger.info("Bottom sheet pill found but not visible")
+                            logger.debug("Bottom sheet pill found but not visible")
                     except NoSuchElementException:
-                        logger.info("Bottom sheet found but dismiss pill not found")
+                        logger.debug("Bottom sheet found but dismiss pill not found")
                     except Exception as e:
                         logger.error(f"Error clicking bottom sheet pill: {e}", exc_info=True)
                 else:
-                    logger.info("Bottom sheet dialog found but not visible")
+                    logger.debug("Bottom sheet dialog found but not visible")
             except NoSuchElementException:
                 pass
             except Exception as e:
@@ -982,7 +981,7 @@ class ReaderHandler:
 
             # If dialog was found, we let the caller handle it and don't click anything
             if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
-                logger.info("Found 'last read page' dialog - leaving it for client to decide")
+                logger.debug("Found 'last read page' dialog - leaving it for client to decide")
                 # We don't click anything - the client will decide using the /last-read-page-dialog endpoint
         except Exception as e:
             logger.error(f"Error checking for 'last read page/location' dialog: {e}", exc_info=True)
@@ -1001,7 +1000,7 @@ class ReaderHandler:
                     if message.is_displayed() and (
                         "Go to that location?" in message.text or "Go to that page?" in message.text
                     ):
-                        logger.info(
+                        logger.debug(
                             "Found 'Go to that location/page?' dialog - leaving it for client to decide"
                         )
                         # Don't click anything - client will decide via /last-read-page-dialog endpoint
@@ -1031,7 +1030,7 @@ class ReaderHandler:
                     slideover = self.driver.find_element(strategy, locator)
                     if slideover.is_displayed():
                         about_book_visible = True
-                        logger.info("Found 'About this book' slideover")
+                        logger.debug("Found 'About this book' slideover")
                         break
                 except NoSuchElementException:
                     continue
@@ -1042,19 +1041,19 @@ class ReaderHandler:
                     pill = self.driver.find_element(*BOTTOM_SHEET_IDENTIFIERS[1])
                     if pill.is_displayed():
                         pill.click()
-                        logger.info("Clicked pill to dismiss 'About this book' slideover")
+                        logger.debug("Clicked pill to dismiss 'About this book' slideover")
                         time.sleep(1)
                     else:
-                        logger.info("Pill found but not visible")
+                        logger.debug("Pill found but not visible")
                 except NoSuchElementException:
-                    logger.info("Pill not found - trying alternative dismissal method")
+                    logger.debug("Pill not found - trying alternative dismissal method")
 
                     # Try tapping near the top of the screen
                     window_size = self.driver.get_window_size()
                     center_x = window_size["width"] // 2
                     top_y = int(window_size["height"] * 0.10)  # Tap at approx. 10% from the top
                     self.driver.tap([(center_x, top_y)])
-                    logger.info("Tapped near top of screen to dismiss 'About this book' slideover")
+                    logger.debug("Tapped near top of screen to dismiss 'About this book' slideover")
                     time.sleep(1)
 
                 # Verify dismissal
@@ -1069,14 +1068,14 @@ class ReaderHandler:
                         continue
 
                 if still_visible:
-                    logger.info("Slideover still visible - trying another approach")
+                    logger.debug("Slideover still visible - trying another approach")
                     # Try swiping down to dismiss
                     window_size = self.driver.get_window_size()
                     center_x = window_size["width"] // 2
                     start_y = int(window_size["height"] * 0.3)
                     end_y = int(window_size["height"] * 0.7)
                     self.driver.swipe(center_x, start_y, center_x, end_y, 500)
-                    logger.info("Swiped down to dismiss 'About this book' slideover")
+                    logger.debug("Swiped down to dismiss 'About this book' slideover")
                     time.sleep(1)
 
                     # Final verification
@@ -1095,12 +1094,11 @@ class ReaderHandler:
                             "'About this book' slideover is still visible after dismissal attempts"
                         )
                     else:
-                        logger.info("'About this book' slideover successfully dismissed")
+                        logger.debug("'About this book' slideover successfully dismissed")
                 else:
-                    logger.info("'About this book' slideover successfully dismissed")
+                    logger.debug("'About this book' slideover successfully dismissed")
 
-                filepath = store_page_source(self.driver.page_source, "after_about_book_dismissal")
-                logger.info(f"Stored page source after dismissal at: {filepath}")
+                store_page_source(self.driver.page_source, "after_about_book_dismissal")
         except Exception as e:
             logger.error(f"Error handling 'About this book' slideover: {e}", exc_info=True)
 
@@ -1117,13 +1115,13 @@ class ReaderHandler:
 
                 # Update styles if needed
                 if not profile_manager.is_styles_updated():
-                    logger.info("First-time reading with this profile, updating reading styles...")
+                    logger.debug("First-time reading with this profile, updating reading styles...")
                     if style_handler.update_reading_style(show_placemark=show_placemark):
                         logger.debug("Updated reading styles")
                     else:
                         logger.warning("Failed to update reading styles")
                 else:
-                    logger.info("Reading styles already updated for this profile, skipping")
+                    logger.debug("Reading styles already updated for this profile, skipping")
             else:
                 logger.warning("Cannot update reading styles - style_handler not available")
         else:
@@ -1131,13 +1129,13 @@ class ReaderHandler:
 
         # Optionally show placemark by tapping center of page
         if show_placemark:
-            logger.info("Placemark mode enabled - tapping to show placemark ribbon")
+            logger.debug("Placemark mode enabled - tapping to show placemark ribbon")
             try:
                 window_size = self.driver.get_window_size()
                 center_x = window_size["width"] // 2
                 center_y = window_size["height"] // 2
                 self.driver.tap([(center_x, center_y)])
-                logger.info("Tapped center of page to show placemark")
+                logger.debug("Tapped center of page to show placemark")
                 time.sleep(0.5)  # Brief wait for placemark to appear
 
                 # Verify placemark is visible
@@ -1145,13 +1143,13 @@ class ReaderHandler:
                     PLACEMARK_IDENTIFIERS, "placemark ribbon"
                 )
                 if placemark_visible:
-                    logger.info("Placemark ribbon successfully displayed")
+                    logger.debug("Placemark ribbon successfully displayed")
                 else:
                     logger.warning("Placemark ribbon not visible after tapping")
             except Exception as e:
                 logger.error(f"Error showing placemark: {e}", exc_info=True)
         else:
-            logger.info("Placemark mode disabled - skipping center tap")
+            logger.debug("Placemark mode disabled - skipping center tap")
 
         # Save the actively reading title to profile settings
         try:
@@ -1160,7 +1158,7 @@ class ReaderHandler:
                 self.driver.automator.profile_manager.save_style_setting(
                     "actively_reading_title", book_title, email=sindarin_email
                 )
-                logger.info(f"Saved actively reading title: {book_title}")
+                logger.debug(f"Saved actively reading title: {book_title}")
             else:
                 logger.warning("No sindarin_email available to save actively reading title")
         except Exception as e:
@@ -1181,7 +1179,7 @@ class ReaderHandler:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     page_text = element.text.strip()
-                    logger.info(f"Found page number: {page_text}")
+                    logger.debug(f"Found page number: {page_text}")
                     return page_text
                 except NoSuchElementException:
                     continue
@@ -1259,7 +1257,7 @@ class ReaderHandler:
                     PLACEMARK_IDENTIFIERS, "placemark ribbon"
                 )
                 if placemark_visible:
-                    logger.info("Found placemark ribbon - removing it before page turn")
+                    logger.debug("Found placemark ribbon - removing it before page turn")
                     window_size = self.driver.get_window_size()
                     center_x = window_size["width"] // 2
                     top_y = int(window_size["height"] * 0.05)  # 5% from top
@@ -1351,7 +1349,7 @@ class ReaderHandler:
                 # Delete the screenshot file after processing
                 try:
                     os.remove(screenshot_path)
-                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
+                    logger.debug(f"Deleted screenshot after OCR processing: {screenshot_path}")
                 except Exception as del_e:
                     logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
@@ -1461,11 +1459,11 @@ class ReaderHandler:
         try:
             # Always try to get basic page info first without tapping
             page_info = self.get_current_page()
-            logger.info(f"Initial page info: {page_info}")
+            logger.debug(f"Initial page info: {page_info}")
 
             # If placemark is not requested, never tap
             if not show_placemark:
-                logger.info("Placemark mode disabled - skipping reading progress tap entirely")
+                logger.debug("Placemark mode disabled - skipping reading progress tap entirely")
                 # Return a minimal set of information
                 if page_info and "Page" in page_info:
                     try:
@@ -1488,15 +1486,15 @@ class ReaderHandler:
             # First check if we can find progress element directly
             try:
                 progress_element = self.driver.find_element(*READING_PROGRESS_IDENTIFIERS[0])
-                logger.info("Found progress element without tapping")
+                logger.debug("Found progress element without tapping")
             except NoSuchElementException:
-                logger.info("Progress element not found initially - will need to tap")
+                logger.debug("Progress element not found initially - will need to tap")
                 # Only tap if explicitly requested via show_placemark=True
                 window_size = self.driver.get_window_size()
                 center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
                 center_y = window_size["height"] // 2
                 self.driver.tap([(center_x, center_y)])
-                logger.info("Tapped center to show controls (placemark explicitly enabled)")
+                logger.debug("Tapped center to show controls (placemark explicitly enabled)")
                 time.sleep(0.5)  # Wait for controls to appear
 
                 # Wait for toolbar to appear
@@ -1513,7 +1511,7 @@ class ReaderHandler:
                         return False
 
                     WebDriverWait(self.driver, 3).until(check_toolbar_visibility)
-                    logger.info("Reading controls now visible")
+                    logger.debug("Reading controls now visible")
                     opened_controls = True
                 except TimeoutException:
                     logger.error("Could not make reading controls visible", exc_info=True)
@@ -1534,7 +1532,7 @@ class ReaderHandler:
 
             # Extract progress text (format: "Page X of Y  •  Z%" or "Page X of Y")
             progress_text = progress_element.text.strip()
-            logger.info(f"Found progress text: {progress_text}")
+            logger.debug(f"Found progress text: {progress_text}")
 
             # Initialize return values
             percentage = None
@@ -1570,7 +1568,7 @@ class ReaderHandler:
                 window_size = self.driver.get_window_size()
                 center_x = int(window_size["width"] * PAGE_NAVIGATION_ZONES["center"])
                 center_y = window_size["height"] // 2
-                logger.info("Closing reading controls")
+                logger.debug("Closing reading controls")
                 self.driver.tap([(center_x, center_y)])
 
             if not any([percentage, current_page, total_pages]):
@@ -1597,7 +1595,7 @@ class ReaderHandler:
             try:
                 element = self.driver.find_element(strategy, locator)
                 if element.is_displayed():
-                    logger.info(f"Found visible {description}")
+                    logger.debug(f"Found visible {description}")
                     return True, element
             except NoSuchElementException:
                 continue
@@ -1610,14 +1608,14 @@ class ReaderHandler:
             str: Book title if found, None otherwise
         """
         try:
-            logger.info("Trying to get current book title")
+            logger.debug("Trying to get current book title")
 
             # Try to show the reader toolbar to access book info
             visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "reading toolbar")
 
             # If toolbar not visible, try to show it by tapping center
             if not visible:
-                logger.info("Toolbar not visible, attempting to show it")
+                logger.debug("Toolbar not visible, attempting to show it")
                 try:
                     # Get screen dimensions
                     window_size = self.driver.get_window_size()
@@ -1646,7 +1644,7 @@ class ReaderHandler:
                 title_element = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/ToolbarTitleBar")
                 if title_element.is_displayed():
                     title = title_element.text
-                    logger.info(f"Found book title from toolbar: '{title}'")
+                    logger.debug(f"Found book title from toolbar: '{title}'")
                     return title
             except NoSuchElementException:
                 pass
@@ -1685,7 +1683,9 @@ class ReaderHandler:
                                             AppiumBy.ID, "com.amazon.kindle:id/about_book_title"
                                         )
                                         title = title_element.text
-                                        logger.info(f"Found book title from About This Book popup: '{title}'")
+                                        logger.debug(
+                                            f"Found book title from About This Book popup: '{title}'"
+                                        )
 
                                         # Close the popup
                                         try:
@@ -1699,7 +1699,7 @@ class ReaderHandler:
 
                                         return title
                                     except NoSuchElementException:
-                                        logger.info("Couldn't find title in About This Book popup")
+                                        logger.debug("Couldn't find title in About This Book popup")
 
                                     # Close the popup anyway if we couldn't find the title
                                     try:
@@ -1711,9 +1711,9 @@ class ReaderHandler:
                                     except Exception:
                                         pass
                             except NoSuchElementException:
-                                logger.info("Couldn't find About This Book option")
+                                logger.debug("Couldn't find About This Book option")
                     except NoSuchElementException:
-                        logger.info("Couldn't find menu button")
+                        logger.debug("Couldn't find menu button")
             except Exception as e:
                 logger.warning(f"Error getting title from menu: {e}")
 
@@ -1732,7 +1732,7 @@ class ReaderHandler:
         try:
             # Check for Item Removed dialog first
             if is_item_removed_dialog_visible(self.driver):
-                logger.info("Item Removed dialog detected - handling it")
+                logger.debug("Item Removed dialog detected - handling it")
                 if handle_item_removed_dialog(self.driver):
                     logger.debug("Handled Item Removed dialog")
                     # After handling this, we'll be back in library view, so return True
@@ -1745,13 +1745,12 @@ class ReaderHandler:
             if self.handle_comic_book_view():
                 logger.debug("Dismissed comic book view during navigation")
                 # Refresh page source for logging
-                filepath = store_page_source(self.driver.page_source, "after_comic_book_dismiss")
-                logger.info(f"Stored page source after comic book dismissal at: {filepath}")
+                store_page_source(self.driver.page_source, "after_comic_book_dismiss")
 
             # First check if toolbar is already visible
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
             if toolbar_visible:
-                logger.info("Toolbar already visible - proceeding to close book")
+                logger.debug("Toolbar already visible - proceeding to close book")
                 return self._click_close_book_button()
 
             # Check for and dismiss "About this book" slideover or bottom sheet
@@ -1764,14 +1763,14 @@ class ReaderHandler:
             )
 
             if about_book_visible or bottom_sheet_visible:
-                logger.info(
+                logger.debug(
                     f"Found slideover/bottom sheet - about_book: {about_book_visible}, bottom_sheet: {bottom_sheet_visible}"
                 )
 
                 # Try multiple dismissal approaches with retries
                 max_attempts = 3
                 for attempt in range(max_attempts):
-                    logger.info(f"Dismissal attempt {attempt + 1}/{max_attempts}")
+                    logger.debug(f"Dismissal attempt {attempt + 1}/{max_attempts}")
 
                     # First try: Click the pill if visible
                     pill_visible, pill = self._check_element_visibility(
@@ -1810,7 +1809,7 @@ class ReaderHandler:
                     )
 
                     if not about_still_visible and not bottom_still_visible:
-                        logger.info("Successfully dismissed slideover/bottom sheet")
+                        logger.debug("Successfully dismissed slideover/bottom sheet")
                         break
 
                     if attempt == max_attempts - 1:
@@ -1835,13 +1834,13 @@ class ReaderHandler:
                 GO_TO_LOCATION_DIALOG_IDENTIFIERS, "'Go to that location/page?' dialog"
             )
             if go_to_location_visible:
-                logger.info("Found 'Go to that location/page?' dialog - clicking YES")
+                logger.debug("Found 'Go to that location/page?' dialog - clicking YES")
                 yes_button_visible, yes_button = self._check_element_visibility(
                     LAST_READ_PAGE_DIALOG_BUTTONS, "YES button"
                 )
                 if yes_button_visible:
                     yes_button.click()
-                    logger.info("Clicked YES button")
+                    logger.debug("Clicked YES button")
                     time.sleep(1)
 
             # Check for and dismiss Goodreads auto-update dialog
@@ -1849,14 +1848,14 @@ class ReaderHandler:
                 GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
             )
             if goodreads_dialog_visible:
-                logger.info("Found Goodreads auto-update dialog - clicking NOT NOW")
+                logger.debug("Found Goodreads auto-update dialog - clicking NOT NOW")
                 try:
                     not_now_button = self.driver.find_element(
                         AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
                     )
                     if not_now_button.is_displayed():
                         not_now_button.click()
-                        logger.info("Clicked NOT NOW button")
+                        logger.debug("Clicked NOT NOW button")
                         time.sleep(1)
 
                         # Verify dialog is gone
@@ -1871,7 +1870,7 @@ class ReaderHandler:
                             else:
                                 logger.debug("Dismissed Goodreads dialog")
                         except NoSuchElementException:
-                            logger.info("Successfully dismissed Goodreads dialog")
+                            logger.debug("Successfully dismissed Goodreads dialog")
 
                 except NoSuchElementException:
                     logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
@@ -1883,14 +1882,14 @@ class ReaderHandler:
                 WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
             )
             if word_wise_dialog_visible:
-                logger.info("Found Word Wise dialog - clicking NO THANKS")
+                logger.debug("Found Word Wise dialog - clicking NO THANKS")
                 no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
                     WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
                 )
 
                 if no_thanks_button_visible:
                     no_thanks_button.click()
-                    logger.info("Clicked NO THANKS button")
+                    logger.debug("Clicked NO THANKS button")
                     time.sleep(1)
 
                     # Verify dialog is gone
@@ -1924,14 +1923,14 @@ class ReaderHandler:
             GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
         )
         if goodreads_dialog_visible:
-            logger.info("Found Goodreads auto-update dialog before showing toolbar - dismissing it first")
+            logger.debug("Found Goodreads auto-update dialog before showing toolbar - dismissing it first")
             try:
                 not_now_button = self.driver.find_element(
                     AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
                 )
                 if not_now_button.is_displayed():
                     not_now_button.click()
-                    logger.info("Clicked NOT NOW button")
+                    logger.debug("Clicked NOT NOW button")
                     time.sleep(1)
                     store_page_source(self.driver.page_source, "goodreads_dialog_dismissed_toolbar")
             except NoSuchElementException:
@@ -1944,14 +1943,14 @@ class ReaderHandler:
             WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
         )
         if word_wise_dialog_visible:
-            logger.info("Found Word Wise dialog before showing toolbar - dismissing it first")
+            logger.debug("Found Word Wise dialog before showing toolbar - dismissing it first")
             no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
                 WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
             )
 
             if no_thanks_button_visible:
                 no_thanks_button.click()
-                logger.info("Clicked NO THANKS button")
+                logger.debug("Clicked NO THANKS button")
                 time.sleep(1)
                 store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_toolbar")
             else:
@@ -1960,36 +1959,36 @@ class ReaderHandler:
         # First check if toolbar is already visible
         toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
         if toolbar_visible:
-            logger.info("Toolbar is already visible - proceeding to close book")
+            logger.debug("Toolbar is already visible - proceeding to close book")
             return self._click_close_book_button()
 
         # Try alternate toolbar checking with toolbar strategies from interaction_strategies.py
         toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_STRATEGIES, "toolbar (alt check)")
         if toolbar_visible:
-            logger.info("Toolbar is already visible (alt check) - proceeding to close book")
+            logger.debug("Toolbar is already visible (alt check) - proceeding to close book")
             return self._click_close_book_button()
 
         # Try multiple different tap patterns to show the toolbar
         max_attempts = 3
         for attempt in range(max_attempts):
-            logger.info(f"Attempting to show toolbar (attempt {attempt + 1}/{max_attempts})")
+            logger.debug(f"Attempting to show toolbar (attempt {attempt + 1}/{max_attempts})")
 
             # Try different tap pattern based on attempt number
             if attempt == 0:
                 # First try: Simple center tap
                 self.driver.tap([(center_x, tap_y)])
-                logger.info(f"Tapped center at ({center_x}, {tap_y})")
+                logger.debug(f"Tapped center at ({center_x}, {tap_y})")
             elif attempt == 1:
                 # Second try: Tap near the top of the page
                 top_y = int(window_size["height"] * 0.25)  # 25% from top
                 self.driver.tap([(center_x, top_y)])
-                logger.info(f"Tapped near top at ({center_x}, {top_y})")
+                logger.debug(f"Tapped near top at ({center_x}, {top_y})")
             else:
                 # Third try: Try a double tap
                 self.driver.tap([(center_x, tap_y)])
                 time.sleep(0.1)  # Brief pause between taps
                 self.driver.tap([(center_x, tap_y)])
-                logger.info(f"Double-tapped center at ({center_x}, {tap_y})")
+                logger.debug(f"Double-tapped center at ({center_x}, {tap_y})")
 
             # Generous wait for toolbar to appear
             time.sleep(0.5)
@@ -1997,7 +1996,7 @@ class ReaderHandler:
             # Check if toolbar appeared using multiple strategies
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
             if toolbar_visible:
-                logger.info(f"Toolbar successfully appeared on attempt {attempt + 1}")
+                logger.debug(f"Toolbar successfully appeared on attempt {attempt + 1}")
                 return self._click_close_book_button()
 
             # Also check with alternative toolbar identifiers
@@ -2005,7 +2004,7 @@ class ReaderHandler:
                 READING_TOOLBAR_STRATEGIES, "toolbar (alt check)"
             )
             if toolbar_visible:
-                logger.info(f"Toolbar successfully appeared (alt check) on attempt {attempt + 1}")
+                logger.debug(f"Toolbar successfully appeared (alt check) on attempt {attempt + 1}")
                 return self._click_close_book_button()
 
             # Check for and handle interrupting dialogs
@@ -2014,14 +2013,14 @@ class ReaderHandler:
                 GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
             )
             if goodreads_dialog_visible:
-                logger.info("Found Goodreads auto-update dialog after tapping - dismissing it")
+                logger.debug("Found Goodreads auto-update dialog after tapping - dismissing it")
                 try:
                     not_now_button = self.driver.find_element(
                         AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
                     )
                     if not_now_button.is_displayed():
                         not_now_button.click()
-                        logger.info("Clicked NOT NOW button")
+                        logger.debug("Clicked NOT NOW button")
                         time.sleep(1)
                         store_page_source(
                             self.driver.page_source, "goodreads_dialog_dismissed_during_toolbar"
@@ -2036,7 +2035,7 @@ class ReaderHandler:
                             READING_TOOLBAR_IDENTIFIERS, "toolbar"
                         )
                         if toolbar_visible:
-                            logger.info("Toolbar appeared after dismissing Goodreads dialog")
+                            logger.debug("Toolbar appeared after dismissing Goodreads dialog")
                             return self._click_close_book_button()
 
                         # Also check with alternative toolbar identifiers
@@ -2044,7 +2043,7 @@ class ReaderHandler:
                             READING_TOOLBAR_STRATEGIES, "toolbar (alt check)"
                         )
                         if toolbar_visible:
-                            logger.info("Toolbar appeared (alt check) after dismissing Goodreads dialog")
+                            logger.debug("Toolbar appeared (alt check) after dismissing Goodreads dialog")
                             return self._click_close_book_button()
                 except NoSuchElementException:
                     logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
@@ -2056,14 +2055,14 @@ class ReaderHandler:
                 WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
             )
             if word_wise_dialog_visible:
-                logger.info("Found Word Wise dialog after tapping - dismissing it")
+                logger.debug("Found Word Wise dialog after tapping - dismissing it")
                 no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
                     WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
                 )
 
                 if no_thanks_button_visible:
                     no_thanks_button.click()
-                    logger.info("Clicked NO THANKS button")
+                    logger.debug("Clicked NO THANKS button")
                     time.sleep(1)
                     store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_during_toolbar")
 
@@ -2076,7 +2075,7 @@ class ReaderHandler:
                         READING_TOOLBAR_IDENTIFIERS, "toolbar"
                     )
                     if toolbar_visible:
-                        logger.info("Toolbar appeared after dismissing Word Wise dialog")
+                        logger.debug("Toolbar appeared after dismissing Word Wise dialog")
                         return self._click_close_book_button()
 
                     # Also check with alternative toolbar identifiers
@@ -2084,7 +2083,7 @@ class ReaderHandler:
                         READING_TOOLBAR_STRATEGIES, "toolbar (alt check)"
                     )
                     if toolbar_visible:
-                        logger.info("Toolbar appeared (alt check) after dismissing Word Wise dialog")
+                        logger.debug("Toolbar appeared (alt check) after dismissing Word Wise dialog")
                         return self._click_close_book_button()
                 else:
                     logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
@@ -2092,7 +2091,7 @@ class ReaderHandler:
             # Check for placemark ribbon which could be blocking our taps
             placemark_visible, _ = self._check_element_visibility(PLACEMARK_IDENTIFIERS, "placemark ribbon")
             if placemark_visible:
-                logger.info("Found placemark ribbon - will try tapping elsewhere")
+                logger.debug("Found placemark ribbon - will try tapping elsewhere")
                 # Try tapping in a different location
                 self.driver.tap([(center_x, int(window_size["height"] * 0.75))])  # Lower on screen
                 time.sleep(0.5)
@@ -2100,7 +2099,7 @@ class ReaderHandler:
                 # Check if toolbar appeared
                 toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
                 if toolbar_visible:
-                    logger.info("Toolbar appeared after tapping away from placemark")
+                    logger.debug("Toolbar appeared after tapping away from placemark")
                     return self._click_close_book_button()
 
             # If still nothing, try checking for close book button directly
@@ -2109,11 +2108,11 @@ class ReaderHandler:
                 CLOSE_BOOK_STRATEGIES, "close book button"
             )
             if close_visible:
-                logger.info("Found close book button directly without toolbar visibility check")
+                logger.debug("Found close book button directly without toolbar visibility check")
                 return self._click_close_book_button()
 
             if attempt < max_attempts - 1:
-                logger.info("Toolbar not visible, will try again with different tap strategy...")
+                logger.debug("Toolbar not visible, will try again with different tap strategy...")
                 # Slightly longer wait between attempts
                 time.sleep(0.5)
 
@@ -2158,7 +2157,7 @@ class ReaderHandler:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         comic_book_view_visible = True
-                        logger.info(f"Found comic book view with {strategy}: {locator}")
+                        logger.debug(f"Found comic book view with {strategy}: {locator}")
                         break
                 except NoSuchElementException:
                     continue
@@ -2176,9 +2175,9 @@ class ReaderHandler:
                 try:
                     x_button = self.driver.find_element(strategy, locator)
                     if x_button and x_button.is_displayed():
-                        logger.info(f"Found comic book X button with {strategy}: {locator}")
+                        logger.debug(f"Found comic book X button with {strategy}: {locator}")
                         x_button.click()
-                        logger.info("Clicked X button to dismiss comic book view")
+                        logger.debug("Clicked X button to dismiss comic book view")
                         x_button_found = True
                         time.sleep(0.5)  # Wait for view to dismiss
                         break
@@ -2231,7 +2230,7 @@ class ReaderHandler:
                     element = self.driver.find_element(strategy, locator)
                     if element and element.is_displayed():
                         tutorial_visible = True
-                        logger.info(f"Found tutorial message: {element.text}")
+                        logger.debug(f"Found tutorial message: {element.text}")
                         break
                 except NoSuchElementException:
                     continue
@@ -2241,7 +2240,7 @@ class ReaderHandler:
             if not tutorial_visible:
                 return False
 
-            logger.info("Tutorial message detected - will tap to dismiss it")
+            logger.debug("Tutorial message detected - will tap to dismiss it")
 
             # Check if we should open the style dialog or just dismiss
             if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
@@ -2257,7 +2256,7 @@ class ReaderHandler:
                     if show_style_dialog is False:
                         # User doesn't want style dialog, so we need to tap twice
                         # First tap opens toolbar, second tap closes it
-                        logger.info("User has style dialog disabled - will tap twice to dismiss tutorial")
+                        logger.debug("User has style dialog disabled - will tap twice to dismiss tutorial")
 
                         # Get screen dimensions
                         window_size = self.driver.get_window_size()
@@ -2293,7 +2292,7 @@ class ReaderHandler:
                             return True
                     else:
                         # User wants style dialog or hasn't set preference
-                        logger.info("User has style dialog enabled - single tap will open style dialog")
+                        logger.debug("User has style dialog enabled - single tap will open style dialog")
 
                         # Single tap to open toolbar/style dialog
                         window_size = self.driver.get_window_size()
@@ -2319,7 +2318,7 @@ class ReaderHandler:
                             logger.warning("Tutorial message still visible after tap")
                             return False
                         else:
-                            logger.info("Successfully dismissed tutorial message and opened toolbar")
+                            logger.debug("Successfully dismissed tutorial message and opened toolbar")
                             return True
 
             # Fallback: just do a single tap if we can't determine preference
@@ -2347,8 +2346,7 @@ class ReaderHandler:
             logger.info("Clicked close book button")
 
             # Add debug page source dump after clicking close button
-            filepath = store_page_source(self.driver.page_source, "failed_transition")
-            logger.info(f"Stored page source after closing book at: {filepath}")
+            store_page_source(self.driver.page_source, "failed_transition")
 
             # Clear the actively reading title when closing the book
             try:
@@ -2357,7 +2355,7 @@ class ReaderHandler:
                     self.driver.automator.profile_manager.save_style_setting(
                         "actively_reading_title", None, email=sindarin_email
                     )
-                    logger.info("Cleared actively reading title")
+                    logger.debug("Cleared actively reading title")
             except Exception as e:
                 logger.error(f"Error clearing actively reading title: {e}", exc_info=True)
 
