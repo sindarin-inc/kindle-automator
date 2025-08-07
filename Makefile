@@ -14,6 +14,9 @@ claude-run:
 	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run dotenv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
+	@echo ""
+	@echo "IMPORTANT: Follow the log/server_output.log and look for === Session restoration complete === to know when the server is ready before making requests."
+	@echo ""
 	@echo "Monitor logs with: tail -f logs/server_output.log"
 	@echo "To stop the server and start a new server, run: make claude-run"
 

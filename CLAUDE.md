@@ -20,7 +20,11 @@ Always run `make lint` after making Python code changes to ensure proper formatt
 # Start server (auto-kills existing)
 make claude-run
 
-# Server starts instantly - no sleep needed
+# IMPORTANT: Wait at least 20 seconds for emulators to boot before making requests
+# The server starts instantly, but emulators need time to become ready
+sleep 20
+
+# Now you can make requests
 curl -s http://localhost:4098/emulators/active
 
 # Monitor logs

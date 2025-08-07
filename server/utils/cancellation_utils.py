@@ -35,16 +35,23 @@ def should_cancel(user_email: str, request_key: Optional[str] = None) -> bool:
 
                 active_request = json.loads(active_data)
                 request_key = active_request.get("request_key")
+                logger.debug(f"Got request_key from active request: {request_key}")
 
         if not request_key:
+            logger.debug(f"No request_key found for {user_email}")
             return False
 
         # Check the cancellation flag
         cancel_key = f"{request_key}:cancelled"
         is_cancelled = bool(redis_client.get(cancel_key))
+        logger.debug(f"Checking cancellation for {cancel_key}: {is_cancelled}")
 
         if is_cancelled:
-            logger.info(f"Request {request_key} has been cancelled for user {user_email}")
+            import time
+
+            logger.info(
+                f"[{time.time():.3f}] CANCELLATION DETECTED: Request {request_key} has been cancelled for user {user_email}"
+            )
 
         return is_cancelled
 
@@ -88,7 +95,11 @@ def mark_cancelled(user_email: str, request_key: Optional[str] = None) -> bool:
         cancel_key = f"{request_key}:cancelled"
         redis_client.set(cancel_key, "1", ex=130)  # Same TTL as other request keys
 
-        logger.info(f"Marked request {request_key} as cancelled for user {user_email}")
+        import time
+
+        logger.info(
+            f"[{time.time():.3f}] CANCELLATION SET: Marked request {request_key} as cancelled for user {user_email}"
+        )
         return True
 
     except Exception as e:

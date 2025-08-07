@@ -79,7 +79,7 @@ class AutomationServer:
 
         # Check if we already have an automator for this profile
         if email in self.automators and self.automators[email]:
-            logger.info(f"Using existing automator for profile {email}")
+            logger.debug(f"Using existing automator for profile {email}")
             return self.automators[email]
 
         # Set email context for this thread so logs go to the right file
@@ -87,9 +87,9 @@ class AutomationServer:
 
         with EmailContext(email):
             # Initialize a new automator
-            logger.info(f"Creating new KindleAutomator for email={email}")
+            logger.debug(f"Creating new KindleAutomator for email={email}")
             automator = KindleAutomator()
-            logger.info(f"Created automator={id(automator)} for email={email}")
+            logger.debug(f"Created automator={id(automator)} for email={email}")
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
             # Add server reference so automator can access current book info

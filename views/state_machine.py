@@ -44,7 +44,41 @@ class KindleStateMachine:
         self.current_state = AppState.UNKNOWN
         # Flag to indicate we're preparing a seed clone (skip sign-in)
         self.preparing_seed_clone = False
+        # Optional cancellation check function for interruptible operations
+        self._cancellation_check = None
 
+    def set_cancellation_check(self, check_func):
+        """Set a function to check for cancellation during long operations.
+        
+        Args:
+            check_func: A callable that returns True if operation should be cancelled
+        """
+        self._cancellation_check = check_func
+    
+    def _interruptible_sleep(self, seconds, check_interval=0.1):
+        """Sleep for specified seconds but check for cancellation periodically.
+        
+        Args:
+            seconds: Total seconds to sleep
+            check_interval: How often to check for cancellation (default 0.1s)
+            
+        Returns:
+            True if sleep completed, False if cancelled
+        """
+        elapsed = 0
+        while elapsed < seconds:
+            # Check for cancellation if a check function is set
+            if self._cancellation_check and self._cancellation_check():
+                logger.info(f"[{time.time():.3f}] Sleep interrupted by cancellation after {elapsed:.1f}s")
+                return False
+            
+            # Sleep for min of remaining time or check interval
+            sleep_time = min(check_interval, seconds - elapsed)
+            time.sleep(sleep_time)
+            elapsed += sleep_time
+        
+        return True
+    
     def _get_current_state(self):
         """Get the current app state using the view inspector."""
         view = self.view_inspector.get_current_view()

@@ -27,7 +27,7 @@ class RedisConnection:
 
     def _initialize_client(self):
         """Initialize Redis client with connection pool."""
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6479/0")
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6479/1")
         logger.debug(f"Initializing Redis connection to {redis_url}")
 
         try:
@@ -38,7 +38,7 @@ class RedisConnection:
                 pool = redis.ConnectionPool(
                     host="localhost",
                     port=6479,
-                    db=0,
+                    db=1,
                     max_connections=50,
                     decode_responses=False,
                 )

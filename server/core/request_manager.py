@@ -42,7 +42,7 @@ PRIORITY_LEVELS = {
     "/books": 30,  # Low - library scanning
     "/books-stream": 30,
     "/auth": 20,
-    "/screenshot": 10,  # Lowest
+    # "/screenshot" is excluded - it can run concurrently without priority blocking
 }
 
 # Endpoints where newer requests should cancel older ones (last-one-wins)
@@ -232,10 +232,12 @@ class RequestManager:
                 if self.priority > active_priority:
                     active_request_key = active_request.get("request_key")
                     if active_request_key:
+                        import time
+
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
                         logger.info(
-                            f"Cancelling lower priority request {active_request_key} "
+                            f"[{time.time():.3f}] PRIORITY CANCELLATION: Cancelling lower priority request {active_request_key} "
                             f"(priority {active_priority}) for higher priority {self.path} "
                             f"(priority {self.priority})"
                         )
