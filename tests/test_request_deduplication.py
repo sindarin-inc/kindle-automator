@@ -56,28 +56,28 @@ class TestRequestDeduplication(unittest.TestCase):
     def test_store_and_retrieve_response(self, mock_get_redis):
         """Test storing and retrieving a deduplicated response."""
         mock_get_redis.return_value = self.redis_client
-        
+
         # First test: No waiters - should only set status and clean up
         self.redis_client.get.return_value = None  # No waiters
-        
+
         manager = RequestManager(self.user_email, self.path, self.method)
-        
+
         # Store response with no waiters
         response_data = {"books": ["Book 1", "Book 2"]}
         status_code = 200
         manager.store_response(response_data, status_code)
-        
+
         # Verify only status was set (no result stored when no waiters)
         calls = self.redis_client.set.call_args_list
         self.assertEqual(len(calls), 1)  # Only status
-        
+
         # Reset for second test: With waiters
         self.redis_client.reset_mock()
         self.redis_client.get.return_value = b"2"  # 2 waiters
-        
+
         manager2 = RequestManager(self.user_email, self.path, self.method)
         manager2.store_response(response_data, status_code)
-        
+
         # Verify both result and status were set
         calls = self.redis_client.set.call_args_list
         self.assertEqual(len(calls), 2)  # Result and status
@@ -519,7 +519,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
     @patch("server.core.request_manager.get_redis_client")
     def test_cache_not_persisted_after_completion(self, mock_get_redis):
         """Test that cache is cleared after request completes with no waiters."""
-        
+
         class RedisSimulator:
             def __init__(self):
                 self.store = {}
@@ -553,28 +553,28 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
         # First request - should execute and not leave cached result
         manager1 = RequestManager("test@example.com", "/books", "GET")
         self.assertTrue(manager1.claim_request())
-        
+
         # Store response with no waiters
         response1 = {"books": ["Book 1", "Book 2"]}
         manager1.store_response(response1, 200)
-        
+
         # Verify status was set but will expire quickly (2 seconds)
         status_key = f"{manager1.request_key}:status"
         self.assertIn(status_key, redis_sim.store)
-        
+
         # Verify result was NOT stored (no waiters)
         result_key = f"{manager1.request_key}:result"
         self.assertNotIn(result_key, redis_sim.store)
-        
+
         # Clear the status to simulate TTL expiry
         redis_sim.store.clear()
-        
+
         # Second request with same parameters - should NOT get cached response
         manager2 = RequestManager("test@example.com", "/books", "GET")
-        
+
         # Should be able to claim (not duplicate since cache was cleared)
         self.assertTrue(manager2.claim_request())
-        
+
         # This proves the second request will execute fresh, not use cached data
 
 

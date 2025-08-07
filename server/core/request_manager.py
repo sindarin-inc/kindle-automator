@@ -333,7 +333,7 @@ class RequestManager:
                 # There are waiters, store the response for them with a short TTL
                 # 10 seconds should be enough for waiters to retrieve it
                 short_ttl = 10
-                
+
                 # Pickle the response data
                 pickled_data = pickle.dumps((response_data, status_code))
 
@@ -341,12 +341,14 @@ class RequestManager:
                 self.redis_client.set(result_key, pickled_data, ex=short_ttl)
                 self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=short_ttl)
 
-                logger.info(f"Stored response for {self.request_key} with {short_ttl}s TTL for {waiters_count} waiters")
+                logger.info(
+                    f"Stored response for {self.request_key} with {short_ttl}s TTL for {waiters_count} waiters"
+                )
             else:
                 # No waiters, just mark as completed and clean up immediately
                 self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=2)
                 logger.info(f"No waiters for {self.request_key}, marked as completed and will clean up")
-                
+
                 # Clean up immediately since there are no waiters
                 keys_to_delete = [
                     f"{self.request_key}:progress",

@@ -274,9 +274,7 @@ class EmulatorLauncher:
                             if avd_name and avd_name in self.running_emulators:
                                 cached_id, _ = self.running_emulators[avd_name]
                                 if cached_id == emulator_id:
-                                    logger.info(
-                                        f"Emulator {emulator_id} is booting..."
-                                    )
+                                    logger.info(f"Emulator {emulator_id} is booting...")
                                     return True
                             logger.warning(
                                 f"Could not get AVD name from emulator {emulator_id}, possibly still booting"
