@@ -243,6 +243,9 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
                 result = manager.wait_for_deduplicated_response()
                 if result:
                     results.append(("deduplicated", result[0]))
+                else:
+                    # Handle timeout or error case
+                    results.append(("timeout", None))
 
         # Start multiple threads making the same request
         threads = []
@@ -259,13 +262,17 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
         self.assertEqual(execution_count, 1)
 
         # Verify all threads got results
-        self.assertEqual(len(results), 5)
+        self.assertEqual(len(results), 5, f"Expected 5 results, got {len(results)}: {results}")
 
-        # Verify one execution and others deduplicated
+        # Verify one execution and others deduplicated or timed out
         executed = [r for r in results if r[0] == "executed"]
         deduplicated = [r for r in results if r[0] == "deduplicated"]
-        self.assertEqual(len(executed), 1)
-        self.assertEqual(len(deduplicated), 4)
+        timeouts = [r for r in results if r[0] == "timeout"]
+        
+        self.assertEqual(len(executed), 1, f"Expected 1 executed, got {len(executed)}")
+        # The rest should be deduplicated (timeouts indicate a problem)
+        self.assertEqual(len(timeouts), 0, f"Got {len(timeouts)} timeouts - this suggests a timing issue")
+        self.assertEqual(len(deduplicated), 4, f"Expected 4 deduplicated, got {len(deduplicated)}")
 
     @patch("server.core.request_manager.get_redis_client")
     def test_priority_waiting(self, mock_get_redis):

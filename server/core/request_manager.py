@@ -336,8 +336,8 @@ class RequestManager:
             # Clear active request if it's ours
             self._clear_active_request()
 
-            # Cleanup if we're the last one
-            self._cleanup_if_last_waiter()
+            # Don't cleanup here - let the waiters handle cleanup
+            # This avoids race condition where we cleanup before waiters increment the counter
 
         except Exception as e:
             logger.error(f"Error storing response: {e}")
