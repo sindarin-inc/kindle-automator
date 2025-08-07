@@ -10,6 +10,7 @@ from handlers.navigation_handler import NavigationResourceHandler
 from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import get_sindarin_email
 
@@ -76,6 +77,7 @@ class NavigationResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @deduplicate_request
     @handle_automator_response
     def post(self, direction=None):
         """Handle page navigation via POST."""
@@ -83,6 +85,7 @@ class NavigationResource(Resource):
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @deduplicate_request
     @handle_automator_response
     def get(self):
         """Handle navigation via GET requests, using query parameters"""

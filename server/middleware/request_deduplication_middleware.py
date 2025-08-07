@@ -6,7 +6,7 @@ from typing import Any, Callable, Tuple
 
 from flask import Response, request
 
-from server.core.request_manager import RequestManager
+from server.core.request_manager import RequestManager, WaitResult
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -77,18 +77,38 @@ def deduplicate_request(func: Callable) -> Callable:
                 raise
 
         else:
-            # Request is already in progress - wait for result
-            logger.info(f"Waiting for deduplicated response for {manager.request_key}")
-            result = manager.wait_for_deduplicated_response()
+            # Request couldn't be claimed - either duplicate or waiting for higher priority
+            # Check if this is a duplicate request
+            if manager.is_duplicate_in_progress():
+                logger.info(f"Waiting for deduplicated response for {manager.request_key}")
+                result = manager.wait_for_deduplicated_response()
 
-            if result:
-                response_data, status_code = result
-                logger.info(f"Returning deduplicated response for {user_email}")
-                return response_data, status_code
+                if result:
+                    response_data, status_code = result
+                    logger.info(f"Returning deduplicated response for {user_email}")
+                    return response_data, status_code
+                else:
+                    # Timeout or error waiting - execute normally as fallback
+                    logger.warning(f"Failed to get deduplicated response, executing normally for {user_email}")
+                    return func(self, *args, **kwargs)
             else:
-                # Timeout or error waiting - execute normally as fallback
-                logger.warning(f"Failed to get deduplicated response, executing normally for {user_email}")
-                return func(self, *args, **kwargs)
+                # Must be waiting for higher priority request
+                logger.info(f"Waiting for higher priority request to complete before executing {path}")
+                wait_result = manager.wait_for_higher_priority_completion()
+                
+                if wait_result == WaitResult.READY:
+                    # Higher priority request finished, now try to execute
+                    logger.info(f"Higher priority request completed, now executing {path}")
+                    return func(self, *args, **kwargs)
+                elif wait_result == WaitResult.CANCELLED:
+                    logger.warning(f"Request {path} was cancelled while waiting")
+                    return {"error": "Request was cancelled by higher priority operation"}, 409
+                elif wait_result == WaitResult.TIMEOUT:
+                    logger.warning(f"Request {path} timed out while waiting")
+                    return {"error": "Request timed out waiting for higher priority operation"}, 408
+                else:  # WaitResult.ERROR
+                    logger.error(f"Error occurred while {path} was waiting")
+                    return {"error": "Error waiting for higher priority operation"}, 500
 
     return wrapper
 

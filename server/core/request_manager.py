@@ -5,6 +5,7 @@ import json
 import logging
 import pickle
 import time
+from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
 from flask import Response, request
@@ -13,12 +14,29 @@ from server.core.redis_connection import get_redis_client
 
 logger = logging.getLogger(__name__)
 
+
+class WaitResult(Enum):
+    """Result of waiting for a higher priority request."""
+    READY = "ready"  # Can proceed with execution
+    CANCELLED = "cancelled"  # Request was cancelled while waiting
+    TIMEOUT = "timeout"  # Timed out waiting
+    ERROR = "error"  # Error occurred while waiting
+
+
+class DeduplicationStatus(Enum):
+    """Status of a deduplicated request."""
+    COMPLETED = "completed"  # Request completed successfully
+    ERROR = "error"  # Request encountered an error
+    IN_PROGRESS = "in_progress"  # Request is still being processed
+
+
 # Request priority levels (higher number = higher priority)
 PRIORITY_LEVELS = {
     "/open-book": 100,  # Highest - user wants to read
     "/open-random-book": 100,
     "/close-book": 90,
     "/navigate": 50,
+    "/state": 40,  # Medium - quick state check
     "/books": 30,  # Low - library scanning
     "/books-stream": 30,
     "/auth": 20,
@@ -84,7 +102,7 @@ class RequestManager:
             return False
 
         # Skip deduplication for certain paths
-        skip_paths = ["/screenshot", "/navigate", "/staff-auth", "/staff-tokens"]
+        skip_paths = ["/staff-auth", "/staff-tokens"]
         if any(self.path.startswith(skip) for skip in skip_paths):
             return False
 
@@ -104,7 +122,7 @@ class RequestManager:
                 self._cancel_existing_same_endpoint_request()
                 
                 # Force claim this request (overwrite any existing)
-                self.redis_client.set(progress_key, "in_progress", ex=DEFAULT_TTL)
+                self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
                 logger.info(f"Claimed request {self.request_key} for {self.user_email} (last-one-wins)")
                 
                 # Record this as the active request for the user
@@ -120,7 +138,7 @@ class RequestManager:
             
             # Normal deduplication logic
             # Try to atomically set the progress key
-            if self.redis_client.set(progress_key, "in_progress", nx=True, ex=DEFAULT_TTL):
+            if self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, nx=True, ex=DEFAULT_TTL):
                 logger.info(f"Claimed request {self.request_key} for {self.user_email}")
 
                 # Check for lower priority active requests and cancel them
@@ -263,7 +281,7 @@ class RequestManager:
                 if status:
                     status = status.decode("utf-8") if isinstance(status, bytes) else status
 
-                    if status == "completed":
+                    if status == DeduplicationStatus.COMPLETED.value:
                         # Get the cached result
                         result_data = self.redis_client.get(result_key)
                         if result_data:
@@ -275,7 +293,7 @@ class RequestManager:
 
                             return result
 
-                    elif status == "error":
+                    elif status == DeduplicationStatus.ERROR.value:
                         logger.warning(f"Original request failed for {self.request_key}")
                         self._cleanup_if_last_waiter()
                         return None
@@ -306,7 +324,7 @@ class RequestManager:
 
             # Store the result and status
             self.redis_client.set(result_key, pickled_data, ex=DEFAULT_TTL)
-            self.redis_client.set(status_key, "completed", ex=DEFAULT_TTL)
+            self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=DEFAULT_TTL)
 
             logger.info(f"Stored response for {self.request_key}")
 
@@ -327,7 +345,7 @@ class RequestManager:
 
         try:
             status_key = f"{self.request_key}:status"
-            self.redis_client.set(status_key, "error", ex=DEFAULT_TTL)
+            self.redis_client.set(status_key, DeduplicationStatus.ERROR.value, ex=DEFAULT_TTL)
 
             # Clear active request
             self._clear_active_request()
@@ -389,6 +407,68 @@ class RequestManager:
         except Exception as e:
             logger.error(f"Error checking cancellation status: {e}")
             return False
+
+    def is_duplicate_in_progress(self) -> bool:
+        """Check if this exact request is already in progress (duplicate)."""
+        if not self.redis_client:
+            return False
+
+        try:
+            progress_key = f"{self.request_key}:progress"
+            return bool(self.redis_client.get(progress_key))
+
+        except Exception as e:
+            logger.error(f"Error checking duplicate status: {e}")
+            return False
+
+    def wait_for_higher_priority_completion(self) -> WaitResult:
+        """Wait for a higher priority request to complete before proceeding."""
+        if not self.redis_client:
+            return WaitResult.ERROR
+
+        start_time = time.time()
+        poll_interval = 0.5
+
+        while (time.time() - start_time) < MAX_WAIT_TIME:
+            try:
+                # Check if we've been cancelled
+                if self.is_cancelled():
+                    logger.info(f"Request {self.request_key} was cancelled while waiting")
+                    return WaitResult.CANCELLED
+
+                # Check if higher priority request is still running
+                active_key = f"kindle:user:{self.user_email}:active_request"
+                active_data = self.redis_client.get(active_key)
+
+                if not active_data:
+                    # No active request, we can proceed
+                    logger.info(f"No active request found, {self.request_key} can proceed")
+                    return WaitResult.READY
+
+                active_request = json.loads(active_data)
+                active_priority = active_request.get("priority", 0)
+
+                if active_priority <= self.priority:
+                    # Higher priority request finished, we can proceed
+                    logger.info(f"Higher priority request completed, {self.request_key} can proceed")
+                    return WaitResult.READY
+
+                # Still waiting
+                logger.debug(
+                    f"Request {self.request_key} still waiting for priority {active_priority} request"
+                )
+
+            except Exception as e:
+                logger.error(f"Error waiting for higher priority completion: {e}")
+                return WaitResult.ERROR
+
+            # Adaptive polling
+            time.sleep(min(poll_interval, 2.0))
+            if poll_interval < 2.0:
+                poll_interval *= 1.5
+
+        logger.warning(f"Timeout waiting for higher priority request for {self.request_key}")
+        return WaitResult.TIMEOUT
 
     def __enter__(self):
         """Context manager entry."""

@@ -11,6 +11,7 @@ from server.core.automation_server import AutomationServer
 from server.logging_config import store_page_source
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.middleware.response_handler import (
     get_image_path,
     handle_automator_response,
@@ -32,6 +33,7 @@ class ScreenshotResource(Resource):
     # Only use the automator_healthy decorator without the response handler for direct image responses
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @deduplicate_request
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
         If xml=1 is provided, also returns the XML page source.
