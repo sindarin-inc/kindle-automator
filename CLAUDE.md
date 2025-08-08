@@ -13,6 +13,7 @@ Always run `make lint` after making Python code changes to ensure proper formatt
 - **`make test-*`**: Run API endpoint tests (e.g. `make test-init`, `make test-books`)
 - **`make ssh`**: SSH to prod/staging (see Makefile for non-interactive command prefix)
 - **Running Python**: Use `uv run dotenv run` for scripts needing env vars, `uv run` for tools
+- **Running tests**: Use `uv run pytest` directly (no PYTHONPATH needed)
 
 ## Running the Server
 
