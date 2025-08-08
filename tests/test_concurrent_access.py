@@ -38,7 +38,7 @@ class ConcurrentAccessTester:
             try:
                 with db_connection.get_session() as session:
                     repo = UserRepository(session)
-                    email = f"thread_{thread_id}@example.com"
+                    email = f"thread_{thread_id}@solreader.com"
                     user = repo.create_user(email, f"AVD_Thread_{thread_id}")
                     return f"Thread {thread_id}: Created user {email}"
             except Exception as e:
@@ -62,7 +62,7 @@ class ConcurrentAccessTester:
         print(f"\n=== Testing concurrent updates with {num_threads} threads ===")
 
         # Create a test user first
-        test_email = "concurrent_test@example.com"
+        test_email = "concurrent_test@solreader.com"
         with db_connection.get_session() as session:
             repo = UserRepository(session)
             repo.create_user(test_email, "ConcurrentTestAVD")
@@ -116,7 +116,7 @@ class ConcurrentAccessTester:
         print(f"\n=== Testing concurrent reads and writes with {num_threads} threads ===")
 
         # Create some test users
-        test_emails = [f"readwrite_{i}@example.com" for i in range(5)]
+        test_emails = [f"readwrite_{i}@solreader.com" for i in range(5)]
         with db_connection.get_session() as session:
             repo = UserRepository(session)
             for email in test_emails:
@@ -163,7 +163,7 @@ class ConcurrentAccessTester:
         """Test transaction isolation levels."""
         print("\n=== Testing transaction isolation ===")
 
-        test_email = "isolation_test@example.com"
+        test_email = "isolation_test@solreader.com"
 
         # Create test user
         with db_connection.get_session() as session:
@@ -250,7 +250,7 @@ class ConcurrentAccessTester:
 
         with db_connection.get_session() as session:
             # Delete all test users
-            session.execute("DELETE FROM kindle_automator.users WHERE email LIKE '%example.com'")
+            session.execute("DELETE FROM kindle_automator.users WHERE email LIKE '%solreader.com'")
             session.commit()
             print("Test data cleaned up")
 

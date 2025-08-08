@@ -1,13 +1,15 @@
 import json
-import os
 import time
-from typing import Any, Dict, Generator
 
 import pytest
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
+from tests.test_base import (
+    RECREATE_USER_EMAIL,
+    STAGING,
+    TEST_USER_EMAIL,
+    BaseKindleTest,
+)
 
 # NOTE: All test calls go through the web-app ASGI reverse proxy server (port 4096)
 # with the /kindle/ prefix. The web-app then routes requests to this Flask server (port 4098).
@@ -16,108 +18,17 @@ load_dotenv()
 # - /kindle/books?sync=false -> returns cached books from web-app
 # - /kindle/books?sync=true -> routes to this server's /books endpoint
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:4096")
-TEST_USER_EMAIL = os.environ.get("TEST_USER_EMAIL", "sam@solreader.com")
-RECREATE_USER_EMAIL = os.environ.get("RECREATE_USER_EMAIL", "recreate@solreader.com")
-STAFF_AUTH_TOKEN = os.environ.get("INTEGRATION_TEST_STAFF_AUTH_TOKEN")
-WEB_AUTH_TOKEN = os.environ.get("WEB_INTEGRATION_TEST_AUTH_TOKEN")
-STAGING = "1"
 
-
-class TestKindleAPIIntegration:
+class TestKindleAPIIntegration(BaseKindleTest):
     """Integration tests for Kindle API endpoints."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
         """Setup for each test."""
-        self.base_url = API_BASE_URL
-        self.default_params = {"user_email": TEST_USER_EMAIL, "staging": STAGING}
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "KindleAutomator/IntegrationTests"})
+        # Use the base class setup
+        self.setup_base()
 
-        # Set Authorization header for API authentication
-        if WEB_AUTH_TOKEN:
-            self.session.headers.update({"Authorization": f"Tolkien {WEB_AUTH_TOKEN}"})
-            print(f"[TEST] Using Knox token for samuel@ofbrooklyn.com (staff user)")
-
-        # Set staff auth cookie for user_email override
-        if STAFF_AUTH_TOKEN:
-            self.session.cookies.set("staff_token", STAFF_AUTH_TOKEN)
-            print(f"[TEST] Using staff token from environment variable")
-
-    def _make_request(
-        self,
-        endpoint: str,
-        params: Dict[str, Any] = None,
-        method: str = "GET",
-        timeout: int = 120,
-        max_retries: int = 3,
-    ) -> requests.Response:
-        """Helper to make API requests with retry logic for 503 errors."""
-        url = f"{self.base_url}/{endpoint}"
-        request_params = {**self.default_params, **(params or {})}
-
-        retry_delay = 10  # seconds
-
-        for attempt in range(max_retries):
-            try:
-                # Debug: print request details
-                print(f"\n[DEBUG] Request attempt {attempt + 1}/{max_retries} to {url}")
-                print(f"[DEBUG] Params: {request_params}")
-                print(f"[DEBUG] Headers: {dict(self.session.headers)}")
-                # Debug cookies - show full staff_token
-                try:
-                    cookies_dict = dict(self.session.cookies)
-                    if "staff_token" in cookies_dict:
-                        token = cookies_dict["staff_token"]
-                        print(f"[DEBUG] Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
-                    else:
-                        print(f"[DEBUG] Cookies: {cookies_dict}")
-                except Exception as e:
-                    # Handle cookie conflicts gracefully
-                    print(f"[DEBUG] Cookie info unavailable: {e}")
-
-                if method == "GET":
-                    response = self.session.get(url, params=request_params, timeout=timeout)
-                elif method == "POST":
-                    response = self.session.post(url, params=request_params, timeout=timeout)
-                elif method == "DELETE":
-                    response = self.session.delete(url, params=request_params, timeout=timeout)
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
-
-                # If we get a 503 and haven't exhausted retries, wait and retry
-                if response.status_code == 503 and attempt < max_retries - 1:
-                    print(
-                        f"Got 503 error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(retry_delay)
-                    continue
-
-                return response
-
-            except requests.exceptions.RequestException as e:
-                # If this is our last attempt, re-raise the exception
-                if attempt == max_retries - 1:
-                    raise
-                print(
-                    f"Request failed with error: {e}, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
-                )
-                time.sleep(retry_delay)
-
-        # This should never be reached, but just in case
-        return response
-
-    def _parse_streaming_response(self, response: requests.Response) -> Generator[Dict[str, Any], None, None]:
-        """Parse newline-delimited JSON streaming response."""
-        for line in response.iter_lines():
-            if line:
-                try:
-                    message = json.loads(line.decode("utf-8"))
-                    print(f"[STREAM] Received message: {json.dumps(message, sort_keys=True)}")
-                    yield message
-                except json.JSONDecodeError as e:
-                    print(f"[STREAM] Failed to parse line: {line}, error: {e}")
+    # The _make_request and _parse_streaming_response methods are inherited from BaseKindleTest
 
     @pytest.mark.timeout(120)
     def test_books_endpoint(self):
@@ -303,7 +214,7 @@ class TestKindleAPIIntegration:
         """Test /kindle/auth-check endpoint with known and unknown users."""
         # Test 1: Check known user (sam@solreader.com)
         print(f"\n[TEST] Testing auth-check for known user: {TEST_USER_EMAIL}")
-        auth_response = self._make_request("kindle/auth-check")
+        auth_response = self._make_request("auth-check")
         assert (
             auth_response.status_code == 200
         ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
@@ -325,7 +236,7 @@ class TestKindleAPIIntegration:
 
         # Override the default params for this request
         unknown_params = {"user_email": unknown_email, "staging": STAGING}
-        auth_response = self._make_request("kindle/auth-check", params=unknown_params)
+        auth_response = self._make_request("auth-check", params=unknown_params)
         assert (
             auth_response.status_code == 200
         ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
@@ -346,7 +257,7 @@ class TestKindleAPIIntegration:
     @pytest.mark.timeout(120)
     def test_open_random_book(self):
         """Test /kindle/open-random-book endpoint."""
-        response = self._make_request("kindle/open-random-book")
+        response = self._make_request("open-random-book")
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
         data = response.json()
@@ -379,7 +290,7 @@ class TestKindleAPIIntegration:
             pytest.skip("No book available to navigate")
 
         params = {"action": "preview", "preview": "true"}
-        response = self._make_request("kindle/navigate", params)
+        response = self._make_request("navigate", params)
 
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
@@ -412,7 +323,7 @@ class TestKindleAPIIntegration:
 
         # Test 1: Try to impersonate without staff token (should fail)
         print("[TEST] 1. Testing impersonation without staff token (should fail)...")
-        response = self._make_request("kindle/auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
         assert response.status_code == 403, f"Expected 403 without staff token, got {response.status_code}"
         data = response.json()
         assert "error" in data, "Response should contain error"
@@ -421,7 +332,7 @@ class TestKindleAPIIntegration:
 
         # Test 2: Create a new staff token
         print("\n[TEST] 2. Creating new staff token...")
-        response = self._make_request("kindle/staff-auth", {"auth": "1"}, max_retries=1)
+        response = self._make_request("staff-auth", {"auth": "1"}, max_retries=1)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data["authenticated"] is True, f"Authentication failed: {data}"
@@ -442,7 +353,7 @@ class TestKindleAPIIntegration:
         # Clear cookies first to avoid conflicts
         self.session.cookies.clear()
         self.session.cookies.set("staff_token", staff_token)
-        response = self._make_request("kindle/auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
         assert response.status_code == 200, f"Expected 200 with staff token, got {response.status_code}"
         data = response.json()
         assert "success" in data or "authenticated" in data, f"Response missing expected fields: {data}"
@@ -450,7 +361,7 @@ class TestKindleAPIIntegration:
 
         # Test 4: Verify the token validates correctly
         print("\n[TEST] 4. Verifying staff token validation...")
-        response = self._make_request("kindle/staff-auth", max_retries=1)
+        response = self._make_request("staff-auth", max_retries=1)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         data = response.json()
         assert data["authenticated"] is True, f"Token validation failed: {data}"
@@ -459,7 +370,7 @@ class TestKindleAPIIntegration:
 
         # Test 5: Revoke the token
         print("\n[TEST] 5. Revoking staff token...")
-        response = self._make_request("kindle/staff-auth", method="DELETE", max_retries=1)
+        response = self._make_request("staff-auth", method="DELETE", max_retries=1)
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         data = response.json()
         assert data["success"] is True, f"Token revocation failed: {data}"
@@ -468,7 +379,7 @@ class TestKindleAPIIntegration:
         # Test 6: Verify revoked token no longer works
         print("\n[TEST] 6. Verifying revoked token is rejected...")
         # Keep the revoked token in cookies
-        response = self._make_request("kindle/auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
         assert response.status_code == 403, f"Expected 403 with revoked token, got {response.status_code}"
         data = response.json()
         assert "error" in data, "Response should contain error"
@@ -508,7 +419,7 @@ class TestKindleAPIIntegration:
     def test_endpoints_sequence(self):
         """Test the full sequence of endpoints."""
         # Open book
-        open_response = self._make_request("kindle/open-random-book")
+        open_response = self._make_request("open-random-book")
         assert open_response.status_code == 200
         open_data = open_response.json()
 
@@ -521,7 +432,7 @@ class TestKindleAPIIntegration:
             assert len(open_data["ocr_text"]) > 0
 
         # Navigate with preview
-        nav_response = self._make_request("kindle/navigate", {"action": "preview", "preview": "true"})
+        nav_response = self._make_request("navigate", {"action": "preview", "preview": "true"})
         assert nav_response.status_code == 200
         nav_data = nav_response.json()
 
@@ -535,7 +446,7 @@ class TestKindleAPIIntegration:
             assert len(text_field) > 0
 
         # Shutdown
-        shutdown_response = self._make_request("kindle/shutdown", method="POST")
+        shutdown_response = self._make_request("shutdown", method="POST")
         assert shutdown_response.status_code == 200
 
     @pytest.mark.expensive
@@ -546,7 +457,7 @@ class TestKindleAPIIntegration:
 
         # Use a longer timeout for recreate operations and disable retries
         response = self._make_request(
-            "kindle/auth",
+            "auth",
             method="GET",
             params={
                 "user_email": RECREATE_USER_EMAIL,
@@ -566,7 +477,7 @@ class TestKindleAPIIntegration:
         # Shutdown
         print("[TEST_RECREATE] Making shutdown request")
         shutdown_response = self._make_request(
-            "kindle/shutdown", method="POST", params={"user_email": RECREATE_USER_EMAIL}
+            "shutdown", method="POST", params={"user_email": RECREATE_USER_EMAIL}
         )
         print(f"[TEST_RECREATE] Shutdown response status: {shutdown_response.status_code}")
         assert shutdown_response.status_code == 200

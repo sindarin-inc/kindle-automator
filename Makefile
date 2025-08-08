@@ -76,7 +76,12 @@ test:
 
 test-all: test
 
-test-unit: test-user-auth
+test-unit: test-user-auth test-deduplication-unit
+	@echo "All unit tests passed!"
+
+test-deduplication-unit:
+	@echo "Running deduplication unit tests (no server required)..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_deduplication_unit.py -v
 
 test-integration:
 	@echo "Running integration tests..."

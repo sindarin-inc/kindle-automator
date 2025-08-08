@@ -4,6 +4,22 @@
 
 Always run `make lint` after making Python code changes to ensure proper formatting (Black, isort, flake8).
 
+## Redis Access
+
+The project uses Redis on port 6479 (database 1) via Docker container `sol_redis`. 
+To access Redis for debugging:
+
+```bash
+# Check active requests
+docker exec sol_redis redis-cli -p 6479 -n 1 keys "kindle:active_request:*"
+
+# Get specific request data
+docker exec sol_redis redis-cli -p 6479 -n 1 get "kindle:active_request:user@email.com"
+
+# Monitor Redis commands in real-time
+docker exec sol_redis redis-cli -p 6479 -n 1 monitor
+```
+
 ## Commands
 
 - **`make lint`**: Run isort, black, and flake8 formatting tools
