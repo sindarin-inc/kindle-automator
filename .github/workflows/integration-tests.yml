@@ -44,12 +44,13 @@ jobs:
       - name: Run deduplication tests
         if: success()
         env:
+          CI: "true"
           API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_request_deduplication.py::TestPriorityAndCancellation -v --tb=short
+          python -m pytest tests/test_request_deduplication.py -v --tb=short
         timeout-minutes: 5
 
       - name: Run expensive integration tests

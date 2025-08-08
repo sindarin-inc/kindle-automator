@@ -1,6 +1,7 @@
 """Tests for request deduplication and cancellation functionality."""
 
 import json
+import os
 import pickle
 import threading
 import time
@@ -590,9 +591,12 @@ class TestPriorityAndCancellation(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        # Server should already be running via make claude-run
-        self.base_url = "http://localhost:4098"
-        self.email = "sam@solreader.com"
+        import os
+
+        # Use environment variable for base URL (for CI) or default to localhost
+        self.base_url = os.getenv("API_BASE_URL", "http://localhost:4098")
+        # Use test email from environment or default
+        self.email = os.getenv("TEST_USER_EMAIL", "sam@solreader.com")
 
         # Create a session with connection pooling
         self.session = requests.Session()
@@ -604,11 +608,15 @@ class TestPriorityAndCancellation(unittest.TestCase):
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
+        # Set up authentication like integration tests
+        web_auth_token = os.getenv("WEB_INTEGRATION_TEST_AUTH_TOKEN")
+        if web_auth_token:
+            self.session.headers.update({"Authorization": f"Tolkien {web_auth_token}"})
+
         # Get staff token for authentication
         self.staff_token = self._get_staff_token()
-
-        # Clear any lingering Redis state for this user
-        self._clear_redis_state()
+        if self.staff_token:
+            self.session.cookies.set("staff_token", self.staff_token)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -619,28 +627,46 @@ class TestPriorityAndCancellation(unittest.TestCase):
 
     def _get_staff_token(self):
         """Get staff authentication token."""
+        import os
+
+        # In CI, use the environment variable
+        ci_token = os.getenv("INTEGRATION_TEST_STAFF_AUTH_TOKEN")
+        if ci_token:
+            return ci_token
+
+        # In local dev, get token from the server
         response = self.session.get(f"{self.base_url}/staff-auth", params={"auth": "1"})
         return response.cookies.get("staff_token")
 
-    def _clear_redis_state(self):
-        """Clear any lingering Redis state for this user to ensure test isolation."""
-        try:
-            import redis
+    def _create_test_session(self):
+        """Create a new session with proper authentication for test threads."""
+        import os
 
-            from server.core.redis_connection import get_redis_client
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=10,
+            max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
 
-            r = get_redis_client()
-            # Clear all keys related to this user
-            pattern = f"kindle:*{self.email}*"
-            keys = r.keys(pattern)
-            if keys:
-                r.delete(*keys)
+        # Copy authentication from environment
+        web_auth_token = os.getenv("WEB_INTEGRATION_TEST_AUTH_TOKEN")
+        if web_auth_token:
+            session.headers.update({"Authorization": f"Tolkien {web_auth_token}"})
 
-            # Also clear active request tracking
-            r.delete(f"kindle:active_request:{self.email}")
-        except Exception:
-            # If Redis isn't available or there's an error, continue anyway
-            pass
+        if self.staff_token:
+            session.cookies.set("staff_token", self.staff_token)
+
+        return session
+
+    def _build_params(self, base_params):
+        """Build request parameters with staging flag and sindarin_email."""
+        params = base_params.copy()
+        params["staging"] = "1"
+        params["sindarin_email"] = self.email
+        return params
 
     def test_screenshot_runs_concurrently(self):
         """Test that /screenshot runs concurrently without priority blocking."""
@@ -648,20 +674,12 @@ class TestPriorityAndCancellation(unittest.TestCase):
 
         def high_priority_request():
             """Make a high priority request that takes time."""
-            # Create a new session for this thread
-            session = requests.Session()
-            adapter = HTTPAdapter(
-                pool_connections=10,
-                pool_maxsize=10,
-                max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
-            )
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
+            session = self._create_test_session()
             try:
+                params = self._build_params({"user_email": self.email, "title": "Hyperion"})
                 response = session.get(
                     f"{self.base_url}/open-book",
-                    params={"user_email": self.email, "sindarin_email": self.email, "title": "Hyperion"},
-                    cookies={"staff_token": self.staff_token},
+                    params=params,
                     timeout=60,
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
@@ -670,20 +688,12 @@ class TestPriorityAndCancellation(unittest.TestCase):
 
         def screenshot_request():
             """Make a screenshot request."""
-            # Create a new session for this thread
-            session = requests.Session()
-            adapter = HTTPAdapter(
-                pool_connections=10,
-                pool_maxsize=10,
-                max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
-            )
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
+            session = self._create_test_session()
             try:
+                params = self._build_params({"user_email": self.email})
                 response = session.get(
                     f"{self.base_url}/screenshot",
-                    params={"user_email": self.email, "sindarin_email": self.email},
-                    cookies={"staff_token": self.staff_token},
+                    params=params,
                     timeout=60,
                 )
                 results["screenshot"] = {"status": response.status_code, "completed_at": time.time()}
@@ -732,20 +742,12 @@ class TestPriorityAndCancellation(unittest.TestCase):
         def stream_books():
             """Stream books endpoint."""
             results["stream_started"] = time.time()
-            # Create a new session for this thread
-            session = requests.Session()
-            adapter = HTTPAdapter(
-                pool_connections=10,
-                pool_maxsize=10,
-                max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
-            )
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
+            session = self._create_test_session()
             try:
+                params = self._build_params({"user_email": self.email})
                 response = session.get(
                     f"{self.base_url}/books-stream",
-                    params={"user_email": self.email, "sindarin_email": self.email},
-                    cookies={"staff_token": self.staff_token},
+                    params=params,
                     stream=True,
                     timeout=60,
                 )
@@ -777,20 +779,12 @@ class TestPriorityAndCancellation(unittest.TestCase):
         def open_book():
             """Open a book (higher priority)."""
             results["open_started"] = time.time()
-            # Create a new session for this thread
-            session = requests.Session()
-            adapter = HTTPAdapter(
-                pool_connections=10,
-                pool_maxsize=10,
-                max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
-            )
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
+            session = self._create_test_session()
             try:
+                params = self._build_params({"user_email": self.email, "title": "Hyperion"})
                 response = session.get(
                     f"{self.base_url}/open-book",
-                    params={"user_email": self.email, "sindarin_email": self.email, "title": "Hyperion"},
-                    cookies={"staff_token": self.staff_token},
+                    params=params,
                     timeout=60,
                 )
                 results["open_completed"] = time.time()
