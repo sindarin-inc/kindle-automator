@@ -188,59 +188,37 @@ class KindleOCR:
                 logger.error(error_msg, exc_info=True)
                 return None, error_msg
 
-            # Initialize Mistral client
-            client = Mistral(api_key=api_key)
-
-            # Implement our own timeout using ThreadPoolExecutor
+            # Initialize Mistral client with timeout
             TIMEOUT_SECONDS = 6
+            client = Mistral(api_key=api_key, timeout_ms=TIMEOUT_SECONDS * 1000)
 
-            # Define the OCR function that will run in a separate thread
-            def run_ocr():
-                try:
-                    ocr_response = client.ocr.process(
-                        model="mistral-ocr-latest",
-                        document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
-                    )
-                except Exception as e:
-                    logger.error(f"Error processing MistralAI OCR: {e}", exc_info=True)
-                    return None
+            # Process OCR directly without ThreadPoolExecutor since we have HTTP timeout
+            try:
+                ocr_response = client.ocr.process(
+                    model="mistral-ocr-latest",
+                    document={"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
+                )
 
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
-                    return page.markdown
-                else:
-                    logger.error(
-                        f"No MistralAI OCR response or no pages found: {ocr_response}", exc_info=True
-                    )
-                return None
-
-            # Execute with timeout
-            try:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    # Submit the OCR task to the executor
-                    future = executor.submit(run_ocr)
-
-                    try:
-                        # Wait for the result with a timeout
-                        ocr_text = future.result(timeout=TIMEOUT_SECONDS)
-
-                        if ocr_text:
-                            logger.info("MistralAI OCR processing successful")
-                            return ocr_text, None
-                        else:
-                            error_msg = "No MistralAI OCR response or no pages found"
-                            logger.error(error_msg, exc_info=True)
-                            return None, error_msg
-
-                    except concurrent.futures.TimeoutError:
-                        # Cancel the future if it times out
-                        future.cancel()
-                        error_msg = f"MistralAI OCR request timed out after {TIMEOUT_SECONDS} seconds"
-                        logger.error(error_msg, exc_info=True)
+                    ocr_text = page.markdown
+                    if ocr_text:
+                        logger.info("MistralAI OCR processing successful")
+                        return ocr_text, None
+                    else:
+                        error_msg = "No text extracted from MistralAI OCR response"
+                        logger.error(error_msg)
                         return None, error_msg
+                else:
+                    error_msg = f"No MistralAI OCR response or no pages found: {ocr_response}"
+                    logger.error(error_msg)
+                    return None, error_msg
 
             except Exception as e:
-                error_msg = f"Error during MistralAI OCR processing with timeout: {e}"
+                # This will catch timeout errors from the HTTP client
+                error_msg = f"MistralAI OCR request failed: {str(e)}"
+                if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    error_msg = f"MistralAI OCR request timed out after {TIMEOUT_SECONDS} seconds"
                 logger.error(error_msg, exc_info=True)
                 return None, error_msg
 
