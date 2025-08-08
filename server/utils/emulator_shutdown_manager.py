@@ -129,7 +129,9 @@ class EmulatorShutdownManager:
         display_num: Optional[int] = None
         try:
             display_num = self._stop_emulator_processes(automator, email, summary)
-            logger.debug(f"Stop emulator processes took {_time.time() - stop_emulator_start:.1f}s for {email}")
+            logger.debug(
+                f"Stop emulator processes took {_time.time() - stop_emulator_start:.1f}s for {email}"
+            )
         finally:
             # Always cleanup ports even when stop_emulator raised.
             emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]

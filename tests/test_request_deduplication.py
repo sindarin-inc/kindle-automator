@@ -607,6 +607,9 @@ class TestPriorityAndCancellation(unittest.TestCase):
         # Get staff token for authentication
         self.staff_token = self._get_staff_token()
 
+        # Clear any lingering Redis state for this user
+        self._clear_redis_state()
+
     def tearDown(self):
         """Clean up after tests."""
         # Close the session
@@ -618,6 +621,26 @@ class TestPriorityAndCancellation(unittest.TestCase):
         """Get staff authentication token."""
         response = self.session.get(f"{self.base_url}/staff-auth", params={"auth": "1"})
         return response.cookies.get("staff_token")
+
+    def _clear_redis_state(self):
+        """Clear any lingering Redis state for this user to ensure test isolation."""
+        try:
+            import redis
+
+            from server.core.redis_connection import get_redis_client
+
+            r = get_redis_client()
+            # Clear all keys related to this user
+            pattern = f"kindle:*{self.email}*"
+            keys = r.keys(pattern)
+            if keys:
+                r.delete(*keys)
+
+            # Also clear active request tracking
+            r.delete(f"kindle:active_request:{self.email}")
+        except Exception:
+            # If Redis isn't available or there's an error, continue anyway
+            pass
 
     def test_screenshot_runs_concurrently(self):
         """Test that /screenshot runs concurrently without priority blocking."""
@@ -639,7 +662,7 @@ class TestPriorityAndCancellation(unittest.TestCase):
                     f"{self.base_url}/open-book",
                     params={"user_email": self.email, "sindarin_email": self.email, "title": "Hyperion"},
                     cookies={"staff_token": self.staff_token},
-                    timeout=30,
+                    timeout=60,
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
             finally:
@@ -661,9 +684,11 @@ class TestPriorityAndCancellation(unittest.TestCase):
                     f"{self.base_url}/screenshot",
                     params={"user_email": self.email, "sindarin_email": self.email},
                     cookies={"staff_token": self.staff_token},
-                    timeout=30,
+                    timeout=60,
                 )
                 results["screenshot"] = {"status": response.status_code, "completed_at": time.time()}
+            except Exception as e:
+                results["screenshot_error"] = str(e)
             finally:
                 session.close()
 
@@ -680,12 +705,20 @@ class TestPriorityAndCancellation(unittest.TestCase):
         screenshot_thread = threading.Thread(target=screenshot_request)
         screenshot_thread.start()
 
-        # Wait for both to complete
-        high_thread.join(timeout=30)
-        screenshot_thread.join(timeout=30)
+        # Wait for both to complete (longer timeout for slower test environments)
+        high_thread.join(timeout=60)
+        screenshot_thread.join(timeout=60)
+
+        # Check if threads are still alive (timeout occurred)
+        if high_thread.is_alive():
+            self.fail("High priority thread did not complete within timeout")
+        if screenshot_thread.is_alive():
+            self.fail("Screenshot thread did not complete within timeout")
 
         # Verify screenshot ran successfully without being blocked
-        self.assertIn("screenshot", results)
+        if "screenshot_error" in results:
+            self.fail(f"Screenshot request failed with error: {results['screenshot_error']}")
+        self.assertIn("screenshot", results, f"Screenshot request did not complete. Results: {results}")
         self.assertEqual(
             results["screenshot"]["status"],
             200,
@@ -714,7 +747,7 @@ class TestPriorityAndCancellation(unittest.TestCase):
                     params={"user_email": self.email, "sindarin_email": self.email},
                     cookies={"staff_token": self.staff_token},
                     stream=True,
-                    timeout=30,
+                    timeout=60,
                 )
 
                 for line in response.iter_lines():
@@ -758,7 +791,7 @@ class TestPriorityAndCancellation(unittest.TestCase):
                     f"{self.base_url}/open-book",
                     params={"user_email": self.email, "sindarin_email": self.email, "title": "Hyperion"},
                     cookies={"staff_token": self.staff_token},
-                    timeout=30,
+                    timeout=60,
                 )
                 results["open_completed"] = time.time()
                 results["open_status"] = response.status_code

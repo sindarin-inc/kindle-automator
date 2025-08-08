@@ -112,7 +112,7 @@ class KindleOCR:
             request = documentai.ProcessRequest(name=processor_name, raw_document=raw_document)
 
             # Use ThreadPoolExecutor for timeout handling
-            TIMEOUT_SECONDS = 10
+            TIMEOUT_SECONDS = 5
 
             def run_google_ocr():
                 try:
@@ -192,7 +192,7 @@ class KindleOCR:
             client = Mistral(api_key=api_key)
 
             # Implement our own timeout using ThreadPoolExecutor
-            TIMEOUT_SECONDS = 10
+            TIMEOUT_SECONDS = 6
 
             # Define the OCR function that will run in a separate thread
             def run_ocr():
