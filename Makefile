@@ -76,9 +76,27 @@ test:
 
 test-all: test
 
-test-dedup:
+test-unit: test-user-auth
+
+test-integration:
+	@echo "Running integration tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_api_integration.py -v
+
+test-concurrent:
+	@echo "Running concurrent tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_concurrent_requests.py -v
+
+test-deduplication:
 	@echo "Running deduplication tests..."
 	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_request_deduplication.py -v
+
+test-user-auth:
+	@echo "Running user authentication tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_user_repository.py -v
+
+test-multi-user:
+	@echo "Running multi-user tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_multi_user.py -v
 
 # Generate staff authentication token for testing
 test-staff-auth:
@@ -155,10 +173,3 @@ db-export:
 	@uv run dotenv -f $(ENV_FILE) run python scripts/export_users_to_json.py
 
 # db-stats and db-data are defined in Makefile.database
-
-# Test multi-user operations
-test-multi-user:
-	@echo "Running multi-user test..."
-	@echo "Make sure the server is running with 'make claude-run' first!"
-	@echo ""
-	uv run dotenv run python tests/test_multi_user.py
