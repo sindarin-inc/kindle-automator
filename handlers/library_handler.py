@@ -66,7 +66,7 @@ class LibraryHandler:
 
         # Initialize helper classes
         self.search_handler = LibraryHandlerSearch(driver)
-        self.scroll_handler = LibraryHandlerScroll(driver)
+        self.scroll_handler = LibraryHandlerScroll(driver, parent_handler=self)
 
     def _discover_and_save_library_preferences(self):
         """Discover the current library view state and save it to preferences.
@@ -1025,6 +1025,122 @@ class LibraryHandler:
         except Exception as e:
             logger.error(f"Error checking list view: {e}", exc_info=True)
             return False
+
+    def _detect_collapsed_series(self):
+        """Detect if there are collapsed series items in the current library view.
+
+        Returns:
+            bool: True if collapsed series are detected, False otherwise
+        """
+        try:
+            # Look for series indicators - either in content-desc or the series count badge
+            # Pattern 1: content-desc contains "Series: [name], X volumes"
+            series_elements = self.driver.find_elements(
+                AppiumBy.XPATH, "//android.widget.RelativeLayout[contains(@content-desc, 'Series:')]"
+            )
+            if series_elements:
+                logger.info(f"Found {len(series_elements)} collapsed series items via content-desc")
+                return True
+
+            # Pattern 2: Look for the series count badge (e.g., "3" indicating 3 books in series)
+            # This appears as a TextView with resource-id "middle_right_label"
+            series_badges = self.driver.find_elements(AppiumBy.ID, "com.amazon.kindle:id/middle_right_label")
+            if series_badges:
+                # Check if any of these badges contain numbers (indicating series count)
+                for badge in series_badges:
+                    try:
+                        text = badge.text
+                        if text and text.isdigit():
+                            logger.info(f"Found series badge with count: {text}")
+                            return True
+                    except Exception:
+                        continue
+
+            return False
+        except Exception as e:
+            logger.debug(f"Error detecting collapsed series: {e}")
+            return False
+
+    def _should_check_series_grouping(self):
+        """Check if it's been more than 24 hours since the last series group check.
+
+        Returns:
+            bool: True if we should check (and potentially disable) series grouping
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # Get the last check time from the database
+            library_settings = self.driver.automator.profile_manager.get_library_settings()
+            if not library_settings:
+                # No settings yet, should check
+                return True
+
+            last_check = library_settings.last_series_group_check
+            if not last_check:
+                # Never checked before
+                return True
+
+            # Check if it's been more than 24 hours
+            now = datetime.utcnow()
+            time_since_check = now - last_check
+            should_check = time_since_check > timedelta(hours=24)
+
+            if not should_check:
+                logger.debug(
+                    f"Last series group check was {time_since_check.total_seconds() / 3600:.1f} hours ago, skipping"
+                )
+
+            return should_check
+        except Exception as e:
+            logger.warning(f"Error checking series grouping time: {e}")
+            # On error, default to checking
+            return True
+
+    def _handle_series_grouping_if_needed(self):
+        """Check for collapsed series and disable grouping if needed.
+
+        This should be called when scrolling through the library and collapsed
+        series are detected.
+        """
+        try:
+            # First check if we should even check (24 hour limit)
+            if not self._should_check_series_grouping():
+                return
+
+            # Check if there are collapsed series visible
+            if not self._detect_collapsed_series():
+                return
+
+            logger.info("Collapsed series detected, checking if group by series needs to be disabled")
+
+            # Open the grid/list dialog to check and disable series grouping
+            if not self.open_grid_list_view_dialog(force_open=True):
+                logger.warning("Failed to open Grid/List dialog to check series grouping")
+                return
+
+            # Handle the dialog to ensure series grouping is off
+            if self.handle_grid_list_view_dialog():
+                logger.info("Successfully handled Grid/List dialog to disable series grouping")
+
+                # Update the last check time in the database
+                from datetime import datetime
+
+                from database.repositories.user_repository import UserRepository
+                from server.utils.request_utils import get_sindarin_email
+
+                sindarin_email = get_sindarin_email(self.driver.automator)
+                if sindarin_email:
+                    with UserRepository() as repo:
+                        library_settings = repo.get_or_create_library_settings(sindarin_email)
+                        library_settings.last_series_group_check = datetime.utcnow()
+                        repo.commit()
+                        logger.info("Updated last_series_group_check timestamp in database")
+            else:
+                logger.warning("Failed to handle Grid/List dialog to disable series grouping")
+
+        except Exception as e:
+            logger.warning(f"Error handling series grouping: {e}")
 
     def _is_in_search_interface(self):
         """

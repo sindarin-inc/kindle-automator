@@ -582,6 +582,21 @@ class AVDProfileManager:
 
         return self.get_user_field(email, setting_name, default, section="library_settings")
 
+    def get_library_settings(self, email: str = None):
+        """Get the library settings object for a user."""
+        if not email:
+            email = get_sindarin_email()
+            if not email:
+                logger.warning("No email available to get library settings")
+                return None
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user(email)
+            if user:
+                return user.library_settings
+            return None
+
     # save_reading_setting is already implemented above in the class
 
     def switch_profile_and_start_emulator(
