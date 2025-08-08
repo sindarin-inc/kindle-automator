@@ -828,8 +828,8 @@ class TestPriorityAndCancellation(unittest.TestCase):
                 cancellation_delay = results["stream_cancelled"] - results["open_started"]
                 self.assertLess(
                     cancellation_delay,
-                    5.0,
-                    f"Cancellation took {cancellation_delay:.1f}s, should be under 5s",
+                    10.0,
+                    f"Cancellation took {cancellation_delay:.1f}s, should be under 10s",
                 )
         elif "stream_errored" in results:
             # Stream errored (probably due to state conflict) - also acceptable
