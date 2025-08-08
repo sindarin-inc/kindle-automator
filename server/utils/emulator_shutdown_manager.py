@@ -110,7 +110,7 @@ class EmulatorShutdownManager:
             preserve_reading_state,
             summary,
         )
-        logger.info(f"UI navigation took {_time.time() - ui_nav_start:.1f}s for {email}")
+        logger.debug(f"UI navigation took {_time.time() - ui_nav_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
         # 4. Take snapshot (always attempt, even if UI crashed)        ──────
@@ -118,9 +118,9 @@ class EmulatorShutdownManager:
         if not skip_snapshot:
             snapshot_start = _time.time()
             self._take_snapshot(automator, email, summary)
-            logger.info(f"Snapshot attempt took {_time.time() - snapshot_start:.1f}s for {email}")
+            logger.debug(f"Snapshot attempt took {_time.time() - snapshot_start:.1f}s for {email}")
         else:
-            logger.info(f"Skipping snapshot for {email} as requested (cold boot)")
+            logger.debug(f"Skipping snapshot for {email} as requested (cold boot)")
 
         # ------------------------------------------------------------------
         # 5. Stop emulator + auxiliary processes                       ──────
@@ -129,21 +129,21 @@ class EmulatorShutdownManager:
         display_num: Optional[int] = None
         try:
             display_num = self._stop_emulator_processes(automator, email, summary)
-            logger.info(f"Stop emulator processes took {_time.time() - stop_emulator_start:.1f}s for {email}")
+            logger.debug(f"Stop emulator processes took {_time.time() - stop_emulator_start:.1f}s for {email}")
         finally:
             # Always cleanup ports even when stop_emulator raised.
             emulator_id = automator.emulator_manager.emulator_launcher.get_running_emulator(email)[0]
             if emulator_id:
                 self._cleanup_emulator_ports(emulator_id, email)
             else:
-                logger.info(f"No emulator ID found for cleanup of email={email}")
+                logger.debug(f"No emulator ID found for cleanup of email={email}")
 
         # ------------------------------------------------------------------
         # 6. Platform‑specific VNC / Xvfb / WebSocket cleanup           ──────
         # ------------------------------------------------------------------
         cleanup_display_start = _time.time()
         self._cleanup_display_resources(email, display_num, summary)
-        logger.info(f"Display resource cleanup took {_time.time() - cleanup_display_start:.1f}s for {email}")
+        logger.debug(f"Display resource cleanup took {_time.time() - cleanup_display_start:.1f}s for {email}")
 
         # ------------------------------------------------------------------
         # 7. Final in‑memory cleanups                                   ──────
@@ -152,9 +152,9 @@ class EmulatorShutdownManager:
         self._cleanup_automator(email, automator, summary)
         server = AutomationServer.get_instance()
         server.clear_current_book(email)
-        logger.info(f"Automator cleanup took {_time.time() - cleanup_automator_start:.1f}s for {email}")
+        logger.debug(f"Automator cleanup took {_time.time() - cleanup_automator_start:.1f}s for {email}")
 
-        logger.info(f"Total shutdown took {_time.time() - start_time:.1f}s for {email}")
+        logger.debug(f"Total shutdown took {_time.time() - start_time:.1f}s for {email}")
         return summary
 
     def shutdown_all_emulators(self, preserve_reading_state: bool = False):  # noqa: D401, ANN001
@@ -224,7 +224,7 @@ class EmulatorShutdownManager:
         vnc_manager = VNCInstanceManager.get_instance()
         vnc_instance = vnc_manager.get_instance_for_profile(email)
         if not vnc_instance or not vnc_instance.get("emulator_id"):
-            logger.info("No running emulator found in VNC instance manager for %s", email)
+            logger.debug("No running emulator found in VNC instance manager for %s", email)
             return summary
 
         emulator_id = vnc_instance["emulator_id"]
@@ -282,7 +282,7 @@ class EmulatorShutdownManager:
         try:
             driver = automator.driver
             if not driver:
-                logger.info(f"No driver available for {email}, skipping library navigation")
+                logger.warning(f"No driver available for {email}, skipping library navigation")
                 return True  # Not an error - we can still take snapshots
             if not automator.state_machine:
                 automator.state_machine = KindleStateMachine(driver)
@@ -309,7 +309,7 @@ class EmulatorShutdownManager:
             if state_machine.driver:
                 about_book_handler = AboutBookPopoverHandler(state_machine.driver)
                 if about_book_handler.is_popover_present():
-                    logger.info(f"About Book popover detected during shutdown for {email} - dismissing it")
+                    logger.debug(f"About Book popover detected during shutdown for {email} - dismissing it")
                     about_book_handler.dismiss_popover()
                     time.sleep(0.5)
 
@@ -503,11 +503,11 @@ class EmulatorShutdownManager:
                         user.snapshot_dirty = False
                         user.snapshot_dirty_since = None
                         session.commit()
-                        logger.info(f"Cleared snapshot dirty flag for {email} after successful snapshot")
+                        logger.debug(f"Cleared snapshot dirty flag for {email} after successful snapshot")
             except Exception as e:
                 logger.error(f"Error clearing snapshot dirty flag: {e}", exc_info=True)
 
-            logger.info("Updated default_boot snapshot timestamp to %s for %s", ts, email)
+            logger.debug("Updated default_boot snapshot timestamp to %s for %s", ts, email)
 
     # ------------------- stop emulator + processes ------------------ #
 
@@ -597,7 +597,7 @@ class EmulatorShutdownManager:
             cleanup_start = _time.time()
             # Skip driver.quit() during shutdown since emulator is already stopped
             automator.cleanup(skip_driver_quit=True)
-            logger.info(f"automator.cleanup() took {_time.time() - cleanup_start:.1f}s for {email}")
+            logger.debug(f"automator.cleanup() took {_time.time() - cleanup_start:.1f}s for {email}")
             summary["automator_cleaned"] = True
         # Clear reference even if cleanup errored.
         server = AutomationServer.get_instance()
@@ -634,7 +634,7 @@ class EmulatorShutdownManager:
                     if "\n" in device_avd:
                         device_avd = device_avd.split("\n")[0].strip()
 
-                    logger.info(f"Emulator {emulator_id} is running AVD: {device_avd}")
+                    logger.debug(f"Emulator {emulator_id} is running AVD: {device_avd}")
 
                     # Get expected AVD from VNC instance or profile
                     vnc_mgr = VNCInstanceManager.get_instance()
@@ -654,9 +654,9 @@ class EmulatorShutdownManager:
             # Port forwards are persistent and tied to the user's instance ID
             # We keep them in place for faster startup on next launch
             # Only remove if explicitly cleaning up the instance permanently
-            logger.info(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
+            logger.debug(f"Keeping ADB port forwards for {emulator_id} to speed up next startup")
 
-            logger.info(f"Killing uiautomator processes on {emulator_id} for email={email}")
+            logger.debug(f"Killing uiautomator processes on {emulator_id} for email={email}")
             with contextlib.suppress(Exception):
                 subprocess.run(
                     [f"adb -s {emulator_id} shell pkill -f uiautomator"],

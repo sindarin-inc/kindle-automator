@@ -1725,11 +1725,22 @@ class ReaderHandler:
             logger.error(f"Error getting book title: {e}", exc_info=True)
             return None
 
-    def navigate_back_to_library(self) -> bool:
-        """Handle the reading state by navigating back to the library."""
+    def navigate_back_to_library(self, cancellation_check=None) -> bool:
+        """Handle the reading state by navigating back to the library.
+
+        Args:
+            cancellation_check: Optional function to check if operation should be cancelled
+
+        Returns:
+            bool: True if successfully navigated back, False if cancelled or failed
+        """
         logger.info("Handling reading state - navigating back to library...")
 
         try:
+            # Check for cancellation at the start
+            if cancellation_check and cancellation_check():
+                logger.info("Navigation back to library cancelled at start")
+                return False
             # Check for Item Removed dialog first
             if is_item_removed_dialog_visible(self.driver):
                 logger.debug("Item Removed dialog detected - handling it")
@@ -1741,14 +1752,26 @@ class ReaderHandler:
                     logger.error("Failed to handle Item Removed dialog", exc_info=True)
                     # Continue with other methods to try getting back to library
 
+            # Check for cancellation after dialog check
+            if cancellation_check and cancellation_check():
+                logger.info("Navigation back to library cancelled after dialog check")
+                return False
+
             # Check for and dismiss the comic book view
             if self.handle_comic_book_view():
                 logger.debug("Dismissed comic book view during navigation")
                 # Refresh page source for logging
                 store_page_source(self.driver.page_source, "after_comic_book_dismiss")
 
+            # Check for cancellation after comic book view
+            if cancellation_check and cancellation_check():
+                logger.info("Navigation back to library cancelled after comic book view")
+                return False
+
             # First check if toolbar is already visible
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
+            if cancellation_check and cancellation_check():
+                return False
             if toolbar_visible:
                 logger.debug("Toolbar already visible - proceeding to close book")
                 return self._click_close_book_button()
@@ -1758,9 +1781,13 @@ class ReaderHandler:
             about_book_visible, _ = self._check_element_visibility(
                 ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
             )
+            if cancellation_check and cancellation_check():
+                return False
             bottom_sheet_visible, _ = self._check_element_visibility(
                 BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
             )
+            if cancellation_check and cancellation_check():
+                return False
 
             if about_book_visible or bottom_sheet_visible:
                 logger.debug(
@@ -1770,6 +1797,11 @@ class ReaderHandler:
                 # Try multiple dismissal approaches with retries
                 max_attempts = 3
                 for attempt in range(max_attempts):
+                    # Check for cancellation in loop
+                    if cancellation_check and cancellation_check():
+                        logger.info("Navigation cancelled during slideover dismissal")
+                        return False
+
                     logger.debug(f"Dismissal attempt {attempt + 1}/{max_attempts}")
 
                     # First try: Click the pill if visible
@@ -1779,7 +1811,9 @@ class ReaderHandler:
                     if pill_visible:
                         pill.click()
                         logger.info("Clicked bottom sheet pill to dismiss")
-                        time.sleep(1)
+                        time.sleep(0.5)
+                        if cancellation_check and cancellation_check():
+                            return False
 
                     # Second try: Swipe down from middle of screen
                     if attempt >= 1:
@@ -1789,7 +1823,9 @@ class ReaderHandler:
                         end_y = int(window_size["height"] * 0.7)
                         self.driver.swipe(center_x, start_y, center_x, end_y, 500)
                         logger.info("Swiped down to dismiss slideover")
-                        time.sleep(1)
+                        time.sleep(0.5)
+                        if cancellation_check and cancellation_check():
+                            return False
 
                     # Third try: Tap near top of screen
                     if attempt >= 2:
@@ -1798,15 +1834,21 @@ class ReaderHandler:
                         top_y = int(window_size["height"] * 0.10)
                         self.driver.tap([(center_x, top_y)])
                         logger.info("Tapped near top of screen to dismiss")
-                        time.sleep(1)
+                        time.sleep(0.5)
+                        if cancellation_check and cancellation_check():
+                            return False
 
                     # Check if dismissed
                     about_still_visible, _ = self._check_element_visibility(
                         ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
                     )
+                    if cancellation_check and cancellation_check():
+                        return False
                     bottom_still_visible, _ = self._check_element_visibility(
                         BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
                     )
+                    if cancellation_check and cancellation_check():
+                        return False
 
                     if not about_still_visible and not bottom_still_visible:
                         logger.debug("Successfully dismissed slideover/bottom sheet")
@@ -1827,7 +1869,10 @@ class ReaderHandler:
 
             if dialog_handler.check_for_viewing_full_screen_dialog():
                 logger.debug("Handled 'Viewing full screen' dialog")
-                time.sleep(0.5)  # Brief wait for dialog dismissal animation
+                # Brief wait for dialog dismissal animation
+                time.sleep(0.5)
+                if cancellation_check and cancellation_check():
+                    return False
 
             # Check for and handle "Go to that location/page?" dialog
             go_to_location_visible, message = self._check_element_visibility(
@@ -1842,6 +1887,8 @@ class ReaderHandler:
                     yes_button.click()
                     logger.debug("Clicked YES button")
                     time.sleep(1)
+                    if cancellation_check and cancellation_check():
+                        return False
 
             # Check for and dismiss Goodreads auto-update dialog
             goodreads_dialog_visible, _ = self._check_element_visibility(
@@ -1857,6 +1904,8 @@ class ReaderHandler:
                         not_now_button.click()
                         logger.debug("Clicked NOT NOW button")
                         time.sleep(1)
+                        if cancellation_check and cancellation_check():
+                            return False
 
                         # Verify dialog is gone
                         try:
@@ -1891,6 +1940,8 @@ class ReaderHandler:
                     no_thanks_button.click()
                     logger.debug("Clicked NO THANKS button")
                     time.sleep(1)
+                    if cancellation_check and cancellation_check():
+                        return False
 
                     # Verify dialog is gone
                     still_visible, _ = self._check_element_visibility(
@@ -1904,15 +1955,24 @@ class ReaderHandler:
                 else:
                     logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
 
+            # Check for cancellation before final step
+            if cancellation_check and cancellation_check():
+                logger.info("Navigation cancelled before showing toolbar")
+                return False
+
             # Now try to make toolbar visible if it isn't already
-            return self._show_toolbar_and_close_book()
+            return self._show_toolbar_and_close_book(cancellation_check=cancellation_check)
 
         except Exception as e:
             logger.error(f"Error handling reading state: {e}", exc_info=True)
             return False
 
-    def _show_toolbar_and_close_book(self):
-        """Show the toolbar by tapping and then close the book."""
+    def _show_toolbar_and_close_book(self, cancellation_check=None):
+        """Show the toolbar by tapping and then close the book.
+
+        Args:
+            cancellation_check: Optional function to check if operation should be cancelled
+        """
         # Get screen dimensions
         window_size = self.driver.get_window_size()
         center_x = window_size["width"] // 2
@@ -1932,6 +1992,8 @@ class ReaderHandler:
                     not_now_button.click()
                     logger.debug("Clicked NOT NOW button")
                     time.sleep(1)
+                    if cancellation_check and cancellation_check():
+                        return False
                     store_page_source(self.driver.page_source, "goodreads_dialog_dismissed_toolbar")
             except NoSuchElementException:
                 logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
@@ -1952,6 +2014,8 @@ class ReaderHandler:
                 no_thanks_button.click()
                 logger.debug("Clicked NO THANKS button")
                 time.sleep(1)
+                if cancellation_check and cancellation_check():
+                    return False
                 store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_toolbar")
             else:
                 logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
@@ -1986,12 +2050,16 @@ class ReaderHandler:
             else:
                 # Third try: Try a double tap
                 self.driver.tap([(center_x, tap_y)])
-                time.sleep(0.1)  # Brief pause between taps
+                time.sleep(0.1)
+                if cancellation_check and cancellation_check():
+                    return False
                 self.driver.tap([(center_x, tap_y)])
                 logger.debug(f"Double-tapped center at ({center_x}, {tap_y})")
 
             # Generous wait for toolbar to appear
             time.sleep(0.5)
+            if cancellation_check and cancellation_check():
+                return False
 
             # Check if toolbar appeared using multiple strategies
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
@@ -2022,6 +2090,8 @@ class ReaderHandler:
                         not_now_button.click()
                         logger.debug("Clicked NOT NOW button")
                         time.sleep(1)
+                        if cancellation_check and cancellation_check():
+                            return False
                         store_page_source(
                             self.driver.page_source, "goodreads_dialog_dismissed_during_toolbar"
                         )
@@ -2029,6 +2099,8 @@ class ReaderHandler:
                         # Try again immediately to show toolbar after dismissing dialog
                         self.driver.tap([(center_x, tap_y)])
                         time.sleep(0.5)
+                        if cancellation_check and cancellation_check():
+                            return False
 
                         # Check if toolbar appeared
                         toolbar_visible, _ = self._check_element_visibility(
@@ -2064,11 +2136,14 @@ class ReaderHandler:
                     no_thanks_button.click()
                     logger.debug("Clicked NO THANKS button")
                     time.sleep(1)
+                    if cancellation_check and cancellation_check():
+                        return False
                     store_page_source(self.driver.page_source, "word_wise_dialog_dismissed_during_toolbar")
 
                     # Try again immediately to show toolbar after dismissing dialog
                     self.driver.tap([(center_x, tap_y)])
-                    time.sleep(0.5)
+                    if not self._interruptible_sleep(0.5, cancellation_check):
+                        return False
 
                     # Check if toolbar appeared
                     toolbar_visible, _ = self._check_element_visibility(
@@ -2113,8 +2188,14 @@ class ReaderHandler:
 
             if attempt < max_attempts - 1:
                 logger.debug("Toolbar not visible, will try again with different tap strategy...")
+                # Check for cancellation before next attempt
+                if cancellation_check and cancellation_check():
+                    logger.info("Navigation cancelled between toolbar attempts")
+                    return False
                 # Slightly longer wait between attempts
                 time.sleep(0.5)
+                if cancellation_check and cancellation_check():
+                    return False
 
         # As a last resort attempt, try directly going back using the system back button
         logger.warning("Could not show toolbar after all attempts - trying system back button as fallback")
@@ -2122,6 +2203,8 @@ class ReaderHandler:
             # Press back button
             self.driver.press_keycode(4)  # Android back button keycode
             time.sleep(1)
+            if cancellation_check and cancellation_check():
+                return False
 
             # Check if we're still in reading view
             reading_view = False

@@ -87,24 +87,12 @@ class BooksResource(Resource):
                     "emulator_id": emulator_id,
                 }, 401
 
-            # Check for cancellation before attempting transition
-            if should_cancel(sindarin_email, stream_request_key):
-                logger.info(f"[{time.time():.3f}] Stream cancelled before transition for {sindarin_email}")
-                manager._clear_active_request()
-                return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
-
             # Try to transition to library state
-            logger.info(f"[{time.time():.3f}] Not in library state, attempting to transition...")
+            logger.info("Not in library state, attempting to transition...")
             final_state = automator.state_machine.transition_to_library(server=server)
 
             # The transition_to_library now returns the final state
-            logger.info(f"[{time.time():.3f}] State after transition attempt: {final_state}")
-            
-            # Check for cancellation after transition
-            if should_cancel(sindarin_email, stream_request_key):
-                logger.info(f"[{time.time():.3f}] Stream cancelled after transition for {sindarin_email}")
-                manager._clear_active_request()
-                return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
+            logger.info(f"State after transition attempt: {final_state}")
 
             # Check for auth requirement regardless of transition success
             if final_state == AppState.SIGN_IN:
@@ -270,19 +258,20 @@ class BooksStreamResource(Resource):
 
         # Store the request key for cancellation checking during state transitions
         stream_request_key = manager.request_key
-        
+
         # Set up cancellation check function for the state machine
         def check_cancellation():
             """Check if this stream request has been cancelled."""
             return should_cancel(sindarin_email, stream_request_key)
-        
+
         # Set the cancellation check on the state machine for interruptible operations
         automator.state_machine.set_cancellation_check(check_cancellation)
-        
+
         # Check for cancellation before state check
         if should_cancel(sindarin_email, stream_request_key):
             logger.info(f"[{time.time():.3f}] Stream cancelled before state check for {sindarin_email}")
             manager._clear_active_request()
+            automator.state_machine.set_cancellation_check(None)
             return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
 
         # Check initial state and restart if UNKNOWN
@@ -328,6 +317,7 @@ class BooksStreamResource(Resource):
             if should_cancel(sindarin_email, stream_request_key):
                 logger.info(f"[{time.time():.3f}] Stream cancelled before transition for {sindarin_email}")
                 manager._clear_active_request()
+                automator.state_machine.set_cancellation_check(None)
                 return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
 
             # Try to transition to library state
@@ -336,11 +326,12 @@ class BooksStreamResource(Resource):
 
             # The transition_to_library now returns the final state
             logger.info(f"[{time.time():.3f}] State after transition attempt: {final_state}")
-            
+
             # Check for cancellation after transition
             if should_cancel(sindarin_email, stream_request_key):
                 logger.info(f"[{time.time():.3f}] Stream cancelled after transition for {sindarin_email}")
                 manager._clear_active_request()
+                automator.state_machine.set_cancellation_check(None)
                 return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
 
             # Check for auth requirement regardless of transition success
@@ -555,7 +546,9 @@ class BooksStreamResource(Resource):
                     return (json.dumps(msg_dict) + "\n").encode("utf-8")
 
                 # Update activity at the start of streaming
-                logger.info(f"[{time.time():.3f}] Starting book stream for {sindarin_email}, updating activity")
+                logger.info(
+                    f"[{time.time():.3f}] Starting book stream for {sindarin_email}, updating activity"
+                )
                 server.update_activity(sindarin_email)
 
                 yield encode_message(
@@ -569,11 +562,15 @@ class BooksStreamResource(Resource):
                 max_initial_wait = 10.0  # Maximum 10 seconds to wait for filter count
                 check_interval = 0.1  # Check for cancellation every 100ms
 
-                logger.info(f"[{time.time():.3f}] Starting initial wait for filter count (max {max_initial_wait}s)")
+                logger.info(
+                    f"[{time.time():.3f}] Starting initial wait for filter count (max {max_initial_wait}s)"
+                )
                 while initial_wait_time < max_initial_wait:
                     # Check for cancellation during initial wait
                     if should_cancel(sindarin_email, stream_request_key) or stream_cancelled:
-                        logger.info(f"[{time.time():.3f}] Stream cancelled for {sindarin_email} during initial wait")
+                        logger.info(
+                            f"[{time.time():.3f}] Stream cancelled for {sindarin_email} during initial wait"
+                        )
                         error_message = "Request cancelled by higher priority operation"
                         stream_cancelled = True
                         yield encode_message({"error": error_message, "cancelled": True, "done": True})
@@ -604,7 +601,9 @@ class BooksStreamResource(Resource):
                             logger.info("No filter count received in initial wait period")
                             break
                         elif int(initial_wait_time * 10) % 20 == 0:  # Log every 2 seconds
-                            logger.debug(f"Still waiting for filter count... {initial_wait_time:.1f}s elapsed")
+                            logger.debug(
+                                f"Still waiting for filter count... {initial_wait_time:.1f}s elapsed"
+                            )
 
                 while True:
                     # Check for cancellation at the start of each iteration

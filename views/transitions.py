@@ -114,7 +114,12 @@ class StateTransitions:
         # Add debug page source capture before transitioning
         store_page_source(self.driver.page_source, "reading_before_transition")
 
-        result = self.reader_handler.navigate_back_to_library()
+        # Get cancellation check from state machine if available
+        cancellation_check = None
+        if hasattr(self, "state_machine") and hasattr(self.state_machine, "_cancellation_check"):
+            cancellation_check = self.state_machine._cancellation_check
+
+        result = self.reader_handler.navigate_back_to_library(cancellation_check=cancellation_check)
 
         # If the navigation was successful and we have a server reference, clear the current book
         if result and server:

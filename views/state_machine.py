@@ -38,6 +38,8 @@ class KindleStateMachine:
             self.reader_handler,
         )
         self.transitions.set_driver(driver)
+        # Give transitions a reference to state machine for cancellation checks
+        self.transitions.state_machine = self
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
@@ -49,36 +51,12 @@ class KindleStateMachine:
 
     def set_cancellation_check(self, check_func):
         """Set a function to check for cancellation during long operations.
-        
+
         Args:
             check_func: A callable that returns True if operation should be cancelled
         """
         self._cancellation_check = check_func
-    
-    def _interruptible_sleep(self, seconds, check_interval=0.1):
-        """Sleep for specified seconds but check for cancellation periodically.
-        
-        Args:
-            seconds: Total seconds to sleep
-            check_interval: How often to check for cancellation (default 0.1s)
-            
-        Returns:
-            True if sleep completed, False if cancelled
-        """
-        elapsed = 0
-        while elapsed < seconds:
-            # Check for cancellation if a check function is set
-            if self._cancellation_check and self._cancellation_check():
-                logger.info(f"[{time.time():.3f}] Sleep interrupted by cancellation after {elapsed:.1f}s")
-                return False
-            
-            # Sleep for min of remaining time or check interval
-            sleep_time = min(check_interval, seconds - elapsed)
-            time.sleep(sleep_time)
-            elapsed += sleep_time
-        
-        return True
-    
+
     def _get_current_state(self):
         """Get the current app state using the view inspector."""
         view = self.view_inspector.get_current_view()
@@ -166,8 +144,9 @@ class KindleStateMachine:
                 if not self.view_inspector.ensure_app_foreground():
                     logger.error("Failed to bring app to foreground", exc_info=True)
                     return self.current_state
-                # Use interruptible sleep that checks for cancellation
-                if not self._interruptible_sleep(1):
+                # Sleep and check for cancellation
+                time.sleep(1)
+                if self._cancellation_check and self._cancellation_check():
                     logger.info(f"[{time.time():.3f}] Transition cancelled during app foreground wait")
                     return self.current_state
 
@@ -229,9 +208,12 @@ class KindleStateMachine:
                             if self.current_state == AppState.UNKNOWN:
                                 if self.view_inspector.ensure_app_foreground():
                                     logger.debug("Brought app to foreground after handling dialog")
-                                    # Use interruptible sleep that checks for cancellation
-                                    if not self._interruptible_sleep(1):
-                                        logger.info(f"[{time.time():.3f}] Transition cancelled during dialog handling wait")
+                                    # Sleep and check for cancellation
+                                    time.sleep(1)
+                                    if self._cancellation_check and self._cancellation_check():
+                                        logger.info(
+                                            f"[{time.time():.3f}] Transition cancelled during dialog handling wait"
+                                        )
                                         return self.current_state
                                     self.current_state = self._get_current_state()
                             continue  # Continue the loop to re-check state

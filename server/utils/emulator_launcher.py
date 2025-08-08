@@ -286,11 +286,11 @@ class EmulatorLauncher:
             if emulator_avd == email_avd:
                 return True
             else:
-                logger.warning(
-                    f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
-                )
                 # Clear the cache entry since this emulator is running the wrong AVD
                 if email_avd in self.running_emulators:
+                    logger.warning(
+                        f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
+                    )
                     cached_id, _ = self.running_emulators[email_avd]
                     if cached_id == emulator_id:
                         logger.info(f"Clearing cache entry for AVD {email_avd} due to AVD mismatch")
