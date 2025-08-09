@@ -64,6 +64,10 @@ tail -n 20 logs/server_output.log
 - `ansible-playbook ansible/provision.yml -t server`: Setup server role
 - `ansible-playbook ansible/deploy.yml`: Deploy Flask server to prod
 
+## Database Migrations
+
+- **Idempotency**: Database migrations must be idempotent for multi-server deployments. Always check if schema changes already exist before applying them (e.g., check if a column exists before adding it). This prevents failures when deploying to multiple servers where some may have already applied manual changes or previous partial deployments.
+
 ## Code Style
 
 - **Formatting**: 110 character line length with Black
