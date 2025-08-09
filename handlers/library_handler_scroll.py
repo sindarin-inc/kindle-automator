@@ -511,7 +511,9 @@ class LibraryHandlerScroll:
                 logger.debug(f"Stale element reference when finding button for {book_info['title']}")
                 continue
             except Exception as e:
-                logger.error(f"Unexpected error finding button for {book_info['title']}: {e}", exc_info=True)
+                logger.warning(
+                    f"Unexpected error finding button for {book_info['title']}: {e}", exc_info=True
+                )
                 continue
 
         return False, None, None
