@@ -1945,6 +1945,16 @@ class LibraryHandler:
                     return []
                 logger.info("Successfully switched to list view")
 
+            # Check if we're in a series/collection expanded view and exit if needed
+            if self._is_in_series_collection_view():
+                logger.info("Detected we're in series/collection view when getting books, exiting first")
+                if not self._exit_series_collection_view():
+                    logger.warning("Failed to exit series/collection view, continuing anyway...")
+                else:
+                    logger.info("Successfully exited series/collection view")
+                    # Give UI time to settle after exiting series view
+                    time.sleep(1)
+
             # Scroll to top of list (hits All/Downloaded tabs to ensure we're at the top)
             if not self.scroll_handler.scroll_to_list_top():
                 logger.warning("Failed to scroll to top of list, continuing anyway...")

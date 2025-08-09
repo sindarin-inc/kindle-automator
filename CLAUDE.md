@@ -69,6 +69,10 @@ tail -f logs/debug_server.log        # DEBUG logs + SQL queries, also persists
   ```
   Note: Full token only in Set-Cookie header, not JSON response
 
+## Database Migrations
+
+- **Idempotency**: Database migrations must be idempotent for multi-server deployments. Always check if schema changes already exist before applying them (e.g., check if a column exists before adding it). This prevents failures when deploying to multiple servers where some may have already applied manual changes or previous partial deployments.
+
 ## Code Style
 
 - **Formatting**: 110 char line length with Black

@@ -18,10 +18,16 @@ depends_on = None
 
 def upgrade():
     """Add last_series_group_check column to library_settings table."""
-    op.add_column(
-        "library_settings",
-        sa.Column("last_series_group_check", DateTime, nullable=True),
-    )
+    # Check if column already exists
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [col["name"] for col in inspector.get_columns("library_settings")]
+
+    if "last_series_group_check" not in columns:
+        op.add_column(
+            "library_settings",
+            sa.Column("last_series_group_check", DateTime, nullable=True),
+        )
 
 
 def downgrade():
