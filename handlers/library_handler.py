@@ -1142,6 +1142,194 @@ class LibraryHandler:
         except Exception as e:
             logger.warning(f"Error handling series grouping: {e}")
 
+    def _is_in_series_collection_view(self):
+        """Check if we're in an expanded series/collection view.
+
+        This view appears when clicking on a grouped series/collection item.
+        It shows "You have X volumes in this series" and lists the books in the series.
+
+        Returns:
+            bool: True if in series/collection view, False otherwise
+        """
+        try:
+            # Check for the series ownership count field
+            # "You have X volumes in this series/collection"
+            try:
+                series_count = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/series_ownership_count_field"
+                )
+                if series_count and series_count.is_displayed():
+                    text = series_count.text
+                    if "volumes" in text.lower() and (
+                        "series" in text.lower() or "collection" in text.lower()
+                    ):
+                        logger.info(f"Detected series/collection view: {text}")
+                        return True
+            except NoSuchElementException:
+                pass
+
+            # Also check for "View all items in series/collection" link
+            try:
+                view_all_link = self.driver.find_element(
+                    AppiumBy.ID, "com.amazon.kindle:id/series_see_all_items_in_store"
+                )
+                if view_all_link and view_all_link.is_displayed():
+                    text = view_all_link.text
+                    if "view all items" in text.lower():
+                        logger.info(f"Detected series/collection view via 'View all items' link")
+                        return True
+            except NoSuchElementException:
+                pass
+
+            # Additional check: Look for text patterns in any TextView
+            try:
+                elements = self.driver.find_elements(
+                    AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'volumes in this')]"
+                )
+                if elements:
+                    logger.info("Detected series/collection view via text pattern")
+                    return True
+            except Exception:
+                pass
+
+            # Enhanced check: Look for back button in library view (indicates series/collection)
+            # Regular library view doesn't have a back/navigate up button
+            try:
+                # First confirm we're in library view
+                self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+
+                # Now check for back button which only appears in series/collection views
+                try:
+                    back_button = self.driver.find_element(
+                        AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
+                    )
+                    if back_button and back_button.is_displayed():
+                        logger.info("Detected series/collection view via back button in library")
+                        return True
+                except NoSuchElementException:
+                    pass
+            except NoSuchElementException:
+                # Not in library view, can't be series view
+                pass
+
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking for series/collection view: {e}")
+            return False
+
+    def _wait_for_view_transition(self, timeout=2):
+        """Wait for a view transition to complete by checking for stable UI elements.
+
+        Args:
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            bool: True if transition completed, False if timeout
+        """
+        try:
+
+            def check_stable_view(driver):
+                # Check if we're in a stable known view (library, series, or reading)
+                try:
+                    # Check for library view
+                    driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/library_root_view")
+                    return True
+                except NoSuchElementException:
+                    pass
+
+                try:
+                    # Check for series view
+                    driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/series_ownership_count_field")
+                    return True
+                except NoSuchElementException:
+                    pass
+
+                try:
+                    # Check for reading view
+                    driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout")
+                    return True
+                except NoSuchElementException:
+                    pass
+
+                return False
+
+            WebDriverWait(self.driver, timeout).until(check_stable_view)
+            return True
+        except TimeoutException:
+            return False
+
+    def _exit_series_collection_view(self):
+        """Exit from the series/collection expanded view back to the library.
+
+        Returns:
+            bool: True if successfully exited, False otherwise
+        """
+        try:
+            if not self._is_in_series_collection_view():
+                logger.debug("Not in series/collection view, nothing to exit")
+                return True
+
+            logger.info("In series/collection view, attempting to navigate back")
+
+            # Look for the back/navigate up button
+            back_button = None
+
+            # Try finding by content-desc "Navigate up"
+            try:
+                back_button = self.driver.find_element(
+                    AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
+                )
+            except NoSuchElementException:
+                # Try finding by class and position (usually top-left)
+                try:
+                    back_button = self.driver.find_element(AppiumBy.CLASS_NAME, "android.widget.ImageButton")
+                except NoSuchElementException:
+                    pass
+
+            if back_button and back_button.is_displayed():
+                logger.info("Found back button, clicking to exit series view")
+                back_button.click()
+
+                # Wait for the view to transition out of series view
+                try:
+
+                    def not_in_series_view(driver):
+                        return not self._is_in_series_collection_view()
+
+                    WebDriverWait(self.driver, 2).until(not_in_series_view)
+                    logger.info("Successfully exited series/collection view")
+
+                    # Now handle the series grouping if needed
+                    self._handle_series_grouping_if_needed()
+                    return True
+                except TimeoutException:
+                    logger.warning("Still in series view after clicking back")
+                    return False
+            else:
+                logger.warning("Could not find back button in series view")
+                # Try using device back button as fallback
+                try:
+                    self.driver.back()
+
+                    # Wait for transition
+                    def not_in_series_view(driver):
+                        return not self._is_in_series_collection_view()
+
+                    WebDriverWait(self.driver, 2).until(not_in_series_view)
+                    logger.info("Successfully exited series view using device back")
+                    self._handle_series_grouping_if_needed()
+                    return True
+                except TimeoutException:
+                    logger.warning("Still in series view after device back")
+                    return False
+                except Exception as e:
+                    logger.error(f"Failed to use device back button: {e}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error exiting series/collection view: {e}")
+            return False
+
     def _is_in_search_interface(self):
         """
         Check if we're currently in the search results interface.
@@ -1987,8 +2175,18 @@ class LibraryHandler:
                 # Store page source immediately after click
                 store_page_source(self.driver.page_source, "after_book_click_download_start")
 
-                # Wait a moment for any progress bar to appear
-                time.sleep(0.5)
+                # Wait a moment for view to stabilize and check what opened
+                self._wait_for_view_transition(timeout=1)
+
+                # Check if we accidentally opened a series/collection view
+                if self._is_in_series_collection_view():
+                    logger.info("Opened series/collection view instead of starting download, backing out")
+                    if self._exit_series_collection_view():
+                        logger.info("Successfully exited series view, retrying book search")
+                        return self.find_book(book_title)
+                    else:
+                        logger.error("Failed to exit series/collection view")
+                        return False
 
                 # Check for "Invalid Item" dialog first
                 if self._check_invalid_item_dialog(book_title, "after clicking non-downloaded book"):
@@ -2129,6 +2327,17 @@ class LibraryHandler:
                                 parent_container.click()
                                 logger.info("Clicked book button after download")
 
+                                # Wait for view transition and check if we accidentally opened a series/collection view
+                                self._wait_for_view_transition(timeout=1)
+                                if self._is_in_series_collection_view():
+                                    logger.info("Opened series/collection view after download, backing out")
+                                    if self._exit_series_collection_view():
+                                        logger.info("Successfully exited series view, retrying book search")
+                                        return self.find_book(book_title)
+                                    else:
+                                        logger.error("Failed to exit series/collection view")
+                                        return False
+
                                 # Check for "Invalid Item" dialog first
                                 if self._check_invalid_item_dialog(
                                     book_title, "after clicking downloaded book"
@@ -2215,6 +2424,19 @@ class LibraryHandler:
 
             # Store page source immediately after click
             store_page_source(self.driver.page_source, "after_book_click_already_downloaded")
+
+            # Wait for view transition and check if we accidentally opened a series/collection view
+            self._wait_for_view_transition(timeout=1)
+            if self._is_in_series_collection_view():
+                logger.info("Opened series/collection view instead of book, backing out")
+                if self._exit_series_collection_view():
+                    logger.info("Successfully exited series view, retrying book search")
+                    # Now try to find the actual book again
+                    # Since we're in a series view, the book title might need adjustment
+                    return self.find_book(book_title)
+                else:
+                    logger.error("Failed to exit series/collection view")
+                    return False
 
             # Check for download progress bar even for "downloaded" books
             # Sometimes the content-desc may show downloaded but it's still downloading
@@ -2564,6 +2786,17 @@ class LibraryHandler:
                 # Store page source immediately after click
                 store_page_source(self.driver.page_source, "after_book_click")
 
+                # Wait for view transition and check if we accidentally opened a series/collection view
+                self._wait_for_view_transition(timeout=1)
+                if self._is_in_series_collection_view():
+                    logger.info("Opened series/collection view instead of book, backing out")
+                    if self._exit_series_collection_view():
+                        logger.info("Successfully exited series view, retrying book search")
+                        return self.open_book(book_title)
+                    else:
+                        logger.error("Failed to exit series/collection view")
+                        return {"success": False, "error": "Failed to exit series/collection view"}
+
                 # Check for download progress bar
                 if self._check_for_download_progress_bar():
                     logger.info("Download progress bar detected, waiting for download to complete...")
@@ -2710,6 +2943,20 @@ class LibraryHandler:
 
                             # Store page source immediately after second click
                             store_page_source(self.driver.page_source, "after_book_click_retry")
+
+                            # Wait for view transition and check if we accidentally opened a series/collection view
+                            self._wait_for_view_transition(timeout=1)
+                            if self._is_in_series_collection_view():
+                                logger.info("Opened series/collection view on retry, backing out")
+                                if self._exit_series_collection_view():
+                                    logger.info("Successfully exited series view, retrying book search")
+                                    return self.open_book(book_title)
+                                else:
+                                    logger.error("Failed to exit series/collection view on retry")
+                                    return {
+                                        "success": False,
+                                        "error": "Failed to exit series/collection view",
+                                    }
 
                             # Check for download progress bar on retry
                             if self._check_for_download_progress_bar():
