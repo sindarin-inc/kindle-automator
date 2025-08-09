@@ -1,6 +1,6 @@
 ---
 - name: Deploy Kindle Automator server
-  hosts: all
+  hosts: web
   become: true
 
   roles:
