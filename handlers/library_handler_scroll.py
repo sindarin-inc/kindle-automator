@@ -31,8 +31,9 @@ logger = logging.getLogger(__name__)
 
 
 class LibraryHandlerScroll:
-    def __init__(self, driver):
+    def __init__(self, driver, parent_handler=None):
         self.driver = driver
+        self.parent_handler = parent_handler
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
@@ -511,7 +512,9 @@ class LibraryHandlerScroll:
                 logger.debug(f"Stale element reference when finding button for {book_info['title']}")
                 continue
             except Exception as e:
-                logger.error(f"Unexpected error finding button for {book_info['title']}: {e}", exc_info=True)
+                logger.warning(
+                    f"Unexpected error finding button for {book_info['title']}: {e}", exc_info=True
+                )
                 continue
 
         return False, None, None
@@ -833,6 +836,10 @@ class LibraryHandlerScroll:
 
                 # Collect all visible containers
                 containers = self._collect_visible_containers()
+
+                # Check for collapsed series and handle if needed
+                if self.parent_handler:
+                    self.parent_handler._handle_series_grouping_if_needed()
 
                 # Store titles from previous scroll position
                 previous_titles = set(seen_titles)
