@@ -424,6 +424,7 @@ class BooksStreamResource(Resource):
             # Shared variables for status
             error_message = None
             total_books_from_handler = 0  # To store the total count from library_handler
+            scroll_complete = False  # Whether we scrolled through all books
             successful_covers_accumulator = {}  # Accumulate all successful covers (now a dict)
 
             # Create cancellation checker for this request - check every iteration for streams
@@ -441,7 +442,7 @@ class BooksStreamResource(Resource):
             # Callback function that will receive raw books_batch from the library handler
             # This callback will process books synchronously (screenshot, covers) for the current stable view
             def book_processing_callback(raw_books_batch, **kwargs):
-                nonlocal error_message, total_books_from_handler, stream_cancelled
+                nonlocal error_message, total_books_from_handler, stream_cancelled, scroll_complete
 
                 # If already cancelled, don't process anything more
                 if stream_cancelled:
@@ -460,11 +461,16 @@ class BooksStreamResource(Resource):
                 if kwargs.get("error"):
                     logger.info(f"Callback received error: {kwargs.get('error')}")
                     error_message = kwargs.get("error")
+                    # Check if this is also a done signal (error with completion info)
+                    if kwargs.get("done"):
+                        total_books_from_handler = kwargs.get("total_books", 0)
+                        scroll_complete = kwargs.get("complete", False)
                     all_books_retrieved_event.set()  # Signal to stop generate_stream loop
                     return
 
                 if kwargs.get("done"):
                     total_books_from_handler = kwargs.get("total_books", 0)
+                    scroll_complete = kwargs.get("complete", False)
                     all_books_retrieved_event.set()  # Signal completion of book retrieval
                     return
 
@@ -654,16 +660,19 @@ class BooksStreamResource(Resource):
                         yield encode_message({"error": f"Streaming error: {str(e)}"})  # Send error to client
                         break  # Terminate stream on unexpected errors
 
-                # After the loop, if no error was yielded from inside the loop
+                # After the loop, always send done message with complete status
                 if not error_message:
                     # Update activity at the end of successful streaming
                     logger.info(f"Book stream completed for {sindarin_email}, updating activity")
                     server.update_activity(sindarin_email)
 
-                    logger.info(
-                        f'Stream finished: {{"done": true, "total_books": {total_books_from_handler}}}'
-                    )
-                    yield encode_message({"done": True, "total_books": total_books_from_handler})
+                # Always send done message with complete status
+                logger.info(
+                    f'Stream finished: {{"done": true, "total_books": {total_books_from_handler}, "complete": {scroll_complete}}}'
+                )
+                yield encode_message(
+                    {"done": True, "total_books": total_books_from_handler, "complete": scroll_complete}
+                )
 
             except Exception as e:
                 error_trace = traceback.format_exc()

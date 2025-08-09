@@ -414,7 +414,7 @@ class LibraryHandlerScroll:
                 logger.info("Double-check confirms no new books, stopping scroll")
                 # Send completion notification via callback if available
                 if callback:
-                    callback(None, done=True, total_books=len(books_list))
+                    callback(None, done=True, total_books=len(books_list), complete=True)
 
                 # Save scroll book count to database
                 try:
@@ -831,7 +831,13 @@ class LibraryHandlerScroll:
                 if cancellation_checker and cancellation_checker.check():
                     logger.info("Library scrolling cancelled due to higher priority request")
                     if callback:
-                        callback(None, error="Request cancelled by higher priority operation")
+                        callback(
+                            None,
+                            error="Request cancelled by higher priority operation",
+                            done=True,
+                            total_books=len(books),
+                            complete=False,
+                        )
                     return [] if not target_title else (None, None, None)
 
                 # Collect all visible containers
@@ -937,7 +943,7 @@ class LibraryHandlerScroll:
                         logger.info("No progress in finding new books, stopping scroll")
                         # Send completion notification via callback if available
                         if callback:
-                            callback(None, done=True, total_books=len(books))
+                            callback(None, done=True, total_books=len(books), complete=True)
 
                         # Save scroll book count to database
                         try:
@@ -999,7 +1005,7 @@ class LibraryHandlerScroll:
 
             # Send error via callback if available
             if callback:
-                callback(None, error=str(e))
+                callback(None, error=str(e), done=True, total_books=len(books), complete=False)
 
             if target_title:
                 # Log any partial matches we might have found before the error
