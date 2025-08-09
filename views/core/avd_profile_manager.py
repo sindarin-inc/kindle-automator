@@ -592,7 +592,7 @@ class AVDProfileManager:
 
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
-            user = repo.get_user(email)
+            user = repo.get_user_by_email(email)
             if user:
                 return user.library_settings
             return None
