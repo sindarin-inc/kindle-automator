@@ -131,6 +131,7 @@ class LibrarySettings(Base):
     actively_reading_title: Mapped[Optional[str]] = mapped_column(Text)
     filter_book_count: Mapped[Optional[int]] = mapped_column(Integer)
     scroll_book_count: Mapped[Optional[int]] = mapped_column(Integer)
+    last_series_group_check: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     # Relationship
     user: Mapped["User"] = relationship(back_populates="library_settings")
