@@ -9,7 +9,11 @@ from typing import Dict, Optional
 import pytz
 
 from server.utils.ansi_colors import (
+    BLUE,
+    BOLD,
+    BRIGHT_CYAN,
     BRIGHT_YELLOW,
+    CYAN,
     GRAY,
     GREEN,
     MAGENTA,
@@ -242,6 +246,19 @@ class RelativePathFormatter(logging.Formatter):
         return s
 
     def format(self, record):
+        # Check if this is a request manager log (from books_resources.py with timestamp pattern)
+        is_request_manager_log = False
+        if "books_resources.py" in record.pathname or "request_manager" in record.pathname:
+            # Check if the message contains a unix timestamp pattern [1234567890.123]
+            import re
+
+            if re.search(r"\[\d{10}\.\d{3}\]", record.getMessage()):
+                is_request_manager_log = True
+                # Remove the unix timestamp from the message
+                original_msg = record.getMessage()
+                record.msg = re.sub(r"\[\d{10}\.\d{3}\]\s*", "", original_msg)
+                record.args = ()  # Clear args since we modified the message
+
         # Get the project root directory (parent of server/server.py)
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -319,6 +336,58 @@ class RelativePathFormatter(logging.Formatter):
                 after_msg = formatted[match.end() :]  # The rest (message)
                 # Insert [User: email] after file:line
                 formatted = f"{before_msg}{ansi_reset} {GREEN}[{email}]{RESET}{spacing}{after_msg}"
+
+        # Apply special formatting for request manager logs
+        if is_request_manager_log:
+            # For request manager logs, use BLUE as base color
+            import re
+
+            # First, apply BLUE to the entire message
+            # Look for the message part after email or after filename:lineno
+            if email:
+                # Pattern with email: filename.py:123 [email][RESET] message
+                match = re.search(rf"\[{re.escape(email)}\].*?\033\[0m\s*", formatted)
+            else:
+                # Pattern without email: filename.py:123[RESET] message
+                match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
+
+            if match:
+                prefix = formatted[: match.end()]
+                message = formatted[match.end() :]
+
+                # Key status phrases to highlight in BOLD BLUE + CYAN
+                important_patterns = [
+                    r"(registered as active)",
+                    r"(Starting state check)",
+                    r"(Current state)",
+                    r"(Starting new stream)",
+                    r"(Creating streaming response)",
+                    r"(Returning streaming response)",
+                    r"(Starting generate_stream)",
+                    r"(request key:)",
+                    r"(Starting book retrieval)",
+                    r"(Starting book stream)",
+                    r"(Starting initial wait)",
+                    r"(Updated current state)",
+                    r"(AppState\.\w+)",  # Highlight state names
+                    r"(merged|queued|deduplicating|cancelling|cancelled)",
+                ]
+
+                # Apply BLUE to entire message
+                colored_message = f"{BLUE}{message}{RESET}"
+
+                # Then highlight important parts with BOLD + CYAN
+                for pattern in important_patterns:
+                    colored_message = re.sub(pattern, f"{BOLD}{BRIGHT_CYAN}\\1{RESET}{BLUE}", colored_message)
+
+                formatted = prefix + colored_message
+
+            # Make the level indicator BLUE as well
+            level_pattern = f"[{record.levelname:5.5s}]"
+            colored_level = f"{BLUE}[{record.levelname:5.5s}]{RESET}"
+            formatted = formatted.replace(level_pattern, colored_level, 1)
+
+            return formatted
 
         # Get the color for this level
         level_color = self.level_colors.get(record.levelno, "")
