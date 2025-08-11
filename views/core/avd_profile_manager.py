@@ -661,6 +661,21 @@ class AVDProfileManager:
 
         # Handle force new emulator
         if is_running and force_new_emulator:
+            logger.info(f"Taking snapshot before stopping emulator {emulator_id} for fresh start")
+            # Take a snapshot before stopping to preserve user state
+            try:
+                from server.utils.emulator_launcher import EmulatorLauncher
+
+                launcher = EmulatorLauncher(self.android_home, self.avd_dir, self.host_arch)
+                if launcher.save_snapshot(email):
+                    logger.info(f"Snapshot saved successfully for {email} before shutdown")
+                else:
+                    logger.warning(
+                        f"Failed to save snapshot for {email} before shutdown - user's reading position may be lost"
+                    )
+            except Exception as e:
+                logger.error(f"Error saving snapshot for {email} before shutdown: {e}", exc_info=True)
+
             logger.info(f"Stopping emulator {emulator_id} for fresh start")
             if not self.stop_emulator(emulator_id):
                 logger.error(f"Failed to stop emulator {emulator_id}")
@@ -792,6 +807,15 @@ class AVDProfileManager:
             if recreate_user:
                 user_emulator_id, _ = self.emulator_manager.emulator_launcher.get_running_emulator(email)
                 if user_emulator_id:
+                    logger.info(f"Taking snapshot before stopping running emulator for {email}")
+                    # Save snapshot before stopping to preserve user state
+                    if self.emulator_manager.emulator_launcher.save_snapshot(email):
+                        logger.info(f"Snapshot saved successfully for {email}")
+                    else:
+                        logger.warning(
+                            f"Failed to save snapshot for {email} - user's reading position may be lost"
+                        )
+
                     logger.info(f"Stopping running emulator for {email}")
                     self.emulator_manager.emulator_launcher.stop_emulator(email)
                     time.sleep(2)  # Give it time to shut down

@@ -6,7 +6,7 @@ Always run `make lint` after making Python code changes to ensure proper formatt
 
 ## Redis Access
 
-The project uses Redis on port 6479 (database 1) via Docker container `sol_redis`. 
+The project uses Redis on port 6479 (database 1) via Docker container `sol_redis`.
 To access Redis for debugging:
 
 ```bash
@@ -25,6 +25,7 @@ docker exec sol_redis redis-cli -p 6479 -n 1 monitor
 - **`make lint`**: Run isort, black, and flake8 formatting tools
 - **`make claude-run`**: Start Flask server in background (auto-kills existing servers)
   - If "Port 4098 is in use", just run it again
+  - Waits for session restoration to complete (no need to sleep after running)
 - **`make deps`**: Install dependencies using uv
 - **`make test-*`**: Run API endpoint tests (e.g. `make test-init`, `make test-books`)
 - **`make ssh`**: SSH to prod/staging (see Makefile for non-interactive command prefix)
@@ -34,14 +35,10 @@ docker exec sol_redis redis-cli -p 6479 -n 1 monitor
 ## Running the Server
 
 ```bash
-# Start server (auto-kills existing)
+# Start server (waits to auto-restart existing emulators)
 make claude-run
 
-# IMPORTANT: Wait at least 20 seconds for emulators to boot before making requests
-# The server starts instantly, but emulators need time to become ready
-sleep 20
-
-# Now you can make requests
+# Now you can make requests. This is a quick one:
 curl -s http://localhost:4098/emulators/active
 
 # Monitor logs
