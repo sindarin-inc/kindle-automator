@@ -17,8 +17,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database.connection import db_connection
-from database.repositories.user_repository import UserRepository
 from database.models import Base
+from database.repositories.user_repository import UserRepository
 
 
 class ConcurrentAccessTester:
@@ -27,10 +27,10 @@ class ConcurrentAccessTester:
     def __init__(self):
         # Initialize database connection
         db_connection.initialize()
-        
+
         # Create all tables for testing
         Base.metadata.create_all(db_connection.engine)
-        
+
         self.results = []
         self.errors = []
 

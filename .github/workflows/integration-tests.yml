@@ -62,6 +62,7 @@ jobs:
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python tests/test_concurrent_requests_integration.py
         timeout-minutes: 5
