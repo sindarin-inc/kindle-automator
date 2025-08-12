@@ -215,12 +215,26 @@ class StateTransitions:
             logger.info("No book title found in context, navigating back to library")
 
         # If we couldn't open the book or there's no book title, navigate back to library
+        # Check for cancellation before clicking back button
+        cancellation_check = None
+        if hasattr(self, "state_machine") and hasattr(self.state_machine, "_cancellation_check"):
+            cancellation_check = self.state_machine._cancellation_check
+
+        if cancellation_check and cancellation_check():
+            logger.info("Search results back navigation cancelled")
+            return False
+
         # Navigate back to library by clicking the back button
         try:
             back_button = self.driver.find_element(
                 AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
             )
             if back_button and back_button.is_displayed():
+                # Final check before clicking
+                if cancellation_check and cancellation_check():
+                    logger.info("Back button click cancelled before action")
+                    return False
+
                 logger.info("Clicking back button to exit search results")
                 back_button.click()
                 time.sleep(1)  # Give time for transition

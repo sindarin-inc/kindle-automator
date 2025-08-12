@@ -2152,7 +2152,9 @@ class LibraryHandler:
             logger.error(f"Error in _check_unable_to_download_dialog: {e}", exc_info=True)
             return False
 
-    def _handle_book_click_and_transition(self, parent_container, button, book_info, book_title):
+    def _handle_book_click_and_transition(
+        self, parent_container, button, book_info, book_title, cancellation_check=None
+    ):
         """Handle clicking a book, waiting for download if needed, and transitioning to reading view.
 
         This is a shared method used after finding a book through various methods (visible on screen,
@@ -2167,11 +2169,16 @@ class LibraryHandler:
             button: The clickable element for the book
             book_info: Dictionary containing book metadata
             book_title: The title of the book (used for logging and verification)
+            cancellation_check: Optional function to check if operation should be cancelled
 
         Returns:
             bool: True if book was successfully opened, False otherwise
         """
         try:
+            # Check for cancellation before any clicks
+            if cancellation_check and cancellation_check():
+                logger.info("Book click cancelled by higher priority operation")
+                return False
             # Check download status and handle download if needed
             content_desc = parent_container.get_attribute("content-desc") or ""
             logger.info(f"Book content description: {content_desc}")
@@ -2334,6 +2341,10 @@ class LibraryHandler:
                             if "Book downloaded" in content_desc:
                                 logger.info("Book has finished downloading")
                                 time.sleep(1)  # Short wait for UI to stabilize
+                                # Check cancellation before clicking
+                                if cancellation_check and cancellation_check():
+                                    logger.info("Book open click cancelled after download")
+                                    return False
                                 parent_container.click()
                                 logger.info("Clicked book button after download")
 
@@ -2375,6 +2386,10 @@ class LibraryHandler:
                                         "Still in library view after clicking downloaded book, trying again..."
                                     )
                                     time.sleep(1)
+                                    # Check cancellation before clicking again
+                                    if cancellation_check and cancellation_check():
+                                        logger.info("Book retry click cancelled")
+                                        return False
                                     parent_container.click()
                                     logger.info("Clicked book again")
                                 except NoSuchElementException:
@@ -2506,6 +2521,10 @@ class LibraryHandler:
                         exc_info=True,
                     )
                     # Try clicking the parent container instead
+                    # Check cancellation before clicking
+                    if cancellation_check and cancellation_check():
+                        logger.info("Book parent container click cancelled")
+                        return False
                     parent_container.click()
 
                     # Check for "Invalid Item" dialog first

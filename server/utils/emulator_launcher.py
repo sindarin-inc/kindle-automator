@@ -1403,7 +1403,12 @@ class EmulatorLauncher:
 
                 if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for AVD {avd_name}")
-                    del self.running_emulators[avd_name]
+                    if avd_name in self.running_emulators:
+                        del self.running_emulators[avd_name]
+                    else:
+                        logger.debug(
+                            f"AVD {avd_name} was not in running_emulators dict when trying to remove it"
+                        )
                     return True
 
                 # Force kill if still running - but use the specific emulator port in the pattern

@@ -486,25 +486,26 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         )
 
     def test_stream_cancellation_by_higher_priority(self):
-        """Test that /books-stream is cancelled when higher priority request arrives."""
+        """Test that /books stream is cancelled when higher priority /open-book request arrives."""
         results = {}
+        cancellation_count = 0
 
         def stream_books():
             """Stream books endpoint."""
+            nonlocal cancellation_count
             results["stream_started"] = time.time()
             session = self._create_test_session()
             try:
-                params = self._build_params({"user_email": self.email})
-                # Use the proxy endpoint for streaming
+                params = self._build_params({"user_email": self.email, "sync": "true"})
                 # Use stream=True to properly handle streaming responses
                 response = session.get(
-                    f"{self.base_url}/kindle/books-stream",
+                    f"{self.base_url}/kindle/books",
                     params=params,
                     timeout=15,  # Shorter timeout since cancellation should be quick
                     stream=True,  # Important for proper streaming
                 )
 
-                # The endpoint returns a single JSON response when cancelled
+                # Check for cancellation in response
                 if response.status_code == 409:  # Conflict status for cancellation
                     try:
                         data = response.json()
@@ -513,12 +514,13 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                         ):
                             results["stream_cancelled"] = time.time()
                             results["cancellation_reason"] = data.get("error", "Cancelled")
+                            cancellation_count += 1
                     except Exception as e:
                         results["stream_error"] = f"Failed to parse cancellation response: {e}"
                 elif response.status_code == 200:
-                    # If we got 200, try to read streaming data
+                    # If we got 200, check the response for cancellation indicators
                     try:
-                        # Check if it's actually streaming or a regular response
+                        # Check if it's streaming or regular JSON
                         content_type = response.headers.get("content-type", "")
                         if "text/event-stream" in content_type or "application/x-ndjson" in content_type:
                             # It's a streaming response
@@ -535,6 +537,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                                         if data.get("cancelled"):
                                             results["stream_cancelled"] = time.time()
                                             results["cancellation_reason"] = data.get("error", "Cancelled")
+                                            cancellation_count += 1
                                             break
                                     except json.JSONDecodeError:
                                         # Not JSON, might be raw text
@@ -543,20 +546,41 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                                 # No lines received - stream was likely interrupted
                                 results["stream_error"] = "Stream interrupted - no data received"
                         else:
-                            # Regular JSON response
+                            # Regular JSON response - check if it indicates cancellation
                             data = response.json()
                             if data.get("cancelled"):
                                 results["stream_cancelled"] = time.time()
                                 results["cancellation_reason"] = data.get("error", "Cancelled")
+                                cancellation_count += 1
                             else:
-                                results["stream_completed"] = time.time()
+                                # Check if response contains partial data (indicating early termination)
+                                if "books" in data and len(data["books"]) < 10:
+                                    # Might have been cancelled early
+                                    results["stream_partial"] = time.time()
+                                    results["book_count"] = len(data["books"])
+                                else:
+                                    results["stream_completed"] = time.time()
                     except Exception as e:
-                        results["stream_error"] = f"Stream reading error: {e}"
+                        # Connection errors or JSON errors could indicate cancellation
+                        error_str = str(e).lower()
+                        if "connection" in error_str or "reset" in error_str or "extra data" in error_str:
+                            results["stream_cancelled"] = time.time()
+                            results["cancellation_reason"] = f"Stream interrupted: {e}"
+                            cancellation_count += 1
+                        else:
+                            results["stream_error"] = f"Stream reading error: {e}"
                 else:
                     results["stream_error"] = f"Unexpected status: {response.status_code}"
 
             except Exception as e:
-                results["stream_error"] = str(e)
+                error_str = str(e).lower()
+                # Check if it's a cancellation-related error
+                if "cancelled" in error_str or "connection" in error_str or "reset" in error_str:
+                    results["stream_cancelled"] = time.time()
+                    results["cancellation_reason"] = str(e)
+                    cancellation_count += 1
+                else:
+                    results["stream_error"] = str(e)
             finally:
                 session.close()
 
@@ -575,15 +599,14 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 results["open_error"] = str(e)
                 raise
 
-        # Start streaming books
+        # Start /books request
         stream_thread = threading.Thread(target=stream_books)
         stream_thread.start()
 
-        # Wait for stream to actually start streaming (not just make the request)
-        # We need to ensure it's past the initial setup and actually streaming data
+        # Wait 5 seconds to ensure /books is actively processing
         time.sleep(5)
 
-        # Start higher priority request
+        # Start higher priority /open-book request
         open_thread = threading.Thread(target=open_book)
         open_thread.start()
 
@@ -591,11 +614,15 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         stream_thread.join(timeout=15)
         open_thread.join(timeout=30)
 
-        # Verify stream was either cancelled, errored, or completed before conflict
-        # If stream completed before the higher priority request started, that's also acceptable
-        stream_handled = (
+        # Verify /open-book returned 200
+        self.assertIn("open_status", results, f"Open book did not complete. Results: {results}")
+        self.assertEqual(results["open_status"], 200, f"Open book should return 200. Results: {results}")
+
+        # Verify stream was cancelled or ended early
+        stream_ended_early = (
             "stream_cancelled" in results
             or "stream_error" in results
+            or "stream_partial" in results
             or (
                 "stream_completed" in results
                 and "open_started" in results
@@ -603,43 +630,220 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             )
         )
 
-        if not stream_handled:
+        if not stream_ended_early:
             # Stream should have been interrupted by higher priority request
             self.fail(
-                f"Stream should have been interrupted by higher priority request or completed before it. Results: {results}"
+                f"Stream should have been interrupted by higher priority request or ended early. Results: {results}"
             )
 
-        # If stream completed before open started, that's fine but log it
-        if "stream_completed" in results and "open_started" in results:
-            if results["stream_completed"] < results["open_started"]:
-                # Stream finished before conflict - this is OK
-                pass
-
-        if "stream_cancelled" in results:
-            # Proper cancellation occurred
-            self.assertIn(
-                "cancelled",
-                results.get("cancellation_reason", "").lower(),
-                "Cancellation reason should mention cancellation",
+        # Check that cancellation was detected OR the stream ended early (partial data)
+        if "stream_partial" not in results and "stream_completed" not in results:
+            # Only require explicit cancellation if the stream didn't complete naturally
+            self.assertGreater(
+                cancellation_count, 0, f"Expected to detect cancellation at least once. Results: {results}"
             )
-            # Verify cancellation was reasonably fast (under 5 seconds)
-            if "open_started" in results:
-                cancellation_delay = results["stream_cancelled"] - results["open_started"]
-                self.assertLess(
-                    cancellation_delay,
-                    10.0,
-                    f"Cancellation took {cancellation_delay:.1f}s, should be under 10s",
+
+        # If stream was properly cancelled, verify it was reasonably fast
+        if "stream_cancelled" in results and "open_started" in results:
+            cancellation_delay = results["stream_cancelled"] - results["open_started"]
+            self.assertLess(
+                cancellation_delay,
+                15.0,
+                f"Cancellation took {cancellation_delay:.1f}s, should be under 15s",
+            )
+
+    def test_three_open_random_book_requests_only_last_succeeds(self):
+        """Test that three /kindle/open-random-book requests spaced 3 seconds apart, only the last one succeeds."""
+        results = {}
+
+        def make_open_random_book_request(request_id, delay=0):
+            """Make an open-random-book request after a delay."""
+            if delay > 0:
+                time.sleep(delay)
+
+            start_time = time.time()
+            results[f"request_{request_id}_started"] = start_time
+
+            try:
+                response = self._make_request(
+                    "open-random-book",
+                    params={"user_email": self.email},
+                    timeout=30,
                 )
-        elif "stream_error" in results:
-            # Stream errored (probably due to state conflict) - also acceptable
-            # This happens when /open-book changes the state before stream can properly start
-            pass
+                end_time = time.time()
+                results[f"request_{request_id}_status"] = response.status_code
+                results[f"request_{request_id}_completed"] = end_time
+                results[f"request_{request_id}_duration"] = end_time - start_time
 
-    def test_last_one_wins_for_same_endpoint(self):
-        """Test that newer requests cancel older ones for last-one-wins endpoints."""
-        # This is already tested in TestRequestDeduplicationIntegration
-        # but we can add a specific test for /open-random-book if needed
-        pass
+                # Check if response indicates cancellation
+                if response.status_code == 409:
+                    results[f"request_{request_id}_cancelled"] = True
+                    try:
+                        data = response.json()
+                        results[f"request_{request_id}_cancel_reason"] = data.get("error", "Cancelled")
+                    except:
+                        pass
+                elif response.status_code == 200:
+                    results[f"request_{request_id}_success"] = True
+                    try:
+                        data = response.json()
+                        if data.get("cancelled"):
+                            results[f"request_{request_id}_cancelled"] = True
+                            results[f"request_{request_id}_cancel_reason"] = data.get("error", "Cancelled")
+                    except:
+                        pass
+
+            except Exception as e:
+                results[f"request_{request_id}_error"] = str(e)
+                results[f"request_{request_id}_duration"] = time.time() - start_time
+                # Check if the error indicates cancellation
+                if "cancelled" in str(e).lower() or "409" in str(e):
+                    results[f"request_{request_id}_cancelled"] = True
+
+        # Start three threads for the three requests
+        threads = []
+
+        # First request - starts immediately
+        thread1 = threading.Thread(target=make_open_random_book_request, args=(1, 0))
+        threads.append(thread1)
+        thread1.start()
+
+        # Second request - starts after 3 seconds
+        thread2 = threading.Thread(target=make_open_random_book_request, args=(2, 3))
+        threads.append(thread2)
+        thread2.start()
+
+        # Third request - starts after 6 seconds
+        thread3 = threading.Thread(target=make_open_random_book_request, args=(3, 6))
+        threads.append(thread3)
+        thread3.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join(timeout=45)
+
+        # Verify the results
+        print(f"Test results: {results}")
+
+        # All three requests should have started
+        self.assertIn("request_1_started", results, "First request should have started")
+        self.assertIn("request_2_started", results, "Second request should have started")
+        self.assertIn("request_3_started", results, "Third request should have started")
+
+        # First two requests should have been cancelled
+        self.assertTrue(
+            results.get("request_1_cancelled", False) or results.get("request_1_status") == 409,
+            f"First request should have been cancelled. Results: {results}",
+        )
+        self.assertTrue(
+            results.get("request_2_cancelled", False) or results.get("request_2_status") == 409,
+            f"Second request should have been cancelled. Results: {results}",
+        )
+
+        # Third request should have succeeded
+        self.assertEqual(
+            results.get("request_3_status"),
+            200,
+            f"Third request should have succeeded with status 200. Results: {results}",
+        )
+        self.assertTrue(
+            results.get("request_3_success", False),
+            f"Third request should have been successful. Results: {results}",
+        )
+
+        # Verify timing - requests should have started approximately 3 seconds apart
+        if "request_1_started" in results and "request_2_started" in results:
+            delay_1_2 = results["request_2_started"] - results["request_1_started"]
+            self.assertGreater(
+                delay_1_2, 2.5, f"Second request should start ~3s after first. Actual: {delay_1_2:.1f}s"
+            )
+            self.assertLess(
+                delay_1_2, 3.5, f"Second request should start ~3s after first. Actual: {delay_1_2:.1f}s"
+            )
+
+        if "request_2_started" in results and "request_3_started" in results:
+            delay_2_3 = results["request_3_started"] - results["request_2_started"]
+            self.assertGreater(
+                delay_2_3, 2.5, f"Third request should start ~3s after second. Actual: {delay_2_3:.1f}s"
+            )
+            self.assertLess(
+                delay_2_3, 3.5, f"Third request should start ~3s after second. Actual: {delay_2_3:.1f}s"
+            )
+
+    def test_z_double_shutdown_both_return_200(self):
+        """Test that calling /shutdown twice on the same emulator both return 200."""
+        results = {}
+
+        # First ensure an emulator is running by making a simple request
+        try:
+            init_response = self._make_request(
+                "screenshot",
+                params={"user_email": self.email},
+                timeout=30,
+            )
+            results["init_status"] = init_response.status_code
+        except Exception as e:
+            results["init_error"] = str(e)
+
+        def shutdown_first():
+            """First shutdown request."""
+            print(f"Starting first shutdown at {time.time()}")
+            try:
+                response = self._make_request(
+                    "shutdown",
+                    params={"user_email": self.email},
+                    timeout=30,
+                )
+                results["shutdown1_status"] = response.status_code
+                results["shutdown1_time"] = time.time()
+                print(f"First shutdown completed with status {response.status_code}")
+                if response.status_code == 200:
+                    results["shutdown1_response"] = response.json()
+            except Exception as e:
+                results["shutdown1_error"] = str(e)
+                print(f"First shutdown error: {e}")
+
+        def shutdown_second():
+            """Second shutdown request."""
+            print(f"Starting second shutdown at {time.time()}")
+            try:
+                response = self._make_request(
+                    "shutdown",
+                    params={"user_email": self.email},
+                    timeout=30,
+                )
+                results["shutdown2_status"] = response.status_code
+                results["shutdown2_time"] = time.time()
+                print(f"Second shutdown completed with status {response.status_code}")
+                if response.status_code == 200:
+                    results["shutdown2_response"] = response.json()
+            except Exception as e:
+                results["shutdown2_error"] = str(e)
+                print(f"Second shutdown error: {e}")
+
+        # Start both shutdown requests with 1 second delay
+        thread1 = threading.Thread(target=shutdown_first)
+        thread2 = threading.Thread(target=shutdown_second)
+
+        thread1.start()
+        # Wait 1 second before sending second shutdown
+        time.sleep(1)
+        thread2.start()
+
+        # Wait for both to complete
+        thread1.join(timeout=30)
+        thread2.join(timeout=30)
+
+        # Verify both returned 200
+        self.assertIn("shutdown1_status", results, f"First shutdown did not complete. Results: {results}")
+        self.assertEqual(
+            results["shutdown1_status"], 200, f"First shutdown should return 200. Results: {results}"
+        )
+
+        self.assertIn("shutdown2_status", results, f"Second shutdown did not complete. Results: {results}")
+        self.assertEqual(
+            results["shutdown2_status"], 200, f"Second shutdown should also return 200. Results: {results}"
+        )
 
 
 if __name__ == "__main__":

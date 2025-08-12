@@ -26,6 +26,7 @@ docker exec sol_redis redis-cli -p 6479 -n 1 monitor
 - **`make claude-run`**: Start Flask server in background (auto-kills existing servers)
   - If "Port 4098 is in use", just run it again
   - Waits for session restoration to complete (no need to sleep after running)
+  - **IMPORTANT**: Always run `make claude-run` after changing server code and before testing
 - **`make deps`**: Install dependencies using uv
 - **`make test-*`**: Run API endpoint tests (e.g. `make test-init`, `make test-books`)
 - **`make ssh`**: SSH to prod/staging (see Makefile for non-interactive command prefix)

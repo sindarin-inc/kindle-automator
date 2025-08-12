@@ -43,7 +43,8 @@ class DeduplicationStatus(Enum):
 
 # Request priority levels (higher number = higher priority)
 PRIORITY_LEVELS = {
-    "/open-book": 100,  # Highest - user wants to read
+    "/shutdown": 200,  # Highest - system shutdown, must not be blocked
+    "/open-book": 100,  # High - user wants to read
     "/open-random-book": 100,
     "/close-book": 90,
     "/navigate": 50,

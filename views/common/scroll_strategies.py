@@ -124,8 +124,20 @@ class SmartScroller:
         except Exception as e:
             logger.error(f"Error performing scroll: {e}", exc_info=True)
 
-    def scroll_down(self):
-        """Scroll down in the view using the smart scrolling technique."""
+    def scroll_down(self, cancellation_check=None):
+        """Scroll down in the view using the smart scrolling technique.
+
+        Args:
+            cancellation_check: Optional function to check if operation should be cancelled
+
+        Returns:
+            bool: False if cancelled, True otherwise
+        """
+        # Check for cancellation before scrolling
+        if cancellation_check and cancellation_check():
+            logger.info("Scroll down cancelled before action")
+            return False
+
         screen_size = self.driver.get_window_size()
         start_y = screen_size["height"] * 0.8
         end_y = screen_size["height"] * 0.2
@@ -139,6 +151,7 @@ class SmartScroller:
 
         # Allow time for scroll to complete
         time.sleep(0.3)  # Reduced from 0.5 for faster operation
+        return True
 
     def scroll_up(self):
         """Scroll up in the view using the smart scrolling technique."""

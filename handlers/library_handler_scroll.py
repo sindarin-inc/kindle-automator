@@ -266,15 +266,16 @@ class LibraryHandlerScroll:
         # Use the common SmartScroller to scroll the reference container to target position
         self.scroller.scroll_to_position(ref_container["element"], target_position)
 
-    def _default_page_scroll(self, start_y, end_y):
+    def _default_page_scroll(self, start_y, end_y, cancellation_check=None):
         """Wrapper for default page scroll operation.
 
         Args:
             start_y: Starting Y coordinate
             end_y: Ending Y coordinate
+            cancellation_check: Optional function to check if operation should be cancelled
         """
         # Use the common SmartScroller for default page scroll
-        self.scroller.scroll_down()
+        self.scroller.scroll_down(cancellation_check=cancellation_check)
 
     def _final_result_handling(self, target_title, books, seen_titles, title_match_func, callback):
         """Handle final result logic for target title searches.
@@ -973,7 +974,9 @@ class LibraryHandlerScroll:
                 if ref_container:
                     self._perform_smart_scroll(ref_container, screen_size)
                 else:
-                    self._default_page_scroll(start_y, end_y)
+                    # Pass cancellation check to scroll
+                    cancellation_check = cancellation_checker.check if cancellation_checker else None
+                    self._default_page_scroll(start_y, end_y, cancellation_check=cancellation_check)
 
                 # Check for and handle selection mode after scroll
                 self._maybe_exit_selection_mode()

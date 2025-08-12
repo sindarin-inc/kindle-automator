@@ -1782,7 +1782,7 @@ class ReaderHandler:
                 return False
             if toolbar_visible:
                 logger.debug("Toolbar already visible - proceeding to close book")
-                return self._click_close_book_button()
+                return self._click_close_book_button(cancellation_check)
 
             # Check for and dismiss "About this book" slideover or bottom sheet
             # These often appear together, so we'll handle them in a unified way
@@ -2032,13 +2032,13 @@ class ReaderHandler:
         toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
         if toolbar_visible:
             logger.debug("Toolbar is already visible - proceeding to close book")
-            return self._click_close_book_button()
+            return self._click_close_book_button(cancellation_check)
 
         # Try alternate toolbar checking with toolbar strategies from interaction_strategies.py
         toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_STRATEGIES, "toolbar (alt check)")
         if toolbar_visible:
             logger.debug("Toolbar is already visible (alt check) - proceeding to close book")
-            return self._click_close_book_button()
+            return self._click_close_book_button(cancellation_check)
 
         # Try multiple different tap patterns to show the toolbar
         max_attempts = 3
@@ -2073,7 +2073,7 @@ class ReaderHandler:
             toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
             if toolbar_visible:
                 logger.debug(f"Toolbar successfully appeared on attempt {attempt + 1}")
-                return self._click_close_book_button()
+                return self._click_close_book_button(cancellation_check)
 
             # Also check with alternative toolbar identifiers
             toolbar_visible, _ = self._check_element_visibility(
@@ -2081,7 +2081,7 @@ class ReaderHandler:
             )
             if toolbar_visible:
                 logger.debug(f"Toolbar successfully appeared (alt check) on attempt {attempt + 1}")
-                return self._click_close_book_button()
+                return self._click_close_book_button(cancellation_check)
 
             # Check for and handle interrupting dialogs
             # Check for Goodreads dialog
@@ -2116,7 +2116,7 @@ class ReaderHandler:
                         )
                         if toolbar_visible:
                             logger.debug("Toolbar appeared after dismissing Goodreads dialog")
-                            return self._click_close_book_button()
+                            return self._click_close_book_button(cancellation_check)
 
                         # Also check with alternative toolbar identifiers
                         toolbar_visible, _ = self._check_element_visibility(
@@ -2124,7 +2124,7 @@ class ReaderHandler:
                         )
                         if toolbar_visible:
                             logger.debug("Toolbar appeared (alt check) after dismissing Goodreads dialog")
-                            return self._click_close_book_button()
+                            return self._click_close_book_button(cancellation_check)
                 except NoSuchElementException:
                     logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
                 except Exception as e:
@@ -2159,7 +2159,7 @@ class ReaderHandler:
                     )
                     if toolbar_visible:
                         logger.debug("Toolbar appeared after dismissing Word Wise dialog")
-                        return self._click_close_book_button()
+                        return self._click_close_book_button(cancellation_check)
 
                     # Also check with alternative toolbar identifiers
                     toolbar_visible, _ = self._check_element_visibility(
@@ -2167,7 +2167,7 @@ class ReaderHandler:
                     )
                     if toolbar_visible:
                         logger.debug("Toolbar appeared (alt check) after dismissing Word Wise dialog")
-                        return self._click_close_book_button()
+                        return self._click_close_book_button(cancellation_check)
                 else:
                     logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
 
@@ -2183,7 +2183,7 @@ class ReaderHandler:
                 toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
                 if toolbar_visible:
                     logger.debug("Toolbar appeared after tapping away from placemark")
-                    return self._click_close_book_button()
+                    return self._click_close_book_button(cancellation_check)
 
             # If still nothing, try checking for close book button directly
             # Sometimes the toolbar is there but not detected with our standard checks
@@ -2192,7 +2192,7 @@ class ReaderHandler:
             )
             if close_visible:
                 logger.debug("Found close book button directly without toolbar visibility check")
-                return self._click_close_book_button()
+                return self._click_close_book_button(cancellation_check)
 
             if attempt < max_attempts - 1:
                 logger.debug("Toolbar not visible, will try again with different tap strategy...")
@@ -2427,12 +2427,22 @@ class ReaderHandler:
             logger.error(f"Error handling tutorial message: {e}", exc_info=True)
             return False
 
-    def _click_close_book_button(self):
+    def _click_close_book_button(self, cancellation_check=None):
         """Find and click the close book button."""
+        # Check for cancellation before clicking
+        if cancellation_check and cancellation_check():
+            logger.info("Close book button click cancelled")
+            return False
+
         close_visible, close_button = self._check_element_visibility(
             CLOSE_BOOK_STRATEGIES, "close book button"
         )
         if close_visible:
+            # Final cancellation check right before the click
+            if cancellation_check and cancellation_check():
+                logger.info("Close book button click cancelled before action")
+                return False
+
             close_button.click()
             logger.info("Clicked close book button")
 
