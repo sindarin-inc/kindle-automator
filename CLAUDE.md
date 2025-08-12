@@ -50,6 +50,12 @@ tail -f logs/debug_server.log        # DEBUG logs + SQL queries, also persists
 ## Issue References
 
 - **KINDLE-AUTOMATOR-XXX**: Use Sentry MCP tools to look up (never use Seer AI)
+  - **Organization**: `sindarin` (not solreader)
+  - **Region URL**: `https://us.sentry.io`
+  - **Example**: `get_issue_details(organizationSlug='sindarin', issueId='KINDLE-AUTOMATOR-XXX', regionUrl='https://us.sentry.io')`
+- **Finding similar bugs**: When fixing a bug, search Sentry for other instances
+  - **Example**: `search_events(organizationSlug='sindarin', projectSlug='kindle-automator', naturalLanguageQuery='TypeError "Object of type datetime is not JSON serializable" last 7 days')`
+  - This helps ensure all instances of a bug are fixed, not just the reported one
 - **Debug user issues**:
   1. Find user email in Sentry ticket
   2. Fetch logs: `scp PROD:/opt/kindle-automator/logs/email_log/<user_email>.log .`
@@ -87,7 +93,7 @@ tail -f logs/debug_server.log        # DEBUG logs + SQL queries, also persists
 - **Always include sindarin_email**: Required in staff auth requests
 - **No test files**: Unless explicitly requested
 - **No backwards compatibility**: Unless asked
-- **Git commits**: Provide one-line messages, but no git add/commit commands
+- **Git commits**: Do NOT commit or push anything to Git. If you want to commit, simply print out the one-liner Git commit message you would use and leave it at that. Always run `make lint` before suggesting a commit.
 
 ## Project Structure
 

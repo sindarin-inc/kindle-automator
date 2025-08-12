@@ -1068,7 +1068,7 @@ class LibraryHandler:
             bool: True if we should check (and potentially disable) series grouping
         """
         try:
-            from datetime import datetime, timedelta
+            from datetime import datetime, timedelta, timezone
 
             # Get the last check time from the database
             library_settings = self.driver.automator.profile_manager.get_library_settings()
@@ -1082,7 +1082,7 @@ class LibraryHandler:
                 return True
 
             # Check if it's been more than 24 hours
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             time_since_check = now - last_check
             should_check = time_since_check > timedelta(hours=24)
 
@@ -1124,7 +1124,7 @@ class LibraryHandler:
                 logger.info("Successfully handled Grid/List dialog to disable series grouping")
 
                 # Update the last check time in the database
-                from datetime import datetime
+                from datetime import datetime, timezone
 
                 from database.repositories.user_repository import UserRepository
                 from server.utils.request_utils import get_sindarin_email
@@ -1133,7 +1133,7 @@ class LibraryHandler:
                 if sindarin_email:
                     with UserRepository() as repo:
                         library_settings = repo.get_or_create_library_settings(sindarin_email)
-                        library_settings.last_series_group_check = datetime.utcnow()
+                        library_settings.last_series_group_check = datetime.now(timezone.utc)
                         repo.commit()
                         logger.info("Updated last_series_group_check timestamp in database")
             else:
