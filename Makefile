@@ -28,7 +28,7 @@ claude-run:
 	@# Clear the log file before starting new server
 	@> logs/server_output.log
 	@# Start the server in background
-	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run dotenv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Waiting for session restoration to complete..."
@@ -63,45 +63,40 @@ lint:
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run dotenv run python -m server.server
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run python -m server.server
 
 # Start an interactive shell with the environment setup
 shell:
 	@echo "Starting interactive shell..."
-	@PYTHONPATH=$(shell pwd) uv run dotenv run python shell.py
+	@PYTHONPATH=$(shell pwd) uv run python shell.py
 
 test:
 	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) uv run dotenv run pytest tests
+	@PYTHONPATH=$(shell pwd) uv run pytest tests
 
 test-all: test
 
-test-unit: test-user-auth test-deduplication-unit
+test-unit:
+	@echo "Running all unit tests (no server required)..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_deduplication_unit.py tests/test_user_repository_unit.py -v
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_concurrent_access_unit.py
 	@echo "All unit tests passed!"
-
-test-deduplication-unit:
-	@echo "Running deduplication unit tests (no server required)..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_deduplication_unit.py -v
 
 test-integration:
 	@echo "Running integration tests..."
 	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_api_integration.py -v
 
 test-concurrent:
-	@echo "Running concurrent tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_concurrent_requests.py -v
+	@echo "Running concurrent HTTP requests tests..."
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_concurrent_requests_integration.py
 
-test-deduplication:
-	@echo "Running deduplication tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_request_deduplication.py -v
-
-test-user-auth:
-	@echo "Running user authentication tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_user_repository.py -v
+test-dedupe:
+	@echo "Running deduplication integration tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_request_deduplication_integration.py -v
 
 test-multi-user:
-	@echo "Running multi-user tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_multi_user.py -v
+	@echo "Running multi-user integration tests..."
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_multi_user_integration.py
 
 # Generate staff authentication token for testing
 test-staff-auth:

@@ -30,9 +30,7 @@ logger = logging.getLogger(__name__)
 USER_A_EMAIL = "sam@solreader.com"
 USER_B_EMAIL = "samuel@ofbrooklyn.com"
 
-# Book ASINs to test with
-BOOK_A_ASIN = "B09XWD3C3K"  # Example ASIN for user A
-BOOK_B_ASIN = "B08N5LPQY1"  # Example ASIN for user B
+# Note: Using /open-random-book instead of hardcoded ASINs for more flexible testing
 
 
 class MultiUserTester(BaseKindleTest):
@@ -169,8 +167,8 @@ class MultiUserTester(BaseKindleTest):
         self.test_results["passed"].append(f"Navigation successful for {email}")
         return True
 
-    def open_book(self, email: str, asin: str) -> bool:
-        """Open a book for a user (if authenticated)."""
+    def open_book(self, email: str) -> bool:
+        """Open a random book for a user (if authenticated)."""
         user_status = self.user_a_status if email == USER_A_EMAIL else self.user_b_status
 
         if not user_status["authenticated"]:
@@ -178,18 +176,18 @@ class MultiUserTester(BaseKindleTest):
             self.test_results["warnings"].append(f"Skipped book open for {email} - not authenticated")
             return True
 
-        logger.info(f"Opening book {asin} for {email}...")
+        logger.info(f"Opening random book for {email}...")
 
-        # Using params instead of json for consistency with other endpoints
-        params = {"sindarin_email": email, "user_email": email, "asin": asin, "staging": STAGING}
-        response = self._make_request("open-book", params=params, method="POST")
+        # Using open-random-book endpoint for more flexible testing
+        params = {"sindarin_email": email, "user_email": email, "staging": STAGING}
+        response = self._make_request("open-random-book", params=params, method="GET")
 
         if response.status_code != 200:
-            logger.warning(f"Failed to open book for {email}")
-            self.test_results["warnings"].append(f"Book open failed for {email}")
+            logger.warning(f"Failed to open random book for {email}")
+            self.test_results["warnings"].append(f"Random book open failed for {email}")
             return False
 
-        self.test_results["passed"].append(f"Book opened for {email}")
+        self.test_results["passed"].append(f"Random book opened for {email}")
         return True
 
     def shutdown_user(self, email: str) -> bool:
@@ -288,9 +286,9 @@ class MultiUserTester(BaseKindleTest):
 
             # Phase 5: Open books (if authenticated)
             logger.info("\n=== PHASE 5: Open Books ===")
-            self.open_book(USER_A_EMAIL, BOOK_A_ASIN)
+            self.open_book(USER_A_EMAIL)
             time.sleep(2)
-            self.open_book(USER_B_EMAIL, BOOK_B_ASIN)
+            self.open_book(USER_B_EMAIL)
 
             # Phase 6: Shutdown User A
             logger.info("\n=== PHASE 6: Shutdown User A ===")

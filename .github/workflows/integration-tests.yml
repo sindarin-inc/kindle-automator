@@ -31,7 +31,25 @@ jobs:
         run: |
           uv pip install --system requests pytest pytest-timeout python-dotenv redis flask
 
-      - name: Run regular integration tests
+      - name: Run unit tests first
+        run: |
+          python -m pytest tests/test_deduplication_unit.py tests/test_user_repository_unit.py -v --tb=short
+          python tests/test_concurrent_access_unit.py
+        timeout-minutes: 3
+
+      - name: Run concurrent requests test
+        if: success()
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: kindle@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python tests/test_concurrent_requests_integration.py
+        timeout-minutes: 5
+
+      - name: Run API integration tests
+        if: success()
         env:
           API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
@@ -41,7 +59,7 @@ jobs:
           python -m pytest tests/test_api_integration.py -v --tb=short -m "not expensive"
         timeout-minutes: 5
 
-      - name: Run deduplication tests
+      - name: Run request deduplication integration tests
         if: success()
         env:
           CI: "true"
@@ -50,7 +68,7 @@ jobs:
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_request_deduplication.py -v --tb=short
+          python -m pytest tests/test_request_deduplication_integration.py -v --tb=short
         timeout-minutes: 5
 
       - name: Run expensive integration tests

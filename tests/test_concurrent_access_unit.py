@@ -39,9 +39,15 @@ class ConcurrentAccessTester:
                 with db_connection.get_session() as session:
                     repo = UserRepository(session)
                     email = f"thread_{thread_id}@solreader.com"
+                    # First try to get existing user
+                    user = repo.get_user_by_email(email)
+                    if user:
+                        return f"Thread {thread_id}: User {email} already exists"
                     user = repo.create_user(email, f"AVD_Thread_{thread_id}")
                     return f"Thread {thread_id}: Created user {email}"
             except Exception as e:
+                if "already exists" in str(e):
+                    return f"Thread {thread_id}: User already exists (race condition)"
                 error_msg = f"Thread {thread_id}: Error - {str(e)}"
                 self.errors.append(error_msg)
                 return error_msg
@@ -61,11 +67,13 @@ class ConcurrentAccessTester:
         """Test multiple threads updating the same user."""
         print(f"\n=== Testing concurrent updates with {num_threads} threads ===")
 
-        # Create a test user first
+        # Create or get test user first
         test_email = "concurrent_test@solreader.com"
         with db_connection.get_session() as session:
             repo = UserRepository(session)
-            repo.create_user(test_email, "ConcurrentTestAVD")
+            user = repo.get_user_by_email(test_email)
+            if not user:
+                repo.create_user(test_email, "ConcurrentTestAVD")
 
         def update_user(thread_id):
             try:
@@ -115,12 +123,14 @@ class ConcurrentAccessTester:
         """Test mixed read and write operations."""
         print(f"\n=== Testing concurrent reads and writes with {num_threads} threads ===")
 
-        # Create some test users
+        # Create or get test users
         test_emails = [f"readwrite_{i}@solreader.com" for i in range(5)]
         with db_connection.get_session() as session:
             repo = UserRepository(session)
             for email in test_emails:
-                repo.create_user(email, f"AVD_{email}")
+                user = repo.get_user_by_email(email)
+                if not user:
+                    repo.create_user(email, f"AVD_{email}")
 
         def mixed_operations(thread_id):
             try:
@@ -165,10 +175,12 @@ class ConcurrentAccessTester:
 
         test_email = "isolation_test@solreader.com"
 
-        # Create test user
+        # Create or get test user
         with db_connection.get_session() as session:
             repo = UserRepository(session)
-            repo.create_user(test_email, "IsolationTestAVD")
+            user = repo.get_user_by_email(test_email)
+            if not user:
+                repo.create_user(test_email, "IsolationTestAVD")
 
         def long_transaction():
             """Simulate a long-running transaction."""
@@ -246,13 +258,9 @@ class ConcurrentAccessTester:
 
     def cleanup_test_data(self):
         """Clean up test data."""
-        print("\n=== Cleaning up test data ===")
-
-        with db_connection.get_session() as session:
-            # Delete all test users
-            session.execute("DELETE FROM kindle_automator.users WHERE email LIKE '%solreader.com'")
-            session.commit()
-            print("Test data cleaned up")
+        print("\n=== Skipping cleanup (shared dev DB) ===")
+        # Don't delete users since we're using the same DB as dev
+        pass
 
 
 def main():
