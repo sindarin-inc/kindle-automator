@@ -212,12 +212,8 @@ class AutomationServer:
                     # We need to force a new emulator since the old one is no longer available
                     logger.info(f"Emulator for {email} no longer available, forcing new emulator creation")
 
-                    # Mark as booting immediately to prevent race conditions
-                    from server.utils.vnc_instance_manager import VNCInstanceManager
-
-                    vnc_manager = VNCInstanceManager.get_instance()
-                    vnc_manager.repository.mark_booting(email)
-                    logger.info(f"Marked emulator for {email} as booting (device no longer available)")
+                    # Don't mark as booting here - let switch_profile_and_start_emulator handle it
+                    # Otherwise we create a situation where the boot flag is set but no emulator is starting
 
                     # Cleanup existing automator
                     self.automators[email].cleanup()
@@ -228,12 +224,8 @@ class AutomationServer:
                     # Need to recreate the automator since force_new_emulator is True
                     logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
 
-                    # Mark as booting immediately to prevent race conditions
-                    from server.utils.vnc_instance_manager import VNCInstanceManager
-
-                    vnc_manager = VNCInstanceManager.get_instance()
-                    vnc_manager.repository.mark_booting(email)
-                    logger.info(f"Marked emulator for {email} as booting (force new emulator)")
+                    # Don't mark as booting here - let switch_profile_and_start_emulator handle it
+                    # Otherwise we create a situation where the boot flag is set but no emulator is starting
 
                     self.automators[email].cleanup()
                     self.automators[email] = None

@@ -567,16 +567,46 @@ class AVDProfileManager:
 
             # Check if already booting
             if vnc_manager.repository.is_booting(email):
-                logger.info(f"Emulator for {email} is already booting, waiting for it to complete")
-                # Wait for it to finish booting (max 60 seconds)
-                wait_start = time.time()
-                while time.time() - wait_start < 60:
-                    if not vnc_manager.repository.is_booting(email):
-                        logger.info(f"Emulator for {email} finished booting")
-                        return True
-                    time.sleep(3)
-                logger.warning(f"Emulator for {email} still booting after 60 seconds")
-                # The is_booting() method will automatically clean up stale records
+                logger.info(f"Emulator for {email} is already booting, verifying it's actually running")
+
+                # Verify the emulator process is actually running or starting
+                # Check if we can find any evidence of the emulator running
+                is_running, emulator_id, avd_name = self.find_running_emulator_for_email(email)
+
+                # Also check if there's an emulator ID stored in VNC manager
+                stored_emulator_id = vnc_manager.get_emulator_id(email)
+
+                # If no emulator is running and no emulator ID is stored, the boot flag is stale
+                if not is_running and not stored_emulator_id:
+                    logger.warning(
+                        f"Boot flag set for {email} but no emulator process found - clearing stale flag"
+                    )
+                    vnc_manager.repository.mark_booted(email)
+                    # Continue to start a new emulator
+                else:
+                    # Wait for it to finish booting (max 60 seconds)
+                    wait_start = time.time()
+                    while time.time() - wait_start < 60:
+                        if not vnc_manager.repository.is_booting(email):
+                            logger.info(f"Emulator for {email} finished booting")
+                            return True
+
+                        # Every 10 seconds, re-verify the emulator is still there
+                        if (time.time() - wait_start) % 10 < 3:
+                            is_running, _, _ = self.find_running_emulator_for_email(email)
+                            stored_emulator_id = vnc_manager.get_emulator_id(email)
+                            if not is_running and not stored_emulator_id:
+                                logger.warning(
+                                    f"Emulator for {email} disappeared while waiting - clearing boot flag"
+                                )
+                                vnc_manager.repository.mark_booted(email)
+                                break
+
+                        time.sleep(3)
+                    else:
+                        logger.warning(f"Emulator for {email} still booting after 60 seconds")
+                        # Clear the stale boot flag
+                        vnc_manager.repository.mark_booted(email)
 
             # Check if already marked as booting (from earlier in the flow)
             if not vnc_manager.repository.is_booting(email):
@@ -590,9 +620,14 @@ class AVDProfileManager:
                 # Start the emulator
                 result = self.emulator_manager.start_emulator_with_retries(email)
 
-                # Mark as booted (whether success or failure)
-                vnc_manager.repository.mark_booted(email)
-                logger.info(f"Marked emulator for {email} as booted (success={result})")
+                if result:
+                    # Emulator is running, but don't mark as booted yet
+                    # The boot flag will be cleared when Appium driver successfully connects
+                    logger.info(f"Emulator for {email} started successfully, waiting for driver connection")
+                else:
+                    # Mark as booted on failure to clear the flag
+                    vnc_manager.repository.mark_booted(email)
+                    logger.info(f"Marked emulator for {email} as booted (failed to start)")
 
                 return result
             except Exception as e:
