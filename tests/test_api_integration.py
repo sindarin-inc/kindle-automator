@@ -323,7 +323,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
         # Test 1: Try to impersonate without staff token (should fail)
         print("[TEST] 1. Testing impersonation without staff token (should fail)...")
-        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
         assert response.status_code == 403, f"Expected 403 without staff token, got {response.status_code}"
         data = response.json()
         assert "error" in data, "Response should contain error"
@@ -332,7 +332,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
         # Test 2: Create a new staff token
         print("\n[TEST] 2. Creating new staff token...")
-        response = self._make_request("staff-auth", {"auth": "1"}, max_retries=1)
+        response = self._make_request("staff-auth", {"auth": "1"})
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert data["authenticated"] is True, f"Authentication failed: {data}"
@@ -353,7 +353,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
         # Clear cookies first to avoid conflicts
         self.session.cookies.clear()
         self.session.cookies.set("staff_token", staff_token)
-        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
         assert response.status_code == 200, f"Expected 200 with staff token, got {response.status_code}"
         data = response.json()
         assert "success" in data or "authenticated" in data, f"Response missing expected fields: {data}"
@@ -361,7 +361,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
         # Test 4: Verify the token validates correctly
         print("\n[TEST] 4. Verifying staff token validation...")
-        response = self._make_request("staff-auth", max_retries=1)
+        response = self._make_request("staff-auth")
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         data = response.json()
         assert data["authenticated"] is True, f"Token validation failed: {data}"
@@ -370,7 +370,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
         # Test 5: Revoke the token
         print("\n[TEST] 5. Revoking staff token...")
-        response = self._make_request("staff-auth", method="DELETE", max_retries=1)
+        response = self._make_request("staff-auth", method="DELETE")
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         data = response.json()
         assert data["success"] is True, f"Token revocation failed: {data}"
@@ -379,7 +379,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
         # Test 6: Verify revoked token no longer works
         print("\n[TEST] 6. Verifying revoked token is rejected...")
         # Keep the revoked token in cookies
-        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL}, max_retries=1)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
         assert response.status_code == 403, f"Expected 403 with revoked token, got {response.status_code}"
         data = response.json()
         assert "error" in data, "Response should contain error"

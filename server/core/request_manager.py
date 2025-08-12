@@ -135,7 +135,7 @@ class RequestManager:
 
                 # Force claim this request (overwrite any existing)
                 self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
-                logger.info(
+                logger.debug(
                     f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
                     f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (last-one-wins){RESET}"
                 )
@@ -156,7 +156,7 @@ class RequestManager:
             if self.redis_client.set(
                 progress_key, DeduplicationStatus.IN_PROGRESS.value, nx=True, ex=DEFAULT_TTL
             ):
-                logger.info(
+                logger.debug(
                     f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
                     f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}"
                 )
@@ -365,7 +365,7 @@ class RequestManager:
             else:
                 # No waiters, just mark as completed and clean up immediately
                 self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=2)
-                logger.info(f"No waiters for {self.request_key}, marked as completed and will clean up")
+                logger.debug(f"No waiters for {self.request_key}, marked as completed and will clean up")
 
                 # Clean up immediately since there are no waiters
                 keys_to_delete = [
@@ -433,7 +433,7 @@ class RequestManager:
                     f"{self.request_key}:cancelled",
                 ]
                 self.redis_client.delete(*keys_to_delete)
-                logger.info(f"Cleaned up Redis keys for {self.request_key}")
+                logger.debug(f"Cleaned up Redis keys for {self.request_key}")
 
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
@@ -485,7 +485,7 @@ class RequestManager:
 
                 if not active_data:
                     # No active request, we can proceed
-                    logger.info(f"No active request found, {self.request_key} can proceed")
+                    logger.debug(f"No active request found, {self.request_key} can proceed")
                     return WaitResult.READY
 
                 active_request = json.loads(active_data)
