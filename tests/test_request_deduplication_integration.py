@@ -640,8 +640,7 @@ if __name__ == "__main__":
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
 
-    # Add main deduplication tests first
-    suite.addTests(loader.loadTestsFromTestCase(TestRequestDeduplication))
+    # Add main deduplication tests
     suite.addTests(loader.loadTestsFromTestCase(TestRequestDeduplicationIntegration))
 
     # Add priority and cancellation tests (only run if main tests pass)
