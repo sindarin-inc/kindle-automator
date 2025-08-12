@@ -79,7 +79,7 @@ class DatabaseConnection:
             self.engine = create_engine(
                 self.database_url,
                 poolclass=NullPool,
-                echo=False,  # Set to True for SQL query logging
+                echo=False,  # Use SQL_LOGGING env var for query logging instead
                 future=True,  # Use SQLAlchemy 2.0 style
             )
         else:
@@ -91,7 +91,7 @@ class DatabaseConnection:
                 max_overflow=20,
                 pool_timeout=30,
                 pool_recycle=1800,  # Recycle connections after 30 minutes
-                echo=False,
+                echo=False,  # Use SQL_LOGGING env var for query logging instead
                 future=True,
             )
 

@@ -239,6 +239,11 @@ class RequestManager:
                     if active_request_key and active_request_key != self.request_key:
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
+
+                        # CRITICAL: Also delete the progress key so future requests don't think they're duplicates
+                        progress_key = f"{active_request_key}:progress"
+                        self.redis_client.delete(progress_key)
+
                         logger.info(
                             f"{BRIGHT_YELLOW}Cancelling previous {BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} request "
                             f"{active_request_key} for newer request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_YELLOW} "
@@ -269,6 +274,11 @@ class RequestManager:
 
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
+
+                        # CRITICAL: Also delete the progress key so future requests don't think they're duplicates
+                        progress_key = f"{active_request_key}:progress"
+                        self.redis_client.delete(progress_key)
+
                         logger.info(
                             f"{BRIGHT_RED}[{time.time():.3f}] PRIORITY CANCELLATION: {BRIGHT_YELLOW}Cancelling lower priority request "
                             f"{active_request_key} (priority {active_priority}) for higher priority "

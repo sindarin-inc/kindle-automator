@@ -81,6 +81,9 @@ def deduplicate_request(func: Callable) -> Callable:
                 elif isinstance(result, Response):
                     # Don't cache streaming responses
                     if result.direct_passthrough or result.is_streamed:
+                        # For streaming responses, we still need to clean up the request number
+                        # even though we don't cache the response
+                        manager._cleanup_request_number()
                         return result
                     response_data = result.get_data(as_text=True)
                     status_code = result.status_code
@@ -118,7 +121,11 @@ def deduplicate_request(func: Callable) -> Callable:
 
         else:
             # Request couldn't be claimed - either duplicate or waiting for higher priority
-            # Check if this is a duplicate request
+            # IMPORTANT: We need to correctly determine WHY the claim failed
+            # A duplicate request will have its progress key already set
+            # A request waiting for higher priority won't have a progress key
+
+            # Check if this exact request is already in progress (duplicate)
             if manager.is_duplicate_in_progress():
                 logger.info(f"Waiting for deduplicated response for {manager.request_key}")
 
@@ -135,7 +142,7 @@ def deduplicate_request(func: Callable) -> Callable:
                     )
                     return func(self, *args, **kwargs)
             else:
-                # Must be waiting for higher priority request
+                # Not a duplicate - must be waiting for higher priority request
                 logger.info(f"Waiting for higher priority request to complete before executing {path}")
 
                 wait_result = manager.wait_for_higher_priority_completion()
@@ -146,12 +153,18 @@ def deduplicate_request(func: Callable) -> Callable:
                     return func(self, *args, **kwargs)
                 elif wait_result == WaitResult.CANCELLED:
                     logger.warning(f"Request {path} was cancelled while waiting")
+                    # Clean up request number for cancelled requests
+                    manager._cleanup_request_number()
                     return {"error": "Request was cancelled by higher priority operation"}, 409
                 elif wait_result == WaitResult.TIMEOUT:
                     logger.warning(f"Request {path} timed out while waiting")
+                    # Clean up request number for timed out requests
+                    manager._cleanup_request_number()
                     return {"error": "Request timed out waiting for higher priority operation"}, 408
                 else:  # WaitResult.ERROR
                     logger.error(f"Error occurred while {path} was waiting")
+                    # Clean up request number for errored requests
+                    manager._cleanup_request_number()
                     return {"error": "Error waiting for higher priority operation"}, 500
 
     return wrapper

@@ -757,6 +757,12 @@ class BooksStreamResource(Resource):
             return response
 
         # No existing stream, start a new one
+
+        # Check for cancellation one more time before starting the stream
+        if manager and manager.is_cancelled():
+            logger.info(f"Request cancelled before starting stream for {sindarin_email}")
+            return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
+
         if redis_client:
             # Mark stream as active
             redis_client.set(stream_active_key, "1", ex=300)  # 5 minute TTL

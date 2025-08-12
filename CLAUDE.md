@@ -45,8 +45,15 @@ curl -s http://localhost:4098/emulators/active
 # Monitor logs
 tail -f logs/server_output.log       # Standard logs, clears every `make claude-run`
 tail -f logs/server.log              # Same as server_output.log, but persists between runs
-tail -f logs/debug_server.log        # DEBUG logs + SQL queries, also persists
+tail -f logs/debug_server.log        # DEBUG logs, also persists
 ```
+
+## SQL Debug Logging
+
+To control SQL query logging in the debug log:
+- Edit `.env` and set `SQL_LOGGING=true` to enable or `SQL_LOGGING=false` to disable
+- Restart the server with `make claude-run`
+- When enabled, formatted SQL queries will appear in `logs/debug_server.log`
 
 ## Issue References
 
