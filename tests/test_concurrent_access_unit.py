@@ -18,6 +18,7 @@ load_dotenv()
 
 from database.connection import db_connection
 from database.repositories.user_repository import UserRepository
+from database.models import Base
 
 
 class ConcurrentAccessTester:
@@ -26,7 +27,10 @@ class ConcurrentAccessTester:
     def __init__(self):
         # Initialize database connection
         db_connection.initialize()
-        db_connection.create_schema()
+        
+        # Create all tables for testing
+        Base.metadata.create_all(db_connection.engine)
+        
         self.results = []
         self.errors = []
 
@@ -258,8 +262,13 @@ class ConcurrentAccessTester:
 
     def cleanup_test_data(self):
         """Clean up test data."""
-        print("\n=== Skipping cleanup (shared dev DB) ===")
-        # Don't delete users since we're using the same DB as dev
+        print("\n=== Cleaning up test database ===")
+        # Drop all tables after test (since we're using a test database in CI)
+        if os.getenv("CI"):
+            Base.metadata.drop_all(db_connection.engine)
+            print("Test tables dropped")
+        else:
+            print("Skipping cleanup (not in CI, using dev DB)")
         pass
 
 
