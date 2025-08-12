@@ -353,9 +353,12 @@ def run_idle_check():
             )
 
             # Count running emulators
+            from server.utils.android_path_utils import get_android_home, get_avd_dir
             from server.utils.emulator_launcher import EmulatorLauncher
 
-            launcher = EmulatorLauncher.get_instance()
+            android_home = get_android_home()
+            avd_dir = get_avd_dir()
+            launcher = EmulatorLauncher(android_home, avd_dir, "x86_64")
             running_count = len(launcher.get_running_emulators())
             logger.info(f"Running emulators: {running_count}")
         except Exception as e:

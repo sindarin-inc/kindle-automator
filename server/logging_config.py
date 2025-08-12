@@ -324,15 +324,16 @@ class RelativePathFormatter(logging.Formatter):
                 else:
                     try:
                         from server.core.redis_connection import get_redis_client
+
                         redis_client = get_redis_client()
                     except:
                         pass
-                
+
                 if redis_client:
                     # Check both the multiple requests flag and active count
                     multi_key = f"kindle:user:{email}:has_multiple_requests"
                     active_key = f"kindle:user:{email}:active_request_count"
-                    
+
                     has_multiple = redis_client.get(multi_key)
                     if has_multiple:
                         has_multiple_requests = True

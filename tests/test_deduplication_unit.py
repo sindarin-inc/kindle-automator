@@ -85,15 +85,27 @@ class TestRequestDeduplication(unittest.TestCase):
         calls = self.redis_client.set.call_args_list
         self.assertEqual(len(calls), 2)  # Result and status
 
-        # Test retrieval - reset the mock's side_effect for the wait
-        self.redis_client.get.side_effect = [
-            DeduplicationStatus.COMPLETED.value.encode(),  # Status
-            pickle.dumps((response_data, status_code)),  # Result
-            # Add more None values for cleanup checks
-            None,
-            None,
-            None,
-        ]
+        # Test retrieval - use a function to handle the different get calls
+        def mock_get(key):
+            if isinstance(key, bytes):
+                key = key.decode("utf-8")
+
+            # Handle the various keys that might be requested
+            if ":status" in key:
+                return DeduplicationStatus.COMPLETED.value.encode()
+            elif ":result" in key:
+                return pickle.dumps((response_data, status_code))
+            elif ":active_request_count" in key:
+                return b"1"  # Return valid count
+            elif ":active_request" in key and "kindle:user:" in key:
+                # Return valid JSON for active request
+                return json.dumps(
+                    {"request_key": "kindle:request:abc123", "priority": 30, "path": "/books"}
+                ).encode()
+            else:
+                return None
+
+        self.redis_client.get.side_effect = mock_get
         # Mock decr to return 0 (no more waiters)
         self.redis_client.decr.return_value = 0
 
