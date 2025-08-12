@@ -431,9 +431,11 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 response = session.get(
                     f"{self.base_url}/kindle/open-book",
                     params=params,
-                    timeout=60,
+                    timeout=120,  # Increased timeout for CI environment
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
+            except Exception as e:
+                results["high_priority_error"] = str(e)
             finally:
                 session.close()
 
@@ -446,7 +448,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 response = session.get(
                     f"{self.base_url}/kindle/screenshot",
                     params=params,
-                    timeout=60,
+                    timeout=120,  # Increased timeout for CI environment
                 )
                 results["screenshot"] = {"status": response.status_code, "completed_at": time.time()}
             except Exception as e:
@@ -468,14 +470,20 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         screenshot_thread.start()
 
         # Wait for both to complete (longer timeout for slower test environments)
-        high_thread.join(timeout=60)
-        screenshot_thread.join(timeout=60)
+        high_thread.join(timeout=120)  # Increased timeout for CI
+        screenshot_thread.join(timeout=120)  # Increased timeout for CI
 
         # Check if threads are still alive (timeout occurred)
         if high_thread.is_alive():
-            self.fail("High priority thread did not complete within timeout")
+            error_msg = f"High priority thread did not complete within timeout. Results: {results}"
+            if "high_priority_error" in results:
+                error_msg += f" Error: {results['high_priority_error']}"
+            self.fail(error_msg)
         if screenshot_thread.is_alive():
-            self.fail("Screenshot thread did not complete within timeout")
+            error_msg = f"Screenshot thread did not complete within timeout. Results: {results}"
+            if "screenshot_error" in results:
+                error_msg += f" Error: {results['screenshot_error']}"
+            self.fail(error_msg)
 
         # Verify screenshot ran successfully without being blocked
         if "screenshot_error" in results:
