@@ -124,7 +124,15 @@ class TextResource(Resource):
                 )
 
             # Save screenshot with unique ID
-            screenshot_id = f"text_extract_{int(time.time())}"
+            # Get the user email for unique screenshot naming
+            profile = automator.profile_manager.get_current_profile()
+            user_email = profile.get("email") if profile else None
+            if user_email:
+                # Sanitize email for filename
+                email_safe = user_email.replace("@", "_").replace(".", "_")
+                screenshot_id = f"{email_safe}_text_extract_{int(time.time())}"
+            else:
+                screenshot_id = f"text_extract_{int(time.time())}"
             screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
             automator.driver.save_screenshot(screenshot_path)
 

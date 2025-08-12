@@ -1329,7 +1329,15 @@ class ReaderHandler:
             time.sleep(0.5)
 
             # Take screenshot
-            screenshot_id = f"{prefix}_{int(time.time())}"
+            # Get the user email for unique screenshot naming
+            profile = self.driver.automator.profile_manager.get_current_profile()
+            sindarin_email = profile.get("email") if profile else None
+            if sindarin_email:
+                # Sanitize email for filename
+                email_safe = sindarin_email.replace("@", "_").replace(".", "_")
+                screenshot_id = f"{email_safe}_{prefix}_{int(time.time())}"
+            else:
+                screenshot_id = f"{prefix}_{int(time.time())}"
             screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
             self.driver.save_screenshot(screenshot_path)
 
