@@ -36,6 +36,20 @@ claude-run:
 	@timeout=120; \
 	elapsed=0; \
 	while [ $$elapsed -lt $$timeout ]; do \
+		if grep -q "Database connection failed" logs/server_output.log 2>/dev/null; then \
+			echo ""; \
+			echo "❌ ERROR: Database connection failed!"; \
+			echo ""; \
+			echo "The PostgreSQL database is not running or not accessible."; \
+			echo ""; \
+			echo "To fix this:"; \
+			echo "  1. Check if Docker is running: docker ps"; \
+			echo "  2. Start the database container: docker start sol_postgres"; \
+			echo "  3. Or run the full stack: cd ../web-app && make fast"; \
+			echo ""; \
+			echo "Check logs/server_output.log for details"; \
+			exit 1; \
+		fi; \
 		if grep -q "=== Session restoration complete ===" logs/server_output.log 2>/dev/null; then \
 			echo ""; \
 			echo "✓ Server is ready! Session restoration complete."; \

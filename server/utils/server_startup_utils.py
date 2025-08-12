@@ -143,6 +143,7 @@ def auto_restart_emulators_after_startup(server):
                     logger.warning(f"  ✗ {email}")
         else:
             logger.info("=== No emulators marked for restart from previous session ===")
+            logger.info("=== Session restoration complete ===")
 
     # Start the background thread
     thread = threading.Thread(target=_restart_emulators, daemon=True)

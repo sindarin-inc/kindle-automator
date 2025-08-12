@@ -247,66 +247,64 @@ class TestUserRepository:
         """Test that datetime fields from database can be JSON serialized."""
         email = "test@example.com"
         user = repo.create_user(email, "TestAVD")
-        
+
         # Update library settings with a datetime
         current_time = datetime.now(timezone.utc)
         repo.update_user_field(email, "library_settings.last_series_group_check", current_time)
-        
+
         # Reload the user with library settings
         user = repo.get_user_by_email(email)
         assert user.library_settings is not None
         assert user.library_settings.last_series_group_check is not None
-        
+
         # Test 1: Direct serialization with custom encoder should work
         from server.server import DateTimeJSONEncoder
-        
+
         # Create a dict that includes the datetime object
         test_dict = {
             "email": email,
             "library_settings": {
                 "last_series_group_check": user.library_settings.last_series_group_check,
                 "view_type": user.library_settings.view_type,
-                "group_by_series": user.library_settings.group_by_series
-            }
+                "group_by_series": user.library_settings.group_by_series,
+            },
         }
-        
+
         # This should not raise an exception
         json_str = json.dumps(test_dict, cls=DateTimeJSONEncoder)
         assert json_str is not None
-        
+
         # Verify the datetime was converted to ISO format string
         parsed = json.loads(json_str)
         assert isinstance(parsed["library_settings"]["last_series_group_check"], str)
         assert "T" in parsed["library_settings"]["last_series_group_check"]  # ISO format includes 'T'
-        
+
         # Test 2: Without custom encoder, it should fail
         with pytest.raises(TypeError) as exc_info:
             json.dumps(test_dict)
         assert "not JSON serializable" in str(exc_info.value)
-        
+
         # Test 3: Test with other datetime fields
         repo.update_user_field(email, "last_used", datetime.now(timezone.utc))
         repo.update_user_field(email, "auth_date", datetime.now(timezone.utc))
         repo.update_user_field(email, "snapshot_dirty_since", datetime.now(timezone.utc))
-        
+
         # Reload to get the updated values
         user = repo.get_user_by_email(email)
-        
+
         # Create a dict with multiple datetime fields
         test_dict_multiple = {
             "email": email,
             "last_used": user.last_used,
             "auth_date": user.auth_date,
             "snapshot_dirty_since": user.snapshot_dirty_since,
-            "library_settings": {
-                "last_series_group_check": user.library_settings.last_series_group_check
-            }
+            "library_settings": {"last_series_group_check": user.library_settings.last_series_group_check},
         }
-        
+
         # Should work with custom encoder
         json_str = json.dumps(test_dict_multiple, cls=DateTimeJSONEncoder)
         parsed = json.loads(json_str)
-        
+
         # All datetime fields should be strings
         assert isinstance(parsed["last_used"], str)
         assert isinstance(parsed["auth_date"], str)

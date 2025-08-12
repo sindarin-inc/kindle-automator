@@ -97,6 +97,15 @@ class DatabaseConnection:
 
         # No need to set search_path since we're using public schema
 
+        # Test the database connection before proceeding
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                logger.debug("Database connection test successful")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            raise RuntimeError(f"Database connection failed: {e}") from e
+
         # Create session factory
         self.SessionLocal = sessionmaker(
             bind=self.engine,
