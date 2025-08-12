@@ -63,7 +63,7 @@ class LibraryHandlerScroll:
         # Build the page info string with colors
         user_prefix = f"{BRIGHT_CYAN}[{user_email}]{RESET} " if user_email else ""
         if filter_book_count:
-            expected_pages = math.ceil(filter_book_count / 10)  # Assuming ~10 books per page
+            expected_pages = math.ceil(filter_book_count / 3)  # Assuming ~3 books per page
             page_info = f"{user_prefix}{BRIGHT_YELLOW}Page {page_number}/{expected_pages}:{RESET} Found {BRIGHT_GREEN}{len(new_books)}{RESET} new books, total {BRIGHT_GREEN}{total_found}/{filter_book_count}{RESET}"
         else:
             page_info = f"{user_prefix}{BRIGHT_YELLOW}Page {page_number}:{RESET} Found {BRIGHT_GREEN}{len(new_books)}{RESET} new books, total {BRIGHT_GREEN}{total_found}{RESET}"
