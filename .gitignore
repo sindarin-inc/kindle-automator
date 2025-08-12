@@ -183,3 +183,4 @@ fixtures/dumps/*.xml
 apks
 backups
 uv.lock
+.cookies.txt

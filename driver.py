@@ -1049,6 +1049,19 @@ class Driver:
             if device_id:
                 target_device_id = device_id
 
+        # If we still don't have a device ID, try to get it from VNC instance manager
+        if not target_device_id:
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                vnc_manager = VNCInstanceManager.get_instance()
+                vnc_device_id = vnc_manager.get_emulator_id(email)
+                if vnc_device_id:
+                    logger.info(f"Got device ID {vnc_device_id} from VNC instance manager for {email}")
+                    target_device_id = vnc_device_id
+            except Exception as e:
+                logger.warning(f"Could not get device ID from VNC instance manager: {e}")
+
         # Get device ID, preferring the specific one if provided
         self.device_id = self._get_emulator_device_id(target_device_id)
 

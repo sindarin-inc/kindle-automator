@@ -424,37 +424,27 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
 
         def high_priority_request():
             """Make a high priority request that takes time."""
-            session = self._create_test_session()
             try:
-                params = self._build_params({"user_email": self.email, "title": "Hyperion"})
-                # Use the proxy endpoint for consistency
-                response = session.get(
-                    f"{self.base_url}/kindle/open-book",
-                    params=params,
-                    timeout=120,  # Increased timeout for CI environment
+                response = self._make_request(
+                    "open-book",
+                    params={"user_email": self.email, "title": "Hyperion"},
+                    timeout=120,
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
             except Exception as e:
                 results["high_priority_error"] = str(e)
-            finally:
-                session.close()
 
         def screenshot_request():
             """Make a screenshot request."""
-            session = self._create_test_session()
             try:
-                params = self._build_params({"user_email": self.email})
-                # Use the proxy endpoint for consistency
-                response = session.get(
-                    f"{self.base_url}/kindle/screenshot",
-                    params=params,
-                    timeout=120,  # Increased timeout for CI environment
+                response = self._make_request(
+                    "screenshot",
+                    params={"user_email": self.email},
+                    timeout=120,
                 )
                 results["screenshot"] = {"status": response.status_code, "completed_at": time.time()}
             except Exception as e:
                 results["screenshot_error"] = str(e)
-            finally:
-                session.close()
 
         # Start high priority request
         results["high_started"] = time.time()
@@ -573,19 +563,17 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         def open_book():
             """Open a book (higher priority)."""
             results["open_started"] = time.time()
-            session = self._create_test_session()
             try:
-                params = self._build_params({"user_email": self.email, "title": "Hyperion"})
-                # Use the proxy endpoint to ensure both requests go to same server
-                response = session.get(
-                    f"{self.base_url}/kindle/open-book",
-                    params=params,
+                response = self._make_request(
+                    "open-book",
+                    params={"user_email": self.email, "title": "Hyperion"},
                     timeout=60,
                 )
                 results["open_completed"] = time.time()
                 results["open_status"] = response.status_code
-            finally:
-                session.close()
+            except Exception as e:
+                results["open_error"] = str(e)
+                raise
 
         # Start streaming books
         stream_thread = threading.Thread(target=stream_books)

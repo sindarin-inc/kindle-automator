@@ -67,8 +67,8 @@ tail -f logs/debug_server.log        # DEBUG logs + SQL queries, also persists
 - **Staff token for other emails**:
   ```bash
   # Use cookie jar (recommended)
-  curl -s -c cookies.txt -X GET "http://localhost:4098/staff-auth?auth=1" > /dev/null
-  curl -b cookies.txt -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1"
+  curl -s -c .cookies.txt -X GET "http://localhost:4098/staff-auth?auth=1"
+  curl -b .cookies.txt -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1"
   ```
   Note: Full token only in Set-Cookie header, not JSON response
 

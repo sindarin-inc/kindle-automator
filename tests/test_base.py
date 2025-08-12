@@ -1,6 +1,7 @@
 """Base test class for Kindle Automator integration tests."""
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict, Generator, Optional
@@ -11,6 +12,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:4096")
@@ -57,12 +60,12 @@ class BaseKindleTest:
         # Set Authorization header for API authentication
         if WEB_AUTH_TOKEN:
             self.session.headers.update({"Authorization": f"Tolkien {WEB_AUTH_TOKEN}"})
-            print(f"[TEST] Using Knox token for samuel@ofbrooklyn.com (staff user)")
+            logger.info("Using Knox token for samuel@ofbrooklyn.com (staff user)")
 
         # Set staff auth cookie for user_email override
         if STAFF_AUTH_TOKEN:
             self.session.cookies.set("staff_token", STAFF_AUTH_TOKEN)
-            print(f"[TEST] Using staff token from environment variable")
+            logger.info("Using staff token from environment variable")
         else:
             # Try to get a staff token from the server if not in environment
             self._get_and_set_staff_token()
@@ -79,10 +82,10 @@ class BaseKindleTest:
                 for cookie in response.cookies:
                     if cookie.name == "staff_token":
                         self.session.cookies.set("staff_token", cookie.value)
-                        print(f"[TEST] Got staff token from server")
+                        logger.info("Got staff token from server")
                         break
         except Exception as e:
-            print(f"[TEST] Could not get staff token: {e}")
+            logger.warning(f"Could not get staff token: {e}")
 
     def _make_request(
         self,
@@ -90,10 +93,10 @@ class BaseKindleTest:
         params: Dict[str, Any] = None,
         method: str = "GET",
         timeout: int = 120,
-        max_retries: int = 3,
+        max_deploy_retries: int = 1,
         use_proxy: bool = True,
     ) -> requests.Response:
-        """Helper to make API requests with retry logic for 503 errors.
+        """Helper to make API requests with retry logic for 503 errors during deployments.
 
         IMPORTANT: We use the /kindle/ prefix to route through the FastAPI reverse proxy
         (running on port 4096). This proxy handles authentication, caching, and routing
@@ -108,7 +111,7 @@ class BaseKindleTest:
             params: Query parameters
             method: HTTP method
             timeout: Request timeout in seconds
-            max_retries: Maximum number of retries for 503 errors
+            max_deploy_retries: Maximum number of retries for 503 errors during deployments (default: 1)
             use_proxy: Whether to use the proxy server (port 4096) or direct (port 4098)
 
         Returns:
@@ -126,24 +129,24 @@ class BaseKindleTest:
         request_params = {**self.default_params, **(params or {})}
         retry_delay = 10  # seconds
 
-        for attempt in range(max_retries):
+        for attempt in range(max_deploy_retries):
             try:
-                # Debug: print request details
-                print(f"\n[DEBUG] Request attempt {attempt + 1}/{max_retries} to {url}")
-                print(f"[DEBUG] Params: {request_params}")
-                print(f"[DEBUG] Headers: {dict(self.session.headers)}")
+                # Debug: log request details
+                logger.debug(f"Request attempt {attempt + 1}/{max_deploy_retries} to {url}")
+                logger.debug(f"Params: {request_params}")
+                logger.debug(f"Headers: {dict(self.session.headers)}")
 
                 # Debug cookies - show full staff_token
                 try:
                     cookies_dict = dict(self.session.cookies)
                     if "staff_token" in cookies_dict:
                         token = cookies_dict["staff_token"]
-                        print(f"[DEBUG] Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
+                        logger.debug(f"Cookies: {{'staff_token': '{token}' (length={len(token)})}}")
                     else:
-                        print(f"[DEBUG] Cookies: {cookies_dict}")
+                        logger.debug(f"Cookies: {cookies_dict}")
                 except Exception as e:
                     # Handle cookie conflicts gracefully
-                    print(f"[DEBUG] Cookie info unavailable: {e}")
+                    logger.debug(f"Cookie info unavailable: {e}")
 
                 if method == "GET":
                     response = self.session.get(url, params=request_params, timeout=timeout)
@@ -155,23 +158,33 @@ class BaseKindleTest:
                     raise ValueError(f"Unsupported method: {method}")
 
                 # If we get a 503 and haven't exhausted retries, wait and retry
-                if response.status_code == 503 and attempt < max_retries - 1:
-                    print(
-                        f"Got 503 error, retrying in {retry_delay} seconds... "
-                        f"(attempt {attempt + 1}/{max_retries})"
+                if response.status_code == 503 and attempt < max_deploy_retries - 1:
+                    logger.info(
+                        f"Got 503 error (deployment in progress), retrying in {retry_delay} seconds... "
+                        f"(attempt {attempt + 1}/{max_deploy_retries})"
                     )
                     time.sleep(retry_delay)
                     continue
+
+                # Fail immediately on 500 errors (internal server error)
+                if response.status_code == 500:
+                    error_msg = f"Request failed with status 500 (Internal Server Error)"
+                    try:
+                        error_data = response.json()
+                        error_msg += f": {error_data}"
+                    except:
+                        error_msg += f": {response.text}"
+                    raise AssertionError(error_msg)
 
                 return response
 
             except requests.exceptions.RequestException as e:
                 # If this is our last attempt, re-raise the exception
-                if attempt == max_retries - 1:
+                if attempt == max_deploy_retries - 1:
                     raise
-                print(
+                logger.info(
                     f"Request failed with error: {e}, retrying in {retry_delay} seconds... "
-                    f"(attempt {attempt + 1}/{max_retries})"
+                    f"(attempt {attempt + 1}/{max_deploy_retries})"
                 )
                 time.sleep(retry_delay)
 
@@ -185,19 +198,19 @@ class BaseKindleTest:
                 try:
                     # Try parsing as newline-delimited JSON first
                     message = json.loads(line.decode("utf-8"))
-                    print(f"[STREAM] Received message: {json.dumps(message, sort_keys=True)}")
+                    logger.debug(f"[STREAM] Received message: {json.dumps(message, sort_keys=True)}")
                     yield message
                 except json.JSONDecodeError:
                     # Try SSE format: "data: {json}"
                     if line.startswith(b"data: "):
                         try:
                             message = json.loads(line[6:].decode("utf-8"))
-                            print(f"[STREAM] Received SSE message: {json.dumps(message)}")
+                            logger.debug(f"[STREAM] Received SSE message: {json.dumps(message)}")
                             yield message
                         except json.JSONDecodeError as e:
-                            print(f"[STREAM] Failed to parse line: {line}, error: {e}")
+                            logger.warning(f"[STREAM] Failed to parse line: {line}, error: {e}")
                     else:
-                        print(f"[STREAM] Skipping non-JSON line: {line}")
+                        logger.debug(f"[STREAM] Skipping non-JSON line: {line}")
 
     def _create_test_session(self) -> requests.Session:
         """Create a new session with proper authentication for test threads.

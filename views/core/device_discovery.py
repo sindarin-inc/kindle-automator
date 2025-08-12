@@ -344,14 +344,24 @@ class DeviceDiscovery:
                         emulator_id = parts[0].strip()
                         device_state = parts[1].strip()
 
-                        # Only proceed if the emulator device is actually available (not 'offline')
-                        if device_state != "offline":
-                            # Query AVD name using AVD Profile Manager
+                        # Handle different device states
+                        if device_state == "device":
+                            # Emulator is online and ready
                             avd_name = self._get_avd_name_for_emulator(emulator_id, profiles_index)
                             if avd_name:
                                 running_emulators[avd_name] = emulator_id
+                        elif device_state == "offline":
+                            # Emulator is booting - still include it as running since it's starting up
+                            logger.info(f"Emulator {emulator_id} is booting (offline state)")
+                            # Try to get AVD name even though it's offline - might work with cached info
+                            avd_name = self._get_avd_name_for_emulator(emulator_id, profiles_index)
+                            if avd_name:
+                                running_emulators[avd_name] = emulator_id
+                                logger.info(f"Included booting emulator {emulator_id} for AVD {avd_name}")
+                            else:
+                                logger.warning(f"Could not determine AVD for booting emulator {emulator_id}")
                         else:
-                            logger.warning(f"Emulator {emulator_id} is in 'offline' state - skipping")
+                            logger.warning(f"Emulator {emulator_id} in unexpected state: {device_state}")
 
             return running_emulators
         except subprocess.TimeoutExpired:

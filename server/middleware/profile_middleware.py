@@ -221,6 +221,21 @@ def ensure_user_profile_loaded(f):
                     "message": "Could not initialize instance tracking",
                 }, 500
 
+        # Check if emulator is currently booting
+        if vnc_manager.repository.is_booting(sindarin_email):
+            logger.info(f"Emulator for {sindarin_email} is currently booting, waiting for it to complete")
+            # Wait for it to finish booting (max 60 seconds)
+            import time
+
+            wait_start = time.time()
+            while time.time() - wait_start < 60:
+                if not vnc_manager.repository.is_booting(sindarin_email):
+                    logger.info(f"Emulator for {sindarin_email} finished booting")
+                    break
+                time.sleep(3)
+            else:
+                logger.warning(f"Emulator for {sindarin_email} still booting after 60 seconds")
+
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
         if automator and hasattr(automator, "driver") and automator.driver:

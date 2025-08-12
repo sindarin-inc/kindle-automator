@@ -425,12 +425,13 @@ class AVDProfileManager:
             users = repo.get_users_with_avd_names(avd_names)
             return {user.email: repo.user_to_dict(user) for user in users}
 
-    def get_emulator_id_for_avd(self, avd_name: str) -> Optional[str]:
+    def get_emulator_id_for_avd(self, avd_name: str, retry_if_starting: bool = True) -> Optional[str]:
         """
         Get the emulator device ID for a given AVD name.
 
         Args:
             avd_name: Name of the AVD to find
+            retry_if_starting: If True and emulator is known to be starting, wait for it to be detected
 
         Returns:
             Optional[str]: The emulator ID if found, None otherwise
@@ -443,6 +444,7 @@ class AVDProfileManager:
             return running_emulators[avd_name]
 
         # Also check VNC instance manager for any stored emulator IDs
+        expected_emulator_id = None
         for email, profile in self.get_all_profiles().items():
             if profile.get("avd_name") == avd_name:
                 try:
@@ -451,6 +453,31 @@ class AVDProfileManager:
                     vnc_manager = VNCInstanceManager.get_instance()
                     emulator_id = vnc_manager.get_emulator_id(email)
                     if emulator_id:
+                        # We found an expected emulator ID in VNC instance
+                        expected_emulator_id = emulator_id
+                        # If retry is enabled and we have an expected ID, wait for it to be detected
+                        if retry_if_starting:
+                            import time
+
+                            logger.info(
+                                f"Emulator {emulator_id} expected for AVD {avd_name}, waiting for ADB detection..."
+                            )
+                            max_wait = 20  # Wait up to 20 seconds
+                            start_time = time.time()
+                            while time.time() - start_time < max_wait:
+                                # Re-check if emulator is now detected
+                                running_emulators = self.device_discovery.map_running_emulators(
+                                    self.get_all_profiles()
+                                )
+                                if avd_name in running_emulators:
+                                    logger.info(
+                                        f"Emulator for AVD {avd_name} detected after {time.time() - start_time:.1f}s"
+                                    )
+                                    return running_emulators[avd_name]
+                                time.sleep(1)
+                            logger.warning(
+                                f"Emulator {emulator_id} for AVD {avd_name} not detected by ADB after {max_wait}s"
+                            )
                         return emulator_id
                 except Exception as e:
                     logger.warning(f"Error checking VNC instance for emulator ID: {e}")
@@ -532,8 +559,50 @@ class AVDProfileManager:
         return self.emulator_manager.stop_specific_emulator(device_id)
 
     def start_emulator(self, email: str) -> bool:
-        """Start the emulator for a specific email."""
-        return self.emulator_manager.start_emulator_with_retries(email)
+        """Start the emulator for a specific email, marking it as booting in the database."""
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            vnc_manager = VNCInstanceManager.get_instance()
+
+            # Check if already booting
+            if vnc_manager.repository.is_booting(email):
+                logger.info(f"Emulator for {email} is already booting, waiting for it to complete")
+                # Wait for it to finish booting (max 60 seconds)
+                wait_start = time.time()
+                while time.time() - wait_start < 60:
+                    if not vnc_manager.repository.is_booting(email):
+                        logger.info(f"Emulator for {email} finished booting")
+                        return True
+                    time.sleep(3)
+                logger.warning(f"Emulator for {email} still booting after 60 seconds")
+                # The is_booting() method will automatically clean up stale records
+
+            # Check if already marked as booting (from earlier in the flow)
+            if not vnc_manager.repository.is_booting(email):
+                # Mark as booting if not already marked
+                vnc_manager.repository.mark_booting(email)
+                logger.info(f"Marked emulator for {email} as booting")
+            else:
+                logger.info(f"Emulator for {email} already marked as booting")
+
+            try:
+                # Start the emulator
+                result = self.emulator_manager.start_emulator_with_retries(email)
+
+                # Mark as booted (whether success or failure)
+                vnc_manager.repository.mark_booted(email)
+                logger.info(f"Marked emulator for {email} as booted (success={result})")
+
+                return result
+            except Exception as e:
+                # Make sure to mark as not booting on error
+                vnc_manager.repository.mark_booted(email)
+                logger.error(f"Error starting emulator for {email}: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Error in start_emulator for {email}: {e}")
+            return False
 
     def create_new_avd(self, email: str) -> Tuple[bool, str]:
         """Create a new AVD for the given email."""
@@ -890,9 +959,9 @@ class AVDProfileManager:
         Returns:
             Tuple[bool, str]: (success, message)
         """
-        # Start the emulator
+        # Start the emulator (use the start_emulator method which has locking)
         logger.info(f"Starting emulator for {email}")
-        if not self.emulator_manager.start_emulator_with_retries(email):
+        if not self.start_emulator(email):
             return False, "Failed to start emulator"
 
         # Wait for emulator to be ready
