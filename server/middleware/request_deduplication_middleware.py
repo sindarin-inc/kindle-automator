@@ -74,6 +74,25 @@ def deduplicate_request(func: Callable) -> Callable:
 
             except Exception as e:
                 logger.error(f"Error executing request {manager.request_key}: {e}")
+
+                # Check if this is a retryable UiAutomator2 crash
+                error_message = str(e)
+                is_retryable_crash = any(
+                    [
+                        "A session is either terminated or not started" in error_message,
+                        "NoSuchDriverError" in error_message,
+                        "InvalidSessionIdException" in error_message,
+                        "instrumentation process is not running" in error_message,
+                        "Could not proxy command to the remote server" in error_message,
+                        "socket hang up" in error_message,
+                    ]
+                )
+
+                # Only mark as error if it's NOT a retryable crash
+                # Retryable crashes will be handled by the automator_middleware retry logic
+                if not is_retryable_crash:
+                    manager._mark_error()
+
                 raise
 
         else:

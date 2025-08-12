@@ -642,37 +642,6 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         pass
 
 
-class TestExpensiveIntegration(BaseKindleTest, unittest.TestCase):
-    """Expensive integration tests that should only run if other tests pass.
-
-    These tests may take longer or use more resources.
-    """
-
-    def setUp(self):
-        """Set up test fixtures."""
-        # Use the base class setup
-        self.setup_base()
-
-    def tearDown(self):
-        """Clean up after tests."""
-        # Close the session
-        self.session.close()
-        # Don't stop the server - it's managed externally
-        pass
-
-    def test_concurrent_stress_test(self):
-        """Stress test with many concurrent requests."""
-        # This would be an expensive test with many threads
-        # Skip for now as it's resource-intensive
-        self.skipTest("Expensive stress test - enable when needed")
-
-    def test_long_running_operations(self):
-        """Test very long-running operations and timeouts."""
-        # This would test operations that take minutes
-        # Skip for now as it takes too long
-        self.skipTest("Long-running test - enable when needed")
-
-
 if __name__ == "__main__":
     # Run tests in order: main tests -> priority tests -> expensive tests
     # Use unittest's test suite to control order
@@ -685,9 +654,6 @@ if __name__ == "__main__":
     # Add priority and cancellation tests (only run if main tests pass)
     suite.addTests(loader.loadTestsFromTestCase(TestPriorityAndCancellation))
 
-    # Add expensive tests last (only run if all other tests pass)
-    suite.addTests(loader.loadTestsFromTestCase(TestExpensiveIntegration))
-
     # Run with stop on first failure
-    runner = unittest.TextTestRunner(verbosity=2, failfast=True)
+    runner = unittest.TextTestRunner(verbosity=1, failfast=True)
     runner.run(suite)

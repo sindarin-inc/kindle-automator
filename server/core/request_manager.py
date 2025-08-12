@@ -11,6 +11,15 @@ from typing import Any, Dict, Optional, Tuple
 from flask import Response, request
 
 from server.core.redis_connection import get_redis_client
+from server.utils.ansi_colors import (
+    BOLD,
+    BRIGHT_BLUE,
+    BRIGHT_GREEN,
+    BRIGHT_RED,
+    BRIGHT_YELLOW,
+    RESET,
+    style_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +135,10 @@ class RequestManager:
 
                 # Force claim this request (overwrite any existing)
                 self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
-                logger.info(f"Claimed request {self.request_key} for {self.user_email} (last-one-wins)")
+                logger.info(
+                    f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
+                    f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (last-one-wins){RESET}"
+                )
 
                 # Record this as the active request for the user
                 self._set_active_request()
@@ -144,7 +156,10 @@ class RequestManager:
             if self.redis_client.set(
                 progress_key, DeduplicationStatus.IN_PROGRESS.value, nx=True, ex=DEFAULT_TTL
             ):
-                logger.info(f"Claimed request {self.request_key} for {self.user_email}")
+                logger.info(
+                    f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
+                    f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}"
+                )
 
                 # Check for lower priority active requests and cancel them
                 self._check_and_cancel_lower_priority_requests()
@@ -208,8 +223,9 @@ class RequestManager:
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
                         logger.info(
-                            f"Cancelling previous {self.path} request {active_request_key} "
-                            f"for newer request {self.request_key} (last-one-wins)"
+                            f"{BRIGHT_YELLOW}Cancelling previous {BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} request "
+                            f"{active_request_key} for newer request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_YELLOW} "
+                            f"(last-one-wins){RESET}"
                         )
 
         except Exception as e:
@@ -237,9 +253,9 @@ class RequestManager:
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
                         logger.info(
-                            f"[{time.time():.3f}] PRIORITY CANCELLATION: Cancelling lower priority request {active_request_key} "
-                            f"(priority {active_priority}) for higher priority {self.path} "
-                            f"(priority {self.priority})"
+                            f"{BRIGHT_RED}[{time.time():.3f}] PRIORITY CANCELLATION: {BRIGHT_YELLOW}Cancelling lower priority request "
+                            f"{active_request_key} (priority {active_priority}) for higher priority "
+                            f"{BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} (priority {self.priority}){RESET}"
                         )
 
         except Exception as e:
