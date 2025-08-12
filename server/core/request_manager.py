@@ -77,6 +77,10 @@ class RequestManager:
         self.priority = PRIORITY_LEVELS.get(path, 0)
         self.request_number = None  # Will be assigned when claimed or waiting
         self.is_executor = False  # Track if this request is actually executing
+        # Unique instance ID to track if THIS specific instance incremented counters
+        import uuid
+
+        self.instance_id = str(uuid.uuid4())
 
     def _generate_request_key(self) -> str:
         """Generate a unique key for this request based on user, path, method, and params."""
@@ -584,8 +588,9 @@ class RequestManager:
             counter_key = f"kindle:user:{self.user_email}:request_counter"
             active_requests_key = f"kindle:user:{self.user_email}:active_request_count"
 
-            # Only increment counter and active count once per request
-            increment_key = f"{self.request_key}:incremented_active"
+            # Only increment counter and active count once per request instance
+            # Use instance_id to ensure only THIS specific instance can decrement later
+            increment_key = f"kindle:instance:{self.instance_id}:incremented_active"
             if self.redis_client.set(increment_key, "1", nx=True, ex=DEFAULT_TTL):
                 # First time this request is getting a number
                 request_num = self.redis_client.incr(counter_key)
@@ -656,11 +661,12 @@ class RequestManager:
             return
 
         try:
-            # Check if this request actually incremented the active count
-            increment_key = f"{self.request_key}:incremented_active"
-            decrement_key = f"{self.request_key}:decremented_active"
+            # Check if THIS SPECIFIC instance incremented the active count
+            # Use instance_id to ensure only the instance that incremented can decrement
+            increment_key = f"kindle:instance:{self.instance_id}:incremented_active"
+            decrement_key = f"kindle:instance:{self.instance_id}:decremented_active"
 
-            # Only decrement if we incremented AND haven't already decremented
+            # Only decrement if THIS instance incremented AND hasn't already decremented
             if self.redis_client.get(increment_key) and self.redis_client.set(
                 decrement_key, "1", nx=True, ex=10
             ):
@@ -684,6 +690,9 @@ class RequestManager:
                     # Update the multiple requests flag
                     self._check_and_notify_multiple_requests()
                     logger.debug(f"Decremented active count for {self.user_email}, {remaining} still active")
+
+                # Clean up instance-specific keys
+                self.redis_client.delete(increment_key, decrement_key)
             else:
                 logger.debug(
                     f"Skipping decrement for {self.user_email} - already decremented or never incremented"
