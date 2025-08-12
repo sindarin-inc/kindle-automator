@@ -15,6 +15,7 @@ class RedisConnection:
 
     _instance: Optional["RedisConnection"] = None
     _client: Optional[redis.Redis] = None
+    _initialized: bool = False
 
     def __new__(cls) -> "RedisConnection":
         if cls._instance is None:
@@ -22,7 +23,9 @@ class RedisConnection:
         return cls._instance
 
     def __init__(self):
-        if self._client is None:
+        # Only initialize once for the singleton
+        if not RedisConnection._initialized:
+            RedisConnection._initialized = True
             self._initialize_client()
 
     def _initialize_client(self):
