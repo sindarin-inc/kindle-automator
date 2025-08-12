@@ -294,6 +294,40 @@ def setup_request_logger(app):
         # Store the email in flask.g for this request
         g.request_email = email
 
+        # Early request number assignment for logging visibility
+        # This ensures request numbers appear in the initial REQUEST log line
+        if email:
+            from server.core.redis_connection import get_redis_client
+            from server.core.request_manager import RequestManager
+
+            # Only assign numbers for paths that use deduplication
+            path = request.path if hasattr(request, "path") else "/"
+            method = request.method if hasattr(request, "method") else "GET"
+
+            # Skip for paths that don't deduplicate
+            skip_paths = ["/staff-auth", "/staff-tokens"]
+            if not any(path.startswith(skip) for skip in skip_paths) and method in ["GET", "POST"]:
+                # Create a temporary request manager just to assign number
+                temp_manager = RequestManager(email, path, method)
+                request_number = temp_manager._assign_request_number()
+                if request_number:
+                    g.request_number = request_number
+                    temp_manager._check_and_notify_multiple_requests()
+
+                    # Only show numbers if this is request 2 or higher
+                    # Request 1 shouldn't show [1] until request 2 arrives
+                    redis_client = get_redis_client()
+                    if redis_client:
+                        if request_number >= 2:
+                            # This is request 2 or higher, enable number display
+                            g.show_request_number = True
+                            # Set the flag in Redis so request 1 knows to show its number too
+                            multi_key = f"kindle:user:{email}:has_multiple_requests"
+                            redis_client.set(multi_key, "1", ex=130)
+                        else:
+                            # This is request 1, don't show number yet
+                            g.show_request_number = False
+
         # Set Sentry user context if email is available
         if email:
             sentry_sdk.set_user({"email": email})

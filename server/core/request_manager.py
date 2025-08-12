@@ -74,6 +74,8 @@ class RequestManager:
         self.redis_client = get_redis_client()
         self.request_key = self._generate_request_key()
         self.priority = PRIORITY_LEVELS.get(path, 0)
+        self.request_number = None  # Will be assigned when claimed or waiting
+        self.is_executor = False  # Track if this request is actually executing
 
     def _generate_request_key(self) -> str:
         """Generate a unique key for this request based on user, path, method, and params."""
@@ -128,6 +130,12 @@ class RequestManager:
         progress_key = f"{self.request_key}:progress"
 
         try:
+            # Assign request number if not already assigned
+            if not self.request_number:
+                self.request_number = self._assign_request_number()
+                # Check for multiple requests
+                self._check_and_notify_multiple_requests()
+
             # For last-one-wins endpoints, always try to claim and cancel previous
             if self.path in LAST_ONE_WINS_ENDPOINTS:
                 # Cancel any existing request for this endpoint
@@ -142,12 +150,13 @@ class RequestManager:
 
                 # Record this as the active request for the user
                 self._set_active_request()
+                self.is_executor = True
                 return True
 
             # Check if there's a higher priority request already running
             if self._should_wait_for_higher_priority():
                 logger.info(
-                    f"Request {self.request_key} (priority {self.priority}) waiting for higher priority request"
+                    f"{BRIGHT_BLUE}Request {self.request_key} (priority {self.priority}) {BOLD}{BRIGHT_BLUE}waiting{RESET}{BRIGHT_BLUE} for higher priority request{RESET}"
                 )
                 return False  # Will trigger wait logic in middleware
 
@@ -166,10 +175,13 @@ class RequestManager:
 
                 # Record this as the active request for the user
                 self._set_active_request()
+                self.is_executor = True
 
                 return True
             else:
-                logger.info(f"Request {self.request_key} already in progress, will wait for result")
+                logger.info(
+                    f"{BRIGHT_BLUE}Request {self.request_key} already in progress, will {BOLD}{BRIGHT_BLUE}wait{RESET}{BRIGHT_BLUE} for result{RESET}"
+                )
                 return False
 
         except Exception as e:
@@ -192,8 +204,8 @@ class RequestManager:
                 # If there's a higher priority request running, we should wait
                 if active_priority > self.priority:
                     logger.info(
-                        f"Higher priority request (priority {active_priority}) is running, "
-                        f"lower priority {self.path} (priority {self.priority}) will wait"
+                        f"{BRIGHT_BLUE}Higher priority request (priority {BOLD}{BRIGHT_BLUE}{active_priority}{RESET}{BRIGHT_BLUE}) is running, "
+                        f"lower priority {self.path} (priority {self.priority}) will {BOLD}{BRIGHT_BLUE}wait{RESET}"
                     )
                     return True
 
@@ -273,6 +285,7 @@ class RequestManager:
                 "priority": self.priority,
                 "path": self.path,
                 "started_at": time.time(),
+                "request_number": self.request_number,
             }
             self.redis_client.set(active_key, json.dumps(active_data), ex=DEFAULT_TTL)
 
@@ -291,14 +304,23 @@ class RequestManager:
         # Increment waiter count
         try:
             self.redis_client.incr(waiters_key)
+            # Assign request number if we don't have one yet (though it should already be assigned)
+            if not self.request_number:
+                self.request_number = self._assign_request_number()
         except Exception:
             pass
 
         start_time = time.time()
         poll_interval = 0.5  # Start with 500ms polling
+        last_check_time = 0
 
         while (time.time() - start_time) < MAX_WAIT_TIME:
             try:
+                # Check for other waiters periodically (every 2 seconds)
+                if time.time() - last_check_time > 2:
+                    self._check_and_notify_multiple_requests()
+                    last_check_time = time.time()
+
                 # Check if request completed
                 status = self.redis_client.get(status_key)
                 if status:
@@ -309,7 +331,9 @@ class RequestManager:
                         result_data = self.redis_client.get(result_key)
                         if result_data:
                             result = pickle.loads(result_data)
-                            logger.info(f"Retrieved deduplicated response for {self.request_key}")
+                            logger.info(
+                                f"{BRIGHT_BLUE}Retrieved {BOLD}{BRIGHT_BLUE}deduplicated response{RESET}{BRIGHT_BLUE} for {self.request_key}{RESET}"
+                            )
 
                             # Cleanup if we're the last waiter
                             self._cleanup_if_last_waiter()
@@ -360,7 +384,7 @@ class RequestManager:
                 self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=short_ttl)
 
                 logger.info(
-                    f"Stored response for {self.request_key} with {short_ttl}s TTL for {waiters_count} waiters"
+                    f"{BRIGHT_BLUE}Stored response for {self.request_key} with {short_ttl}s TTL for {BOLD}{BRIGHT_BLUE}{waiters_count} waiters{RESET}"
                 )
             else:
                 # No waiters, just mark as completed and clean up immediately
@@ -377,6 +401,9 @@ class RequestManager:
             # Clear active request if it's ours
             self._clear_active_request()
 
+            # Clean up request number and potentially reset counter
+            self._cleanup_request_number()
+
         except Exception as e:
             logger.error(f"Error storing response: {e}")
             self._mark_error()
@@ -392,6 +419,9 @@ class RequestManager:
 
             # Clear active request
             self._clear_active_request()
+
+            # Clean up request number and potentially reset counter
+            self._cleanup_request_number()
 
         except Exception as e:
             logger.error(f"Error marking request as failed: {e}")
@@ -435,6 +465,9 @@ class RequestManager:
                 self.redis_client.delete(*keys_to_delete)
                 logger.debug(f"Cleaned up Redis keys for {self.request_key}")
 
+            # Clean up request number for waiters too
+            self._cleanup_request_number()
+
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
@@ -469,14 +502,26 @@ class RequestManager:
         if not self.redis_client:
             return WaitResult.ERROR
 
+        # Assign request number if we don't have one yet (though it should already be assigned)
+        if not self.request_number:
+            self.request_number = self._assign_request_number()
+
         start_time = time.time()
         poll_interval = 0.5
+        last_check_time = 0
 
         while (time.time() - start_time) < MAX_WAIT_TIME:
             try:
+                # Check for other waiters periodically (every 2 seconds)
+                if time.time() - last_check_time > 2:
+                    self._check_and_notify_multiple_requests()
+                    last_check_time = time.time()
+
                 # Check if we've been cancelled
                 if self.is_cancelled():
-                    logger.info(f"Request {self.request_key} was cancelled while waiting")
+                    logger.info(
+                        f"{BRIGHT_BLUE}Request {self.request_key} was {BOLD}{BRIGHT_BLUE}cancelled{RESET}{BRIGHT_BLUE} while waiting{RESET}"
+                    )
                     return WaitResult.CANCELLED
 
                 # Check if higher priority request is still running
@@ -485,7 +530,9 @@ class RequestManager:
 
                 if not active_data:
                     # No active request, we can proceed
-                    logger.debug(f"No active request found, {self.request_key} can proceed")
+                    logger.debug(
+                        f"{BRIGHT_BLUE}No active request found, {self.request_key} can {BOLD}{BRIGHT_BLUE}proceed{RESET}"
+                    )
                     return WaitResult.READY
 
                 active_request = json.loads(active_data)
@@ -493,7 +540,9 @@ class RequestManager:
 
                 if active_priority <= self.priority:
                     # Higher priority request finished, we can proceed
-                    logger.info(f"Higher priority request completed, {self.request_key} can proceed")
+                    logger.info(
+                        f"{BRIGHT_BLUE}Higher priority request {BOLD}{BRIGHT_BLUE}completed{RESET}{BRIGHT_BLUE}, {self.request_key} can {BOLD}{BRIGHT_BLUE}proceed{RESET}"
+                    )
                     return WaitResult.READY
 
                 # Still waiting
@@ -516,6 +565,131 @@ class RequestManager:
     def __enter__(self):
         """Context manager entry."""
         return self
+
+    def _assign_request_number(self) -> int:
+        """Assign a request number to this request for the user."""
+        if not self.redis_client:
+            return 1
+
+        try:
+            # Check if we already have a request number stored
+            req_num_key = f"{self.request_key}:request_number"
+            existing_num = self.redis_client.get(req_num_key)
+            if existing_num:
+                # Already have a number, just return it
+                return int(existing_num)
+
+            # Key for tracking request numbers per user
+            counter_key = f"kindle:user:{self.user_email}:request_counter"
+            active_requests_key = f"kindle:user:{self.user_email}:active_request_count"
+
+            # Only increment counter and active count once per request
+            increment_key = f"{self.request_key}:incremented_active"
+            if self.redis_client.set(increment_key, "1", nx=True, ex=DEFAULT_TTL):
+                # First time this request is getting a number
+                request_num = self.redis_client.incr(counter_key)
+                active_count = self.redis_client.incr(active_requests_key)
+
+                # Store the request number for this specific request key
+                self.redis_client.set(req_num_key, str(request_num), ex=DEFAULT_TTL)
+
+                # Set expiration on both keys
+                self.redis_client.expire(counter_key, DEFAULT_TTL)
+                self.redis_client.expire(active_requests_key, DEFAULT_TTL)
+
+                logger.debug(
+                    f"Assigned NEW request number {request_num} to {self.user_email} (active count: {active_count})"
+                )
+                return request_num
+            else:
+                # Should not happen - we already checked for existing number
+                logger.warning(f"Request {self.request_key} already incremented but missing number")
+                return 1
+
+        except Exception as e:
+            logger.error(f"Error assigning request number: {e}")
+            return 1
+
+    def _check_and_notify_multiple_requests(self):
+        """Check if there are multiple requests and set flag in Redis."""
+        if not self.redis_client:
+            return
+
+        try:
+            # Check active request count
+            active_requests_key = f"kindle:user:{self.user_email}:active_request_count"
+            active_count = self.redis_client.get(active_requests_key)
+
+            # Set or clear the multiple requests flag
+            multi_key = f"kindle:user:{self.user_email}:has_multiple_requests"
+            if active_count and int(active_count) > 1:
+                self.redis_client.set(multi_key, "1", ex=DEFAULT_TTL)
+            else:
+                self.redis_client.delete(multi_key)
+
+        except Exception as e:
+            logger.error(f"Error checking for multiple requests: {e}")
+
+    def get_request_number(self) -> Optional[int]:
+        """Get the request number for this request."""
+        if self.request_number:
+            return self.request_number
+
+        if not self.redis_client:
+            return None
+
+        try:
+            req_num_key = f"{self.request_key}:request_number"
+            num = self.redis_client.get(req_num_key)
+            if num:
+                self.request_number = int(num)
+                return self.request_number
+        except Exception:
+            pass
+
+        return None
+
+    def _cleanup_request_number(self):
+        """Decrement active request count and reset counter if needed."""
+        if not self.redis_client or not self.request_number:
+            return
+
+        try:
+            # Check if this request actually incremented the active count
+            increment_key = f"{self.request_key}:incremented_active"
+            decrement_key = f"{self.request_key}:decremented_active"
+
+            # Only decrement if we incremented AND haven't already decremented
+            if self.redis_client.get(increment_key) and self.redis_client.set(
+                decrement_key, "1", nx=True, ex=10
+            ):
+                active_requests_key = f"kindle:user:{self.user_email}:active_request_count"
+                counter_key = f"kindle:user:{self.user_email}:request_counter"
+
+                # Decrement the active request count
+                remaining = self.redis_client.decr(active_requests_key)
+
+                # If no more active requests, reset the counter back to 0
+                if remaining <= 0:
+                    self.redis_client.delete(counter_key)
+                    self.redis_client.delete(active_requests_key)
+                    # Also clear the multiple requests flag
+                    multi_key = f"kindle:user:{self.user_email}:has_multiple_requests"
+                    self.redis_client.delete(multi_key)
+                    logger.info(
+                        f"{BRIGHT_BLUE}Reset request counter for {self.user_email} - {BOLD}{BRIGHT_BLUE}no active requests remaining{RESET}"
+                    )
+                else:
+                    # Update the multiple requests flag
+                    self._check_and_notify_multiple_requests()
+                    logger.debug(f"Decremented active count for {self.user_email}, {remaining} still active")
+            else:
+                logger.debug(
+                    f"Skipping decrement for {self.user_email} - already decremented or never incremented"
+                )
+
+        except Exception as e:
+            logger.error(f"Error cleaning up request number: {e}")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - handle errors."""

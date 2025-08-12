@@ -76,7 +76,7 @@ class RedisConnection:
                 logger.debug(f"Successfully connected to Redis at {redis_url}")
 
         except (ConnectionError, RedisError) as e:
-            logger.error(f"Failed to connect to Redis at {redis_url}: {e}")
+            logger.warning(f"Failed to connect to Redis at {redis_url}: {e}")
             self._client = None
 
     @property

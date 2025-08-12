@@ -4,7 +4,7 @@ import functools
 import logging
 from typing import Any, Callable, Tuple
 
-from flask import Response, request
+from flask import Response, g, request
 
 from server.core.request_manager import RequestManager, WaitResult
 from server.utils.request_utils import get_sindarin_email
@@ -46,6 +46,27 @@ def deduplicate_request(func: Callable) -> Callable:
 
         # Create request manager
         manager = RequestManager(user_email, path, method)
+
+        # Store request manager in Flask g context
+        g.request_manager = manager
+
+        # Check if request number was already assigned in before_request
+        if hasattr(g, "request_number") and g.request_number:
+            # Use the already-assigned number
+            manager.request_number = g.request_number
+        else:
+            # Assign request number if not already done
+            manager.request_number = manager._assign_request_number()
+            if manager.request_number:
+                g.request_number = manager.request_number
+                manager._check_and_notify_multiple_requests()
+
+        # Update the show_request_number flag based on current state
+        if manager.redis_client:
+            active_key = f"kindle:user:{user_email}:active_request_count"
+            active_count = manager.redis_client.get(active_key)
+            if active_count and int(active_count) > 1:
+                g.show_request_number = True
 
         # Try to claim the request
         if manager.claim_request():
@@ -100,6 +121,7 @@ def deduplicate_request(func: Callable) -> Callable:
             # Check if this is a duplicate request
             if manager.is_duplicate_in_progress():
                 logger.info(f"Waiting for deduplicated response for {manager.request_key}")
+
                 result = manager.wait_for_deduplicated_response()
 
                 if result:
@@ -115,6 +137,7 @@ def deduplicate_request(func: Callable) -> Callable:
             else:
                 # Must be waiting for higher priority request
                 logger.info(f"Waiting for higher priority request to complete before executing {path}")
+
                 wait_result = manager.wait_for_higher_priority_completion()
 
                 if wait_result == WaitResult.READY:

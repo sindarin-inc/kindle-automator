@@ -298,12 +298,50 @@ class RelativePathFormatter(logging.Formatter):
 
         # Get the user email for the current request/context
         email = None
+        request_number = None
+        has_multiple_requests = False
+
         # Try Flask g.request_email (set in before_request)
         try:
             from flask import g
 
             if hasattr(g, "request_email"):
                 email = g.request_email
+
+            # Get request number from g context
+            if hasattr(g, "request_number"):
+                request_number = g.request_number
+
+            # Check if we should show request numbers
+            # Always check Redis for the current state, not just g.show_request_number
+            # This ensures that if request 2 arrives while request 1 is executing,
+            # request 1 will start showing its number too
+            if email:
+                # Try to get Redis client from request manager or import it
+                redis_client = None
+                if hasattr(g, "request_manager") and g.request_manager:
+                    redis_client = g.request_manager.redis_client
+                else:
+                    try:
+                        from server.core.redis_connection import get_redis_client
+                        redis_client = get_redis_client()
+                    except:
+                        pass
+                
+                if redis_client:
+                    # Check both the multiple requests flag and active count
+                    multi_key = f"kindle:user:{email}:has_multiple_requests"
+                    active_key = f"kindle:user:{email}:active_request_count"
+                    
+                    has_multiple = redis_client.get(multi_key)
+                    if has_multiple:
+                        has_multiple_requests = True
+                    else:
+                        # Also check active count as backup
+                        active_count = redis_client.get(active_key)
+                        if active_count and int(active_count) > 1:
+                            has_multiple_requests = True
+
         except (ImportError, RuntimeError):
             # Not in Flask context
             pass
@@ -334,8 +372,15 @@ class RelativePathFormatter(logging.Formatter):
                 ansi_reset = match.group(2) or ""  # Optional ANSI reset
                 spacing = match.group(3)  # Spacing before message
                 after_msg = formatted[match.end() :]  # The rest (message)
+
+                # Include request number if there are multiple requests
+                if has_multiple_requests and request_number:
+                    email_display = f"{email}[{request_number}]"
+                else:
+                    email_display = email
+
                 # Insert [User: email] after file:line
-                formatted = f"{before_msg}{ansi_reset} {GREEN}[{email}]{RESET}{spacing}{after_msg}"
+                formatted = f"{before_msg}{ansi_reset} {GREEN}[{email_display}]{RESET}{spacing}{after_msg}"
 
         # Apply special formatting for request manager logs
         if is_request_manager_log:
@@ -346,7 +391,12 @@ class RelativePathFormatter(logging.Formatter):
             # Look for the message part after email or after filename:lineno
             if email:
                 # Pattern with email: filename.py:123 [email][RESET] message
-                match = re.search(rf"\[{re.escape(email)}\].*?\033\[0m\s*", formatted)
+                # Need to handle both email and email[number] formats
+                if has_multiple_requests and request_number:
+                    email_pattern = rf"\[{re.escape(email)}\[{request_number}\]\].*?\033\[0m\s*"
+                else:
+                    email_pattern = rf"\[{re.escape(email)}\].*?\033\[0m\s*"
+                match = re.search(email_pattern, formatted)
             else:
                 # Pattern without email: filename.py:123[RESET] message
                 match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
@@ -407,7 +457,12 @@ class RelativePathFormatter(logging.Formatter):
             # Look for the pattern that includes the email in brackets
             if email:
                 # Pattern with email: filename.py:123 [email][RESET] message
-                match = re.search(rf"\[{re.escape(email)}\].*?\033\[0m\s*", formatted)
+                # Need to handle both email and email[number] formats
+                if has_multiple_requests and request_number:
+                    email_pattern = rf"\[{re.escape(email)}\[{request_number}\]\].*?\033\[0m\s*"
+                else:
+                    email_pattern = rf"\[{re.escape(email)}\].*?\033\[0m\s*"
+                match = re.search(email_pattern, formatted)
             else:
                 # Pattern without email: filename.py:123[RESET] message
                 match = re.search(r"(.*\.py:\d+.*?\033\[0m\s*)", formatted)
@@ -427,7 +482,12 @@ class RelativePathFormatter(logging.Formatter):
             else:
                 # Fallback: try without ANSI codes
                 if email:
-                    match = re.search(rf"\[{re.escape(email)}\]\s+", formatted)
+                    # Need to handle both email and email[number] formats
+                    if has_multiple_requests and request_number:
+                        email_pattern = rf"\[{re.escape(email)}\[{request_number}\]\]\s+"
+                    else:
+                        email_pattern = rf"\[{re.escape(email)}\]\s+"
+                    match = re.search(email_pattern, formatted)
                 else:
                     match = re.search(r"(.*\.py:\d+\s+)", formatted)
 
