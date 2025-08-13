@@ -13,7 +13,7 @@ concurrency:
 jobs:
   api-integration-tests:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
@@ -66,7 +66,7 @@ jobs:
           python -m pytest tests/test_api_integration.py -v --tb=short -m "not expensive"
         timeout-minutes: 5
 
-        - name: Run concurrent requests test
+      - name: Run concurrent requests test
         if: success()
         env:
           API_BASE_URL: https://staging.sindarin.com
