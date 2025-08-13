@@ -127,7 +127,8 @@ class TestKindleAPIIntegration(BaseKindleTest):
         stream_params["sync"] = "true"
 
         try:
-            response = self.session.get(stream_url, params=stream_params, stream=True, timeout=60)
+            # 120s timeout needed to allow the emulator to boot first
+            response = self.session.get(stream_url, params=stream_params, stream=True, timeout=120)
             response.raise_for_status()
 
             messages = []
