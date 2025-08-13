@@ -321,13 +321,6 @@ class RelativePathFormatter(logging.Formatter):
                 redis_client = None
                 if hasattr(g, "request_manager") and g.request_manager:
                     redis_client = g.request_manager.redis_client
-                else:
-                    try:
-                        from server.core.redis_connection import get_redis_client
-
-                        redis_client = get_redis_client()
-                    except:
-                        pass
 
                 if redis_client:
                     # Check both the multiple requests flag and active count
