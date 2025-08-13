@@ -656,11 +656,11 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
     def test_three_open_random_book_requests_only_last_succeeds(self):
         """Test that multiple /open-book requests cancel earlier ones when they have different parameters."""
         results = {}
-        
+
         # Define the books for each request
         books = {
             1: "Fourth Wing",  # A
-            2: "Breakfast of Champions",  # B  
+            2: "Breakfast of Champions",  # B
             3: "sol-chapter-test-epub",  # C
             4: "sol-chapter-test-epub",  # D (same as C for deduplication)
         }
@@ -677,10 +677,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 # Use /open-book with specific titles
                 response = self._make_request(
                     "open-book",
-                    params={
-                        "user_email": self.email,
-                        "title": books[request_id]
-                    },
+                    params={"user_email": self.email, "title": books[request_id]},
                     timeout=30,
                     use_proxy=False,  # Direct to Flask server
                 )
@@ -762,7 +759,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results.get("request_2_cancelled", False) or results.get("request_2_status") == 409,
             f"Second request (Breakfast of Champions) should have been cancelled. Results: {results}",
         )
-        
+
         # Third and fourth requests should BOTH succeed since they have the same title (deduplication)
         # Request 3 executes, request 4 gets the deduplicated response
         self.assertEqual(
@@ -770,7 +767,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             200,
             f"Third request (sol-chapter-test-epub) should have succeeded with status 200. Results: {results}",
         )
-        
+
         self.assertEqual(
             results.get("request_4_status"),
             200,
