@@ -44,7 +44,7 @@ def should_cancel(user_email: str, request_key: Optional[str] = None) -> bool:
         # Check the cancellation flag
         cancel_key = f"{request_key}:cancelled"
         is_cancelled = bool(redis_client.get(cancel_key))
-        logger.debug(f"Checking cancellation for {cancel_key}: {is_cancelled}")
+        # logger.debug(f"Checking cancellation for {cancel_key}: {is_cancelled}")
 
         if is_cancelled:
             import time
