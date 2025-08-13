@@ -18,6 +18,8 @@ class RedisConnection:
     _instance: Optional["RedisConnection"] = None
     _client: Optional[redis.Redis] = None
     _initialized: bool = False
+    _connection_attempts: int = 0
+    _last_connection_attempt: float = 0
 
     def __new__(cls) -> "RedisConnection":
         if cls._instance is None:
@@ -39,10 +41,25 @@ class RedisConnection:
 
     def _initialize_client(self):
         """Initialize Redis client with connection pool."""
+        # Circuit breaker: prevent rapid reconnection attempts
+        now = time.time()
+        if self._last_connection_attempt and (now - self._last_connection_attempt) < 1.0:
+            logger.warning(f"[REDIS CONNECT] Skipping connection attempt - too soon since last attempt")
+            return
+
+        self._last_connection_attempt = now
+        self._connection_attempts += 1
+
+        if self._connection_attempts > 10:
+            logger.error(
+                f"[REDIS CONNECT] Too many connection attempts ({self._connection_attempts}), giving up"
+            )
+            return
+
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6479/1")
         start_time = time.time()
         logger.info(
-            f"[REDIS CONNECT] Starting connection to {redis_url} at {time.strftime('%Y-%m-%d %H:%M:%S')} - PID: {os.getpid()}"
+            f"[REDIS CONNECT] Starting connection attempt #{self._connection_attempts} to {redis_url} at {time.strftime('%Y-%m-%d %H:%M:%S')} - PID: {os.getpid()}"
         )
 
         try:
@@ -68,12 +85,7 @@ class RedisConnection:
                     ssl_cert_reqs=None,  # Don't verify certificates for managed Redis
                     socket_connect_timeout=5,
                     retry_on_timeout=True,
-                    socket_keepalive=True,
-                    socket_keepalive_options={
-                        1: 1,  # TCP_KEEPIDLE: seconds before sending keepalive probes
-                        2: 1,  # TCP_KEEPINTVL: interval between keepalive probes
-                        3: 3,  # TCP_KEEPCNT: failed keepalive probes before declaring dead
-                    },
+                    # Don't use socket_keepalive_options - causes Error 22 on Linux
                 )
                 logger.info(f"[REDIS CONNECT] Redis client created, testing connection...")
                 # Skip the pool creation for SSL connections
@@ -114,6 +126,8 @@ class RedisConnection:
                     )
                 else:
                     logger.info(f"[REDIS CONNECT] Data integrity check passed")
+                    # Reset connection attempts on successful connection
+                    self._connection_attempts = 0
 
         except (ConnectionError, RedisError) as e:
             total_time = time.time() - start_time
