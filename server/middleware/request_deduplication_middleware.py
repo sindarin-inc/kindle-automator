@@ -162,9 +162,6 @@ def deduplicate_request(func: Callable) -> Callable:
                     )
                     return func(self, *args, **kwargs)
                 elif wait_result == WaitResult.CANCELLED:
-                    # Log in blue to match the cancellation log
-                    from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
-
                     logger.info(
                         f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "
                         f"detected it was cancelled for user {BOLD}{BRIGHT_BLUE}{user_email}{RESET}"
