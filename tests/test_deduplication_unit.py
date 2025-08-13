@@ -258,6 +258,10 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
                     for key in keys:
                         self.store.pop(key, None)
 
+            def expire(self, key, seconds):
+                # Mock expire functionality - just return True
+                return True
+
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
 
@@ -352,6 +356,10 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
                         val = int(val)
                     self.store[key] = val - 1
                     return val - 1
+
+            def expire(self, key, seconds):
+                # Mock expire functionality - just return True
+                return True
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
@@ -451,6 +459,10 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
             def decr(self, key):
                 return 0
 
+            def expire(self, key, seconds):
+                # Mock expire functionality - just return True
+                return True
+
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
 
@@ -511,17 +523,29 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
             def decr(self, key):
                 return 0
 
+            def expire(self, key, seconds):
+                # Mock expire functionality - just return True
+                return True
+
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
 
         # Create multiple /open-random-book requests
         # Each should cancel the previous one
+        # Note: We need to mock Flask's request context to add unique parameters
+        from flask import Flask
+
+        app = Flask(__name__)
+
         managers = []
         for i in range(3):
-            manager = RequestManager("test@example.com", "/open-random-book", "GET")
-            self.assertTrue(manager.claim_request())
-            managers.append(manager)
-            time.sleep(0.01)  # Small delay to ensure different timestamps
+            # Use Flask test request context with unique timestamp parameter
+            with app.test_request_context(f"/open-random-book?t={time.time() + i}"):
+                manager = RequestManager("test@example.com", "/open-random-book", "GET")
+                result = manager.claim_request()
+                self.assertTrue(result, f"Request {i} failed to claim")
+                managers.append(manager)
+                time.sleep(0.01)  # Small delay to ensure different timestamps
 
         # The first two should be cancelled, only the last one should be active
         self.assertTrue(managers[0].is_cancelled())
@@ -561,6 +585,10 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
 
             def decr(self, key):
                 return 0
+
+            def expire(self, key, seconds):
+                # Mock expire functionality - just return True
+                return True
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
