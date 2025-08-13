@@ -212,7 +212,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
     @pytest.mark.timeout(30)
     def test_auth_check(self):
         """Test /kindle/auth-check endpoint with known and unknown users."""
-        # Test 1: Check known user (sam@solreader.com)
+        # Test 1: Check known user
         print(f"\n[TEST] Testing auth-check for known user: {TEST_USER_EMAIL}")
         auth_response = self._make_request("auth-check")
         assert (

@@ -7,6 +7,7 @@ import time
 from typing import Any, Generator, Optional
 
 from server.core.request_manager import RequestManager
+from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,16 @@ class StreamingRequestManager(RequestManager):
         try:
             # Check if stream is already active
             if self.redis_client.get(self.stream_active_key):
-                logger.info(f"Joining existing stream for {self.request_key}")
+                logger.info(
+                    f"{BRIGHT_BLUE}Joining existing stream for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
+                )
                 return False
 
             # Try to claim the stream
             if self.redis_client.set(self.stream_active_key, "1", nx=True, ex=STREAM_TTL):
-                logger.info(f"Started new stream for {self.request_key}")
+                logger.info(
+                    f"{BRIGHT_BLUE}Started new stream for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
+                )
 
                 # Initialize accumulated data list
                 self.redis_client.delete(self.accumulated_key)
@@ -62,7 +67,9 @@ class StreamingRequestManager(RequestManager):
 
                 return True
             else:
-                logger.info(f"Stream already active for {self.request_key}, will join")
+                logger.info(
+                    f"{BRIGHT_BLUE}Stream already active for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE}, will join{RESET}"
+                )
                 return False
 
         except Exception as e:
@@ -133,7 +140,9 @@ class StreamingRequestManager(RequestManager):
             try:
                 # Check if stream is still active
                 if not self.redis_client.get(self.stream_active_key):
-                    logger.info(f"Stream {self.request_key} has ended")
+                    logger.info(
+                        f"{BRIGHT_BLUE}Stream {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} has ended{RESET}"
+                    )
                     break
 
                 # Get new items since last index
@@ -172,7 +181,7 @@ class StreamingRequestManager(RequestManager):
             # Keep accumulated data for a bit for late joiners
             self.redis_client.expire(self.accumulated_key, 60)  # Keep for 1 minute
 
-            logger.info(f"Ended stream for {self.request_key}")
+            logger.info(f"{BRIGHT_BLUE}Ended stream for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}")
 
         except Exception as e:
             logger.error(f"Error ending stream: {e}")

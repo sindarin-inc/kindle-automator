@@ -407,7 +407,9 @@ class RequestManager:
             if poll_interval < 2.0:
                 poll_interval *= 1.5
 
-        logger.warning(f"Timeout waiting for deduplicated response for {self.request_key}")
+        logger.warning(
+            f"{BRIGHT_BLUE}Timeout waiting for deduplicated response for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
+        )
         self._cleanup_if_last_waiter()
         return None
 
@@ -613,7 +615,9 @@ class RequestManager:
             if poll_interval < 2.0:
                 poll_interval *= 1.5
 
-        logger.warning(f"Timeout waiting for higher priority request for {self.request_key}")
+        logger.warning(
+            f"{BRIGHT_BLUE}Timeout waiting for higher priority request for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
+        )
         return WaitResult.TIMEOUT
 
     def __enter__(self):

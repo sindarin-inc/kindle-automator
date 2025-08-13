@@ -7,6 +7,7 @@ from typing import Any, Callable, Tuple
 from flask import Response, g, request
 
 from server.core.request_manager import RequestManager, WaitResult
+from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
 from server.utils.request_utils import get_sindarin_email
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,9 @@ def deduplicate_request(func: Callable) -> Callable:
         if manager.claim_request():
             # We own this request - execute it
             try:
-                logger.info(f"Executing request {manager.request_key} for {user_email}")
+                logger.info(
+                    f"{BRIGHT_BLUE}Executing request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} for {BOLD}{BRIGHT_BLUE}{user_email}{RESET}"
+                )
                 result = func(self, *args, **kwargs)
 
                 # Handle different response types
@@ -128,7 +131,9 @@ def deduplicate_request(func: Callable) -> Callable:
 
             # Check if this exact request is already in progress (duplicate)
             if manager.is_duplicate_in_progress():
-                logger.info(f"Waiting for deduplicated response for {manager.request_key}")
+                logger.info(
+                    f"{BRIGHT_BLUE}Waiting for deduplicated response for {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}"
+                )
 
                 result = manager.wait_for_deduplicated_response()
 
@@ -144,13 +149,17 @@ def deduplicate_request(func: Callable) -> Callable:
                     return func(self, *args, **kwargs)
             else:
                 # Not a duplicate - must be waiting for higher priority request
-                logger.info(f"Waiting for higher priority request to complete before executing {path}")
+                logger.info(
+                    f"{BRIGHT_BLUE}Waiting for higher priority request to complete before executing {BOLD}{BRIGHT_BLUE}{path}{RESET}"
+                )
 
                 wait_result = manager.wait_for_higher_priority_completion()
 
                 if wait_result == WaitResult.READY:
                     # Higher priority request finished, now try to execute
-                    logger.info(f"Higher priority request completed, now executing {path}")
+                    logger.info(
+                        f"{BRIGHT_BLUE}Higher priority request completed, now executing {BOLD}{BRIGHT_BLUE}{path}{RESET}"
+                    )
                     return func(self, *args, **kwargs)
                 elif wait_result == WaitResult.CANCELLED:
                     # Log in blue to match the cancellation log

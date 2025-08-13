@@ -5,6 +5,7 @@ from typing import Optional
 
 from server.core.redis_connection import get_redis_client
 from server.core.request_manager import RequestManager
+from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,8 @@ def should_cancel(user_email: str, request_key: Optional[str] = None) -> bool:
         # logger.debug(f"Checking cancellation for {cancel_key}: {is_cancelled}")
 
         if is_cancelled:
-            import time
-
             logger.info(
-                f"[{time.time():.3f}] CANCELLATION DETECTED: Request {request_key} has been cancelled for user {user_email}"
+                f"{BRIGHT_BLUE}{BOLD}CANCELLATION DETECTED{RESET}{BRIGHT_BLUE}: Request {request_key} has been cancelled for user {user_email}"
             )
 
         return is_cancelled
@@ -88,7 +87,9 @@ def mark_cancelled(user_email: str, request_key: Optional[str] = None) -> bool:
                 request_key = active_request.get("request_key")
 
         if not request_key:
-            logger.warning(f"No active request found to cancel for user {user_email}")
+            logger.warning(
+                f"{BRIGHT_BLUE}No active request found to cancel for user {BOLD}{BRIGHT_BLUE}{user_email}{RESET}"
+            )
             return False
 
         # Set the cancellation flag

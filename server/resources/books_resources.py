@@ -16,6 +16,7 @@ from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.middleware.response_handler import handle_automator_response
+from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
 from server.utils.appium_error_utils import is_appium_error
 from server.utils.cancellation_utils import (
     CancellationChecker,
@@ -239,7 +240,9 @@ class BooksStreamResource(Resource):
 
         # Check if we should wait for higher priority request
         if manager._should_wait_for_higher_priority():
-            logger.info(f"Books-stream request blocked by higher priority operation for {sindarin_email}")
+            logger.info(
+                f"{BRIGHT_BLUE}Books-stream request blocked by higher priority operation for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}"
+            )
             return {"error": "Request blocked by higher priority operation"}, 409
 
         # Check for and cancel lower priority requests
@@ -269,7 +272,9 @@ class BooksStreamResource(Resource):
 
         # Check for cancellation before state check
         if should_cancel(sindarin_email, stream_request_key):
-            logger.info(f"[{time.time():.3f}] Stream cancelled before state check for {sindarin_email}")
+            logger.info(
+                f"{BRIGHT_BLUE}[{time.time():.3f}] Stream cancelled before state check for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}"
+            )
             manager._clear_active_request()
             automator.state_machine.set_cancellation_check(None)
             return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
@@ -315,7 +320,9 @@ class BooksStreamResource(Resource):
 
             # Check for cancellation before attempting transition
             if should_cancel(sindarin_email, stream_request_key):
-                logger.info(f"[{time.time():.3f}] Stream cancelled before transition for {sindarin_email}")
+                logger.info(
+                    f"{BRIGHT_BLUE}[{time.time():.3f}] Stream cancelled before transition for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}"
+                )
                 manager._clear_active_request()
                 automator.state_machine.set_cancellation_check(None)
                 return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
@@ -329,7 +336,9 @@ class BooksStreamResource(Resource):
 
             # Check for cancellation after transition
             if should_cancel(sindarin_email, stream_request_key):
-                logger.info(f"[{time.time():.3f}] Stream cancelled after transition for {sindarin_email}")
+                logger.info(
+                    f"{BRIGHT_BLUE}[{time.time():.3f}] Stream cancelled after transition for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}"
+                )
                 manager._clear_active_request()
                 automator.state_machine.set_cancellation_check(None)
                 return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
@@ -614,7 +623,9 @@ class BooksStreamResource(Resource):
                 while True:
                     # Check for cancellation at the start of each iteration
                     if should_cancel(sindarin_email, stream_request_key) or stream_cancelled:
-                        logger.info(f"Stream cancelled for {sindarin_email} in main loop")
+                        logger.info(
+                            f"{BRIGHT_BLUE}Stream cancelled for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}{BRIGHT_BLUE} in main loop{RESET}"
+                        )
                         error_message = "Request cancelled by higher priority operation"
                         yield encode_message({"error": error_message, "cancelled": True, "done": True})
                         return  # Exit the entire generator
@@ -642,7 +653,9 @@ class BooksStreamResource(Resource):
                     except queue.Empty:
                         # Queue is empty, check for cancellation again
                         if should_cancel(sindarin_email, stream_request_key) or stream_cancelled:
-                            logger.info(f"Stream cancelled for {sindarin_email} while waiting for data")
+                            logger.info(
+                                f"{BRIGHT_BLUE}Stream cancelled for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}{BRIGHT_BLUE} while waiting for data{RESET}"
+                            )
                             error_message = "Request cancelled by higher priority operation"
                             yield encode_message({"error": error_message, "cancelled": True, "done": True})
                             return  # Exit the entire generator
@@ -731,7 +744,9 @@ class BooksStreamResource(Resource):
                             time.sleep(0.5)  # Wait before polling again
 
                     # Timeout reached
-                    logger.warning(f"Timeout waiting for stream data for {sindarin_email}")
+                    logger.warning(
+                        f"{BRIGHT_BLUE}Timeout waiting for stream data for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}"
+                    )
                     timeout_msg = json.dumps({"error": "Stream timeout", "done": True})
                     yield timeout_msg.encode("utf-8") + b"\n"
 
@@ -760,7 +775,9 @@ class BooksStreamResource(Resource):
 
         # Check for cancellation one more time before starting the stream
         if manager and manager.is_cancelled():
-            logger.info(f"Request cancelled before starting stream for {sindarin_email}")
+            logger.info(
+                f"{BRIGHT_BLUE}Request cancelled before starting stream for {BOLD}{BRIGHT_BLUE}{sindarin_email}{RESET}"
+            )
             return {"error": "Request cancelled by higher priority operation", "cancelled": True}, 409
 
         if redis_client:
