@@ -200,6 +200,5 @@ def get_redis_client() -> Optional[redis.Redis]:
     except:
         pass
 
-    logger.debug(f"[REDIS GET] get_redis_client called from {caller_frame or 'unknown'} - PID: {os.getpid()}")
     connection = RedisConnection.get_instance()
     return connection.client

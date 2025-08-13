@@ -46,6 +46,7 @@ def deduplicate_request(func: Callable) -> Callable:
 
         # Create request manager
         manager = RequestManager(user_email, path, method)
+        logger.info(f"Created RequestManager with key: {manager.request_key}")
 
         # Store request manager in Flask g context
         g.request_manager = manager
@@ -152,7 +153,13 @@ def deduplicate_request(func: Callable) -> Callable:
                     logger.info(f"Higher priority request completed, now executing {path}")
                     return func(self, *args, **kwargs)
                 elif wait_result == WaitResult.CANCELLED:
-                    logger.warning(f"Request {path} was cancelled while waiting")
+                    # Log in blue to match the cancellation log
+                    from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
+
+                    logger.info(
+                        f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "
+                        f"detected it was cancelled for user {BOLD}{BRIGHT_BLUE}{user_email}{RESET}"
+                    )
                     # Clean up request number for cancelled requests
                     manager._cleanup_request_number()
                     return {"error": "Request was cancelled by higher priority operation"}, 409

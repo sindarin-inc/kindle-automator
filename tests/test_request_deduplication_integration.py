@@ -653,7 +653,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             )
 
     def test_three_open_random_book_requests_only_last_succeeds(self):
-        """Test that three /kindle/open-random-book requests spaced 3 seconds apart, only the last one succeeds."""
+        """Test that multiple /open-random-book requests cancel earlier ones since each has different random selection."""
         results = {}
 
         def make_open_random_book_request(request_id, delay=0):
@@ -665,10 +665,14 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results[f"request_{request_id}_started"] = start_time
 
             try:
+                # IMPORTANT: Use the proxy endpoint /kindle/open-random-book
+                # If this URL doesn't work, DO NOT switch to non-proxy version
+                # as we need the proxy to handle the random book selection
                 response = self._make_request(
-                    "open-random-book",
+                    "open-random-book",  # This will be prefixed with /kindle/ by _make_request
                     params={"user_email": self.email},
                     timeout=30,
+                    use_proxy=True,  # Ensure we use the proxy
                 )
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
@@ -690,6 +694,9 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                         if data.get("cancelled"):
                             results[f"request_{request_id}_cancelled"] = True
                             results[f"request_{request_id}_cancel_reason"] = data.get("error", "Cancelled")
+                        # Store the book that was opened
+                        if data.get("progress", {}).get("title"):
+                            results[f"request_{request_id}_book"] = data["progress"]["title"]
                     except:
                         pass
 
@@ -700,7 +707,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 if "cancelled" in str(e).lower() or "409" in str(e):
                     results[f"request_{request_id}_cancelled"] = True
 
-        # Start three threads for the three requests
+        # Start four threads for the four requests (each will get a random book)
         threads = []
 
         # First request - starts immediately
@@ -718,6 +725,11 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         threads.append(thread3)
         thread3.start()
 
+        # Fourth request - starts after 9 seconds
+        thread4 = threading.Thread(target=make_open_random_book_request, args=(4, 9))
+        threads.append(thread4)
+        thread4.start()
+
         # Wait for all threads to complete
         for thread in threads:
             thread.join(timeout=45)
@@ -725,12 +737,13 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         # Verify the results
         print(f"Test results: {results}")
 
-        # All three requests should have started
+        # All four requests should have started
         self.assertIn("request_1_started", results, "First request should have started")
         self.assertIn("request_2_started", results, "Second request should have started")
         self.assertIn("request_3_started", results, "Third request should have started")
+        self.assertIn("request_4_started", results, "Fourth request should have started")
 
-        # First two requests should have been cancelled
+        # First three requests should have been cancelled (each has different random params)
         self.assertTrue(
             results.get("request_1_cancelled", False) or results.get("request_1_status") == 409,
             f"First request should have been cancelled. Results: {results}",
@@ -739,17 +752,22 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results.get("request_2_cancelled", False) or results.get("request_2_status") == 409,
             f"Second request should have been cancelled. Results: {results}",
         )
-
-        # Third request should have succeeded
-        self.assertEqual(
-            results.get("request_3_status"),
-            200,
-            f"Third request should have succeeded with status 200. Results: {results}",
-        )
         self.assertTrue(
-            results.get("request_3_success", False),
-            f"Third request should have been successful. Results: {results}",
+            results.get("request_3_cancelled", False) or results.get("request_3_status") == 409,
+            f"Third request should have been cancelled. Results: {results}",
         )
+
+        # Only the fourth (last) request should succeed
+        self.assertEqual(
+            results.get("request_4_status"),
+            200,
+            f"Fourth (last) request should have succeeded with status 200. Results: {results}",
+        )
+
+        # Print which books were randomly selected if available
+        for i in range(1, 5):
+            if f"request_{i}_book" in results:
+                print(f"Request {i} selected book: {results[f'request_{i}_book']}")
 
         # Verify timing - requests should have started approximately 3 seconds apart
         if "request_1_started" in results and "request_2_started" in results:
@@ -768,6 +786,15 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             )
             self.assertLess(
                 delay_2_3, 3.5, f"Third request should start ~3s after second. Actual: {delay_2_3:.1f}s"
+            )
+
+        if "request_3_started" in results and "request_4_started" in results:
+            delay_3_4 = results["request_4_started"] - results["request_3_started"]
+            self.assertGreater(
+                delay_3_4, 2.5, f"Fourth request should start ~3s after third. Actual: {delay_3_4:.1f}s"
+            )
+            self.assertLess(
+                delay_3_4, 3.5, f"Fourth request should start ~3s after third. Actual: {delay_3_4:.1f}s"
             )
 
     def test_z_double_shutdown_both_return_200(self):

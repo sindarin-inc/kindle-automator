@@ -323,6 +323,8 @@ class AVDProfileManager:
             if not user:
                 repo.create_user(email)
 
+            logger.debug(f"Saving library setting {setting_name} for {email} with value {setting_value}")
+
             # Update the library setting
             success = repo.update_user_field(email, f"library_settings.{setting_name}", setting_value)
 

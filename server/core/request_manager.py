@@ -56,8 +56,9 @@ PRIORITY_LEVELS = {
 }
 
 # Endpoints where newer requests should cancel older ones (last-one-wins)
+# NOTE: This is now handled dynamically based on parameter differences
 LAST_ONE_WINS_ENDPOINTS = {
-    "/open-random-book",  # User wants the most recent random book choice
+    # Keeping empty for now as the logic is handled by parameter comparison
 }
 
 # Default TTL for cached responses and locks
@@ -88,14 +89,6 @@ class RequestManager:
 
     def _generate_request_key(self) -> str:
         """Generate a unique key for this request based on user, path, method, and params."""
-        # For last-one-wins endpoints, add timestamp to make each request unique
-        if self.path in LAST_ONE_WINS_ENDPOINTS:
-            import time
-
-            signature = f"{self.user_email}:{self.path}:{self.method}:{time.time()}"
-            request_hash = hashlib.md5(signature.encode()).hexdigest()
-            return f"kindle:request:{request_hash}"
-
         # Get query parameters, excluding certain ones
         params = {}
         try:
@@ -112,7 +105,8 @@ class RequestManager:
         # Sort params for consistent hashing
         sorted_params = json.dumps(filtered_params, sort_keys=True)
 
-        # Create a hash of the request signature
+        # Create a hash of the request signature - always include params
+        # This ensures same params = same key (deduplicate), different params = different key
         signature = f"{self.user_email}:{self.path}:{self.method}:{sorted_params}"
         request_hash = hashlib.md5(signature.encode()).hexdigest()
 
@@ -138,6 +132,8 @@ class RequestManager:
 
         progress_key = f"{self.request_key}:progress"
 
+        logger.info(f"Attempting to claim request {self.request_key} for {self.user_email} on {self.path}")
+
         try:
             # Assign request number if not already assigned
             if not self.request_number:
@@ -145,7 +141,28 @@ class RequestManager:
                 # Check for multiple requests
                 self._check_and_notify_multiple_requests()
 
-            # For last-one-wins endpoints, always try to claim and cancel previous
+            # Check if there's an active request for the same endpoint with different params
+            active_info = self._get_active_request_info()
+            if active_info and active_info.get("path") == self.path:
+                # Check if it's the same request (same request_key means same params)
+                if active_info.get("request_key") != self.request_key:
+                    # Different params - cancel the previous request
+                    self._cancel_existing_same_endpoint_request()
+
+                    # Force claim this request (overwrite any existing)
+                    self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
+                    logger.debug(
+                        f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
+                        f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (different params, last-one-wins){RESET}"
+                    )
+
+                    # Record this as the active request for the user
+                    self._set_active_request()
+                    self.is_executor = True
+                    return True
+                # else: Same params - fall through to normal deduplication logic
+
+            # For last-one-wins endpoints (legacy, keeping for compatibility)
             if self.path in LAST_ONE_WINS_ENDPOINTS:
                 # Cancel any existing request for this endpoint
                 self._cancel_existing_same_endpoint_request()
@@ -196,6 +213,24 @@ class RequestManager:
         except Exception as e:
             logger.error(f"Error claiming request: {e}")
             return True  # Fall back to executing on Redis errors
+
+    def _get_active_request_info(self) -> Optional[dict]:
+        """Get information about the active request for this user."""
+        if not self.redis_client:
+            return None
+
+        try:
+            active_key = f"kindle:user:{self.user_email}:active_request"
+            active_data = self.redis_client.get(active_key)
+
+            if active_data:
+                return json.loads(active_data)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting active request info: {e}")
+            return None
 
     def _should_wait_for_higher_priority(self) -> bool:
         """Check if there's a higher priority request running that we should wait for."""

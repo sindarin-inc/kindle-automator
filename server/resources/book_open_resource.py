@@ -5,7 +5,7 @@ import os
 import time
 import urllib.parse
 
-from flask import request
+from flask import g, request
 from flask_restful import Resource
 
 from handlers.about_book_popover_handler import AboutBookPopoverHandler
@@ -22,9 +22,27 @@ logger = logging.getLogger(__name__)
 
 
 class BookOpenResource(Resource):
+    def _check_cancellation(self):
+        """Check if the current request has been cancelled."""
+        # Get request manager from Flask context
+        manager = getattr(g, "request_manager", None)
+        if manager and manager.is_cancelled():
+            from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
+
+            logger.info(
+                f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "
+                f"detected it was cancelled in open_book handler{RESET}"
+            )
+            return True
+        return False
+
     def _open_book(self, book_title):
         """Open a specific book - shared implementation for GET and POST."""
         server = AutomationServer.get_instance()
+
+        # Check for cancellation at the start
+        if self._check_cancellation():
+            return {"error": "Request was cancelled by higher priority operation"}, 409
 
         # URL decode the book title to handle plus signs and other encoded characters
         if book_title:
@@ -156,6 +174,10 @@ class BookOpenResource(Resource):
                 "error": "State machine not initialized. Please ensure the automator is properly initialized."
             }, 500
 
+        # Check for cancellation before checking initial state
+        if self._check_cancellation():
+            return {"error": "Request was cancelled by higher priority operation"}, 409
+
         # Check initial state and restart if UNKNOWN
         current_state = automator.state_machine.check_initial_state_with_restart()
 
@@ -215,6 +237,10 @@ class BookOpenResource(Resource):
                         f"Already reading book (partial match): {book_title}, returning current state"
                     )
                     return capture_book_state(already_open=True)
+
+                # Check for cancellation during lengthy book comparison process
+                if self._check_cancellation():
+                    return {"error": "Request was cancelled by higher priority operation"}, 409
 
                 # If we're in reading state but current_book doesn't match, try to get book title from UI
                 logger.info(
@@ -370,6 +396,10 @@ class BookOpenResource(Resource):
         if current_state == AppState.SEARCH_RESULTS:
             logger.info("Currently in SEARCH_RESULTS view, opening book directly")
 
+            # Check for cancellation before handling search results
+            if self._check_cancellation():
+                return {"error": "Request was cancelled by higher priority operation"}, 409
+
             # Set book_to_open attribute on automator for the state handler to use
             automator.book_to_open = book_title
             logger.info(f"Set automator.book_to_open to '{book_title}' for handle_search_results")
@@ -403,10 +433,23 @@ class BookOpenResource(Resource):
 
         # For other states, transition to library and open the book
         logger.info(f"Transitioning from {current_state} to library")
+
+        # Check for cancellation before transition
+        if self._check_cancellation():
+            return {"error": "Request was cancelled by higher priority operation"}, 409
+
         final_state = automator.state_machine.transition_to_library(server=server)
+
+        # Check for cancellation after transition
+        if self._check_cancellation():
+            return {"error": "Request was cancelled by higher priority operation"}, 409
 
         if final_state == AppState.LIBRARY:
             # Successfully transitioned to library
+            # Check for cancellation before opening the book
+            if self._check_cancellation():
+                return {"error": "Request was cancelled by higher priority operation"}, 409
+
             # Use library_handler to open the book instead of reader_handler
             result = automator.state_machine.library_handler.open_book(book_title)
             logger.info(f"Book open result: {result}")
