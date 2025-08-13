@@ -277,6 +277,9 @@ class UserRepository:
             values = {"updated_at": datetime.now(timezone.utc)}
             if authenticated:
                 values["auth_date"] = datetime.now(timezone.utc)
+                values["auth_failed_date"] = None  # Clear any previous auth failure
+            else:
+                values["auth_failed_date"] = datetime.now(timezone.utc)
 
             stmt = update(User).where(User.email == email).values(**values)
             result = self.session.execute(stmt)

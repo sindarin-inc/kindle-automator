@@ -155,6 +155,15 @@ class AuthResource(Resource):
 
         # Handle already authenticated cases (LIBRARY or HOME)
         if auth_status.get("already_authenticated", False):
+            # Update database to reflect authenticated state
+            logger.info(f"User {sindarin_email} is authenticated, updating auth state in database")
+            try:
+                profile_manager = AVDProfileManager.get_instance()
+                profile_manager.update_auth_state(sindarin_email, authenticated=True)
+                logger.info(f"Updated auth state for {sindarin_email} to authenticated")
+            except Exception as e:
+                logger.error(f"Failed to update auth state in database: {e}", exc_info=True)
+
             # If we're in HOME state, try to switch to LIBRARY
             if auth_status.get("state") == "HOME":
                 logger.info("Already logged in but in HOME state, switching to LIBRARY")
@@ -214,6 +223,17 @@ class AuthResource(Resource):
             except Exception as e:
                 logger.error(f"Error handling LIBRARY_SIGN_IN state: {e}", exc_info=True)
                 # Continue with normal authentication process
+
+        # If user is not authenticated, update the database to reflect this
+        if not auth_status.get("already_authenticated", False):
+            logger.info(f"User {sindarin_email} is not authenticated, updating auth state in database")
+            try:
+                # Get the profile manager and update auth state
+                profile_manager = AVDProfileManager.get_instance()
+                profile_manager.update_auth_state(sindarin_email, authenticated=False)
+                logger.info(f"Updated auth state for {sindarin_email} to unauthenticated")
+            except Exception as e:
+                logger.error(f"Failed to update auth state in database: {e}", exc_info=True)
 
         # Always use manual login via VNC (no automation of Amazon credentials)
         # Before getting VNC URL, ensure that VNC server is running

@@ -33,6 +33,7 @@ class User(Base):
     avd_name: Mapped[Optional[str]] = mapped_column(String(255))
     last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
     auth_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    auth_failed_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
     was_running_at_restart: Mapped[Optional[bool]] = mapped_column(Boolean)
     styles_updated: Mapped[bool] = mapped_column(Boolean, default=False)
     timezone: Mapped[Optional[str]] = mapped_column(String(50))
