@@ -115,6 +115,11 @@ class RedisConnection:
                     f"[REDIS CONNECT] SUCCESS - Connected to Redis at {redis_url} - Ping: {ping_time:.3f}s, Total: {total_time:.3f}s"
                 )
 
+                # Log which database we're connected to
+                connection_kwargs = self._client.connection_pool.connection_kwargs
+                db_num = connection_kwargs.get("db", 0)
+                logger.info(f"[REDIS CONNECT] Connected to database {db_num}")
+
                 # Test a simple set/get operation
                 test_key = f"test:connection:{os.getpid()}:{time.time()}"
                 test_value = "test_connection"
