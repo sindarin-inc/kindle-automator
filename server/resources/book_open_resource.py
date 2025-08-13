@@ -33,6 +33,19 @@ class BookOpenResource(Resource):
                 f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "
                 f"detected it was cancelled in open_book handler{RESET}"
             )
+
+            # Clear the cancellation check from state machine when we detect cancellation
+            # This ensures it's cleaned up even if we return early
+            from server.core.automation_server import AutomationServer
+            from server.utils.request_utils import get_sindarin_email
+
+            sindarin_email = get_sindarin_email()
+            if sindarin_email:
+                server = AutomationServer.get_instance()
+                automator = server.automators.get(sindarin_email)
+                if automator and automator.state_machine:
+                    automator.state_machine.set_cancellation_check(None)
+
             return True
         return False
 
@@ -174,8 +187,12 @@ class BookOpenResource(Resource):
                 "error": "State machine not initialized. Please ensure the automator is properly initialized."
             }, 500
 
+        # Set the cancellation check on the state machine for interruptible operations
+        automator.state_machine.set_cancellation_check(self._check_cancellation)
+
         # Check for cancellation before checking initial state
         if self._check_cancellation():
+            automator.state_machine.set_cancellation_check(None)
             return {"error": "Request was cancelled by higher priority operation"}, 409
 
         # Check initial state and restart if UNKNOWN
@@ -221,7 +238,10 @@ class BookOpenResource(Resource):
                 # Try exact match first
                 if normalized_request_title == normalized_current_title:
                     logger.info(f"Already reading book (exact match): {book_title}, returning current state")
-                    return capture_book_state(already_open=True)
+                    result = capture_book_state(already_open=True)
+                    # Clear cancellation check on successful completion
+                    automator.state_machine.set_cancellation_check(None)
+                    return result
 
                 # For longer titles, try to match the first 30+ characters or check if one title contains the other
                 if (
@@ -236,10 +256,15 @@ class BookOpenResource(Resource):
                     logger.info(
                         f"Already reading book (partial match): {book_title}, returning current state"
                     )
-                    return capture_book_state(already_open=True)
+                    automator.state_machine.set_cancellation_check(None)
+                    result = capture_book_state(already_open=True)
+                    # Clear cancellation check on successful completion
+                    automator.state_machine.set_cancellation_check(None)
+                    return result
 
                 # Check for cancellation during lengthy book comparison process
                 if self._check_cancellation():
+                    automator.state_machine.set_cancellation_check(None)
                     return {"error": "Request was cancelled by higher priority operation"}, 409
 
                 # If we're in reading state but current_book doesn't match, try to get book title from UI
@@ -264,7 +289,10 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
+                            result = capture_book_state(already_open=True)
+                            # Clear cancellation check on successful completion
+                            automator.state_machine.set_cancellation_check(None)
+                            return result
 
                         # Check partial match with UI title
                         if (
@@ -281,7 +309,11 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
+                            automator.state_machine.set_cancellation_check(None)
+                            result = capture_book_state(already_open=True)
+                    # Clear cancellation check on successful completion
+                    automator.state_machine.set_cancellation_check(None)
+                    return result
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
 
@@ -315,7 +347,10 @@ class BookOpenResource(Resource):
                         )
                         # Update server's current book tracking
                         server.set_current_book(actively_reading_title, sindarin_email)
-                        return capture_book_state(already_open=True)
+                        result = capture_book_state(already_open=True)
+                        # Clear cancellation check on successful completion
+                        automator.state_machine.set_cancellation_check(None)
+                        return result
 
                     # For longer titles, try to match the first 30+ characters or check if one title contains the other
                     if (
@@ -332,7 +367,11 @@ class BookOpenResource(Resource):
                         )
                         # Update server's current book tracking
                         server.set_current_book(actively_reading_title, sindarin_email)
-                        return capture_book_state(already_open=True)
+                        automator.state_machine.set_cancellation_check(None)
+                        result = capture_book_state(already_open=True)
+                    # Clear cancellation check on successful completion
+                    automator.state_machine.set_cancellation_check(None)
+                    return result
 
                 # If no match with stored title, try to get it from UI
                 try:
@@ -358,7 +397,10 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
+                            result = capture_book_state(already_open=True)
+                            # Clear cancellation check on successful completion
+                            automator.state_machine.set_cancellation_check(None)
+                            return result
 
                         # Check partial match with UI title
                         if (
@@ -375,7 +417,11 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             server.set_current_book(current_title_from_ui, sindarin_email)
-                            return capture_book_state(already_open=True)
+                            automator.state_machine.set_cancellation_check(None)
+                            result = capture_book_state(already_open=True)
+                    # Clear cancellation check on successful completion
+                    automator.state_machine.set_cancellation_check(None)
+                    return result
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
         # Not in reading state but have tracked book - clear it
@@ -398,6 +444,7 @@ class BookOpenResource(Resource):
 
             # Check for cancellation before handling search results
             if self._check_cancellation():
+                automator.state_machine.set_cancellation_check(None)
                 return {"error": "Request was cancelled by higher priority operation"}, 409
 
             # Set book_to_open attribute on automator for the state handler to use
@@ -412,7 +459,11 @@ class BookOpenResource(Resource):
                 if automator.state_machine.current_state == AppState.READING:
                     # Set the current book in the server state
                     server.set_current_book(book_title, sindarin_email)
-                    return capture_book_state()
+                    automator.state_machine.set_cancellation_check(None)
+                    result = capture_book_state()
+            # Clear cancellation check on successful completion
+            automator.state_machine.set_cancellation_check(None)
+            return result
 
             # If handle_state didn't succeed or we're not in READING state, try direct approach
             logger.info("Falling back to direct library_handler.open_book for search results")
@@ -422,13 +473,18 @@ class BookOpenResource(Resource):
             # Handle dictionary response from library handler
             if result.get("status") == "title_not_available":
                 # Return the error response directly
+                automator.state_machine.set_cancellation_check(None)
                 return result, 400
             elif result.get("success"):
                 # Set the current book in the server state
                 server.set_current_book(book_title, sindarin_email)
-                return capture_book_state()
+                result = capture_book_state()
+                # Clear cancellation check on successful completion
+                automator.state_machine.set_cancellation_check(None)
+                return result
             else:
                 # Return the error from the result
+                automator.state_machine.set_cancellation_check(None)
                 return result, 500
 
         # For other states, transition to library and open the book
@@ -436,18 +492,21 @@ class BookOpenResource(Resource):
 
         # Check for cancellation before transition
         if self._check_cancellation():
+            automator.state_machine.set_cancellation_check(None)
             return {"error": "Request was cancelled by higher priority operation"}, 409
 
         final_state = automator.state_machine.transition_to_library(server=server)
 
         # Check for cancellation after transition
         if self._check_cancellation():
+            automator.state_machine.set_cancellation_check(None)
             return {"error": "Request was cancelled by higher priority operation"}, 409
 
         if final_state == AppState.LIBRARY:
             # Successfully transitioned to library
             # Check for cancellation before opening the book
             if self._check_cancellation():
+                automator.state_machine.set_cancellation_check(None)
                 return {"error": "Request was cancelled by higher priority operation"}, 409
 
             # Use library_handler to open the book instead of reader_handler
@@ -457,13 +516,18 @@ class BookOpenResource(Resource):
             # Handle dictionary response from library handler
             if result.get("status") == "title_not_available":
                 # Return the error response directly
+                automator.state_machine.set_cancellation_check(None)
                 return result, 400
             elif result.get("success"):
                 # Set the current book in the server state
                 server.set_current_book(book_title, sindarin_email)
-                return capture_book_state()
+                result = capture_book_state()
+                # Clear cancellation check on successful completion
+                automator.state_machine.set_cancellation_check(None)
+                return result
             else:
                 # Return the error from the result
+                automator.state_machine.set_cancellation_check(None)
                 return result, 500
         else:
             # Did not reach library state
@@ -472,9 +536,11 @@ class BookOpenResource(Resource):
             # Check if we ended up in an auth state
             auth_response = automator.state_machine.handle_auth_state_detection(final_state, sindarin_email)
             if auth_response:
+                automator.state_machine.set_cancellation_check(None)
                 return auth_response, 401
 
             # Not in an auth state, return generic error
+            automator.state_machine.set_cancellation_check(None)
             return {
                 "success": False,
                 "error": f"Failed to transition from {current_state} to library (ended in {final_state})",

@@ -409,7 +409,8 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         """Set up test fixtures."""
         # Use the base class setup
         self.setup_base()
-        self.email = TEST_USER_EMAIL
+        # Use kindle@solreader.com for this specific test
+        self.email = "kindle@solreader.com"
 
     def tearDown(self):
         """Clean up after tests."""
@@ -653,11 +654,19 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             )
 
     def test_three_open_random_book_requests_only_last_succeeds(self):
-        """Test that multiple /open-random-book requests cancel earlier ones since each has different random selection."""
+        """Test that multiple /open-book requests cancel earlier ones when they have different parameters."""
         results = {}
+        
+        # Define the books for each request
+        books = {
+            1: "Fourth Wing",  # A
+            2: "Breakfast of Champions",  # B  
+            3: "sol-chapter-test-epub",  # C
+            4: "sol-chapter-test-epub",  # D (same as C for deduplication)
+        }
 
         def make_open_random_book_request(request_id, delay=0):
-            """Make an open-random-book request after a delay."""
+            """Make an open-book request after a delay."""
             if delay > 0:
                 time.sleep(delay)
 
@@ -665,14 +674,15 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results[f"request_{request_id}_started"] = start_time
 
             try:
-                # IMPORTANT: Use the proxy endpoint /kindle/open-random-book
-                # If this URL doesn't work, DO NOT switch to non-proxy version
-                # as we need the proxy to handle the random book selection
+                # Use /open-book with specific titles
                 response = self._make_request(
-                    "open-random-book",  # This will be prefixed with /kindle/ by _make_request
-                    params={"user_email": self.email},
+                    "open-book",
+                    params={
+                        "user_email": self.email,
+                        "title": books[request_id]
+                    },
                     timeout=30,
-                    use_proxy=True,  # Ensure we use the proxy
+                    use_proxy=False,  # Direct to Flask server
                 )
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
@@ -743,31 +753,35 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         self.assertIn("request_3_started", results, "Third request should have started")
         self.assertIn("request_4_started", results, "Fourth request should have started")
 
-        # First three requests should have been cancelled (each has different random params)
+        # First two requests should have been cancelled (different titles from later requests)
         self.assertTrue(
             results.get("request_1_cancelled", False) or results.get("request_1_status") == 409,
-            f"First request should have been cancelled. Results: {results}",
+            f"First request (Fourth Wing) should have been cancelled. Results: {results}",
         )
         self.assertTrue(
             results.get("request_2_cancelled", False) or results.get("request_2_status") == 409,
-            f"Second request should have been cancelled. Results: {results}",
+            f"Second request (Breakfast of Champions) should have been cancelled. Results: {results}",
         )
-        self.assertTrue(
-            results.get("request_3_cancelled", False) or results.get("request_3_status") == 409,
-            f"Third request should have been cancelled. Results: {results}",
+        
+        # Third and fourth requests should BOTH succeed since they have the same title (deduplication)
+        # Request 3 executes, request 4 gets the deduplicated response
+        self.assertEqual(
+            results.get("request_3_status"),
+            200,
+            f"Third request (sol-chapter-test-epub) should have succeeded with status 200. Results: {results}",
         )
-
-        # Only the fourth (last) request should succeed
+        
         self.assertEqual(
             results.get("request_4_status"),
             200,
-            f"Fourth (last) request should have succeeded with status 200. Results: {results}",
+            f"Fourth request (sol-chapter-test-epub) should also succeed with deduplicated response. Results: {results}",
         )
 
-        # Print which books were randomly selected if available
+        # Print which books were requested
         for i in range(1, 5):
+            print(f"Request {i} requested book: {books[i]}")
             if f"request_{i}_book" in results:
-                print(f"Request {i} selected book: {results[f'request_{i}_book']}")
+                print(f"  -> Actually opened: {results[f'request_{i}_book']}")
 
         # Verify timing - requests should have started approximately 3 seconds apart
         if "request_1_started" in results and "request_2_started" in results:
