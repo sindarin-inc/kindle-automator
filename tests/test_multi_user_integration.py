@@ -27,8 +27,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Test configuration
-USER_A_EMAIL = "sam@solreader.com"
-USER_B_EMAIL = "samuel@ofbrooklyn.com"
+USER_A_EMAIL = "kindle@solreader.com"
+USER_B_EMAIL = "sam@solreader.com"
 
 # Note: Using /open-random-book instead of hardcoded ASINs for more flexible testing
 

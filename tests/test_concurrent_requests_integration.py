@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Test configuration
 TEST_USERS = [
-    "samuel@ofbrooklyn.com",
+    "kindle@solreader.com",
     "sam@solreader.com",
 ]
 

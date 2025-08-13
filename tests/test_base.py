@@ -60,7 +60,7 @@ class BaseKindleTest:
         # Set Authorization header for API authentication
         if WEB_AUTH_TOKEN:
             self.session.headers.update({"Authorization": f"Tolkien {WEB_AUTH_TOKEN}"})
-            logger.info("Using Knox token for samuel@ofbrooklyn.com (staff user)")
+            logger.info("Using Knox token for staff user")
 
         # Set staff auth cookie for user_email override
         if STAFF_AUTH_TOKEN:

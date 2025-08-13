@@ -6,7 +6,6 @@ import pickle
 import time
 from typing import Any, Generator, Optional
 
-from server.core.redis_connection import get_redis_client
 from server.core.request_manager import RequestManager
 
 logger = logging.getLogger(__name__)

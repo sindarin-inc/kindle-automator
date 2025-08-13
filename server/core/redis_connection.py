@@ -2,6 +2,8 @@
 
 import logging
 import os
+import threading
+import time
 from typing import Optional
 
 import redis
@@ -25,13 +27,23 @@ class RedisConnection:
     def __init__(self):
         # Only initialize once for the singleton
         if not RedisConnection._initialized:
+            logger.info(
+                f"[REDIS INIT] First initialization - PID: {os.getpid()}, Thread: {threading.current_thread().name}"
+            )
             RedisConnection._initialized = True
             self._initialize_client()
+        else:
+            logger.debug(
+                f"[REDIS INIT] Singleton already initialized - PID: {os.getpid()}, Thread: {threading.current_thread().name}"
+            )
 
     def _initialize_client(self):
         """Initialize Redis client with connection pool."""
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6479/1")
-        logger.debug(f"Initializing Redis connection to {redis_url}")
+        start_time = time.time()
+        logger.info(
+            f"[REDIS CONNECT] Starting connection to {redis_url} at {time.strftime('%Y-%m-%d %H:%M:%S')} - PID: {os.getpid()}"
+        )
 
         try:
             # For macOS, we need to use the direct connection method instead of from_url
@@ -47,6 +59,7 @@ class RedisConnection:
                 )
             elif redis_url.startswith("rediss://"):
                 # SSL/TLS connection (DigitalOcean Managed Redis uses this)
+                logger.info(f"[REDIS CONNECT] Using SSL/TLS connection for DigitalOcean Redis")
                 # Use direct Redis.from_url for SSL connections
                 self._client = redis.from_url(
                     redis_url,
@@ -55,7 +68,14 @@ class RedisConnection:
                     ssl_cert_reqs=None,  # Don't verify certificates for managed Redis
                     socket_connect_timeout=5,
                     retry_on_timeout=True,
+                    socket_keepalive=True,
+                    socket_keepalive_options={
+                        1: 1,  # TCP_KEEPIDLE: seconds before sending keepalive probes
+                        2: 1,  # TCP_KEEPINTVL: interval between keepalive probes
+                        3: 3,  # TCP_KEEPCNT: failed keepalive probes before declaring dead
+                    },
                 )
+                logger.info(f"[REDIS CONNECT] Redis client created, testing connection...")
                 # Skip the pool creation for SSL connections
                 pool = None
             else:
@@ -75,26 +95,65 @@ class RedisConnection:
 
             # Test the connection
             if self._client:
+                ping_start = time.time()
                 self._client.ping()
-                logger.debug(f"Successfully connected to Redis at {redis_url}")
+                ping_time = time.time() - ping_start
+                total_time = time.time() - start_time
+                logger.info(
+                    f"[REDIS CONNECT] SUCCESS - Connected to Redis at {redis_url} - Ping: {ping_time:.3f}s, Total: {total_time:.3f}s"
+                )
+
+                # Test a simple set/get operation
+                test_key = f"test:connection:{os.getpid()}:{time.time()}"
+                test_value = "test_connection"
+                self._client.set(test_key, test_value, ex=10)  # Expire in 10 seconds
+                retrieved = self._client.get(test_key)
+                if retrieved != test_value.encode():
+                    logger.error(
+                        f"[REDIS CONNECT] Data integrity check failed! Set: {test_value}, Got: {retrieved}"
+                    )
+                else:
+                    logger.info(f"[REDIS CONNECT] Data integrity check passed")
 
         except (ConnectionError, RedisError) as e:
-            logger.warning(f"Failed to connect to Redis at {redis_url}: {e}")
+            total_time = time.time() - start_time
+            logger.error(
+                f"[REDIS CONNECT] FAILED after {total_time:.3f}s - {redis_url}: {type(e).__name__}: {e}"
+            )
+            self._client = None
+        except Exception as e:
+            total_time = time.time() - start_time
+            logger.error(
+                f"[REDIS CONNECT] UNEXPECTED ERROR after {total_time:.3f}s - {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             self._client = None
 
     @property
     def client(self) -> Optional[redis.Redis]:
         """Get the Redis client, attempting to reconnect if necessary."""
         if self._client is None:
+            logger.warning(f"[REDIS CLIENT] No client exists, initializing... PID: {os.getpid()}")
             self._initialize_client()
 
         if self._client:
             try:
                 # Test the connection
+                ping_start = time.time()
                 self._client.ping()
-            except (ConnectionError, RedisError):
-                logger.warning("Redis connection lost, attempting to reconnect...")
+                ping_time = time.time() - ping_start
+                if ping_time > 1.0:
+                    logger.warning(f"[REDIS CLIENT] Slow ping response: {ping_time:.3f}s")
+            except (ConnectionError, RedisError) as e:
+                logger.error(
+                    f"[REDIS CLIENT] Connection lost ({type(e).__name__}: {e}), attempting to reconnect..."
+                )
                 self._initialize_client()
+            except Exception as e:
+                logger.error(
+                    f"[REDIS CLIENT] Unexpected error during ping: {type(e).__name__}: {e}", exc_info=True
+                )
+                self._client = None
 
         return self._client
 
@@ -112,5 +171,16 @@ class RedisConnection:
 
 def get_redis_client() -> Optional[redis.Redis]:
     """Convenience function to get the Redis client."""
+    caller_frame = None
+    try:
+        import inspect
+
+        frame = inspect.currentframe()
+        if frame and frame.f_back:
+            caller_frame = f"{frame.f_back.f_code.co_filename}:{frame.f_back.f_lineno}"
+    except:
+        pass
+
+    logger.debug(f"[REDIS GET] get_redis_client called from {caller_frame or 'unknown'} - PID: {os.getpid()}")
     connection = RedisConnection.get_instance()
     return connection.client
