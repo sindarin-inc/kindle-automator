@@ -58,7 +58,7 @@ jobs:
       - name: Run API integration tests
         if: success()
         env:
-          API_BASE_URL: https://staging.sindarin.com
+          API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
@@ -69,7 +69,7 @@ jobs:
       - name: Run concurrent requests test
         if: success()
         env:
-          API_BASE_URL: https://staging.sindarin.com
+          API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
@@ -82,7 +82,7 @@ jobs:
         if: success()
         env:
           CI: "true"
-          API_BASE_URL: https://staging.sindarin.com
+          API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
@@ -93,7 +93,7 @@ jobs:
       - name: Run recreate integration tests
         if: success()
         env:
-          API_BASE_URL: https://staging.sindarin.com
+          API_BASE_URL: https://api.sindarin.com
           TEST_USER_EMAIL: kindle@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
