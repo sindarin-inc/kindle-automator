@@ -26,7 +26,7 @@ class TestRequestDeduplication(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.redis_client = MagicMock(spec=redis.Redis)
-        self.user_email = "sam@solreader.com"
+        self.user_email = "kindle@solreader.com"
         self.path = "/books"
         self.method = "GET"
 

@@ -281,60 +281,110 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
         low_manager2 = RequestManager("test@example.com", "/screenshot", "GET")
         self.assertTrue(low_manager2._should_wait_for_higher_priority())
 
-    @patch("server.core.request_manager.get_redis_client")
-    def test_last_one_wins_for_random_book(self, mock_get_redis):
+    def test_last_one_wins_for_random_book(self):
         """Test that newer /open-random-book requests cancel older ones."""
+        # This test verifies that when multiple /open-random-book requests are made,
+        # each new request cancels the previous one since they're for the same user
+        # and endpoint but with different implicit randomness.
 
-        class RedisSimulator:
-            def __init__(self):
-                self.store = {}
-                self.lock = threading.Lock()
-                self.cancelled_requests = set()
+        # Start the server first
+        from tests.test_base import BaseKindleTest
 
-            def set(self, key, value, nx=False, ex=None):
-                with self.lock:
-                    if nx and key in self.store:
-                        return False
-                    self.store[key] = value
-                    # Track cancellations
-                    if key.endswith(":cancelled"):
-                        self.cancelled_requests.add(key)
-                    return True
+        base_test = BaseKindleTest()
+        base_test.setup_base()
 
-            def get(self, key):
-                with self.lock:
-                    return self.store.get(key)
+        results = {}
 
-            def delete(self, *keys):
-                with self.lock:
-                    for key in keys:
-                        self.store.pop(key, None)
+        def make_open_random_book_request(request_id, delay=0):
+            """Make an /open-random-book request after a delay."""
+            if delay > 0:
+                time.sleep(delay)
 
-            def incr(self, key):
-                return 1
+            start_time = time.time()
+            results[f"request_{request_id}_started"] = start_time
 
-            def decr(self, key):
-                return 0
+            try:
+                # Each request gets a unique timestamp to ensure they're different
+                response = base_test._make_request(
+                    "kindle/open-random-book",
+                    params={"user_email": "test@example.com", "t": str(time.time())},
+                    timeout=30,
+                    use_proxy=True,  # Use proxy server (port 4099)
+                )
+                end_time = time.time()
+                results[f"request_{request_id}_status"] = response.status_code
+                results[f"request_{request_id}_completed"] = end_time
+                results[f"request_{request_id}_duration"] = end_time - start_time
 
-        redis_sim = RedisSimulator()
-        mock_get_redis.return_value = redis_sim
+                # Check if response indicates cancellation
+                if response.status_code == 409:
+                    results[f"request_{request_id}_cancelled"] = True
+                    try:
+                        data = response.json()
+                        results[f"request_{request_id}_cancel_reason"] = data.get("error", "Cancelled")
+                    except:
+                        pass
+                elif response.status_code == 200:
+                    results[f"request_{request_id}_success"] = True
+                    try:
+                        data = response.json()
+                        if data.get("cancelled"):
+                            results[f"request_{request_id}_cancelled"] = True
+                            results[f"request_{request_id}_cancel_reason"] = data.get("error", "Cancelled")
+                    except:
+                        pass
 
-        # Create multiple /open-random-book requests
-        # Each should cancel the previous one
-        managers = []
-        for i in range(3):
-            manager = RequestManager("test@example.com", "/open-random-book", "GET")
-            self.assertTrue(manager.claim_request())
-            managers.append(manager)
-            time.sleep(0.01)  # Small delay to ensure different timestamps
+            except Exception as e:
+                results[f"request_{request_id}_error"] = str(e)
+                results[f"request_{request_id}_duration"] = time.time() - start_time
+                # Check if the error indicates cancellation
+                if "cancelled" in str(e).lower() or "409" in str(e):
+                    results[f"request_{request_id}_cancelled"] = True
 
-        # The first two should be cancelled, only the last one should be active
-        self.assertTrue(managers[0].is_cancelled())
-        self.assertTrue(managers[1].is_cancelled())
-        self.assertFalse(managers[2].is_cancelled())
+        # Start three threads for three /open-random-book requests
+        threads = []
 
-        # Verify cancellation keys were set
-        self.assertGreater(len(redis_sim.cancelled_requests), 0)
+        # First request - starts immediately
+        thread1 = threading.Thread(target=make_open_random_book_request, args=(1, 0))
+        threads.append(thread1)
+        thread1.start()
+
+        # Second request - starts after 0.5 seconds
+        thread2 = threading.Thread(target=make_open_random_book_request, args=(2, 0.5))
+        threads.append(thread2)
+        thread2.start()
+
+        # Third request - starts after 1 second
+        thread3 = threading.Thread(target=make_open_random_book_request, args=(3, 1))
+        threads.append(thread3)
+        thread3.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join(timeout=35)
+
+        # Clean up
+        base_test.session.close()
+
+        # Verify the results
+        # The first two requests should have been cancelled
+        self.assertTrue(
+            results.get("request_1_cancelled", False),
+            f"Request 1 should have been cancelled. Results: {results}",
+        )
+        self.assertTrue(
+            results.get("request_2_cancelled", False),
+            f"Request 2 should have been cancelled. Results: {results}",
+        )
+
+        # The third request should have succeeded
+        self.assertTrue(
+            results.get("request_3_success", False), f"Request 3 should have succeeded. Results: {results}"
+        )
+        self.assertFalse(
+            results.get("request_3_cancelled", False),
+            f"Request 3 should not have been cancelled. Results: {results}",
+        )
 
     @patch("server.core.request_manager.get_redis_client")
     def test_cache_not_persisted_after_completion(self, mock_get_redis):

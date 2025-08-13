@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:4096")
-TEST_USER_EMAIL = os.environ.get("TEST_USER_EMAIL", "sam@solreader.com")
+TEST_USER_EMAIL = os.environ.get("TEST_USER_EMAIL", "kindle@solreader.com")
 RECREATE_USER_EMAIL = os.environ.get("RECREATE_USER_EMAIL", "recreate@solreader.com")
 STAFF_AUTH_TOKEN = os.environ.get("INTEGRATION_TEST_STAFF_AUTH_TOKEN")
 WEB_AUTH_TOKEN = os.environ.get("WEB_INTEGRATION_TEST_AUTH_TOKEN")

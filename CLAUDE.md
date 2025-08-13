@@ -51,6 +51,7 @@ tail -f logs/debug_server.log        # DEBUG logs, also persists
 ## SQL Debug Logging
 
 To control SQL query logging in the debug log:
+
 - Edit `.env` and set `SQL_LOGGING=true` to enable or `SQL_LOGGING=false` to disable
 - Restart the server with `make claude-run`
 - When enabled, formatted SQL queries will appear in `logs/debug_server.log`
@@ -116,3 +117,12 @@ To control SQL query logging in the debug log:
 - `ansible-playbook ansible/provision.yml -t android-x86`: Setup Android x86
 - `ansible-playbook ansible/provision.yml -t server`: Setup server
 - `ansible-playbook ansible/deploy.yml`: Deploy to prod
+
+## Proxy Server
+
+**All `/kindle/*` endpoints go through the proxy server (port 4096 on dev), not directly to this Flask server (port 4098).**
+
+- The proxy server maintains book caches and additional functionality
+- `/kindle/open-random-book` only exists on the proxy server (uses cached book list)
+- If the proxy server is down/not working, DO NOT attempt to find these URLs on the Flask server
+- Ask the user to start the proxy server if needed
