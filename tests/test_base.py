@@ -124,7 +124,7 @@ class BaseKindleTest:
             url = f"{self.base_url}/kindle/{endpoint.lstrip('/')}"
         else:
             # Direct to Flask server (bypasses proxy features)
-            url = f"http://localhost:4098/{endpoint.lstrip('/')}"
+            url = f"{self.base_url}/{endpoint.lstrip('/')}"
 
         request_params = {**self.default_params, **(params or {})}
         retry_delay = 10  # seconds

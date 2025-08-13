@@ -306,10 +306,9 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
             try:
                 # Each request gets a unique timestamp to ensure they're different
                 response = base_test._make_request(
-                    "kindle/open-random-book",
+                    "open-random-book",
                     params={"user_email": "test@example.com", "t": str(time.time())},
                     timeout=30,
-                    use_proxy=True,  # Use proxy server (port 4099)
                 )
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
@@ -729,7 +728,6 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                     "open-book",
                     params={"user_email": self.email, "title": books[request_id]},
                     timeout=30,
-                    use_proxy=False,  # Direct to Flask server
                 )
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
