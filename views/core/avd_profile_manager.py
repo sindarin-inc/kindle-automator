@@ -1216,29 +1216,13 @@ class AVDProfileManager:
         try:
             with self.db_connection.get_session() as session:
                 repo = UserRepository(session)
-                user = repo.get_user_by_email(email)
-
-                if not user:
-                    logger.warning(f"Cannot clear emulator settings: email {email} not found")
-                    return False
-
-                # Clear all emulator settings by setting them to their defaults
-                if user.emulator_settings:
-                    user.emulator_settings.hw_overlays_disabled = False
-                    user.emulator_settings.animations_disabled = False
-                    user.emulator_settings.sleep_disabled = False
-                    user.emulator_settings.status_bar_disabled = False
-                    user.emulator_settings.auto_updates_disabled = False
-                    user.emulator_settings.memory_optimizations_applied = False
-                    user.emulator_settings.memory_optimization_timestamp = None
-                    user.emulator_settings.appium_device_initialized = False
-
-                    session.commit()
+                # Use the repository method which handles all the logic idempotently
+                success = repo.clear_emulator_settings(email)
+                if success:
                     logger.info(f"Cleared all emulator settings for {email}")
                 else:
-                    logger.info(f"No emulator settings to clear for {email}")
-
-                return True
+                    logger.warning(f"Failed to clear emulator settings for {email}")
+                return success
 
         except Exception as e:
             logger.error(f"Error clearing emulator settings for {email}: {e}", exc_info=True)

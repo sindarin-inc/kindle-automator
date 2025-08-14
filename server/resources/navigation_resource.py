@@ -118,11 +118,11 @@ class NavigationResource(Resource):
 
             with get_db() as session:
                 user_repo = UserRepository(session)
-                user = user_repo.get_user_by_email(sindarin_email)
-                if user and not user.snapshot_dirty:
-                    user.snapshot_dirty = True
-                    user.snapshot_dirty_since = datetime.now(timezone.utc)
-                    session.commit()
+                # Use the repository method to update snapshot dirty status
+                success = user_repo.update_snapshot_dirty_status(
+                    sindarin_email, is_dirty=True, dirty_since=datetime.now(timezone.utc)
+                )
+                if success:
                     logger.info(f"Marked snapshot as dirty for {sindarin_email}")
         except Exception as e:
             logger.error(f"Error marking snapshot as dirty for {sindarin_email}: {e}", exc_info=True)

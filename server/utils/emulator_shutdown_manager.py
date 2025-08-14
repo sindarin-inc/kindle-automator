@@ -500,11 +500,9 @@ class EmulatorShutdownManager:
 
                 with get_db() as session:
                     user_repo = UserRepository(session)
-                    user = user_repo.get_user_by_email(email)
-                    if user and user.snapshot_dirty:
-                        user.snapshot_dirty = False
-                        user.snapshot_dirty_since = None
-                        session.commit()
+                    # Use the repository method to update snapshot dirty status
+                    success = user_repo.update_snapshot_dirty_status(email, is_dirty=False, dirty_since=None)
+                    if success:
                         logger.debug(f"Cleared snapshot dirty flag for {email} after successful snapshot")
             except Exception as e:
                 logger.error(f"Error clearing snapshot dirty flag: {e}", exc_info=True)
