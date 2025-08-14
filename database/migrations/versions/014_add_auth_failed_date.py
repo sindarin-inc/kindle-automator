@@ -1,7 +1,7 @@
 """Add auth_failed_date to users table
 
-Revision ID: 013
-Revises: 012
+Revision ID: 014
+Revises: 013
 Create Date: 2025-08-13
 """
 
@@ -10,8 +10,8 @@ from alembic import op
 from sqlalchemy import DateTime
 
 # revision identifiers
-revision = "013"
-down_revision = "012"
+revision = "014"
+down_revision = "013"
 branch_labels = None
 depends_on = None
 
