@@ -1103,44 +1103,40 @@ class LibraryHandler:
         This should be called when scrolling through the library and collapsed
         series are detected.
         """
-        try:
-            # First check if we should even check (24 hour limit)
-            if not self._should_check_series_grouping():
-                return
+        # First check if we should even check (24 hour limit)
+        if not self._should_check_series_grouping():
+            return
 
-            # Check if there are collapsed series visible
-            if not self._detect_collapsed_series():
-                return
+        # Check if there are collapsed series visible
+        if not self._detect_collapsed_series():
+            return
 
-            logger.info("Collapsed series detected, checking if group by series needs to be disabled")
+        logger.info("Collapsed series detected, checking if group by series needs to be disabled")
 
-            # Open the grid/list dialog to check and disable series grouping
-            if not self.open_grid_list_view_dialog(force_open=True):
-                logger.warning("Failed to open Grid/List dialog to check series grouping")
-                return
+        # Open the grid/list dialog to check and disable series grouping
+        if not self.open_grid_list_view_dialog(force_open=True):
+            logger.warning("Failed to open Grid/List dialog to check series grouping")
+            return
 
-            # Handle the dialog to ensure series grouping is off
-            if self.handle_grid_list_view_dialog():
-                logger.info("Successfully handled Grid/List dialog to disable series grouping")
+        # Handle the dialog to ensure series grouping is off
+        if self.handle_grid_list_view_dialog():
+            logger.info("Successfully handled Grid/List dialog to disable series grouping")
 
-                # Update the last check time in the database
-                from datetime import datetime, timezone
+            # Update the last check time in the database
+            from datetime import datetime, timezone
 
-                from database.repositories.user_repository import UserRepository
-                from server.utils.request_utils import get_sindarin_email
+            from database.repositories.user_repository import UserRepository
+            from server.utils.request_utils import get_sindarin_email
 
-                sindarin_email = get_sindarin_email(self.driver.automator)
-                if sindarin_email:
-                    with UserRepository() as repo:
-                        library_settings = repo.get_or_create_library_settings(sindarin_email)
-                        library_settings.last_series_group_check = datetime.now(timezone.utc)
-                        repo.commit()
-                        logger.info("Updated last_series_group_check timestamp in database")
-            else:
-                logger.warning("Failed to handle Grid/List dialog to disable series grouping")
-
-        except Exception as e:
-            logger.warning(f"Error handling series grouping: {e}")
+            sindarin_email = get_sindarin_email()
+            if sindarin_email:
+                with UserRepository() as repo:
+                    library_settings = repo.get_or_create_library_settings(sindarin_email)
+                    library_settings.last_series_group_check = datetime.now(timezone.utc)
+                    repo.commit()
+                    logger.info("Updated last_series_group_check timestamp in database")
+        else:
+            logger.warning("Failed to handle Grid/List dialog to disable series grouping")
 
     def _is_in_series_collection_view(self):
         """Check if we're in an expanded series/collection view.
