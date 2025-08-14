@@ -1122,7 +1122,7 @@ class LibraryHandler:
         if self.handle_grid_list_view_dialog():
             logger.info("Successfully handled Grid/List dialog to disable series grouping")
 
-            # Update the last check time in the database
+            # Update the last check time in the database using idempotent pattern
             from datetime import datetime, timezone
 
             from database.connection import get_db
@@ -1133,10 +1133,14 @@ class LibraryHandler:
             if sindarin_email:
                 with get_db() as session:
                     repo = UserRepository(session)
-                    library_settings = repo.get_or_create_library_settings(sindarin_email)
-                    library_settings.last_series_group_check = datetime.now(timezone.utc)
-                    session.commit()
-                    logger.info("Updated last_series_group_check timestamp in database")
+                    # Use update_user_field which is idempotent (creates library_settings if needed)
+                    success = repo.update_user_field(
+                        sindarin_email, "library_settings.last_series_group_check", datetime.now(timezone.utc)
+                    )
+                    if success:
+                        logger.info("Updated last_series_group_check timestamp in database")
+                    else:
+                        logger.warning(f"Failed to update last_series_group_check for {sindarin_email}")
         else:
             logger.warning("Failed to handle Grid/List dialog to disable series grouping")
 
