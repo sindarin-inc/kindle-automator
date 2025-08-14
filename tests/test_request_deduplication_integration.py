@@ -18,8 +18,20 @@ from server.utils.cancellation_utils import (
 from tests.test_base import TEST_USER_EMAIL, BaseKindleTest
 
 
-class TestRequestDeduplicationIntegration(unittest.TestCase):
+class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
     """Integration tests for request deduplication with threading."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        # Use the base class setup for proper authentication
+        self.setup_base()
+        self.email = TEST_USER_EMAIL
+
+    def tearDown(self):
+        """Clean up after tests."""
+        # Close the session but don't stop the server
+        if hasattr(self, "session"):
+            self.session.close()
 
     @patch("server.core.request_manager.get_redis_client")
     def test_concurrent_requests_deduplication(self, mock_get_redis):
@@ -287,12 +299,6 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
         # each new request cancels the previous one since they're for the same user
         # and endpoint but with different implicit randomness.
 
-        # Start the server first
-        from tests.test_base import BaseKindleTest
-
-        base_test = BaseKindleTest()
-        base_test.setup_base()
-
         results = {}
 
         def make_open_random_book_request(request_id, delay=0):
@@ -305,9 +311,12 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
 
             try:
                 # Each request gets a unique timestamp to ensure they're different
-                response = base_test._make_request(
+                response = self._make_request(
                     "open-random-book",
-                    params={"user_email": "test@example.com", "t": str(time.time())},
+                    params={
+                        "user_email": self.email,  # Use the same email as rest of the test
+                        "t": str(time.time()),  # Unique timestamp for each request
+                    },
                     timeout=60,
                 )
                 end_time = time.time()
@@ -361,9 +370,6 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
         # Wait for all threads to complete
         for thread in threads:
             thread.join(timeout=35)
-
-        # Clean up
-        base_test.session.close()
 
         # Verify the results
         # The first two requests should have been cancelled
@@ -722,13 +728,16 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             start_time = time.time()
             results[f"request_{request_id}_started"] = start_time
 
+            # Create a separate session for this thread
+            session = self._create_test_session()
+
             try:
                 # Use /open-book with specific titles
-                response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": books[request_id]},
-                    timeout=60,
-                )
+                # Build URL and params directly since we're using a custom session
+                url = f"{self.base_url}/kindle/open-book"
+                params = {"user_email": self.email, "title": books[request_id], "staging": "1"}
+
+                response = session.get(url, params=params, timeout=60)
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
                 results[f"request_{request_id}_completed"] = end_time
@@ -761,6 +770,9 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 # Check if the error indicates cancellation
                 if "cancelled" in str(e).lower() or "409" in str(e):
                     results[f"request_{request_id}_cancelled"] = True
+            finally:
+                # Clean up the session
+                session.close()
 
         # Start four threads for the four requests (each will get a random book)
         threads = []

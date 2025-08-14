@@ -1,0 +1,3 @@
+---
+# Production configuration for prod servers
+kindle_repo_branch: "sam/redis-dedupe"  # Production branch
