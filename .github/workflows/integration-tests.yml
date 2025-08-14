@@ -51,7 +51,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kindle_test
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m pytest tests/test_deduplication_unit.py tests/test_user_repository_unit.py -v --tb=short
+          python -m pytest tests/test_deduplication_unit.py tests/test_user_repository_unit.py -v --tb=short --durations=0
           python tests/test_concurrent_access_unit.py
         timeout-minutes: 3
 
@@ -63,7 +63,7 @@ jobs:
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_api_integration.py -v --tb=short -m "not expensive"
+          python -m pytest tests/test_api_integration.py -v --tb=short -m "not expensive" --durations=0
         timeout-minutes: 5
 
       - name: Run concurrent requests test
@@ -87,7 +87,7 @@ jobs:
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_request_deduplication_integration.py -v --tb=short
+          python -m pytest tests/test_request_deduplication_integration.py -v --tb=short --durations=0
         timeout-minutes: 5
 
       - name: Run recreate integration tests
@@ -98,7 +98,7 @@ jobs:
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_api_integration.py -v --tb=short -m "expensive"
+          python -m pytest tests/test_api_integration.py -v --tb=short -m "expensive" --durations=0
         timeout-minutes: 5
 
       - name: Upload test results
