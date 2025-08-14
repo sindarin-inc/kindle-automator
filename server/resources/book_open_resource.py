@@ -87,10 +87,27 @@ class BookOpenResource(Resource):
 
         # Check if placemark is requested - default is FALSE which means DO NOT show placemark
         show_placemark = False
-        placemark_param = request.args.get("placemark", "0")
-        if placemark_param and placemark_param.lower() in ("1", "true", "yes"):
+        # For POST requests with JSON, check request.json first, then fall back to request.values
+        if request.method == "POST" and request.is_json:
+            placemark_param = request.json.get("placemark", "0")
+        else:
+            placemark_param = request.values.get("placemark", "0")
+        if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
             show_placemark = True
             logger.info("Placemark mode enabled for this request")
+
+        # Check if force_library_navigation is requested - forces going to library even if already in the book
+        force_library_navigation = False
+        # For POST requests with JSON, check request.json first, then fall back to request.values
+        if request.method == "POST" and request.is_json:
+            force_nav_param = request.json.get("force_library_navigation", "0")
+        else:
+            force_nav_param = request.values.get("force_library_navigation", "0")
+        if force_nav_param and str(force_nav_param).lower() in ("1", "true", "yes"):
+            force_library_navigation = True
+            logger.info(
+                "Force library navigation enabled - will navigate through library even if already in book"
+            )
 
         logger.info(f"Opening book: {book_title}")
 
@@ -204,8 +221,14 @@ class BookOpenResource(Resource):
         # Get current book for this email
         current_book = server.current_books.get(sindarin_email)
 
-        # If we're already in READING state, we should NOT close the book - get the title!
-        if current_state == AppState.READING:
+        # If forcing library navigation, log that we're skipping the optimization
+        if current_state == AppState.READING and force_library_navigation:
+            logger.info(
+                "Force library navigation enabled - skipping already-reading optimization and going to library"
+            )
+
+        # If we're already in READING state and not forcing library navigation, we should NOT close the book - get the title!
+        if current_state == AppState.READING and not force_library_navigation:
             # First check for Download Limit dialog which needs to be handled even for already-open books
             try:
                 # Check if we're dealing with the Download Limit dialog
@@ -558,11 +581,7 @@ class BookOpenResource(Resource):
         data = request.get_json()
         book_title = data.get("title")
 
-        # Handle placemark parameter from POST data
-        placemark_param = data.get("placemark", "0")
-        if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
-            request.args = request.args.copy()
-            request.args["placemark"] = "1"
+        # Parameters are now handled in _open_book method which checks request.json for POST requests
 
         # Call the implementation without the handle_automator_response decorator
         # since it might return a Response object that can't be JSON serialized

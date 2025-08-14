@@ -316,6 +316,7 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                     params={
                         "user_email": self.email,  # Use the same email as rest of the test
                         "t": str(time.time()),  # Unique timestamp for each request
+                        "force_library_navigation": "1",  # Force going through library for more rigorous testing
                     },
                     timeout=60,
                 )
@@ -735,7 +736,12 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 # Use /open-book with specific titles
                 # Build URL and params directly since we're using a custom session
                 url = f"{self.base_url}/kindle/open-book"
-                params = {"user_email": self.email, "title": books[request_id], "staging": "1"}
+                params = {
+                    "user_email": self.email,
+                    "title": books[request_id],
+                    "staging": "1",
+                    "force_library_navigation": "1",  # Force going through library for more rigorous testing
+                }
 
                 response = session.get(url, params=params, timeout=60)
                 end_time = time.time()
