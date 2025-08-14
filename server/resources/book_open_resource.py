@@ -311,9 +311,9 @@ class BookOpenResource(Resource):
                             server.set_current_book(current_title_from_ui, sindarin_email)
                             automator.state_machine.set_cancellation_check(None)
                             result = capture_book_state(already_open=True)
-                    # Clear cancellation check on successful completion
-                    automator.state_machine.set_cancellation_check(None)
-                    return result
+                            # Clear cancellation check on successful completion
+                            automator.state_machine.set_cancellation_check(None)
+                            return result
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
 
@@ -419,9 +419,9 @@ class BookOpenResource(Resource):
                             server.set_current_book(current_title_from_ui, sindarin_email)
                             automator.state_machine.set_cancellation_check(None)
                             result = capture_book_state(already_open=True)
-                    # Clear cancellation check on successful completion
-                    automator.state_machine.set_cancellation_check(None)
-                    return result
+                            # Clear cancellation check on successful completion
+                            automator.state_machine.set_cancellation_check(None)
+                            return result
                 except Exception as e:
                     logger.warning(f"Failed to get book title from UI: {e}")
         # Not in reading state but have tracked book - clear it
