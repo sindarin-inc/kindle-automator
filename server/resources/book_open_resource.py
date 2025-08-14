@@ -369,9 +369,9 @@ class BookOpenResource(Resource):
                         server.set_current_book(actively_reading_title, sindarin_email)
                         automator.state_machine.set_cancellation_check(None)
                         result = capture_book_state(already_open=True)
-                    # Clear cancellation check on successful completion
-                    automator.state_machine.set_cancellation_check(None)
-                    return result
+                        # Clear cancellation check on successful completion
+                        automator.state_machine.set_cancellation_check(None)
+                        return result
 
                 # If no match with stored title, try to get it from UI
                 try:
@@ -461,9 +461,9 @@ class BookOpenResource(Resource):
                     server.set_current_book(book_title, sindarin_email)
                     automator.state_machine.set_cancellation_check(None)
                     result = capture_book_state()
-            # Clear cancellation check on successful completion
-            automator.state_machine.set_cancellation_check(None)
-            return result
+                    # Clear cancellation check on successful completion
+                    automator.state_machine.set_cancellation_check(None)
+                    return result
 
             # If handle_state didn't succeed or we're not in READING state, try direct approach
             logger.info("Falling back to direct library_handler.open_book for search results")
