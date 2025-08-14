@@ -20,7 +20,12 @@ from tests.test_base import (
 
 
 class TestKindleAPIIntegration(BaseKindleTest):
-    """Integration tests for Kindle API endpoints."""
+    """Integration tests for Kindle API endpoints.
+
+    Tests run in the order they appear in the file.
+    Since the Kindle emulator is stateful, test order matters.
+    The emulator is only shut down at the end of all tests.
+    """
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -28,16 +33,83 @@ class TestKindleAPIIntegration(BaseKindleTest):
         # Use the base class setup
         self.setup_base()
 
+    @classmethod
+    def teardown_class(cls):
+        """Teardown after all tests in this class.
+        Only shutdown the emulator once at the very end."""
+        try:
+            # Create a session for teardown
+            session = requests.Session()
+            base_url = f"http://localhost:{4096 if not STAGING else 80}"
+
+            # Shutdown the emulator
+            shutdown_url = f"{base_url}/kindle/shutdown"
+            params = {"user_email": TEST_USER_EMAIL, "staging": STAGING}
+            response = session.post(shutdown_url, params=params, timeout=30)
+
+            if response.status_code == 200:
+                print("\n[TEARDOWN] Successfully shut down emulator after all tests")
+            else:
+                print(f"\n[TEARDOWN] Shutdown returned {response.status_code}: {response.text}")
+
+        except Exception as e:
+            print(f"\n[TEARDOWN] Error during shutdown: {e}")
+
     # The _make_request and _parse_streaming_response methods are inherited from BaseKindleTest
 
+    @pytest.mark.timeout(30)
+    def test_auth_check_known_user(self):
+        """Test /kindle/auth-check endpoint with known user."""
+        print(f"\n[TEST] Testing auth-check for known user: {TEST_USER_EMAIL}")
+        auth_response = self._make_request("auth-check")
+        assert (
+            auth_response.status_code == 200
+        ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
+
+        auth_data = auth_response.json()
+        assert "authenticated" in auth_data, f"Auth response missing authenticated field: {auth_data}"
+        assert "status" in auth_data, f"Auth response missing status field: {auth_data}"
+        assert "email" in auth_data, f"Auth response missing email field: {auth_data}"
+        assert auth_data["email"] == TEST_USER_EMAIL, f"Wrong email in response: {auth_data['email']}"
+
+        # Known user should be authenticated
+        print(f"[TEST] Auth check result: {auth_data['status']} for {auth_data['email']}")
+        if auth_data.get("auth_date"):
+            print(f"[TEST] Authenticated at: {auth_data['auth_date']}")
+
+    @pytest.mark.timeout(30)
+    def test_auth_check_unknown_user(self):
+        """Test /kindle/auth-check endpoint with unknown user."""
+        unknown_email = "no-auth@solreader.com"
+        print(f"\n[TEST] Testing auth-check for unknown user: {unknown_email}")
+
+        # Override the default params for this request
+        unknown_params = {"user_email": unknown_email, "staging": STAGING}
+        auth_response = self._make_request("auth-check", params=unknown_params)
+        assert (
+            auth_response.status_code == 200
+        ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
+
+        auth_data = auth_response.json()
+        assert "authenticated" in auth_data, f"Auth response missing authenticated field: {auth_data}"
+        assert "status" in auth_data, f"Auth response missing status field: {auth_data}"
+        assert "email" in auth_data, f"Auth response missing email field: {auth_data}"
+        assert auth_data["email"] == unknown_email, f"Wrong email in response: {auth_data['email']}"
+
+        # Unknown user should not be authenticated
+        assert auth_data["authenticated"] is False, f"Unknown user should not be authenticated: {auth_data}"
+        assert (
+            auth_data["status"] == "never_authenticated"
+        ), f"Unknown user should have never_authenticated status: {auth_data['status']}"
+        print(f"[TEST] Auth check result: {auth_data['status']} for {auth_data['email']} (as expected)")
+
     @pytest.mark.timeout(120)
-    def test_books_endpoint(self):
-        """Test /books endpoint with sync, pagination, and streaming functionality."""
+    def test_books_non_streaming(self):
+        """Test /books endpoint in non-streaming mode (sync=false)."""
         # Always use the web-app proxy for testing
         url = f"{self.base_url}/kindle/books"
         params = self.default_params.copy()
 
-        # Test 1: Non-streaming mode (sync=false or not specified)
         print("\n[TEST] Testing non-streaming mode (sync=false)...")
         non_stream_params = params.copy()
         non_stream_params["sync"] = "false"
@@ -65,7 +137,12 @@ class TestKindleAPIIntegration(BaseKindleTest):
         except requests.exceptions.RequestException as e:
             pytest.fail(f"Non-streaming mode failed: {e}")
 
-        # Test 2: Pagination (page_size=2)
+    @pytest.mark.timeout(120)
+    def test_books_pagination(self):
+        """Test /books endpoint with pagination (page_size=2)."""
+        url = f"{self.base_url}/kindle/books"
+        params = self.default_params.copy()
+
         print("\n[TEST] Testing pagination with page_size=2...")
         page_params = params.copy()
         page_params["sync"] = "false"
@@ -119,7 +196,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
         print(f"[TEST] Pagination test passed! Got {len(all_pages_books)} books across {page} pages")
         assert len(all_pages_books) >= 3, f"Expected at least 3 books total, got {len(all_pages_books)}"
 
-        # Test 3: Streaming mode (sync=true)
+    @pytest.mark.timeout(120)
+    def test_books_streaming(self):
+        """Test /books endpoint in streaming mode (sync=true)."""
         print("\n[TEST] Testing streaming mode (sync=true)...")
         # Use the dedicated streaming endpoint for sync=true
         stream_url = f"{self.base_url}/kindle/books-stream"
@@ -210,50 +289,150 @@ class TestKindleAPIIntegration(BaseKindleTest):
             else:
                 pytest.fail(f"Streaming mode failed: {e}")
 
-    @pytest.mark.timeout(30)
-    def test_auth_check(self):
-        """Test /kindle/auth-check endpoint with known and unknown users."""
-        # Test 1: Check known user
-        print(f"\n[TEST] Testing auth-check for known user: {TEST_USER_EMAIL}")
-        auth_response = self._make_request("auth-check")
+    @pytest.mark.timeout(120)
+    def test_staff_auth_fail_without_token(self):
+        """Test that impersonation fails without staff token."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+
+        # Clear any existing staff token
+        self.session.cookies.clear()
+
+        print("\n[TEST] Testing impersonation without staff token (should fail)...")
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
+        assert response.status_code == 403, f"Expected 403 without staff token, got {response.status_code}"
+        data = response.json()
+        assert "error" in data, "Response should contain error"
+        assert "staff" in data["error"].lower(), f"Error should mention staff auth: {data}"
+        print(f"[TEST] ✓ Correctly rejected: {data['error']}")
+
+        # Restore original session state
+        self.session.cookies = original_cookies
+
+    @pytest.mark.timeout(120)
+    def test_staff_auth_create_token(self):
+        """Test creating a new staff token."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+        self.session.cookies.clear()
+
+        print("\n[TEST] Creating new staff token...")
+        response = self._make_request("staff-auth", {"auth": "1"})
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["authenticated"] is True, f"Authentication failed: {data}"
+        assert "token" in data, "Response should contain token"
+
+        # Extract the full token from cookies (since response only shows truncated version)
+        staff_token = None
+        for cookie in response.cookies:
+            if cookie.name == "staff_token":
+                staff_token = cookie.value
+                break
+        assert staff_token is not None, "No staff_token cookie received"
+        assert len(staff_token) == 64, f"Token should be 64 chars, got {len(staff_token)}"
+        print(f"[TEST] ✓ Staff token created: {staff_token[:8]}...{staff_token[-8:]}")
+
+        # Store token for next test
+        self.__class__.staff_token = staff_token
+
+        # Restore original session state
+        self.session.cookies = original_cookies
+
+    @pytest.mark.timeout(120)
+    def test_staff_auth_impersonate_user(self):
+        """Test using staff token to impersonate a user."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+
+        # Use the token from previous test
+        assert hasattr(self.__class__, "staff_token"), "No staff token from previous test"
+        staff_token = self.__class__.staff_token
+
+        print("\n[TEST] Testing user impersonation with staff token...")
+        # Clear cookies first to avoid conflicts
+        self.session.cookies.clear()
+        self.session.cookies.set("staff_token", staff_token)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
+        assert response.status_code == 200, f"Expected 200 with staff token, got {response.status_code}"
+        data = response.json()
+        assert "success" in data or "authenticated" in data, f"Response missing expected fields: {data}"
+        print(f"[TEST] ✓ Successfully impersonated user: {data}")
+
+        # Restore original session state
+        self.session.cookies = original_cookies
+
+    @pytest.mark.timeout(120)
+    def test_staff_auth_validate_token(self):
+        """Test verifying staff token validation."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+
+        # Use the token from previous test
+        assert hasattr(self.__class__, "staff_token"), "No staff token from previous test"
+        staff_token = self.__class__.staff_token
+
+        print("\n[TEST] Verifying staff token validation...")
+        self.session.cookies.clear()
+        self.session.cookies.set("staff_token", staff_token)
+        response = self._make_request("staff-auth")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert data["authenticated"] is True, f"Token validation failed: {data}"
+        assert "Valid staff token" in data["message"], f"Unexpected message: {data}"
+        print(f"[TEST] ✓ Token validated: {data['message']}")
+
+        # Restore original session state
+        self.session.cookies = original_cookies
+
+    @pytest.mark.timeout(120)
+    def test_staff_auth_revoke_token(self):
+        """Test revoking the staff token."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+
+        # Use the token from previous test
+        assert hasattr(self.__class__, "staff_token"), "No staff token from previous test"
+        staff_token = self.__class__.staff_token
+
+        print("\n[TEST] Revoking staff token...")
+        self.session.cookies.clear()
+        self.session.cookies.set("staff_token", staff_token)
+        response = self._make_request("staff-auth", method="DELETE")
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert data["success"] is True, f"Token revocation failed: {data}"
+        print(f"[TEST] ✓ Token revoked: {data['message']}")
+
+        # Restore original session state
+        self.session.cookies = original_cookies
+
+    @pytest.mark.timeout(120)
+    def test_staff_auth_verify_revoked_fails(self):
+        """Test that revoked token no longer works."""
+        # Save current session state
+        original_cookies = self.session.cookies.copy()
+
+        # Use the token from previous test
+        assert hasattr(self.__class__, "staff_token"), "No staff token from previous test"
+        staff_token = self.__class__.staff_token
+
+        print("\n[TEST] Verifying revoked token is rejected...")
+        # Keep the revoked token in cookies
+        self.session.cookies.clear()
+        self.session.cookies.set("staff_token", staff_token)
+        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
+        assert response.status_code == 403, f"Expected 403 with revoked token, got {response.status_code}"
+        data = response.json()
+        assert "error" in data, "Response should contain error"
         assert (
-            auth_response.status_code == 200
-        ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
+            "invalid" in data["error"].lower() or "revoked" in data["error"].lower()
+        ), f"Error should mention invalid/revoked token: {data}"
+        print(f"[TEST] ✓ Revoked token correctly rejected: {data['error']}")
 
-        auth_data = auth_response.json()
-        assert "authenticated" in auth_data, f"Auth response missing authenticated field: {auth_data}"
-        assert "status" in auth_data, f"Auth response missing status field: {auth_data}"
-        assert "email" in auth_data, f"Auth response missing email field: {auth_data}"
-        assert auth_data["email"] == TEST_USER_EMAIL, f"Wrong email in response: {auth_data['email']}"
-
-        # Known user should be authenticated
-        print(f"[TEST] Auth check result: {auth_data['status']} for {auth_data['email']}")
-        if auth_data.get("auth_date"):
-            print(f"[TEST] Authenticated at: {auth_data['auth_date']}")
-
-        # Test 2: Check unknown user (no-auth@solreader.com)
-        unknown_email = "no-auth@solreader.com"
-        print(f"\n[TEST] Testing auth-check for unknown user: {unknown_email}")
-
-        # Override the default params for this request
-        unknown_params = {"user_email": unknown_email, "staging": STAGING}
-        auth_response = self._make_request("auth-check", params=unknown_params)
-        assert (
-            auth_response.status_code == 200
-        ), f"Auth check failed: {auth_response.status_code}: {auth_response.text}"
-
-        auth_data = auth_response.json()
-        assert "authenticated" in auth_data, f"Auth response missing authenticated field: {auth_data}"
-        assert "status" in auth_data, f"Auth response missing status field: {auth_data}"
-        assert "email" in auth_data, f"Auth response missing email field: {auth_data}"
-        assert auth_data["email"] == unknown_email, f"Wrong email in response: {auth_data['email']}"
-
-        # Unknown user should not be authenticated
-        assert auth_data["authenticated"] is False, f"Unknown user should not be authenticated: {auth_data}"
-        assert (
-            auth_data["status"] == "never_authenticated"
-        ), f"Unknown user should have never_authenticated status: {auth_data['status']}"
-        print(f"[TEST] Auth check result: {auth_data['status']} for {auth_data['email']} (as expected)")
+        # Restore original session state
+        self.session.cookies = original_cookies
+        print("\n[TEST] Staff token authentication workflow completed successfully!")
 
     @pytest.mark.timeout(120)
     def test_open_random_book(self):
@@ -279,11 +458,14 @@ class TestKindleAPIIntegration(BaseKindleTest):
         self.__class__.opened_book = data
 
     @pytest.mark.timeout(120)
-    def test_navigate_with_preview(self):
-        """Test /kindle/navigate endpoint with preview."""
+    def test_navigate_preview(self):
+        """Test /kindle/navigate endpoint with preview action."""
         # First ensure a book is open
         if not hasattr(self.__class__, "opened_book"):
-            self.test_open_random_book()
+            # Open a book first
+            response = self._make_request("open-random-book")
+            assert response.status_code == 200
+            self.__class__.opened_book = response.json()
             time.sleep(2)  # Give time for book to load
 
         # Skip if no book was opened
@@ -311,148 +493,10 @@ class TestKindleAPIIntegration(BaseKindleTest):
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
 
-    @pytest.mark.timeout(120)
-    def test_staff_token_authentication(self):
-        """Test staff token creation, validation, and user impersonation."""
-        # Save current session state
-        original_cookies = self.session.cookies.copy()
-
-        # Clear any existing staff token
-        self.session.cookies.clear()
-
-        print("\n[TEST] Testing staff authentication workflow...")
-
-        # Test 1: Try to impersonate without staff token (should fail)
-        print("[TEST] 1. Testing impersonation without staff token (should fail)...")
-        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
-        assert response.status_code == 403, f"Expected 403 without staff token, got {response.status_code}"
-        data = response.json()
-        assert "error" in data, "Response should contain error"
-        assert "staff" in data["error"].lower(), f"Error should mention staff auth: {data}"
-        print(f"[TEST] ✓ Correctly rejected: {data['error']}")
-
-        # Test 2: Create a new staff token
-        print("\n[TEST] 2. Creating new staff token...")
-        response = self._make_request("staff-auth", {"auth": "1"})
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
-        assert data["authenticated"] is True, f"Authentication failed: {data}"
-        assert "token" in data, "Response should contain token"
-
-        # Extract the full token from cookies (since response only shows truncated version)
-        staff_token = None
-        for cookie in response.cookies:
-            if cookie.name == "staff_token":
-                staff_token = cookie.value
-                break
-        assert staff_token is not None, "No staff_token cookie received"
-        assert len(staff_token) == 64, f"Token should be 64 chars, got {len(staff_token)}"
-        print(f"[TEST] ✓ Staff token created: {staff_token[:8]}...{staff_token[-8:]}")
-
-        # Test 3: Use the token to impersonate a user
-        print("\n[TEST] 3. Testing user impersonation with staff token...")
-        # Clear cookies first to avoid conflicts
-        self.session.cookies.clear()
-        self.session.cookies.set("staff_token", staff_token)
-        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
-        assert response.status_code == 200, f"Expected 200 with staff token, got {response.status_code}"
-        data = response.json()
-        assert "success" in data or "authenticated" in data, f"Response missing expected fields: {data}"
-        print(f"[TEST] ✓ Successfully impersonated user: {data}")
-
-        # Test 4: Verify the token validates correctly
-        print("\n[TEST] 4. Verifying staff token validation...")
-        response = self._make_request("staff-auth")
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        data = response.json()
-        assert data["authenticated"] is True, f"Token validation failed: {data}"
-        assert "Valid staff token" in data["message"], f"Unexpected message: {data}"
-        print(f"[TEST] ✓ Token validated: {data['message']}")
-
-        # Test 5: Revoke the token
-        print("\n[TEST] 5. Revoking staff token...")
-        response = self._make_request("staff-auth", method="DELETE")
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
-        data = response.json()
-        assert data["success"] is True, f"Token revocation failed: {data}"
-        print(f"[TEST] ✓ Token revoked: {data['message']}")
-
-        # Test 6: Verify revoked token no longer works
-        print("\n[TEST] 6. Verifying revoked token is rejected...")
-        # Keep the revoked token in cookies
-        response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
-        assert response.status_code == 403, f"Expected 403 with revoked token, got {response.status_code}"
-        data = response.json()
-        assert "error" in data, "Response should contain error"
-        assert (
-            "invalid" in data["error"].lower() or "revoked" in data["error"].lower()
-        ), f"Error should mention invalid/revoked token: {data}"
-        print(f"[TEST] ✓ Revoked token correctly rejected: {data['error']}")
-
-        # Restore original session state
-        self.session.cookies = original_cookies
-        print("\n[TEST] Staff token authentication workflow completed successfully!")
-
-    @pytest.mark.timeout(120)
-    def _test_shutdown(self):
-        """Test /kindle/shutdown endpoint."""
-        try:
-            response = self._make_request("shutdown", method="POST")
-        except requests.exceptions.ReadTimeout:
-            # Don't skip - let the test fail
-            raise
-
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        data = response.json()
-        assert "success" in data or "status" in data, f"Response missing success/status field: {data}"
-
-        # Verify shutdown was acknowledged
-        if "success" in data:
-            assert data["success"] is True, f"Shutdown failed: {data}"
-        elif "status" in data:
-            assert data["status"] in [
-                "success",
-                "ok",
-                "completed",
-            ], f"Unexpected status: {data}"
-
-    def test_endpoints_sequence(self):
-        """Test the full sequence of endpoints."""
-        # Open book
-        open_response = self._make_request("open-random-book")
-        assert open_response.status_code == 200
-        open_data = open_response.json()
-
-        # Verify open response (handle both last-read dialog and normal book open)
-        if open_data.get("last_read_dialog") and open_data.get("dialog_text"):
-            assert "message" in open_data
-            assert len(open_data["dialog_text"]) > 0
-        else:
-            assert "ocr_text" in open_data
-            assert len(open_data["ocr_text"]) > 0
-
-        # Navigate with preview
-        nav_response = self._make_request("navigate", {"action": "preview", "preview": "true"})
-        assert nav_response.status_code == 200
-        nav_data = nav_response.json()
-
-        # Verify navigate response (handle both last-read dialog and normal navigation)
-        if nav_data.get("last_read_dialog") and nav_data.get("dialog_text"):
-            assert "message" in nav_data
-            assert len(nav_data["dialog_text"]) > 0
-        else:
-            assert any(key in nav_data for key in ["ocr_text", "text", "content"])
-            text_field = nav_data.get("ocr_text") or nav_data.get("text") or nav_data.get("content")
-            assert len(text_field) > 0
-
-        # Shutdown
-        shutdown_response = self._make_request("shutdown", method="POST")
-        assert shutdown_response.status_code == 200
-
     @pytest.mark.expensive
-    def test_recreate(self):
-        """Ensure that recreation/creating a new AVD works"""
+    @pytest.mark.timeout(120)
+    def test_recreate_avd(self):
+        """Test recreating/creating a new AVD."""
         print("\n[TEST_RECREATE] Starting test_recreate")
         print("[TEST_RECREATE] Making auth request with recreate=1")
 
@@ -475,7 +519,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
         assert data["success"] is True, f"Recreation failed: {data}"
         assert data["authenticated"] is False, f"Recreation failed: {data}"
 
-        # Shutdown
+        # Shutdown the recreated AVD
         print("[TEST_RECREATE] Making shutdown request")
         shutdown_response = self._make_request(
             "shutdown", method="POST", params={"user_email": RECREATE_USER_EMAIL}
@@ -483,6 +527,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
         print(f"[TEST_RECREATE] Shutdown response status: {shutdown_response.status_code}")
         assert shutdown_response.status_code == 200
         print("[TEST_RECREATE] Test completed successfully")
+
+    # Note: The shutdown test is removed as individual method since we handle it in teardown_class
+    # If you need to test shutdown/restart routines, you can add specific test methods for those
 
 
 if __name__ == "__main__":

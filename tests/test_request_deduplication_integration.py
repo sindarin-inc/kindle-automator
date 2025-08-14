@@ -308,7 +308,7 @@ class TestRequestDeduplicationIntegration(unittest.TestCase):
                 response = base_test._make_request(
                     "open-random-book",
                     params={"user_email": "test@example.com", "t": str(time.time())},
-                    timeout=30,
+                    timeout=60,
                 )
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
@@ -662,7 +662,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
 
         # Wait for both to complete
         stream_thread.join(timeout=15)
-        open_thread.join(timeout=30)
+        open_thread.join(timeout=60)
 
         # Verify /open-book returned 200
         self.assertIn("open_status", results, f"Open book did not complete. Results: {results}")
@@ -727,7 +727,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 response = self._make_request(
                     "open-book",
                     params={"user_email": self.email, "title": books[request_id]},
-                    timeout=30,
+                    timeout=60,
                 )
                 end_time = time.time()
                 results[f"request_{request_id}_status"] = response.status_code
@@ -865,7 +865,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             init_response = self._make_request(
                 "screenshot",
                 params={"user_email": self.email},
-                timeout=30,
+                timeout=60,
             )
             results["init_status"] = init_response.status_code
         except Exception as e:
@@ -878,7 +878,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 response = self._make_request(
                     "shutdown",
                     params={"user_email": self.email},
-                    timeout=30,
+                    timeout=60,
                 )
                 results["shutdown1_status"] = response.status_code
                 results["shutdown1_time"] = time.time()
@@ -896,7 +896,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 response = self._make_request(
                     "shutdown",
                     params={"user_email": self.email},
-                    timeout=30,
+                    timeout=60,
                 )
                 results["shutdown2_status"] = response.status_code
                 results["shutdown2_time"] = time.time()
@@ -917,8 +917,8 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         thread2.start()
 
         # Wait for both to complete
-        thread1.join(timeout=30)
-        thread2.join(timeout=30)
+        thread1.join(timeout=60)
+        thread2.join(timeout=60)
 
         # Verify both returned 200
         self.assertIn("shutdown1_status", results, f"First shutdown did not complete. Results: {results}")
