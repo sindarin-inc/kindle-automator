@@ -1426,7 +1426,12 @@ class EmulatorLauncher:
                     subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
 
                 # Remove from running emulators
-                del self.running_emulators[avd_name]
+                if avd_name in self.running_emulators:
+                    del self.running_emulators[avd_name]
+                else:
+                    logger.warning(
+                        f"AVD {avd_name} was not in running_emulators dict when trying to remove it after force kill"
+                    )
                 return True
 
             # For backward compatibility, check using email directly
@@ -1487,7 +1492,12 @@ class EmulatorLauncher:
 
                 if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for {email}")
-                    del self.running_emulators[email]
+                    if email in self.running_emulators:
+                        del self.running_emulators[email]
+                    else:
+                        logger.warning(
+                            f"Email {email} was not in running_emulators dict when trying to remove it (legacy key)"
+                        )
                     return True
 
                 # Force kill if still running
@@ -1504,7 +1514,12 @@ class EmulatorLauncher:
                     subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
 
                 # Remove from running emulators
-                del self.running_emulators[email]
+                if email in self.running_emulators:
+                    del self.running_emulators[email]
+                else:
+                    logger.warning(
+                        f"Email {email} was not in running_emulators dict when trying to remove it after force kill (legacy key)"
+                    )
                 return True
 
             # No running emulator found
