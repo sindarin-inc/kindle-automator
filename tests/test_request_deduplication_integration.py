@@ -7,6 +7,7 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
 import redis
 
 from server.core.request_manager import DeduplicationStatus, RequestManager, WaitResult
@@ -293,6 +294,7 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
         low_manager2 = RequestManager("test@example.com", "/screenshot", "GET")
         self.assertTrue(low_manager2._should_wait_for_higher_priority())
 
+    @pytest.mark.expensive
     def test_last_one_wins_for_random_book(self):
         """Test that newer /open-random-book requests cancel older ones."""
         # This test verifies that when multiple /open-random-book requests are made,
@@ -709,6 +711,7 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
                 f"Cancellation took {cancellation_delay:.1f}s, should be under 15s",
             )
 
+    @pytest.mark.expensive
     def test_three_open_random_book_requests_only_last_succeeds(self):
         """Test that multiple /open-book requests cancel earlier ones when they have different parameters."""
         results = {}
