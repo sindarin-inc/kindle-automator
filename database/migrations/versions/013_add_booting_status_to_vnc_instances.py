@@ -48,6 +48,19 @@ def upgrade():
 
 def downgrade():
     """Remove booting status fields from vnc_instances table."""
-    op.drop_index("idx_vnc_instances_booting", table_name="vnc_instances")
-    op.drop_column("vnc_instances", "boot_started_at")
-    op.drop_column("vnc_instances", "is_booting")
+    # Check if index exists before dropping
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_indexes = [idx["name"] for idx in inspector.get_indexes("vnc_instances")]
+
+    if "idx_vnc_instances_booting" in existing_indexes:
+        op.drop_index("idx_vnc_instances_booting", table_name="vnc_instances")
+
+    # Check if columns exist before dropping
+    columns = [col["name"] for col in inspector.get_columns("vnc_instances")]
+
+    if "boot_started_at" in columns:
+        op.drop_column("vnc_instances", "boot_started_at")
+
+    if "is_booting" in columns:
+        op.drop_column("vnc_instances", "is_booting")

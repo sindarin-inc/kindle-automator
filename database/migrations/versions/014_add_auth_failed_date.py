@@ -32,4 +32,10 @@ def upgrade():
 
 def downgrade():
     """Remove auth_failed_date column from users table."""
-    op.drop_column("users", "auth_failed_date")
+    # Check if column exists before dropping (idempotent migration)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [col["name"] for col in inspector.get_columns("users")]
+
+    if "auth_failed_date" in columns:
+        op.drop_column("users", "auth_failed_date")
