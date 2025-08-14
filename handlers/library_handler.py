@@ -1125,15 +1125,17 @@ class LibraryHandler:
             # Update the last check time in the database
             from datetime import datetime, timezone
 
+            from database.connection import get_db
             from database.repositories.user_repository import UserRepository
             from server.utils.request_utils import get_sindarin_email
 
             sindarin_email = get_sindarin_email()
             if sindarin_email:
-                with UserRepository() as repo:
+                with get_db() as session:
+                    repo = UserRepository(session)
                     library_settings = repo.get_or_create_library_settings(sindarin_email)
                     library_settings.last_series_group_check = datetime.now(timezone.utc)
-                    repo.commit()
+                    session.commit()
                     logger.info("Updated last_series_group_check timestamp in database")
         else:
             logger.warning("Failed to handle Grid/List dialog to disable series grouping")
