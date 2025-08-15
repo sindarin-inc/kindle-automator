@@ -89,17 +89,11 @@ class NavigationResource(Resource):
         # Log the navigation parameters
         logger.info(f"Navigation params: {params}")
 
-        # Update the position based on navigation (not preview, as preview returns to original position)
-        navigate_count = params.get("navigate_count", 0)
-        if navigate_count != 0:
-            new_position = server.update_position(sindarin_email, navigate_count)
-            logger.info(f"Updated position for {sindarin_email} by {navigate_count} to {new_position}")
-
-        # Mark snapshot as dirty since user navigated
+        # Mark snapshot as dirty since user navigated (before actual navigation)
         self._mark_snapshot_dirty(sindarin_email)
 
         # Delegate to the handler
-        return nav_handler.navigate(
+        result = nav_handler.navigate(
             navigate_count=params["navigate_count"],
             preview_count=params["preview_count"],
             show_placemark=params["show_placemark"],
@@ -107,6 +101,32 @@ class NavigationResource(Resource):
             perform_ocr=params["perform_ocr"],
             book_title=params.get("title"),
         )
+
+        # Extract the response and status code from the result
+        if isinstance(result, tuple) and len(result) == 2:
+            response, status_code = result
+        else:
+            # Handle unexpected return format
+            response = result
+            status_code = 200 if isinstance(result, dict) and result.get("success") else 500
+
+        # Only update position if navigation was successful
+        # Check if the response indicates success and we actually navigated (not just preview)
+        navigate_count = params.get("navigate_count", 0)
+        if (
+            navigate_count != 0
+            and status_code == 200
+            and isinstance(response, dict)
+            and response.get("success")
+        ):
+            new_position = server.update_position(sindarin_email, navigate_count)
+            logger.info(f"Updated position for {sindarin_email} by {navigate_count} to {new_position}")
+        elif navigate_count != 0:
+            logger.info(
+                f"Navigation failed or returned non-success, not updating position for {sindarin_email}"
+            )
+
+        return response, status_code
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
