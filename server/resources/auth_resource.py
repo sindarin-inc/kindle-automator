@@ -12,6 +12,7 @@ from flask_restful import Resource
 from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.middleware.response_handler import handle_automator_response
 from server.utils.request_utils import (
     get_formatted_vnc_url,
@@ -323,6 +324,7 @@ class AuthResource(Resource):
 
         return response_data, 200
 
+    @deduplicate_request
     def get(self):
         """Get the auth status"""
         # Use get_sindarin_email() to properly handle user_email overrides
@@ -343,6 +345,7 @@ class AuthResource(Resource):
         # Now proceed with normal auth flow
         return self._auth()
 
+    @deduplicate_request
     def post(self):
         """Set up a profile for manual authentication via VNC"""
         # Use get_sindarin_email() to properly handle user_email overrides
