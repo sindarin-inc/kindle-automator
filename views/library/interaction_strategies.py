@@ -120,6 +120,22 @@ UNABLE_TO_DOWNLOAD_DIALOG_BUTTONS = [
     (AppiumBy.ID, "android:id/button1"),  # TRY AGAIN button
 ]
 
+# Title Not Available dialog identifiers (appears when trying to open expired loans)
+TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS = [
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Title Not Available']"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/alertTitle' and @text='Title Not Available']",
+    ),
+    (AppiumBy.ID, "com.amazon.kindle:id/alertTitle"),  # Generic alert title - check text separately
+]
+
+TITLE_NOT_AVAILABLE_DIALOG_BUTTONS = [
+    (AppiumBy.XPATH, "//android.widget.Button[@text='CANCEL']"),
+    (AppiumBy.XPATH, "//android.widget.Button[@resource-id='android:id/button2']"),
+    (AppiumBy.ID, "android:id/button2"),  # CANCEL button
+]
+
 # Filter button strategies
 FILTER_BUTTON_STRATEGIES = [
     (AppiumBy.ID, "com.amazon.kindle:id/refine_menu_button_container"),

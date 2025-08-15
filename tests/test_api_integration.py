@@ -499,19 +499,19 @@ class TestKindleAPIIntegration(BaseKindleTest):
     def test_recreate_avd(self):
         """Test recreating/creating a new AVD with duplicate request deduplication."""
         print("\n[TEST_RECREATE] Starting test_recreate with duplicate request testing")
-        
+
         # Dictionary to store results from threads
         results = {}
-        
+
         def make_recreate_request(request_num, delay=0):
             """Make a recreate request after an optional delay."""
             if delay > 0:
                 print(f"[TEST_RECREATE] Request {request_num} waiting {delay}s before starting...")
                 time.sleep(delay)
-            
+
             start_time = time.time()
             print(f"[TEST_RECREATE] Request {request_num} starting recreate request")
-            
+
             # Use a longer timeout for recreate operations and disable retries
             response = self._make_request(
                 "auth",
@@ -523,38 +523,38 @@ class TestKindleAPIIntegration(BaseKindleTest):
                 timeout=120,  # 2 minutes timeout
                 max_deploy_retries=1,  # No retries - recreate is expensive and should only run once
             )
-            
+
             elapsed = time.time() - start_time
             print(f"[TEST_RECREATE] Request {request_num} completed in {elapsed:.1f}s")
             print(f"[TEST_RECREATE] Request {request_num} status: {response.status_code}")
-            
+
             data = response.json()
             print(f"[TEST_RECREATE] Request {request_num} response: {data}")
-            
+
             results[request_num] = {
                 "response": response,
                 "data": data,
                 "elapsed": elapsed,
-                "start_time": start_time
+                "start_time": start_time,
             }
-        
+
         # Create two threads - one immediate, one delayed by 10 seconds
         thread1 = threading.Thread(target=make_recreate_request, args=(1, 0))
         thread2 = threading.Thread(target=make_recreate_request, args=(2, 10))
-        
+
         # Start both threads
         print("[TEST_RECREATE] Starting Request 1 immediately and Request 2 after 10s delay")
         thread1.start()
         thread2.start()
-        
+
         # Wait for both to complete
         thread1.join()
         thread2.join()
-        
+
         # Verify both requests succeeded
         assert 1 in results, "Request 1 did not complete"
         assert 2 in results, "Request 2 did not complete"
-        
+
         # Check first request
         response1 = results[1]["response"]
         data1 = results[1]["data"]
@@ -562,7 +562,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
         assert "success" in data1 or "status" in data1, f"Request 1 missing success/status field: {data1}"
         assert data1["success"] is True, f"Request 1 recreation failed: {data1}"
         assert data1["authenticated"] is False, f"Request 1 recreation failed: {data1}"
-        
+
         # Check second request
         response2 = results[2]["response"]
         data2 = results[2]["data"]
@@ -570,35 +570,37 @@ class TestKindleAPIIntegration(BaseKindleTest):
         assert "success" in data2 or "status" in data2, f"Request 2 missing success/status field: {data2}"
         assert data2["success"] is True, f"Request 2 recreation failed: {data2}"
         assert data2["authenticated"] is False, f"Request 2 recreation failed: {data2}"
-        
+
         # Verify deduplication worked
         elapsed1 = results[1]["elapsed"]
         elapsed2 = results[2]["elapsed"]
         server_time1 = data1.get("time_taken", 0)
         server_time2 = data2.get("time_taken", 0)
-        
+
         print(f"\n[TEST_RECREATE] DEDUPLICATION ANALYSIS:")
         print(f"[TEST_RECREATE] Request 1: actual {elapsed1:.1f}s, server reported {server_time1:.1f}s")
         print(f"[TEST_RECREATE] Request 2: actual {elapsed2:.1f}s, server reported {server_time2:.1f}s")
-        
+
         # Both should have the same server-reported time if deduplicated
         if abs(server_time1 - server_time2) < 0.5:  # Allow small difference
-            print(f"[TEST_RECREATE] ✓ Both requests report same server time ({server_time1:.1f}s) - confirms deduplication")
-        
+            print(
+                f"[TEST_RECREATE] ✓ Both requests report same server time ({server_time1:.1f}s) - confirms deduplication"
+            )
+
         # Request 2 should complete faster in real time if it was deduplicated
         if elapsed2 < elapsed1:
             time_saved = elapsed1 - elapsed2
             print(f"[TEST_RECREATE] ✓ Request 2 completed {time_saved:.1f}s faster in real time")
         else:
             print(f"[TEST_RECREATE] ⚠️ Request 2 took as long as Request 1 (may not have been deduplicated)")
-        
+
         # Check if requests overlapped
         request1_end = results[1]["start_time"] + elapsed1
         request2_start = results[2]["start_time"]
         if request2_start < request1_end:
             overlap = request1_end - request2_start
             print(f"[TEST_RECREATE] ✓ Requests overlapped by {overlap:.1f}s")
-        
+
         # Shutdown the recreated AVD
         print("\n[TEST_RECREATE] Making shutdown request")
         shutdown_response = self._make_request(
