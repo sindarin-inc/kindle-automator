@@ -442,6 +442,18 @@ class NavigationResourceHandler:
             if i < count - 1:
                 time.sleep(0.5)
 
+        # Mark AVD as dirty after successful navigation (placemark has changed)
+        if success and count > 0:
+            try:
+                profile = self.automator.profile_manager.get_current_profile()
+                if profile:
+                    email = profile.get("email")
+                    if email:
+                        self.automator.profile_manager.mark_avd_dirty(email)
+                        logger.debug(f"Marked AVD as dirty for {email} after navigation")
+            except Exception as e:
+                logger.warning(f"Failed to mark AVD as dirty after navigation: {e}")
+
         return success
 
     def _preview_multiple_pages_forward(self, count: int) -> Tuple[bool, Optional[str]]:

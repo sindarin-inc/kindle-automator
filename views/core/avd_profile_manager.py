@@ -287,6 +287,12 @@ class AVDProfileManager:
             repo = UserRepository(session)
             return repo.update_auth_state(email, authenticated)
 
+    def mark_avd_dirty(self, email: str) -> bool:
+        """Mark AVD as dirty (changed since last backup)."""
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.mark_avd_dirty(email)
+
     def _save_profile_status(self, email: str, avd_name: str, emulator_id: Optional[str] = None) -> bool:
         """Save profile status with last_used timestamp."""
         with self.db_connection.get_session() as session:

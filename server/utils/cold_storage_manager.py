@@ -2,10 +2,11 @@ import logging
 import os
 import platform
 import shutil
+import socket
 import tarfile
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 import boto3
@@ -98,21 +99,209 @@ class ColdStorageManager:
             bytes_size /= 1024.0
         return f"{bytes_size:.2f} PB"
 
+    def _compress_and_upload_avd(
+        self,
+        email: str,
+        avd_name: str,
+        avd_path: str,
+        ini_path: str,
+        s3_prefix: str = "cold-storage/avds/",
+        include_metadata: bool = False,
+    ) -> Tuple[bool, Optional[dict]]:
+        """
+        Shared method to compress and upload AVD to S3.
+
+        Args:
+            email: Email address of the profile
+            avd_name: Name of the AVD
+            avd_path: Path to AVD directory
+            ini_path: Path to AVD .ini file
+            s3_prefix: S3 prefix for storage ("backups/avds/" or "cold-storage/avds/")
+            include_metadata: Whether to include metadata in S3 upload
+
+        Returns:
+            Tuple[bool, Optional[dict]]: (success, storage_info)
+        """
+        temp_path = None
+        try:
+            # Calculate original size
+            original_size = self._get_directory_size(avd_path) + os.path.getsize(ini_path)
+            logger.info(f"Original AVD size: {self._format_bytes(original_size)}")
+
+            # Create temporary archive
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as temp_file:
+                temp_path = temp_file.name
+            logger.info(f"Temporary archive path: {temp_path}")
+
+            # Compress AVD files
+            logger.info(f"Compressing AVD files...")
+            start_time = time.time()
+            with tarfile.open(temp_path, "w:gz", compresslevel=1) as tar:  # Fast compression
+                logger.info(f"Adding {avd_path} to archive...")
+                tar.add(avd_path, arcname=f"{avd_name}.avd")
+                logger.info(f"Adding {ini_path} to archive...")
+                tar.add(ini_path, arcname=f"{avd_name}.ini")
+            compression_time = time.time() - start_time
+            logger.info(f"Compression completed in {compression_time:.2f} seconds")
+
+            # Get compressed size
+            compressed_size = os.path.getsize(temp_path)
+            compression_ratio = (1 - compressed_size / original_size) * 100
+            logger.info(
+                f"Compressed size: {self._format_bytes(compressed_size)} ({compression_ratio:.1f}% compression)"
+            )
+
+            # Upload to S3
+            archive_key = f"{s3_prefix}{email}/{avd_name}.tar.gz"
+            logger.info(f"Uploading to S3: {self.bucket_name}/{archive_key}")
+            upload_start = time.time()
+
+            extra_args = {"ACL": "private"}
+            if include_metadata:
+                import socket
+
+                extra_args["Metadata"] = {
+                    "hostname": socket.gethostname(),
+                    "backup_date": datetime.now(timezone.utc).isoformat(),
+                    "email": email,
+                }
+
+            with open(temp_path, "rb") as f:
+                self.s3_client.upload_fileobj(f, self.bucket_name, archive_key, ExtraArgs=extra_args)
+            upload_time = time.time() - upload_start
+            logger.info(f"S3 upload completed in {upload_time:.2f} seconds")
+
+            # Calculate space saved (for cold storage)
+            space_saved = original_size - compressed_size
+
+            storage_info = {
+                "original_size": original_size,
+                "compressed_size": compressed_size,
+                "compression_ratio": compression_ratio,
+                "space_saved": space_saved,
+                "original_size_human": self._format_bytes(original_size),
+                "compressed_size_human": self._format_bytes(compressed_size),
+                "space_saved_human": self._format_bytes(space_saved),
+                "s3_key": archive_key,
+                "upload_time": upload_time,
+            }
+
+            if include_metadata:
+                import socket
+
+                storage_info["backup_date"] = datetime.now(timezone.utc)
+                storage_info["hostname"] = socket.gethostname()
+
+            return True, storage_info
+
+        except Exception as e:
+            logger.error(f"Failed to compress and upload AVD for {email}: {e}", exc_info=True)
+            return False, {"error": str(e)}
+        finally:
+            # Always clean up temp file
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                    logger.info("Temporary archive file cleaned up")
+                except Exception as e:
+                    logger.error(f"Failed to clean up temporary file: {e}", exc_info=True)
+
+    def backup_avd(self, email: str) -> Tuple[bool, Optional[dict]]:
+        """
+        Create a backup of an AVD in cloud storage without deleting the local copy.
+        This is called when a user successfully authenticates to ensure we have a backup.
+
+        Args:
+            email: Email address of the profile to backup
+
+        Returns:
+            Tuple[bool, Optional[dict]]: (success, backup_info)
+        """
+        from views.core.avd_profile_manager import AVDProfileManager
+
+        profile_manager = AVDProfileManager.get_instance()
+        avd_name = profile_manager.get_avd_for_email(email)
+
+        if not avd_name:
+            logger.warning(f"No AVD name found for email {email}")
+            return False, None
+
+        avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
+        ini_path = os.path.join(self.avd_base_path, f"{avd_name}.ini")
+
+        if not os.path.exists(avd_path) or not os.path.exists(ini_path):
+            logger.warning(f"AVD files not found for email {email}")
+            return False, None
+
+        # Take snapshot if emulator is running
+        self._save_snapshot_if_running(email)
+
+        logger.info(f"Starting AVD backup for email {email}")
+
+        # Use shared compression and upload method
+        return self._compress_and_upload_avd(
+            email=email,
+            avd_name=avd_name,
+            avd_path=avd_path,
+            ini_path=ini_path,
+            s3_prefix="backups/avds/",
+            include_metadata=True,
+        )
+
+    def _save_snapshot_if_running(self, email: str) -> bool:
+        """
+        Save a snapshot if the emulator is running.
+
+        Args:
+            email: Email address of the profile
+
+        Returns:
+            bool: True if snapshot was saved or not needed, False if failed
+        """
+        from server.utils.vnc_instance_manager import VNCInstanceManager
+
+        vnc_manager = VNCInstanceManager.get_instance()
+        emulator_id = vnc_manager.get_emulator_id(email)
+
+        if emulator_id:
+            from views.core.emulator_manager import EmulatorManager
+
+            emulator_manager = EmulatorManager.get_instance()
+
+            if emulator_manager.is_emulator_running(email):
+                logger.info(f"Emulator {emulator_id} is running for {email}, taking snapshot")
+                try:
+                    from server.utils.emulator_launcher import EmulatorLauncher
+
+                    launcher = EmulatorLauncher(
+                        os.environ.get("ANDROID_HOME", "/Users/sam/Library/Android/sdk"),
+                        os.path.join(os.path.expanduser("~"), ".android/avd"),
+                        platform.machine(),
+                    )
+                    if launcher.save_snapshot(email):
+                        logger.info(f"Snapshot saved successfully for {email}")
+                        return True
+                    else:
+                        logger.warning(f"Failed to save snapshot for {email}")
+                        return False
+                except Exception as e:
+                    logger.error(f"Error saving snapshot for {email}: {e}", exc_info=True)
+                    return False
+        return True  # No snapshot needed
+
     def archive_avd_to_cold_storage(self, email: str, dry_run: bool = False) -> Tuple[bool, Optional[dict]]:
         """
-        Archive an AVD to cold storage
+        Archive an AVD to cold storage (uploads and DELETES local copy).
+
+        This is for permanent cold storage when a user hasn't been active.
+        For simple backups without deletion, use backup_avd() instead.
 
         Args:
             email: Email address of the profile to archive
             dry_run: If True, perform all operations except deletion of local files
 
         Returns:
-            Tuple[bool, Optional[dict]]: (success, storage_info) where storage_info contains:
-                - original_size: Size of AVD before compression
-                - compressed_size: Size of compressed archive
-                - space_saved: Space saved in bytes
-                - compression_ratio: Compression ratio percentage
-                - dry_run: Whether this was a dry run
+            Tuple[bool, Optional[dict]]: (success, storage_info)
         """
         from server.utils.vnc_instance_manager import VNCInstanceManager
         from views.core.avd_profile_manager import AVDProfileManager
@@ -125,56 +314,9 @@ class ColdStorageManager:
             logger.warning(f"No AVD name found for email {email}")
             return False, None
 
-        # Check if emulator is running via VNC instance map
-        vnc_manager = VNCInstanceManager.get_instance()
-        emulator_id = vnc_manager.get_emulator_id(email)
-
-        if emulator_id:
-            # Check if the emulator is actually running
-            from views.core.emulator_manager import EmulatorManager
-
-            emulator_manager = EmulatorManager.get_instance()
-
-            if emulator_manager.is_emulator_running(email):
-                logger.warning(f"Cannot archive AVD for {email} - emulator {emulator_id} is still running")
-
-                # Take a snapshot before stopping to preserve user state
-                logger.info(f"Taking snapshot before stopping emulator {emulator_id} for archiving")
-                try:
-                    from server.utils.emulator_launcher import EmulatorLauncher
-
-                    launcher = EmulatorLauncher(
-                        os.environ.get("ANDROID_HOME", "/Users/sam/Library/Android/sdk"),
-                        os.path.join(os.path.expanduser("~"), ".android/avd"),
-                        platform.machine(),
-                    )
-                    if launcher.save_snapshot(email):
-                        logger.info(f"Snapshot saved successfully for {email} before archiving")
-                    else:
-                        logger.warning(
-                            f"Failed to save snapshot for {email} before archiving - user's reading position may be lost"
-                        )
-                except Exception as e:
-                    logger.error(f"Error saving snapshot for {email} before archiving: {e}", exc_info=True)
-
-                logger.info(f"Attempting to stop emulator {emulator_id} before archiving")
-                # Try to stop the emulator
-                if not emulator_manager.stop_specific_emulator(emulator_id):
-                    logger.error(f"Failed to stop emulator {emulator_id} for {email}", exc_info=True)
-                    return False, {"error": f"Emulator {emulator_id} is running and could not be stopped"}
-
-                # Wait a bit for the emulator to fully shut down
-                time.sleep(3)
-
-                # Double-check it's stopped
-                if emulator_manager.is_emulator_running(email):
-                    logger.error(f"Emulator {emulator_id} still running after stop attempt", exc_info=True)
-                    return False, {"error": f"Emulator {emulator_id} is still running after stop attempt"}
-
-                logger.info(f"Successfully stopped emulator {emulator_id} for {email}")
-
-                # Release the entire VNC instance since AVD is going to cold storage
-                vnc_manager.release_instance_from_profile(email)
+        # Stop emulator if running (required for cold storage)
+        if not self._stop_emulator_if_running(email):
+            return False, {"error": "Failed to stop running emulator"}
 
         avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
         ini_path = os.path.join(self.avd_base_path, f"{avd_name}.ini")
@@ -183,124 +325,208 @@ class ColdStorageManager:
             logger.warning(f"AVD files not found for email {email}")
             return False, None
 
+        logger.info(f"Starting cold storage archival for email {email}")
+
+        # Use shared compression and upload method
+        success, storage_info = self._compress_and_upload_avd(
+            email=email,
+            avd_name=avd_name,
+            avd_path=avd_path,
+            ini_path=ini_path,
+            s3_prefix=self.cold_storage_prefix,
+            include_metadata=False,
+        )
+
+        if not success:
+            return False, storage_info
+
+        # Handle local file deletion
+        if dry_run:
+            logger.info("DRY RUN: Moving files to local cold storage backup instead of deleting")
+            # Create backup directory for this email
+            backup_dir = os.path.join(self.local_cold_storage_dir, email)
+            os.makedirs(backup_dir, exist_ok=True)
+
+            # Move AVD files to backup directory
+            backup_avd_path = os.path.join(backup_dir, f"{avd_name}.avd")
+            backup_ini_path = os.path.join(backup_dir, f"{avd_name}.ini")
+
+            # Remove existing backups if they exist
+            if os.path.exists(backup_avd_path):
+                shutil.rmtree(backup_avd_path)
+            if os.path.exists(backup_ini_path):
+                os.unlink(backup_ini_path)
+
+            # Move files to backup
+            shutil.move(avd_path, backup_avd_path)
+            shutil.move(ini_path, backup_ini_path)
+            logger.info(f"DRY RUN: Moved AVD files to {backup_dir}")
+        else:
+            # Normal operation - delete the files
+            logger.info(f"Deleting local AVD files after successful upload")
+            logger.info(f"Deleting AVD directory: {avd_path}")
+            shutil.rmtree(avd_path)
+            logger.info(f"Deleting INI file: {ini_path}")
+            os.unlink(ini_path)
+
+            # Verify deletion
+            if os.path.exists(avd_path):
+                logger.error(f"AVD directory still exists after deletion attempt: {avd_path}", exc_info=True)
+                raise Exception(f"Failed to delete AVD directory: {avd_path}")
+            if os.path.exists(ini_path):
+                logger.error(f"INI file still exists after deletion attempt: {ini_path}", exc_info=True)
+                raise Exception(f"Failed to delete INI file: {ini_path}")
+
+            logger.info(f"Successfully deleted local AVD files for {email}")
+
+        # Add dry_run flag to storage_info
+        storage_info["dry_run"] = dry_run
+
+        if dry_run:
+            logger.info(f"DRY RUN: Successfully simulated archiving AVD for email {email}")
+        else:
+            logger.info(f"Successfully archived AVD for email {email} to cold storage")
+
+        return True, storage_info
+
+    def _stop_emulator_if_running(self, email: str) -> bool:
+        """
+        Stop emulator if it's running. Required for cold storage.
+
+        Args:
+            email: Email address of the profile
+
+        Returns:
+            bool: True if emulator was stopped or wasn't running, False if failed to stop
+        """
+        from server.utils.vnc_instance_manager import VNCInstanceManager
+        from views.core.emulator_manager import EmulatorManager
+
+        vnc_manager = VNCInstanceManager.get_instance()
+        emulator_id = vnc_manager.get_emulator_id(email)
+
+        if emulator_id:
+            emulator_manager = EmulatorManager.get_instance()
+
+            if emulator_manager.is_emulator_running(email):
+                logger.warning(f"Cannot archive AVD for {email} - emulator {emulator_id} is still running")
+
+                # Take a snapshot before stopping to preserve user state
+                logger.info(f"Taking snapshot before stopping emulator {emulator_id} for archiving")
+                self._save_snapshot_if_running(email)
+
+                logger.info(f"Attempting to stop emulator {emulator_id} before archiving")
+                # Try to stop the emulator
+                if not emulator_manager.stop_specific_emulator(emulator_id):
+                    logger.error(f"Failed to stop emulator {emulator_id} for {email}", exc_info=True)
+                    return False
+
+                # Wait a bit for the emulator to fully shut down
+                time.sleep(3)
+
+                # Double-check it's stopped
+                if emulator_manager.is_emulator_running(email):
+                    logger.error(f"Emulator {emulator_id} still running after stop attempt", exc_info=True)
+                    return False
+
+                logger.info(f"Successfully stopped emulator {emulator_id} for {email}")
+
+                # Release the entire VNC instance since AVD is going to cold storage
+                vnc_manager.release_instance_from_profile(email)
+
+        return True
+
+    def restore_avd_from_backup(self, email: str, force: bool = False) -> Tuple[bool, Optional[dict]]:
+        """
+        Restore an AVD from backup (not cold storage).
+
+        This restores from the backup created during authentication,
+        useful for moving AVDs between servers or recovering from issues.
+
+        Args:
+            email: Email address of the profile to restore
+            force: If True, overwrite existing AVD files
+
+        Returns:
+            Tuple[bool, Optional[dict]]: (success, restore_info)
+        """
+        from views.core.avd_profile_manager import AVDProfileManager
+
+        profile_manager = AVDProfileManager.get_instance()
+        avd_name = profile_manager.get_avd_for_email(email)
+
+        if not avd_name:
+            logger.warning(f"No AVD name found for email {email}")
+            return False, {"error": "No AVD name found"}
+
+        # Check if AVD already exists locally
+        avd_path = os.path.join(self.avd_base_path, f"{avd_name}.avd")
+        ini_path = os.path.join(self.avd_base_path, f"{avd_name}.ini")
+
+        if not force and (os.path.exists(avd_path) or os.path.exists(ini_path)):
+            logger.warning(f"AVD already exists locally for {email}, use force=True to overwrite")
+            return False, {"error": "AVD already exists locally"}
+
+        # Try backup location first
+        backup_key = f"backups/avds/{email}/{avd_name}.tar.gz"
+        archive_key = backup_key
+
+        try:
+            # Check if backup exists
+            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=backup_key)
+            archive_size = int(response.get("ContentLength", 0))
+            logger.info(f"Found backup in S3: {self._format_bytes(archive_size)}")
+        except:
+            # Fall back to cold storage location
+            archive_key = f"{self.cold_storage_prefix}{email}/{avd_name}.tar.gz"
+            try:
+                response = self.s3_client.head_object(Bucket=self.bucket_name, Key=archive_key)
+                archive_size = int(response.get("ContentLength", 0))
+                logger.info(f"Found archive in cold storage: {self._format_bytes(archive_size)}")
+            except:
+                logger.error(f"No backup or cold storage archive found for {email}")
+                return False, {"error": "No backup found"}
+
         temp_path = None
         try:
-            logger.info(f"Starting cold storage archival for email {email}")
-
-            # Calculate original size
-            original_size = self._get_directory_size(avd_path) + os.path.getsize(ini_path)
-            logger.info(f"Original AVD size: {self._format_bytes(original_size)}")
-
-            logger.info(f"Creating temporary archive file...")
+            # Download archive to temp file
             with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as temp_file:
                 temp_path = temp_file.name
-            logger.info(f"Temporary archive path: {temp_path}")
 
-            logger.info(f"Starting compression of AVD files...")
+            logger.info(f"Downloading archive from S3...")
             start_time = time.time()
-            with tarfile.open(temp_path, "w:gz", compresslevel=1) as tar:  # Use faster compression
-                logger.info(f"Adding {avd_path} to archive...")
-                tar.add(avd_path, arcname=f"{avd_name}.avd")
-                logger.info(f"Adding {ini_path} to archive...")
-                tar.add(ini_path, arcname=f"{avd_name}.ini")
-            compression_time = time.time() - start_time
-            logger.info(f"Compression completed in {compression_time:.2f} seconds")
+            self.s3_client.download_file(self.bucket_name, archive_key, temp_path)
+            download_time = time.time() - start_time
+            logger.info(f"Download completed in {download_time:.2f} seconds")
 
-            # Get compressed size
-            compressed_size = os.path.getsize(temp_path)
-            logger.info(f"Compressed size: {self._format_bytes(compressed_size)}")
+            # Extract archive
+            logger.info(f"Extracting archive to {self.avd_base_path}")
+            with tarfile.open(temp_path, "r:gz") as tar:
+                tar.extractall(self.avd_base_path)
 
-            # Calculate savings
-            space_saved = original_size - compressed_size
-            compression_ratio = (1 - compressed_size / original_size) * 100
+            # Verify extraction
+            if not os.path.exists(avd_path) or not os.path.exists(ini_path):
+                raise Exception("AVD files not found after extraction")
 
-            logger.info(
-                f"Space saved: {self._format_bytes(space_saved)} ({compression_ratio:.1f}% compression)"
-            )
+            logger.info(f"Successfully restored AVD for {email} from backup")
 
-            # Always upload to S3, even in dry run
-            archive_key = f"{self.cold_storage_prefix}{email}/{avd_name}.tar.gz"
-
-            logger.info(f"Starting S3 upload to {self.bucket_name}/{archive_key}")
-            upload_start = time.time()
-            try:
-                with open(temp_path, "rb") as f:
-                    self.s3_client.upload_fileobj(
-                        f, self.bucket_name, archive_key, ExtraArgs={"ACL": "private"}
-                    )
-                upload_time = time.time() - upload_start
-                logger.info(f"S3 upload completed in {upload_time:.2f} seconds")
-            except Exception as e:
-                logger.error(f"S3 upload failed: {e}", exc_info=True)
-                raise
-
-            if dry_run:
-                logger.info("DRY RUN: Moving files to local cold storage backup instead of deleting")
-                # Create backup directory for this email
-                backup_dir = os.path.join(self.local_cold_storage_dir, email)
-                os.makedirs(backup_dir, exist_ok=True)
-
-                # Move AVD files to backup directory
-                backup_avd_path = os.path.join(backup_dir, f"{avd_name}.avd")
-                backup_ini_path = os.path.join(backup_dir, f"{avd_name}.ini")
-
-                # Remove existing backups if they exist
-                if os.path.exists(backup_avd_path):
-                    shutil.rmtree(backup_avd_path)
-                if os.path.exists(backup_ini_path):
-                    os.unlink(backup_ini_path)
-
-                # Move files to backup
-                shutil.move(avd_path, backup_avd_path)
-                shutil.move(ini_path, backup_ini_path)
-                logger.info(f"DRY RUN: Moved AVD files to {backup_dir}")
-            else:
-                # Normal operation - delete the files
-                logger.info(f"Deleting local AVD files after successful upload")
-                logger.info(f"Deleting AVD directory: {avd_path}")
-                shutil.rmtree(avd_path)
-                logger.info(f"Deleting INI file: {ini_path}")
-                os.unlink(ini_path)
-
-                # Verify deletion
-                if os.path.exists(avd_path):
-                    logger.error(
-                        f"AVD directory still exists after deletion attempt: {avd_path}", exc_info=True
-                    )
-                    raise Exception(f"Failed to delete AVD directory: {avd_path}")
-                if os.path.exists(ini_path):
-                    logger.error(f"INI file still exists after deletion attempt: {ini_path}", exc_info=True)
-                    raise Exception(f"Failed to delete INI file: {ini_path}")
-
-                logger.info(f"Successfully deleted local AVD files for {email}")
-
-            storage_info = {
-                "original_size": original_size,
-                "compressed_size": compressed_size,
-                "space_saved": space_saved,
-                "compression_ratio": compression_ratio,
-                "original_size_human": self._format_bytes(original_size),
-                "compressed_size_human": self._format_bytes(compressed_size),
-                "space_saved_human": self._format_bytes(space_saved),
-                "dry_run": dry_run,
+            restore_info = {
+                "archive_size": archive_size,
+                "download_time": download_time,
+                "s3_key": archive_key,
+                "from_backup": "backups/" in archive_key,
             }
 
-            if dry_run:
-                logger.info(f"DRY RUN: Successfully simulated archiving AVD for email {email}")
-            else:
-                logger.info(f"Successfully archived AVD for email {email} to cold storage")
-            return True, storage_info
+            return True, restore_info
 
         except Exception as e:
-            logger.error(f"Failed to archive AVD for email {email}: {e}", exc_info=True)
-            return False, None
+            logger.error(f"Failed to restore AVD from backup for {email}: {e}", exc_info=True)
+            return False, {"error": str(e)}
         finally:
-            # Always clean up the temp file
+            # Clean up temp file
             if temp_path and os.path.exists(temp_path):
-                logger.info(f"Cleaning up temporary archive file: {temp_path}")
                 try:
                     os.unlink(temp_path)
-                    logger.info("Temporary file cleaned up successfully")
                 except Exception as e:
                     logger.error(f"Failed to clean up temporary file: {e}", exc_info=True)
 

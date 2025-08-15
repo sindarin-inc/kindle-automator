@@ -278,6 +278,9 @@ class UserRepository:
             if authenticated:
                 values["auth_date"] = datetime.now(timezone.utc)
                 values["auth_failed_date"] = None  # Clear any previous auth failure
+
+                # Trigger AVD backup on successful authentication
+                self._trigger_avd_backup(email)
             else:
                 values["auth_failed_date"] = datetime.now(timezone.utc)
 
@@ -290,6 +293,104 @@ class UserRepository:
         except SQLAlchemyError as e:
             self.session.rollback()
             logger.error(f"Error updating auth state for {email}: {e}")
+            raise
+
+    def _trigger_avd_backup(self, email: str):
+        """
+        Trigger AVD backup when user successfully authenticates.
+        Only backs up if:
+        1. No backup exists yet
+        2. Existing backup is older than 1 year
+        """
+        try:
+            user = self.get_user_by_email(email)
+            if not user:
+                logger.warning(f"User not found for backup trigger: {email}")
+                return
+
+            # Check if backup is needed
+            if user.backup_date:
+                backup_age = datetime.now(timezone.utc) - user.backup_date
+                if backup_age.days < 365:
+                    logger.info(f"AVD backup for {email} is recent ({backup_age.days} days old), skipping")
+                    return
+
+            # Create backup asynchronously
+            logger.info(f"Triggering AVD backup for {email} on successful authentication")
+            import socket
+            import threading
+
+            from server.utils.cold_storage_manager import ColdStorageManager
+
+            def backup_worker():
+                try:
+                    cold_storage_manager = ColdStorageManager.get_instance()
+                    success, backup_info = cold_storage_manager.backup_avd(email)
+
+                    if success:
+                        # Update backup metadata in database
+                        stmt = (
+                            update(User)
+                            .where(User.email == email)
+                            .values(
+                                backup_date=datetime.now(timezone.utc),
+                                backup_hostname=socket.gethostname(),
+                                avd_dirty=False,
+                                avd_dirty_since=None,
+                                updated_at=datetime.now(timezone.utc),
+                            )
+                        )
+                        self.session.execute(stmt)
+                        self.session.commit()
+                        logger.info(f"AVD backup completed for {email}: {backup_info}")
+                    else:
+                        logger.error(f"AVD backup failed for {email}")
+                except Exception as e:
+                    logger.error(f"Error in AVD backup worker for {email}: {e}", exc_info=True)
+
+            # Start backup in background thread
+            backup_thread = threading.Thread(target=backup_worker, name=f"avd-backup-{email}")
+            backup_thread.daemon = True
+            backup_thread.start()
+
+        except Exception as e:
+            logger.error(f"Error triggering AVD backup for {email}: {e}", exc_info=True)
+
+    def mark_avd_dirty(self, email: str) -> bool:
+        """
+        Mark AVD as dirty (changed since last backup).
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            True if update was successful
+        """
+        try:
+            user = self.get_user_by_email(email)
+            if not user:
+                return False
+
+            # Only mark dirty if not already dirty
+            if not user.avd_dirty:
+                values = {
+                    "avd_dirty": True,
+                    "avd_dirty_since": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+                stmt = update(User).where(User.email == email).values(**values)
+                result = self.session.execute(stmt)
+                self.session.commit()
+
+                if result.rowcount > 0:
+                    logger.debug(f"Marked AVD as dirty for {email}")
+                    return True
+
+            return False
+
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error marking AVD dirty for {email}: {e}")
             raise
 
     def get_all_users(self) -> List[User]:
