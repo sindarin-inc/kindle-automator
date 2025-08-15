@@ -20,6 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from server.logging_config import store_page_source
 from server.utils.ansi_colors import BRIGHT_CYAN, BRIGHT_GREEN, BRIGHT_YELLOW, RESET
 from server.utils.cancellation_utils import CancellationChecker
+from server.utils.request_utils import get_sindarin_email
 from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
     BOOK_CONTAINER_RELATIONSHIPS,
@@ -41,6 +42,27 @@ class LibraryHandlerScroll:
         self.scroller = SmartScroller(driver)
         # Store partial matches for later retrieval
         self.partial_matches = []
+
+    def _check_for_cancellation(self, message=None):
+        """Check if current operation should be cancelled.
+
+        Args:
+            message: Optional log message to display if cancellation is detected
+
+        Returns:
+            bool: True if operation should be cancelled, False otherwise
+        """
+        try:
+            sindarin_email = get_sindarin_email()
+            if sindarin_email:
+                checker = CancellationChecker(sindarin_email, check_interval=1)
+                if checker.check():
+                    if message:
+                        logger.info(message)
+                    return True
+        except Exception:
+            pass  # No user context available
+        return False
 
     def _log_page_summary(self, page_number, new_books, total_found):
         """Log a concise summary of books found on current page.
@@ -378,7 +400,7 @@ class LibraryHandlerScroll:
             callback: Callback function for new books
 
         Returns:
-            bool: True if new titles were found, False otherwise
+            bool/None: True if new titles were found, False if no new titles, None if cancelled
         """
         try:
             title_elements = self.driver.find_elements(AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title")
@@ -410,6 +432,13 @@ class LibraryHandlerScroll:
                 if callback and current_double_check_batch:
                     callback(current_double_check_batch)
 
+                    # Check for cancellation after callback
+                    if self._check_for_cancellation(
+                        "Detected cancellation during double-check titles callback"
+                    ):
+                        # Return None to indicate cancellation (distinct from False which means no new titles)
+                        return None
+
                 return True
             else:
                 logger.info("Double-check confirms no new books, stopping scroll")
@@ -419,8 +448,6 @@ class LibraryHandlerScroll:
 
                 # Save scroll book count to database
                 try:
-                    from server.utils.request_utils import get_sindarin_email
-
                     sindarin_email = get_sindarin_email()
                     if sindarin_email:
                         self.driver.automator.profile_manager.save_style_setting(
@@ -814,23 +841,11 @@ class LibraryHandlerScroll:
             consecutive_identical_screen_iterations = 0
             IDENTICAL_SCREEN_THRESHOLD = 10
 
-            # Create cancellation checker if we have user context
-            cancellation_checker = None
-            try:
-                from server.utils.request_utils import get_sindarin_email
-
-                sindarin_email = get_sindarin_email()
-                if sindarin_email:
-                    cancellation_checker = CancellationChecker(sindarin_email, check_interval=5)
-            except Exception:
-                pass  # No user context available
-
             while True:
                 page_count += 1
 
                 # Check for cancellation at the start of each page
-                if cancellation_checker and cancellation_checker.check():
-                    logger.info("Library scrolling cancelled due to higher priority request")
+                if self._check_for_cancellation("Library scrolling cancelled due to higher priority request"):
                     if callback:
                         callback(
                             None,
@@ -907,6 +922,21 @@ class LibraryHandlerScroll:
                 if callback and new_books_batch:
                     callback(new_books_batch)
 
+                    # Check for cancellation immediately after callback
+                    # The callback may have detected cancellation and we should stop immediately
+                    if self._check_for_cancellation(
+                        "Library scrolling cancelled after callback detected higher priority request"
+                    ):
+                        if callback:
+                            callback(
+                                None,
+                                error="Request cancelled by higher priority operation",
+                                done=True,
+                                total_books=len(books),
+                                complete=False,
+                            )
+                        return [] if not target_title else (None, None, None)
+
                 # Decision for the UPCOMING scroll's hook is based on whether THIS page's MAIN pass found anything.
                 use_hook_for_current_scroll = books_added_in_current_page_processing
 
@@ -928,7 +958,19 @@ class LibraryHandlerScroll:
                     found_new_titles = self._double_check_titles(
                         seen_titles, books, page_count, new_titles_on_page, callback
                     )
-                    if found_new_titles:
+                    if found_new_titles is None:
+                        # None specifically means cancellation was detected
+                        logger.info("Cancellation detected during double-check, stopping scroll")
+                        if callback:
+                            callback(
+                                None,
+                                error="Request cancelled by higher priority operation",
+                                done=True,
+                                total_books=len(books),
+                                complete=False,
+                            )
+                        return [] if not target_title else (None, None, None)
+                    elif found_new_titles:
                         any_new_books_this_iteration = True
                     else:
                         if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
@@ -948,8 +990,6 @@ class LibraryHandlerScroll:
 
                         # Save scroll book count to database
                         try:
-                            from server.utils.request_utils import get_sindarin_email
-
                             sindarin_email = get_sindarin_email()
                             if sindarin_email:
                                 self.driver.automator.profile_manager.save_style_setting(
@@ -975,8 +1015,10 @@ class LibraryHandlerScroll:
                     self._perform_smart_scroll(ref_container, screen_size)
                 else:
                     # Pass cancellation check to scroll
-                    cancellation_check = cancellation_checker.check if cancellation_checker else None
-                    self._default_page_scroll(start_y, end_y, cancellation_check=cancellation_check)
+                    # Pass our cancellation check method to the scroll
+                    self._default_page_scroll(
+                        start_y, end_y, cancellation_check=lambda: self._check_for_cancellation()
+                    )
 
                 # Check for and handle selection mode after scroll
                 self._maybe_exit_selection_mode()
