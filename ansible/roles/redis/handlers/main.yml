@@ -2,7 +2,8 @@
 # Redis handlers
 
 - name: restart redis
-  systemd:
-    name: redis-server
-    state: restarted
+  community.docker.docker_container:
+    name: kindle_automator_redis
+    state: started
+    restart: yes
   become: yes
