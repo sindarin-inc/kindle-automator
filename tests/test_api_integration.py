@@ -509,7 +509,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
                 "recreate": "1",
             },
             timeout=120,  # 2 minutes timeout
-            max_retries=1,  # No retries - recreate is expensive and should only run once
+            max_deploy_retries=1,  # No retries - recreate is expensive and should only run once
         )
         print(f"[TEST_RECREATE] Auth response status: {response.status_code}")
         assert response.status_code == 200
