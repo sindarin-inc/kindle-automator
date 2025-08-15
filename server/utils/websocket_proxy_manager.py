@@ -122,9 +122,23 @@ class WebSocketProxyManager:
             # Give it a moment to start and check if it's still running
             time.sleep(0.5)
             if process.poll() is not None:
-                # Process terminated immediately
-                stdout, stderr = process.communicate()
-                logger.error(f"WebSocket proxy failed to start: {stderr}", exc_info=True)
+                # Process terminated immediately - read error from log files
+                stderr_content = ""
+                try:
+                    with open(str(stderr_log), "r") as f:
+                        stderr_content = f.read().strip() or "No error output captured"
+                except Exception:
+                    stderr_content = "Could not read error log"
+
+                # Check if rfbproxy is installed
+                import shutil
+
+                if not shutil.which("rfbproxy"):
+                    stderr_content = (
+                        "rfbproxy command not found. Please install rfbproxy to enable WebSocket support."
+                    )
+
+                logger.error(f"WebSocket proxy failed to start: {stderr_content}", exc_info=True)
                 return None
 
             # Store the active proxy
