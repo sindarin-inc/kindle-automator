@@ -80,6 +80,10 @@ To control SQL query logging in the debug log:
   curl -b .cookies.txt -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1"
   ```
   Note: Full token only in Set-Cookie header, not JSON response
+- **After working on features**: Look through `tests/test_api_integration.py` and run the most appropriate specific test for the endpoint you modified:
+  ```bash
+  uv run pytest tests/test_api_integration.py::TestKindleAPIIntegration::test_specific_endpoint -v
+  ```
 
 ## Database Migrations
 

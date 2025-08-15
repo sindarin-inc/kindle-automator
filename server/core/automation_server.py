@@ -34,6 +34,7 @@ class AutomationServer:
         self.pid_dir = "logs"
         self.current_books = {}  # Track the currently open book title for each email
         self.last_activity = {}  # Track last activity time for each email
+        # Note: current_positions removed - now using database via BookPositionRepository
         os.makedirs(self.pid_dir, exist_ok=True)
 
         # Initialize the AVD profile manager
@@ -258,7 +259,9 @@ class AutomationServer:
             return
 
         self.current_books[email] = book_title
-        logger.info(f"Set current book for {email} to: {book_title}")
+        # Reset position to 0 when opening a new book
+        self.reset_position(email, book_title)
+        logger.info(f"Set current book for {email} to: {book_title} (position reset to 0)")
 
     def clear_current_book(self, email):
         """Clear the currently open book tracking variable for a specific email
@@ -353,6 +356,124 @@ class AutomationServer:
             The last activity timestamp or None if not found
         """
         return self.last_activity.get(email)
+
+    def reset_position(self, email: str, book_title: str = None) -> None:
+        """Reset the page position to 0 for a given email (called when opening a book).
+
+        Args:
+            email: The email address to reset position for
+            book_title: The book title to reset position for
+        """
+        # Get book title if not provided
+        if not book_title:
+            book_title = self.current_books.get(email)
+
+        if not book_title:
+            logger.warning(f"No book title available for position reset for {email}")
+            return
+
+        try:
+            from database.connection import get_db
+            from database.repositories.book_position_repository import (
+                BookPositionRepository,
+            )
+
+            with get_db() as session:
+                repo = BookPositionRepository(session)
+                repo.reset_position(email, book_title)
+        except Exception as e:
+            logger.error(f"Error resetting position for {email}: {e}", exc_info=True)
+
+    def get_position(self, email: str, book_title: str = None) -> int:
+        """Get the current page position for a given email.
+
+        Args:
+            email: The email address to get position for
+            book_title: Optional book title. If not provided, uses current book.
+
+        Returns:
+            The current page position (0 = start of book)
+        """
+        # Get book title if not provided
+        if not book_title:
+            book_title = self.current_books.get(email)
+
+        if not book_title:
+            logger.debug(f"No book title available for position lookup for {email}")
+            return 0
+
+        try:
+            from database.connection import get_db
+            from database.repositories.book_position_repository import (
+                BookPositionRepository,
+            )
+
+            with get_db() as session:
+                repo = BookPositionRepository(session)
+                return repo.get_position(email, book_title)
+        except Exception as e:
+            logger.error(f"Error getting position for {email}: {e}", exc_info=True)
+            return 0
+
+    def update_position(self, email: str, delta: int, book_title: str = None) -> int:
+        """Update the page position by a relative amount.
+
+        Args:
+            email: The email address to update position for
+            delta: The relative change in position (positive = forward, negative = backward)
+            book_title: Optional book title. If not provided, uses current book.
+
+        Returns:
+            The new position after update
+        """
+        # Get book title if not provided
+        if not book_title:
+            book_title = self.current_books.get(email)
+
+        if not book_title:
+            logger.warning(f"No book title available for position update for {email}")
+            return 0
+
+        try:
+            from database.connection import get_db
+            from database.repositories.book_position_repository import (
+                BookPositionRepository,
+            )
+
+            with get_db() as session:
+                repo = BookPositionRepository(session)
+                return repo.update_position(email, book_title, delta)
+        except Exception as e:
+            logger.error(f"Error updating position for {email}: {e}", exc_info=True)
+            return 0
+
+    def set_position(self, email: str, position: int, book_title: str = None) -> None:
+        """Set the absolute page position for a given email.
+
+        Args:
+            email: The email address to set position for
+            position: The absolute position to set
+            book_title: Optional book title. If not provided, uses current book.
+        """
+        # Get book title if not provided
+        if not book_title:
+            book_title = self.current_books.get(email)
+
+        if not book_title:
+            logger.warning(f"No book title available for position set for {email}")
+            return
+
+        try:
+            from database.connection import get_db
+            from database.repositories.book_position_repository import (
+                BookPositionRepository,
+            )
+
+            with get_db() as session:
+                repo = BookPositionRepository(session)
+                repo.set_position(email, book_title, position)
+        except Exception as e:
+            logger.error(f"Error setting position for {email}: {e}", exc_info=True)
 
     def ensure_seed_clone_prepared(self):
         """Ensure the seed clone AVD is prepared for fast user initialization.

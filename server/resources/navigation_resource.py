@@ -51,16 +51,49 @@ class NavigationResource(Resource):
         # Process and parse navigation parameters
         params = NavigationResourceHandler.parse_navigation_params(request)
 
+        # Handle absolute position parameters (navigate_to and preview_to)
+        # Convert them to relative movements based on current position
+        if params.get("navigate_to") is not None or params.get("preview_to") is not None:
+            current_position = server.get_position(sindarin_email)
+
+            # If navigate_to is specified, calculate relative movement
+            if params.get("navigate_to") is not None:
+                target_position = params["navigate_to"]
+                params["navigate_count"] = target_position - current_position
+                logger.info(
+                    f"Converting absolute navigate_to={target_position} to relative: current={current_position}, delta={params['navigate_count']}"
+                )
+
+            # If preview_to is specified, calculate relative preview movement
+            if params.get("preview_to") is not None:
+                preview_target = params["preview_to"]
+                # Preview is relative to where we'll be after navigation
+                final_position = current_position + params.get("navigate_count", 0)
+                params["preview_count"] = preview_target - final_position
+                logger.info(
+                    f"Converting absolute preview_to={preview_target} to relative: position_after_nav={final_position}, preview_delta={params['preview_count']}"
+                )
+
         # If a specific direction was provided in the route initialization, override navigate_count
-        if direction is not None:
+        elif direction is not None:
             # Set the navigate_count based on the requested direction
             params["navigate_count"] = direction
         # If no navigate_count was provided in the request, use the default direction
-        elif "navigate" not in request.args and "navigate" not in request.form:
+        elif (
+            "navigate" not in request.args
+            and "navigate" not in request.form
+            and params.get("navigate_to") is None
+        ):
             params["navigate_count"] = self.default_direction
 
         # Log the navigation parameters
         logger.info(f"Navigation params: {params}")
+
+        # Update the position based on navigation (not preview, as preview returns to original position)
+        navigate_count = params.get("navigate_count", 0)
+        if navigate_count != 0:
+            new_position = server.update_position(sindarin_email, navigate_count)
+            logger.info(f"Updated position for {sindarin_email} by {navigate_count} to {new_position}")
 
         # Mark snapshot as dirty since user navigated
         self._mark_snapshot_dirty(sindarin_email)

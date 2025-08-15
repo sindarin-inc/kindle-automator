@@ -268,3 +268,33 @@ class EmulatorShutdownFailure(Base):
 
     def __repr__(self) -> str:
         return f"<EmulatorShutdownFailure(id={self.id}, user_email={self.user_email}, failure_type={self.failure_type})>"
+
+
+class BookPosition(Base):
+    """Tracks the current page position for each book per user."""
+
+    __tablename__ = "book_positions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    book_title: Mapped[str] = mapped_column(Text, nullable=False)
+    current_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    position_updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+    # Table constraints and indexes
+    __table_args__ = (
+        UniqueConstraint("user_id", "book_title", name="uq_user_book_position"),
+        Index("idx_book_position_user_id", "user_id"),
+        Index("idx_book_position_updated", "position_updated_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BookPosition(id={self.id}, user_id={self.user_id}, book_title={self.book_title[:30]}..., position={self.current_position})>"
