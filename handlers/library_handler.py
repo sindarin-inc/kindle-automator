@@ -2084,6 +2084,89 @@ class LibraryHandler:
             logger.error(f"Error in _check_invalid_item_dialog: {e}", exc_info=True)
             return False
 
+    def _check_title_not_available_dialog(self, book_title, context=""):
+        """Check for and handle the 'Title Not Available' dialog (expired loans).
+
+        Args:
+            book_title: The title of the book being downloaded/opened
+            context: Context description for logging (e.g., "after clicking book")
+
+        Returns:
+            bool: True if dialog was found and handled, False otherwise
+        """
+        from views.library.interaction_strategies import (
+            TITLE_NOT_AVAILABLE_DIALOG_BUTTONS,
+            TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS,
+        )
+
+        try:
+            for strategy, locator in TITLE_NOT_AVAILABLE_DIALOG_IDENTIFIERS:
+                try:
+                    dialog_title = self.driver.find_element(strategy, locator)
+                    if dialog_title.is_displayed():
+                        # For generic alert title ID, check the text
+                        if strategy == AppiumBy.ID and locator == "com.amazon.kindle:id/alertTitle":
+                            if dialog_title.text != "Title Not Available":
+                                continue
+
+                        logger.info(f"Found 'Title Not Available' dialog {context}")
+
+                        # Store page source for diagnostics
+                        store_page_source(
+                            self.driver.page_source,
+                            f"title_not_available_dialog_{context.replace(' ', '_')}",
+                        )
+
+                        # Get the error message text if available
+                        error_message = "This title is not available"
+                        try:
+                            message_element = self.driver.find_element(AppiumBy.ID, "android:id/message")
+                            if message_element and message_element.is_displayed():
+                                error_message = message_element.text
+                                logger.info(f"Title Not Available dialog message: {error_message}")
+                        except:
+                            logger.debug("Could not get error message text from dialog")
+
+                        # Click the CANCEL button
+                        cancel_clicked = False
+                        for btn_strategy, btn_locator in TITLE_NOT_AVAILABLE_DIALOG_BUTTONS:
+                            try:
+                                btn = self.driver.find_element(btn_strategy, btn_locator)
+                                if btn.is_displayed() and (
+                                    btn.text == "CANCEL" or "button2" in str(btn_locator)
+                                ):
+                                    btn.click()
+                                    logger.info(f"Clicked CANCEL button on 'Title Not Available' dialog")
+                                    cancel_clicked = True
+                                    time.sleep(1)  # Wait for dialog to dismiss
+                                    break
+                            except:
+                                continue
+
+                        if not cancel_clicked:
+                            logger.warning("Could not click CANCEL button on 'Title Not Available' dialog")
+
+                        # Set an error property on the automator to inform the client
+                        if hasattr(self.driver, "automator"):
+                            self.driver.automator.last_error = {
+                                "type": "title_not_available",
+                                "message": error_message,
+                                "book_title": book_title,
+                            }
+
+                        # Return True to indicate dialog was found and handled
+                        return True
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error checking for 'Title Not Available' dialog: {e}")
+
+            # Dialog not found
+            return False
+        except Exception as e:
+            logger.error(f"Error in _check_title_not_available_dialog: {e}", exc_info=True)
+            return False
+
     def _check_unable_to_download_dialog(self, book_title, context=""):
         """Check for and handle the 'Unable to Download' dialog.
 
@@ -2222,6 +2305,10 @@ class LibraryHandler:
                     logger.info(f"Book '{book_title}' was removed as an invalid item, trying to find again")
                     time.sleep(1)  # Wait for UI to refresh after removal
                     return self.find_book(book_title)
+
+                # Check for "Title Not Available" dialog (expired loans)
+                if self._check_title_not_available_dialog(book_title, "after clicking non-downloaded book"):
+                    return False
 
                 # Check for "Unable to Download" dialog
                 if self._check_unable_to_download_dialog(book_title, "after clicking non-downloaded book"):
@@ -3206,6 +3293,14 @@ class LibraryHandler:
 
             # Find and click the book button
             if not self.find_book(book_title):
+                # Check if we encountered a Title Not Available dialog
+                if hasattr(self.driver.automator, "last_error"):
+                    last_error = self.driver.automator.last_error
+                    if last_error and last_error.get("type") == "title_not_available":
+                        error_msg = last_error.get("message", "try opening the book in your Kindle app")
+                        logger.warning(f"Title not available: {book_title} - {error_msg}")
+                        return {"success": False, "error": f"Title not available: {error_msg}"}
+
                 logger.error(f"Failed to find book: {book_title}", exc_info=True)
                 return {"success": False, "error": f"Failed to find book: {book_title}"}
 
