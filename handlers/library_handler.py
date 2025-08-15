@@ -1395,15 +1395,24 @@ class LibraryHandler:
     def switch_to_list_view(self):
         """Switch to list view if not already in it"""
         try:
-            # First check cached preferences to see if we should already be in list view
-            if self._is_library_view_preferences_correctly_set():
-                logger.info(
-                    "Library settings already set to list view with group_by_series=false in cache, "
-                    "assuming we're already in list view and skipping all checks"
-                )
-                return True
+            # If we're in grid view, we must switch regardless of cache
+            # (The cache might be stale/incorrect)
+            in_grid_view = self._is_grid_view()
 
-            # If cache doesn't indicate list view, proceed with normal checks
+            if in_grid_view:
+                # Update the cache to reflect actual state
+                logger.info("Grid view detected, updating cache to reflect actual state")
+                self.driver.automator.profile_manager.save_style_setting("view_type", "grid")
+            else:
+                # Only trust cache if we haven't detected grid view
+                if self._is_library_view_preferences_correctly_set():
+                    logger.info(
+                        "Library settings already set to list view with group_by_series=false in cache, "
+                        "and no grid view detected, assuming we're already in list view"
+                    )
+                    return True
+
+            # If cache doesn't indicate list view or we're in grid view, proceed with normal checks
             # First check if we're in search interface
             if self._is_in_search_interface():
                 logger.info("Detected we're in search interface, exiting search mode first")
@@ -1434,7 +1443,7 @@ class LibraryHandler:
             self.driver.automator.state_machine.update_current_state()
 
             # If we're in grid view, we need to open the view options menu
-            if self._is_grid_view():
+            if in_grid_view:
                 logger.info("Currently in grid view, switching to list view")
 
                 # Check again for search interface (could be misdetected as grid view)
