@@ -2755,7 +2755,12 @@ class LibraryHandler:
 
     def _check_cancellation(self):
         """Check if the current request has been cancelled."""
-        from flask import g
+        from flask import g, has_request_context
+
+        # Check if we're in a Flask request context
+        if not has_request_context():
+            # Outside request context - no cancellation check possible
+            return False
 
         # Get request manager from Flask context
         manager = getattr(g, "request_manager", None)
