@@ -79,7 +79,7 @@ class AutomationServer:
 
         # Check if we already have an automator for this profile
         if email in self.automators and self.automators[email]:
-            logger.info(f"Using existing automator for profile {email}")
+            logger.debug(f"Using existing automator for profile {email}")
             return self.automators[email]
 
         # Set email context for this thread so logs go to the right file
@@ -87,9 +87,9 @@ class AutomationServer:
 
         with EmailContext(email):
             # Initialize a new automator
-            logger.info(f"Creating new KindleAutomator for email={email}")
+            logger.debug(f"Creating new KindleAutomator for email={email}")
             automator = KindleAutomator()
-            logger.info(f"Created automator={id(automator)} for email={email}")
+            logger.debug(f"Created automator={id(automator)} for email={email}")
             # Connect profile manager to automator for device ID tracking
             automator.profile_manager = self.profile_manager
             # Add server reference so automator can access current book info
@@ -189,6 +189,9 @@ class AutomationServer:
                 except Exception as e:
                     logger.warning(f"Error checking device {device_id} availability: {e}")
                     device_available = False
+            else:
+                # No device_id to check - consider device available if emulator is running
+                device_available = is_running
 
             # Handle different scenarios based on emulator state
             if is_running and not force_new_emulator and device_available:
@@ -197,10 +200,10 @@ class AutomationServer:
                 )
                 return True, f"Already using profile for {email} with running emulator"
             elif not is_running or not device_available:
-                # Either the emulator isn't running or the device isn't available in ADB
+                # Either the emulator isn't running or the device isn't available in ADB (but only if we had a device_id to check)
                 if not is_running:
                     logger.info(f"Emulator not running for {email} according to ADB")
-                if not device_available:
+                if not device_available and self.automators[email].device_id is not None:
                     logger.info(
                         f"Device ID {self.automators[email].device_id} no longer available in ADB: {self.automators[email]}"
                     )
@@ -208,6 +211,10 @@ class AutomationServer:
                 if not force_new_emulator:
                     # We need to force a new emulator since the old one is no longer available
                     logger.info(f"Emulator for {email} no longer available, forcing new emulator creation")
+
+                    # Don't mark as booting here - let switch_profile_and_start_emulator handle it
+                    # Otherwise we create a situation where the boot flag is set but no emulator is starting
+
                     # Cleanup existing automator
                     self.automators[email].cleanup()
                     self.automators[email] = None
@@ -216,6 +223,10 @@ class AutomationServer:
                 else:
                     # Need to recreate the automator since force_new_emulator is True
                     logger.info(f"Force new emulator requested for {email}, cleaning up existing automator")
+
+                    # Don't mark as booting here - let switch_profile_and_start_emulator handle it
+                    # Otherwise we create a situation where the boot flag is set but no emulator is starting
+
                     self.automators[email].cleanup()
                     self.automators[email] = None
 
@@ -295,10 +306,14 @@ class AutomationServer:
         if name == "flask":
             try:
                 # Use lsof to find process on port 4098
-                pid = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
-                if pid:
-                    os.kill(int(pid), signal.SIGTERM)
-                    logger.info(f"Killed existing flask process with PID {pid}")
+                output = subprocess.check_output(["lsof", "-t", "-i:4098"]).decode().strip()
+                if output:
+                    # Handle multiple PIDs (can happen if parent/child processes both have the port)
+                    pids = output.split("\n")
+                    for pid in pids:
+                        if pid:
+                            os.kill(int(pid), signal.SIGTERM)
+                            logger.info(f"Killed existing flask process with PID {pid}")
 
                     # Wait for port to be released (up to 20 seconds)
                     import time

@@ -195,7 +195,15 @@ class LastReadPageDialogResource(Resource):
             # We need OCR text if requested, but without screenshots
             if perform_ocr:
                 # Take a screenshot just for OCR then discard it
-                screenshot_id = f"ocr_temp_{int(time.time())}"
+                # Get the user email for unique screenshot naming
+                profile = automator.profile_manager.get_current_profile()
+                user_email = profile.get("email") if profile else None
+                if user_email:
+                    # Sanitize email for filename
+                    email_safe = user_email.replace("@", "_").replace(".", "_")
+                    screenshot_id = f"{email_safe}_ocr_temp_{int(time.time())}"
+                else:
+                    screenshot_id = f"ocr_temp_{int(time.time())}"
                 screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
                 automator.driver.save_screenshot(screenshot_path)
 

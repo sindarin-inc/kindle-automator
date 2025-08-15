@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import shutil
 import tarfile
 import tempfile
@@ -136,8 +137,27 @@ class ColdStorageManager:
 
             if emulator_manager.is_emulator_running(email):
                 logger.warning(f"Cannot archive AVD for {email} - emulator {emulator_id} is still running")
-                logger.info(f"Attempting to stop emulator {emulator_id} before archiving")
 
+                # Take a snapshot before stopping to preserve user state
+                logger.info(f"Taking snapshot before stopping emulator {emulator_id} for archiving")
+                try:
+                    from server.utils.emulator_launcher import EmulatorLauncher
+
+                    launcher = EmulatorLauncher(
+                        os.environ.get("ANDROID_HOME", "/Users/sam/Library/Android/sdk"),
+                        os.path.join(os.path.expanduser("~"), ".android/avd"),
+                        platform.machine(),
+                    )
+                    if launcher.save_snapshot(email):
+                        logger.info(f"Snapshot saved successfully for {email} before archiving")
+                    else:
+                        logger.warning(
+                            f"Failed to save snapshot for {email} before archiving - user's reading position may be lost"
+                        )
+                except Exception as e:
+                    logger.error(f"Error saving snapshot for {email} before archiving: {e}", exc_info=True)
+
+                logger.info(f"Attempting to stop emulator {emulator_id} before archiving")
                 # Try to stop the emulator
                 if not emulator_manager.stop_specific_emulator(emulator_id):
                     logger.error(f"Failed to stop emulator {emulator_id} for {email}", exc_info=True)

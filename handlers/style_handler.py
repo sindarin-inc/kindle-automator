@@ -79,7 +79,7 @@ class StyleHandler:
         Returns:
             bool: True if the styles were applied successfully, False otherwise
         """
-        logger.info(
+        logger.debug(
             f"Applying reading settings: font_size={font_size}, highlighting={real_time_highlighting}, etc."
         )
 
@@ -89,7 +89,7 @@ class StyleHandler:
             dialog_handler = DialogHandler(self.driver)
             handled, dialog_type = dialog_handler.check_all_dialogs(context="before_style_update")
             if handled:
-                logger.info(f"Handled {dialog_type} dialog before applying styles")
+                logger.debug(f"Handled {dialog_type} dialog before applying styles")
 
             # Store page source before starting
             store_page_source(self.driver.page_source, "style_update_before")
@@ -109,7 +109,7 @@ class StyleHandler:
                 # Store page source after tapping center
                 store_page_source(self.driver.page_source, "style_update_after_center_tap")
             else:
-                logger.info("Skipping center tap (placemark mode disabled)")
+                logger.debug("Skipping center tap (placemark mode disabled)")
                 # We still need to tap to show reading controls to access the style button
                 # This is a tap near the top of the screen that won't trigger a placemark
                 top_y = int(window_size["height"] * 0.05)  # Very top of the screen (5%)
@@ -249,7 +249,7 @@ class StyleHandler:
         """
         # First check if styles have already been updated for this profile
         if self.profile_manager and self.profile_manager.is_styles_updated():
-            logger.info("Reading styles already updated for this profile, skipping")
+            logger.debug("Reading styles already updated for this profile, skipping")
             return True
 
         logger.info("Updating reading styles for the current profile")
@@ -287,7 +287,7 @@ class StyleHandler:
 
                         # Swipe from right to left to decrease font size
                         self.driver.swipe(start_x, slider_y, end_x, slider_y, 500)
-                        logger.info(
+                        logger.debug(
                             f"Slid font size slider from ({start_x}, {slider_y}) to ({end_x}, {slider_y})"
                         )
                         slider_found = True
@@ -303,7 +303,7 @@ class StyleHandler:
                         AppiumBy.ID, "com.amazon.kindle:id/aa_menu_v2_decrease_font_size"
                     )
                     if decrease_button.is_displayed():
-                        logger.info(
+                        logger.debug(
                             "Found decrease font size button, tapping multiple times as alternative to slider"
                         )
                         # Tap the button multiple times to ensure smallest font size
@@ -383,7 +383,7 @@ class StyleHandler:
                     AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_scrollview_more"
                 )
                 if scroll_view.is_displayed():
-                    logger.info(
+                    logger.debug(
                         "Found the More tab ScrollView, will perform a scroll to see additional settings"
                     )
 
@@ -400,7 +400,7 @@ class StyleHandler:
 
                     # Perform the scroll - scroll up to show elements below
                     self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
-                    logger.info(f"Scrolled ScrollView from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                    logger.debug(f"Scrolled ScrollView from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
                     time.sleep(1)
             except NoSuchElementException:
                 logger.warning("Could not find the ScrollView by ID, trying alternate approach")
@@ -411,7 +411,7 @@ class StyleHandler:
                         AppiumBy.ID, "com.amazon.kindle:id/view_options_tab_content"
                     )
                     if more_tab_content.is_displayed():
-                        logger.info(
+                        logger.debug(
                             "Found the More tab content, will perform a scroll to see additional settings"
                         )
                         location = more_tab_content.location
@@ -424,7 +424,9 @@ class StyleHandler:
 
                         # Perform the scroll
                         self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
-                        logger.info(f"Scrolled content from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})")
+                        logger.debug(
+                            f"Scrolled content from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
+                        )
                         time.sleep(1)
                 except NoSuchElementException:
                     logger.warning(
@@ -454,7 +456,7 @@ class StyleHandler:
 
                         # Perform the scroll
                         self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 800)
-                        logger.info(
+                        logger.debug(
                             f"Scrolled from highlight element ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
                         )
                         time.sleep(1)
@@ -469,7 +471,7 @@ class StyleHandler:
 
                         # Do a longer, slower scroll to ensure we see more options
                         self.driver.swipe(scroll_x, start_y, scroll_x, end_y, 1000)
-                        logger.info(
+                        logger.debug(
                             f"Performed generic scroll from ({scroll_x}, {start_y}) to ({scroll_x}, {end_y})"
                         )
                         time.sleep(1)
@@ -482,7 +484,7 @@ class StyleHandler:
             end_y2 = int(window_size["height"] * 0.3)
             scroll_x2 = window_size["width"] // 2
             self.driver.swipe(scroll_x2, start_y2, scroll_x2, end_y2, 800)
-            logger.info(f"Performed second scroll from ({scroll_x2}, {start_y2}) to ({scroll_x2}, {end_y2})")
+            logger.debug(f"Performed second scroll from ({scroll_x2}, {start_y2}) to ({scroll_x2}, {end_y2})")
             time.sleep(1)
 
         except Exception as e:

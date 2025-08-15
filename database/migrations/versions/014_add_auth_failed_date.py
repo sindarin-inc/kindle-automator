@@ -1,7 +1,7 @@
 """Add auth_failed_date to users table
 
-Revision ID: 013
-Revises: 012
+Revision ID: 014
+Revises: 013
 Create Date: 2025-08-13
 """
 
@@ -10,8 +10,8 @@ from alembic import op
 from sqlalchemy import DateTime
 
 # revision identifiers
-revision = "013"
-down_revision = "012"
+revision = "014"
+down_revision = "013"
 branch_labels = None
 depends_on = None
 
@@ -32,4 +32,10 @@ def upgrade():
 
 def downgrade():
     """Remove auth_failed_date column from users table."""
-    op.drop_column("users", "auth_failed_date")
+    # Check if column exists before dropping (idempotent migration)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    columns = [col["name"] for col in inspector.get_columns("users")]
+
+    if "auth_failed_date" in columns:
+        op.drop_column("users", "auth_failed_date")

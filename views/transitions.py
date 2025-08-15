@@ -60,7 +60,7 @@ class StateTransitions:
         # Even if permission handling fails, we want to continue the flow
         # The dialog may have auto-dismissed, which is fine
         if not result:
-            logger.info("Permission dialog may have auto-dismissed - continuing flow")
+            logger.debug("Permission dialog may have auto-dismissed - continuing flow")
 
         return True
 
@@ -112,10 +112,14 @@ class StateTransitions:
         logger.info("Handling READING state - navigating back to library...")
 
         # Add debug page source capture before transitioning
-        filepath = store_page_source(self.driver.page_source, "reading_before_transition")
-        logger.info(f"Stored page source before navigating from reading state at: {filepath}")
+        store_page_source(self.driver.page_source, "reading_before_transition")
 
-        result = self.reader_handler.navigate_back_to_library()
+        # Get cancellation check from state machine if available
+        cancellation_check = None
+        if hasattr(self, "state_machine") and hasattr(self.state_machine, "_cancellation_check"):
+            cancellation_check = self.state_machine._cancellation_check
+
+        result = self.reader_handler.navigate_back_to_library(cancellation_check=cancellation_check)
 
         # If the navigation was successful and we have a server reference, clear the current book
         if result and server:
@@ -128,14 +132,13 @@ class StateTransitions:
 
             if email:
                 server.clear_current_book(email)
-                logger.info(f"Cleared current book for {email} after returning to library")
+                logger.debug(f"Cleared current book for {email} after returning to library")
             else:
                 logger.warning("Could not get email to clear current book after returning to library")
 
         # If the navigation failed, capture the state to help with debugging
         if not result:
-            filepath = store_page_source(self.driver.page_source, "reading_transition_failed")
-            logger.info(f"Stored page source after failed navigation attempt at: {filepath}")
+            store_page_source(self.driver.page_source, "reading_transition_failed")
 
         return result
 
@@ -158,7 +161,7 @@ class StateTransitions:
             and self.driver.automator.book_to_open
         ):
             book_title = self.driver.automator.book_to_open
-            logger.info(f"Found book_to_open in context: '{book_title}', checking if it's in search results")
+            logger.debug(f"Found book_to_open in context: '{book_title}', checking if it's in search results")
         # Fall back to current_book_title if book_to_open isn't set
         elif (
             hasattr(self.driver, "automator")
@@ -166,7 +169,7 @@ class StateTransitions:
             and self.driver.automator.current_book_title
         ):
             book_title = self.driver.automator.current_book_title
-            logger.info(
+            logger.debug(
                 f"Using current_book_title as fallback: '{book_title}', checking if it's in search results"
             )
 
@@ -179,7 +182,7 @@ class StateTransitions:
                 )
                 if search_query_element and search_query_element.is_displayed():
                     current_search_query = search_query_element.text
-                    logger.info(f"Current search query: '{current_search_query}'")
+                    logger.debug(f"Current search query: '{current_search_query}'")
 
                     # If search query contains our book title (partial match is fine)
                     # or book title contains the search query, likely a match
@@ -187,11 +190,11 @@ class StateTransitions:
                         current_search_query.lower() in book_title.lower()
                         or book_title.lower() in current_search_query.lower()
                     ):
-                        logger.info(
+                        logger.debug(
                             f"Search query matches book title: '{current_search_query}' ~ '{book_title}'"
                         )
                     else:
-                        logger.info(f"Search query doesn't match book title, but will still check")
+                        logger.debug(f"Search query doesn't match book title, but will still check")
             except Exception as e:
                 logger.debug(f"Error checking search query: {e}")
 
@@ -200,11 +203,11 @@ class StateTransitions:
             result = self.library_handler.open_book(book_title)
 
             if result.get("success"):
-                logger.info(f"Successfully opened book '{book_title}' from search results")
+                logger.debug(f"Successfully opened book '{book_title}' from search results")
                 # Clear book_to_open since we successfully handled it
                 if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "book_to_open"):
                     self.driver.automator.book_to_open = None
-                    logger.info("Cleared book_to_open after successful handling")
+                    logger.debug("Cleared book_to_open after successful handling")
                 return True
 
             logger.info(f"Book '{book_title}' not found in search results, navigating back to library")
@@ -212,12 +215,26 @@ class StateTransitions:
             logger.info("No book title found in context, navigating back to library")
 
         # If we couldn't open the book or there's no book title, navigate back to library
+        # Check for cancellation before clicking back button
+        cancellation_check = None
+        if hasattr(self, "state_machine") and hasattr(self.state_machine, "_cancellation_check"):
+            cancellation_check = self.state_machine._cancellation_check
+
+        if cancellation_check and cancellation_check():
+            logger.info("Search results back navigation cancelled")
+            return False
+
         # Navigate back to library by clicking the back button
         try:
             back_button = self.driver.find_element(
                 AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Navigate up']"
             )
             if back_button and back_button.is_displayed():
+                # Final check before clicking
+                if cancellation_check and cancellation_check():
+                    logger.info("Back button click cancelled before action")
+                    return False
+
                 logger.info("Clicking back button to exit search results")
                 back_button.click()
                 time.sleep(1)  # Give time for transition
@@ -234,8 +251,7 @@ class StateTransitions:
 
         try:
             # Store screenshot and page source for debugging
-            filepath = store_page_source(self.driver.page_source, "app_not_responding_handling")
-            logger.info(f"Stored page source for app not responding at: {filepath}")
+            store_page_source(self.driver.page_source, "app_not_responding_handling")
 
             # Click the "Close app" button
             logger.info("Clicking 'Close app' button")
@@ -257,8 +273,8 @@ class StateTransitions:
                 # Use the automator's restart_app method
                 logger.info("Using automator.restart_app() to restart app...")
                 if automator.restart_app():
-                    logger.info("App restarted successfully")
-                    time.sleep(3)  # Wait for app to initialize
+                    logger.debug("App restarted successfully")
+                    time.sleep(1)  # Wait for app to initialize
                     return True
                 else:
                     logger.error("Failed to restart app with automator.restart_app()", exc_info=True)
@@ -267,8 +283,8 @@ class StateTransitions:
                 # Fallback to using the view inspector's ensure_app_foreground
                 logger.info("No automator reference found, using ensure_app_foreground...")
                 if self.view_inspector.ensure_app_foreground():
-                    logger.info("App brought to foreground")
-                    time.sleep(3)  # Wait for app to initialize
+                    logger.debug("App brought to foreground")
+                    time.sleep(1)  # Wait for app to initialize
                     return True
                 else:
                     logger.error("Failed to restart app with ensure_app_foreground", exc_info=True)
@@ -301,8 +317,7 @@ class StateTransitions:
         logger.info("Two-Step Verification detected - manual intervention required via VNC")
         # Store page source for debugging
         try:
-            filepath = store_page_source(self.driver.page_source, "two_factor_auth")
-            logger.info(f"Stored Two-Step Verification page source at: {filepath}")
+            store_page_source(self.driver.page_source, "two_factor_auth")
         except Exception as e:
             logger.warning(f"Error storing 2FA page source: {e}", exc_info=True)
         # Return False to indicate we can't proceed automatically
@@ -313,8 +328,7 @@ class StateTransitions:
         logger.info("Puzzle authentication detected - manual intervention required via VNC")
         # Store page source for debugging
         try:
-            filepath = store_page_source(self.driver.page_source, "puzzle_auth")
-            logger.info(f"Stored puzzle authentication page source at: {filepath}")
+            store_page_source(self.driver.page_source, "puzzle_auth")
         except Exception as e:
             logger.warning(f"Error storing puzzle page source: {e}", exc_info=True)
         # Return False to indicate we can't proceed automatically

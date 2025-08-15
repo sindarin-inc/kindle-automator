@@ -11,7 +11,9 @@ import requests
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 from flask import current_app
+from requests.adapters import HTTPAdapter
 from urllib3.exceptions import MaxRetryError
+from urllib3.util.retry import Retry
 
 from server.utils.appium_driver import AppiumDriver
 from server.utils.request_utils import get_sindarin_email
@@ -20,6 +22,24 @@ logger = logging.getLogger(__name__)
 
 
 class Driver:
+    # Class-level HTTP session with connection pooling
+    _http_session = None
+
+    @classmethod
+    def _get_http_session(cls):
+        """Get or create a shared HTTP session with proper connection pooling."""
+        if cls._http_session is None:
+            cls._http_session = requests.Session()
+            # Configure connection pooling
+            adapter = HTTPAdapter(
+                pool_connections=10,  # Number of connection pools to cache
+                pool_maxsize=10,  # Maximum number of connections to save in the pool
+                max_retries=Retry(total=3, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
+            )
+            cls._http_session.mount("http://", adapter)
+            cls._http_session.mount("https://", adapter)
+        return cls._http_session
+
     def __init__(self):
         if hasattr(self, "_initialized_attributes"):
             logger.error(f"Driver already initialized, instance: {self}", exc_info=True)
@@ -163,7 +183,7 @@ class Driver:
                     email, setting_name, value, section="emulator_settings"
                 )
 
-                logger.info(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
+                logger.debug(f"Updated profile setting emulator_settings.{setting_name}={value} for {email}")
             else:
                 logger.error(
                     f"Failed to update profile setting: {setting_name}={value} for {email}", exc_info=True
@@ -858,7 +878,7 @@ class Driver:
                     if houdini_check.returncode == 0:
                         logger.info("ARM translation (libhoudini) is available")
                     else:
-                        logger.warning("ARM translation (libhoudini) NOT found - ARM apps won't run!")
+                        logger.info("ARM translation (libhoudini) NOT found - ARM apps won't run!")
 
                 # Also check available storage
                 storage_check = subprocess.run(
@@ -868,7 +888,7 @@ class Driver:
                     check=False,
                 )
                 if storage_check.returncode == 0:
-                    logger.info(f"Device storage status:\n{storage_check.stdout}")
+                    logger.debug(f"Device storage status:\n{storage_check.stdout}")
             except Exception as e:
                 logger.warning(f"Could not check device info: {e}")
 
@@ -1028,6 +1048,19 @@ class Driver:
             device_id = self.automator.profile_manager.get_emulator_id_for_avd(avd_name)
             if device_id:
                 target_device_id = device_id
+
+        # If we still don't have a device ID, try to get it from VNC instance manager
+        if not target_device_id:
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                vnc_manager = VNCInstanceManager.get_instance()
+                vnc_device_id = vnc_manager.get_emulator_id(email)
+                if vnc_device_id:
+                    logger.info(f"Got device ID {vnc_device_id} from VNC instance manager for {email}")
+                    target_device_id = vnc_device_id
+            except Exception as e:
+                logger.warning(f"Could not get device ID from VNC instance manager: {e}")
 
         # Get device ID, preferring the specific one if provided
         self.device_id = self._get_emulator_device_id(target_device_id)
@@ -1299,7 +1332,8 @@ class Driver:
                 logger.debug(
                     f"Checking Appium server (127.0.0.1:{self.appium_port}) status (attempt {attempt+1}/{max_retries})..."
                 )
-                status_response = requests.get(f"http://127.0.0.1:{self.appium_port}/status", timeout=5)
+                session = self._get_http_session()
+                status_response = session.get(f"http://127.0.0.1:{self.appium_port}/status", timeout=5)
                 # Handle both Appium 1.x and 2.x response formats
                 response_json = status_response.json()
 

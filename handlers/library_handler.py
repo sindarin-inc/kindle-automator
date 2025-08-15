@@ -1082,7 +1082,7 @@ class LibraryHandler:
                 return True
 
             # Check if it's been more than 24 hours
-            now = datetime.utcnow()
+            now = datetime.now()
             time_since_check = now - last_check
             should_check = time_since_check > timedelta(hours=24)
 
@@ -1103,44 +1103,46 @@ class LibraryHandler:
         This should be called when scrolling through the library and collapsed
         series are detected.
         """
-        try:
-            # First check if we should even check (24 hour limit)
-            if not self._should_check_series_grouping():
-                return
+        # First check if we should even check (24 hour limit)
+        if not self._should_check_series_grouping():
+            return
 
-            # Check if there are collapsed series visible
-            if not self._detect_collapsed_series():
-                return
+        # Check if there are collapsed series visible
+        if not self._detect_collapsed_series():
+            return
 
-            logger.info("Collapsed series detected, checking if group by series needs to be disabled")
+        logger.info("Collapsed series detected, checking if group by series needs to be disabled")
 
-            # Open the grid/list dialog to check and disable series grouping
-            if not self.open_grid_list_view_dialog(force_open=True):
-                logger.warning("Failed to open Grid/List dialog to check series grouping")
-                return
+        # Open the grid/list dialog to check and disable series grouping
+        if not self.open_grid_list_view_dialog(force_open=True):
+            logger.warning("Failed to open Grid/List dialog to check series grouping")
+            return
 
-            # Handle the dialog to ensure series grouping is off
-            if self.handle_grid_list_view_dialog():
-                logger.info("Successfully handled Grid/List dialog to disable series grouping")
+        # Handle the dialog to ensure series grouping is off
+        if self.handle_grid_list_view_dialog():
+            logger.info("Successfully handled Grid/List dialog to disable series grouping")
 
-                # Update the last check time in the database
-                from datetime import datetime
+            # Update the last check time in the database using idempotent pattern
+            from datetime import datetime, timezone
 
-                from database.repositories.user_repository import UserRepository
-                from server.utils.request_utils import get_sindarin_email
+            from database.connection import get_db
+            from database.repositories.user_repository import UserRepository
+            from server.utils.request_utils import get_sindarin_email
 
-                sindarin_email = get_sindarin_email(self.driver.automator)
-                if sindarin_email:
-                    with UserRepository() as repo:
-                        library_settings = repo.get_or_create_library_settings(sindarin_email)
-                        library_settings.last_series_group_check = datetime.utcnow()
-                        repo.commit()
+            sindarin_email = get_sindarin_email()
+            if sindarin_email:
+                with get_db() as session:
+                    repo = UserRepository(session)
+                    # Use update_user_field which is idempotent (creates library_settings if needed)
+                    success = repo.update_user_field(
+                        sindarin_email, "library_settings.last_series_group_check", datetime.now()
+                    )
+                    if success:
                         logger.info("Updated last_series_group_check timestamp in database")
-            else:
-                logger.warning("Failed to handle Grid/List dialog to disable series grouping")
-
-        except Exception as e:
-            logger.warning(f"Error handling series grouping: {e}")
+                    else:
+                        logger.warning(f"Failed to update last_series_group_check for {sindarin_email}")
+        else:
+            logger.warning("Failed to handle Grid/List dialog to disable series grouping")
 
     def _is_in_series_collection_view(self):
         """Check if we're in an expanded series/collection view.
@@ -2152,7 +2154,9 @@ class LibraryHandler:
             logger.error(f"Error in _check_unable_to_download_dialog: {e}", exc_info=True)
             return False
 
-    def _handle_book_click_and_transition(self, parent_container, button, book_info, book_title):
+    def _handle_book_click_and_transition(
+        self, parent_container, button, book_info, book_title, cancellation_check=None
+    ):
         """Handle clicking a book, waiting for download if needed, and transitioning to reading view.
 
         This is a shared method used after finding a book through various methods (visible on screen,
@@ -2167,11 +2171,16 @@ class LibraryHandler:
             button: The clickable element for the book
             book_info: Dictionary containing book metadata
             book_title: The title of the book (used for logging and verification)
+            cancellation_check: Optional function to check if operation should be cancelled
 
         Returns:
             bool: True if book was successfully opened, False otherwise
         """
         try:
+            # Check for cancellation before any clicks
+            if cancellation_check and cancellation_check():
+                logger.info("Book click cancelled by higher priority operation")
+                return False
             # Check download status and handle download if needed
             content_desc = parent_container.get_attribute("content-desc") or ""
             logger.info(f"Book content description: {content_desc}")
@@ -2334,6 +2343,10 @@ class LibraryHandler:
                             if "Book downloaded" in content_desc:
                                 logger.info("Book has finished downloading")
                                 time.sleep(1)  # Short wait for UI to stabilize
+                                # Check cancellation before clicking
+                                if cancellation_check and cancellation_check():
+                                    logger.info("Book open click cancelled after download")
+                                    return False
                                 parent_container.click()
                                 logger.info("Clicked book button after download")
 
@@ -2375,6 +2388,10 @@ class LibraryHandler:
                                         "Still in library view after clicking downloaded book, trying again..."
                                     )
                                     time.sleep(1)
+                                    # Check cancellation before clicking again
+                                    if cancellation_check and cancellation_check():
+                                        logger.info("Book retry click cancelled")
+                                        return False
                                     parent_container.click()
                                     logger.info("Clicked book again")
                                 except NoSuchElementException:
@@ -2506,6 +2523,10 @@ class LibraryHandler:
                         exc_info=True,
                     )
                     # Try clicking the parent container instead
+                    # Check cancellation before clicking
+                    if cancellation_check and cancellation_check():
+                        logger.info("Book parent container click cancelled")
+                        return False
                     parent_container.click()
 
                     # Check for "Invalid Item" dialog first
@@ -2542,6 +2563,11 @@ class LibraryHandler:
     def find_book(self, book_title: str) -> bool:
         """Find and click a book button by title. If the book isn't downloaded, initiate download and wait for completion."""
         try:
+            # Check for cancellation at the start of find_book
+            if self._check_cancellation():
+                logger.info("Request cancelled before searching for book")
+                return False
+
             # Try using the search box first to find the book
             search_result = self.search_handler.search_for_book(book_title)
             # search_result = False  # TODO: Remove this once done testing scrolling method
@@ -2549,6 +2575,11 @@ class LibraryHandler:
             if search_result:
                 parent_container, button, book_info = search_result
                 logger.info(f"Successfully found book '{book_title}' using search function: {book_info}")
+
+                # Check for cancellation after search before clicking
+                if self._check_cancellation():
+                    logger.info("Request cancelled after finding book but before clicking")
+                    return False
 
                 # Handle clicking the book and check if we successfully exit library view
                 return self._handle_book_click_and_transition(parent_container, button, book_info, book_title)
@@ -2588,6 +2619,11 @@ class LibraryHandler:
             parent_container, button, book_info = self.scroll_handler._scroll_through_library(
                 book_title, title_match_func=self.search_handler._title_match
             )
+
+            # Check for cancellation after scrolling
+            if self._check_cancellation():
+                logger.info("Request cancelled after scrolling through library")
+                return False
 
             # If standard search failed, check for partial matches
             if not parent_container:
@@ -2717,6 +2753,22 @@ class LibraryHandler:
         logger.error(f"Download did not complete within {timeout}s timeout", exc_info=True)
         return False
 
+    def _check_cancellation(self):
+        """Check if the current request has been cancelled."""
+        from flask import g
+
+        # Get request manager from Flask context
+        manager = getattr(g, "request_manager", None)
+        if manager and manager.is_cancelled():
+            from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
+
+            logger.info(
+                f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "
+                f"detected it was cancelled in library_handler{RESET}"
+            )
+            return True
+        return False
+
     def open_book(self, book_title: str) -> dict:
         """Open a book in the library.
 
@@ -2727,6 +2779,13 @@ class LibraryHandler:
             dict: A result dictionary with 'success' boolean and optional error details
         """
         try:
+            # Check for cancellation at the start
+            if self._check_cancellation():
+                return {
+                    "success": False,
+                    "error": "Request was cancelled by higher priority operation",
+                    "status": 409,
+                }
             # Check if we have any cached preferences at all
             cached_view_type = self.driver.automator.profile_manager.get_style_setting("view_type")
             cached_group_by_series = self.driver.automator.profile_manager.get_style_setting(
@@ -2783,11 +2842,27 @@ class LibraryHandler:
             # Store initial page source for diagnostics
             store_page_source(self.driver.page_source, "library_before_book_search")
 
+            # Check for cancellation before searching for the book
+            if self._check_cancellation():
+                return {
+                    "success": False,
+                    "error": "Request was cancelled by higher priority operation",
+                    "status": 409,
+                }
+
             # Check if the book is already visible on the current screen before searching
             visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
             if visible_book_result:
                 parent_container, button, book_info = visible_book_result
                 logger.info(f"Book '{book_title}' is already visible on the current screen")
+
+                # Check for cancellation before clicking the book
+                if self._check_cancellation():
+                    return {
+                        "success": False,
+                        "error": "Request was cancelled by higher priority operation",
+                        "status": 409,
+                    }
 
                 # Handle clicking the book
                 button.click()
@@ -2832,6 +2907,13 @@ class LibraryHandler:
                     visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
                     if visible_book_result:
                         _, button, _ = visible_book_result
+                        # Check for cancellation before clicking after download
+                        if self._check_cancellation():
+                            return {
+                                "success": False,
+                                "error": "Request was cancelled by higher priority operation",
+                                "status": 409,
+                            }
                         button.click()
                         logger.info("Clicked book again after download completed")
                         store_page_source(self.driver.page_source, "after_book_click_post_download")
@@ -2948,6 +3030,13 @@ class LibraryHandler:
                         visible_book_result = self.search_handler._check_book_visible_on_screen(book_title)
                         if visible_book_result:
                             _, button, _ = visible_book_result
+                            # Check for cancellation before retry click
+                            if self._check_cancellation():
+                                return {
+                                    "success": False,
+                                    "error": "Request was cancelled by higher priority operation",
+                                    "status": 409,
+                                }
                             button.click()
                             logger.info("Clicked book button again")
 
@@ -3000,6 +3089,13 @@ class LibraryHandler:
                                 )
                                 if visible_book_result:
                                     _, button, _ = visible_book_result
+                                    # Check for cancellation before clicking after download on retry
+                                    if self._check_cancellation():
+                                        return {
+                                            "success": False,
+                                            "error": "Request was cancelled by higher priority operation",
+                                            "status": 409,
+                                        }
                                     button.click()
                                     logger.info("Clicked book again after download completed on retry")
                                     store_page_source(
@@ -3140,6 +3236,14 @@ class LibraryHandler:
             # )
             # logger.info("Reading view loaded successfully")
 
+            # Check for cancellation before delegating to reader handler
+            if self._check_cancellation():
+                return {
+                    "success": False,
+                    "error": "Request was cancelled by higher priority operation",
+                    "status": 409,
+                }
+
             # Now that we're in the reading view, let reader_handler handle the dialogs
             # We use show_placemark=False to avoid showing the placemark ribbon
             dialog_handled = reader_handler.open_book(book_title, show_placemark=False)
@@ -3188,6 +3292,13 @@ class LibraryHandler:
                     try:
                         yes_button = self.driver.find_element(AppiumBy.ID, "android:id/button1")
                         if yes_button and yes_button.is_displayed() and yes_button.text == "YES":
+                            # Check for cancellation before clicking YES on dialog
+                            if self._check_cancellation():
+                                return {
+                                    "success": False,
+                                    "error": "Request was cancelled by higher priority operation",
+                                    "status": 409,
+                                }
                             yes_button.click()
                             logger.info(
                                 f"Clicked YES button on page navigation dialog ({source_description})"
@@ -3351,6 +3462,13 @@ class LibraryHandler:
                                 try:
                                     cancel_button = self.driver.find_element(btn_strategy, btn_locator)
                                     if cancel_button and cancel_button.is_displayed():
+                                        # Check for cancellation before clicking Cancel on dialog
+                                        if self._check_cancellation():
+                                            return {
+                                                "success": False,
+                                                "error": "Request was cancelled by higher priority operation",
+                                                "status": 409,
+                                            }
                                         cancel_button.click()
                                         logger.info("Clicked Cancel button on Title Not Available dialog")
                                         break
@@ -3425,6 +3543,14 @@ class LibraryHandler:
                     if visible_book_result:
                         parent_container, button, book_info = visible_book_result
                         logger.info(f"Book '{book_title}' is still visible - trying to click it again")
+
+                        # Check for cancellation before final retry click
+                        if self._check_cancellation():
+                            return {
+                                "success": False,
+                                "error": "Request was cancelled by higher priority operation",
+                                "status": 409,
+                            }
 
                         # Try clicking the book again
                         button.click()
@@ -3522,6 +3648,13 @@ class LibraryHandler:
             try:
                 button = self.driver.find_element(strategy, locator)
                 if button.is_displayed():
+                    # Check for cancellation before clicking OK on dialog
+                    if self._check_cancellation():
+                        return {
+                            "success": False,
+                            "error": "Request was cancelled by higher priority operation",
+                            "status": 409,
+                        }
                     button.click()
                     logger.info("Clicked OK button on Unable to Download dialog")
                     ok_clicked = True

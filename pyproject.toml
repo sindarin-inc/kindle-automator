@@ -1,0 +1,13 @@
+[project]
+name = "kindle-automator"
+version = "1.0.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = [
+    # Ignore Google protobuf deprecation warnings for Python 3.14
+    "ignore:Type google._upb._message.MessageMapContainer.*:DeprecationWarning",
+    "ignore:Type google._upb._message.ScalarMapContainer.*:DeprecationWarning",
+]

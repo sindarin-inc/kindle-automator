@@ -44,6 +44,7 @@ class User(Base):
     last_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
     snapshot_dirty: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     snapshot_dirty_since: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    cold_storage_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
     kindle_version_name: Mapped[Optional[str]] = mapped_column(String(50))
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
     android_version: Mapped[Optional[str]] = mapped_column(String(10))
@@ -193,6 +194,8 @@ class VNCInstance(Base):
     appium_system_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_chromedriver_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_mjpeg_server_port: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_booting: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    boot_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )

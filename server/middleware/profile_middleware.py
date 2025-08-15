@@ -221,6 +221,21 @@ def ensure_user_profile_loaded(f):
                     "message": "Could not initialize instance tracking",
                 }, 500
 
+        # Check if emulator is currently booting
+        if vnc_manager.repository.is_booting(sindarin_email):
+            logger.info(f"Emulator for {sindarin_email} is currently booting, waiting for it to complete")
+            # Wait for it to finish booting (max 60 seconds)
+            import time
+
+            wait_start = time.time()
+            while time.time() - wait_start < 60:
+                if not vnc_manager.repository.is_booting(sindarin_email):
+                    logger.info(f"Emulator for {sindarin_email} finished booting")
+                    break
+                time.sleep(3)
+            else:
+                logger.warning(f"Emulator for {sindarin_email} still booting after 60 seconds")
+
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
         if automator and hasattr(automator, "driver") and automator.driver:
@@ -302,6 +317,23 @@ def ensure_user_profile_loaded(f):
 
             # Try initializing the driver if needed
             if not automator.driver:
+                # Check if we're still booting - if so, wait for it to complete
+                if vnc_manager.repository.is_booting(sindarin_email):
+                    logger.info(
+                        f"Emulator for {sindarin_email} is still booting, waiting for driver initialization"
+                    )
+                    # Wait up to 30 seconds for driver initialization
+                    import time
+
+                    wait_start = time.time()
+                    while time.time() - wait_start < 30:
+                        if not vnc_manager.repository.is_booting(sindarin_email):
+                            logger.info(f"Emulator for {sindarin_email} finished booting")
+                            break
+                        time.sleep(1)
+                    else:
+                        logger.warning(f"Emulator for {sindarin_email} still booting after 30 seconds")
+
                 if not automator.initialize_driver():
                     logger.error(f"Failed to initialize driver for {sindarin_email}", exc_info=True)
                     return {

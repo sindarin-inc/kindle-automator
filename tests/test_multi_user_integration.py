@@ -17,33 +17,29 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+try:
+    from tests.test_base import STAGING, BaseKindleTest
+except ImportError:
+    # When running as a script
+    from test_base import STAGING, BaseKindleTest
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Test configuration
-BASE_URL = "http://localhost:4098"
-USER_A_EMAIL = "test_user_a@solreader.com"
-USER_B_EMAIL = "test_user_b@solreader.com"
+USER_A_EMAIL = "kindle@solreader.com"
+USER_B_EMAIL = "sam@solreader.com"
 
-# Book ASINs to test with
-BOOK_A_ASIN = "B09XWD3C3K"  # Example ASIN for user A
-BOOK_B_ASIN = "B08N5LPQY1"  # Example ASIN for user B
+# Note: Using /open-random-book instead of hardcoded ASINs for more flexible testing
 
 
-class MultiUserTester:
+class MultiUserTester(BaseKindleTest):
     def __init__(self):
-        self.session = requests.Session()
+        # Initialize base class
+        self.setup_base()
         self.user_a_status = {"email": USER_A_EMAIL, "initialized": False, "authenticated": False}
         self.user_b_status = {"email": USER_B_EMAIL, "initialized": False, "authenticated": False}
         self.test_results = {"passed": [], "failed": [], "warnings": []}
-
-    def get_staff_token(self):
-        """Get and set staff authentication token."""
-        response = self.session.get(f"{BASE_URL}/staff-auth", params={"auth": "1"})
-        response.raise_for_status()
-        token = response.json()["token"]
-        self.session.cookies.set("staff_token", token)
-        logger.info("Obtained staff token")
 
     def check_adb_devices(self) -> Tuple[Dict[str, str], List[str]]:
         """Check which emulators are currently running and their port forwards."""
@@ -97,7 +93,7 @@ class MultiUserTester:
                     logger.info(f"      {forward}")
 
         # Check active emulators via API
-        response = self.session.get(f"{BASE_URL}/emulators/active")
+        response = self._make_request("emulators/active", method="GET")
         if response.status_code == 200:
             active = response.json()
             logger.info(f"Active emulators (API): {active.get('count', 0)}")
@@ -110,8 +106,8 @@ class MultiUserTester:
         """Authenticate a user and start their emulator."""
         logger.info(f"Authenticating {email}...")
 
-        params = {"sindarin_email": email, "user_email": email}
-        response = self.session.get(f"{BASE_URL}/auth", params=params)
+        params = {"sindarin_email": email, "user_email": email, "staging": STAGING}
+        response = self._make_request("auth", params=params, method="GET")
 
         if response.status_code != 200:
             logger.error(f"Failed to auth {email}: {response.text}")
@@ -135,8 +131,8 @@ class MultiUserTester:
         """Test the snapshot-check endpoint for a user."""
         logger.info(f"Testing snapshot-check for {email}...")
 
-        params = {"email": email}
-        response = self.session.get(f"{BASE_URL}/snapshot-check", params=params)
+        params = {"email": email, "staging": STAGING}
+        response = self._make_request("snapshot-check", params=params, method="GET")
 
         if response.status_code != 200:
             logger.error(f"Snapshot check failed for {email}: {response.status_code}")
@@ -160,8 +156,8 @@ class MultiUserTester:
 
         logger.info(f"Navigating to home for {email}...")
 
-        params = {"sindarin_email": email, "user_email": email, "action": "home"}
-        response = self.session.get(f"{BASE_URL}/navigate", params=params)
+        params = {"sindarin_email": email, "user_email": email, "action": "home", "staging": STAGING}
+        response = self._make_request("navigate", params=params, method="GET")
 
         if response.status_code != 200:
             logger.error(f"Failed to navigate home for {email}")
@@ -171,8 +167,8 @@ class MultiUserTester:
         self.test_results["passed"].append(f"Navigation successful for {email}")
         return True
 
-    def open_book(self, email: str, asin: str) -> bool:
-        """Open a book for a user (if authenticated)."""
+    def open_book(self, email: str) -> bool:
+        """Open a random book for a user (if authenticated)."""
         user_status = self.user_a_status if email == USER_A_EMAIL else self.user_b_status
 
         if not user_status["authenticated"]:
@@ -180,25 +176,27 @@ class MultiUserTester:
             self.test_results["warnings"].append(f"Skipped book open for {email} - not authenticated")
             return True
 
-        logger.info(f"Opening book {asin} for {email}...")
+        logger.info(f"Opening random book for {email}...")
 
-        json_data = {"sindarin_email": email, "user_email": email, "asin": asin}
-        response = self.session.post(f"{BASE_URL}/open-book", json=json_data)
+        # Using open-random-book endpoint for more flexible testing
+        params = {"sindarin_email": email, "user_email": email, "staging": STAGING}
+        response = self._make_request("open-random-book", params=params, method="GET")
 
         if response.status_code != 200:
-            logger.warning(f"Failed to open book for {email}")
-            self.test_results["warnings"].append(f"Book open failed for {email}")
+            logger.warning(f"Failed to open random book for {email}")
+            self.test_results["warnings"].append(f"Random book open failed for {email}")
             return False
 
-        self.test_results["passed"].append(f"Book opened for {email}")
+        self.test_results["passed"].append(f"Random book opened for {email}")
         return True
 
     def shutdown_user(self, email: str) -> bool:
         """Shutdown a user's emulator."""
         logger.info(f"Shutting down {email}...")
 
-        json_data = {"sindarin_email": email, "user_email": email}
-        response = self.session.post(f"{BASE_URL}/shutdown", json=json_data)
+        # Using params instead of json for consistency with other endpoints
+        params = {"sindarin_email": email, "user_email": email, "staging": STAGING}
+        response = self._make_request("shutdown", params=params, method="POST")
 
         if response.status_code != 200:
             logger.error(f"Failed to shutdown {email}: {response.text}")
@@ -240,8 +238,7 @@ class MultiUserTester:
     def run_test(self):
         """Run the comprehensive multi-user test."""
         try:
-            # Get staff token
-            self.get_staff_token()
+            # Staff token is already set by BaseKindleTest
 
             # Initial state
             self.log_system_state("INITIAL")
@@ -289,9 +286,9 @@ class MultiUserTester:
 
             # Phase 5: Open books (if authenticated)
             logger.info("\n=== PHASE 5: Open Books ===")
-            self.open_book(USER_A_EMAIL, BOOK_A_ASIN)
+            self.open_book(USER_A_EMAIL)
             time.sleep(2)
-            self.open_book(USER_B_EMAIL, BOOK_B_ASIN)
+            self.open_book(USER_B_EMAIL)
 
             # Phase 6: Shutdown User A
             logger.info("\n=== PHASE 6: Shutdown User A ===")

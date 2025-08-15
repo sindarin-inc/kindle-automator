@@ -119,14 +119,13 @@ def calculate_emulator_ports(instance_id: int) -> dict:
     }
 
 
-def get_appium_port_for_email(email: str, vnc_manager=None, profiles_index=None) -> int:
+def get_appium_port_for_email(email: str, vnc_manager=None) -> int:
     """
     Get Appium port for an email, checking stored value first.
 
     Args:
         email: Email address
         vnc_manager: VNC instance manager to check for stored port
-        profiles_index: Direct profiles_index dict for backward compatibility
 
     Returns:
         Appium port number
@@ -139,12 +138,6 @@ def get_appium_port_for_email(email: str, vnc_manager=None, profiles_index=None)
                 return stored_port
         except Exception:
             pass
-
-    # Check profiles_index for backward compatibility
-    if profiles_index and email in profiles_index:
-        profile_entry = profiles_index.get(email)
-        if isinstance(profile_entry, dict) and "appium_port" in profile_entry:
-            return profile_entry["appium_port"]
 
     # Calculate port if not stored
     return calculate_appium_port(email=email)

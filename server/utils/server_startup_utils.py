@@ -32,7 +32,7 @@ def auto_restart_emulators_after_startup(server):
         vnc_manager = VNCInstanceManager.get_instance()
 
         # Reset any lingering appium states from previous run
-        logger.info("Resetting appium states from previous run...")
+        logger.debug("Resetting appium states from previous run...")
         vnc_manager.reset_appium_states_on_startup()
 
         emulators_to_restart = vnc_manager.get_running_at_restart()
@@ -46,10 +46,10 @@ def auto_restart_emulators_after_startup(server):
 
             # Clear the flags first to avoid infinite restart loops
             vnc_manager.clear_running_at_restart_flags()
-            logger.info("Cleared restart flags to prevent infinite loops")
+            logger.debug("Cleared restart flags to prevent infinite loops")
 
             # Clean up any lingering port forwards and UiAutomator2 processes before starting
-            logger.info("Cleaning up lingering processes and port forwards before restart")
+            logger.debug("Cleaning up lingering processes and port forwards before restart")
             try:
                 # Get all connected devices
                 result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
@@ -57,10 +57,10 @@ def auto_restart_emulators_after_startup(server):
                 for line in lines:
                     if "\tdevice" in line:
                         device_id = line.split("\t")[0]
-                        logger.info(f"Cleaning up device {device_id}")
+                        logger.debug(f"Cleaning up device {device_id}")
                         # Port forwards are persistent and tied to instance IDs
                         # We keep them in place for faster startup
-                        logger.info(f"Keeping ADB port forwards for {device_id} to speed up startup")
+                        logger.debug(f"Keeping ADB port forwards for {device_id} to speed up startup")
                         # Kill any UiAutomator2 processes
                         subprocess.run(
                             [f"adb -s {device_id} shell pkill -f uiautomator"], shell=True, check=False
@@ -105,7 +105,7 @@ def auto_restart_emulators_after_startup(server):
                         if success:
                             # Initialize the automator to ensure the driver is ready
                             automator = server.initialize_automator(email)
-                            logger.info(f"Initialized startup automator for {email}: {automator}")
+                            logger.debug(f"Initialized startup automator for {email}: {automator}")
                             if automator:
                                 logger.info(f"✓ Successfully restarted emulator for {email}")
                                 successfully_restarted.append(email)
@@ -113,7 +113,9 @@ def auto_restart_emulators_after_startup(server):
                                 # Track which emulator this profile is using
                                 if platform.system() == "Darwin" and hasattr(automator, "device_id"):
                                     emulators_in_use[automator.device_id] = email
-                                    logger.info(f"Marked emulator {automator.device_id} as in use by {email}")
+                                    logger.debug(
+                                        f"Marked emulator {automator.device_id} as in use by {email}"
+                                    )
                             else:
                                 logger.error(f"✗ Failed to initialize driver for {email}", exc_info=True)
                                 failed_restarts.append(email)
@@ -136,11 +138,12 @@ def auto_restart_emulators_after_startup(server):
                     logger.info(f"  ✓ {email}")
 
             if failed_restarts:
-                logger.info(f"Failed to restart: {len(failed_restarts)} emulators")
+                logger.warning(f"Failed to restart: {len(failed_restarts)} emulators")
                 for email in failed_restarts:
-                    logger.info(f"  ✗ {email}")
+                    logger.warning(f"  ✗ {email}")
         else:
             logger.info("=== No emulators marked for restart from previous session ===")
+            logger.info("=== Session restoration complete ===")
 
     # Start the background thread
     thread = threading.Thread(target=_restart_emulators, daemon=True)

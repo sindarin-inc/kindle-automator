@@ -1,0 +1,9 @@
+---
+# Redis handlers
+
+- name: restart redis
+  community.docker.docker_container:
+    name: kindle_automator_redis
+    state: started
+    restart: yes
+  become: yes

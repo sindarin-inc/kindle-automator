@@ -227,29 +227,11 @@ def ensure_automator_healthy(f):
                         port = get_appium_port_for_email(
                             sindarin_email,
                             vnc_manager=vnc_manager,
-                            profiles_index=server.profile_manager.profiles_index,
                         )
                         logger.info(f"Using Appium port {port} for {sindarin_email}")
 
-                        # If port wasn't already stored, store it for future use
-                        if not server.profile_manager.get_appium_port_for_email(sindarin_email):
-                            # Store this port in the profile for future use
-                            if hasattr(server.profile_manager, "register_profile"):
-                                # Get the AVD name for this email
-                                avd_name = server.profile_manager.get_avd_for_email(sindarin_email)
-                                if avd_name:
-                                    # Get existing VNC instance if any
-                                    vnc_instance = server.profile_manager.get_vnc_instance_for_email(
-                                        sindarin_email
-                                    )
-                                    # Register the profile with the new port
-                                    server.profile_manager.register_profile(
-                                        email=sindarin_email,
-                                        avd_name=avd_name,
-                                        vnc_instance=vnc_instance,
-                                        appium_port=port,
-                                    )
-                                    logger.info(f"Stored Appium port {port} for {sindarin_email} in profile")
+                        # The port is already determined and will be used by AppiumDriver
+                        # No need to store it separately as it's managed by VNC instance
 
                         # Start a dedicated Appium server for this email
                         if not appium_driver.start_appium_for_profile(sindarin_email):

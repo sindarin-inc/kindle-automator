@@ -79,7 +79,7 @@ class DatabaseConnection:
             self.engine = create_engine(
                 self.database_url,
                 poolclass=NullPool,
-                echo=False,  # Set to True for SQL query logging
+                echo=False,  # Use SQL_LOGGING env var for query logging instead
                 future=True,  # Use SQLAlchemy 2.0 style
             )
         else:
@@ -91,11 +91,20 @@ class DatabaseConnection:
                 max_overflow=20,
                 pool_timeout=30,
                 pool_recycle=1800,  # Recycle connections after 30 minutes
-                echo=False,
+                echo=False,  # Use SQL_LOGGING env var for query logging instead
                 future=True,
             )
 
         # No need to set search_path since we're using public schema
+
+        # Test the database connection before proceeding
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                logger.debug("Database connection test successful")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            raise RuntimeError(f"Database connection failed: {e}") from e
 
         # Create session factory
         self.SessionLocal = sessionmaker(
@@ -107,7 +116,7 @@ class DatabaseConnection:
 
         # Add query logging for development environment
         # Can be disabled by setting SQL_LOGGING=false or SQL_LOGGING=0
-        sql_logging_enabled = os.getenv("SQL_LOGGING", "true").lower() not in ["false", "0", "no", "off"]
+        sql_logging_enabled = os.getenv("SQL_LOGGING", "false").lower() not in ["false", "0", "no", "off"]
 
         # Enable SQL logging for development and staging environments
         environment = os.getenv("ENVIRONMENT", "").lower()

@@ -38,12 +38,24 @@ class KindleStateMachine:
             self.reader_handler,
         )
         self.transitions.set_driver(driver)
+        # Give transitions a reference to state machine for cancellation checks
+        self.transitions.state_machine = self
         self.screenshots_dir = "screenshots"
         # Ensure screenshots directory exists
         os.makedirs(self.screenshots_dir, exist_ok=True)
         self.current_state = AppState.UNKNOWN
         # Flag to indicate we're preparing a seed clone (skip sign-in)
         self.preparing_seed_clone = False
+        # Optional cancellation check function for interruptible operations
+        self._cancellation_check = None
+
+    def set_cancellation_check(self, check_func):
+        """Set a function to check for cancellation during long operations.
+
+        Args:
+            check_func: A callable that returns True if operation should be cancelled
+        """
+        self._cancellation_check = check_func
 
     def _get_current_state(self):
         """Get the current app state using the view inspector."""
@@ -70,7 +82,7 @@ class KindleStateMachine:
             try:
                 current_activity = self.driver.current_activity
                 if "RemoteLicenseReleaseActivity" in current_activity:
-                    logger.info("Detected Download Limit dialog during transition - treating as READING")
+                    logger.debug("Detected Download Limit dialog during transition - treating as READING")
                     self.current_state = AppState.READING
             except Exception as e:
                 logger.debug(f"Error checking for RemoteLicenseReleaseActivity: {e}")
@@ -84,7 +96,7 @@ class KindleStateMachine:
 
                 # Check if there's a current book for this email
                 if email and email in server.current_books:
-                    logger.info(
+                    logger.debug(
                         f"Not in reading state ({self.current_state}) but have current book tracked for {email} - clearing it"
                     )
                     server.clear_current_book(email)
@@ -132,13 +144,17 @@ class KindleStateMachine:
                 if not self.view_inspector.ensure_app_foreground():
                     logger.error("Failed to bring app to foreground", exc_info=True)
                     return self.current_state
-                time.sleep(1)  # Wait for app to come to foreground
+                # Sleep and check for cancellation
+                time.sleep(1)
+                if self._cancellation_check and self._cancellation_check():
+                    logger.info(f"[{time.time():.3f}] Transition cancelled during app foreground wait")
+                    return self.current_state
 
                 # Try to get the current state again
                 self.current_state = self._get_current_state()
                 logger.info(f"After bringing app to foreground, state is: {self.current_state}")
                 if self.current_state == AppState.LIBRARY:
-                    logger.info("Successfully reached library state after bringing app to foreground")
+                    logger.debug("Successfully reached library state after bringing app to foreground")
                     # Update auth tracking when we reach library
                     try:
                         from datetime import datetime
@@ -174,40 +190,46 @@ class KindleStateMachine:
                         "AlertActivity" in current_activity
                         or "StandAloneBookReaderActivity" in current_activity
                     ):
-                        logger.info(f"Detected {current_activity}, checking for known dialogs...")
+                        logger.debug(f"Detected {current_activity}, checking for known dialogs...")
 
                         # Check for dialogs without requiring book title
                         handled, dialog_type = dialog_handler.check_all_dialogs(None, "in UNKNOWN state")
                         if handled:
-                            logger.info(f"Successfully handled {dialog_type} dialog in UNKNOWN state")
+                            logger.debug(f"Successfully handled {dialog_type} dialog in UNKNOWN state")
                             # Try to update state after handling dialog
                             self.current_state = self._get_current_state()
 
                             # If we're now in READING state after handling the dialog, we're done
                             if self.current_state == AppState.READING:
-                                logger.info("Now in READING state after handling dialog")
+                                logger.debug("Now in READING state after handling dialog")
                                 return self.current_state
 
                             # If still unknown, try to re-enter the app
                             if self.current_state == AppState.UNKNOWN:
                                 if self.view_inspector.ensure_app_foreground():
-                                    logger.info("Brought app to foreground after handling dialog")
+                                    logger.debug("Brought app to foreground after handling dialog")
+                                    # Sleep and check for cancellation
                                     time.sleep(1)
+                                    if self._cancellation_check and self._cancellation_check():
+                                        logger.info(
+                                            f"[{time.time():.3f}] Transition cancelled during dialog handling wait"
+                                        )
+                                        return self.current_state
                                     self.current_state = self._get_current_state()
                             continue  # Continue the loop to re-check state
 
                     # If dialog handling didn't work, try checking for library-specific elements
-                    logger.info("Checking for library-specific elements...")
+                    logger.debug("Checking for library-specific elements...")
                     if self.library_handler._is_library_tab_selected():
-                        logger.info("Library handler detected library view")
+                        logger.debug("Library handler detected library view")
                         return self.current_state
                     # Check if we're in search interface (which is part of library)
                     if self.library_handler._is_in_search_interface():
-                        logger.info("Library handler detected search interface - treating as library view")
+                        logger.debug("Library handler detected search interface - treating as library view")
                         self.current_state = AppState.LIBRARY  # Update the state
                         # Exit search mode to get to main library view
                         if self.library_handler.search_handler._exit_search_mode():
-                            logger.info("Exited search mode, now in library view")
+                            logger.debug("Exited search mode, now in library view")
                             return self.current_state
                         else:
                             logger.warning("Failed to exit search mode")
@@ -281,14 +303,12 @@ class KindleStateMachine:
             source = self.view_inspector.driver.page_source
 
             # Store the page source
-            filepath = store_page_source(source, "failed_transition")
-            logger.info(f"Stored failed transition page source at: {filepath}")
+            store_page_source(source, "failed_transition")
 
             # Also save a screenshot for visual debugging
             try:
                 screenshot_path = os.path.join(self.screenshots_dir, "failed_transition.png")
                 self.view_inspector.driver.save_screenshot(screenshot_path)
-                logger.info(f"Saved failed transition screenshot to {screenshot_path}")
             except Exception as e:
                 logger.warning(f"Failed to save transition error screenshot: {e}", exc_info=True)
         except Exception as e:
@@ -302,13 +322,11 @@ class KindleStateMachine:
         try:
             # Store page source
             source = self.view_inspector.driver.page_source
-            filepath = store_page_source(source, f"failed_transition_{from_state}_to_{to_state}")
-            logger.info(f"Stored failed transition page source at: {filepath}")
+            store_page_source(source, f"failed_transition_{from_state}_to_{to_state}")
 
             # Save screenshot
             screenshot_path = os.path.join(self.screenshots_dir, "failed_transition.png")
             self.view_inspector.driver.save_screenshot(screenshot_path)
-            logger.info(f"Saved failed transition screenshot to {screenshot_path}")
         except Exception as e:
             logger.warning(f"Failed to save transition error data: {e}", exc_info=True)
 
@@ -336,7 +354,7 @@ class KindleStateMachine:
 
         # Log the result
         if result:
-            logger.info(f"Successfully handled state {self.current_state}")
+            logger.debug(f"Successfully handled state {self.current_state}")
         else:
             logger.error(f"Failed to handle state {self.current_state}", exc_info=True)
 
@@ -465,7 +483,7 @@ class KindleStateMachine:
                     AppState.LIBRARY,
                     AppState.SEARCH_RESULTS,
                 ]:
-                    logger.info(
+                    logger.debug(
                         f"Using cached state from {time_since_last_check:.2f}s ago: {self._last_state_value}"
                     )
                     self.current_state = self._last_state_value
@@ -570,13 +588,13 @@ class KindleStateMachine:
                 # If we found at least 2 elements of the download limit dialog, we're confident we need
                 # to handle this dialog via reader_handler before continuing
                 if download_limit_elements >= 2:
-                    logger.info("Download limit reached dialog detected within READING state")
+                    logger.debug("Download limit reached dialog detected within READING state")
                     # Don't override the state as it's correctly detected as READING already
                     return self.current_state
 
                 # Double check for library elements
                 library_elements_found = False
-                logger.info("State detected as READING - double checking for library elements...")
+                logger.debug("State detected as READING - double checking for library elements...")
 
                 # First verify that we have strong reading view indicators
                 from views.reading.view_strategies import READING_VIEW_IDENTIFIERS
@@ -596,7 +614,7 @@ class KindleStateMachine:
                         try:
                             element = self.driver.find_element(strategy, locator)
                             if element.is_displayed():
-                                logger.info(
+                                logger.debug(
                                     f"Found library element {strategy}={locator} despite READING state detection"
                                 )
                                 library_elements_found = True
@@ -608,7 +626,7 @@ class KindleStateMachine:
                         logger.info("Overriding state from READING to LIBRARY based on element detection")
                         self.current_state = AppState.LIBRARY
                 else:
-                    logger.info(f"Confirmed READING state with {reading_elements_count} strong indicators")
+                    logger.debug(f"Confirmed READING state with {reading_elements_count} strong indicators")
 
             # If unknown, try to detect specific states, but only store debug info for unknown state
             if self.current_state == AppState.UNKNOWN:
@@ -648,13 +666,12 @@ class KindleStateMachine:
 
                 # Store page source for debugging if still unknown
                 source = self.driver.page_source
-                filepath = store_page_source(source, "unknown_state")
-                logger.info(f"Stored unknown state page source at: {filepath}")
+                store_page_source(source, "unknown_state")
 
                 # Try to detect library state specifically
                 if self.library_handler._is_library_tab_selected():
                     self.current_state = AppState.LIBRARY
-                    logger.info("Detected LIBRARY state from library handler")
+                    logger.debug("Detected LIBRARY state from library handler")
 
                     # Set auth_date immediately when we detect LIBRARY state
                     try:
@@ -682,7 +699,7 @@ class KindleStateMachine:
                             element = self.driver.find_element(strategy, locator)
                             if element.is_displayed() and "Go to that location?" in element.text:
                                 self.current_state = AppState.READING
-                                logger.info("Detected READING state from 'Go to that location?' dialog")
+                                logger.debug("Detected READING state from 'Go to that location?' dialog")
                                 break
                         except:
                             continue
@@ -733,7 +750,7 @@ class KindleStateMachine:
         This backs out from search results to library, refreshes, and checks auth status.
         """
         try:
-            logger.info(f"Verifying auth status for {email} from search results")
+            logger.debug(f"Verifying auth status for {email} from search results")
 
             # Back out from search results to library
             from appium.webdriver.common.appiumby import AppiumBy
@@ -765,15 +782,15 @@ class KindleStateMachine:
                 end_y = screen_size["height"] // 2
 
                 self.driver.swipe(start_x, start_y, start_x, end_y, duration=800)
-                logger.info("Performed pull to refresh gesture")
-                time.sleep(2)  # Wait for refresh to complete
+                logger.debug("Performed pull to refresh gesture")
+                time.sleep(0.5)  # Wait for refresh to complete
 
                 # Update state again after refresh
                 self.update_current_state()
 
                 if self.current_state == AppState.LIBRARY:
                     # Still in library after refresh - user is authenticated
-                    logger.info(f"User {email} confirmed authenticated after refresh")
+                    logger.debug(f"User {email} confirmed authenticated after refresh")
                     profile_manager.update_auth_state(email, authenticated=True)
 
                 elif self.current_state == AppState.LIBRARY_SIGN_IN:

@@ -86,7 +86,7 @@ class UserRepository:
 
             self.session.commit()
             self.session.refresh(user)
-            logger.info(f"Created new user: {email}")
+            logger.debug(f"Created new user: {email}")
             return user
         except IntegrityError as e:
             self.session.rollback()
@@ -251,7 +251,7 @@ class UserRepository:
             self.session.commit()
 
             if result.rowcount > 0:
-                logger.info(f"Updated last_used for {email}")
+                logger.debug(f"Updated last_used for {email}")
                 if emulator_id:
                     logger.debug(f"Emulator ID: {emulator_id}")
                 return True
@@ -512,3 +512,80 @@ class UserRepository:
         except SQLAlchemyError as e:
             logger.error(f"Database error getting users by AVD names: {e}")
             return []
+
+    def clear_emulator_settings(self, email: str) -> bool:
+        """
+        Clear all emulator settings for a user by resetting to defaults.
+
+        Args:
+            email: The user's email address
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            user = self.get_user_by_email(email)
+            if not user:
+                logger.warning(f"User {email} not found")
+                return False
+
+            if not user.emulator_settings:
+                user.emulator_settings = EmulatorSettings(user=user)
+
+            # Reset all settings to defaults
+            user.emulator_settings.hw_overlays_disabled = False
+            user.emulator_settings.animations_disabled = False
+            user.emulator_settings.sleep_disabled = False
+            user.emulator_settings.status_bar_disabled = False
+            user.emulator_settings.auto_updates_disabled = False
+            user.emulator_settings.memory_optimizations_applied = False
+            user.emulator_settings.memory_optimization_timestamp = None
+            user.emulator_settings.appium_device_initialized = False
+            user.emulator_settings.keyboard_disabled = False
+
+            user.updated_at = datetime.now(timezone.utc)
+            user.version += 1
+            self.session.commit()
+
+            logger.debug(f"Cleared emulator settings for {email}")
+            return True
+
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error clearing emulator settings for {email}: {e}")
+            return False
+
+    def update_snapshot_dirty_status(
+        self, email: str, is_dirty: bool, dirty_since: Optional[datetime] = None
+    ) -> bool:
+        """
+        Update snapshot dirty status for a user.
+
+        Args:
+            email: The user's email address
+            is_dirty: Whether the snapshot is dirty
+            dirty_since: When the snapshot became dirty (None if clearing)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            values = {
+                "snapshot_dirty": is_dirty,
+                "snapshot_dirty_since": dirty_since,
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            stmt = update(User).where(User.email == email).values(**values)
+            result = self.session.execute(stmt)
+            self.session.commit()
+
+            if result.rowcount > 0:
+                logger.debug(f"Updated snapshot dirty status for {email}: dirty={is_dirty}")
+                return True
+            return False
+
+        except SQLAlchemyError as e:
+            self.session.rollback()
+            logger.error(f"Error updating snapshot dirty status for {email}: {e}")
+            return False

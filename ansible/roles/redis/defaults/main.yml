@@ -1,0 +1,16 @@
+---
+# Redis defaults
+# Database servers should use prod password
+redis_password: >-
+  {%- if inventory_hostname in groups.get('db', []) -%}
+    {{ REDIS_PROD_PASSWORD | default('') }}
+  {%- elif inventory_hostname in groups.get('prod', []) -%}
+    {{ REDIS_PROD_PASSWORD | default('') }}
+  {%- elif inventory_hostname in groups.get('staging', []) -%}
+    {{ REDIS_STAGING_PASSWORD | default('') }}
+  {%- else -%}
+    
+  {%- endif -%}
+redis_port: 6379
+redis_maxmemory: "256mb"
+redis_maxmemory_policy: "allkeys-lru"

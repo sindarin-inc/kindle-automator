@@ -274,9 +274,7 @@ class EmulatorLauncher:
                             if avd_name and avd_name in self.running_emulators:
                                 cached_id, _ = self.running_emulators[avd_name]
                                 if cached_id == emulator_id:
-                                    logger.info(
-                                        f"Emulator {emulator_id} is booting and matches cached ID for {email}"
-                                    )
+                                    logger.info(f"Emulator {emulator_id} is booting...")
                                     return True
                             logger.warning(
                                 f"Could not get AVD name from emulator {emulator_id}, possibly still booting"
@@ -288,11 +286,11 @@ class EmulatorLauncher:
             if emulator_avd == email_avd:
                 return True
             else:
-                logger.warning(
-                    f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
-                )
                 # Clear the cache entry since this emulator is running the wrong AVD
                 if email_avd in self.running_emulators:
+                    logger.warning(
+                        f"Emulator {emulator_id} is running with unexpected AVD {emulator_avd}, expected {email_avd}"
+                    )
                     cached_id, _ = self.running_emulators[email_avd]
                     if cached_id == emulator_id:
                         logger.info(f"Clearing cache entry for AVD {email_avd} due to AVD mismatch")
@@ -727,7 +725,7 @@ class EmulatorLauncher:
                     f"x11vnc process not found for display :{display_num} after launch attempt.",
                     exc_info=True,
                 )
-                logger.info(
+                logger.debug(
                     f"For x11vnc startup issues, check its dedicated log: /var/log/x11vnc-{display_num}.log"
                 )
                 if vnc_check.stderr.strip():  # If pgrep itself had an error
@@ -825,7 +823,7 @@ class EmulatorLauncher:
                 cpu_percent = psutil.cpu_percent(interval=0.1)
                 memory = psutil.virtual_memory()
                 disk = psutil.disk_usage("/")
-                logger.info(
+                logger.debug(
                     f"System resources - CPU: {cpu_percent}%, Memory: {memory.percent}% used ({memory.used // 1024**3}GB/{memory.total // 1024**3}GB), Disk: {disk.percent}% used"
                 )
             except Exception as e:
@@ -903,7 +901,7 @@ class EmulatorLauncher:
             emulator_id = f"emulator-{emulator_port}"
 
             # Check for and dismiss any existing crash dialogs BEFORE launching
-            logger.info(f"Checking for existing crash dialogs on display :{display_num} before launch")
+            logger.debug(f"Checking for existing crash dialogs on display :{display_num} before launch")
             if self._check_and_dismiss_crash_dialog(display_num):
                 logger.info(
                     f"Dismissed existing crash dialog on display :{display_num}, continuing with launch"
@@ -939,18 +937,18 @@ class EmulatorLauncher:
                 last_snapshot_timestamp = avd_manager.get_user_field(email, "last_snapshot_timestamp")
 
                 if last_snapshot_timestamp:
-                    logger.info(
+                    logger.debug(
                         f"Default boot snapshot was last updated at {last_snapshot_timestamp} for {email}"
                     )
                 else:
-                    logger.info(
+                    logger.debug(
                         f"No snapshot timestamp found for {email}, emulator will use default boot if available"
                     )
 
                 # Special handling for seed clone AVDs
                 created_from_seed = avd_manager.get_user_field(email, "created_from_seed_clone")
                 if created_from_seed:
-                    logger.info(f"AVD was created from seed clone")
+                    logger.debug(f"AVD was created from seed clone")
 
             except Exception as e:
                 logger.warning(f"Error accessing user profile for snapshot info: {e}")
@@ -1303,7 +1301,7 @@ class EmulatorLauncher:
                     logger.warning(f"Failed to apply post-boot randomization: {e}", exc_info=True)
                     # Continue anyway - better to have a working emulator with duplicate identifiers
             elif (created_from_seed or needs_device_randomization_check) and post_boot_randomized_check:
-                logger.info(f"Skipping post-boot randomization for {email} - already randomized")
+                logger.debug(f"Skipping post-boot randomization for {email} - already randomized")
 
             return True, emulator_id, display_num
 
@@ -1324,7 +1322,7 @@ class EmulatorLauncher:
         try:
             # Release the profile through VNCInstanceManager
             if self.vnc_manager.release_instance_from_profile(email):
-                logger.info(f"Released profile {email} from VNC instance map")
+                logger.debug(f"Released profile {email} from VNC instance map")
                 return True
             else:
                 logger.warning(f"No VNC instance found for profile {email}")
@@ -1405,7 +1403,12 @@ class EmulatorLauncher:
 
                 if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for AVD {avd_name}")
-                    del self.running_emulators[avd_name]
+                    if avd_name in self.running_emulators:
+                        del self.running_emulators[avd_name]
+                    else:
+                        logger.debug(
+                            f"AVD {avd_name} was not in running_emulators dict when trying to remove it"
+                        )
                     return True
 
                 # Force kill if still running - but use the specific emulator port in the pattern
@@ -1423,7 +1426,12 @@ class EmulatorLauncher:
                     subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
 
                 # Remove from running emulators
-                del self.running_emulators[avd_name]
+                if avd_name in self.running_emulators:
+                    del self.running_emulators[avd_name]
+                else:
+                    logger.warning(
+                        f"AVD {avd_name} was not in running_emulators dict when trying to remove it after force kill"
+                    )
                 return True
 
             # For backward compatibility, check using email directly
@@ -1444,7 +1452,7 @@ class EmulatorLauncher:
                     return False
 
                 # Clean up processes before killing emulator
-                logger.info(f"Cleaning up processes for emulator {emulator_id}")
+                logger.debug(f"Cleaning up processes for emulator {emulator_id}")
                 try:
                     # Port forwards are persistent and tied to the user's instance ID
                     # We keep them in place for faster startup on next launch
@@ -1484,7 +1492,12 @@ class EmulatorLauncher:
 
                 if shutdown_successful:
                     logger.info(f"Emulator {emulator_id} stopped successfully for {email}")
-                    del self.running_emulators[email]
+                    if email in self.running_emulators:
+                        del self.running_emulators[email]
+                    else:
+                        logger.warning(
+                            f"Email {email} was not in running_emulators dict when trying to remove it (legacy key)"
+                        )
                     return True
 
                 # Force kill if still running
@@ -1501,7 +1514,12 @@ class EmulatorLauncher:
                     subprocess.run(["pkill", "-f", f"emulator.*{emulator_id}"], check=False, timeout=3)
 
                 # Remove from running emulators
-                del self.running_emulators[email]
+                if email in self.running_emulators:
+                    del self.running_emulators[email]
+                else:
+                    logger.warning(
+                        f"Email {email} was not in running_emulators dict when trying to remove it after force kill (legacy key)"
+                    )
                 return True
 
             # No running emulator found
@@ -1799,7 +1817,7 @@ class EmulatorLauncher:
             email: The user's email address
         """
         try:
-            logger.info(f"Device identifiers for {email} on {emulator_id}:")
+            logger.debug(f"Device identifiers for {email} on {emulator_id}:")
 
             # Get various device properties
             properties = {
@@ -1866,7 +1884,7 @@ class EmulatorLauncher:
             for key, value in identifier_values.items():
                 id_parts.append(f"{key}: {value}")
 
-            logger.info(f"  {' | '.join(id_parts)}")
+            logger.debug(f"  {' | '.join(id_parts)}")
 
         except Exception as e:
             logger.warning(f"Error logging device identifiers: {e}", exc_info=True)
@@ -1998,7 +2016,7 @@ class EmulatorLauncher:
                     logger.info(f"ADB emu snapshot command succeeded for {email} on emulator {emulator_id}")
                     # Verify the snapshot was created
                     if self.has_snapshot(email, "default_boot"):
-                        logger.info(f"✓ SNAPSHOT SUCCESS: Verified snapshot exists on disk for {email}")
+                        logger.debug(f"✓ SNAPSHOT SUCCESS: Verified snapshot exists on disk for {email}")
                         return True
                     else:
                         logger.error(
@@ -2015,7 +2033,7 @@ class EmulatorLauncher:
                 logger.error(f"SNAPSHOT FAILURE: ADB emu method failed for {email}: {adb_e}", exc_info=True)
 
             # Method 2: Fall back to telnet if ADB method fails
-            logger.info(f"Falling back to telnet method for snapshot creation for {email}")
+            logger.warning(f"Falling back to telnet method for snapshot creation for {email}")
             # The emulator port is the last part of the emulator-xxxx ID
             emulator_port = int(emulator_id.split("-")[1])
             console_port = emulator_port - 1  # Console port is usually emulator_port - 1
@@ -2057,7 +2075,7 @@ class EmulatorLauncher:
             if result.returncode == 0 and "OK" in result.stdout:
                 # Verify the snapshot was actually created
                 if self.has_snapshot(email, "default_boot"):
-                    logger.info(f"✓ SNAPSHOT SUCCESS: Telnet method saved snapshot for {email}")
+                    logger.warning(f"✓ SNAPSHOT SUCCESS: Telnet method saved snapshot for {email}")
                     return True
                 else:
                     logger.error(
@@ -2107,7 +2125,7 @@ class EmulatorLauncher:
                 snapshot_stat = os.stat(snapshot_path)
                 snapshot_size_mb = snapshot_stat.st_size / (1024 * 1024)
                 snapshot_mtime = datetime.fromtimestamp(snapshot_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                logger.info(
+                logger.debug(
                     f"Snapshot '{snapshot_name}' exists for {email} at {snapshot_path} "
                     f"(size: {snapshot_size_mb:.1f}MB, modified: {snapshot_mtime})"
                 )
@@ -2198,7 +2216,7 @@ class EmulatorLauncher:
             library_snapshots = [s for s in all_snapshots if s.startswith(f"library_park_{avd_identifier}_")]
 
             if len(library_snapshots) <= keep_count:
-                logger.info(
+                logger.debug(
                     f"Found {len(library_snapshots)} library park snapshots for {email}, no cleanup needed (keep_count={keep_count})"
                 )
                 return 0
@@ -2209,9 +2227,9 @@ class EmulatorLauncher:
             # Determine which snapshots to delete
             snapshots_to_delete = library_snapshots[keep_count:]
 
-            logger.info(f"Cleaning up {len(snapshots_to_delete)} old library park snapshots for {email}")
-            logger.info(f"Keeping the {keep_count} most recent: {library_snapshots[:keep_count]}")
-            logger.info(f"Deleting: {snapshots_to_delete}")
+            logger.debug(f"Cleaning up {len(snapshots_to_delete)} old library park snapshots for {email}")
+            logger.debug(f"Keeping the {keep_count} most recent: {library_snapshots[:keep_count]}")
+            logger.debug(f"Deleting: {snapshots_to_delete}")
 
             # Delete the old snapshots
             deleted_count = 0
@@ -2233,7 +2251,7 @@ class EmulatorLauncher:
                 except Exception as del_error:
                     logger.warning(f"Error deleting snapshot {snapshot_name}: {del_error}", exc_info=True)
 
-            logger.info(f"Successfully deleted {deleted_count} old library park snapshots for {email}")
+            logger.debug(f"Successfully deleted {deleted_count} old library park snapshots for {email}")
             return deleted_count
 
         except Exception as e:

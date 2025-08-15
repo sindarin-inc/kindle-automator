@@ -6,6 +6,7 @@ from flask_restful import Resource
 
 from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.utils.emulator_shutdown_manager import EmulatorShutdownManager
 from server.utils.request_utils import get_boolean_param, get_sindarin_email
 
@@ -100,6 +101,7 @@ class ShutdownResource(Resource):
                     )
                     return
 
+    @deduplicate_request
     def post(self):
         """Shutdown emulator and VNC/xvfb display for the email"""
         sindarin_email = get_sindarin_email()

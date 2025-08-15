@@ -272,3 +272,75 @@ class VNCInstanceRepository:
                 session.commit()
                 return True
             return False
+
+    def mark_booting(self, email: str) -> bool:
+        """Mark a VNC instance as booting."""
+        with db_connection.get_session() as session:
+            stmt = (
+                update(VNCInstance)
+                .where(
+                    and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+                )
+                .values(is_booting=True, boot_started_at=datetime.now(timezone.utc))
+            )
+            result = session.execute(stmt)
+            session.commit()
+            return result.rowcount > 0
+
+    def mark_booted(self, email: str) -> bool:
+        """Mark a VNC instance as finished booting."""
+        with db_connection.get_session() as session:
+            stmt = (
+                update(VNCInstance)
+                .where(
+                    and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+                )
+                .values(is_booting=False, boot_started_at=None)
+            )
+            result = session.execute(stmt)
+            session.commit()
+            return result.rowcount > 0
+
+    def is_booting(self, email: str) -> bool:
+        """Check if a VNC instance is currently booting (non-stale)."""
+        with db_connection.get_session() as session:
+            stmt = select(VNCInstance).where(
+                and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+            )
+            instance = session.scalar(stmt)
+            if not instance or not instance.is_booting:
+                return False
+
+            # Check if it's stale (booting for more than 60 seconds)
+            if instance.boot_started_at:
+                from datetime import timedelta
+
+                # PostgreSQL returns naive datetimes, so we need to make them timezone-aware
+                # All our timestamps are stored as UTC in the database
+                boot_started = instance.boot_started_at
+                if boot_started.tzinfo is None:
+                    boot_started = boot_started.replace(tzinfo=timezone.utc)
+
+                current_time = datetime.now(timezone.utc)
+                elapsed = current_time - boot_started
+
+                if elapsed > timedelta(seconds=60):
+                    # It's stale, mark it as not booting
+                    logger.warning(
+                        f"Found stale booting status for {email} (booting for {elapsed.total_seconds():.1f}s), clearing it"
+                    )
+                    stmt = (
+                        update(VNCInstance)
+                        .where(
+                            and_(
+                                VNCInstance.assigned_profile == email,
+                                VNCInstance.server_name == self.server_name,
+                            )
+                        )
+                        .values(is_booting=False, boot_started_at=None)
+                    )
+                    session.execute(stmt)
+                    session.commit()
+                    return False
+
+            return True

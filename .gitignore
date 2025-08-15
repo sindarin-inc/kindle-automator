@@ -182,3 +182,5 @@ fixtures/dumps/*.xml
 **/.claude/settings.local.json
 apks
 backups
+uv.lock
+.cookies.txt

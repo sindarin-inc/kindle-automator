@@ -76,7 +76,7 @@ class AuthenticationHandler:
                     AppiumBy.XPATH, "//android.widget.EditText[@focused='true']"
                 )
                 if focused_element and focused_element.is_displayed():
-                    logger.info(f"Found a focused edit text field")
+                    logger.debug(f"Found a focused edit text field")
                     # Now check if this is the field we're looking for
                     for strategy, locator in field_strategies:
                         try:
@@ -84,7 +84,7 @@ class AuthenticationHandler:
                             if field.get_attribute("resource-id") == focused_element.get_attribute(
                                 "resource-id"
                             ):
-                                logger.info(
+                                logger.debug(
                                     f"{field_type.capitalize()} field already has focus, no need to tap"
                                 )
                                 focused_field = field
@@ -104,7 +104,7 @@ class AuthenticationHandler:
                     try:
                         field = self.driver.find_element(strategy, locator)
                         if field and field.is_displayed():
-                            logger.info(
+                            logger.debug(
                                 f"Found {field_type} field with strategy: {strategy}={locator}, tapping it"
                             )
                             field.click()
@@ -198,7 +198,7 @@ class AuthenticationHandler:
             # This is critical to ensure we don't miss the empty library with sign-in button
             try:
                 # Force view inspector to check specifically for empty library with sign-in button
-                logger.info("Forcing thorough state detection to check for LIBRARY_SIGN_IN state")
+                logger.debug("Forcing thorough state detection to check for LIBRARY_SIGN_IN state")
 
                 # First check if we can find the sign-in button directly
                 found_sign_in_button = False
@@ -210,7 +210,7 @@ class AuthenticationHandler:
                     try:
                         button = self.driver.find_element(strategy, locator)
                         if button.is_displayed():
-                            logger.info(f"Found sign-in button using strategy: {strategy}={locator}")
+                            logger.debug(f"Found sign-in button using strategy: {strategy}={locator}")
                             found_sign_in_button = True
                             break
                     except Exception:
@@ -220,12 +220,12 @@ class AuthenticationHandler:
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                logger.info(f"Current state before authentication preparation: {state_name}")
+                logger.debug(f"Current state before authentication preparation: {state_name}")
 
                 # If we found the sign-in button but state_name isn't LIBRARY_SIGN_IN,
                 # override it because we know we're in LIBRARY_SIGN_IN
                 if found_sign_in_button and state_name != "LIBRARY_SIGN_IN":
-                    logger.info(
+                    logger.debug(
                         f"State machine reports {state_name} but we found sign-in button - overriding to LIBRARY_SIGN_IN"
                     )
                     state_name = "LIBRARY_SIGN_IN"
@@ -235,11 +235,11 @@ class AuthenticationHandler:
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                logger.info(f"Current state before authentication preparation: {state_name}")
+                logger.debug(f"Current state before authentication preparation: {state_name}")
 
             # Check for empty library with sign-in button
             if state_name == "LIBRARY_SIGN_IN":
-                logger.info(
+                logger.debug(
                     "Found empty library with sign-in button, we'll need to proceed with authentication"
                 )
                 email = ""
@@ -260,17 +260,17 @@ class AuthenticationHandler:
 
             # Check if we're already in a logged-in state (LIBRARY, HOME, or READING)
             if state_name in ["LIBRARY", "HOME", "READING"]:
-                logger.info(f"Already authenticated in {state_name} state")
+                logger.debug(f"Already authenticated in {state_name} state")
 
                 # If we're in HOME state, try to navigate to LIBRARY for consistency
                 if state_name == "HOME":
                     try:
-                        logger.info("In HOME state, trying to navigate to LIBRARY tab")
+                        logger.debug("In HOME state, trying to navigate to LIBRARY tab")
                         library_tab = self.driver.find_element(
                             AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"
                         )
                         library_tab.click()
-                        logger.info("Clicked on LIBRARY tab")
+                        logger.debug("Clicked on LIBRARY tab")
                         time.sleep(1)  # Wait for tab transition
 
                         # After clicking LIBRARY tab, check specifically for sign-in button first
@@ -284,7 +284,7 @@ class AuthenticationHandler:
                             try:
                                 button = self.driver.find_element(strategy, locator)
                                 if button.is_displayed():
-                                    logger.info(
+                                    logger.debug(
                                         f"Found sign-in button after LIBRARY tab click using strategy: {strategy}={locator}"
                                     )
                                     found_sign_in_button = True
@@ -294,7 +294,7 @@ class AuthenticationHandler:
 
                         # If we found a sign-in button, we're in LIBRARY_SIGN_IN state
                         if found_sign_in_button:
-                            logger.info(
+                            logger.debug(
                                 "Found sign-in button after clicking LIBRARY tab - we're in LIBRARY_SIGN_IN state"
                             )
                             # For empty library with sign-in button, return LIBRARY_SIGN_IN state
@@ -323,7 +323,7 @@ class AuthenticationHandler:
                             state_name = "LIBRARY"
                         # Check if we navigated to empty library with sign-in button
                         elif updated_state_name == "LIBRARY_SIGN_IN":
-                            logger.info("Navigated to empty library with sign-in button")
+                            logger.debug("Navigated to empty library with sign-in button")
                             # For empty library with sign-in button, return LIBRARY_SIGN_IN state
                             email = ""
                             if hasattr(automator, "profile_manager") and automator.profile_manager:
@@ -358,7 +358,7 @@ class AuthenticationHandler:
 
             # Check if we're in NOTIFICATION_PERMISSION state - handle it first
             if state_name == "NOTIFICATION_PERMISSION":
-                logger.info("In NOTIFICATION_PERMISSION state - handling permission dialog")
+                logger.debug("In NOTIFICATION_PERMISSION state - handling permission dialog")
                 # Handle the notification permission directly here
                 try:
                     from handlers.permissions_handler import PermissionsHandler
@@ -373,12 +373,12 @@ class AuthenticationHandler:
                             self.driver.automator, "state_machine"
                         ):
                             state_name = self.driver.automator.state_machine.update_current_state().name
-                            logger.info(f"State after handling notification permission: {state_name}")
+                            logger.debug(f"State after handling notification permission: {state_name}")
 
                             # If we're now in HOME state (after first launch), continue with normal flow
                             # to navigate to sign-in screen
                             if state_name == "HOME":
-                                logger.info(
+                                logger.debug(
                                     "Now in HOME state after handling notification - will continue to navigate to sign-in"
                                 )
                                 # Don't return early, let the normal flow handle navigation from HOME to SIGN_IN
@@ -426,7 +426,7 @@ class AuthenticationHandler:
             # Check if we're already in a sign-in flow state
             sign_in_states = ["SIGN_IN", "SIGN_IN_PASSWORD", "CAPTCHA", "TWO_FACTOR", "PUZZLE"]
             if state_name in sign_in_states:
-                logger.info(f"Already in sign-in flow: {state_name}")
+                logger.debug(f"Already in sign-in flow: {state_name}")
 
                 # Always require manual login
                 # Get email from automator's current profile if available
@@ -444,7 +444,7 @@ class AuthenticationHandler:
                     try:
                         # Check if the emulator is ready
                         is_ready = automator.emulator_manager.emulator_launcher.is_emulator_ready(email)
-                        logger.info(f"Emulator ready check for {email}: {is_ready}")
+                        logger.debug(f"Emulator ready check for {email}: {is_ready}")
 
                         if not is_ready:
                             logger.warning(f"Emulator not ready for {email}, may need to be restarted")
@@ -463,16 +463,16 @@ class AuthenticationHandler:
                 }
 
             # We need to navigate to the sign-in screen
-            logger.info(f"Need to navigate to sign-in screen from {state_name}")
+            logger.debug(f"Need to navigate to sign-in screen from {state_name}")
 
             # Make sure the Kindle app is running - this is crucial for auth
             # First check if we need to install the app
             if hasattr(automator, "ensure_kindle_installed") and callable(automator.ensure_kindle_installed):
                 try:
-                    logger.info("Ensuring Kindle app is installed")
+                    logger.debug("Ensuring Kindle app is installed")
                     install_result = automator.ensure_kindle_installed()
                     if install_result:
-                        logger.info("Kindle app is installed and ready")
+                        logger.debug("Kindle app is installed and ready")
                     else:
                         logger.warning("Could not verify Kindle app installation")
                 except Exception as e:
@@ -482,18 +482,18 @@ class AuthenticationHandler:
             # from HOME to sign-in states properly
             success = False
             if state_name == "HOME":
-                logger.info("In HOME state - using transition_to_library to navigate to sign-in")
+                logger.debug("In HOME state - using transition_to_library to navigate to sign-in")
                 try:
                     final_state = automator.state_machine.transition_to_library()
                     state_name = final_state.name if hasattr(final_state, "name") else str(final_state)
-                    logger.info(f"After transition_to_library, state is: {state_name}")
+                    logger.debug(f"After transition_to_library, state is: {state_name}")
 
                     # Check if we reached a sign-in state
                     if state_name in ["SIGN_IN", "SIGN_IN_PASSWORD", "LIBRARY_SIGN_IN"]:
                         success = True
                     elif state_name == "LIBRARY":
                         # Already authenticated
-                        logger.info("Already authenticated - in LIBRARY state")
+                        logger.debug("Already authenticated - in LIBRARY state")
                         email = ""
                         if hasattr(automator, "profile_manager") and automator.profile_manager:
                             current_profile = automator.profile_manager.get_current_profile()
@@ -548,7 +548,7 @@ class AuthenticationHandler:
             automator.state_machine.update_current_state()
             current_state = automator.state_machine.current_state
             state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-            logger.info(f"Current state after app launch: {state_name}")
+            logger.debug(f"Current state after app launch: {state_name}")
 
             # For authenticated states, provide a VNC URL with current email
             email = ""
@@ -619,7 +619,7 @@ class AuthenticationHandler:
 
             # If we reached a library state after restart, we're already logged in
             if state_name in ["LIBRARY", "HOME", "READING"]:
-                logger.info(f"Already authenticated in {state_name}")
+                logger.debug(f"Already authenticated in {state_name}")
                 return {
                     "state": state_name,
                     "authenticated": True,
@@ -629,7 +629,7 @@ class AuthenticationHandler:
 
             # As a fallback, always try to use transition_to_library which may go through auth flow
             # This is the most important part - we want to make sure we're in a good state
-            logger.info("Using transition_to_library to ensure we reach AUTH or LIBRARY state")
+            logger.debug("Using transition_to_library to ensure we reach AUTH or LIBRARY state")
             try:
                 # This is a critical operation - we must launch the Kindle app
                 # and either get to sign-in screen or library
@@ -644,10 +644,10 @@ class AuthenticationHandler:
                     logger.warning(f"Error activating Kindle app: {launch_e}")
 
                 # Now attempt transition_to_library which will go through the auth flow if needed
-                logger.info("Executing transition_to_library to navigate through auth flow")
+                logger.debug("Executing transition_to_library to navigate through auth flow")
                 device_id = getattr(automator, "device_id", "unknown")
                 final_state = automator.transition_to_library()
-                logger.info(f"transition_to_library result: {final_state}")
+                logger.debug(f"transition_to_library result: {final_state}")
 
                 # Check if transition ended in an acceptable state
                 if final_state != AppState.LIBRARY and not final_state.is_auth_state():
@@ -685,7 +685,7 @@ class AuthenticationHandler:
                 automator.state_machine.update_current_state()
                 current_state = automator.state_machine.current_state
                 state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                logger.info(f"Current state after transition_to_library: {state_name}")
+                logger.debug(f"Current state after transition_to_library: {state_name}")
 
                 # Get the email for this profile to use in VNC URL
                 email = ""
@@ -742,7 +742,7 @@ class AuthenticationHandler:
                     automator.state_machine.update_current_state()
                     current_state = automator.state_machine.current_state
                     state_name = current_state.name if hasattr(current_state, "name") else str(current_state)
-                    logger.info(f"Current state after error: {state_name}")
+                    logger.debug(f"Current state after error: {state_name}")
                 except Exception as state_err:
                     logger.warning(f"Error getting state after transition error: {state_err}", exc_info=True)
                     state_name = "UNKNOWN"
@@ -760,7 +760,7 @@ class AuthenticationHandler:
 
             # Last attempt - if we're in SIGN_IN, HOME, or LIBRARY, we can still give a focused response
             if state_name == "SIGN_IN":
-                logger.info("Despite errors, we are in SIGN_IN state")
+                logger.debug("Despite errors, we are in SIGN_IN state")
                 return {
                     "state": "SIGN_IN",
                     "authenticated": False,
@@ -768,7 +768,7 @@ class AuthenticationHandler:
                     "vnc_url": formatted_vnc_url,
                 }
             elif state_name in ["LIBRARY", "HOME"]:
-                logger.info(f"Despite errors, we are in {state_name} state")
+                logger.debug(f"Despite errors, we are in {state_name} state")
                 return {
                     "state": state_name,
                     "authenticated": True,
@@ -816,11 +816,11 @@ class AuthenticationHandler:
             A tuple indicating automated sign-in is not supported
         """
         try:
-            logger.info("Authentication must be done manually via VNC")
+            logger.debug("Authentication must be done manually via VNC")
 
             # Check for captcha and log it
             if self._is_captcha_screen():
-                logger.info("Captcha detected - manual intervention required")
+                logger.debug("Captcha detected - manual intervention required")
 
             # Return error to indicate VNC is required
             return (
@@ -858,7 +858,7 @@ class AuthenticationHandler:
     def _verify_login(self):
         """Verify successful login by waiting for library view to load or detect error conditions."""
         try:
-            logger.info("Verifying login success...")
+            logger.debug("Verifying login success...")
 
             def check_login_result(driver):
                 # First check for error message box which indicates authentication problems
@@ -911,7 +911,7 @@ class AuthenticationHandler:
                         AppiumBy.XPATH, "//android.widget.Button[@text='Sign in' and @enabled='false']"
                     )
                     if sign_in_button:
-                        logger.info("Sign-in button is disabled, could be processing authentication...")
+                        logger.debug("Sign-in button is disabled, could be processing authentication...")
 
                         # First check if we have any explicit error messages
                         error_found = False
@@ -937,7 +937,7 @@ class AuthenticationHandler:
                                 try:
                                     element = driver.find_element(by, locator)
                                     if element and element.is_displayed():
-                                        logger.info(
+                                        logger.debug(
                                             f"Found library view element '{locator}' while sign-in button is disabled"
                                         )
                                         return LoginVerificationState.SUCCESS
@@ -957,7 +957,7 @@ class AuthenticationHandler:
                         AppiumBy.XPATH, "//android.widget.Button[@text='Sign in']"
                     )
                     if not sign_in_button.is_enabled():
-                        logger.info("Sign-in button is disabled, still processing login...")
+                        logger.debug("Sign-in button is disabled, still processing login...")
                         return None  # Return None to continue waiting
                 except:
                     pass
@@ -980,46 +980,46 @@ class AuthenticationHandler:
                             except:
                                 continue
 
-                        logger.info("Still on password page, waiting for transition...")
+                        logger.debug("Still on password page, waiting for transition...")
                         return None  # Return None to continue waiting
                 except:
                     pass
 
                 # Now check for CAPTCHA since we're not in a transitional state
-                logger.info("Checking for CAPTCHA...")
+                logger.debug("Checking for CAPTCHA...")
                 # Log what indicators we're looking for
-                logger.info("Looking for CAPTCHA indicators:")
+                logger.debug("Looking for CAPTCHA indicators:")
                 indicators_found = 0
                 for strategy, locator in CAPTCHA_REQUIRED_INDICATORS:
                     try:
                         driver.find_element(strategy, locator)
-                        logger.info(f"Found CAPTCHA indicator: {strategy}={locator}")
+                        logger.debug(f"Found CAPTCHA indicator: {strategy}={locator}")
                         indicators_found += 1
                     except:
                         logger.debug(f"CAPTCHA indicator not found: {strategy}={locator}")
 
                 if indicators_found >= 3:
-                    logger.info(f"CAPTCHA detected! Found {indicators_found} indicators")
+                    logger.debug(f"CAPTCHA detected! Found {indicators_found} indicators")
                     return LoginVerificationState.CAPTCHA
 
                 # Check for library view
-                logger.info("Checking for library view...")
+                logger.debug("Checking for library view...")
                 for by, locator in LIBRARY_VIEW_VERIFICATION_STRATEGIES:
                     try:
                         driver.find_element(by, locator)
-                        logger.info(f"Found library element: {locator}")
+                        logger.debug(f"Found library element: {locator}")
                         return LoginVerificationState.SUCCESS
                     except:
                         logger.debug(f"Library element not found: {locator}")
                         continue
 
                 # Check for error messages
-                logger.info("Checking for error messages...")
+                logger.debug("Checking for error messages...")
                 for strategy in AUTH_ERROR_STRATEGIES:
                     try:
                         error = driver.find_element(*strategy)
                         if error and error.text.strip():
-                            logger.info(f"Found error message: {error.text.strip()}")
+                            logger.debug(f"Found error message: {error.text.strip()}")
                             return (LoginVerificationState.ERROR, error.text.strip())
                     except:
                         continue
@@ -1030,8 +1030,8 @@ class AuthenticationHandler:
                         element = driver.find_element(strategy, locator)
                         if element:
                             text = element.get_attribute("text")
-                            logger.info(f"Found auth error text: '{text}'")
-                            logger.info("Found auth error requiring restart - storing page source")
+                            logger.debug(f"Found auth error text: '{text}'")
+                            logger.debug("Found auth error requiring restart - storing page source")
                             source = driver.page_source
                             store_page_source(source, "auth_restart_error")
                             return (LoginVerificationState.ERROR, text)
@@ -1041,28 +1041,28 @@ class AuthenticationHandler:
 
                 # Save page source
                 filepath = store_page_source(driver.page_source, "auth_unknown_state")
-                logger.info(f"Stored unknown state page source at: {filepath}")
+                logger.debug(f"Stored unknown state page source at: {filepath}")
 
                 # Log page source when we can't determine the state
-                logger.info("No definitive state found, returning UNKNOWN")
+                logger.debug("No definitive state found, returning UNKNOWN")
                 return LoginVerificationState.UNKNOWN
 
             # Wait for any result with a longer timeout since we're handling transitions
             try:
-                logger.info("Waiting for login verification result...")
+                logger.debug("Waiting for login verification result...")
                 result = WebDriverWait(self.driver, 30).until(check_login_result)  # 30 second timeout
-                logger.info(f"Login verification result: {result}")
+                logger.debug(f"Login verification result: {result}")
 
                 if result == LoginVerificationState.SUCCESS:
                     logger.debug("Verified library view")
                     return True
                 elif result == LoginVerificationState.CAPTCHA:
                     # Handle CAPTCHA immediately
-                    logger.info("Handling CAPTCHA during verification...")
+                    logger.debug("Handling CAPTCHA during verification...")
                     if not self._handle_captcha():
                         # If _handle_captcha returns False, it means we need client interaction
                         # This is actually a success case where we need the client to solve the CAPTCHA
-                        logger.info("CAPTCHA needs client interaction - returning True")
+                        logger.debug("CAPTCHA needs client interaction - returning True")
                         return True
                     return True
                 elif isinstance(result, tuple) and result[0] == LoginVerificationState.INCORRECT_PASSWORD:
@@ -1084,7 +1084,7 @@ class AuthenticationHandler:
                     try:
                         element = self.driver.find_element(by, locator)
                         if element and element.is_displayed():
-                            logger.info(
+                            logger.debug(
                                 f"Found library view element '{locator}' after timeout - login successful"
                             )
                             # Stop the keyboard check as we've completed authentication
@@ -1119,7 +1119,7 @@ class AuthenticationHandler:
                             try:
                                 element = self.driver.find_element(by, locator)
                                 if element and element.is_displayed():
-                                    logger.info(
+                                    logger.debug(
                                         f"Found library view element '{locator}' after extended wait - login successful"
                                     )
                                     # Stop the keyboard check as we've completed authentication
@@ -1131,8 +1131,7 @@ class AuthenticationHandler:
                     pass
 
                 # If we reach here, we truly timed out
-                filepath = store_page_source(self.driver.page_source, "auth_login_timeout")
-                logger.info(f"Stored unknown timeout page source at: {filepath}")
+                store_page_source(self.driver.page_source, "auth_login_timeout")
 
                 logger.error("Could not verify login status within timeout", exc_info=True)
                 return False
@@ -1192,12 +1191,12 @@ class AuthenticationHandler:
         This sets a flag that will be detected by the state machine to
         continuously check for and hide the keyboard while in AUTH state.
         """
-        logger.info("Starting continuous keyboard check for AUTH state")
+        logger.debug("Starting continuous keyboard check for AUTH state")
         self.keyboard_check_active = True
 
     def stop_keyboard_check(self):
         """Stop the continuous keyboard check."""
-        logger.info("Stopping continuous keyboard check for AUTH state")
+        logger.debug("Stopping continuous keyboard check for AUTH state")
         self.keyboard_check_active = False
 
     def is_keyboard_check_active(self):
@@ -1210,7 +1209,7 @@ class AuthenticationHandler:
 
     def _check_for_errors(self):
         """Check for error messages after attempting to sign in."""
-        logger.info("Checking for error messages...")
+        logger.debug("Checking for error messages...")
 
         try:
             error = WebDriverWait(self.driver, 5).until(
@@ -1232,7 +1231,7 @@ class AuthenticationHandler:
                 logger.info(f"Found error message: {error}")
                 return True
         except TimeoutException:
-            logger.info("No error messages found")
+            logger.debug("No error messages found after timeout")
             return False
 
         return False
@@ -1292,7 +1291,7 @@ class AuthenticationHandler:
 
             # Log interactive captcha detection
             if interactive_indicators_found >= 3:
-                logger.info(
+                logger.debug(
                     f"Interactive captcha detected! Found {interactive_indicators_found} interactive indicators"
                 )
 

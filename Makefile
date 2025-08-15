@@ -11,11 +11,60 @@ init:
 
 claude-run: 
 	@echo "Starting Flask server in background..."
-	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run dotenv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@# Check if previous shutdown is still ongoing
+	@if [ -f logs/server_output.log ] && grep -q "=== Beginning graceful shutdown sequence ===" logs/server_output.log 2>/dev/null && ! grep -q "=== Graceful shutdown complete ===" logs/server_output.log 2>/dev/null; then \
+		echo "Waiting for previous shutdown to complete..."; \
+		timeout=60; \
+		elapsed=0; \
+		while [ $$elapsed -lt $$timeout ]; do \
+			if grep -q "=== Graceful shutdown complete ===" logs/server_output.log 2>/dev/null; then \
+				break; \
+			fi; \
+			echo "  Still shutting down previous instance... ($$elapsed seconds)"; \
+			sleep 2; \
+			elapsed=$$((elapsed + 2)); \
+		done; \
+	fi
+	@# Clear the log file before starting new server
+	@> logs/server_output.log
+	@# Start the server in background
+	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
-	@echo "Monitor logs with: tail -f logs/server_output.log"
-	@echo "To stop the server and start a new server, run: make claude-run"
+	@echo "Waiting for session restoration to complete..."
+	@# Wait for session restoration to complete (with timeout of 120 seconds)
+	@timeout=120; \
+	elapsed=0; \
+	while [ $$elapsed -lt $$timeout ]; do \
+		if grep -q "Database connection failed" logs/server_output.log 2>/dev/null; then \
+			echo ""; \
+			echo "❌ ERROR: Database connection failed!"; \
+			echo ""; \
+			echo "The PostgreSQL database is not running or not accessible."; \
+			echo ""; \
+			echo "To fix this:"; \
+			echo "  1. Check if Docker is running: docker ps"; \
+			echo "  2. Start the database container: docker start sol_postgres"; \
+			echo "  3. Or run the full stack: cd ../web-app && make fast"; \
+			echo ""; \
+			echo "Check logs/server_output.log for details"; \
+			exit 1; \
+		fi; \
+		if grep -q "=== Session restoration complete ===" logs/server_output.log 2>/dev/null; then \
+			echo ""; \
+			echo "✓ Server is ready! Session restoration complete."; \
+			echo ""; \
+			echo "Monitor logs with: tail -f logs/server_output.log"; \
+			echo "To stop the server and start a new server, run: make claude-run"; \
+			exit 0; \
+		fi; \
+		echo "  Waiting for session restoration... ($$elapsed seconds elapsed)"; \
+		sleep 3; \
+		elapsed=$$((elapsed + 3)); \
+	done; \
+	echo "Timeout waiting for session restoration after $$timeout seconds"; \
+	echo "Check logs/server_output.log for issues"; \
+	exit 1
 
 deps:
 	uv pip install -r requirements.txt
@@ -28,18 +77,40 @@ lint:
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run dotenv run python -m server.server
+	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run python -m server.server
 
 # Start an interactive shell with the environment setup
 shell:
 	@echo "Starting interactive shell..."
-	@PYTHONPATH=$(shell pwd) uv run dotenv run python shell.py
+	@PYTHONPATH=$(shell pwd) uv run python shell.py
 
 test:
 	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) uv run dotenv run pytest tests
+	@PYTHONPATH=$(shell pwd) uv run pytest tests
 
 test-all: test
+
+test-unit:
+	@echo "Running all unit tests (no server required)..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_deduplication_unit.py tests/test_user_repository_unit.py -v
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_concurrent_access_unit.py
+	@echo "All unit tests passed!"
+
+test-integration:
+	@echo "Running integration tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_api_integration.py -v
+
+test-concurrent:
+	@echo "Running concurrent HTTP requests tests..."
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_concurrent_requests_integration.py
+
+test-dedupe:
+	@echo "Running deduplication integration tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_request_deduplication_integration.py -v
+
+test-multi-user:
+	@echo "Running multi-user integration tests..."
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_multi_user_integration.py
 
 # Generate staff authentication token for testing
 test-staff-auth:
@@ -116,10 +187,3 @@ db-export:
 	@uv run dotenv -f $(ENV_FILE) run python scripts/export_users_to_json.py
 
 # db-stats and db-data are defined in Makefile.database
-
-# Test multi-user operations
-test-multi-user:
-	@echo "Running multi-user test..."
-	@echo "Make sure the server is running with 'make claude-run' first!"
-	@echo ""
-	uv run dotenv run python tests/test_multi_user.py

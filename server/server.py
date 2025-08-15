@@ -9,6 +9,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
 
 import sentry_sdk
@@ -78,8 +79,32 @@ else:
 # Development mode detection
 IS_DEVELOPMENT = os.getenv("FLASK_ENV") == "development"
 
+
+# Custom JSON encoder that can handle datetime objects
+class DateTimeJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 app = Flask(__name__)
+app.json_encoder = DateTimeJSONEncoder
+
+# Configure Flask-RESTful to use the custom encoder
+from flask_restful.representations import json as flask_json
+
+
+def output_json(data, code, headers=None):
+    """Makes a Flask response with a JSON encoded body using custom encoder."""
+    resp = make_response(json.dumps(data, cls=DateTimeJSONEncoder), code)
+    resp.headers.extend(headers or {})
+    resp.headers["Content-Type"] = "application/json"
+    return resp
+
+
 api = Api(app)
+api.representations = {"application/json": output_json}
 
 # Initialize database connection
 db_connection.initialize()
@@ -328,9 +353,12 @@ def run_idle_check():
             )
 
             # Count running emulators
+            from server.utils.android_path_utils import get_android_home, get_avd_dir
             from server.utils.emulator_launcher import EmulatorLauncher
 
-            launcher = EmulatorLauncher.get_instance()
+            android_home = get_android_home()
+            avd_dir = get_avd_dir()
+            launcher = EmulatorLauncher(android_home, avd_dir, "x86_64")
             running_count = len(launcher.get_running_emulators())
             logger.info(f"Running emulators: {running_count}")
         except Exception as e:

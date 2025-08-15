@@ -8,6 +8,7 @@ from flask_restful import Resource
 from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
+from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.utils.appium_error_utils import is_appium_error
 from server.utils.request_utils import get_automator_for_request
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 class StateResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
+    @deduplicate_request
     def get(self):
         server = AutomationServer.get_instance()
 

@@ -1,0 +1,86 @@
+---
+# Redis Docker container setup
+
+# Include firewall configuration
+- include_tasks: firewall.yml
+  tags: [firewall]
+
+- name: Set vm.overcommit_memory for Redis
+  sysctl:
+    name: vm.overcommit_memory
+    value: "1"
+    state: present
+    sysctl_set: yes
+    reload: yes
+  become: yes
+
+- name: Pull Redis Docker image
+  community.docker.docker_image:
+    name: redis
+    tag: "7-alpine"
+    source: pull
+  become: yes
+
+- name: Create Redis directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "999"
+    group: "999"
+    mode: '0755'
+  become: yes
+  with_items:
+    - /opt/redis/data
+    - /opt/redis/config
+
+- name: Create Redis ACL configuration (if password is set)
+  copy:
+    content: "user default on ~* &* +@all >{{ redis_password }}\n"
+    dest: /opt/redis/config/users.acl
+    owner: "999"
+    group: "999"
+    mode: '0640'
+    force: yes
+  become: yes
+  when: redis_password | length > 0
+  notify: restart redis
+
+- name: Start Redis container
+  community.docker.docker_container:
+    name: kindle_automator_redis
+    image: "redis:7-alpine"
+    state: started
+    restart_policy: always
+    ports:
+      - "0.0.0.0:{{ redis_port }}:6379"
+    volumes:
+      - /opt/redis/data:/data
+      - /opt/redis/config:/usr/local/etc/redis
+    command: >
+      redis-server
+      --maxmemory {{ redis_maxmemory }}
+      --maxmemory-policy {{ redis_maxmemory_policy }}
+      --save ""
+      --appendonly no
+      --protected-mode yes
+      --bind 0.0.0.0
+      {% if redis_password %}--aclfile /usr/local/etc/redis/users.acl{% endif %}
+  become: yes
+  notify: restart redis
+
+- name: Wait for Redis to be ready
+  wait_for:
+    port: "{{ redis_port }}"
+    host: 127.0.0.1
+    delay: 2
+    timeout: 30
+
+- name: Test Redis connection (with password if configured)
+  command: >
+    docker exec kindle_automator_redis redis-cli
+    {% if redis_password %}-a {{ redis_password }}{% endif %}
+    ping
+  register: redis_ping
+  changed_when: false
+  failed_when: redis_ping.stdout != "PONG"
+  no_log: true  # Don't log password

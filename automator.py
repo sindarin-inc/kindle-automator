@@ -74,11 +74,35 @@ class KindleAutomator:
             driver.automator = self
             if not driver.initialize():
                 logger.error("Failed to initialize driver", exc_info=True)
+                # Clear the boot flag if we fail to initialize driver
+                email = get_sindarin_email()
+                if email:
+                    try:
+                        from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                        vnc_manager = VNCInstanceManager.get_instance()
+                        if vnc_manager.repository.is_booting(email):
+                            vnc_manager.repository.mark_booted(email)
+                            logger.info(f"Cleared boot flag for {email} after driver initialization failure")
+                    except Exception as e:
+                        logger.warning(f"Error clearing boot flag for {email}: {e}")
                 return False
 
             self.driver = driver.get_appium_driver_instance()
             if not self.driver:
                 logger.error("Failed to get Appium driver instance", exc_info=True)
+                # Clear the boot flag if we fail to get driver instance
+                email = get_sindarin_email()
+                if email:
+                    try:
+                        from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                        vnc_manager = VNCInstanceManager.get_instance()
+                        if vnc_manager.repository.is_booting(email):
+                            vnc_manager.repository.mark_booted(email)
+                            logger.info(f"Cleared boot flag for {email} after failing to get driver instance")
+                    except Exception as e:
+                        logger.warning(f"Error clearing boot flag for {email}: {e}")
                 return False
 
             # Store reference to the Driver instance for cleanup
@@ -96,6 +120,19 @@ class KindleAutomator:
 
         # Verify the device ID matches what's assigned in VNC instance manager
         email = get_sindarin_email()
+
+        # Now that Appium driver is connected, mark the boot as completed
+        # This ensures the boot flag is only cleared after successful driver connection
+        if self.driver and email:
+            try:
+                from server.utils.vnc_instance_manager import VNCInstanceManager
+
+                vnc_manager = VNCInstanceManager.get_instance()
+                if vnc_manager.repository.is_booting(email):
+                    vnc_manager.repository.mark_booted(email)
+                    logger.info(f"Marked emulator for {email} as booted after successful driver connection")
+            except Exception as e:
+                logger.warning(f"Error clearing boot flag for {email}: {e}")
         try:
             from server.utils.vnc_instance_manager import VNCInstanceManager
 

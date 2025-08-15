@@ -19,6 +19,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 from server.logging_config import store_page_source
 from server.utils.ansi_colors import BRIGHT_CYAN, BRIGHT_GREEN, BRIGHT_YELLOW, RESET
+from server.utils.cancellation_utils import CancellationChecker
 from views.common.scroll_strategies import SmartScroller
 from views.library.view_strategies import (
     BOOK_CONTAINER_RELATIONSHIPS,
@@ -62,7 +63,7 @@ class LibraryHandlerScroll:
         # Build the page info string with colors
         user_prefix = f"{BRIGHT_CYAN}[{user_email}]{RESET} " if user_email else ""
         if filter_book_count:
-            expected_pages = math.ceil(filter_book_count / 10)  # Assuming ~10 books per page
+            expected_pages = math.ceil(filter_book_count / 3)  # Assuming ~3 books per page
             page_info = f"{user_prefix}{BRIGHT_YELLOW}Page {page_number}/{expected_pages}:{RESET} Found {BRIGHT_GREEN}{len(new_books)}{RESET} new books, total {BRIGHT_GREEN}{total_found}/{filter_book_count}{RESET}"
         else:
             page_info = f"{user_prefix}{BRIGHT_YELLOW}Page {page_number}:{RESET} Found {BRIGHT_GREEN}{len(new_books)}{RESET} new books, total {BRIGHT_GREEN}{total_found}{RESET}"
@@ -265,15 +266,16 @@ class LibraryHandlerScroll:
         # Use the common SmartScroller to scroll the reference container to target position
         self.scroller.scroll_to_position(ref_container["element"], target_position)
 
-    def _default_page_scroll(self, start_y, end_y):
+    def _default_page_scroll(self, start_y, end_y, cancellation_check=None):
         """Wrapper for default page scroll operation.
 
         Args:
             start_y: Starting Y coordinate
             end_y: Ending Y coordinate
+            cancellation_check: Optional function to check if operation should be cancelled
         """
         # Use the common SmartScroller for default page scroll
-        self.scroller.scroll_down()
+        self.scroller.scroll_down(cancellation_check=cancellation_check)
 
     def _final_result_handling(self, target_title, books, seen_titles, title_match_func, callback):
         """Handle final result logic for target title searches.
@@ -413,7 +415,7 @@ class LibraryHandlerScroll:
                 logger.info("Double-check confirms no new books, stopping scroll")
                 # Send completion notification via callback if available
                 if callback:
-                    callback(None, done=True, total_books=len(books_list))
+                    callback(None, done=True, total_books=len(books_list), complete=True)
 
                 # Save scroll book count to database
                 try:
@@ -656,7 +658,7 @@ class LibraryHandlerScroll:
                 "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/*[@content-desc]",
             )
 
-            logger.info(f"Found {len(book_containers)} book containers with content-desc")
+            logger.debug(f"Found {len(book_containers)} book containers with content-desc")
             if book_containers:
                 containers = book_containers
             else:
@@ -664,7 +666,7 @@ class LibraryHandlerScroll:
                 title_elements = self.driver.find_elements(
                     AppiumBy.ID, "com.amazon.kindle:id/lib_book_row_title"
                 )
-                logger.info(f"Found {len(title_elements)} title elements as fallback")
+                logger.debug(f"Found {len(title_elements)} title elements as fallback")
 
                 # Convert these title elements to containers
                 containers = self._convert_title_elements(title_elements)
@@ -812,8 +814,32 @@ class LibraryHandlerScroll:
             consecutive_identical_screen_iterations = 0
             IDENTICAL_SCREEN_THRESHOLD = 10
 
+            # Create cancellation checker if we have user context
+            cancellation_checker = None
+            try:
+                from server.utils.request_utils import get_sindarin_email
+
+                sindarin_email = get_sindarin_email()
+                if sindarin_email:
+                    cancellation_checker = CancellationChecker(sindarin_email, check_interval=5)
+            except Exception:
+                pass  # No user context available
+
             while True:
                 page_count += 1
+
+                # Check for cancellation at the start of each page
+                if cancellation_checker and cancellation_checker.check():
+                    logger.info("Library scrolling cancelled due to higher priority request")
+                    if callback:
+                        callback(
+                            None,
+                            error="Request cancelled by higher priority operation",
+                            done=True,
+                            total_books=len(books),
+                            complete=False,
+                        )
+                    return [] if not target_title else (None, None, None)
 
                 # Collect all visible containers
                 containers = self._collect_visible_containers()
@@ -918,7 +944,7 @@ class LibraryHandlerScroll:
                         logger.info("No progress in finding new books, stopping scroll")
                         # Send completion notification via callback if available
                         if callback:
-                            callback(None, done=True, total_books=len(books))
+                            callback(None, done=True, total_books=len(books), complete=True)
 
                         # Save scroll book count to database
                         try:
@@ -948,7 +974,9 @@ class LibraryHandlerScroll:
                 if ref_container:
                     self._perform_smart_scroll(ref_container, screen_size)
                 else:
-                    self._default_page_scroll(start_y, end_y)
+                    # Pass cancellation check to scroll
+                    cancellation_check = cancellation_checker.check if cancellation_checker else None
+                    self._default_page_scroll(start_y, end_y, cancellation_check=cancellation_check)
 
                 # Check for and handle selection mode after scroll
                 self._maybe_exit_selection_mode()
@@ -980,7 +1008,7 @@ class LibraryHandlerScroll:
 
             # Send error via callback if available
             if callback:
-                callback(None, error=str(e))
+                callback(None, error=str(e), done=True, total_books=len(books), complete=False)
 
             if target_title:
                 # Log any partial matches we might have found before the error
