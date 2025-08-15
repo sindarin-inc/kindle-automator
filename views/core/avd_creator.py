@@ -31,6 +31,11 @@ class AVDCreator:
         "phil@rigden-online.com",
     ]
 
+    # List of email addresses that should get 12GB storage instead of 8GB
+    HIGH_STORAGE_EMAILS = [
+        "whp8z4bw9n@privaterelay.appleid.com",
+    ]
+
     def __init__(self, android_home, avd_dir, host_arch):
         self.android_home = android_home
         self.avd_dir = avd_dir
@@ -301,6 +306,11 @@ class AVDCreator:
             if email in self.HIGH_MEMORY_EMAILS:
                 logger.info(f"Using high memory configuration (8GB) for {email}")
 
+            # Determine storage size based on email
+            storage_size = "12G" if email in self.HIGH_STORAGE_EMAILS else "8G"
+            if email in self.HIGH_STORAGE_EMAILS:
+                logger.info(f"Using high storage configuration (12GB) for {email}")
+
             # Define settings to update
             settings = {
                 "hw.ramSize": ram_size,
@@ -325,7 +335,7 @@ class AVDCreator:
                 "hw.arc.autologin": "no",
                 "snapshot.present": "yes",
                 "quickbootChoice": "2",
-                "disk.dataPartition.size": "6G",
+                "disk.dataPartition.size": storage_size,
                 "PlayStore.enabled": "true",
                 "image.sysdir.1": sysdir,
                 "tag.id": (
