@@ -6,6 +6,7 @@ import platform
 import signal
 import subprocess
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,6 +25,21 @@ class AutomationServer:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
+
+    @contextmanager
+    def _book_position_repo(self):
+        """Context manager for BookPositionRepository operations.
+
+        Yields:
+            BookPositionRepository: Repository instance for book position operations
+        """
+        from database.connection import get_db
+        from database.repositories.book_position_repository import (
+            BookPositionRepository,
+        )
+
+        with get_db() as session:
+            yield BookPositionRepository(session)
 
     def __init__(self):
         if self._initialized:
@@ -373,13 +389,7 @@ class AutomationServer:
             return
 
         try:
-            from database.connection import get_db
-            from database.repositories.book_position_repository import (
-                BookPositionRepository,
-            )
-
-            with get_db() as session:
-                repo = BookPositionRepository(session)
+            with self._book_position_repo() as repo:
                 repo.reset_position(email, book_title)
         except Exception as e:
             logger.error(f"Error resetting position for {email}: {e}", exc_info=True)
@@ -403,13 +413,7 @@ class AutomationServer:
             return 0
 
         try:
-            from database.connection import get_db
-            from database.repositories.book_position_repository import (
-                BookPositionRepository,
-            )
-
-            with get_db() as session:
-                repo = BookPositionRepository(session)
+            with self._book_position_repo() as repo:
                 return repo.get_position(email, book_title)
         except Exception as e:
             logger.error(f"Error getting position for {email}: {e}", exc_info=True)
@@ -435,13 +439,7 @@ class AutomationServer:
             return 0
 
         try:
-            from database.connection import get_db
-            from database.repositories.book_position_repository import (
-                BookPositionRepository,
-            )
-
-            with get_db() as session:
-                repo = BookPositionRepository(session)
+            with self._book_position_repo() as repo:
                 return repo.update_position(email, book_title, delta)
         except Exception as e:
             logger.error(f"Error updating position for {email}: {e}", exc_info=True)
@@ -464,13 +462,7 @@ class AutomationServer:
             return
 
         try:
-            from database.connection import get_db
-            from database.repositories.book_position_repository import (
-                BookPositionRepository,
-            )
-
-            with get_db() as session:
-                repo = BookPositionRepository(session)
+            with self._book_position_repo() as repo:
                 repo.set_position(email, book_title, position)
         except Exception as e:
             logger.error(f"Error setting position for {email}: {e}", exc_info=True)

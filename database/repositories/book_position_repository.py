@@ -4,7 +4,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -68,28 +69,21 @@ class BookPositionRepository:
                 logger.warning(f"User not found: {email}")
                 return
 
-            # Check if position record exists
-            stmt = select(BookPosition).where(
-                BookPosition.user_id == user.id, BookPosition.book_title == book_title
-            )
-            position = self.session.execute(stmt).scalar_one_or_none()
-
             now = datetime.now(timezone.utc)
-            if position:
-                # Update existing record
-                position.current_position = 0
-                position.position_updated_at = now
-            else:
-                # Create new record
-                position = BookPosition(
-                    user_id=user.id,
-                    book_title=book_title,
-                    current_position=0,
-                    position_updated_at=now,
-                    created_at=now,
-                )
-                self.session.add(position)
 
+            # Use upsert pattern to atomically insert or update
+            stmt = pg_insert(BookPosition).values(
+                user_id=user.id,
+                book_title=book_title,
+                current_position=0,
+                position_updated_at=now,
+                created_at=now,
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["user_id", "book_title"],
+                set_=dict(current_position=0, position_updated_at=now),
+            )
+            self.session.execute(stmt)
             self.session.commit()
             logger.debug(f"Reset position to 0 for {email}/{book_title}")
         except SQLAlchemyError as e:
@@ -120,32 +114,31 @@ class BookPositionRepository:
                 logger.warning(f"No book title provided for position update for {email}")
                 return 0
 
-            # Get or create position record
-            stmt = select(BookPosition).where(
-                BookPosition.user_id == user.id, BookPosition.book_title == book_title
-            )
-            position = self.session.execute(stmt).scalar_one_or_none()
-
             now = datetime.now(timezone.utc)
-            if position:
-                # Update existing record
-                old_position = position.current_position
-                new_position = old_position + delta
-                position.current_position = new_position
-                position.position_updated_at = now
-            else:
-                # Create new record with delta as the initial position
-                new_position = delta
-                position = BookPosition(
-                    user_id=user.id,
-                    book_title=book_title,
-                    current_position=new_position,
-                    position_updated_at=now,
-                    created_at=now,
-                )
-                self.session.add(position)
 
+            # Use upsert pattern with increment for existing records
+            stmt = pg_insert(BookPosition).values(
+                user_id=user.id,
+                book_title=book_title,
+                current_position=delta,  # Initial value if new
+                position_updated_at=now,
+                created_at=now,
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["user_id", "book_title"],
+                set_=dict(current_position=BookPosition.current_position + delta, position_updated_at=now),
+            )
+            self.session.execute(stmt)
             self.session.commit()
+
+            # Get the new position value
+            position = self.session.execute(
+                select(BookPosition).where(
+                    BookPosition.user_id == user.id, BookPosition.book_title == book_title
+                )
+            ).scalar_one_or_none()
+
+            new_position = position.current_position if position else 0
             logger.debug(
                 f"Updated position for {email}/{book_title}: delta={delta}, new_position={new_position}"
             )
@@ -171,28 +164,21 @@ class BookPositionRepository:
                 logger.warning(f"User not found: {email}")
                 return
 
-            # Get or create position record
-            stmt = select(BookPosition).where(
-                BookPosition.user_id == user.id, BookPosition.book_title == book_title
-            )
-            position = self.session.execute(stmt).scalar_one_or_none()
-
             now = datetime.now(timezone.utc)
-            if position:
-                # Update existing record
-                position.current_position = position_value
-                position.position_updated_at = now
-            else:
-                # Create new record
-                position = BookPosition(
-                    user_id=user.id,
-                    book_title=book_title,
-                    current_position=position_value,
-                    position_updated_at=now,
-                    created_at=now,
-                )
-                self.session.add(position)
 
+            # Use upsert pattern to atomically insert or update
+            stmt = pg_insert(BookPosition).values(
+                user_id=user.id,
+                book_title=book_title,
+                current_position=position_value,
+                position_updated_at=now,
+                created_at=now,
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["user_id", "book_title"],
+                set_=dict(current_position=position_value, position_updated_at=now),
+            )
+            self.session.execute(stmt)
             self.session.commit()
             logger.debug(f"Set position to {position_value} for {email}/{book_title}")
         except SQLAlchemyError as e:
