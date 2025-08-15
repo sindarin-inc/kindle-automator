@@ -4,6 +4,7 @@ from selenium.webdriver.common.by import By
 # View identification strategies
 READING_VIEW_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/reader_drawer_layout"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_under_drawer"),  # Container under drawer layout
     (AppiumBy.ID, "com.amazon.kindle:id/reader_root_view"),
     (AppiumBy.ID, "com.amazon.kindle:id/reader_view"),
     (AppiumBy.ID, "com.amazon.kindle:id/reader_content_fragment_container"),

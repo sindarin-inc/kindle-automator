@@ -656,12 +656,36 @@ class ViewInspector:
                 except NoSuchElementException:
                     continue
 
+            # Check for ReaderLayout class which is a strong indicator
+            try:
+                reader_layout = self.driver.find_element(
+                    AppiumBy.CLASS_NAME, "com.amazon.kcp.reader.ui.ReaderLayout"
+                )
+                if reader_layout.is_displayed():
+                    logger.debug("   Found ReaderLayout class - strong indicator of reading view")
+                    reading_view_elements_found += 1
+            except NoSuchElementException:
+                pass
+
             # If we found multiple reading view elements, we're definitely in reading view
             if reading_view_elements_found >= 2:
                 logger.debug(
                     f"   Found {reading_view_elements_found} reading view elements - confidently in reading view"
                 )
                 return AppView.READING
+
+            # Single high-confidence element (drawer_layout or reader_under_drawer) is also sufficient
+            # when combined with StandAloneBookReaderActivity
+            if reading_view_elements_found == 1:
+                try:
+                    current_activity = self.driver.current_activity
+                    if "StandAloneBookReaderActivity" in current_activity:
+                        logger.debug(
+                            f"   Found 1 reading view element with StandAloneBookReaderActivity - in reading view"
+                        )
+                        return AppView.READING
+                except Exception:
+                    pass
 
             # Also check for full screen dialog which indicates reading view
             for strategy, locator in READING_VIEW_FULL_SCREEN_DIALOG:
