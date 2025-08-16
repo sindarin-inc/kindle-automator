@@ -673,6 +673,18 @@ def setup_logger():
         lib_logger = logging.getLogger(lib_name)
         lib_logger.setLevel(logging.INFO)
 
+    # Configure SQL and Redis command loggers to only write to debug_server.log
+    # These loggers don't propagate to avoid showing in email logs
+    sql_logger = logging.getLogger("sql_commands")
+    sql_logger.setLevel(logging.DEBUG)
+    sql_logger.propagate = False  # Don't propagate to root logger (prevents email logs)
+    sql_logger.addHandler(debug_file_handler)  # Only add to debug file handler
+
+    redis_logger = logging.getLogger("redis_commands")
+    redis_logger.setLevel(logging.DEBUG)
+    redis_logger.propagate = False  # Don't propagate to root logger (prevents email logs)
+    redis_logger.addHandler(debug_file_handler)  # Only add to debug file handler
+
     # Log that we've set up the email-specific logging
     logger.info(
         "Direct email-specific logging configured - all logs will be directed to both global and user-specific log files based on request context"

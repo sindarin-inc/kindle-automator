@@ -24,6 +24,8 @@ from server.utils.ansi_colors import (
 )
 
 logger = logging.getLogger(__name__)
+# Dedicated logger for SQL queries that only goes to debug log, not email logs
+sql_logger = logging.getLogger("sql_commands")
 
 # Global flag to track if query logging is already set up
 # Reset to False to ensure new color scheme is picked up on restart
@@ -116,7 +118,7 @@ class DatabaseConnection:
 
         # Add query logging for development environment
         # Can be disabled by setting SQL_LOGGING=false or SQL_LOGGING=0
-        sql_logging_enabled = os.getenv("SQL_LOGGING", "false").lower() not in ["false", "0", "no", "off"]
+        sql_logging_enabled = os.getenv("SQL_LOGGING", "true").lower() not in ["false", "0", "no", "off"]
 
         # Enable SQL logging for development and staging environments
         environment = os.getenv("ENVIRONMENT", "").lower()
@@ -226,8 +228,8 @@ class DatabaseConnection:
             else:  # Dim gray for fast queries
                 time_str = f"{DIM_GRAY}{time_ms:.1f}ms{RESET}"
 
-            # Log the query at debug level
-            logger.debug(f"{DIM_GRAY}[SQL {time_str}{DIM_GRAY}] {query_color}{formatted_query}{RESET}")
+            # Log the query to dedicated SQL logger (only goes to debug log, not email logs)
+            sql_logger.debug(f"{DIM_GRAY}[SQL {time_str}{DIM_GRAY}] {query_color}{formatted_query}{RESET}")
 
     @contextmanager
     def get_session(self) -> Generator[Session, None, None]:

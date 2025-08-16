@@ -4,12 +4,152 @@ import logging
 import os
 import threading
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import redis
 from redis.exceptions import ConnectionError, RedisError
 
+from server.utils.ansi_colors import CYAN, DIM_GRAY, RESET
+
 logger = logging.getLogger(__name__)
+# Dedicated logger for Redis commands that only goes to debug log, not email logs
+redis_logger = logging.getLogger("redis_commands")
+
+
+class LoggingRedisClient:
+    """Wrapper around Redis client that logs all commands to debug log."""
+
+    def __init__(self, redis_client: redis.Redis):
+        self._client = redis_client
+        self._redis_logging_enabled = None
+        self._check_logging_config()
+
+    def _check_logging_config(self):
+        """Check if Redis logging is enabled from environment variable."""
+        redis_logging = os.getenv("REDIS_LOGGING", "true").lower()
+        self._redis_logging_enabled = redis_logging not in ["false", "0", "no", "off"]
+
+        if self._redis_logging_enabled:
+            redis_logger.debug(
+                f"{DIM_GRAY}Redis command logging enabled (set REDIS_LOGGING=false to disable){RESET}"
+            )
+
+    def _format_value(self, value: Any, max_length: int = 100) -> str:
+        """Format a Redis value for logging, truncating if needed."""
+        if value is None:
+            return "None"
+
+        if isinstance(value, bytes):
+            try:
+                # Try to decode as string
+                str_value = value.decode("utf-8")
+                if len(str_value) > max_length:
+                    return f"'{str_value[:max_length]}...' ({len(str_value)} chars)"
+                return f"'{str_value}'"
+            except:
+                # If can't decode, show as bytes
+                if len(value) > max_length:
+                    return f"<bytes: {len(value)} bytes>"
+                return f"<bytes: {value[:20]!r}...>"
+
+        if isinstance(value, str):
+            if len(value) > max_length:
+                return f"'{value[:max_length]}...' ({len(value)} chars)"
+            return f"'{value}'"
+
+        if isinstance(value, (list, tuple)):
+            if len(value) > 5:
+                items = [self._format_value(v, 20) for v in value[:5]]
+                return f"[{', '.join(items)}, ... ({len(value)} items)]"
+            items = [self._format_value(v, 50) for v in value]
+            return f"[{', '.join(items)}]"
+
+        if isinstance(value, dict):
+            if len(value) > 3:
+                items = []
+                for i, (k, v) in enumerate(value.items()):
+                    if i >= 3:
+                        items.append(f"... ({len(value)} keys)")
+                        break
+                    items.append(f"{k}: {self._format_value(v, 20)}")
+                return f"{{{', '.join(items)}}}"
+            items = [f"{k}: {self._format_value(v, 30)}" for k, v in value.items()]
+            return f"{{{', '.join(items)}}}"
+
+        return str(value)
+
+    def _log_command(
+        self,
+        command: str,
+        args: tuple,
+        kwargs: dict,
+        result: Any = None,
+        error: Exception = None,
+        duration_ms: float = None,
+    ):
+        """Log a Redis command with formatting."""
+        if not self._redis_logging_enabled:
+            return
+
+        # Format command and arguments
+        cmd_parts = [command.upper()]
+        for arg in args:
+            cmd_parts.append(self._format_value(arg))
+
+        if kwargs:
+            for k, v in kwargs.items():
+                cmd_parts.append(f"{k}={self._format_value(v)}")
+
+        cmd_str = " ".join(cmd_parts)
+
+        # Format timing
+        if duration_ms is not None:
+            if duration_ms > 10:
+                time_str = f"{duration_ms:.1f}ms"
+            else:
+                time_str = f"{duration_ms:.2f}ms"
+        else:
+            time_str = ""
+
+        # Log to dedicated Redis logger (only goes to debug log, not email logs)
+        if error:
+            redis_logger.debug(
+                f"{DIM_GRAY}[{time_str}] {CYAN}{cmd_str}{RESET} {DIM_GRAY}→ ERROR: {error}{RESET}"
+            )
+        elif result is not None:
+            # Format result
+            result_str = self._format_value(result)
+            redis_logger.debug(
+                f"{DIM_GRAY}[{time_str}] {CYAN}{cmd_str}{RESET} {DIM_GRAY}→ {result_str}{RESET}"
+            )
+        else:
+            redis_logger.debug(f"{DIM_GRAY}[{time_str}] {CYAN}{cmd_str}{RESET}")
+
+    def __getattr__(self, name):
+        """Proxy all method calls to the underlying Redis client with logging."""
+        attr = getattr(self._client, name)
+
+        if not callable(attr):
+            return attr
+
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = attr(*args, **kwargs)
+                duration_ms = (time.time() - start_time) * 1000
+                self._log_command(name, args, kwargs, result=result, duration_ms=duration_ms)
+                return result
+            except Exception as e:
+                duration_ms = (time.time() - start_time) * 1000
+                self._log_command(name, args, kwargs, error=e, duration_ms=duration_ms)
+                raise
+
+        return wrapper
+
+    # Proxy essential properties
+    @property
+    def connection_pool(self):
+        return self._client.connection_pool
 
 
 class RedisConnection:
@@ -78,7 +218,7 @@ class RedisConnection:
                 # SSL/TLS connection (DigitalOcean Managed Redis uses this)
                 logger.info(f"[REDIS CONNECT] Using SSL/TLS connection for DigitalOcean Redis")
                 # Use direct Redis.from_url for SSL connections
-                self._client = redis.from_url(
+                client = redis.from_url(
                     redis_url,
                     max_connections=50,
                     decode_responses=False,
@@ -87,6 +227,17 @@ class RedisConnection:
                     retry_on_timeout=True,
                     # Don't use socket_keepalive_options - causes Error 22 on Linux
                 )
+                # Check if Redis logging is enabled for SSL client
+                redis_logging = os.getenv("REDIS_LOGGING", "false").lower()
+                redis_logging_enabled = redis_logging not in ["false", "0", "no", "off"]
+                environment = os.getenv("ENVIRONMENT", "").lower()
+                is_development = os.getenv("ENVIRONMENT") in [None, "", "dev", "development"]
+
+                if (is_development or environment in ["dev", "staging"]) and redis_logging_enabled:
+                    self._client = LoggingRedisClient(client)
+                else:
+                    self._client = client
+
                 logger.info(f"[REDIS CONNECT] Redis client created, testing connection...")
                 # Skip the pool creation for SSL connections
                 pool = None
@@ -104,6 +255,17 @@ class RedisConnection:
             # Only create client from pool if we haven't already created it (SSL case)
             if pool is not None:
                 self._client = redis.Redis(connection_pool=pool)
+
+            # Wrap the client with logging if enabled
+            if self._client:
+                # Check if Redis logging is enabled
+                redis_logging = os.getenv("REDIS_LOGGING", "false").lower()
+                redis_logging_enabled = redis_logging not in ["false", "0", "no", "off"]
+                environment = os.getenv("ENVIRONMENT", "").lower()
+                is_development = os.getenv("ENVIRONMENT") in [None, "", "dev", "development"]
+
+                if (is_development or environment in ["dev", "staging"]) and redis_logging_enabled:
+                    self._client = LoggingRedisClient(self._client)
 
             # Test the connection
             if self._client:
