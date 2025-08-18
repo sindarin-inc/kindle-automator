@@ -1,7 +1,0 @@
----
-# PostgreSQL performance tuning for database server
-postgres_max_connections: 500
-postgres_shared_buffers: "2GB"
-postgres_effective_cache_size: "8GB"
-postgres_maintenance_work_mem: "512MB"
-postgres_work_mem: "16MB"
