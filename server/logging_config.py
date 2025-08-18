@@ -324,18 +324,11 @@ class RelativePathFormatter(logging.Formatter):
 
                 # Skip Redis checks if this is a Redis log message to prevent infinite recursion
                 if redis_client and "redis_connection.py" not in record.pathname:
-                    # Check both the multiple requests flag and active count
-                    multi_key = f"kindle:user:{email}:has_multiple_requests"
+                    # Only check the active count - no need for redundant has_multiple_requests key
                     active_key = f"kindle:user:{email}:active_request_count"
-
-                    has_multiple = redis_client.get(multi_key)
-                    if has_multiple:
+                    active_count = redis_client.get(active_key)
+                    if active_count and int(active_count) > 1:
                         has_multiple_requests = True
-                    else:
-                        # Also check active count as backup
-                        active_count = redis_client.get(active_key)
-                        if active_count and int(active_count) > 1:
-                            has_multiple_requests = True
 
         except (ImportError, RuntimeError):
             # Not in Flask context

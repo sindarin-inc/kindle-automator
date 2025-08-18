@@ -641,9 +641,9 @@ class RequestManager:
             counter_key = f"kindle:user:{self.user_email}:request_counter"
             active_requests_key = f"kindle:user:{self.user_email}:active_request_count"
 
-            # Only increment counter and active count once per request instance
-            # Use instance_id to ensure only THIS specific instance can decrement later
-            increment_key = f"kindle:instance:{self.instance_id}:incremented_active"
+            # Only increment counter and active count once per request
+            # Use request_key to track that THIS request incremented the count
+            increment_key = f"{self.request_key}:incremented_active"
             if self.redis_client.set(increment_key, "1", nx=True, ex=DEFAULT_TTL):
                 # First time this request is getting a number
                 request_num = self.redis_client.incr(counter_key)
@@ -670,24 +670,10 @@ class RequestManager:
             return 1
 
     def _check_and_notify_multiple_requests(self):
-        """Check if there are multiple requests and set flag in Redis."""
-        if not self.redis_client:
-            return
-
-        try:
-            # Check active request count
-            active_requests_key = f"kindle:user:{self.user_email}:active_request_count"
-            active_count = self.redis_client.get(active_requests_key)
-
-            # Set or clear the multiple requests flag
-            multi_key = f"kindle:user:{self.user_email}:has_multiple_requests"
-            if active_count and int(active_count) > 1:
-                self.redis_client.set(multi_key, "1", ex=DEFAULT_TTL)
-            else:
-                self.redis_client.delete(multi_key)
-
-        except Exception as e:
-            logger.error(f"Error checking for multiple requests: {e}")
+        """Check if there are multiple requests (deprecated - kept for compatibility)."""
+        # This method is no longer needed since we directly check active_request_count
+        # Kept as a no-op for backward compatibility with existing call sites
+        pass
 
     def get_request_number(self) -> Optional[int]:
         """Get the request number for this request."""
@@ -714,12 +700,12 @@ class RequestManager:
             return
 
         try:
-            # Check if THIS SPECIFIC instance incremented the active count
-            # Use instance_id to ensure only the instance that incremented can decrement
-            increment_key = f"kindle:instance:{self.instance_id}:incremented_active"
-            decrement_key = f"kindle:instance:{self.instance_id}:decremented_active"
+            # Check if THIS request incremented the active count
+            # Use request_key to ensure only the request that incremented can decrement
+            increment_key = f"{self.request_key}:incremented_active"
+            decrement_key = f"{self.request_key}:decremented_active"
 
-            # Only decrement if THIS instance incremented AND hasn't already decremented
+            # Only decrement if THIS request incremented AND hasn't already decremented
             if self.redis_client.get(increment_key) and self.redis_client.set(
                 decrement_key, "1", nx=True, ex=10
             ):
@@ -733,9 +719,6 @@ class RequestManager:
                 if remaining <= 0:
                     self.redis_client.delete(counter_key)
                     self.redis_client.delete(active_requests_key)
-                    # Also clear the multiple requests flag
-                    multi_key = f"kindle:user:{self.user_email}:has_multiple_requests"
-                    self.redis_client.delete(multi_key)
                     logger.info(
                         f"{BRIGHT_BLUE}Reset request counter for {self.user_email} - {BOLD}{BRIGHT_BLUE}no active requests remaining{RESET}"
                     )

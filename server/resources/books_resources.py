@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 class BooksResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
-    @handle_automator_response
     @deduplicate_request
+    @handle_automator_response
     def _get_books(self):
         """Get list of available books with metadata"""
         server = AutomationServer.get_instance()

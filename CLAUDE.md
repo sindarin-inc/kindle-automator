@@ -4,7 +4,30 @@
 
 Always run `make lint` after making Python code changes to ensure proper formatting (Black, isort, flake8).
 
-## Redis Access
+## Docker Services (Redis & Postgres)
+
+### Restarting After Docker Crash
+
+When Docker Desktop crashes on macOS, follow these steps:
+
+1. **Start Docker Desktop:**
+   ```bash
+   open -a Docker
+   # Wait ~10 seconds for Docker to fully start
+   ```
+
+2. **Start Redis and Postgres containers:**
+   ```bash
+   cd ../web-app
+   make fast  # Starts sol_redis (port 6479) and sol_postgres (port 5496)
+   ```
+
+3. **Verify services are running:**
+   ```bash
+   docker ps | grep -E "sol_postgres|sol_redis"
+   ```
+
+### Redis Access
 
 The project uses Redis on port 6479 (database 1) via Docker container `sol_redis`.
 To access Redis for debugging:
