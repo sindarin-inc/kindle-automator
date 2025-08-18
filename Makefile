@@ -92,25 +92,28 @@ test-all: test
 
 test-unit:
 	@echo "Running all unit tests (no server required)..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_deduplication_unit.py tests/test_user_repository_unit.py -v
-	@PYTHONPATH=$(shell pwd) uv run python tests/test_concurrent_access_unit.py
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v
 	@echo "All unit tests passed!"
 
-test-integration:
+test-api:
 	@echo "Running integration tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_api_integration.py -v
-
-test-concurrent:
-	@echo "Running concurrent HTTP requests tests..."
-	@PYTHONPATH=$(shell pwd) uv run python tests/test_concurrent_requests_integration.py
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_01_api_integration.py -v
 
 test-dedupe:
 	@echo "Running deduplication integration tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_request_deduplication_integration.py -v
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_02_request_deduplication_integration.py -v
 
-test-multi-user:
+test-page:
+	@echo "Running page navigation tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_03_absolute_navigation.py -v
+
+test-concurrent:
+	@echo "Running concurrent HTTP requests tests..."
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_04_concurrent_requests_integration.py
+
+test-user:
 	@echo "Running multi-user integration tests..."
-	@PYTHONPATH=$(shell pwd) uv run python tests/test_multi_user_integration.py
+	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_05_multi_user_integration.py
 
 # Generate staff authentication token for testing
 test-staff-auth:

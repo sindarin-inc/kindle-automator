@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -21,10 +23,12 @@ from database.models import Base
 from database.repositories.user_repository import UserRepository
 
 
-class ConcurrentAccessTester:
+class TestConcurrentAccess:
     """Test concurrent database access scenarios."""
 
-    def __init__(self):
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Set up test database and clean up after tests."""
         # Initialize database connection
         db_connection.initialize()
 
@@ -34,9 +38,16 @@ class ConcurrentAccessTester:
         self.results = []
         self.errors = []
 
-    def test_concurrent_user_creation(self, num_threads=10):
+        yield
+
+        # Cleanup after test
+        if os.getenv("CI"):
+            Base.metadata.drop_all(db_connection.engine)
+        db_connection.dispose()
+
+    def test_concurrent_user_creation(self):
         """Test multiple threads creating users simultaneously."""
-        print(f"\n=== Testing concurrent user creation with {num_threads} threads ===")
+        num_threads = 10
 
         def create_user(thread_id):
             try:
@@ -62,14 +73,16 @@ class ConcurrentAccessTester:
             for future in as_completed(futures):
                 result = future.result()
                 self.results.append(result)
-                print(result)
 
-        print(f"Created {len(self.results) - len(self.errors)} users successfully")
-        print(f"Errors: {len(self.errors)}")
+        # Assert that we created users successfully
+        assert len(self.errors) == 0, f"Errors encountered: {self.errors}"
+        assert len(self.results) == num_threads
 
-    def test_concurrent_updates(self, num_threads=20):
+    def test_concurrent_updates(self):
         """Test multiple threads updating the same user."""
-        print(f"\n=== Testing concurrent updates with {num_threads} threads ===")
+        num_threads = 20
+        self.errors = []  # Reset errors for this test
+        self.results = []
 
         # Create or get test user first
         test_email = "concurrent_test@solreader.com"
@@ -108,24 +121,22 @@ class ConcurrentAccessTester:
                 self.errors.append(error_msg)
                 return error_msg
 
-        start_time = time.time()
-
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [executor.submit(update_user, i) for i in range(num_threads)]
 
             for future in as_completed(futures):
                 result = future.result()
                 self.results.append(result)
-                print(result)
 
-        elapsed_time = time.time() - start_time
-        print(f"\nCompleted {num_threads} updates in {elapsed_time:.2f} seconds")
-        print(f"Successful updates: {len(self.results) - len(self.errors)}")
-        print(f"Errors: {len(self.errors)}")
+        # Assert all updates completed successfully
+        assert len(self.errors) == 0, f"Errors encountered: {self.errors}"
+        assert len(self.results) == num_threads
 
-    def test_concurrent_reads_writes(self, num_threads=30):
+    def test_concurrent_reads_writes(self):
         """Test mixed read and write operations."""
-        print(f"\n=== Testing concurrent reads and writes with {num_threads} threads ===")
+        num_threads = 30
+        self.errors = []  # Reset errors for this test
+        self.results = []
 
         # Create or get test users
         test_emails = [f"readwrite_{i}@solreader.com" for i in range(5)]
@@ -167,17 +178,15 @@ class ConcurrentAccessTester:
             for future in as_completed(futures):
                 result = future.result()
                 self.results.append(result)
-                print(result)
 
-        print(f"\nCompleted {num_threads} operations")
-        print(f"Successful operations: {len(self.results) - len(self.errors)}")
-        print(f"Errors: {len(self.errors)}")
+        # Assert all operations completed successfully
+        assert len(self.errors) == 0, f"Errors encountered: {self.errors}"
+        assert len(self.results) == num_threads
 
     def test_transaction_isolation(self):
         """Test transaction isolation levels."""
-        print("\n=== Testing transaction isolation ===")
-
         test_email = "isolation_test@solreader.com"
+        results = []
 
         # Create or get test user
         with db_connection.get_session() as session:
@@ -194,7 +203,6 @@ class ConcurrentAccessTester:
 
                     # Start transaction
                     user = repo.get_user_by_email(test_email)
-                    print("Long transaction: Got user, sleeping...")
 
                     # Simulate processing
                     time.sleep(2)
@@ -202,7 +210,6 @@ class ConcurrentAccessTester:
                     # Update after delay
                     repo.update_user_field(test_email, "timezone", "LongTransaction")
                     session.commit()
-                    print("Long transaction: Committed")
                     return "Long transaction completed"
             except Exception as e:
                 return f"Long transaction error: {e}"
@@ -216,10 +223,8 @@ class ConcurrentAccessTester:
                     repo = UserRepository(session)
 
                     # Try to update same user
-                    print("Quick transaction: Attempting update...")
                     repo.update_user_field(test_email, "styles_updated", True)
                     session.commit()
-                    print("Quick transaction: Committed")
                     return "Quick transaction completed"
             except Exception as e:
                 return f"Quick transaction error: {e}"
@@ -229,76 +234,37 @@ class ConcurrentAccessTester:
             long_future = executor.submit(long_transaction)
             quick_future = executor.submit(quick_transaction)
 
-            print(long_future.result())
-            print(quick_future.result())
+            long_result = long_future.result()
+            quick_result = quick_future.result()
+            results = [long_result, quick_result]
 
-    def verify_data_integrity(self):
+        # Both transactions should complete without errors
+        for result in results:
+            assert "error" not in result.lower(), f"Transaction failed: {result}"
+        assert len(results) == 2
+
+    def test_data_integrity(self):
         """Verify data integrity after concurrent operations."""
-        print("\n=== Verifying data integrity ===")
-
         with db_connection.get_session() as session:
             repo = UserRepository(session)
 
             # Check all users
             all_users = repo.get_all_users()
-            print(f"Total users in database: {len(all_users)}")
 
             # Check for any inconsistencies
+            missing_settings = []
             for user in all_users:
                 # Verify required relationships exist
                 if not user.emulator_settings:
-                    print(f"WARNING: User {user.email} missing emulator_settings")
+                    missing_settings.append(f"User {user.email} missing emulator_settings")
                 if not user.device_identifiers:
-                    print(f"WARNING: User {user.email} missing device_identifiers")
+                    missing_settings.append(f"User {user.email} missing device_identifiers")
                 if not user.library_settings:
-                    print(f"WARNING: User {user.email} missing library_settings")
+                    missing_settings.append(f"User {user.email} missing library_settings")
                 if not user.reading_settings:
-                    print(f"WARNING: User {user.email} missing reading_settings")
+                    missing_settings.append(f"User {user.email} missing reading_settings")
 
-            # Check version numbers (should increment with updates)
-            for user in all_users:
-                if user.version > 1:
-                    print(f"User {user.email} has version {user.version} (updated)")
+            assert len(missing_settings) == 0, f"Missing settings: {missing_settings}"
 
-    def cleanup_test_data(self):
-        """Clean up test data."""
-        print("\n=== Cleaning up test database ===")
-        # Drop all tables after test (since we're using a test database in CI)
-        if os.getenv("CI"):
-            Base.metadata.drop_all(db_connection.engine)
-            print("Test tables dropped")
-        else:
-            print("Skipping cleanup (not in CI, using dev DB)")
-        pass
-
-
-def main():
-    """Run all concurrent access tests."""
-    tester = ConcurrentAccessTester()
-
-    try:
-        # Run tests
-        tester.test_concurrent_user_creation(num_threads=10)
-        tester.test_concurrent_updates(num_threads=20)
-        tester.test_concurrent_reads_writes(num_threads=30)
-        tester.test_transaction_isolation()
-        tester.verify_data_integrity()
-
-        # Summary
-        print("\n=== Test Summary ===")
-        print(f"Total operations: {len(tester.results)}")
-        print(f"Total errors: {len(tester.errors)}")
-
-        if tester.errors:
-            print("\nErrors encountered:")
-            for error in tester.errors:
-                print(f"  - {error}")
-
-    finally:
-        # Cleanup
-        tester.cleanup_test_data()
-        db_connection.dispose()
-
-
-if __name__ == "__main__":
-    main()
+            # Check that we have created users from our tests
+            assert len(all_users) > 0, "No users found in database"
