@@ -110,20 +110,32 @@ class NavigationResource(Resource):
             response = result
             status_code = 200 if isinstance(result, dict) and result.get("success") else 500
 
-        # Only update position if navigation was successful
-        # Check if the response indicates success and we actually navigated (not just preview)
+        # Update position if navigation or preview was successful
+        # Calculate total position change (navigate + preview)
         navigate_count = params.get("navigate_count", 0)
+        preview_count = params.get("preview_count", 0)
+        total_movement = navigate_count + preview_count
+
         if (
-            navigate_count != 0
+            total_movement != 0
             and status_code == 200
             and isinstance(response, dict)
             and response.get("success")
         ):
-            new_position = server.update_position(sindarin_email, navigate_count)
-            logger.info(f"Updated position for {sindarin_email} by {navigate_count} to {new_position}")
-        elif navigate_count != 0:
+            new_position = server.update_position(sindarin_email, total_movement)
+            if navigate_count != 0 and preview_count != 0:
+                logger.info(
+                    f"Updated position for {sindarin_email} by {total_movement} (navigate={navigate_count}, preview={preview_count}) to {new_position}"
+                )
+            elif navigate_count != 0:
+                logger.info(f"Updated position for {sindarin_email} by {navigate_count} to {new_position}")
+            else:
+                logger.info(
+                    f"Updated position for {sindarin_email} by preview={preview_count} to {new_position}"
+                )
+        elif total_movement != 0:
             logger.info(
-                f"Navigation failed or returned non-success, not updating position for {sindarin_email}"
+                f"Navigation/preview failed or returned non-success, not updating position for {sindarin_email}"
             )
 
         return response, status_code

@@ -156,6 +156,40 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert not combo2_data.get("error"), f"Combined navigation failed: {combo2_data.get('error')}"
         print("[TEST] ✓ Successfully navigated to 2 and previewed absolute position 0")
 
+        # Test relative navigation updates position correctly
+        print("\n[TEST] Testing relative navigation updates position...")
+        # We're currently at position 2, save this as checkpoint
+        checkpoint_response = self._make_request("navigate", params={"navigate": 0})
+        assert checkpoint_response.status_code == 200
+        checkpoint_text = checkpoint_response.json().get("text", "") or checkpoint_response.json().get(
+            "ocr_text", ""
+        )
+        print("[TEST] Saved checkpoint at position 2")
+
+        # Do relative navigation forward 3 pages
+        print("[TEST] Relative navigate forward 3 pages...")
+        rel_nav = self._make_request("navigate", params={"navigate": 3})
+        assert rel_nav.status_code == 200
+        print("[TEST] ✓ Navigated relatively forward 3 pages (should be at position 5)")
+
+        # Do relative preview back 1 (should update position to 4)
+        print("[TEST] Relative preview back 1 page...")
+        rel_preview = self._make_request("navigate", params={"preview": -1})
+        assert rel_preview.status_code == 200
+        print("[TEST] ✓ Previewed relatively back 1 page (should be at position 4)")
+
+        # Navigate back to absolute position 2 using navigate_to
+        print("[TEST] Navigate back to absolute position 2...")
+        back_to_checkpoint = self._make_request("navigate", params={"navigate_to": 2})
+        assert back_to_checkpoint.status_code == 200
+        back_text = back_to_checkpoint.json().get("text", "") or back_to_checkpoint.json().get("ocr_text", "")
+
+        # Verify we're back at the same checkpoint
+        assert (
+            back_text == checkpoint_text
+        ), "Position tracking failed - checkpoint text doesn't match after relative navigation"
+        print("[TEST] ✓ Successfully returned to checkpoint - position tracking is consistent")
+
         print("[TEST] All combined navigation tests passed!")
 
     @pytest.mark.timeout(60)
