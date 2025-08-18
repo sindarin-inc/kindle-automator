@@ -322,7 +322,8 @@ class RelativePathFormatter(logging.Formatter):
                 if hasattr(g, "request_manager") and g.request_manager:
                     redis_client = g.request_manager.redis_client
 
-                if redis_client:
+                # Skip Redis checks if this is a Redis log message to prevent infinite recursion
+                if redis_client and "redis_connection.py" not in record.pathname:
                     # Check both the multiple requests flag and active count
                     multi_key = f"kindle:user:{email}:has_multiple_requests"
                     active_key = f"kindle:user:{email}:active_request_count"
