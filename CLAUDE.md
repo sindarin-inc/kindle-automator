@@ -56,6 +56,15 @@ To control SQL query logging in the debug log:
 - Restart the server with `make claude-run`
 - When enabled, formatted SQL queries will appear in `logs/debug_server.log`
 
+## Redis Debug Logging
+
+To control Redis command logging in the debug log:
+
+- Edit `.env` and set `REDIS_LOGGING=true` to enable or `REDIS_LOGGING=false` to disable
+- Restart the server with `make claude-run`
+- When enabled, all Redis commands will appear in cyan in `logs/debug_server.log`
+- Shows command, arguments, results, and timing for each Redis operation
+
 ## Issue References
 
 - **KINDLE-AUTOMATOR-XXX**: Use Sentry MCP tools to look up (never use Seer AI)
