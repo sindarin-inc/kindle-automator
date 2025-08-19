@@ -245,10 +245,19 @@ class TestConcurrentAccess:
 
     def test_data_integrity(self):
         """Verify data integrity after concurrent operations."""
+        # First create some users to ensure we have data to check
+        test_emails = ["integrity_test_1@solreader.com", "integrity_test_2@solreader.com"]
+
         with db_connection.get_session() as session:
             repo = UserRepository(session)
 
-            # Check all users
+            # Create test users
+            for email in test_emails:
+                user = repo.get_user_by_email(email)
+                if not user:
+                    repo.create_user(email, f"IntegrityTestAVD_{email}")
+
+            # Now check all users
             all_users = repo.get_all_users()
 
             # Check for any inconsistencies
@@ -268,3 +277,8 @@ class TestConcurrentAccess:
 
             # Check that we have created users from our tests
             assert len(all_users) > 0, "No users found in database"
+
+            # Verify our test users were created
+            created_emails = [user.email for user in all_users]
+            for test_email in test_emails:
+                assert test_email in created_emails, f"Test user {test_email} not found"
