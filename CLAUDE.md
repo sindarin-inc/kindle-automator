@@ -108,30 +108,35 @@ To control Redis command logging in the debug log:
 
 - **Local email**: Always use `sam@solreader.com` or `kindle@solreader.com`
 - **Authentication for proxy server (REQUIRED)**:
+
   ```bash
   # Step 1: Generate a dev session (creates Django session with OTP bypass)
   docker exec -t sol_web ./manage.py generate_dev_session
   # This outputs a sessionid like: f0605l2bra7fgpnsem7ahdl8ebv5bqp7
-  
+
   # Step 2: Get staff token - save to cookie file to get FULL token
   curl -s -c .cookies.txt -H "Cookie: sessionid=YOUR_SESSION_ID" \
     "http://localhost:4096/kindle/staff-auth?auth=1"
-  
+
   # Step 3: Extract the full token from cookie file (JSON response truncates it)
   STAFF_TOKEN=$(grep staff_token .cookies.txt | awk '{print $7}')
-  
+
   # Step 4: Use both cookies for all requests
   curl -s -H "Cookie: sessionid=YOUR_SESSION_ID; staff_token=$STAFF_TOKEN" \
     "http://localhost:4096/kindle/screenshot?user_email=kindle@solreader.com&xml=1"
   ```
-  **IMPORTANT**: 
+
+  **IMPORTANT**:
+
   - The proxy server handles authentication differently than the Flask server
   - The staff_token in the JSON response is truncated with "..." - always get it from the cookie file or Set-Cookie header
   - You MUST use dev session authentication as shown above
+
 - **After working on features**: Look through `tests/test_api_integration.py` and run the most appropriate specific test for the endpoint you modified:
   ```bash
   uv run pytest tests/test_api_integration.py::TestKindleAPIIntegration::test_specific_endpoint -v
   ```
+- Never skip tests, they are all there for a reason
 
 ## Database Migrations
 

@@ -22,7 +22,7 @@ from server.utils.cancellation_utils import (
 from tests.test_base import TEST_USER_EMAIL, BaseKindleTest
 
 
-class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
+class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
     """Integration tests for request deduplication with threading."""
 
     def setUp(self):
@@ -459,7 +459,7 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
         # This proves the second request will execute fresh, not use cached data
 
 
-class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
+class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
     """Test priority-based request management and cancellation.
 
     These tests verify that higher priority requests properly cancel lower priority ones,
@@ -947,10 +947,10 @@ if __name__ == "__main__":
     suite = unittest.TestSuite()
 
     # Add main deduplication tests
-    suite.addTests(loader.loadTestsFromTestCase(TestRequestDeduplicationIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(Test1RequestDeduplicationIntegration))
 
     # Add priority and cancellation tests (only run if main tests pass)
-    suite.addTests(loader.loadTestsFromTestCase(TestPriorityAndCancellation))
+    suite.addTests(loader.loadTestsFromTestCase(Test2PriorityAndCancellation))
 
     # Run with stop on first failure
     runner = unittest.TextTestRunner(verbosity=1, failfast=True)
