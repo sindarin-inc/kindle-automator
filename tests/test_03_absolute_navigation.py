@@ -175,14 +175,18 @@ class TestAbsoluteNavigation(BaseKindleTest):
         rel_nav = self._make_request("navigate", params={"navigate": 3})
         assert rel_nav.status_code == 200
         rel_nav_text = rel_nav.json().get("text", "") or rel_nav.json().get("ocr_text", "")
-        print(f"[TEST] ✓ Navigated relatively forward 3 pages (should be at position 5), OCR: {rel_nav_text[:100]}...")
+        print(
+            f"[TEST] ✓ Navigated relatively forward 3 pages (should be at position 5), OCR: {rel_nav_text[:100]}..."
+        )
 
         # Do relative preview back 1 (should NOT update position, just preview)
         print("[TEST] Relative preview back 1 page (should still be at position 5)...")
         rel_preview = self._make_request("navigate", params={"preview": -1})
         assert rel_preview.status_code == 200
         rel_preview_text = rel_preview.json().get("text", "") or rel_preview.json().get("ocr_text", "")
-        print(f"[TEST] ✓ Previewed relatively back 1 page (preview of position 4), OCR: {rel_preview_text[:100]}...")
+        print(
+            f"[TEST] ✓ Previewed relatively back 1 page (preview of position 4), OCR: {rel_preview_text[:100]}..."
+        )
 
         # Verify we're still at position 5 after preview
         verify_pos = self._make_request("navigate", params={"navigate": 0})
@@ -333,9 +337,13 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert preview_1.status_code == 200
         preview_1_data = preview_1.json()
         preview_1_text = preview_1_data.get("text", "") or preview_1_data.get("ocr_text", "")
-        print(f"[TEST] Preview text length: {len(preview_1_text)} chars, OCR preview: {preview_1_text[:100]}...")
+        print(
+            f"[TEST] Preview text length: {len(preview_1_text)} chars, OCR preview: {preview_1_text[:100]}..."
+        )
         assert preview_1_text, "Preview text is empty"
-        assert preview_1_text != current_text, f"Preview text should be different from current\nCurrent: {current_text[:200]}\nPreview: {preview_1_text[:200]}"
+        assert (
+            preview_1_text != current_text
+        ), f"Preview text should be different from current\nCurrent: {current_text[:200]}\nPreview: {preview_1_text[:200]}"
 
         # Verify we're still at the same position
         verify_1 = self._make_request("navigate", params={"navigate": 0})

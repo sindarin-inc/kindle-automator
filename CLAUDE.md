@@ -11,12 +11,14 @@ Always run `make lint` after making Python code changes to ensure proper formatt
 When Docker Desktop crashes on macOS, follow these steps:
 
 1. **Start Docker Desktop:**
+
    ```bash
    open -a Docker
    # Wait ~10 seconds for Docker to fully start
    ```
 
 2. **Start Redis and Postgres containers:**
+
    ```bash
    cd ../web-app
    make fast  # Starts sol_redis (port 6479) and sol_postgres (port 5496)
@@ -63,7 +65,7 @@ docker exec sol_redis redis-cli -p 6479 -n 1 monitor
 make claude-run
 
 # Now you can make requests. This is a quick one:
-curl -s http://localhost:4098/emulators/active
+curl -s http://localhost:4096/kindle/emulators/active
 
 # Monitor logs
 tail -f logs/server_output.log       # Standard logs, clears every `make claude-run`
@@ -104,14 +106,28 @@ To control Redis command logging in the debug log:
 
 ## Testing
 
-- **Local email**: Always use `sam@solreader.com`
-- **Staff token for other emails**:
+- **Local email**: Always use `sam@solreader.com` or `kindle@solreader.com`
+- **Authentication for proxy server (REQUIRED)**:
   ```bash
-  # Use cookie jar (recommended)
-  curl -s -c .cookies.txt -X GET "http://localhost:4098/staff-auth?auth=1"
-  curl -b .cookies.txt -X GET "http://localhost:4098/auth?user_email=recreate@solreader.com&recreate=1"
+  # Step 1: Generate a dev session (creates Django session with OTP bypass)
+  docker exec -t sol_web ./manage.py generate_dev_session
+  # This outputs a sessionid like: f0605l2bra7fgpnsem7ahdl8ebv5bqp7
+  
+  # Step 2: Get staff token - save to cookie file to get FULL token
+  curl -s -c .cookies.txt -H "Cookie: sessionid=YOUR_SESSION_ID" \
+    "http://localhost:4096/kindle/staff-auth?auth=1"
+  
+  # Step 3: Extract the full token from cookie file (JSON response truncates it)
+  STAFF_TOKEN=$(grep staff_token .cookies.txt | awk '{print $7}')
+  
+  # Step 4: Use both cookies for all requests
+  curl -s -H "Cookie: sessionid=YOUR_SESSION_ID; staff_token=$STAFF_TOKEN" \
+    "http://localhost:4096/kindle/screenshot?user_email=kindle@solreader.com&xml=1"
   ```
-  Note: Full token only in Set-Cookie header, not JSON response
+  **IMPORTANT**: 
+  - The proxy server handles authentication differently than the Flask server
+  - The staff_token in the JSON response is truncated with "..." - always get it from the cookie file or Set-Cookie header
+  - You MUST use dev session authentication as shown above
 - **After working on features**: Look through `tests/test_api_integration.py` and run the most appropriate specific test for the endpoint you modified:
   ```bash
   uv run pytest tests/test_api_integration.py::TestKindleAPIIntegration::test_specific_endpoint -v
@@ -135,10 +151,17 @@ To control Redis command logging in the debug log:
 ## Development Guidelines
 
 - **Never kill emulators/servers directly**: Use `make claude-run` or `/shutdown` API
-- **Always include sindarin_email**: Required in staff auth requests
+- **Always include user_email**: Required in all requests (localhost:4096/kindle/screenshot?user_email=kindle@solreader.com)
+- **Ensure auth**: `GET localhost:4096/staff-auth?auth=1` to set an auth cookie
 - **No test files**: Unless explicitly requested
 - **No backwards compatibility**: Unless asked
 - **Git commits**: Do NOT commit or push anything to Git. If you want to commit, simply print out the one-liner Git commit message you would use and leave it at that. Always run `make lint` before suggesting a commit.
+- **Screenshots and XML**: To retrieve screenshots and xml, use the proxy server with authentication:
+  ```bash
+  # For XML: http://localhost:4096/kindle/screenshot?user_email=kindle@solreader.com&xml=1
+  # For image: http://localhost:4096/kindle/screenshot?user_email=kindle@solreader.com&xml=0
+  # MUST include authentication cookies (see Testing section)
+  ```
 
 ## Project Structure
 
@@ -156,9 +179,11 @@ To control Redis command logging in the debug log:
 
 ## Proxy Server
 
-**All `/kindle/*` endpoints go through the proxy server (port 4096 on dev), not directly to this Flask server (port 4098).**
+**CRITICAL: All `/kindle/*` endpoints go through the proxy server (port 4096), NEVER directly to the Flask server (port 4098).**
 
+- **NEVER access the Flask server directly on port 4098** - it will not work and is not the correct approach
+- The proxy server (port 4096) is the ONLY way to access Kindle functionality
 - The proxy server maintains book caches and additional functionality
 - `/kindle/open-random-book` only exists on the proxy server (uses cached book list)
-- If the proxy server is down/not working, DO NOT attempt to find these URLs on the Flask server
-- Ask the user to start the proxy server if needed
+- **If the proxy server returns an error**: Debug the proxy authentication (see Testing section), DO NOT try the Flask server
+- **Authentication is REQUIRED**: All proxy requests need dev session authentication (see Testing section above)
