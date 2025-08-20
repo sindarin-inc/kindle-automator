@@ -304,6 +304,12 @@ class RequestManager:
             if active_data:
                 active_request = json.loads(active_data)
                 active_priority = active_request.get("priority", 0)
+                active_path = active_request.get("path", "unknown")
+
+                logger.info(
+                    f"[DEBUG] Checking priority: Current request {self.path} (priority {self.priority}) "
+                    f"vs active request {active_path} (priority {active_priority})"
+                )
 
                 # If our priority is higher, cancel the active request
                 if self.priority > active_priority:
@@ -314,15 +320,27 @@ class RequestManager:
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
 
+                        # Force immediate Redis write (flush)
+                        try:
+                            self.redis_client.ping()  # Force connection to be active
+                        except:
+                            pass
+
                         # CRITICAL: Also delete the progress key so future requests don't think they're duplicates
                         progress_key = f"{active_request_key}:progress"
                         self.redis_client.delete(progress_key)
 
                         logger.info(
-                            f"{BRIGHT_RED}[{time.time():.3f}] PRIORITY CANCELLATION: {BRIGHT_YELLOW}Cancelling lower priority request "
-                            f"{active_request_key} (priority {active_priority}) for higher priority "
+                            f"{BRIGHT_RED}[{time.time():.3f}] PRIORITY CANCELLATION SET: {BRIGHT_YELLOW}Cancelling lower priority request "
+                            f"{active_request_key} (priority {active_priority}, path {active_path}) for higher priority "
                             f"{BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} (priority {self.priority}){RESET}"
                         )
+                else:
+                    logger.info(
+                        f"[DEBUG] Not cancelling: {self.path} priority {self.priority} <= {active_path} priority {active_priority}"
+                    )
+            else:
+                logger.info(f"[DEBUG] No active request found for user {self.user_email}")
 
         except Exception as e:
             logger.error(f"Error checking for lower priority requests: {e}")

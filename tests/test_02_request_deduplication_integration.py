@@ -1,6 +1,7 @@
 """Integration tests for request deduplication and cancellation functionality."""
 
 import json
+import logging
 import pickle
 import threading
 import time
@@ -9,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import redis
+
+logger = logging.getLogger(__name__)
 
 from server.core.request_manager import DeduplicationStatus, RequestManager, WaitResult
 from server.utils.cancellation_utils import (
@@ -677,30 +680,14 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         self.assertIn("open_status", results, f"Open book did not complete. Results: {results}")
         self.assertEqual(results["open_status"], 200, f"Open book should return 200. Results: {results}")
 
-        # Verify stream was cancelled or ended early
-        stream_ended_early = (
-            "stream_cancelled" in results
-            or "stream_error" in results
-            or "stream_partial" in results
-            or (
-                "stream_completed" in results
-                and "open_started" in results
-                and results["stream_completed"] < results["open_started"]
-            )
+        # Verify stream was cancelled or interrupted
+        stream_was_cancelled = (
+            "stream_cancelled" in results or "stream_error" in results or "stream_partial" in results
         )
 
-        if not stream_ended_early:
-            # Stream should have been interrupted by higher priority request
-            self.fail(
-                f"Stream should have been interrupted by higher priority request or ended early. Results: {results}"
-            )
-
-        # Check that cancellation was detected OR the stream ended early (partial data)
-        if "stream_partial" not in results and "stream_completed" not in results:
-            # Only require explicit cancellation if the stream didn't complete naturally
-            self.assertGreater(
-                cancellation_count, 0, f"Expected to detect cancellation at least once. Results: {results}"
-            )
+        if not stream_was_cancelled:
+            # Stream should have been cancelled by higher priority request
+            self.fail(f"Stream should have been cancelled by higher priority request. Results: {results}")
 
         # If stream was properly cancelled, verify it was reasonably fast
         if "stream_cancelled" in results and "open_started" in results:

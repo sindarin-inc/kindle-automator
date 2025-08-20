@@ -3,8 +3,9 @@
 import logging
 import os
 import time
+from io import BytesIO
 
-from flask import make_response, request
+from flask import make_response, request, send_file
 from flask_restful import Resource
 
 from server.core.automation_server import AutomationServer
@@ -126,7 +127,7 @@ class ScreenshotResource(Resource):
             f"save: {save}, include_xml: {include_xml}, use_base64: {use_base64}, perform_ocr: {perform_ocr}"
         )
 
-        # If xml=1, return XML directly as text/xml response
+        # If xml=1, return XML directly as text/xml response using send_file like images
         if include_xml and not perform_ocr and not use_base64:
             try:
                 # Get page source from the driver
@@ -137,10 +138,20 @@ class ScreenshotResource(Resource):
                 xml_path = store_page_source(page_source, image_id)
                 logger.info(f"Stored page source XML at {xml_path}")
 
-                # Create a proper Flask response with XML content type
-                # Flask-RESTful will respect this and not serialize it
-                response = make_response(page_source)
-                response.headers["Content-Type"] = "text/xml; charset=utf-8"
+                # Create a BytesIO object with the XML content
+                xml_bytes = BytesIO(page_source.encode("utf-8"))
+                xml_bytes.seek(0)
+
+                # Use send_file with BytesIO to serve the XML
+                # This approach works with Flask-RESTful just like serve_image does
+                response = make_response(
+                    send_file(
+                        xml_bytes,
+                        mimetype="text/xml; charset=utf-8",
+                        as_attachment=False,
+                        download_name=xml_filename,
+                    )
+                )
                 return response
             except Exception as xml_error:
                 logger.error(f"Error getting page source XML: {xml_error}", exc_info=True)

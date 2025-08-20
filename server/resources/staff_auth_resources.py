@@ -37,7 +37,7 @@ class StaffAuthResource(Resource):
                     {
                         "authenticated": True,
                         "message": "Staff authentication successful via GET request",
-                        "token": token[:8] + "..." + token[-8:],  # Show truncated token for confirmation
+                        "token": token,
                     }
                 )
             )

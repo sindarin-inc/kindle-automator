@@ -44,8 +44,15 @@ def should_cancel(user_email: str, request_key: Optional[str] = None) -> bool:
 
         # Check the cancellation flag
         cancel_key = f"{request_key}:cancelled"
-        is_cancelled = bool(redis_client.get(cancel_key))
-        # logger.debug(f"Checking cancellation for {cancel_key}: {is_cancelled}")
+        cancel_value = redis_client.get(cancel_key)
+        is_cancelled = bool(cancel_value)
+
+        # Debug logging for cancellation checks
+        import time
+
+        logger.debug(
+            f"[{time.time():.3f}] Checking cancellation for {cancel_key}: {is_cancelled} (value: {cancel_value})"
+        )
 
         if is_cancelled:
             logger.info(
@@ -96,10 +103,16 @@ def mark_cancelled(user_email: str, request_key: Optional[str] = None) -> bool:
         cancel_key = f"{request_key}:cancelled"
         redis_client.set(cancel_key, "1", ex=130)  # Same TTL as other request keys
 
+        # Force immediate Redis write
+        try:
+            redis_client.ping()  # Force connection to be active
+        except:
+            pass
+
         import time
 
         logger.info(
-            f"[{time.time():.3f}] CANCELLATION SET: Marked request {request_key} as cancelled for user {user_email}"
+            f"[{time.time():.3f}] CANCELLATION MARKED: Request {request_key} has been marked as cancelled for user {user_email}"
         )
         return True
 

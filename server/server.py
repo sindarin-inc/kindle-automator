@@ -103,8 +103,20 @@ def output_json(data, code, headers=None):
     return resp
 
 
+def output_xml(data, code, headers=None):
+    """Pass through XML data without modification."""
+    # If data is already a Flask response object with XML content type, return it as-is
+    if hasattr(data, "headers") and "text/xml" in data.headers.get("Content-Type", ""):
+        return data
+    # Otherwise create XML response
+    resp = make_response(data, code)
+    resp.headers.extend(headers or {})
+    resp.headers["Content-Type"] = "text/xml; charset=utf-8"
+    return resp
+
+
 api = Api(app)
-api.representations = {"application/json": output_json}
+api.representations = {"application/json": output_json, "text/xml": output_xml}
 
 # Initialize database connection
 db_connection.initialize()

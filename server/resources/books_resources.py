@@ -212,10 +212,23 @@ class BooksResource(Resource):
 
     def get(self):
         """Handle GET request for books list"""
+        # Check if sync=true parameter is present
+        sync = request.args.get("sync", "false").lower() in ("true", "1")
+        if sync:
+            # Use the streaming implementation
+            stream_resource = BooksStreamResource()
+            return stream_resource.get()
         return self._get_books()
 
     def post(self):
         """Handle POST request for books list"""
+        # Check if sync=true parameter is present in POST data
+        data = request.get_json() or {}
+        sync = str(data.get("sync", "false")).lower() in ("true", "1")
+        if sync:
+            # Use the streaming implementation
+            stream_resource = BooksStreamResource()
+            return stream_resource.get()
         return self._get_books()
 
 
@@ -460,7 +473,7 @@ class BooksStreamResource(Resource):
                 # Check for cancellation before processing each batch - check every time for streams
                 if should_cancel(sindarin_email, stream_request_key):
                     logger.info(
-                        f"Book retrieval cancelled for {sindarin_email} due to higher priority request"
+                        f"[{time.time():.3f}] Book retrieval cancelled for {sindarin_email} due to higher priority request (in callback)"
                     )
                     error_message = "Request cancelled by higher priority operation"
                     stream_cancelled = True
