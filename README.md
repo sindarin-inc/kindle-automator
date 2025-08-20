@@ -112,7 +112,26 @@ Now you are ready to proceed with the automation setup and run the scripts.
    make deps
    ```
 
-10. **Configuration**:
+10. **Database Setup (Required for first-time setup)**:
+    The application requires PostgreSQL and Redis to be running. These are provided via Docker containers from the web-app project:
+    
+    ```sh
+    # Start Docker containers (PostgreSQL and Redis)
+    cd ../web-app && make fast
+    cd ../kindle-automator
+    
+    # Initialize the database (creates kindle_dev database, runs migrations, imports data)
+    make db-setup
+    ```
+    
+    This only needs to be done once when setting up a new development environment. The `make db-setup` command will:
+    - Create the `kindle_dev` database if it doesn't exist
+    - Run all database migrations
+    - Import any existing user data from `user_data/users.json`
+    
+    **Note**: Make sure Docker Desktop is running and the `sol_postgres` container is available on port 5496.
+
+11. **Configuration**:
     The application uses a `.env` file for API keys and other configuration. Create your `.env` file by copying the example:
 
     ```sh
@@ -130,7 +149,7 @@ Now you are ready to proceed with the automation setup and run the scripts.
     
     **Note**: Amazon credentials (email and password) must be provided in the /auth API request, and captcha solutions (if needed) must be provided to the /captcha endpoint. These are not read from environment variables or configuration files. The system will automatically initialize when needed, but you must authenticate with the /auth endpoint before accessing other features.
 
-11. **Running Tests**:
+12. **Running Tests**:
     To run the integration tests, you need to generate authentication tokens first:
 
     ```sh
@@ -152,7 +171,7 @@ Now you are ready to proceed with the automation setup and run the scripts.
     make test
     ```
 
-12. **Run the Script**:
+13. **Run the Script**:
     After setting up the virtual environment, installing dependencies, and configuring your environment, you can run the automation script using:
 
     ```sh
