@@ -86,9 +86,13 @@ shell:
 
 test:
 	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) uv run pytest tests
+	@PYTHONPATH=$(shell pwd) uv run pytest tests -v
 
 test-all: test
+
+test-fast:
+	@echo "Running tests with fail-fast (stops on first failure)..."
+	@PYTHONPATH=$(shell pwd) uv run pytest tests -x -v
 
 test-unit:
 	@echo "Running all unit tests (no server required)..."
