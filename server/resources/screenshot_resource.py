@@ -138,6 +138,12 @@ class ScreenshotResource(Resource):
                 xml_path = store_page_source(page_source, image_id)
                 logger.info(f"Stored page source XML at {xml_path}")
 
+                # If save=1, return the file path instead of the content
+                if save:
+                    # Return the absolute path to the saved XML file
+                    absolute_path = os.path.abspath(xml_path)
+                    return {"xml_path": absolute_path}, 200
+
                 # Create a BytesIO object with the XML content
                 xml_bytes = BytesIO(page_source.encode("utf-8"))
                 xml_bytes.seek(0)
