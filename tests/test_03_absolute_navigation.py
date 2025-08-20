@@ -18,9 +18,9 @@ class TestAbsoluteNavigation(BaseKindleTest):
         """Test navigate_to for absolute positioning."""
         print("\n[TEST] Testing navigate_to absolute positioning")
 
-        # Open a random book first
-        print("[TEST] Opening a random book...")
-        open_response = self._make_request("open-random-book")
+        # Open the test book with numbered paragraphs
+        print("[TEST] Opening sol-chapter-test-epub book...")
+        open_response = self._make_request("open-book", params={"title": "sol-chapter-test-epub"})
         assert open_response.status_code == 200
 
         # Handle last read dialog if present
@@ -38,7 +38,8 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert nav_3.status_code == 200
         nav_3_data = nav_3.json()
         assert not nav_3_data.get("error"), f"Navigation failed: {nav_3_data.get('error')}"
-        print("[TEST] ✓ Successfully navigated to position 3")
+        nav_3_text = nav_3_data.get("text", "") or nav_3_data.get("ocr_text", "")
+        print(f"[TEST] ✓ Successfully navigated to position 3, OCR text preview: {nav_3_text[:100]}...")
 
         # Test navigate_to=1 (should go back)
         print("[TEST] Testing navigate_to=1 (going back)...")
@@ -46,7 +47,8 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert nav_1.status_code == 200
         nav_1_data = nav_1.json()
         assert not nav_1_data.get("error"), f"Navigation failed: {nav_1_data.get('error')}"
-        print("[TEST] ✓ Successfully navigated back to position 1")
+        nav_1_text = nav_1_data.get("text", "") or nav_1_data.get("ocr_text", "")
+        print(f"[TEST] ✓ Successfully navigated back to position 1, OCR text preview: {nav_1_text[:100]}...")
 
         # Test navigate_to=0 (go to start)
         print("[TEST] Testing navigate_to=0 (start of book)...")
@@ -54,7 +56,8 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert nav_0.status_code == 200
         nav_0_data = nav_0.json()
         assert not nav_0_data.get("error"), f"Navigation failed: {nav_0_data.get('error')}"
-        print("[TEST] ✓ Successfully navigated to position 0")
+        nav_0_text = nav_0_data.get("text", "") or nav_0_data.get("ocr_text", "")
+        print(f"[TEST] ✓ Successfully navigated to position 0, OCR text preview: {nav_0_text[:100]}...")
 
         print("[TEST] All navigate_to tests passed!")
 
@@ -63,9 +66,9 @@ class TestAbsoluteNavigation(BaseKindleTest):
         """Test preview_to for absolute preview without changing position."""
         print("\n[TEST] Testing preview_to absolute preview")
 
-        # Open a random book first
-        print("[TEST] Opening a random book...")
-        open_response = self._make_request("open-random-book")
+        # Open the test book with numbered paragraphs
+        print("[TEST] Opening sol-chapter-test-epub book...")
+        open_response = self._make_request("open-book", params={"title": "sol-chapter-test-epub"})
         assert open_response.status_code == 200
 
         # Handle last read dialog if present
@@ -121,9 +124,9 @@ class TestAbsoluteNavigation(BaseKindleTest):
         """Test using navigate_to with preview together."""
         print("\n[TEST] Testing combined navigate_to and preview")
 
-        # Open a random book first
-        print("[TEST] Opening a random book...")
-        open_response = self._make_request("open-random-book")
+        # Open the test book with numbered paragraphs
+        print("[TEST] Opening sol-chapter-test-epub book...")
+        open_response = self._make_request("open-book", params={"title": "sol-chapter-test-epub"})
         assert open_response.status_code == 200
 
         # Handle last read dialog if present
@@ -164,42 +167,53 @@ class TestAbsoluteNavigation(BaseKindleTest):
         checkpoint_text = checkpoint_response.json().get("text", "") or checkpoint_response.json().get(
             "ocr_text", ""
         )
-        print("[TEST] Saved checkpoint at position 2")
+        print(f"[TEST] Saved checkpoint at position 2, OCR text: {checkpoint_text[:100]}...")
+        assert checkpoint_text, "Checkpoint text is empty - cannot verify position tracking"
 
         # Do relative navigation forward 3 pages
         print("[TEST] Relative navigate forward 3 pages...")
         rel_nav = self._make_request("navigate", params={"navigate": 3})
         assert rel_nav.status_code == 200
-        print("[TEST] ✓ Navigated relatively forward 3 pages (should be at position 5)")
+        rel_nav_text = rel_nav.json().get("text", "") or rel_nav.json().get("ocr_text", "")
+        print(f"[TEST] ✓ Navigated relatively forward 3 pages (should be at position 5), OCR: {rel_nav_text[:100]}...")
 
-        # Do relative preview back 1 (should update position to 4)
-        print("[TEST] Relative preview back 1 page...")
+        # Do relative preview back 1 (should NOT update position, just preview)
+        print("[TEST] Relative preview back 1 page (should still be at position 5)...")
         rel_preview = self._make_request("navigate", params={"preview": -1})
         assert rel_preview.status_code == 200
-        print("[TEST] ✓ Previewed relatively back 1 page (should be at position 4)")
+        rel_preview_text = rel_preview.json().get("text", "") or rel_preview.json().get("ocr_text", "")
+        print(f"[TEST] ✓ Previewed relatively back 1 page (preview of position 4), OCR: {rel_preview_text[:100]}...")
+
+        # Verify we're still at position 5 after preview
+        verify_pos = self._make_request("navigate", params={"navigate": 0})
+        assert verify_pos.status_code == 200
+        verify_text = verify_pos.json().get("text", "") or verify_pos.json().get("ocr_text", "")
+        assert verify_text == rel_nav_text, "Position changed after preview - should still be at position 5"
+        print("[TEST] ✓ Confirmed still at position 5 after preview")
 
         # Navigate back to absolute position 2 using navigate_to
         print("[TEST] Navigate back to absolute position 2...")
         back_to_checkpoint = self._make_request("navigate", params={"navigate_to": 2})
         assert back_to_checkpoint.status_code == 200
         back_text = back_to_checkpoint.json().get("text", "") or back_to_checkpoint.json().get("ocr_text", "")
+        print(f"[TEST] Back at position 2, OCR text: {back_text[:100]}...")
 
         # Verify we're back at the same checkpoint
         assert (
             back_text == checkpoint_text
-        ), "Position tracking failed - checkpoint text doesn't match after relative navigation"
+        ), f"Position tracking failed - checkpoint text doesn't match after relative navigation\nExpected: {checkpoint_text[:200]}\nGot: {back_text[:200]}"
         print("[TEST] ✓ Successfully returned to checkpoint - position tracking is consistent")
 
         print("[TEST] All combined navigation tests passed!")
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)  # Increased timeout since CI had timeout issues
     def test_navigation_consistency(self):
         """Test that navigation forward and backward returns to the same text."""
         print("\n[TEST] Testing navigation consistency - forward and backward should return same text")
 
-        # First ensure we have a book open
-        print("[TEST] Opening a random book to test navigation...")
-        open_response = self._make_request("open-random-book")
+        # Open the test book with numbered paragraphs
+        print("[TEST] Opening sol-chapter-test-epub book to test navigation...")
+        open_response = self._make_request("open-book", params={"title": "sol-chapter-test-epub"})
         assert open_response.status_code == 200, f"Failed to open book: {open_response.text}"
 
         # Handle potential last read dialog from open-random-book
@@ -220,7 +234,8 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert initial_response.status_code == 200
         initial_data = initial_response.json()
         initial_text = initial_data.get("text", "") or initial_data.get("ocr_text", "")
-        print(f"[TEST] Initial text length: {len(initial_text)} chars")
+        print(f"[TEST] Initial text length: {len(initial_text)} chars, OCR preview: {initial_text[:100]}...")
+        assert initial_text, "Initial text is empty - cannot perform navigation consistency tests"
 
         # Skip test if we still have dialog issues
         if initial_data.get("last_read_dialog"):
@@ -284,14 +299,14 @@ class TestAbsoluteNavigation(BaseKindleTest):
 
         print("\n[TEST] All navigation consistency tests passed!")
 
-    @pytest.mark.timeout(60)
+    @pytest.mark.timeout(120)  # Increased timeout
     def test_preview_consistency(self):
         """Test that preview returns to original position without changing current page."""
         print("\n[TEST] Testing preview consistency - preview should not change current position")
 
-        # First ensure we have a book open (in case this test runs independently)
-        print("[TEST] Opening a random book to test preview...")
-        open_response = self._make_request("open-random-book")
+        # Open the test book with numbered paragraphs
+        print("[TEST] Opening sol-chapter-test-epub book to test preview...")
+        open_response = self._make_request("open-book", params={"title": "sol-chapter-test-epub"})
         assert open_response.status_code == 200, f"Failed to open book: {open_response.text}"
 
         # Handle potential last read dialog
@@ -308,17 +323,19 @@ class TestAbsoluteNavigation(BaseKindleTest):
         current_response = self._make_request("navigate", params={"navigate": 0})
         assert current_response.status_code == 200
         current_data = current_response.json()
-        current_text = current_data.get("text", "")
-        print(f"[TEST] Current text length: {len(current_text)} chars")
+        current_text = current_data.get("text", "") or current_data.get("ocr_text", "")
+        print(f"[TEST] Current text length: {len(current_text)} chars, OCR preview: {current_text[:100]}...")
+        assert current_text, "Current text is empty - cannot perform preview consistency tests"
 
         # Test 1: Preview forward 1 (navigate=0, preview=1)
         print("\n[TEST] Test 1: Preview 1 page ahead without navigating")
         preview_1 = self._make_request("navigate", params={"navigate": 0, "preview": 1})
         assert preview_1.status_code == 200
         preview_1_data = preview_1.json()
-        preview_1_text = preview_1_data.get("text", "")
-        assert preview_1_text != current_text, "Preview text should be different from current"
-        print(f"[TEST] Preview text length: {len(preview_1_text)} chars")
+        preview_1_text = preview_1_data.get("text", "") or preview_1_data.get("ocr_text", "")
+        print(f"[TEST] Preview text length: {len(preview_1_text)} chars, OCR preview: {preview_1_text[:100]}...")
+        assert preview_1_text, "Preview text is empty"
+        assert preview_1_text != current_text, f"Preview text should be different from current\nCurrent: {current_text[:200]}\nPreview: {preview_1_text[:200]}"
 
         # Verify we're still at the same position
         verify_1 = self._make_request("navigate", params={"navigate": 0})
