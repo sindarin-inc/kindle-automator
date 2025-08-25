@@ -37,6 +37,7 @@ from server.middleware.response_handler import (
     serve_image,
 )
 from server.resources.active_emulators_resource import ActiveEmulatorsResource
+from server.resources.dashboard_resource import DashboardResource
 from server.resources.emulator_batch_config_resource import EmulatorBatchConfigResource
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
@@ -295,6 +296,7 @@ api.add_resource(
     "/batch-configure-emulators",
     resource_class_kwargs={"server_instance": server},
 )
+api.add_resource(DashboardResource, "/dashboard")
 api.add_resource(
     ColdStorageArchiveResource,
     "/cold-storage/archive",

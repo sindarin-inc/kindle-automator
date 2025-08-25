@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kindle Emulator VNC Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            overflow-x: auto;
+        }
+        
+        .header {
+            background: #2a2a2a;
+            padding: 1rem;
+            border-bottom: 1px solid #3a3a3a;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: #fff;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+        }
+        
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #4ade80;
+        }
+        
+        .dashboard {
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 1.5rem;
+            max-width: 100%;
+        }
+        
+        .vnc-container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.3s ease-in;
+            position: relative;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+        }
+        
+        .vnc-container.removing {
+            animation: fadeOut 0.3s ease-out;
+        }
+        
+        .vnc-header {
+            background: #333;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .vnc-title {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 250px;
+        }
+        
+        .vnc-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.booting {
+            background: #fbbf24;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .vnc-display {
+            width: 100%;
+            height: 640px;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .vnc-display iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .vnc-info {
+            padding: 0.75rem 1rem;
+            background: #333;
+            border-top: 1px solid #444;
+            font-size: 0.8rem;
+            color: #999;
+        }
+        
+        .loading {
+            color: #999;
+            font-size: 0.9rem;
+        }
+        
+        .error {
+            color: #ef4444;
+            font-size: 0.9rem;
+        }
+        
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #666;
+        }
+        
+        .empty-state h2 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: #888;
+        }
+        
+        .empty-state p {
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .refresh-indicator {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: #333;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .refresh-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 1s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📱 Kindle Emulator Dashboard</h1>
+        <div class="stats">
+            <div class="stat">
+                <span>Active Emulators:</span>
+                <span class="stat-value" id="emulator-count">0</span>
+            </div>
+            <div class="stat">
+                <span>Servers:</span>
+                <span class="stat-value" id="server-count">0</span>
+            </div>
+            <div class="stat">
+                <span>Last Update:</span>
+                <span class="stat-value" id="last-update">--:--:--</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="dashboard" id="dashboard">
+        <div class="empty-state">
+            <h2>No Active Emulators</h2>
+            <p>Waiting for emulators to start...</p>
+        </div>
+    </div>
+    
+    <div class="refresh-indicator">
+        <div class="refresh-dot"></div>
+        <span>Auto-refreshing every 5 seconds</span>
+    </div>
+
+    <script>
+        // Configuration
+        const VNC_PASSWORD = 'changeme';
+        const REFRESH_INTERVAL = 5000; // 5 seconds
+        const API_ENDPOINT = '/kindle/dashboard?format=json';
+        const NOVNC_BASE_URL = 'https://novnc.com/noVNC/vnc_lite.html';
+        
+        // State
+        let currentEmulators = new Map();
+        let refreshTimer = null;
+        
+        // Update dashboard statistics
+        function updateStats(instances) {
+            const emulatorCount = instances.length;
+            const serverSet = new Set(instances.map(i => i.server_name));
+            const serverCount = serverSet.size;
+            const now = new Date().toLocaleTimeString();
+            
+            document.getElementById('emulator-count').textContent = emulatorCount;
+            document.getElementById('server-count').textContent = serverCount;
+            document.getElementById('last-update').textContent = now;
+        }
+        
+        // Create VNC viewer element
+        function createVNCViewer(instance) {
+            const container = document.createElement('div');
+            container.className = 'vnc-container';
+            container.id = `vnc-${instance.server_name}-${instance.display}`;
+            
+            // Build noVNC URL with parameters
+            const vncUrl = `${instance.vnc_host}:${instance.vnc_port}`;
+            const params = new URLSearchParams({
+                host: instance.vnc_host,
+                port: instance.vnc_port,
+                password: VNC_PASSWORD,
+                autoconnect: 'true',
+                reconnect: 'true',
+                reconnect_delay: '5000',
+                resize: 'scale',
+                shared: 'true',
+                view_only: 'false',
+                show_dot: 'false',
+                logging: 'warn'
+            });
+            
+            // Use embedded noVNC or external
+            const noVNCUrl = `${NOVNC_BASE_URL}?${params.toString()}`;
+            
+            container.innerHTML = `
+                <div class="vnc-header">
+                    <div class="vnc-title" title="${instance.user_email}">
+                        ${instance.user_email}
+                    </div>
+                    <div class="vnc-status">
+                        <div class="status-dot ${instance.is_booting ? 'booting' : ''}"></div>
+                        <span>${instance.is_booting ? 'Booting' : 'Active'}</span>
+                    </div>
+                </div>
+                <div class="vnc-display">
+                    <iframe 
+                        src="${noVNCUrl}"
+                        allow="clipboard-read; clipboard-write"
+                        sandbox="allow-scripts allow-same-origin allow-forms"
+                        loading="lazy">
+                    </iframe>
+                </div>
+                <div class="vnc-info">
+                    ${instance.server_name} | Display :${instance.display} | Port ${instance.vnc_port}
+                </div>
+            `;
+            
+            return container;
+        }
+        
+        // Update dashboard with new emulator data
+        function updateDashboard(instances) {
+            const dashboard = document.getElementById('dashboard');
+            const newEmulatorIds = new Set();
+            
+            // Process each instance
+            instances.forEach(instance => {
+                const id = `${instance.server_name}-${instance.display}`;
+                newEmulatorIds.add(id);
+                
+                // Add new emulator if not already present
+                if (!currentEmulators.has(id)) {
+                    const viewer = createVNCViewer(instance);
+                    
+                    // Remove empty state if present
+                    const emptyState = dashboard.querySelector('.empty-state');
+                    if (emptyState) {
+                        emptyState.remove();
+                    }
+                    
+                    dashboard.appendChild(viewer);
+                    currentEmulators.set(id, instance);
+                } else {
+                    // Update existing emulator status if changed
+                    const existing = currentEmulators.get(id);
+                    if (existing.is_booting !== instance.is_booting) {
+                        const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
+                        if (container) {
+                            const statusDot = container.querySelector('.status-dot');
+                            const statusText = container.querySelector('.vnc-status span');
+                            if (statusDot) {
+                                statusDot.className = `status-dot ${instance.is_booting ? 'booting' : ''}`;
+                            }
+                            if (statusText) {
+                                statusText.textContent = instance.is_booting ? 'Booting' : 'Active';
+                            }
+                        }
+                        currentEmulators.set(id, instance);
+                    }
+                }
+            });
+            
+            // Remove emulators that are no longer active
+            currentEmulators.forEach((instance, id) => {
+                if (!newEmulatorIds.has(id)) {
+                    const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
+                    if (container) {
+                        container.classList.add('removing');
+                        setTimeout(() => {
+                            container.remove();
+                            currentEmulators.delete(id);
+                            
+                            // Show empty state if no emulators left
+                            if (currentEmulators.size === 0) {
+                                dashboard.innerHTML = `
+                                    <div class="empty-state">
+                                        <h2>No Active Emulators</h2>
+                                        <p>Waiting for emulators to start...</p>
+                                    </div>
+                                `;
+                            }
+                        }, 300);
+                    } else {
+                        currentEmulators.delete(id);
+                    }
+                }
+            });
+            
+            updateStats(instances);
+        }
+        
+        // Fetch emulator data from API
+        async function fetchEmulatorData() {
+            try {
+                const response = await fetch(API_ENDPOINT);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    updateDashboard(data.vnc_instances || []);
+                } else {
+                    console.error('API returned error:', data.error);
+                }
+            } catch (error) {
+                console.error('Error fetching emulator data:', error);
+                // Continue refreshing even on error
+            }
+        }
+        
+        // Start auto-refresh
+        function startAutoRefresh() {
+            fetchEmulatorData(); // Initial fetch
+            
+            refreshTimer = setInterval(() => {
+                fetchEmulatorData();
+            }, REFRESH_INTERVAL);
+        }
+        
+        // Stop auto-refresh
+        function stopAutoRefresh() {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        }
+        
+        // Handle page visibility changes to pause/resume refresh
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+        
+        // Start the dashboard
+        startAutoRefresh();
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopAutoRefresh();
+        });
+    </script>
+</body>
+</html>
