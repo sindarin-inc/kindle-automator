@@ -286,11 +286,12 @@
             container.className = 'vnc-container';
             container.id = `vnc-${instance.server_name}-${instance.display}`;
             
-            // Build noVNC URL with parameters
-            const vncUrl = `${instance.vnc_host}:${instance.vnc_port}`;
+            // Build noVNC URL with WebSocket parameters
+            // Use WebSocket port (ws_port) instead of direct VNC port
+            const wsPort = instance.ws_port || (instance.vnc_port + 1000);
             const params = new URLSearchParams({
                 host: instance.vnc_host,
-                port: instance.vnc_port,
+                port: wsPort,  // Use WebSocket port for noVNC
                 password: VNC_PASSWORD,
                 autoconnect: 'true',
                 reconnect: 'true',
@@ -324,7 +325,7 @@
                     </iframe>
                 </div>
                 <div class="vnc-info">
-                    ${instance.server_name} | Display :${instance.display} | Port ${instance.vnc_port}
+                    ${instance.server_name} | Display :${instance.display} | VNC ${instance.vnc_port} | WS ${wsPort}
                 </div>
             `;
             

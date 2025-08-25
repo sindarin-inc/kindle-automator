@@ -136,6 +136,7 @@ class VNCInstanceManager:
     def assign_instance_to_profile(self, email: str, instance_id: Optional[int] = None) -> Optional[Dict]:
         """
         Assign a VNC instance to a profile. Creates a new instance if needed.
+        Always starts a WebSocket proxy for noVNC support.
 
         Args:
             email: Email address of the profile
@@ -148,6 +149,8 @@ class VNCInstanceManager:
         existing = self.get_instance_for_profile(email)
         if existing:
             logger.info(f"Profile {email} is already assigned to VNC instance {existing['id']}")
+            # Always ensure WebSocket proxy is running for noVNC support
+            self._ensure_websocket_proxy(email, existing["vnc_port"])
             return existing
 
         # Try to assign the specified instance if provided
@@ -157,7 +160,11 @@ class VNCInstanceManager:
                 if instance.assigned_profile is None:
                     if self.repository.assign_instance_to_profile(instance_id, email):
                         logger.info(f"Assigned VNC instance {instance_id} to email {email}")
-                        return self._instance_to_dict(self.repository.get_instance_by_id(instance_id))
+                        result = self._instance_to_dict(self.repository.get_instance_by_id(instance_id))
+                        # Always start WebSocket proxy for noVNC support
+                        if result:
+                            self._ensure_websocket_proxy(email, result["vnc_port"])
+                        return result
                 else:
                     logger.warning(
                         f"VNC instance {instance_id} is already assigned to {instance.assigned_profile}"
@@ -173,13 +180,56 @@ class VNCInstanceManager:
             instance = unassigned[0]
             if self.repository.assign_instance_to_profile(instance.id, email):
                 logger.info(f"Assigned VNC instance {instance.id} to email {email}")
-                return self._instance_to_dict(self.repository.get_instance_by_id(instance.id))
+                result = self._instance_to_dict(self.repository.get_instance_by_id(instance.id))
+                # Always start WebSocket proxy for noVNC support
+                if result:
+                    self._ensure_websocket_proxy(email, result["vnc_port"])
+                return result
 
         # No available instances, create a new one
         new_instance_dict = self._create_new_instance()
         if self.repository.assign_instance_to_profile(new_instance_dict["id"], email):
             logger.info(f"Created and assigned new VNC instance {new_instance_dict['id']} to email {email}")
-            return self._instance_to_dict(self.repository.get_instance_by_id(new_instance_dict["id"]))
+            result = self._instance_to_dict(self.repository.get_instance_by_id(new_instance_dict["id"]))
+            # Always start WebSocket proxy for noVNC support
+            if result:
+                self._ensure_websocket_proxy(email, result["vnc_port"])
+            return result
+
+        return None
+
+    def _ensure_websocket_proxy(self, email: str, vnc_port: int) -> Optional[int]:
+        """
+        Ensure WebSocket proxy is running for noVNC support.
+
+        Args:
+            email: Email address of the profile
+            vnc_port: VNC port to proxy
+
+        Returns:
+            Optional[int]: WebSocket port if proxy started, None otherwise
+        """
+        try:
+            from server.utils.websocket_proxy_manager import WebSocketProxyManager
+
+            ws_manager = WebSocketProxyManager.get_instance()
+
+            # Check if proxy is already running
+            if not ws_manager.is_proxy_running(email):
+                # Start the proxy
+                ws_port = ws_manager.start_proxy(email, vnc_port)
+                if ws_port:
+                    logger.info(
+                        f"Started WebSocket proxy for {email} on port {ws_port} (VNC port {vnc_port})"
+                    )
+                    return ws_port
+                else:
+                    logger.warning(f"Failed to start WebSocket proxy for {email}")
+            else:
+                logger.debug(f"WebSocket proxy already running for {email}")
+
+        except Exception as e:
+            logger.warning(f"Error ensuring WebSocket proxy for {email}: {e}")
 
         return None
 

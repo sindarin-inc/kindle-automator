@@ -58,10 +58,14 @@ class DashboardResource(Resource):
                     # If it's the current server, use localhost for local testing
                     vnc_host = "localhost" if instance.server_name == current_server else instance.server_name
 
+                    # Calculate WebSocket port (VNC port + 1000)
+                    ws_port = instance.vnc_port + 1000
+
                     vnc_info = {
                         "server_name": instance.server_name,
                         "vnc_host": vnc_host,
                         "vnc_port": instance.vnc_port,
+                        "ws_port": ws_port,  # WebSocket port for noVNC
                         "display": instance.display,
                         "user_email": instance.assigned_profile,
                         "emulator_id": instance.emulator_id,
