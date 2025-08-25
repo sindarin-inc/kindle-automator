@@ -335,7 +335,10 @@
         const currentEmulators = new Map();
         const vncConnections = new Map();
         const reconnectAttempts = new Map(); // Track reconnect attempts for exponential backoff
+        const reconnectTimeouts = new Map(); // Track pending reconnect timeouts
+        const connectionStartTimes = new Map(); // Track when each connection started
         let refreshTimer = null;
+        let durationTimer = null; // Timer for updating session durations
         
         // Build API endpoint preserving existing query parameters
         function buildApiEndpoint() {
@@ -410,8 +413,11 @@
                 // Set up event handlers
                 rfb.addEventListener('connect', () => {
                     console.log(`VNC connected for ${id}`);
-                    // Don't clear innerHTML - noVNC creates its own canvas
-                    // canvasContainer.innerHTML = '';
+                    // Clear the connecting message once connected
+                    const connectingMsg = canvasContainer.querySelector('.vnc-connecting');
+                    if (connectingMsg) {
+                        connectingMsg.remove();
+                    }
                     
                     // Reset reconnect attempts on successful connection
                     reconnectAttempts.set(id, 0);
@@ -449,9 +455,11 @@
                     canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Reconnecting in ${backoffSec}s...</span></div>`;
                     reconnectAttempts.set(id, attempts + 1);
                     
-                    setTimeout(() => {
+                    const timeoutId = setTimeout(() => {
+                        reconnectTimeouts.delete(id);
                         window.reconnectVNC(id);
                     }, backoffMs);
+                    reconnectTimeouts.set(id, timeoutId);
                 });
                 
                 rfb.addEventListener('credentialsrequired', () => {
@@ -469,9 +477,11 @@
                     canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Auth failed, retrying in ${backoffSec}s...</span></div>`;
                     reconnectAttempts.set(id, attempts + 1);
                     
-                    setTimeout(() => {
+                    const timeoutId = setTimeout(() => {
+                        reconnectTimeouts.delete(id);
                         window.reconnectVNC(id);
                     }, backoffMs);
+                    reconnectTimeouts.set(id, timeoutId);
                 });
                 
                 // Add desktop name handler
@@ -502,21 +512,33 @@
                 canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Error, retrying in ${backoffSec}s...</span></div>`;
                 reconnectAttempts.set(id, attempts + 1);
                 
-                setTimeout(() => {
+                const timeoutId = setTimeout(() => {
+                    reconnectTimeouts.delete(id);
                     window.reconnectVNC(id);
                 }, backoffMs);
+                reconnectTimeouts.set(id, timeoutId);
             }
         }
         
         // Reconnect VNC
-        window.reconnectVNC = function(id) {
+        window.reconnectVNC = function(id, isManual = false) {
             const instance = currentEmulators.get(id);
             const container = document.getElementById(`vnc-${id}`);
             if (instance && container) {
+                // If manual reconnect, reset the attempt counter
+                if (isManual) {
+                    reconnectAttempts.set(id, 0);
+                    console.log(`Manual reconnect for ${id} - resetting attempts`);
+                }
+                
                 // Clean up existing connection if any
                 if (vncConnections.has(id)) {
                     const rfb = vncConnections.get(id);
                     try {
+                        // Remove event listeners to prevent loops
+                        rfb.removeEventListener('disconnect');
+                        rfb.removeEventListener('securityfailure');
+                        
                         // Only disconnect if not already disconnected
                         if (rfb && rfb._rfbConnectionState !== 'disconnected') {
                             rfb.disconnect();
@@ -526,6 +548,13 @@
                     }
                     vncConnections.delete(id);
                 }
+                
+                // Clear any pending reconnect timeouts
+                if (reconnectTimeouts.has(id)) {
+                    clearTimeout(reconnectTimeouts.get(id));
+                    reconnectTimeouts.delete(id);
+                }
+                
                 // Create new connection
                 createVNCConnection(instance, container);
             }
@@ -552,7 +581,7 @@
                 <div class="vnc-display">
                     <div class="vnc-canvas-container"></div>
                     <div class="vnc-controls">
-                        <button class="vnc-control-btn" onclick="window.reconnectVNC('${instance.server_name}-${instance.display}')">↻</button>
+                        <button class="vnc-control-btn" onclick="window.reconnectVNC('${instance.server_name}-${instance.display}', true)">↻</button>
                     </div>
                 </div>
                 <div class="vnc-info">
