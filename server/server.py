@@ -553,6 +553,11 @@ def main():
     logger.info(f"Started APScheduler for idle checks ({idle_schedule_desc})")
     logger.info("Started APScheduler for cold storage checks (daily at 3:00 AM)")
 
+    # Clear Redis deduplication keys after all initialization is complete
+    from server.core.redis_connection import clear_deduplication_keys_on_startup
+
+    clear_deduplication_keys_on_startup()
+
     # Run the server directly, regardless of development mode
     run_server()
 

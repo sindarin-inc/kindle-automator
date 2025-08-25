@@ -323,16 +323,20 @@ class RelativePathFormatter(logging.Formatter):
                     redis_client = g.request_manager.redis_client
 
                 if redis_client:
+                    # Use the underlying Redis client to avoid logging loops
+                    # The redis_client might be a LoggingRedisClient wrapper
+                    actual_client = getattr(redis_client, "_client", redis_client)
+
                     # Check both the multiple requests flag and active count
                     multi_key = f"kindle:user:{email}:has_multiple_requests"
                     active_key = f"kindle:user:{email}:active_request_count"
 
-                    has_multiple = redis_client.get(multi_key)
+                    has_multiple = actual_client.get(multi_key)
                     if has_multiple:
                         has_multiple_requests = True
                     else:
                         # Also check active count as backup
-                        active_count = redis_client.get(active_key)
+                        active_count = actual_client.get(active_key)
                         if active_count and int(active_count) > 1:
                             has_multiple_requests = True
 
