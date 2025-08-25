@@ -349,7 +349,8 @@ class TestAbsoluteNavigation(BaseKindleTest):
         verify_1 = self._make_request("navigate", params={"navigate": 0})
         assert verify_1.status_code == 200
         verify_1_data = verify_1.json()
-        assert verify_1_data.get("text") == current_text, "Position changed after preview"
+        verify_1_text = verify_1_data.get("text", "") or verify_1_data.get("ocr_text", "")
+        assert verify_1_text == current_text, "Position changed after preview"
         print("[TEST] ✓ Position unchanged after preview=1")
 
         # Test 2: Preview forward 3
@@ -365,7 +366,8 @@ class TestAbsoluteNavigation(BaseKindleTest):
         verify_3 = self._make_request("navigate", params={"navigate": 0})
         assert verify_3.status_code == 200
         verify_3_data = verify_3.json()
-        assert verify_3_data.get("text") == current_text, "Position changed after preview=3"
+        verify_3_text = verify_3_data.get("text", "") or verify_3_data.get("ocr_text", "")
+        assert verify_3_text == current_text, "Position changed after preview=3"
         print("[TEST] ✓ Position unchanged after preview=3")
 
         # Test 3: Navigate and preview combo (navigate=2, preview=1)
@@ -380,13 +382,15 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert verify_pos_2.status_code == 200
         verify_pos_2_data = verify_pos_2.json()
         # This text should be different from initial (we moved 2 pages)
-        assert verify_pos_2_data.get("text") != current_text, "Should be at new position after navigate=2"
+        verify_pos_2_text = verify_pos_2_data.get("text", "") or verify_pos_2_data.get("ocr_text", "")
+        assert verify_pos_2_text != current_text, "Should be at new position after navigate=2"
 
         # Navigate back to start
         back_to_start = self._make_request("navigate", params={"navigate": -2})
         assert back_to_start.status_code == 200
         back_data = back_to_start.json()
-        assert back_data.get("text") == current_text, "Failed to return to start position"
+        back_text = back_data.get("text", "") or back_data.get("ocr_text", "")
+        assert back_text == current_text, "Failed to return to start position"
         print("[TEST] ✓ Navigate and preview combo works correctly")
 
         # Test 4: Preview backward
