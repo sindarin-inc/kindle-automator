@@ -76,6 +76,18 @@ class DashboardResource(Resource):
                     # Calculate WebSocket port (VNC port + 1000)
                     ws_port = instance.vnc_port + 1000
 
+                    # Calculate session duration in minutes
+                    session_duration_minutes = None
+                    if instance.boot_started_at:
+                        # Make sure boot_started_at is timezone-aware
+                        boot_time = instance.boot_started_at
+                        if boot_time.tzinfo is None:
+                            boot_time = boot_time.replace(tzinfo=timezone.utc)
+
+                        now = datetime.now(timezone.utc)
+                        duration = now - boot_time
+                        session_duration_minutes = int(duration.total_seconds() / 60)
+
                     vnc_info = {
                         "server_name": instance.server_name,
                         "vnc_host": vnc_host,
@@ -86,6 +98,7 @@ class DashboardResource(Resource):
                         "emulator_id": instance.emulator_id,
                         "is_booting": instance.is_booting,
                         "appium_running": instance.appium_running,
+                        "session_duration_minutes": session_duration_minutes,
                         "created_at": instance.created_at.isoformat() if instance.created_at else None,
                         "updated_at": instance.updated_at.isoformat() if instance.updated_at else None,
                     }

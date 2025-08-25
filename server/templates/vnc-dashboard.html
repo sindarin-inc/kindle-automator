@@ -199,8 +199,35 @@
             top: 0.5rem;
             right: 0.5rem;
             display: flex;
-            gap: 0.5rem;
+            align-items: center;
+            gap: 0.75rem;
             z-index: 10;
+        }
+        
+        .vnc-duration {
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .vnc-duration .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
         }
         
         .vnc-control-btn {
@@ -568,6 +595,17 @@
             
             const wsPort = instance.ws_port || (instance.vnc_port + 1000);
             
+            // Format duration
+            let durationDisplay = '';
+            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                durationDisplay = `
+                    <div class="vnc-duration" data-instance-id="${instance.server_name}-${instance.display}">
+                        <span class="status-dot"></span>
+                        <span>Active ${instance.session_duration_minutes}m</span>
+                    </div>
+                `;
+            }
+            
             container.innerHTML = `
                 <div class="vnc-header">
                     <div class="vnc-title" title="${instance.user_email}">
@@ -581,6 +619,7 @@
                 <div class="vnc-display">
                     <div class="vnc-canvas-container"></div>
                     <div class="vnc-controls">
+                        ${durationDisplay}
                         <button class="vnc-control-btn" onclick="window.reconnectVNC('${instance.server_name}-${instance.display}', true)">↻</button>
                     </div>
                 </div>
@@ -620,12 +659,14 @@
                         createVNCConnection(instance, viewer);
                     }, 100);
                 } else {
-                    // Update existing emulator status if changed
+                    // Update existing emulator
                     const existing = currentEmulators.get(id);
-                    if (existing.is_booting !== instance.is_booting) {
-                        const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
-                        if (container) {
-                            const statusDot = container.querySelector('.status-dot');
+                    const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
+                    
+                    if (container) {
+                        // Update booting status if changed
+                        if (existing.is_booting !== instance.is_booting) {
+                            const statusDot = container.querySelector('.vnc-status .status-dot');
                             const statusText = container.querySelector('.vnc-status span');
                             if (statusDot) {
                                 statusDot.className = `status-dot ${instance.is_booting ? 'booting' : ''}`;
@@ -634,8 +675,34 @@
                                 statusText.textContent = instance.is_booting ? 'Booting' : 'Active';
                             }
                         }
-                        currentEmulators.set(id, instance);
+                        
+                        // Update session duration
+                        const durationContainer = container.querySelector('.vnc-controls');
+                        if (durationContainer && instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                            let durationEl = durationContainer.querySelector('.vnc-duration');
+                            if (!durationEl) {
+                                // Create duration element if it doesn't exist
+                                const durationHtml = `
+                                    <div class="vnc-duration">
+                                        <span class="status-dot"></span>
+                                        <span>Active ${instance.session_duration_minutes}m</span>
+                                    </div>
+                                `;
+                                const reconnectBtn = durationContainer.querySelector('.vnc-control-btn');
+                                if (reconnectBtn) {
+                                    reconnectBtn.insertAdjacentHTML('beforebegin', durationHtml);
+                                }
+                            } else {
+                                // Update existing duration
+                                const durationText = durationEl.querySelector('span:last-child');
+                                if (durationText) {
+                                    durationText.textContent = `Active ${instance.session_duration_minutes}m`;
+                                }
+                            }
+                        }
                     }
+                    
+                    currentEmulators.set(id, instance);
                 }
             });
             
