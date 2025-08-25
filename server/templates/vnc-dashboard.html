@@ -380,6 +380,7 @@
                 let wsUrl;
                 if (window.location.protocol === 'https:') {
                     // Route through api.sindarin.com with server info in path
+                    // The nginx proxy will forward this to the actual rfbproxy service
                     wsUrl = `${protocol}://${window.location.hostname}/websockify/${instance.server_name}/${wsPort}`;
                 } else {
                     // Direct connection for HTTP
@@ -392,8 +393,8 @@
                 const rfb = new RFB(canvasContainer, wsUrl, {
                     credentials: { password: VNC_PASSWORD },
                     shared: true,
-                    repeaterID: '',
-                    wsProtocols: ['binary', 'base64']
+                    repeaterID: ''
+                    // Note: Removed wsProtocols as rfbproxy may not support specific subprotocols
                 });
                 
                 // Configure RFB settings
