@@ -368,8 +368,10 @@
                 return;
             }
             
-            // Clear any existing content
-            canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
+            // Show connecting message
+            if (!canvasContainer.querySelector('canvas')) {
+                canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
+            }
             
             try {
                 // Build WebSocket URL - must use same protocol as page to avoid security errors
@@ -399,18 +401,42 @@
                 
                 // Configure RFB settings
                 rfb.viewOnly = false;
-                rfb.scaleViewport = true;
+                rfb.scaleViewport = false;  // Don't scale, show actual size
                 rfb.resizeSession = false;
-                rfb.showDotCursor = false;
-                rfb.qualityLevel = 6;
-                rfb.compressionLevel = 2;
+                rfb.showDotCursor = true;   // Show cursor to verify rendering
+                rfb.qualityLevel = 9;       // Max quality
+                rfb.compressionLevel = 0;   // No compression
                 
                 // Set up event handlers
                 rfb.addEventListener('connect', () => {
                     console.log(`VNC connected for ${id}`);
-                    canvasContainer.innerHTML = '';
+                    // Don't clear innerHTML - noVNC creates its own canvas
+                    // canvasContainer.innerHTML = '';
+                    
                     // Reset reconnect attempts on successful connection
                     reconnectAttempts.set(id, 0);
+                    
+                    // Check if canvas was created and request full update
+                    setTimeout(() => {
+                        const canvas = canvasContainer.querySelector('canvas');
+                        if (canvas) {
+                            console.log(`Canvas found for ${id}:`, canvas.width, 'x', canvas.height);
+                            // Make sure canvas is visible
+                            canvas.style.display = 'block';
+                            canvas.style.width = '100%';
+                            canvas.style.height = '100%';
+                            canvas.style.objectFit = 'contain';
+                            
+                            // Request a full framebuffer update
+                            if (rfb._sock && rfb._sock.open) {
+                                console.log(`Requesting framebuffer update for ${id}`);
+                                // This is a hack to force a full update
+                                rfb._display.resize(rfb._fbWidth, rfb._fbHeight);
+                            }
+                        } else {
+                            console.error(`No canvas found for ${id}`);
+                        }
+                    }, 500);
                 });
                 
                 rfb.addEventListener('disconnect', (e) => {
@@ -446,6 +472,21 @@
                     setTimeout(() => {
                         window.reconnectVNC(id);
                     }, backoffMs);
+                });
+                
+                // Add desktop name handler
+                rfb.addEventListener('desktopname', (e) => {
+                    console.log(`Desktop name for ${id}:`, e.detail.name);
+                });
+                
+                // Add clipboard handler  
+                rfb.addEventListener('clipboard', (e) => {
+                    console.log(`Clipboard for ${id}:`, e.detail.text);
+                });
+                
+                // Add bell handler
+                rfb.addEventListener('bell', () => {
+                    console.log(`Bell for ${id}`);
                 });
                 
                 // Store the connection
