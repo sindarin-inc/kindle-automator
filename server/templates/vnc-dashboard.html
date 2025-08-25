@@ -363,9 +363,7 @@
         const vncConnections = new Map();
         const reconnectAttempts = new Map(); // Track reconnect attempts for exponential backoff
         const reconnectTimeouts = new Map(); // Track pending reconnect timeouts
-        const connectionStartTimes = new Map(); // Track when each connection started
         let refreshTimer = null;
-        let durationTimer = null; // Timer for updating session durations
         
         // Build API endpoint preserving existing query parameters
         function buildApiEndpoint() {
@@ -474,6 +472,13 @@
                 
                 rfb.addEventListener('disconnect', (e) => {
                     console.log(`VNC disconnected for ${id}:`, e.detail);
+                    
+                    // Skip auto-reconnect if this is part of a manual reconnect
+                    if (manualReconnectInProgress.has(id)) {
+                        console.log(`Skipping auto-reconnect for ${id} - manual reconnect in progress`);
+                        return;
+                    }
+                    
                     // Auto-reconnect with exponential backoff
                     const attempts = reconnectAttempts.get(id) || 0;
                     const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000); // 1s, 2s, 4s, 8s, 16s, 30s max
@@ -496,6 +501,13 @@
                 
                 rfb.addEventListener('securityfailure', (e) => {
                     console.error(`Security failure for ${id}:`, e.detail);
+                    
+                    // Skip auto-reconnect if this is part of a manual reconnect
+                    if (manualReconnectInProgress.has(id)) {
+                        console.log(`Skipping auto-reconnect for ${id} security failure - manual reconnect in progress`);
+                        return;
+                    }
+                    
                     // Auto-retry on auth failure with exponential backoff
                     const attempts = reconnectAttempts.get(id) || 0;
                     const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000);
@@ -547,25 +559,31 @@
             }
         }
         
+        // Flag to prevent auto-reconnect during manual reconnect
+        let manualReconnectInProgress = new Set();
+        
         // Reconnect VNC
         window.reconnectVNC = function(id, isManual = false) {
             const instance = currentEmulators.get(id);
             const container = document.getElementById(`vnc-${id}`);
             if (instance && container) {
-                // If manual reconnect, reset the attempt counter
+                // If manual reconnect, reset the attempt counter and flag it
                 if (isManual) {
                     reconnectAttempts.set(id, 0);
+                    manualReconnectInProgress.add(id);
                     console.log(`Manual reconnect for ${id} - resetting attempts`);
+                }
+                
+                // Clear any pending reconnect timeouts
+                if (reconnectTimeouts.has(id)) {
+                    clearTimeout(reconnectTimeouts.get(id));
+                    reconnectTimeouts.delete(id);
                 }
                 
                 // Clean up existing connection if any
                 if (vncConnections.has(id)) {
                     const rfb = vncConnections.get(id);
                     try {
-                        // Remove event listeners to prevent loops
-                        rfb.removeEventListener('disconnect');
-                        rfb.removeEventListener('securityfailure');
-                        
                         // Only disconnect if not already disconnected
                         if (rfb && rfb._rfbConnectionState !== 'disconnected') {
                             rfb.disconnect();
@@ -576,14 +594,11 @@
                     vncConnections.delete(id);
                 }
                 
-                // Clear any pending reconnect timeouts
-                if (reconnectTimeouts.has(id)) {
-                    clearTimeout(reconnectTimeouts.get(id));
-                    reconnectTimeouts.delete(id);
-                }
-                
-                // Create new connection
-                createVNCConnection(instance, container);
+                // Small delay then create new connection
+                setTimeout(() => {
+                    manualReconnectInProgress.delete(id);
+                    createVNCConnection(instance, container);
+                }, 100);
             }
         };
         
@@ -678,26 +693,32 @@
                         
                         // Update session duration
                         const durationContainer = container.querySelector('.vnc-controls');
-                        if (durationContainer && instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                        if (durationContainer) {
                             let durationEl = durationContainer.querySelector('.vnc-duration');
-                            if (!durationEl) {
-                                // Create duration element if it doesn't exist
-                                const durationHtml = `
-                                    <div class="vnc-duration">
+                            
+                            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                                if (!durationEl) {
+                                    // Create duration element if it doesn't exist
+                                    const durationDiv = document.createElement('div');
+                                    durationDiv.className = 'vnc-duration';
+                                    durationDiv.innerHTML = `
                                         <span class="status-dot"></span>
                                         <span>Active ${instance.session_duration_minutes}m</span>
-                                    </div>
-                                `;
-                                const reconnectBtn = durationContainer.querySelector('.vnc-control-btn');
-                                if (reconnectBtn) {
-                                    reconnectBtn.insertAdjacentHTML('beforebegin', durationHtml);
+                                    `;
+                                    const reconnectBtn = durationContainer.querySelector('.vnc-control-btn');
+                                    if (reconnectBtn) {
+                                        durationContainer.insertBefore(durationDiv, reconnectBtn);
+                                    }
+                                } else {
+                                    // Update existing duration
+                                    const durationText = durationEl.querySelector('span:last-child');
+                                    if (durationText) {
+                                        durationText.textContent = `Active ${instance.session_duration_minutes}m`;
+                                    }
                                 }
-                            } else {
-                                // Update existing duration
-                                const durationText = durationEl.querySelector('span:last-child');
-                                if (durationText) {
-                                    durationText.textContent = `Active ${instance.session_duration_minutes}m`;
-                                }
+                            } else if (durationEl) {
+                                // Remove duration element if no duration available
+                                durationEl.remove();
                             }
                         }
                     }
