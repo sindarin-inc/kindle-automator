@@ -364,3 +364,46 @@ def get_redis_client() -> Optional[redis.Redis]:
 
     connection = RedisConnection.get_instance()
     return connection.client
+
+
+def clear_deduplication_keys_on_startup() -> None:
+    """Clear all Redis keys related to request deduplication on Flask startup.
+
+    This prevents issues where users are waiting for duplicated endpoints that
+    never come after a deployment/restart.
+    """
+    redis_client = get_redis_client()
+    if not redis_client:
+        logger.warning("Redis not available - skipping deduplication key cleanup")
+        return
+
+    try:
+        # Test Redis connection
+        redis_client.ping()
+
+        # Patterns for all deduplication-related keys
+        key_patterns = [
+            "kindle:request:*",  # Request deduplication keys and request numbers
+            "kindle:user:*:active_request",  # Active request tracking
+            "kindle:user:*:active_request_count",  # Active request counts
+            "kindle:user:*:request_counter",  # Request counters
+            "kindle:user:*:has_multiple_requests",  # Multiple request flags
+        ]
+
+        total_deleted = 0
+
+        for pattern in key_patterns:
+            try:
+                keys = redis_client.keys(pattern)
+                if keys:
+                    deleted_count = redis_client.delete(*keys)
+                    total_deleted += deleted_count
+                    logger.info(f"Cleared {deleted_count} Redis keys matching '{pattern}'")
+            except Exception as e:
+                logger.error(f"Error clearing Redis keys for pattern '{pattern}': {e}")
+                continue
+
+        logger.info(f"Flask startup: cleared {total_deleted} Redis deduplication keys")
+
+    except Exception as e:
+        logger.error(f"Failed to clear Redis deduplication keys on startup: {e}")
