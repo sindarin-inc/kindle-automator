@@ -396,10 +396,17 @@
                 return;
             }
             
-            // Show connecting message
-            if (!canvasContainer.querySelector('canvas')) {
-                canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
+            // Check if a connection already exists and is connected
+            if (vncConnections.has(id)) {
+                const existingRfb = vncConnections.get(id);
+                if (existingRfb && existingRfb._rfbConnectionState === 'connected') {
+                    console.log(`VNC already connected for ${id}, skipping`);
+                    return;
+                }
             }
+            
+            // Show connecting message
+            canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
             
             try {
                 // Build WebSocket URL - must use same protocol as page to avoid security errors
@@ -438,17 +445,18 @@
                 // Set up event handlers
                 rfb.addEventListener('connect', () => {
                     console.log(`VNC connected for ${id}`);
-                    // Clear the connecting message once connected
-                    const connectingMsg = canvasContainer.querySelector('.vnc-connecting');
-                    if (connectingMsg) {
-                        connectingMsg.remove();
-                    }
                     
                     // Reset reconnect attempts on successful connection
                     reconnectAttempts.set(id, 0);
                     
-                    // Check if canvas was created and request full update
+                    // Wait a bit for noVNC to create the canvas, then clean up and style
                     setTimeout(() => {
+                        // Clear the connecting message once canvas is ready
+                        const connectingMsg = canvasContainer.querySelector('.vnc-connecting');
+                        if (connectingMsg) {
+                            connectingMsg.remove();
+                        }
+                        
                         const canvas = canvasContainer.querySelector('canvas');
                         if (canvas) {
                             console.log(`Canvas found for ${id}:`, canvas.width, 'x', canvas.height);
@@ -465,9 +473,23 @@
                                 rfb._display.resize(rfb._fbWidth, rfb._fbHeight);
                             }
                         } else {
-                            console.error(`No canvas found for ${id}`);
+                            console.error(`No canvas found for ${id} - waiting more`);
+                            // Try again after another delay
+                            setTimeout(() => {
+                                const canvas2 = canvasContainer.querySelector('canvas');
+                                if (canvas2) {
+                                    console.log(`Canvas found on retry for ${id}`);
+                                    canvas2.style.display = 'block';
+                                    canvas2.style.width = '100%';
+                                    canvas2.style.height = '100%';
+                                    canvas2.style.objectFit = 'contain';
+                                }
+                                // Clear connecting message even if no canvas
+                                const msg = canvasContainer.querySelector('.vnc-connecting');
+                                if (msg) msg.remove();
+                            }, 1000);
                         }
-                    }, 500);
+                    }, 200);
                 });
                 
                 rfb.addEventListener('disconnect', (e) => {
@@ -543,6 +565,13 @@
                 
             } catch (error) {
                 console.error(`Error creating VNC connection for ${id}:`, error);
+                
+                // Skip auto-reconnect if this is part of a manual reconnect
+                if (manualReconnectInProgress.has(id)) {
+                    console.log(`Skipping auto-reconnect for ${id} error - manual reconnect in progress`);
+                    return;
+                }
+                
                 // Auto-retry on error with exponential backoff
                 const attempts = reconnectAttempts.get(id) || 0;
                 const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000);
