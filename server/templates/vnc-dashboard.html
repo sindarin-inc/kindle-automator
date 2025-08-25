@@ -334,6 +334,7 @@
         // State
         const currentEmulators = new Map();
         const vncConnections = new Map();
+        const reconnectAttempts = new Map(); // Track reconnect attempts for exponential backoff
         let refreshTimer = null;
         
         // Build API endpoint preserving existing query parameters
@@ -371,10 +372,19 @@
             canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
             
             try {
-                // Build WebSocket URL - use the VNC host from instance data
+                // Build WebSocket URL - must use same protocol as page to avoid security errors
                 const wsPort = instance.ws_port || (instance.vnc_port + 1000);
-                // Always use ws:// (not wss://) as SSL is handled at proxy level
-                const wsUrl = `ws://${instance.vnc_host}/websockify/${wsPort}`;
+                const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                
+                // For HTTPS pages, route through the API server which will proxy to the correct backend
+                let wsUrl;
+                if (window.location.protocol === 'https:') {
+                    // Route through api.sindarin.com with server info in path
+                    wsUrl = `${protocol}://${window.location.hostname}/websockify/${instance.server_name}/${wsPort}`;
+                } else {
+                    // Direct connection for HTTP
+                    wsUrl = `${protocol}://${instance.vnc_host}/websockify/${wsPort}`;
+                }
                 
                 console.log(`Connecting to VNC at ${wsUrl} for ${id}`);
                 
@@ -398,15 +408,23 @@
                 rfb.addEventListener('connect', () => {
                     console.log(`VNC connected for ${id}`);
                     canvasContainer.innerHTML = '';
+                    // Reset reconnect attempts on successful connection
+                    reconnectAttempts.set(id, 0);
                 });
                 
                 rfb.addEventListener('disconnect', (e) => {
                     console.log(`VNC disconnected for ${id}:`, e.detail);
-                    // Auto-reconnect after 2 seconds
-                    canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Reconnecting...</span></div>';
+                    // Auto-reconnect with exponential backoff
+                    const attempts = reconnectAttempts.get(id) || 0;
+                    const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000); // 1s, 2s, 4s, 8s, 16s, 30s max
+                    const backoffSec = Math.round(backoffMs / 1000);
+                    
+                    canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Reconnecting in ${backoffSec}s...</span></div>`;
+                    reconnectAttempts.set(id, attempts + 1);
+                    
                     setTimeout(() => {
                         window.reconnectVNC(id);
-                    }, 2000);
+                    }, backoffMs);
                 });
                 
                 rfb.addEventListener('credentialsrequired', () => {
@@ -416,11 +434,17 @@
                 
                 rfb.addEventListener('securityfailure', (e) => {
                     console.error(`Security failure for ${id}:`, e.detail);
-                    // Auto-retry on auth failure
-                    canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Retrying authentication...</span></div>';
+                    // Auto-retry on auth failure with exponential backoff
+                    const attempts = reconnectAttempts.get(id) || 0;
+                    const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000);
+                    const backoffSec = Math.round(backoffMs / 1000);
+                    
+                    canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Auth failed, retrying in ${backoffSec}s...</span></div>`;
+                    reconnectAttempts.set(id, attempts + 1);
+                    
                     setTimeout(() => {
                         window.reconnectVNC(id);
-                    }, 3000);
+                    }, backoffMs);
                 });
                 
                 // Store the connection
@@ -428,11 +452,17 @@
                 
             } catch (error) {
                 console.error(`Error creating VNC connection for ${id}:`, error);
-                // Auto-retry on error
-                canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Retrying connection...</span></div>';
+                // Auto-retry on error with exponential backoff
+                const attempts = reconnectAttempts.get(id) || 0;
+                const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000);
+                const backoffSec = Math.round(backoffMs / 1000);
+                
+                canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Error, retrying in ${backoffSec}s...</span></div>`;
+                reconnectAttempts.set(id, attempts + 1);
+                
                 setTimeout(() => {
                     window.reconnectVNC(id);
-                }, 3000);
+                }, backoffMs);
             }
         }
         
@@ -550,6 +580,8 @@
                         }
                         vncConnections.delete(id);
                     }
+                    // Clean up reconnect attempts
+                    reconnectAttempts.delete(id);
                     
                     const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
                     if (container) {
