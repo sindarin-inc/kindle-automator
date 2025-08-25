@@ -54,9 +54,19 @@ class DashboardResource(Resource):
 
                 vnc_list = []
                 for instance in instances:
-                    # Determine the VNC host
-                    # If it's the current server, use localhost for local testing
-                    vnc_host = "localhost" if instance.server_name == current_server else instance.server_name
+                    # Map server names to accessible hostnames
+                    server_hostname_map = {
+                        "kindle-automator-1": "kindle1.sindarin.com",
+                        "kindle-automator-3": "kindle3.sindarin.com",
+                        "kindle-staging": "kindle-staging.sindarin.com",
+                    }
+                    
+                    # Determine the VNC host - use mapped hostname if available
+                    vnc_host = server_hostname_map.get(instance.server_name, instance.server_name)
+                    
+                    # Only use localhost for actual local development
+                    if instance.server_name == current_server and current_server not in server_hostname_map:
+                        vnc_host = "localhost"
 
                     # Calculate WebSocket port (VNC port + 1000)
                     ws_port = instance.vnc_port + 1000
