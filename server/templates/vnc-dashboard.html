@@ -371,10 +371,10 @@
             canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
             
             try {
-                // Build WebSocket URL - always use proxy path for consistency
+                // Build WebSocket URL - use the VNC host from instance data
                 const wsPort = instance.ws_port || (instance.vnc_port + 1000);
-                const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-                const wsUrl = `${protocol}://${window.location.hostname}/websockify/${wsPort}`;
+                // Always use ws:// (not wss://) as SSL is handled at proxy level
+                const wsUrl = `ws://${instance.vnc_host}/websockify/${wsPort}`;
                 
                 console.log(`Connecting to VNC at ${wsUrl} for ${id}`);
                 
@@ -439,14 +439,18 @@
         // Reconnect VNC
         window.reconnectVNC = function(id) {
             const instance = currentEmulators.get(id);
-            const container = document.getElementById(`vnc-${id.replace('-', '-')}`);
+            const container = document.getElementById(`vnc-${id}`);
             if (instance && container) {
-                // Disconnect existing connection
+                // Clean up existing connection if any
                 if (vncConnections.has(id)) {
+                    const rfb = vncConnections.get(id);
                     try {
-                        vncConnections.get(id).disconnect();
+                        // Only disconnect if not already disconnected
+                        if (rfb && rfb._rfbConnectionState !== 'disconnected') {
+                            rfb.disconnect();
+                        }
                     } catch (e) {
-                        console.error('Error disconnecting:', e);
+                        // Ignore disconnect errors
                     }
                     vncConnections.delete(id);
                 }
