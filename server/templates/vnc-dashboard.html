@@ -253,8 +253,16 @@
         // Configuration
         const VNC_PASSWORD = 'changeme';
         const REFRESH_INTERVAL = 5000; // 5 seconds
-        const API_ENDPOINT = '/kindle/dashboard?format=json';
         const NOVNC_BASE_URL = 'https://novnc.com/noVNC/vnc_lite.html';
+        
+        // Build API endpoint preserving existing query parameters
+        function buildApiEndpoint() {
+            const currentParams = new URLSearchParams(window.location.search);
+            currentParams.set('format', 'json'); // Add or override format=json
+            return `/kindle/dashboard?${currentParams.toString()}`;
+        }
+        
+        const API_ENDPOINT = buildApiEndpoint();
         
         // State
         let currentEmulators = new Map();
