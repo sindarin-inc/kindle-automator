@@ -371,10 +371,10 @@
             canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
             
             try {
-                // Build WebSocket URL
+                // Build WebSocket URL - always use proxy path for consistency
                 const wsPort = instance.ws_port || (instance.vnc_port + 1000);
                 const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-                const wsUrl = `${protocol}://${instance.vnc_host}:${wsPort}/websockify`;
+                const wsUrl = `${protocol}://${window.location.hostname}/websockify/${wsPort}`;
                 
                 console.log(`Connecting to VNC at ${wsUrl} for ${id}`);
                 
@@ -402,12 +402,11 @@
                 
                 rfb.addEventListener('disconnect', (e) => {
                     console.log(`VNC disconnected for ${id}:`, e.detail);
-                    canvasContainer.innerHTML = `
-                        <div class="vnc-error">
-                            <div>Connection lost</div>
-                            <button class="vnc-control-btn" onclick="window.reconnectVNC('${id}')">Reconnect</button>
-                        </div>
-                    `;
+                    // Auto-reconnect after 2 seconds
+                    canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Reconnecting...</span></div>';
+                    setTimeout(() => {
+                        window.reconnectVNC(id);
+                    }, 2000);
                 });
                 
                 rfb.addEventListener('credentialsrequired', () => {
@@ -417,7 +416,11 @@
                 
                 rfb.addEventListener('securityfailure', (e) => {
                     console.error(`Security failure for ${id}:`, e.detail);
-                    canvasContainer.innerHTML = '<div class="vnc-error">Authentication failed</div>';
+                    // Auto-retry on auth failure
+                    canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Retrying authentication...</span></div>';
+                    setTimeout(() => {
+                        window.reconnectVNC(id);
+                    }, 3000);
                 });
                 
                 // Store the connection
@@ -425,7 +428,11 @@
                 
             } catch (error) {
                 console.error(`Error creating VNC connection for ${id}:`, error);
-                canvasContainer.innerHTML = `<div class="vnc-error">Failed to connect: ${error.message}</div>`;
+                // Auto-retry on error
+                canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Retrying connection...</span></div>';
+                setTimeout(() => {
+                    window.reconnectVNC(id);
+                }, 3000);
             }
         }
         
