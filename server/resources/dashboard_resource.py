@@ -58,12 +58,12 @@ class DashboardResource(Resource):
                     server_hostname_map = {
                         "kindle-automator-1": "kindle1.sindarin.com",
                         "kindle-automator-3": "kindle3.sindarin.com",
-                        "kindle-staging": "kindle-staging.sindarin.com",
+                        "kkindle-automator-staging": "kindle-staging.sindarin.com",
                     }
-                    
+
                     # Determine the VNC host - use mapped hostname if available
                     vnc_host = server_hostname_map.get(instance.server_name, instance.server_name)
-                    
+
                     # Only use localhost for actual local development
                     if instance.server_name == current_server and current_server not in server_hostname_map:
                         vnc_host = "localhost"
