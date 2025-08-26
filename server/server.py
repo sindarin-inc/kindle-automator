@@ -381,6 +381,7 @@ def run_idle_check():
         # Clean up stale VNC instance records for crashed/killed emulators
         try:
             from server.utils.vnc_instance_manager import VNCInstanceManager
+
             vnc_manager = VNCInstanceManager.get_instance()
             vnc_manager.audit_and_cleanup_stale_instances()
         except Exception as e:
