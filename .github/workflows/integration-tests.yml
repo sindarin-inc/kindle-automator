@@ -6,29 +6,53 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: integration-tests-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
+  # Determine if we should run tests (avoid duplicates)
+  should-run:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - id: check
+        run: |
+          # Run on pull_request events
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          # Run on push to main/staging
+          elif [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/staging") ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          # Run on workflow_dispatch
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          # Skip push events to PR branches (they'll be covered by pull_request event)
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
   # Run all three test groups in parallel
   test-group-1:
+    needs: should-run
+    if: needs.should-run.outputs.should_run == 'true'
     uses: ./.github/workflows/integration-tests-group1.yml
     secrets: inherit
     
   test-group-2:
+    needs: should-run
+    if: needs.should-run.outputs.should_run == 'true'
     uses: ./.github/workflows/integration-tests-group2.yml
     secrets: inherit
     
   test-group-3:
+    needs: should-run
+    if: needs.should-run.outputs.should_run == 'true'
     uses: ./.github/workflows/integration-tests-group3.yml
     secrets: inherit
   
   # Final job to check all tests passed
   integration-tests-complete:
-    needs: [test-group-1, test-group-2, test-group-3]
+    needs: [should-run, test-group-1, test-group-2, test-group-3]
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.should-run.outputs.should_run == 'true'
     steps:
       - name: Check test results
         run: |
