@@ -65,17 +65,6 @@ jobs:
           python -m pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive" --durations=0
         timeout-minutes: 5
 
-      - name: Run 01 - API integration tests (expensive)
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "expensive" --durations=0
-        timeout-minutes: 3
-
       - name: Run 02 - Request deduplication integration tests
         if: success()
         env:
@@ -87,7 +76,7 @@ jobs:
         run: |
           python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive" --durations=0
         timeout-minutes: 8
-      
+
       - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
         if: success()
         continue-on-error: true
@@ -134,6 +123,17 @@ jobs:
         run: |
           python -m pytest tests/test_05_multi_user_integration.py -v --tb=short --durations=0
         timeout-minutes: 5
+
+      - name: Run 06 - API integration tests (expensive)
+        if: success()
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: kindle@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "expensive" --durations=0
+        timeout-minutes: 3
 
       - name: Upload test results
         if: always()

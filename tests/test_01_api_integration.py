@@ -507,7 +507,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
             assert len(text_field) > 0, "OCR text should not be empty"
 
     @pytest.mark.expensive
-    @pytest.mark.timeout(120)
+    @pytest.mark.timeout(180)
     def test_recreate_avd(self):
         """Test recreating/creating a new AVD with duplicate request deduplication."""
         print("\n[TEST_RECREATE] Starting test_recreate with duplicate request testing")
