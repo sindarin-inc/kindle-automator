@@ -48,7 +48,22 @@ class VNCInstanceRepository:
             stmt = select(VNCInstance).where(
                 and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
             )
-            return session.scalar(stmt)
+            instances = list(session.scalars(stmt).all())
+
+            # Check for multiple assignments (should never happen with the new assign_instance_to_profile logic)
+            if len(instances) > 1:
+                logger.error(
+                    f"CRITICAL: User {email} has {len(instances)} VNC instances assigned! "
+                    f"Instance IDs: {[i.id for i in instances]}, "
+                    f"Displays: {[i.display for i in instances]}, "
+                    f"Emulator ports: {[i.emulator_port for i in instances]}, "
+                    f"Emulator IDs: {[i.emulator_id for i in instances]}. "
+                    f"This violates the one-instance-per-user rule. Returning first instance."
+                )
+                # Return the first one to maintain backward compatibility, but log the error
+                return instances[0]
+
+            return instances[0] if instances else None
 
     def get_assigned_instances(self) -> List[VNCInstance]:
         """Get all VNC instances that are assigned to profiles on the current server."""
@@ -110,6 +125,21 @@ class VNCInstanceRepository:
     def assign_instance_to_profile(self, instance_id: int, email: str) -> bool:
         """Assign a VNC instance to a profile on the current server."""
         with db_connection.get_session() as session:
+            # CRITICAL: First check if this email already has ANY instance assigned
+            existing_check = select(VNCInstance).where(
+                and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+            )
+            existing_instances = list(session.scalars(existing_check).all())
+
+            if existing_instances:
+                logger.error(
+                    f"BLOCKED: Cannot assign instance {instance_id} to {email} - "
+                    f"user already has {len(existing_instances)} instance(s) assigned: "
+                    f"{[i.id for i in existing_instances]}. Each user must have exactly one instance."
+                )
+                return False
+
+            # Now proceed with the assignment
             stmt = (
                 update(VNCInstance)
                 .where(
@@ -149,13 +179,39 @@ class VNCInstanceRepository:
     def update_emulator_id(self, email: str, emulator_id: Optional[str]) -> bool:
         """Update the emulator ID for a profile's assigned instance on the current server."""
         with db_connection.get_session() as session:
-            stmt = (
-                update(VNCInstance)
-                .where(
-                    and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
+            # When setting an emulator ID, match based on port to handle edge cases
+            if emulator_id and emulator_id.startswith("emulator-"):
+                try:
+                    # Extract port from emulator ID (e.g., "emulator-5558" -> 5558)
+                    emulator_port = int(emulator_id.split("-")[1])
+
+                    # Update only the instance with matching email AND port
+                    stmt = (
+                        update(VNCInstance)
+                        .where(
+                            and_(
+                                VNCInstance.assigned_profile == email,
+                                VNCInstance.emulator_port == emulator_port,
+                                VNCInstance.server_name == self.server_name,
+                            )
+                        )
+                        .values(emulator_id=emulator_id, updated_at=datetime.now(timezone.utc))
+                    )
+                except (ValueError, IndexError):
+                    logger.error(f"Invalid emulator_id format: {emulator_id}")
+                    return False
+            else:
+                # When clearing emulator ID (setting to None), update by email only
+                stmt = (
+                    update(VNCInstance)
+                    .where(
+                        and_(
+                            VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name
+                        )
+                    )
+                    .values(emulator_id=emulator_id, updated_at=datetime.now(timezone.utc))
                 )
-                .values(emulator_id=emulator_id, updated_at=datetime.now(timezone.utc))
-            )
+
             result = session.execute(stmt)
             session.commit()
             return result.rowcount > 0
