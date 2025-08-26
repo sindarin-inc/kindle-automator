@@ -446,29 +446,38 @@ class RequestManager:
             has_waiters = waiters_count and int(waiters_count) > 0
 
             if has_waiters:
-                # There are waiters, store the response for them with a short TTL
-                # 10 seconds should be enough for waiters to retrieve it
-                short_ttl = 10
+                # There are waiters, store the response for them
+                # The last waiter will be responsible for cleanup via _cleanup_if_last_waiter
+                # We use a long TTL as a safety net only, not for primary cleanup
+                safety_ttl = 300  # 5 minutes as safety net only
 
                 # Pickle the response data
                 pickled_data = pickle.dumps((response_data, status_code))
 
-                # Store the result and status with short TTL
-                self.redis_client.set(result_key, pickled_data, ex=short_ttl)
-                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=short_ttl)
+                # Store the result and status with safety TTL
+                # The last waiter will delete these keys, TTL is just a safety net
+                self.redis_client.set(result_key, pickled_data, ex=safety_ttl)
+                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=safety_ttl)
+                # Also ensure waiters key has safety TTL
+                self.redis_client.expire(waiters_key, safety_ttl)
+                
+                # Delete the progress key immediately - waiters check status not progress
+                progress_key = f"{self.request_key}:progress"
+                self.redis_client.delete(progress_key)
 
                 logger.info(
-                    f"{BRIGHT_BLUE}Stored response for {self.request_key} with {short_ttl}s TTL for {BOLD}{BRIGHT_BLUE}{waiters_count} waiters{RESET}"
+                    f"{BRIGHT_BLUE}Stored response for {self.request_key} for {BOLD}{BRIGHT_BLUE}{waiters_count} waiters{RESET} (last waiter will cleanup)"
                 )
             else:
-                # No waiters, just mark as completed and clean up immediately
-                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=2)
-                logger.debug(f"No waiters for {self.request_key}, marked as completed and will clean up")
+                # No waiters, clean up immediately - no need for status at all
+                logger.debug(f"No waiters for {self.request_key}, cleaning up immediately")
 
                 # Clean up immediately since there are no waiters
                 keys_to_delete = [
                     f"{self.request_key}:progress",
                     f"{self.request_key}:cancelled",
+                    f"{self.request_key}:status",
+                    f"{self.request_key}:waiters",
                 ]
                 self.redis_client.delete(*keys_to_delete)
 
@@ -489,7 +498,34 @@ class RequestManager:
 
         try:
             status_key = f"{self.request_key}:status"
-            self.redis_client.set(status_key, DeduplicationStatus.ERROR.value, ex=DEFAULT_TTL)
+            progress_key = f"{self.request_key}:progress"
+            waiters_key = f"{self.request_key}:waiters"
+            
+            # Check if there are waiters
+            waiters_count = self.redis_client.get(waiters_key)
+            has_waiters = waiters_count and int(waiters_count) > 0
+            
+            if has_waiters:
+                # Set error status with safety TTL - last waiter will clean up
+                safety_ttl = 300  # 5 minutes as safety net only
+                self.redis_client.set(status_key, DeduplicationStatus.ERROR.value, ex=safety_ttl)
+                # Also ensure waiters key has safety TTL
+                self.redis_client.expire(waiters_key, safety_ttl)
+                logger.debug(f"Set error status for {self.request_key} with safety TTL (waiters will cleanup)")
+            else:
+                # No waiters, clean up immediately - no need to set error status
+                # Just delete all the keys
+                keys_to_delete = [
+                    status_key,
+                    waiters_key,
+                    f"{self.request_key}:result",
+                    f"{self.request_key}:cancelled",
+                ]
+                self.redis_client.delete(*keys_to_delete)
+                logger.debug(f"No waiters for {self.request_key} on error, cleaned up immediately")
+            
+            # Delete the progress key immediately - this is critical
+            self.redis_client.delete(progress_key)
 
             # Clear active request
             self._clear_active_request()
