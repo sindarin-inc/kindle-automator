@@ -1,0 +1,62 @@
+name: Integration Tests - Group 3 (recreate@solreader.com)
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  group3-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kindle_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+      
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements.txt
+      
+      - name: Run 06 - API integration tests (expensive - recreate AVD)
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: recreate@solreader.com
+          RECREATE_USER_EMAIL: recreate@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "expensive" --durations=0
+        timeout-minutes: 3
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-group3
+          path: |
+            pytest-results.xml
+            test-logs/
+          retention-days: 7

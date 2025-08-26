@@ -7,140 +7,41 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: integration-tests
+  group: integration-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  api-integration-tests:
+  # Run all three test groups in parallel
+  test-group-1:
+    uses: ./.github/workflows/integration-tests-group1.yml
+    secrets: inherit
+    
+  test-group-2:
+    uses: ./.github/workflows/integration-tests-group2.yml
+    secrets: inherit
+    
+  test-group-3:
+    uses: ./.github/workflows/integration-tests-group3.yml
+    secrets: inherit
+  
+  # Final job to check all tests passed
+  integration-tests-complete:
+    needs: [test-group-1, test-group-2, test-group-3]
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kindle_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
+    if: always()
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v2
-        with:
-          version: "latest"
-
-      - name: Install dependencies
+      - name: Check test results
         run: |
-          uv pip install --system -r requirements.txt
-
-      - name: Run unit tests first
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kindle_test
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          python -m pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short --durations=0
-        timeout-minutes: 1
-
-      - name: Run 01 - API integration tests
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive" --durations=0
-        timeout-minutes: 5
-
-      - name: Run 02 - Request deduplication integration tests
-        if: success()
-        env:
-          CI: "true"
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive" --durations=0
-        timeout-minutes: 8
-
-      - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
-        if: success()
-        continue-on-error: true
-        env:
-          CI: "true"
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" --durations=0
-        timeout-minutes: 8
-
-      - name: Run 03 - Absolute navigation integration tests
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_03_absolute_navigation.py -v --tb=short --durations=0
-        timeout-minutes: 10
-
-      - name: Run 04 - Concurrent requests integration test
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-          PYTHONPATH: ${{ github.workspace }}
-        run: |
-          python tests/test_04_concurrent_requests_integration.py
-        timeout-minutes: 5
-
-      - name: Run 05 - Multi-user integration tests
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_05_multi_user_integration.py -v --tb=short --durations=0
-        timeout-minutes: 5
-
-      - name: Run 06 - API integration tests (expensive)
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "expensive" --durations=0
-        timeout-minutes: 3
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: |
-            pytest-results.xml
-            test-logs/
-          retention-days: 7
+          if [[ "${{ needs.test-group-1.result }}" != "success" ]]; then
+            echo "Test Group 1 failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-group-2.result }}" != "success" ]]; then
+            echo "Test Group 2 failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-group-3.result }}" != "success" ]]; then
+            echo "Test Group 3 failed"
+            exit 1
+          fi
+          echo "All test groups passed successfully!"

@@ -1,0 +1,92 @@
+name: Integration Tests - Group 1 (kindle@solreader.com)
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  group1-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kindle_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+      
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements.txt
+      
+      - name: Run unit tests first
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kindle_test
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short --durations=0
+        timeout-minutes: 1
+      
+      - name: Run 01 - API integration tests (non-expensive)
+        if: success()
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: kindle@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive" --durations=0
+        timeout-minutes: 5
+      
+      - name: Run 03 - Absolute navigation integration tests
+        if: success()
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: kindle@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_03_absolute_navigation.py -v --tb=short --durations=0
+        timeout-minutes: 10
+      
+      - name: Run 05 - Multi-user integration tests
+        if: success()
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: kindle@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_05_multi_user_integration.py -v --tb=short --durations=0
+        timeout-minutes: 5
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-group1
+          path: |
+            pytest-results.xml
+            test-logs/
+          retention-days: 7
