@@ -204,32 +204,6 @@
             z-index: 10;
         }
         
-        .vnc-duration {
-            background: rgba(0, 0, 0, 0.7);
-            color: #fff;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-        }
-        
-        .vnc-duration .status-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #10b981;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-        
         .vnc-control-btn {
             background: rgba(0, 0, 0, 0.7);
             color: #fff;
@@ -639,15 +613,11 @@
             
             const wsPort = instance.ws_port || (instance.vnc_port + 1000);
             
-            // Format duration
-            let durationDisplay = '';
+            // Format status with duration
+            let statusText = instance.is_booting ? 'Booting' : 'Active';
+            let durationText = '';
             if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
-                durationDisplay = `
-                    <div class="vnc-duration" data-instance-id="${instance.server_name}-${instance.display}">
-                        <span class="status-dot"></span>
-                        <span>Active ${instance.session_duration_minutes}m</span>
-                    </div>
-                `;
+                durationText = ` · ${instance.session_duration_minutes}m`;
             }
             
             container.innerHTML = `
@@ -657,13 +627,12 @@
                     </div>
                     <div class="vnc-status">
                         <div class="status-dot ${instance.is_booting ? 'booting' : ''}"></div>
-                        <span>${instance.is_booting ? 'Booting' : 'Active'}</span>
+                        <span>${statusText}${durationText}</span>
                     </div>
                 </div>
                 <div class="vnc-display">
                     <div class="vnc-canvas-container"></div>
                     <div class="vnc-controls">
-                        ${durationDisplay}
                         <button class="vnc-control-btn" onclick="window.reconnectVNC('${instance.server_name}-${instance.display}', true)">↻</button>
                     </div>
                 </div>
@@ -708,47 +677,27 @@
                     const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
                     
                     if (container) {
-                        // Update booting status if changed
-                        if (existing.is_booting !== instance.is_booting) {
-                            const statusDot = container.querySelector('.vnc-status .status-dot');
-                            const statusText = container.querySelector('.vnc-status span');
-                            if (statusDot) {
+                        // Update status and duration
+                        const statusDot = container.querySelector('.vnc-status .status-dot');
+                        const statusTextEl = container.querySelector('.vnc-status span');
+                        
+                        // Determine if status or duration changed
+                        const statusChanged = existing.is_booting !== instance.is_booting;
+                        const durationChanged = existing.session_duration_minutes !== instance.session_duration_minutes;
+                        
+                        if ((statusChanged || durationChanged) && statusTextEl) {
+                            // Update status dot if booting status changed
+                            if (statusChanged && statusDot) {
                                 statusDot.className = `status-dot ${instance.is_booting ? 'booting' : ''}`;
                             }
-                            if (statusText) {
-                                statusText.textContent = instance.is_booting ? 'Booting' : 'Active';
-                            }
-                        }
-                        
-                        // Update session duration
-                        const durationContainer = container.querySelector('.vnc-controls');
-                        if (durationContainer) {
-                            let durationEl = durationContainer.querySelector('.vnc-duration');
                             
+                            // Update status text with duration
+                            let statusText = instance.is_booting ? 'Booting' : 'Active';
+                            let durationText = '';
                             if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
-                                if (!durationEl) {
-                                    // Create duration element if it doesn't exist
-                                    const durationDiv = document.createElement('div');
-                                    durationDiv.className = 'vnc-duration';
-                                    durationDiv.innerHTML = `
-                                        <span class="status-dot"></span>
-                                        <span>Active ${instance.session_duration_minutes}m</span>
-                                    `;
-                                    const reconnectBtn = durationContainer.querySelector('.vnc-control-btn');
-                                    if (reconnectBtn) {
-                                        durationContainer.insertBefore(durationDiv, reconnectBtn);
-                                    }
-                                } else {
-                                    // Update existing duration
-                                    const durationText = durationEl.querySelector('span:last-child');
-                                    if (durationText) {
-                                        durationText.textContent = `Active ${instance.session_duration_minutes}m`;
-                                    }
-                                }
-                            } else if (durationEl) {
-                                // Remove duration element if no duration available
-                                durationEl.remove();
+                                durationText = ` · ${instance.session_duration_minutes}m`;
                             }
+                            statusTextEl.textContent = `${statusText}${durationText}`;
                         }
                     }
                     
