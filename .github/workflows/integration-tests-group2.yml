@@ -1,4 +1,4 @@
-name: Integration Tests - Group 2 (kindle2@solreader.com)
+name: Integration Tests - Group 2 (sam@solreader.com)
 
 on:
   workflow_call:
@@ -7,7 +7,7 @@ on:
 jobs:
   group2-tests:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
@@ -22,58 +22,58 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v2
         with:
           version: "latest"
-      
+
       - name: Install dependencies
         run: |
           uv pip install --system -r requirements.txt
-      
+
       - name: Run 02 - Request deduplication integration tests
         env:
           CI: "true"
           API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle2@solreader.com
+          TEST_USER_EMAIL: sam@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
           python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive" --durations=0
         timeout-minutes: 8
-      
+
       - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
         continue-on-error: true
         env:
           CI: "true"
           API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle2@solreader.com
+          TEST_USER_EMAIL: sam@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
           python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" --durations=0
         timeout-minutes: 8
-      
+
       - name: Run 04 - Concurrent requests integration test
         env:
           API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle2@solreader.com
+          TEST_USER_EMAIL: sam@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
           PYTHONPATH: ${{ github.workspace }}
         run: |
           python tests/test_04_concurrent_requests_integration.py
         timeout-minutes: 5
-      
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

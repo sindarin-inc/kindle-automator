@@ -34,8 +34,8 @@ USER_B_EMAIL = "sam@solreader.com"
 
 
 class MultiUserTester(BaseKindleTest):
-    def __init__(self):
-        # Initialize base class
+    def setup_test_state(self):
+        # Initialize test state
         self.setup_base()
         self.user_a_status = {"email": USER_A_EMAIL, "initialized": False, "authenticated": False}
         self.user_b_status = {"email": USER_B_EMAIL, "initialized": False, "authenticated": False}
@@ -127,7 +127,7 @@ class MultiUserTester(BaseKindleTest):
 
         return data
 
-    def test_snapshot_check(self, email: str) -> bool:
+    def check_snapshot(self, email: str) -> bool:
         """Test the snapshot-check endpoint for a user."""
         logger.info(f"Testing snapshot-check for {email}...")
 
@@ -238,6 +238,10 @@ class MultiUserTester(BaseKindleTest):
     def run_test(self):
         """Run the comprehensive multi-user test."""
         try:
+            # Initialize test state if not already done
+            if not hasattr(self, "test_results"):
+                self.setup_test_state()
+
             # Staff token is already set by BaseKindleTest
 
             # Initial state
@@ -266,11 +270,11 @@ class MultiUserTester(BaseKindleTest):
 
             # Phase 3: Test snapshot-check for both users
             logger.info("\n=== PHASE 3: Test Snapshot Check ===")
-            if self.test_snapshot_check(USER_A_EMAIL):
+            if self.check_snapshot(USER_A_EMAIL):
                 _, after_a_snapshot = self.check_adb_devices()
                 self.verify_port_forwards(user_b_forwards, after_a_snapshot, "User A snapshot check")
 
-            if self.test_snapshot_check(USER_B_EMAIL):
+            if self.check_snapshot(USER_B_EMAIL):
                 _, after_b_snapshot = self.check_adb_devices()
                 self.verify_port_forwards(
                     after_a_snapshot if "after_a_snapshot" in locals() else user_b_forwards,
@@ -338,9 +342,22 @@ class MultiUserTester(BaseKindleTest):
             raise
 
 
+class TestMultiUserIntegration(MultiUserTester):
+    """Pytest test class for multi-user integration tests."""
+
+    def setup_method(self):
+        """Setup for each test method."""
+        self.setup_test_state()
+
+    def test_multi_user_comprehensive(self):
+        """Run the comprehensive multi-user test."""
+        self.run_test()
+
+
 def main():
-    """Run the comprehensive multi-user test."""
+    """Run the comprehensive multi-user test as a script."""
     tester = MultiUserTester()
+    tester.setup_test_state()
     tester.run_test()
 
 
