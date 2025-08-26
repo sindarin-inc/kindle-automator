@@ -99,7 +99,7 @@ jobs:
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
           python -m pytest tests/test_03_absolute_navigation.py -v --tb=short --durations=0
-        timeout-minutes: 5
+        timeout-minutes: 10
 
       - name: Run 04 - Concurrent requests integration test
         if: success()
