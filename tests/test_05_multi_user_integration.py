@@ -204,13 +204,17 @@ class MultiUserTester(BaseKindleTest):
             self.shutdown_user(USER_A_EMAIL)
             time.sleep(5)
 
-            # Verify User B still running
-            devices, _ = self.check_adb_devices()
-            if len(devices) > 0:
-                logger.info("✅ User B still running after User A shutdown")
-                self.test_results["passed"].append("User B survived User A shutdown")
-            else:
-                logger.error("❌ User B was affected by User A shutdown")
+            # Verify User B still running by making a simple request
+            try:
+                response = self._make_request("screenshot", params={"user_email": USER_B_EMAIL})
+                if response.status_code == 200:
+                    logger.info("✅ User B still running after User A shutdown")
+                    self.test_results["passed"].append("User B survived User A shutdown")
+                else:
+                    logger.error("❌ User B was affected by User A shutdown")
+                    self.test_results["failed"].append("User B affected by User A shutdown")
+            except Exception as e:
+                logger.error(f"❌ User B was affected by User A shutdown: {e}")
                 self.test_results["failed"].append("User B affected by User A shutdown")
 
             # Phase 7: Shutdown User B

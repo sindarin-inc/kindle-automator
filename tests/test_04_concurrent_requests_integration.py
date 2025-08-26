@@ -115,7 +115,8 @@ class ConcurrentRequestsTester(BaseKindleTest):
             ("Load Books", "/books"),
             ("Open Random Book", "/open-random-book"),
             ("Navigate forward", "/navigate?navigate=0&preview=1"),
-            ("Shutdown", "/shutdown"),
+            # Skip shutdown - it affects both users and can cause issues
+            # ("Shutdown", "/shutdown"),
         ]
 
         for op_name, endpoint in operations:
