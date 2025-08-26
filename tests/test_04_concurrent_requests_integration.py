@@ -134,7 +134,7 @@ class ConcurrentRequestsTester(BaseKindleTest):
                 results = []
                 for future, user in futures:
                     try:
-                        result = future.result(timeout=120)
+                        result = future.result(timeout=45)  # Reduced from 120 to avoid hanging on retry loops
                         results.append(result)
                         if result["status_code"] == 200:
                             logger.info(f"✅ {user} - {op_name} successful ({result['duration']:.2f}s)")

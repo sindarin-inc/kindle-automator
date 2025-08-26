@@ -608,7 +608,7 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
         result_key = f"{manager1.request_key}:result"
         progress_key = f"{manager1.request_key}:progress"
         waiters_key = f"{manager1.request_key}:waiters"
-        
+
         # All keys should be deleted when no waiters
         self.assertNotIn(status_key, redis_sim.store)
         self.assertNotIn(result_key, redis_sim.store)

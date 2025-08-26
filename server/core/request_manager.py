@@ -66,7 +66,6 @@ DEFAULT_TTL = 130  # seconds
 MAX_WAIT_TIME = 125  # seconds
 
 
-
 class RequestManager:
     """Manages request deduplication and cancellation using Redis."""
 
@@ -376,7 +375,7 @@ class RequestManager:
 
         # Track if we successfully incremented the waiter count
         waiter_registered = False
-        
+
         try:
             # Increment waiter count
             try:
@@ -431,7 +430,7 @@ class RequestManager:
                 f"{BRIGHT_BLUE}Timeout waiting for deduplicated response for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
             )
             return None
-            
+
         finally:
             # ALWAYS clean up if we registered as a waiter, no matter how we exit
             if waiter_registered:
@@ -462,7 +461,7 @@ class RequestManager:
                 # The last waiter MUST delete these keys via _cleanup_if_last_waiter
                 self.redis_client.set(result_key, pickled_data)
                 self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value)
-                
+
                 # Delete the progress key immediately - waiters check status not progress
                 progress_key = f"{self.request_key}:progress"
                 self.redis_client.delete(progress_key)
@@ -502,11 +501,11 @@ class RequestManager:
             status_key = f"{self.request_key}:status"
             progress_key = f"{self.request_key}:progress"
             waiters_key = f"{self.request_key}:waiters"
-            
+
             # Check if there are waiters
             waiters_count = self.redis_client.get(waiters_key)
             has_waiters = waiters_count and int(waiters_count) > 0
-            
+
             if has_waiters:
                 # Set error status WITHOUT TTL - last waiter MUST clean up
                 self.redis_client.set(status_key, DeduplicationStatus.ERROR.value)
@@ -522,7 +521,7 @@ class RequestManager:
                 ]
                 self.redis_client.delete(*keys_to_delete)
                 logger.debug(f"No waiters for {self.request_key} on error, cleaned up immediately")
-            
+
             # Delete the progress key immediately - this is critical
             self.redis_client.delete(progress_key)
 

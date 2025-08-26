@@ -473,17 +473,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
     @pytest.mark.timeout(120)
     def test_navigate_preview(self):
         """Test /kindle/navigate endpoint with preview action."""
-        # First ensure a book is open
+        # This test depends on test_open_random_book having run first
         if not hasattr(self.__class__, "opened_book"):
-            # Open a book first
-            response = self._make_request("open-random-book")
-            assert response.status_code == 200
-            self.__class__.opened_book = response.json()
-            time.sleep(2)  # Give time for book to load
-
-        # Skip if no book was opened
-        if not hasattr(self.__class__, "opened_book"):
-            pytest.skip("No book available to navigate")
+            pytest.skip("No book available to navigate - test_open_random_book must run first")
 
         params = {"action": "preview", "preview": "true"}
         response = self._make_request("navigate", params)
