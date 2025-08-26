@@ -70,9 +70,11 @@ class TestRequestDeduplication(unittest.TestCase):
         status_code = 200
         manager.store_response(response_data, status_code)
 
-        # Verify only status was set (no result stored when no waiters)
+        # Verify delete was called to clean up keys (no status set when no waiters)
+        self.redis_client.delete.assert_called_once()
+        # Verify no set calls for status or result when no waiters
         calls = self.redis_client.set.call_args_list
-        self.assertEqual(len(calls), 1)  # Only status
+        self.assertEqual(len(calls), 0)  # No sets when no waiters
 
         # Reset for second test: With waiters
         self.redis_client.reset_mock()
@@ -601,15 +603,19 @@ class TestRequestDeduplicationThreading(unittest.TestCase):
         response1 = {"books": ["Book 1", "Book 2"]}
         manager1.store_response(response1, 200)
 
-        # Verify status was set but will expire quickly (2 seconds)
+        # Verify all deduplication keys were deleted immediately (no waiters)
         status_key = f"{manager1.request_key}:status"
-        self.assertIn(status_key, redis_sim.store)
-
-        # Verify result was NOT stored (no waiters)
         result_key = f"{manager1.request_key}:result"
+        progress_key = f"{manager1.request_key}:progress"
+        waiters_key = f"{manager1.request_key}:waiters"
+        
+        # All keys should be deleted when no waiters
+        self.assertNotIn(status_key, redis_sim.store)
         self.assertNotIn(result_key, redis_sim.store)
+        self.assertNotIn(progress_key, redis_sim.store)
+        self.assertNotIn(waiters_key, redis_sim.store)
 
-        # Clear the status to simulate TTL expiry
+        # Clear any remaining keys (like request_number)
         redis_sim.store.clear()
 
         # Second request with same parameters - should NOT get cached response
