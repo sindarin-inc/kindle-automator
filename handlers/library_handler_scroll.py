@@ -441,21 +441,21 @@ class LibraryHandlerScroll:
 
                 return True
             else:
-                logger.info("Double-check confirms no new books, stopping scroll")
-                # Send completion notification via callback if available
-                if callback:
-                    callback(None, done=True, total_books=len(books_list), complete=True)
-
-                # Save scroll book count to database
+                # Check if we have an expected total for logging
+                expected_total = None
                 try:
-                    sindarin_email = get_sindarin_email()
-                    if sindarin_email:
-                        self.driver.automator.profile_manager.save_style_setting(
-                            "scroll_book_count", len(books_list)
-                        )
-                        logger.info(f"Saved scroll book count to database: {len(books_list)}")
-                except Exception as e:
-                    logger.error(f"Error saving scroll book count: {e}", exc_info=True)
+                    expected_total = self.driver.automator.profile_manager.get_style_setting(
+                        "filter_book_count"
+                    )
+                except Exception:
+                    pass
+
+                if expected_total:
+                    logger.info(
+                        f"Double-check found no new books on this screen (have {len(books_list)} books, expected: {expected_total})"
+                    )
+                else:
+                    logger.info("Double-check confirms no new books on this screen")
 
                 return False
         except Exception as e:
@@ -581,7 +581,23 @@ class LibraryHandlerScroll:
             return True
         else:
             if book_info["title"]:
-                logger.info(f"Already seen book ({len(seen_titles)} found): {book_info['title'][:15]}...")
+                # Check if we have an expected total
+                expected_total = None
+                try:
+                    expected_total = self.driver.automator.profile_manager.get_style_setting(
+                        "filter_book_count"
+                    )
+                except Exception:
+                    pass
+
+                if expected_total:
+                    logger.debug(
+                        f"Already seen book ({len(seen_titles)}/{expected_total} found): {book_info['title'][:15]}..."
+                    )
+                else:
+                    logger.debug(
+                        f"Already seen book ({len(seen_titles)} found): {book_info['title'][:15]}..."
+                    )
             return False
 
     def get_partial_matches(self):
@@ -839,7 +855,9 @@ class LibraryHandlerScroll:
             page_count = 0
             use_hook_for_current_scroll = True
             consecutive_identical_screen_iterations = 0
+            consecutive_no_new_books = 0  # Track consecutive screens with no new books
             IDENTICAL_SCREEN_THRESHOLD = 10
+            NO_NEW_BOOKS_THRESHOLD = 3  # Stop after 3 consecutive screens with no new books
 
             while True:
                 page_count += 1
@@ -972,38 +990,95 @@ class LibraryHandlerScroll:
                         return [] if not target_title else (None, None, None)
                     elif found_new_titles:
                         any_new_books_this_iteration = True
-                    else:
-                        if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
-                            break  # No new books found, stop scrolling
+                    # else: found_new_titles is False - no new books found in double-check
+                    # We'll handle this in the main decision logic below
+
+                # Check if we have an expected total for logging purposes
+                expected_total = None
+                try:
+                    expected_total = self.driver.automator.profile_manager.get_style_setting(
+                        "filter_book_count"
+                    )
+                except Exception:
+                    pass  # No expected total available
+
+                # Decide whether to stop scrolling
+                should_stop_scrolling = False
+
+                if not any_new_books_this_iteration:
+                    # No new books found this iteration - increment counter
+                    consecutive_no_new_books += 1
+
+                    if expected_total and len(books) >= expected_total:
+                        # We have all expected books and found no new ones - we're done
+                        logger.info(
+                            f"Found all expected books ({len(books)}/{expected_total}) and no new books on screen, stopping scroll"
+                        )
+                        should_stop_scrolling = True
+                    elif consecutive_no_new_books >= NO_NEW_BOOKS_THRESHOLD:
+                        # We've had multiple screens with no new books - we've likely reached the bottom
+                        if expected_total:
+                            logger.info(
+                                f"No new books after {NO_NEW_BOOKS_THRESHOLD} consecutive screens. Found {len(books)} books (expected: {expected_total}), stopping scroll"
+                            )
                         else:
                             logger.info(
-                                f"All titles identical but haven't reached threshold ({consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD}), continuing scroll"
+                                f"No new books after {NO_NEW_BOOKS_THRESHOLD} consecutive screens, stopping scroll"
                             )
-
-                # At this point, if nothing new was found after our double-check, or if we're seeing exactly the same books, stop
-                if not any_new_books_this_iteration or seen_titles == previous_titles:
-                    if consecutive_identical_screen_iterations < IDENTICAL_SCREEN_THRESHOLD:
-                        logger.info("No progress in finding new books, stopping scroll")
-                        # Send completion notification via callback if available
-                        if callback:
-                            callback(None, done=True, total_books=len(books), complete=True)
-
-                        # Save scroll book count to database
-                        try:
-                            sindarin_email = get_sindarin_email()
-                            if sindarin_email:
-                                self.driver.automator.profile_manager.save_style_setting(
-                                    "scroll_book_count", len(books)
-                                )
-                                logger.info(f"Saved scroll book count to database: {len(books)}")
-                        except Exception as e:
-                            logger.error(f"Error saving scroll book count: {e}", exc_info=True)
-
-                        break
+                        should_stop_scrolling = True
+                    elif consecutive_identical_screen_iterations >= IDENTICAL_SCREEN_THRESHOLD:
+                        # We've had multiple identical screens in a row - we've reached the bottom
+                        if expected_total:
+                            logger.info(
+                                f"No progress after {IDENTICAL_SCREEN_THRESHOLD} identical screens. Found {len(books)} books (expected: {expected_total}), stopping scroll"
+                            )
+                        else:
+                            logger.info(
+                                f"No progress after {IDENTICAL_SCREEN_THRESHOLD} identical screens, stopping scroll"
+                            )
+                        should_stop_scrolling = True
+                    elif expected_total and len(books) < expected_total:
+                        # Haven't found all expected books yet - keep scrolling but warn if close to threshold
+                        if consecutive_no_new_books == NO_NEW_BOOKS_THRESHOLD - 1:
+                            logger.info(
+                                f"No new books on this screen (have {len(books)}/{expected_total}). Will stop after one more empty screen."
+                            )
+                        else:
+                            logger.info(
+                                f"No new books on this screen (have {len(books)}/{expected_total}). Consecutive empty: {consecutive_no_new_books}/{NO_NEW_BOOKS_THRESHOLD}"
+                            )
                     else:
+                        # No expected total and not enough screens
                         logger.info(
-                            f"No progress but all titles identical ({consecutive_identical_screen_iterations}/{IDENTICAL_SCREEN_THRESHOLD}), continuing scroll"
+                            f"No new books on this screen. Consecutive empty: {consecutive_no_new_books}/{NO_NEW_BOOKS_THRESHOLD}"
                         )
+                else:
+                    # Found new books - reset the counter
+                    consecutive_no_new_books = 0
+
+                if expected_total and len(books) >= expected_total and any_new_books_this_iteration:
+                    # We've reached or exceeded the expected total, but still finding new books
+                    logger.info(
+                        f"Found {len(books)} books (expected: {expected_total}), but still finding new books - continuing scroll"
+                    )
+
+                if should_stop_scrolling:
+                    # Send completion notification via callback if available
+                    if callback:
+                        callback(None, done=True, total_books=len(books), complete=True)
+
+                    # Save scroll book count to database
+                    try:
+                        sindarin_email = get_sindarin_email()
+                        if sindarin_email:
+                            self.driver.automator.profile_manager.save_style_setting(
+                                "scroll_book_count", len(books)
+                            )
+                            logger.info(f"Saved scroll book count to database: {len(books)}")
+                    except Exception as e:
+                        logger.error(f"Error saving scroll book count: {e}", exc_info=True)
+
+                    break
 
                 # Find scroll reference and perform scrolling
                 book_containers = self.driver.find_elements(
@@ -1036,6 +1111,24 @@ class LibraryHandlerScroll:
                         f"No exact match for '{target_title}', but {len(self.partial_matches)} partial matches found"
                     )
                 return result
+            else:
+                # Not searching for a specific title - ensure we send completion if callback provided
+                if callback:
+                    # Check if we already sent a completion message (we should have, but just in case)
+                    # Send completion notification
+                    logger.info("Sending final completion notification to callback")
+                    callback(None, done=True, total_books=len(books), complete=True)
+
+                    # Save scroll book count to database
+                    try:
+                        sindarin_email = get_sindarin_email()
+                        if sindarin_email:
+                            self.driver.automator.profile_manager.save_style_setting(
+                                "scroll_book_count", len(books)
+                            )
+                            logger.info(f"Saved final scroll book count to database: {len(books)}")
+                    except Exception as e:
+                        logger.error(f"Error saving scroll book count: {e}", exc_info=True)
 
             return books
 

@@ -1976,6 +1976,7 @@ class LibraryHandler:
                 logger.warning("Pull-to-refresh failed, continuing anyway...")
 
             # After pull-to-refresh and All/Downloaded tab switching, capture filter book count
+            logger.info("Attempting to capture filter book count")
             filter_book_count = self.click_filter_button_and_count_books()
             if filter_book_count is not None:
                 logger.info(f"Captured filter book count: {filter_book_count}")
@@ -1996,7 +1997,7 @@ class LibraryHandler:
                 except Exception as e:
                     logger.error(f"Error saving filter book count: {e}", exc_info=True)
             else:
-                logger.warning("Failed to capture filter book count")
+                logger.warning("Failed to capture filter book count - filter button may not be visible")
 
             # Use the scroll handler's method to get all books
             # If callback is provided, pass it to the scroll handler for streaming
