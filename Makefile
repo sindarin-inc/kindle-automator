@@ -164,8 +164,6 @@ test-group1:
 	@echo "Running Test 03 - Absolute navigation..."
 	@TEST_USER_EMAIL=kindle@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
 	@echo ""
-	@echo "Running Test 05 - Multi-user integration..."
-	@TEST_USER_EMAIL=kindle@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
 	@echo ""
 	@echo "===== GROUP 1 Tests Complete ====="
 
@@ -178,8 +176,6 @@ test-group2:
 	@echo "Running Test 02 - Request deduplication (expensive - allowed to fail)..."
 	@CI=true TEST_USER_EMAIL=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
 	@echo ""
-	@echo "Running Test 04 - Concurrent requests..."
-	@TEST_USER_EMAIL=sam@solreader.com PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
 	@echo ""
 	@echo "===== GROUP 2 Tests Complete ====="
 
@@ -190,6 +186,19 @@ test-group3:
 	@TEST_USER_EMAIL=recreate@solreader.com RECREATE_USER_EMAIL=recreate@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
 	@echo ""
 	@echo "===== GROUP 3 Tests Complete ====="
+
+test-group4:
+	@echo "===== GROUP 4 Tests (Multi-user: kindle@ and sam@) ====="
+	@echo "NOTE: Run AFTER groups 1 and 2 complete to avoid conflicts"
+	@echo "Configured users: CONCURRENT_USER_A=kindle@solreader.com, CONCURRENT_USER_B=sam@solreader.com"
+	@echo ""
+	@echo "Running Test 04 - Concurrent requests (uses both users)..."
+	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
+	@echo ""
+	@echo "Running Test 05 - Multi-user integration (uses both users)..."
+	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
+	@echo ""
+	@echo "===== GROUP 4 Tests Complete ====="
 
 # Generate staff authentication token for testing
 test-staff-auth:

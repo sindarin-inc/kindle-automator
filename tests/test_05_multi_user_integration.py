@@ -10,6 +10,7 @@ This test:
 
 import json
 import logging
+import os
 import time
 from typing import Dict
 
@@ -22,9 +23,12 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Test configuration
-USER_A_EMAIL = "kindle@solreader.com"
-USER_B_EMAIL = "sam@solreader.com"
+# Test configuration - Get users from environment variables
+# For multi-user testing, we need two distinct users
+USER_A_EMAIL = os.environ.get("CONCURRENT_USER_A", "kindle@solreader.com")
+USER_B_EMAIL = os.environ.get("CONCURRENT_USER_B", "sam@solreader.com")
+
+logger.info(f"Multi-user test configuration: User A={USER_A_EMAIL}, User B={USER_B_EMAIL}")
 
 # Note: Using /open-random-book instead of hardcoded ASINs for more flexible testing
 

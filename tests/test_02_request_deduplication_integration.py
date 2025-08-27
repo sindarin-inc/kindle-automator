@@ -494,8 +494,8 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         """Set up test fixtures."""
         # Use the base class setup
         self.setup_base()
-        # Use kindle@solreader.com for this specific test
-        self.email = "kindle@solreader.com"
+        # Use TEST_USER_EMAIL from environment (defaults to kindle@solreader.com)
+        self.email = TEST_USER_EMAIL
 
     def tearDown(self):
         """Clean up after tests."""

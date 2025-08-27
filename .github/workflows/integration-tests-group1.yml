@@ -70,17 +70,6 @@ jobs:
           python -m pytest tests/test_03_absolute_navigation.py -v --tb=short --durations=0
         timeout-minutes: 10
       
-      - name: Run 05 - Multi-user integration tests
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_05_multi_user_integration.py -v --tb=short --durations=0
-        timeout-minutes: 5
-      
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

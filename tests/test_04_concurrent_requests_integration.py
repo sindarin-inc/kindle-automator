@@ -5,6 +5,7 @@ performing realistic workflows simultaneously.
 """
 
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,11 +19,17 @@ from tests.test_base import BaseKindleTest
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Test configuration
+# Test configuration - Get users from environment variables
+# For multi-user concurrent testing, we need two distinct users
+CONCURRENT_USER_A = os.environ.get("CONCURRENT_USER_A", "kindle@solreader.com")
+CONCURRENT_USER_B = os.environ.get("CONCURRENT_USER_B", "sam@solreader.com")
+
 TEST_USERS = [
-    "kindle@solreader.com",
-    "sam@solreader.com",
+    CONCURRENT_USER_A,
+    CONCURRENT_USER_B,
 ]
+
+logger.info(f"Concurrent test configuration: User A={CONCURRENT_USER_A}, User B={CONCURRENT_USER_B}")
 
 
 class ConcurrentRequestsTester(BaseKindleTest):

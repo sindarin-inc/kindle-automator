@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Run all three test groups in parallel
+  # Run first three test groups in parallel
   test-group-1:
     uses: ./.github/workflows/integration-tests-group1.yml
     secrets: inherit
@@ -18,9 +18,15 @@ jobs:
     uses: ./.github/workflows/integration-tests-group3.yml
     secrets: inherit
   
+  # Run group 4 after groups 1 and 2 complete (multi-user tests)
+  test-group-4:
+    needs: [test-group-1, test-group-2]
+    uses: ./.github/workflows/integration-tests-group4.yml
+    secrets: inherit
+  
   # Final job to check all tests passed
   integration-tests-complete:
-    needs: [test-group-1, test-group-2, test-group-3]
+    needs: [test-group-1, test-group-2, test-group-3, test-group-4]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -36,6 +42,10 @@ jobs:
           fi
           if [[ "${{ needs.test-group-3.result }}" != "success" ]]; then
             echo "Test Group 3 failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-group-4.result }}" != "success" ]]; then
+            echo "Test Group 4 failed"
             exit 1
           fi
           echo "All test groups passed successfully!"

@@ -1,73 +1,60 @@
-name: Integration Tests - Group 2 (sam@solreader.com)
+name: Integration Tests - Group 4 (Multi-user: kindle@ and sam@)
 
 on:
   workflow_call:
   workflow_dispatch:
 
 jobs:
-  group2-tests:
+  group4-tests:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kindle_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
+    
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
+      
       - name: Install uv
         uses: astral-sh/setup-uv@v2
         with:
           version: "latest"
-
+      
       - name: Install dependencies
         run: |
           uv pip install --system -r requirements.txt
-
-      - name: Run 02 - Request deduplication integration tests
+      
+      - name: Run 04 - Concurrent requests integration test (both users)
         env:
-          CI: "true"
           API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: sam@solreader.com
+          CONCURRENT_USER_A: kindle@solreader.com
+          CONCURRENT_USER_B: sam@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          echo "Running concurrent test with users: $CONCURRENT_USER_A and $CONCURRENT_USER_B"
+          python tests/test_04_concurrent_requests_integration.py
+        timeout-minutes: 5
+      
+      - name: Run 05 - Multi-user integration tests (both users)
+        env:
+          API_BASE_URL: https://api.sindarin.com
+          CONCURRENT_USER_A: kindle@solreader.com
+          CONCURRENT_USER_B: sam@solreader.com
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive" --durations=0
-        timeout-minutes: 8
-
-      - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
-        continue-on-error: true
-        env:
-          CI: "true"
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: sam@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" --durations=0
-        timeout-minutes: 8
-
+          echo "Running multi-user test with users: $CONCURRENT_USER_A and $CONCURRENT_USER_B"
+          python -m pytest tests/test_05_multi_user_integration.py -v --tb=short --durations=0
+        timeout-minutes: 5
+      
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-group2
+          name: test-results-group4
           path: |
             pytest-results.xml
             test-logs/
