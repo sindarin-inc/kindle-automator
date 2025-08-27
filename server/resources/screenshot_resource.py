@@ -3,8 +3,9 @@
 import logging
 import os
 import time
+from io import BytesIO
 
-from flask import request
+from flask import make_response, request, send_file
 from flask_restful import Resource
 
 from server.core.automation_server import AutomationServer
@@ -36,7 +37,7 @@ class ScreenshotResource(Resource):
     @deduplicate_request
     def get(self):
         """Get current page screenshot and return a URL to access it or display it directly.
-        If xml=1 is provided, also returns the XML page source.
+        If xml=1 is provided, returns the XML page source directly as text/xml.
         If text=1 is provided, OCRs the image and returns the text.
         If base64=1 is provided, returns the image encoded as base64 instead of a URL."""
         server = AutomationServer.get_instance()
@@ -125,6 +126,42 @@ class ScreenshotResource(Resource):
         logger.info(
             f"save: {save}, include_xml: {include_xml}, use_base64: {use_base64}, perform_ocr: {perform_ocr}"
         )
+
+        # If xml=1, return XML directly as text/xml response using send_file like images
+        if include_xml and not perform_ocr and not use_base64:
+            try:
+                # Get page source from the driver
+                page_source = automator.driver.page_source
+
+                # Store the XML for debugging purposes
+                xml_filename = f"{image_id}.xml"
+                xml_path = store_page_source(page_source, image_id)
+                logger.info(f"Stored page source XML at {xml_path}")
+
+                # If save=1, return the file path instead of the content
+                if save:
+                    # Return the absolute path to the saved XML file
+                    absolute_path = os.path.abspath(xml_path)
+                    return {"xml_path": absolute_path}, 200
+
+                # Create a BytesIO object with the XML content
+                xml_bytes = BytesIO(page_source.encode("utf-8"))
+                xml_bytes.seek(0)
+
+                # Use send_file with BytesIO to serve the XML
+                # This approach works with Flask-RESTful just like serve_image does
+                response = make_response(
+                    send_file(
+                        xml_bytes,
+                        mimetype="text/xml; charset=utf-8",
+                        as_attachment=False,
+                        download_name=xml_filename,
+                    )
+                )
+                return response
+            except Exception as xml_error:
+                logger.error(f"Error getting page source XML: {xml_error}", exc_info=True)
+                return {"error": f"Failed to get XML: {str(xml_error)}"}, 500
 
         # If OCR is requested, we need the JSON response path
         if perform_ocr:

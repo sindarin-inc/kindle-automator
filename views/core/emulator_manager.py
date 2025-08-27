@@ -96,11 +96,22 @@ class EmulatorManager:
             ]
 
             # Corroborate with the profiles index
-            if lines:
-                vnc_manager = VNCInstanceManager.get_instance()
-                emulator_id = vnc_manager.get_emulator_id(email)
-                if emulator_id and any(emulator_id in line for line in lines):
+            vnc_manager = VNCInstanceManager.get_instance()
+            emulator_id = vnc_manager.get_emulator_id(email)
+
+            if emulator_id:
+                # We have a stored emulator_id, check if it's actually running
+                if lines and any(emulator_id in line for line in lines):
                     return True
+                else:
+                    # Stored emulator_id but it's not in adb devices - it crashed/died
+                    logger.warning(
+                        f"Emulator {emulator_id} for {email} is not running (crashed/killed), clearing stale VNC record"
+                    )
+                    vnc_manager.repository.update_emulator_id(email, None)
+                    return False
+
+            # No stored emulator_id, not running
             return False
         except subprocess.TimeoutExpired:
             logger.warning("Timeout expired while checking if emulator is running, assuming it's not running")

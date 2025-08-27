@@ -321,9 +321,7 @@ def setup_request_logger(app):
                         if request_number >= 2:
                             # This is request 2 or higher, enable number display
                             g.show_request_number = True
-                            # Set the flag in Redis so request 1 knows to show its number too
-                            multi_key = f"kindle:user:{email}:has_multiple_requests"
-                            redis_client.set(multi_key, "1", ex=130)
+                            # No need to set a separate flag - active_request_count already tracks this
                         else:
                             # This is request 1, don't show number yet
                             g.show_request_number = False

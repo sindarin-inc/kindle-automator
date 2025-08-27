@@ -87,9 +87,14 @@ BOTTOM_NAV_IDENTIFIERS = [
 
 # View mode identifiers
 GRID_VIEW_IDENTIFIERS = [
+    # In grid view, books are wrapped in LinearLayout containers as direct children of RecyclerView
+    (
+        AppiumBy.XPATH,
+        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/recycler_view']/android.widget.LinearLayout",
+    ),
+    # Fallback: old grid view identifiers (may not exist in current Kindle versions)
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/grid_view']"),
     (AppiumBy.XPATH, "//*[@resource-id='com.amazon.kindle:id/grid_recycler_view']"),
-    (AppiumBy.XPATH, "//android.widget.GridView[@resource-id='com.amazon.kindle:id/recycler_view']"),
 ]
 
 LIST_VIEW_IDENTIFIERS = [

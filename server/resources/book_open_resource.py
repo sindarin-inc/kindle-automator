@@ -14,6 +14,7 @@ from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_deduplication_middleware import deduplicate_request
+from server.middleware.response_handler import handle_automator_response
 from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
 from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
@@ -576,30 +577,24 @@ class BookOpenResource(Resource):
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @deduplicate_request
+    @handle_automator_response
     def post(self):
         """Open a specific book via POST request."""
         data = request.get_json()
         book_title = data.get("title")
 
         # Parameters are now handled in _open_book method which checks request.json for POST requests
-
-        # Call the implementation without the handle_automator_response decorator
-        # since it might return a Response object that can't be JSON serialized
         result = self._open_book(book_title)
-
-        # Directly return the result, as Flask can handle Response objects
         return result
 
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @deduplicate_request
+    @handle_automator_response
     def get(self):
         """Open a specific book via GET request."""
         book_title = request.args.get("title")
 
-        # Call the implementation without the handle_automator_response decorator
-        # since it might return a Response object that can't be JSON serialized
+        # Call the implementation
         result = self._open_book(book_title)
-
-        # Directly return the result, as Flask can handle Response objects
         return result

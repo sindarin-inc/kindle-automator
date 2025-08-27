@@ -37,6 +37,7 @@ from server.middleware.response_handler import (
     serve_image,
 )
 from server.resources.active_emulators_resource import ActiveEmulatorsResource
+from server.resources.dashboard_resource import DashboardResource
 from server.resources.emulator_batch_config_resource import EmulatorBatchConfigResource
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
@@ -103,8 +104,20 @@ def output_json(data, code, headers=None):
     return resp
 
 
+def output_xml(data, code, headers=None):
+    """Pass through XML data without modification."""
+    # If data is already a Flask response object with XML content type, return it as-is
+    if hasattr(data, "headers") and "text/xml" in data.headers.get("Content-Type", ""):
+        return data
+    # Otherwise create XML response
+    resp = make_response(data, code)
+    resp.headers.extend(headers or {})
+    resp.headers["Content-Type"] = "text/xml; charset=utf-8"
+    return resp
+
+
 api = Api(app)
-api.representations = {"application/json": output_json}
+api.representations = {"application/json": output_json, "text/xml": output_xml}
 
 # Initialize database connection
 db_connection.initialize()
@@ -283,6 +296,7 @@ api.add_resource(
     "/batch-configure-emulators",
     resource_class_kwargs={"server_instance": server},
 )
+api.add_resource(DashboardResource, "/dashboard")
 api.add_resource(
     ColdStorageArchiveResource,
     "/cold-storage/archive",
@@ -363,6 +377,15 @@ def run_idle_check():
             logger.info(f"Running emulators: {running_count}")
         except Exception as e:
             logger.debug(f"Could not log health status: {e}")
+
+        # Clean up stale VNC instance records for crashed/killed emulators
+        try:
+            from server.utils.vnc_instance_manager import VNCInstanceManager
+
+            vnc_manager = VNCInstanceManager.get_instance()
+            vnc_manager.audit_and_cleanup_stale_instances()
+        except Exception as e:
+            logger.debug(f"Error during VNC instance cleanup: {e}")
 
         idle_check = IdleCheckResource(server_instance=server)
         result, status_code = idle_check.get()

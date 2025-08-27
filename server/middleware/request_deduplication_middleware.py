@@ -98,6 +98,9 @@ def deduplicate_request(func: Callable) -> Callable:
                 # Store the response for waiting requests
                 manager.store_response(response_data, status_code)
 
+                # Clean up the request number now that the request is complete
+                manager._cleanup_request_number()
+
                 return response_data, status_code
 
             except Exception as e:
@@ -121,6 +124,9 @@ def deduplicate_request(func: Callable) -> Callable:
                 if not is_retryable_crash:
                     manager._mark_error()
 
+                # Clean up request number on error
+                manager._cleanup_request_number()
+
                 raise
 
         else:
@@ -140,13 +146,23 @@ def deduplicate_request(func: Callable) -> Callable:
                 if result:
                     response_data, status_code = result
                     logger.info(f"Returning deduplicated response for {user_email}")
+                    # Clean up request number for deduplicated requests
+                    manager._cleanup_request_number()
                     return response_data, status_code
                 else:
                     # Timeout or error waiting - execute normally as fallback
                     logger.warning(
                         f"Failed to get deduplicated response, executing normally for {user_email}"
                     )
-                    return func(self, *args, **kwargs)
+                    try:
+                        result = func(self, *args, **kwargs)
+                        # Clean up after fallback execution
+                        manager._cleanup_request_number()
+                        return result
+                    except Exception as e:
+                        # Clean up on error
+                        manager._cleanup_request_number()
+                        raise
             else:
                 # Not a duplicate - must be waiting for higher priority request
                 logger.info(
@@ -160,7 +176,15 @@ def deduplicate_request(func: Callable) -> Callable:
                     logger.info(
                         f"{BRIGHT_BLUE}Higher priority request completed, now executing {BOLD}{BRIGHT_BLUE}{path}{RESET}"
                     )
-                    return func(self, *args, **kwargs)
+                    try:
+                        result = func(self, *args, **kwargs)
+                        # Clean up after execution following higher priority wait
+                        manager._cleanup_request_number()
+                        return result
+                    except Exception as e:
+                        # Clean up on error
+                        manager._cleanup_request_number()
+                        raise
                 elif wait_result == WaitResult.CANCELLED:
                     logger.info(
                         f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "

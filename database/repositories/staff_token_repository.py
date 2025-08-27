@@ -20,7 +20,7 @@ class StaffTokenRepository:
 
     def create_token(self) -> StaffToken:
         """Create a new staff token."""
-        token_value = secrets.token_hex(32)
+        token_value = secrets.token_hex(6)
 
         token = StaffToken(
             token=token_value,

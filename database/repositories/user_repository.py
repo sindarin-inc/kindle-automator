@@ -220,18 +220,21 @@ class UserRepository:
 
     def _update_preference(self, user: User, key: str, value: Any) -> None:
         """Update or create a user preference."""
-        # Find existing preference
-        pref = next((p for p in user.preferences if p.preference_key == key), None)
+        from sqlalchemy.dialects.postgresql import insert
 
-        if pref:
-            pref.preference_value = json.dumps(value) if not isinstance(value, str) else value
-        else:
-            new_pref = UserPreference(
-                user=user,
-                preference_key=key,
-                preference_value=json.dumps(value) if not isinstance(value, str) else value,
-            )
-            self.session.add(new_pref)
+        # Convert value to string format for storage
+        str_value = json.dumps(value) if not isinstance(value, str) else value
+
+        # Use PostgreSQL's INSERT ... ON CONFLICT for atomic upsert
+        stmt = insert(UserPreference).values(user_id=user.id, preference_key=key, preference_value=str_value)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["user_id", "preference_key"],
+            set_={"preference_value": stmt.excluded.preference_value},
+        )
+        self.session.execute(stmt)
+
+        # Refresh the user's preferences relationship to ensure consistency
+        self.session.expire(user, ["preferences"])
 
     def update_last_used(self, email: str, emulator_id: Optional[str] = None) -> bool:
         """

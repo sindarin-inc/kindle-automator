@@ -103,15 +103,19 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
                 response["time_taken"] = time_taken
                 # Add authenticated field if not present
                 if "authenticated" not in response:
-                    # Default to True unless it's a 401 error or has error field
-                    response["authenticated"] = status_code != 401 and "error" not in response
+                    # Check the actual authentication status from the database
+                    from server.utils.request_utils import is_request_authenticated
+
+                    response["authenticated"] = is_request_authenticated()
             return response, status_code
         elif isinstance(result, dict):
             result["time_taken"] = time_taken
             # Add authenticated field if not present
             if "authenticated" not in result:
-                # Default to True unless has error field
-                result["authenticated"] = "error" not in result
+                # Check the actual authentication status from the database
+                from server.utils.request_utils import is_request_authenticated
+
+                result["authenticated"] = is_request_authenticated()
             return result, 200
         return result
 

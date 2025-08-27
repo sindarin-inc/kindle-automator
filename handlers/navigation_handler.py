@@ -630,15 +630,35 @@ class NavigationResourceHandler:
         """
         # Initialize with default values
         params = {
-            "navigate_count": 1,  # Default to 1 page navigation
+            "navigate_count": 0,  # Default to no navigation (caller will specify)
             "preview_count": 0,  # Default to no preview
             "show_placemark": False,
             "use_base64": False,
             "perform_ocr": True,  # Default to True - must be explicitly disabled with ocr=0
             "title": None,  # Book title for fallback if not in reading view
+            "navigate_to": None,  # Absolute navigation position
+            "preview_to": None,  # Absolute preview position
         }
 
-        # Check for navigate parameter in query string
+        # Check for navigate_to parameter (absolute position)
+        navigate_to_param = request_obj.args.get("navigate_to")
+        if navigate_to_param is not None:
+            try:
+                params["navigate_to"] = int(navigate_to_param)
+            except ValueError:
+                logger.warning(f"Invalid navigate_to value: {navigate_to_param}, ignoring")
+
+        # Check for preview_to parameter (absolute position)
+        preview_to_param = request_obj.args.get("preview_to")
+        if preview_to_param is not None:
+            try:
+                params["preview_to"] = int(preview_to_param)
+                # Set perform_ocr to True if preview_to is set
+                params["perform_ocr"] = True
+            except ValueError:
+                logger.warning(f"Invalid preview_to value: {preview_to_param}, ignoring")
+
+        # Check for navigate parameter in query string (relative movement)
         navigate_param = request_obj.args.get("navigate")
         if navigate_param:
             try:
@@ -646,7 +666,7 @@ class NavigationResourceHandler:
             except ValueError:
                 logger.warning(f"Invalid navigate value: {navigate_param}, using default")
 
-        # Check for preview parameter in query string
+        # Check for preview parameter in query string (relative movement)
         preview_param = request_obj.args.get("preview")
         if preview_param:
             try:
@@ -694,7 +714,22 @@ class NavigationResourceHandler:
                 if "action" in json_data and json_data["action"]:
                     params["action"] = json_data["action"]
 
-                # Override navigate_count if provided in JSON
+                # Override navigate_to if provided in JSON (absolute position)
+                if "navigate_to" in json_data:
+                    try:
+                        params["navigate_to"] = int(json_data["navigate_to"])
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid navigate_to in JSON: {json_data['navigate_to']}, ignoring")
+
+                # Override preview_to if provided in JSON (absolute position)
+                if "preview_to" in json_data:
+                    try:
+                        params["preview_to"] = int(json_data["preview_to"])
+                        params["perform_ocr"] = True
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid preview_to in JSON: {json_data['preview_to']}, ignoring")
+
+                # Override navigate_count if provided in JSON (relative movement)
                 if "navigate" in json_data:
                     try:
                         params["navigate_count"] = int(json_data["navigate"])
@@ -703,7 +738,7 @@ class NavigationResourceHandler:
                         if isinstance(json_data["navigate"], bool) and json_data["navigate"]:
                             params["navigate_count"] = 1
 
-                # Override preview_count if provided in JSON
+                # Override preview_count if provided in JSON (relative movement)
                 if "preview" in json_data:
                     try:
                         params["preview_count"] = int(json_data["preview"])

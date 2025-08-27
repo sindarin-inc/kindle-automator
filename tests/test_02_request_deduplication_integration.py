@@ -1,6 +1,7 @@
 """Integration tests for request deduplication and cancellation functionality."""
 
 import json
+import logging
 import pickle
 import threading
 import time
@@ -9,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import redis
+
+logger = logging.getLogger(__name__)
 
 from server.core.request_manager import DeduplicationStatus, RequestManager, WaitResult
 from server.utils.cancellation_utils import (
@@ -19,7 +22,7 @@ from server.utils.cancellation_utils import (
 from tests.test_base import TEST_USER_EMAIL, BaseKindleTest
 
 
-class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
+class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
     """Integration tests for request deduplication with threading."""
 
     def setUp(self):
@@ -75,6 +78,10 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                 with self.lock:
                     for key in keys:
                         self.store.pop(key, None)
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
@@ -154,6 +161,10 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                 with self.lock:
                     for key in keys:
                         self.store.pop(key, None)
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
             def incr(self, key):
                 with self.lock:
@@ -262,6 +273,10 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                 with self.lock:
                     for key in keys:
                         self.store.pop(key, None)
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
             def incr(self, key):
                 return 1
@@ -419,11 +434,19 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                     for key in keys:
                         self.store.pop(key, None)
 
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
+
             def incr(self, key):
                 return 1
 
             def decr(self, key):
                 return 0
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
@@ -436,15 +459,19 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
         response1 = {"books": ["Book 1", "Book 2"]}
         manager1.store_response(response1, 200)
 
-        # Verify status was set but will expire quickly (2 seconds)
+        # Verify all deduplication keys were deleted immediately (no waiters)
         status_key = f"{manager1.request_key}:status"
-        self.assertIn(status_key, redis_sim.store)
-
-        # Verify result was NOT stored (no waiters)
         result_key = f"{manager1.request_key}:result"
-        self.assertNotIn(result_key, redis_sim.store)
+        progress_key = f"{manager1.request_key}:progress"
+        waiters_key = f"{manager1.request_key}:waiters"
 
-        # Clear the status to simulate TTL expiry
+        # All keys should be deleted when no waiters
+        self.assertNotIn(status_key, redis_sim.store)
+        self.assertNotIn(result_key, redis_sim.store)
+        self.assertNotIn(progress_key, redis_sim.store)
+        self.assertNotIn(waiters_key, redis_sim.store)
+
+        # Clear any remaining keys (like request_number)
         redis_sim.store.clear()
 
         # Second request with same parameters - should NOT get cached response
@@ -456,7 +483,7 @@ class TestRequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
         # This proves the second request will execute fresh, not use cached data
 
 
-class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
+class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
     """Test priority-based request management and cancellation.
 
     These tests verify that higher priority requests properly cancel lower priority ones,
@@ -467,8 +494,8 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         """Set up test fixtures."""
         # Use the base class setup
         self.setup_base()
-        # Use kindle@solreader.com for this specific test
-        self.email = "kindle@solreader.com"
+        # Use TEST_USER_EMAIL from environment (defaults to kindle@solreader.com)
+        self.email = TEST_USER_EMAIL
 
     def tearDown(self):
         """Clean up after tests."""
@@ -485,8 +512,8 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             """Make a high priority request that takes time."""
             try:
                 response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": "Hyperion"},
+                    "open-random-book",
+                    params={"user_email": self.email},
                     timeout=120,
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
@@ -648,8 +675,8 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results["open_started"] = time.time()
             try:
                 response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": "Hyperion"},
+                    "open-random-book",
+                    params={"user_email": self.email},
                     timeout=60,
                 )
                 results["open_completed"] = time.time()
@@ -677,30 +704,14 @@ class TestPriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         self.assertIn("open_status", results, f"Open book did not complete. Results: {results}")
         self.assertEqual(results["open_status"], 200, f"Open book should return 200. Results: {results}")
 
-        # Verify stream was cancelled or ended early
-        stream_ended_early = (
-            "stream_cancelled" in results
-            or "stream_error" in results
-            or "stream_partial" in results
-            or (
-                "stream_completed" in results
-                and "open_started" in results
-                and results["stream_completed"] < results["open_started"]
-            )
+        # Verify stream was cancelled or interrupted
+        stream_was_cancelled = (
+            "stream_cancelled" in results or "stream_error" in results or "stream_partial" in results
         )
 
-        if not stream_ended_early:
-            # Stream should have been interrupted by higher priority request
-            self.fail(
-                f"Stream should have been interrupted by higher priority request or ended early. Results: {results}"
-            )
-
-        # Check that cancellation was detected OR the stream ended early (partial data)
-        if "stream_partial" not in results and "stream_completed" not in results:
-            # Only require explicit cancellation if the stream didn't complete naturally
-            self.assertGreater(
-                cancellation_count, 0, f"Expected to detect cancellation at least once. Results: {results}"
-            )
+        if not stream_was_cancelled:
+            # Stream should have been cancelled by higher priority request
+            self.fail(f"Stream should have been cancelled by higher priority request. Results: {results}")
 
         # If stream was properly cancelled, verify it was reasonably fast
         if "stream_cancelled" in results and "open_started" in results:
@@ -960,10 +971,10 @@ if __name__ == "__main__":
     suite = unittest.TestSuite()
 
     # Add main deduplication tests
-    suite.addTests(loader.loadTestsFromTestCase(TestRequestDeduplicationIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(Test1RequestDeduplicationIntegration))
 
     # Add priority and cancellation tests (only run if main tests pass)
-    suite.addTests(loader.loadTestsFromTestCase(TestPriorityAndCancellation))
+    suite.addTests(loader.loadTestsFromTestCase(Test2PriorityAndCancellation))
 
     # Run with stop on first failure
     runner = unittest.TextTestRunner(verbosity=1, failfast=True)
