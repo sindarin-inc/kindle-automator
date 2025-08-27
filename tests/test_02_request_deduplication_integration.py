@@ -512,8 +512,8 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             """Make a high priority request that takes time."""
             try:
                 response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": "Hyperion"},
+                    "open-random-book",
+                    params={"user_email": self.email},
                     timeout=120,
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
@@ -675,8 +675,8 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results["open_started"] = time.time()
             try:
                 response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": "Hyperion"},
+                    "open-random-book",
+                    params={"user_email": self.email},
                     timeout=60,
                 )
                 results["open_completed"] = time.time()
