@@ -79,6 +79,10 @@ class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                     for key in keys:
                         self.store.pop(key, None)
 
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
+
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
 
@@ -157,6 +161,10 @@ class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                 with self.lock:
                     for key in keys:
                         self.store.pop(key, None)
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
             def incr(self, key):
                 with self.lock:
@@ -265,6 +273,10 @@ class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                 with self.lock:
                     for key in keys:
                         self.store.pop(key, None)
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
             def incr(self, key):
                 return 1
@@ -422,11 +434,19 @@ class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
                     for key in keys:
                         self.store.pop(key, None)
 
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
+
             def incr(self, key):
                 return 1
 
             def decr(self, key):
                 return 0
+
+            def expire(self, key, seconds):
+                # Mock expire - just ignore it
+                return True
 
         redis_sim = RedisSimulator()
         mock_get_redis.return_value = redis_sim
@@ -439,15 +459,19 @@ class Test1RequestDeduplicationIntegration(BaseKindleTest, unittest.TestCase):
         response1 = {"books": ["Book 1", "Book 2"]}
         manager1.store_response(response1, 200)
 
-        # Verify status was set but will expire quickly (2 seconds)
+        # Verify all deduplication keys were deleted immediately (no waiters)
         status_key = f"{manager1.request_key}:status"
-        self.assertIn(status_key, redis_sim.store)
-
-        # Verify result was NOT stored (no waiters)
         result_key = f"{manager1.request_key}:result"
-        self.assertNotIn(result_key, redis_sim.store)
+        progress_key = f"{manager1.request_key}:progress"
+        waiters_key = f"{manager1.request_key}:waiters"
 
-        # Clear the status to simulate TTL expiry
+        # All keys should be deleted when no waiters
+        self.assertNotIn(status_key, redis_sim.store)
+        self.assertNotIn(result_key, redis_sim.store)
+        self.assertNotIn(progress_key, redis_sim.store)
+        self.assertNotIn(waiters_key, redis_sim.store)
+
+        # Clear any remaining keys (like request_number)
         redis_sim.store.clear()
 
         # Second request with same parameters - should NOT get cached response
@@ -470,8 +494,8 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
         """Set up test fixtures."""
         # Use the base class setup
         self.setup_base()
-        # Use kindle@solreader.com for this specific test
-        self.email = "kindle@solreader.com"
+        # Use TEST_USER_EMAIL from environment (defaults to kindle@solreader.com)
+        self.email = TEST_USER_EMAIL
 
     def tearDown(self):
         """Clean up after tests."""
@@ -488,8 +512,8 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             """Make a high priority request that takes time."""
             try:
                 response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": "Hyperion"},
+                    "open-random-book",
+                    params={"user_email": self.email},
                     timeout=120,
                 )
                 results["high_priority"] = {"status": response.status_code, "completed_at": time.time()}
@@ -651,8 +675,8 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results["open_started"] = time.time()
             try:
                 response = self._make_request(
-                    "open-book",
-                    params={"user_email": self.email, "title": "Hyperion"},
+                    "open-random-book",
+                    params={"user_email": self.email},
                     timeout=60,
                 )
                 results["open_completed"] = time.time()

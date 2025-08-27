@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kindle Emulator VNC Dashboard</title>
+    
+    <!-- noVNC CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/app/styles/base.css">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            overflow-x: auto;
+        }
+        
+        .header {
+            background: #2a2a2a;
+            padding: 1rem;
+            border-bottom: 1px solid #3a3a3a;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: #fff;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+        }
+        
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #4ade80;
+        }
+        
+        .dashboard {
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 1.5rem;
+            max-width: 100%;
+        }
+        
+        .vnc-container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            animation: fadeIn 0.3s ease-in;
+            position: relative;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+        }
+        
+        .vnc-container.removing {
+            animation: fadeOut 0.3s ease-out;
+        }
+        
+        .vnc-header {
+            background: #333;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .vnc-title {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 250px;
+        }
+        
+        .vnc-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.booting {
+            background: #fbbf24;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+        
+        .vnc-display {
+            width: 100%;
+            height: 640px;
+            position: relative;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .vnc-canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .vnc-canvas-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: contain;
+        }
+        
+        .vnc-connecting {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #999;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .vnc-error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ef4444;
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .vnc-controls {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            z-index: 10;
+        }
+        
+        .vnc-control-btn {
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .vnc-control-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+        }
+        
+        .vnc-info {
+            padding: 0.75rem 1rem;
+            background: #333;
+            border-top: 1px solid #444;
+            font-size: 0.8rem;
+            color: #999;
+        }
+        
+        .loading {
+            color: #999;
+            font-size: 0.9rem;
+        }
+        
+        .error {
+            color: #ef4444;
+            font-size: 0.9rem;
+        }
+        
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #666;
+        }
+        
+        .empty-state h2 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: #888;
+        }
+        
+        .empty-state p {
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .refresh-indicator {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: #333;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .refresh-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 1s infinite;
+        }
+        
+        /* Spinner */
+        .spinner {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid #fff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📱 Kindle Emulator Dashboard</h1>
+        <div class="stats">
+            <div class="stat">
+                <span>Active Emulators:</span>
+                <span class="stat-value" id="emulator-count">0</span>
+            </div>
+            <div class="stat">
+                <span>Servers:</span>
+                <span class="stat-value" id="server-count">0</span>
+            </div>
+            <div class="stat">
+                <span>Last Update:</span>
+                <span class="stat-value" id="last-update">--:--:--</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="dashboard" id="dashboard">
+        <div class="empty-state">
+            <h2>No Active Emulators</h2>
+            <p>Waiting for emulators to start...</p>
+        </div>
+    </div>
+    
+    <div class="refresh-indicator">
+        <div class="refresh-dot"></div>
+        <span>Auto-refreshing every 5 seconds</span>
+    </div>
+
+    <!-- Load noVNC scripts -->
+    <script type="module">
+        import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/core/rfb.js';
+        
+        // Configuration
+        const VNC_PASSWORD = 'changeme';
+        const REFRESH_INTERVAL = 5000; // 5 seconds
+        
+        // State
+        const currentEmulators = new Map();
+        const vncConnections = new Map();
+        const reconnectAttempts = new Map(); // Track reconnect attempts for exponential backoff
+        const reconnectTimeouts = new Map(); // Track pending reconnect timeouts
+        let refreshTimer = null;
+        
+        // Build API endpoint preserving existing query parameters
+        function buildApiEndpoint() {
+            const currentParams = new URLSearchParams(window.location.search);
+            currentParams.set('format', 'json');
+            return `/kindle/dashboard?${currentParams.toString()}`;
+        }
+        
+        const API_ENDPOINT = buildApiEndpoint();
+        
+        // Update dashboard statistics
+        function updateStats(instances) {
+            const emulatorCount = instances.length;
+            const serverSet = new Set(instances.map(i => i.server_name));
+            const serverCount = serverSet.size;
+            const now = new Date().toLocaleTimeString();
+            
+            document.getElementById('emulator-count').textContent = emulatorCount;
+            document.getElementById('server-count').textContent = serverCount;
+            document.getElementById('last-update').textContent = now;
+        }
+        
+        // Create VNC connection
+        function createVNCConnection(instance, container) {
+            const id = `${instance.server_name}-${instance.display}`;
+            const canvasContainer = container.querySelector('.vnc-canvas-container');
+            
+            if (!canvasContainer) {
+                console.error('Canvas container not found for', id);
+                return;
+            }
+            
+            // Check if a connection already exists and is connected
+            if (vncConnections.has(id)) {
+                const existingRfb = vncConnections.get(id);
+                if (existingRfb && existingRfb._rfbConnectionState === 'connected') {
+                    console.log(`VNC already connected for ${id}, skipping`);
+                    return;
+                }
+            }
+            
+            // Show connecting message
+            canvasContainer.innerHTML = '<div class="vnc-connecting"><div class="spinner"></div><span>Connecting...</span></div>';
+            
+            try {
+                // Build WebSocket URL - must use same protocol as page to avoid security errors
+                const wsPort = instance.ws_port || (instance.vnc_port + 1000);
+                const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                
+                // For HTTPS pages, route through the API server which will proxy to the correct backend
+                let wsUrl;
+                if (window.location.protocol === 'https:') {
+                    // Route through api.sindarin.com with server info in path
+                    // The nginx proxy will forward this to the actual rfbproxy service
+                    wsUrl = `${protocol}://${window.location.hostname}/websockify/${instance.server_name}/${wsPort}`;
+                } else {
+                    // Direct connection for HTTP
+                    wsUrl = `${protocol}://${instance.vnc_host}/websockify/${wsPort}`;
+                }
+                
+                console.log(`Connecting to VNC at ${wsUrl} for ${id}`);
+                
+                // Create RFB connection
+                const rfb = new RFB(canvasContainer, wsUrl, {
+                    credentials: { password: VNC_PASSWORD },
+                    shared: true,
+                    repeaterID: ''
+                    // Note: Removed wsProtocols as rfbproxy may not support specific subprotocols
+                });
+                
+                // Configure RFB settings
+                rfb.viewOnly = false;
+                rfb.scaleViewport = false;  // Don't scale, show actual size
+                rfb.resizeSession = false;
+                rfb.showDotCursor = true;   // Show cursor to verify rendering
+                rfb.qualityLevel = 9;       // Max quality
+                rfb.compressionLevel = 0;   // No compression
+                
+                // Set up event handlers
+                rfb.addEventListener('connect', () => {
+                    console.log(`VNC connected for ${id}`);
+                    
+                    // Reset reconnect attempts on successful connection
+                    reconnectAttempts.set(id, 0);
+                    
+                    // Wait a bit for noVNC to create the canvas, then clean up and style
+                    setTimeout(() => {
+                        // Clear the connecting message once canvas is ready
+                        const connectingMsg = canvasContainer.querySelector('.vnc-connecting');
+                        if (connectingMsg) {
+                            connectingMsg.remove();
+                        }
+                        
+                        const canvas = canvasContainer.querySelector('canvas');
+                        if (canvas) {
+                            console.log(`Canvas found for ${id}:`, canvas.width, 'x', canvas.height);
+                            // Make sure canvas is visible
+                            canvas.style.display = 'block';
+                            canvas.style.width = '100%';
+                            canvas.style.height = '100%';
+                            canvas.style.objectFit = 'contain';
+                            
+                            // Request a full framebuffer update
+                            if (rfb._sock && rfb._sock.open) {
+                                console.log(`Requesting framebuffer update for ${id}`);
+                                // This is a hack to force a full update
+                                rfb._display.resize(rfb._fbWidth, rfb._fbHeight);
+                            }
+                        } else {
+                            console.error(`No canvas found for ${id} - waiting more`);
+                            // Try again after another delay
+                            setTimeout(() => {
+                                const canvas2 = canvasContainer.querySelector('canvas');
+                                if (canvas2) {
+                                    console.log(`Canvas found on retry for ${id}`);
+                                    canvas2.style.display = 'block';
+                                    canvas2.style.width = '100%';
+                                    canvas2.style.height = '100%';
+                                    canvas2.style.objectFit = 'contain';
+                                }
+                                // Clear connecting message even if no canvas
+                                const msg = canvasContainer.querySelector('.vnc-connecting');
+                                if (msg) msg.remove();
+                            }, 1000);
+                        }
+                    }, 200);
+                });
+                
+                rfb.addEventListener('disconnect', (e) => {
+                    console.log(`VNC disconnected for ${id}:`, e.detail);
+                    
+                    // Skip auto-reconnect if this is part of a manual reconnect
+                    if (manualReconnectInProgress.has(id)) {
+                        console.log(`Skipping auto-reconnect for ${id} - manual reconnect in progress`);
+                        return;
+                    }
+                    
+                    // Auto-reconnect with exponential backoff
+                    const attempts = reconnectAttempts.get(id) || 0;
+                    const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000); // 1s, 2s, 4s, 8s, 16s, 30s max
+                    const backoffSec = Math.round(backoffMs / 1000);
+                    
+                    canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Reconnecting in ${backoffSec}s...</span></div>`;
+                    reconnectAttempts.set(id, attempts + 1);
+                    
+                    const timeoutId = setTimeout(() => {
+                        reconnectTimeouts.delete(id);
+                        window.reconnectVNC(id);
+                    }, backoffMs);
+                    reconnectTimeouts.set(id, timeoutId);
+                });
+                
+                rfb.addEventListener('credentialsrequired', () => {
+                    console.log(`Credentials required for ${id}`);
+                    rfb.sendCredentials({ password: VNC_PASSWORD });
+                });
+                
+                rfb.addEventListener('securityfailure', (e) => {
+                    console.error(`Security failure for ${id}:`, e.detail);
+                    
+                    // Skip auto-reconnect if this is part of a manual reconnect
+                    if (manualReconnectInProgress.has(id)) {
+                        console.log(`Skipping auto-reconnect for ${id} security failure - manual reconnect in progress`);
+                        return;
+                    }
+                    
+                    // Auto-retry on auth failure with exponential backoff
+                    const attempts = reconnectAttempts.get(id) || 0;
+                    const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000);
+                    const backoffSec = Math.round(backoffMs / 1000);
+                    
+                    canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Auth failed, retrying in ${backoffSec}s...</span></div>`;
+                    reconnectAttempts.set(id, attempts + 1);
+                    
+                    const timeoutId = setTimeout(() => {
+                        reconnectTimeouts.delete(id);
+                        window.reconnectVNC(id);
+                    }, backoffMs);
+                    reconnectTimeouts.set(id, timeoutId);
+                });
+                
+                // Add desktop name handler
+                rfb.addEventListener('desktopname', (e) => {
+                    console.log(`Desktop name for ${id}:`, e.detail.name);
+                });
+                
+                // Add clipboard handler  
+                rfb.addEventListener('clipboard', (e) => {
+                    console.log(`Clipboard for ${id}:`, e.detail.text);
+                });
+                
+                // Add bell handler
+                rfb.addEventListener('bell', () => {
+                    console.log(`Bell for ${id}`);
+                });
+                
+                // Store the connection
+                vncConnections.set(id, rfb);
+                
+            } catch (error) {
+                console.error(`Error creating VNC connection for ${id}:`, error);
+                
+                // Skip auto-reconnect if this is part of a manual reconnect
+                if (manualReconnectInProgress.has(id)) {
+                    console.log(`Skipping auto-reconnect for ${id} error - manual reconnect in progress`);
+                    return;
+                }
+                
+                // Auto-retry on error with exponential backoff
+                const attempts = reconnectAttempts.get(id) || 0;
+                const backoffMs = Math.min(30000, Math.pow(2, attempts) * 1000);
+                const backoffSec = Math.round(backoffMs / 1000);
+                
+                canvasContainer.innerHTML = `<div class="vnc-connecting"><div class="spinner"></div><span>Error, retrying in ${backoffSec}s...</span></div>`;
+                reconnectAttempts.set(id, attempts + 1);
+                
+                const timeoutId = setTimeout(() => {
+                    reconnectTimeouts.delete(id);
+                    window.reconnectVNC(id);
+                }, backoffMs);
+                reconnectTimeouts.set(id, timeoutId);
+            }
+        }
+        
+        // Flag to prevent auto-reconnect during manual reconnect
+        let manualReconnectInProgress = new Set();
+        
+        // Reconnect VNC
+        window.reconnectVNC = function(id, isManual = false) {
+            const instance = currentEmulators.get(id);
+            const container = document.getElementById(`vnc-${id}`);
+            if (instance && container) {
+                // If manual reconnect, reset the attempt counter and flag it
+                if (isManual) {
+                    reconnectAttempts.set(id, 0);
+                    manualReconnectInProgress.add(id);
+                    console.log(`Manual reconnect for ${id} - resetting attempts`);
+                }
+                
+                // Clear any pending reconnect timeouts
+                if (reconnectTimeouts.has(id)) {
+                    clearTimeout(reconnectTimeouts.get(id));
+                    reconnectTimeouts.delete(id);
+                }
+                
+                // Clean up existing connection if any
+                if (vncConnections.has(id)) {
+                    const rfb = vncConnections.get(id);
+                    try {
+                        // Only disconnect if not already disconnected
+                        if (rfb && rfb._rfbConnectionState !== 'disconnected') {
+                            rfb.disconnect();
+                        }
+                    } catch (e) {
+                        // Ignore disconnect errors
+                    }
+                    vncConnections.delete(id);
+                }
+                
+                // Small delay then create new connection
+                setTimeout(() => {
+                    manualReconnectInProgress.delete(id);
+                    createVNCConnection(instance, container);
+                }, 100);
+            }
+        };
+        
+        // Create VNC viewer element
+        function createVNCViewer(instance) {
+            const container = document.createElement('div');
+            container.className = 'vnc-container';
+            container.id = `vnc-${instance.server_name}-${instance.display}`;
+            
+            const wsPort = instance.ws_port || (instance.vnc_port + 1000);
+            
+            // Format status with duration
+            let statusText = instance.is_booting ? 'Booting' : 'Active';
+            let durationText = '';
+            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                durationText = ` · ${instance.session_duration_minutes}m`;
+            }
+            
+            container.innerHTML = `
+                <div class="vnc-header">
+                    <div class="vnc-title" title="${instance.user_email}">
+                        ${instance.user_email}
+                    </div>
+                    <div class="vnc-status">
+                        <div class="status-dot ${instance.is_booting ? 'booting' : ''}"></div>
+                        <span>${statusText}${durationText}</span>
+                    </div>
+                </div>
+                <div class="vnc-display">
+                    <div class="vnc-canvas-container"></div>
+                    <div class="vnc-controls">
+                        <button class="vnc-control-btn" onclick="window.reconnectVNC('${instance.server_name}-${instance.display}', true)">↻</button>
+                    </div>
+                </div>
+                <div class="vnc-info">
+                    ${instance.server_name} | Display :${instance.display} | VNC ${instance.vnc_port} | WS ${wsPort}
+                </div>
+            `;
+            
+            return container;
+        }
+        
+        // Update dashboard with new emulator data
+        function updateDashboard(instances) {
+            const dashboard = document.getElementById('dashboard');
+            const newEmulatorIds = new Set();
+            
+            // Process each instance
+            instances.forEach(instance => {
+                const id = `${instance.server_name}-${instance.display}`;
+                newEmulatorIds.add(id);
+                
+                // Add new emulator if not already present
+                if (!currentEmulators.has(id)) {
+                    const viewer = createVNCViewer(instance);
+                    
+                    // Remove empty state if present
+                    const emptyState = dashboard.querySelector('.empty-state');
+                    if (emptyState) {
+                        emptyState.remove();
+                    }
+                    
+                    dashboard.appendChild(viewer);
+                    currentEmulators.set(id, instance);
+                    
+                    // Create VNC connection after element is added to DOM
+                    setTimeout(() => {
+                        createVNCConnection(instance, viewer);
+                    }, 100);
+                } else {
+                    // Update existing emulator
+                    const existing = currentEmulators.get(id);
+                    const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
+                    
+                    if (container) {
+                        // Update status and duration
+                        const statusDot = container.querySelector('.vnc-status .status-dot');
+                        const statusTextEl = container.querySelector('.vnc-status span');
+                        
+                        // Determine if status or duration changed
+                        const statusChanged = existing.is_booting !== instance.is_booting;
+                        const durationChanged = existing.session_duration_minutes !== instance.session_duration_minutes;
+                        
+                        if ((statusChanged || durationChanged) && statusTextEl) {
+                            // Update status dot if booting status changed
+                            if (statusChanged && statusDot) {
+                                statusDot.className = `status-dot ${instance.is_booting ? 'booting' : ''}`;
+                            }
+                            
+                            // Update status text with duration
+                            let statusText = instance.is_booting ? 'Booting' : 'Active';
+                            let durationText = '';
+                            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                                durationText = ` · ${instance.session_duration_minutes}m`;
+                            }
+                            statusTextEl.textContent = `${statusText}${durationText}`;
+                        }
+                    }
+                    
+                    currentEmulators.set(id, instance);
+                }
+            });
+            
+            // Remove emulators that are no longer active
+            currentEmulators.forEach((instance, id) => {
+                if (!newEmulatorIds.has(id)) {
+                    // Disconnect VNC
+                    if (vncConnections.has(id)) {
+                        try {
+                            vncConnections.get(id).disconnect();
+                        } catch (e) {
+                            console.error('Error disconnecting VNC:', e);
+                        }
+                        vncConnections.delete(id);
+                    }
+                    // Clean up reconnect attempts
+                    reconnectAttempts.delete(id);
+                    
+                    const container = document.getElementById(`vnc-${instance.server_name}-${instance.display}`);
+                    if (container) {
+                        container.classList.add('removing');
+                        setTimeout(() => {
+                            container.remove();
+                            currentEmulators.delete(id);
+                            
+                            // Show empty state if no emulators left
+                            if (currentEmulators.size === 0) {
+                                dashboard.innerHTML = `
+                                    <div class="empty-state">
+                                        <h2>No Active Emulators</h2>
+                                        <p>Waiting for emulators to start...</p>
+                                    </div>
+                                `;
+                            }
+                        }, 300);
+                    } else {
+                        currentEmulators.delete(id);
+                    }
+                }
+            });
+            
+            updateStats(instances);
+        }
+        
+        // Fetch emulator data from API
+        async function fetchEmulatorData() {
+            try {
+                const response = await fetch(API_ENDPOINT);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    updateDashboard(data.vnc_instances || []);
+                } else {
+                    console.error('API returned error:', data.error);
+                }
+            } catch (error) {
+                console.error('Error fetching emulator data:', error);
+            }
+        }
+        
+        // Start auto-refresh
+        function startAutoRefresh() {
+            fetchEmulatorData();
+            refreshTimer = setInterval(() => {
+                fetchEmulatorData();
+            }, REFRESH_INTERVAL);
+        }
+        
+        // Stop auto-refresh
+        function stopAutoRefresh() {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+            }
+        }
+        
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+        
+        // Start the dashboard
+        startAutoRefresh();
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopAutoRefresh();
+            // Disconnect all VNC connections
+            vncConnections.forEach((rfb) => {
+                try {
+                    rfb.disconnect();
+                } catch (e) {
+                    console.error('Error disconnecting VNC on unload:', e);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

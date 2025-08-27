@@ -373,63 +373,68 @@ class RequestManager:
         status_key = f"{self.request_key}:status"
         waiters_key = f"{self.request_key}:waiters"
 
-        # Increment waiter count
+        # Track if we successfully incremented the waiter count
+        waiter_registered = False
+
         try:
-            self.redis_client.incr(waiters_key)
-            # Assign request number if we don't have one yet (though it should already be assigned)
-            if not self.request_number:
-                self.request_number = self._assign_request_number()
-        except Exception:
-            pass
-
-        start_time = time.time()
-        poll_interval = 0.5  # Start with 500ms polling
-        last_check_time = 0
-
-        while (time.time() - start_time) < MAX_WAIT_TIME:
+            # Increment waiter count
             try:
-                # Check for other waiters periodically (every 2 seconds)
-                if time.time() - last_check_time > 2:
-                    self._check_and_notify_multiple_requests()
-                    last_check_time = time.time()
-
-                # Check if request completed
-                status = self.redis_client.get(status_key)
-                if status:
-                    status = status.decode("utf-8") if isinstance(status, bytes) else status
-
-                    if status == DeduplicationStatus.COMPLETED.value:
-                        # Get the cached result
-                        result_data = self.redis_client.get(result_key)
-                        if result_data:
-                            result = pickle.loads(result_data)
-                            logger.info(
-                                f"{BRIGHT_BLUE}Retrieved {BOLD}{BRIGHT_BLUE}deduplicated response{RESET}{BRIGHT_BLUE} for {self.request_key}{RESET}"
-                            )
-
-                            # Cleanup if we're the last waiter
-                            self._cleanup_if_last_waiter()
-
-                            return result
-
-                    elif status == DeduplicationStatus.ERROR.value:
-                        logger.warning(f"Original request failed for {self.request_key}")
-                        self._cleanup_if_last_waiter()
-                        return None
-
+                self.redis_client.incr(waiters_key)
+                waiter_registered = True
+                # Assign request number if we don't have one yet (though it should already be assigned)
+                if not self.request_number:
+                    self.request_number = self._assign_request_number()
             except Exception as e:
-                logger.error(f"Error waiting for deduplicated response: {e}")
+                logger.error(f"Failed to register as waiter: {e}")
+                return None
 
-            # Adaptive polling - increase interval over time
-            time.sleep(min(poll_interval, 2.0))
-            if poll_interval < 2.0:
-                poll_interval *= 1.5
+            start_time = time.time()
+            poll_interval = 0.5  # Start with 500ms polling
+            last_check_time = 0
 
-        logger.warning(
-            f"{BRIGHT_BLUE}Timeout waiting for deduplicated response for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
-        )
-        self._cleanup_if_last_waiter()
-        return None
+            while (time.time() - start_time) < MAX_WAIT_TIME:
+                try:
+                    # Check for other waiters periodically (every 2 seconds)
+                    if time.time() - last_check_time > 2:
+                        self._check_and_notify_multiple_requests()
+                        last_check_time = time.time()
+
+                    # Check if request completed
+                    status = self.redis_client.get(status_key)
+                    if status:
+                        status = status.decode("utf-8") if isinstance(status, bytes) else status
+
+                        if status == DeduplicationStatus.COMPLETED.value:
+                            # Get the cached result
+                            result_data = self.redis_client.get(result_key)
+                            if result_data:
+                                result = pickle.loads(result_data)
+                                logger.info(
+                                    f"{BRIGHT_BLUE}Retrieved {BOLD}{BRIGHT_BLUE}deduplicated response{RESET}{BRIGHT_BLUE} for {self.request_key}{RESET}"
+                                )
+                                return result
+
+                        elif status == DeduplicationStatus.ERROR.value:
+                            logger.warning(f"Original request failed for {self.request_key}")
+                            return None
+
+                except Exception as e:
+                    logger.error(f"Error waiting for deduplicated response: {e}")
+
+                # Adaptive polling - increase interval over time
+                time.sleep(min(poll_interval, 2.0))
+                if poll_interval < 2.0:
+                    poll_interval *= 1.5
+
+            logger.warning(
+                f"{BRIGHT_BLUE}Timeout waiting for deduplicated response for {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}"
+            )
+            return None
+
+        finally:
+            # ALWAYS clean up if we registered as a waiter, no matter how we exit
+            if waiter_registered:
+                self._cleanup_if_last_waiter()
 
     def store_response(self, response_data: Any, status_code: int):
         """Store the response in Redis for other waiting requests."""
@@ -446,29 +451,34 @@ class RequestManager:
             has_waiters = waiters_count and int(waiters_count) > 0
 
             if has_waiters:
-                # There are waiters, store the response for them with a short TTL
-                # 10 seconds should be enough for waiters to retrieve it
-                short_ttl = 10
+                # There are waiters, store the response for them
+                # The last waiter will be responsible for cleanup via _cleanup_if_last_waiter
 
                 # Pickle the response data
                 pickled_data = pickle.dumps((response_data, status_code))
 
-                # Store the result and status with short TTL
-                self.redis_client.set(result_key, pickled_data, ex=short_ttl)
-                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=short_ttl)
+                # Store the result and status WITHOUT TTL
+                # The last waiter MUST delete these keys via _cleanup_if_last_waiter
+                self.redis_client.set(result_key, pickled_data)
+                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value)
+
+                # Delete the progress key immediately - waiters check status not progress
+                progress_key = f"{self.request_key}:progress"
+                self.redis_client.delete(progress_key)
 
                 logger.info(
-                    f"{BRIGHT_BLUE}Stored response for {self.request_key} with {short_ttl}s TTL for {BOLD}{BRIGHT_BLUE}{waiters_count} waiters{RESET}"
+                    f"{BRIGHT_BLUE}Stored response for {self.request_key} for {BOLD}{BRIGHT_BLUE}{waiters_count} waiters{RESET} (last waiter will cleanup)"
                 )
             else:
-                # No waiters, just mark as completed and clean up immediately
-                self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=2)
-                logger.debug(f"No waiters for {self.request_key}, marked as completed and will clean up")
+                # No waiters, clean up immediately - no need for status at all
+                logger.debug(f"No waiters for {self.request_key}, cleaning up immediately")
 
                 # Clean up immediately since there are no waiters
                 keys_to_delete = [
                     f"{self.request_key}:progress",
                     f"{self.request_key}:cancelled",
+                    f"{self.request_key}:status",
+                    f"{self.request_key}:waiters",
                 ]
                 self.redis_client.delete(*keys_to_delete)
 
@@ -489,7 +499,31 @@ class RequestManager:
 
         try:
             status_key = f"{self.request_key}:status"
-            self.redis_client.set(status_key, DeduplicationStatus.ERROR.value, ex=DEFAULT_TTL)
+            progress_key = f"{self.request_key}:progress"
+            waiters_key = f"{self.request_key}:waiters"
+
+            # Check if there are waiters
+            waiters_count = self.redis_client.get(waiters_key)
+            has_waiters = waiters_count and int(waiters_count) > 0
+
+            if has_waiters:
+                # Set error status WITHOUT TTL - last waiter MUST clean up
+                self.redis_client.set(status_key, DeduplicationStatus.ERROR.value)
+                logger.debug(f"Set error status for {self.request_key} (waiters will cleanup)")
+            else:
+                # No waiters, clean up immediately - no need to set error status
+                # Just delete all the keys
+                keys_to_delete = [
+                    status_key,
+                    waiters_key,
+                    f"{self.request_key}:result",
+                    f"{self.request_key}:cancelled",
+                ]
+                self.redis_client.delete(*keys_to_delete)
+                logger.debug(f"No waiters for {self.request_key} on error, cleaned up immediately")
+
+            # Delete the progress key immediately - this is critical
+            self.redis_client.delete(progress_key)
 
             # Clear active request
             self._clear_active_request()

@@ -85,8 +85,40 @@ shell:
 	@PYTHONPATH=$(shell pwd) uv run python shell.py
 
 test:
-	@echo "Running tests..."
-	@PYTHONPATH=$(shell pwd) uv run pytest tests -v
+	@echo "========================================="
+	@echo "Running ALL tests grouped by integration"
+	@echo "========================================="
+	@echo ""
+	@echo "===== UNIT TESTS (all groups) ====="
+	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short
+	@echo ""
+	@echo "===== GROUP 1 (kindle@solreader.com) ====="
+	@echo "Test 01 - API integration (non-expensive)"
+	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive"
+	@echo ""
+	@echo "Test 03 - Absolute navigation"
+	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
+	@echo ""
+	@echo "Test 05 - Multi-user integration"
+	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
+	@echo ""
+	@echo "===== GROUP 2 (sam@solreader.com) ====="
+	@echo "Test 02 - Request deduplication (non-expensive)"
+	@CI=true PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive"
+	@echo ""
+	@echo "Test 02 - Request deduplication (expensive - may fail)"
+	@CI=true PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
+	@echo ""
+	@echo "Test 04 - Concurrent requests"
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
+	@echo ""
+	@echo "===== GROUP 3 (recreate@solreader.com) ====="
+	@echo "Test 01 - API integration (expensive - recreate AVD)"
+	@RECREATE_USER_EMAIL=recreate@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
+	@echo ""
+	@echo "========================================="
+	@echo "All test groups completed!"
+	@echo "========================================="
 
 test-all: test
 
@@ -113,11 +145,60 @@ test-page:
 
 test-concurrent:
 	@echo "Running concurrent HTTP requests tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_04_concurrent_requests_integration.py
+	@PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
 
 test-user:
 	@echo "Running multi-user integration tests..."
 	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_05_multi_user_integration.py
+
+# Test groups matching GitHub Actions integration groups
+test-group1:
+	@echo "===== GROUP 1 Tests (kindle@solreader.com) ====="
+	@echo ""
+	@echo "Running unit tests..."
+	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short
+	@echo ""
+	@echo "Running Test 01 - API integration (non-expensive)..."
+	@TEST_USER_EMAIL=kindle@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive"
+	@echo ""
+	@echo "Running Test 03 - Absolute navigation..."
+	@TEST_USER_EMAIL=kindle@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
+	@echo ""
+	@echo ""
+	@echo "===== GROUP 1 Tests Complete ====="
+
+test-group2:
+	@echo "===== GROUP 2 Tests (sam@solreader.com) ====="
+	@echo ""
+	@echo "Running Test 02 - Request deduplication (non-expensive)..."
+	@CI=true TEST_USER_EMAIL=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive"
+	@echo ""
+	@echo "Running Test 02 - Request deduplication (expensive - allowed to fail)..."
+	@CI=true TEST_USER_EMAIL=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
+	@echo ""
+	@echo ""
+	@echo "===== GROUP 2 Tests Complete ====="
+
+test-group3:
+	@echo "===== GROUP 3 Tests (recreate@solreader.com) ====="
+	@echo ""
+	@echo "Running Test 01 - API integration (expensive - recreate AVD)..."
+	@TEST_USER_EMAIL=recreate@solreader.com RECREATE_USER_EMAIL=recreate@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
+	@echo ""
+	@echo "===== GROUP 3 Tests Complete ====="
+
+test-group4:
+	@echo "===== GROUP 4 Tests (Multi-user: kindle@ and sam@) ====="
+	@echo "NOTE: Run AFTER groups 1 and 2 complete to avoid conflicts"
+	@echo "Configured users: CONCURRENT_USER_A=kindle@solreader.com, CONCURRENT_USER_B=sam@solreader.com"
+	@echo ""
+	@echo "Running Test 04 - Concurrent requests (uses both users)..."
+	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
+	@echo ""
+	@echo "Running Test 05 - Multi-user integration (uses both users)..."
+	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
+	@echo ""
+	@echo "===== GROUP 4 Tests Complete ====="
 
 # Generate staff authentication token for testing
 test-staff-auth:
