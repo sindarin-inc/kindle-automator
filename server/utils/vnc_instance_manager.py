@@ -479,6 +479,9 @@ class VNCInstanceManager:
         """
         Audit VNC instances and clean up any that don't have running emulators.
         This ensures the VNC instance table stays accurate and doesn't hold stale entries.
+        A stale entry is:
+        1. An instance with an emulator_id that's not actually running
+        2. An instance with an assigned profile but no emulator_id (indicates failed/crashed emulator)
         """
         logger.debug("Starting VNC instance audit to clean up stale entries")
 
@@ -508,9 +511,12 @@ class VNCInstanceManager:
             logger.error(f"Error getting running emulators: {e}")
             return
 
-        # Check each instance with an emulator_id
         cleaned_count = 0
+        instances_missing_emulator = 0
+
+        # Check each instance
         for instance in all_instances:
+            # Case 1: Instance has an emulator_id that's not actually running
             if instance.emulator_id and instance.emulator_id not in running_emulators:
                 logger.warning(
                     f"Clearing stale emulator_id {instance.emulator_id} from VNC instance {instance.id} "
@@ -521,11 +527,19 @@ class VNCInstanceManager:
                 self.repository.update_emulator_id(instance.assigned_profile, None)
                 cleaned_count += 1
 
-                # If this instance has no profile assigned, it's truly orphaned
-                if not instance.assigned_profile:
-                    logger.info(
-                        f"VNC instance {instance.id} has no profile and no running emulator - available for use"
-                    )
+            # Case 2: Instance has an assigned profile but no emulator_id (stale assignment)
+            elif instance.assigned_profile and not instance.emulator_id:
+                logger.warning(
+                    f"Found stale assignment: VNC instance {instance.id} assigned to {instance.assigned_profile} "
+                    f"but has no emulator_id (display :{instance.display}, port {instance.emulator_port})"
+                )
+                instances_missing_emulator += 1
+                # Note: We're not clearing the assignment, just logging it as stale
+                # The assignment remains so the user can restart their emulator
+
+            # Case 3: Instance has no profile and no emulator (available for use)
+            elif not instance.assigned_profile and not instance.emulator_id:
+                logger.debug(f"VNC instance {instance.id} is available (no profile, no emulator)")
 
         # Also check for emulator IDs in the table that shouldn't be there
         stale_count = self.repository.clear_stale_emulator_ids(running_emulators)
@@ -533,7 +547,10 @@ class VNCInstanceManager:
             logger.info(f"Cleared {stale_count} additional stale emulator IDs from VNC instances")
             cleaned_count += stale_count
 
-        if cleaned_count > 0:
-            logger.info(f"VNC instance audit complete: cleaned {cleaned_count} stale entries")
+        if cleaned_count > 0 or instances_missing_emulator > 0:
+            logger.info(
+                f"VNC instance audit complete: cleaned {cleaned_count} stale emulator IDs, "
+                f"found {instances_missing_emulator} instances with profiles but no running emulator"
+            )
         else:
             logger.debug("VNC instance audit complete: no stale entries found")
