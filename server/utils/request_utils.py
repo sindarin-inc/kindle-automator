@@ -226,6 +226,47 @@ def is_websockets_requested() -> bool:
     return get_boolean_param("websockets", False)
 
 
+def is_request_authenticated() -> bool:
+    """Check if the current request's user has valid Kindle authentication.
+
+    This checks if the user has authenticated with Kindle (has auth_date in DB),
+    not whether the API request itself is authenticated.
+
+    Returns:
+        bool: True if the user is authenticated with Kindle, False otherwise
+    """
+    from flask import has_request_context
+
+    if not has_request_context():
+        return False
+
+    # Get the sindarin_email (handles staff impersonation automatically)
+    sindarin_email = get_sindarin_email()
+
+    if not sindarin_email:
+        return False
+
+    # Check the actual authentication status from the database
+    try:
+        from database.connection import DatabaseConnection
+        from database.repositories.user_repository import UserRepository
+
+        with DatabaseConnection().get_session() as session:
+            repo = UserRepository(session)
+            user = repo.get_user_by_email(sindarin_email)
+
+            if not user:
+                return False
+
+            # User is authenticated if they have an auth_date
+            return user.auth_date is not None
+
+    except Exception as e:
+        logger.warning(f"Error checking authentication status for {sindarin_email}: {e}")
+        # Default to False if we can't check
+        return False
+
+
 def get_vnc_and_websocket_urls(sindarin_email: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """Get both VNC and WebSocket URLs for the given email.
 
