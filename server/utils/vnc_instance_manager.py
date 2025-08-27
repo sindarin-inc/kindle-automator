@@ -401,6 +401,23 @@ class VNCInstanceManager:
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}", exc_info=True)
 
+    def update_appium_status(self, email: str, running: bool, pid: Optional[int] = None) -> bool:
+        """
+        Update the Appium status for a profile's instance.
+
+        Args:
+            email: Email address of the profile
+            running: Whether Appium is running
+            pid: Optional process ID
+
+        Returns:
+            bool: True if update was successful
+        """
+        from datetime import datetime, timezone
+
+        health_check = datetime.now(timezone.utc) if running else None
+        return self.repository.update_appium_status(email, running, pid, health_check)
+
     def reset_appium_states_on_startup(self) -> None:
         """
         Reset all appium_running states to false on server startup.
@@ -512,7 +529,6 @@ class VNCInstanceManager:
             return
 
         cleaned_count = 0
-        instances_missing_emulator = 0
 
         # Check each instance
         for instance in all_instances:
@@ -530,12 +546,12 @@ class VNCInstanceManager:
             # Case 2: Instance has an assigned profile but no emulator_id (stale assignment)
             elif instance.assigned_profile and not instance.emulator_id:
                 logger.warning(
-                    f"Found stale assignment: VNC instance {instance.id} assigned to {instance.assigned_profile} "
+                    f"Releasing stale assignment: VNC instance {instance.id} assigned to {instance.assigned_profile} "
                     f"but has no emulator_id (display :{instance.display}, port {instance.emulator_port})"
                 )
-                instances_missing_emulator += 1
-                # Note: We're not clearing the assignment, just logging it as stale
-                # The assignment remains so the user can restart their emulator
+                # Release the stale assignment since users get reassigned dynamically
+                self.repository.release_instance_from_profile(instance.assigned_profile)
+                cleaned_count += 1
 
             # Case 3: Instance has no profile and no emulator (available for use)
             elif not instance.assigned_profile and not instance.emulator_id:
@@ -547,10 +563,7 @@ class VNCInstanceManager:
             logger.info(f"Cleared {stale_count} additional stale emulator IDs from VNC instances")
             cleaned_count += stale_count
 
-        if cleaned_count > 0 or instances_missing_emulator > 0:
-            logger.info(
-                f"VNC instance audit complete: cleaned {cleaned_count} stale emulator IDs, "
-                f"found {instances_missing_emulator} instances with profiles but no running emulator"
-            )
+        if cleaned_count > 0:
+            logger.info(f"VNC instance audit complete: cleaned {cleaned_count} stale entries")
         else:
             logger.debug("VNC instance audit complete: no stale entries found")

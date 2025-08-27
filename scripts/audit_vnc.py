@@ -161,7 +161,7 @@ def audit_vnc_dry_run():
         for instance in stale_assignments:
             print(f"  • Instance {instance.id} (Display :{instance.display})")
             print(f"    - Profile: {instance.assigned_profile}")
-            print(f"    - Status: No emulator running (assignment preserved)")
+            print(f"    - Would release assignment (instance becomes available)")
         print()
 
     # Report orphaned instances
@@ -176,8 +176,8 @@ def audit_vnc_dry_run():
     print("=" * 60)
     print("DRY RUN COMPLETE - No changes were made")
     print("=" * 60)
-    print(f"\nTo apply cleanup (clears stale emulator_ids), run: make db-audit")
-    print("Note: Profile assignments are preserved even if emulator is not running")
+    print(f"\nTo apply cleanup, run: make db-audit")
+    print("This will clear stale emulator_ids and release stale profile assignments")
 
 
 def main():

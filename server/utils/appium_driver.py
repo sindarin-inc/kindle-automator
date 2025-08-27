@@ -82,8 +82,8 @@ class AppiumDriver:
                 return True
             else:
                 logger.info(f"Appium marked as running but not healthy for {email}, restarting")
-                instance["appium_running"] = False
-                self.vnc_manager.save_instances()
+                # Update database to mark as not running
+                self.vnc_manager.update_appium_status(email, running=False)
 
         port = instance["appium_port"]
         process_name = f"appium_{email}"
@@ -91,8 +91,8 @@ class AppiumDriver:
         # First check if anything is already using this port
         if self._check_appium_health(email):
             logger.info(f"Healthy Appium server already on port {port}, marking as running")
-            instance["appium_running"] = True
-            self.vnc_manager.save_instances()
+            # Update database to mark as running
+            self.vnc_manager.update_appium_status(email, running=True)
             return True
 
         # Kill any existing process on this port
@@ -146,11 +146,8 @@ class AppiumDriver:
             # Save PID
             self._save_pid(process_name, process.pid)
 
-            # Update instance with process info
-            instance["appium_pid"] = process.pid
-            instance["appium_running"] = True
-            instance["appium_last_health_check"] = time.time()
-            self.vnc_manager.save_instances()
+            # Update database with process info
+            self.vnc_manager.update_appium_status(email, running=True, pid=process.pid)
 
             # Keep process reference in memory only (not serialized)
             self._runtime_processes = getattr(self, "_runtime_processes", {})
@@ -211,10 +208,8 @@ class AppiumDriver:
         if email in runtime_processes:
             del runtime_processes[email]
 
-        # Clear process info
-        instance["appium_pid"] = None
-        instance["appium_running"] = False
-        self.vnc_manager.save_instances()
+        # Clear process info in database
+        self.vnc_manager.update_appium_status(email, running=False, pid=None)
 
         return True
 

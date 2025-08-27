@@ -231,7 +231,7 @@ test-web-auth:
 provision:
 	ansible-playbook ansible/provision.yml
 deploy:
-	ansible-playbook ansible/deploy.yml
+	ansible-playbook ansible/deploy.yml -l prod
 staging:
 	ansible-playbook ansible/deploy.yml -l staging
 env:
