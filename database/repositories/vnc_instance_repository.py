@@ -169,6 +169,8 @@ class VNCInstanceRepository:
                     appium_pid=None,
                     appium_running=False,
                     appium_last_health_check=None,
+                    boot_started_at=None,
+                    is_booting=False,
                     updated_at=datetime.now(timezone.utc),
                 )
             )
@@ -371,7 +373,7 @@ class VNCInstanceRepository:
                 .where(
                     and_(VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name)
                 )
-                .values(is_booting=False, boot_started_at=None)
+                .values(is_booting=False)
             )
             result = session.execute(stmt)
             session.commit()
@@ -413,7 +415,7 @@ class VNCInstanceRepository:
                                 VNCInstance.server_name == self.server_name,
                             )
                         )
-                        .values(is_booting=False, boot_started_at=None)
+                        .values(is_booting=False)
                     )
                     session.execute(stmt)
                     session.commit()

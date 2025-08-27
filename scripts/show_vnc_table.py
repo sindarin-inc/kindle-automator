@@ -50,15 +50,15 @@ def main():
             print("No VNC instances found")
             return
 
-        # Print header with server name column
+        # Print header with server name column and duration
         print(
-            "┌────┬────────────────────────┬─────┬──────┬───────┬──────────────┬─────────────────────────────┬─────────┬────────────┐"
+            "┌────┬────────────────────────┬─────┬──────┬───────┬──────────────┬─────────────────────────────┬─────────┬──────────┬────────────┐"
         )
         print(
-            "│ ID │ Server                 │ Dsp │ VNC  │ Emu   │ Emulator ID  │ Profile                     │ Appium  │ Updated    │"
+            "│ ID │ Server                 │ Dsp │ VNC  │ Emu   │ Emulator ID  │ Profile                     │ Appium  │ Duration │ Updated    │"
         )
         print(
-            "├────┼────────────────────────┼─────┼──────┼───────┼──────────────┼─────────────────────────────┼─────────┼────────────┤"
+            "├────┼────────────────────────┼─────┼──────┼───────┼──────────────┼─────────────────────────────┼─────────┼──────────┼────────────┤"
         )
 
         for inst in instances:
@@ -81,15 +81,32 @@ def main():
             else:
                 appium = "-".center(9)
 
+            # Calculate duration
+            duration = "-"
+            if inst.boot_started_at and inst.assigned_profile:
+                boot_time = inst.boot_started_at
+                if boot_time.tzinfo is None:
+                    boot_time = boot_time.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                diff = now - boot_time
+                mins = int(diff.total_seconds() / 60)
+                if mins < 60:
+                    duration = f"{mins}m"
+                else:
+                    hours = mins // 60
+                    remaining_mins = mins % 60
+                    duration = f"{hours}h{remaining_mins}m"
+            duration = duration.center(10)
+
             updated = format_datetime(inst.updated_at).center(12)
 
             # Print row
             print(
-                f"│{id_str}│{server}│{display}│{vnc_port}│{emu_port}│{emu_id}│{profile}│{appium}│{updated}│"
+                f"│{id_str}│{server}│{display}│{vnc_port}│{emu_port}│{emu_id}│{profile}│{appium}│{duration}│{updated}│"
             )
 
         print(
-            "└────┴────────────────────────┴─────┴──────┴───────┴──────────────┴─────────────────────────────┴─────────┴────────────┘"
+            "└────┴────────────────────────┴─────┴──────┴───────┴──────────────┴─────────────────────────────┴─────────┴──────────┴────────────┘"
         )
 
         # Summary with server breakdown
