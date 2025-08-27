@@ -1,4 +1,4 @@
-name: Integration Tests - Group 4 (Multi-user: kindle@ and sam@)
+name: Integration Tests - Group 4 (Multi-user)
 
 on:
   workflow_call:

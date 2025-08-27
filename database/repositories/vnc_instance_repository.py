@@ -179,19 +179,39 @@ class VNCInstanceRepository:
     def update_emulator_id(self, email: str, emulator_id: Optional[str]) -> bool:
         """Update the emulator ID for a profile's assigned instance on the current server."""
         with db_connection.get_session() as session:
-            # When setting an emulator ID, match based on port to handle edge cases
+            # When setting an emulator ID, we should match by email only
+            # The emulator port may not match the assigned port if the emulator was started
+            # on a different port or if there was a port mismatch during startup
             if emulator_id and emulator_id.startswith("emulator-"):
                 try:
-                    # Extract port from emulator ID (e.g., "emulator-5558" -> 5558)
+                    # Extract port from emulator ID for logging purposes
                     emulator_port = int(emulator_id.split("-")[1])
 
-                    # Update only the instance with matching email AND port
+                    # First check what port this email is assigned to
+                    check_stmt = select(VNCInstance).where(
+                        and_(
+                            VNCInstance.assigned_profile == email, VNCInstance.server_name == self.server_name
+                        )
+                    )
+                    instance = session.scalar(check_stmt)
+
+                    if not instance:
+                        logger.error(f"No VNC instance found for {email} on {self.server_name}")
+                        return False
+
+                    if instance.emulator_port != emulator_port:
+                        logger.warning(
+                            f"Port mismatch for {email}: VNC instance has port {instance.emulator_port} "
+                            f"but emulator ID {emulator_id} implies port {emulator_port}. "
+                            f"Updating emulator ID anyway based on email match."
+                        )
+
+                    # Update by email only, not by port
                     stmt = (
                         update(VNCInstance)
                         .where(
                             and_(
                                 VNCInstance.assigned_profile == email,
-                                VNCInstance.emulator_port == emulator_port,
                                 VNCInstance.server_name == self.server_name,
                             )
                         )
