@@ -269,6 +269,16 @@ ENV_FILE := $(shell if [ -f .env ]; then echo .env; elif [ -f .env.staging ]; th
 db-vnc:
 	@uv run dotenv -f $(ENV_FILE) run python scripts/show_vnc_table.py
 
+# Audit VNC instances and clean up stale emulator IDs (only affects THIS server)
+db-audit:
+	@echo "Running VNC instance audit (will clean stale entries on THIS server)..."
+	@uv run dotenv -f $(ENV_FILE) run python scripts/audit_vnc.py
+
+# Dry run audit - shows what would be cleaned without making changes
+db-audit-dry:
+	@echo "Running VNC instance audit in dry run mode (no changes will be made)..."
+	@uv run dotenv -f $(ENV_FILE) run python scripts/audit_vnc.py --dry
+
 # Export database to JSON format (auto-detects environment)
 db-export:
 	@echo "Exporting users from database to JSON format..."
