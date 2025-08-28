@@ -392,6 +392,15 @@ class AVDProfileManager:
             users = repo.get_users_with_restart_flag()
             return [user.email for user in users]
 
+    def get_profiles_with_restart_flag_and_server(self) -> List[Tuple[str, str]]:
+        """Get list of (email, server) tuples for profiles with was_running_at_restart flag set."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            users = repo.get_users_with_restart_flag()
+            return [(user.email, user.restart_on_server) for user in users if user.restart_on_server]
+
     def clear_all_restart_flags(self) -> int:
         """Clear all was_running_at_restart flags and return count cleared."""
         from database.repositories.user_repository import UserRepository
@@ -399,6 +408,14 @@ class AVDProfileManager:
         with self.db_connection.get_session() as session:
             repo = UserRepository(session)
             return repo.clear_restart_flags()
+
+    def clear_all_restart_flags_and_servers(self) -> int:
+        """Clear all was_running_at_restart flags and restart_on_server values."""
+        from database.repositories.user_repository import UserRepository
+
+        with self.db_connection.get_session() as session:
+            repo = UserRepository(session)
+            return repo.clear_restart_flags_and_servers()
 
     def get_email_by_emulator_id(self, emulator_id: str) -> Optional[str]:
         """Get email for a given emulator_id."""

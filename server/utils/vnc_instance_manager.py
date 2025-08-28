@@ -354,16 +354,29 @@ class VNCInstanceManager:
             bool: True if updated successfully
         """
         try:
+            import socket
+
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
+
+            # Set the restart flag
             success = avd_manager.set_user_field(
                 email, "was_running_at_restart", should_restart if should_restart else None
             )
 
+            # Also set the server name for affinity if marking for restart
+            if success and should_restart:
+                server_name = socket.gethostname()
+                success = avd_manager.set_user_field(email, "restart_on_server", server_name)
+                if success:
+                    logger.info(f"✓ Marked {email} for restart on server '{server_name}'")
+            elif success and not should_restart:
+                # Clear the server affinity when clearing the restart flag
+                avd_manager.set_user_field(email, "restart_on_server", None)
+                logger.info(f"✓ Cleared restart flag for {email}")
+
             if success:
-                action = "marked for restart" if should_restart else "cleared restart flag"
-                logger.info(f"✓ Successfully {action} for {email}")
                 return True
             else:
                 logger.warning(f"Failed to update restart flag for {email}")
@@ -374,30 +387,47 @@ class VNCInstanceManager:
 
     def get_running_at_restart(self) -> List[str]:
         """
-        Get list of emails that were running at last restart.
+        Get list of emails that were running at last restart on THIS server.
 
         Returns:
-            List[str]: Email addresses that were running at restart
+            List[str]: Email addresses that were running at restart on this server
         """
         try:
+            import socket
+
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
-            return avd_manager.get_profiles_with_restart_flag()
+            current_server = socket.gethostname()
+
+            # Get all profiles with restart flag and filter by server affinity
+            all_restart_profiles = avd_manager.get_profiles_with_restart_flag_and_server()
+
+            # Filter to only those that should restart on this server
+            profiles_for_this_server = [
+                email for email, server in all_restart_profiles if server == current_server
+            ]
+
+            if profiles_for_this_server:
+                logger.info(
+                    f"Found {len(profiles_for_this_server)} profiles to restart on server '{current_server}'"
+                )
+
+            return profiles_for_this_server
         except Exception as e:
             logger.error(f"Error getting running at restart emails: {e}", exc_info=True)
             return []
 
     def clear_running_at_restart_flags(self) -> None:
         """
-        Clear all was_running_at_restart flags after server startup.
+        Clear all was_running_at_restart flags and server affinities after server startup.
         """
         try:
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
-            cleared_count = avd_manager.clear_all_restart_flags()
-            logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
+            cleared_count = avd_manager.clear_all_restart_flags_and_servers()
+            logger.info(f"Cleared {cleared_count} was_running_at_restart flags and server affinities")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}", exc_info=True)
 
