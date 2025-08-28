@@ -104,8 +104,6 @@ class DashboardResource(Resource):
                     }
                     vnc_list.append(vnc_info)
 
-                logger.info(f"Found {len(vnc_list)} active VNC instances across all servers")
-
                 return {
                     "success": True,
                     "vnc_instances": vnc_list,

@@ -83,9 +83,9 @@ class RequestManager:
 
         self.instance_id = str(uuid.uuid4())
 
-        logger.debug(
-            f"RequestManager initialized for {self.user_email} on {self.path} with method {self.method} with instance ID {self.instance_id}"
-        )
+        # logger.debug(
+        #     f"RequestManager initialized for {self.user_email} on {self.path} with method {self.method} with instance ID {self.instance_id}"
+        # )
 
     def _generate_request_key(self) -> str:
         """Generate a unique key for this request based on user, path, method, and params."""
