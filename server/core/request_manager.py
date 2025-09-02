@@ -56,9 +56,10 @@ PRIORITY_LEVELS = {
 }
 
 # Endpoints where newer requests should cancel older ones (last-one-wins)
-# NOTE: This is now handled dynamically based on parameter differences
+# These endpoints use path-only request keys for proper cancellation
 LAST_ONE_WINS_ENDPOINTS = {
-    # Keeping empty for now as the logic is handled by parameter comparison
+    "/open-book",  # Book opening should cancel previous book opening requests
+    "/open-random-book",  # Random book selection should cancel previous random book requests
 }
 
 # Default TTL for cached responses and locks
@@ -83,9 +84,9 @@ class RequestManager:
 
         self.instance_id = str(uuid.uuid4())
 
-        logger.debug(
-            f"RequestManager initialized for {self.user_email} on {self.path} with method {self.method} with instance ID {self.instance_id}"
-        )
+        # logger.debug(
+        #     f"RequestManager initialized for {self.user_email} on {self.path} with method {self.method} with instance ID {self.instance_id}"
+        # )
 
     def _generate_request_key(self) -> str:
         """Generate a unique key for this request based on user, path, method, and params."""
@@ -272,10 +273,19 @@ class RequestManager:
                 active_request = json.loads(active_data)
                 active_path = active_request.get("path")
 
-                # If it's the same endpoint, cancel it
-                if active_path == self.path:
+                # For last-one-wins endpoints, always cancel existing requests for the same path
+                # For other endpoints, only cancel if it's exactly the same request
+                should_cancel = False
+                if self.path in LAST_ONE_WINS_ENDPOINTS and active_path == self.path:
+                    should_cancel = True
+                elif active_path == self.path:
                     active_request_key = active_request.get("request_key")
                     if active_request_key and active_request_key != self.request_key:
+                        should_cancel = True
+
+                if should_cancel:
+                    active_request_key = active_request.get("request_key")
+                    if active_request_key:
                         cancel_key = f"{active_request_key}:cancelled"
                         self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
 

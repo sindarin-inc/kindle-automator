@@ -361,6 +361,7 @@ class UserRepository:
             "last_used_date": user.last_used.isoformat() if user.last_used else None,
             "auth_date": user.auth_date.isoformat() if user.auth_date else None,
             "was_running_at_restart": user.was_running_at_restart,
+            "restart_on_server": user.restart_on_server,
             "styles_updated": user.styles_updated,
             "timezone": user.timezone,
             "created_from_seed_clone": user.created_from_seed_clone,
@@ -460,6 +461,22 @@ class UserRepository:
             return result.rowcount
         except SQLAlchemyError as e:
             logger.error(f"Database error clearing restart flags: {e}")
+            self.session.rollback()
+            return 0
+
+    def clear_restart_flags_and_servers(self) -> int:
+        """Clear all was_running_at_restart flags and restart_on_server values."""
+        try:
+            stmt = (
+                update(User)
+                .where(User.was_running_at_restart == True)
+                .values(was_running_at_restart=None, restart_on_server=None)
+            )
+            result = self.session.execute(stmt)
+            self.session.commit()
+            return result.rowcount
+        except SQLAlchemyError as e:
+            logger.error(f"Database error clearing restart flags and servers: {e}")
             self.session.rollback()
             return 0
 

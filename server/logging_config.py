@@ -667,6 +667,11 @@ def setup_logger():
         lib_logger = logging.getLogger(lib_name)
         lib_logger.setLevel(logging.INFO)
 
+    # Disable Werkzeug's access logs (the "GET /path HTTP/1.1 200" logs)
+    # since we have our own request logging
+    werkzeug_logger = logging.getLogger("werkzeug._internal")
+    werkzeug_logger.setLevel(logging.WARNING)
+
     # Configure SQL and Redis command loggers to only write to debug_server.log
     # These loggers don't propagate to avoid showing in email logs
     sql_logger = logging.getLogger("sql_commands")

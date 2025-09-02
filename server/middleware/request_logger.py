@@ -128,6 +128,11 @@ class RequestBodyLogger:
     @staticmethod
     def log_request():
         """Log the request body."""
+        # Skip logging for certain paths
+        skip_logging_paths = ["/dashboard"]
+        if request.path in skip_logging_paths:
+            return
+
         request_data = None
 
         # Get user agent
@@ -194,6 +199,11 @@ class RequestBodyLogger:
     @staticmethod
     def log_response(response):
         """Log the response body."""
+        # Skip logging for certain paths
+        skip_logging_paths = ["/dashboard"]
+        if request.path in skip_logging_paths:
+            return response
+
         response_data = None
 
         # Calculate elapsed time

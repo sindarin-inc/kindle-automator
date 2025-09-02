@@ -89,8 +89,8 @@ class DatabaseConnection:
             self.engine = create_engine(
                 self.database_url,
                 poolclass=QueuePool,
-                pool_size=10,
-                max_overflow=20,
+                pool_size=5,
+                max_overflow=10,
                 pool_timeout=30,
                 pool_recycle=1800,  # Recycle connections after 30 minutes
                 echo=False,  # Use SQL_LOGGING env var for query logging instead

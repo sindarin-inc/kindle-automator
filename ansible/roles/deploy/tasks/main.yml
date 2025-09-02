@@ -1,4 +1,7 @@
 ---
+# Deployment tasks for Kindle Automator
+# Note: Database migrations run only once (on the first server) to prevent conflicts
+
 # Reset and update the repository
 - name: Reset git repository to clean state
   shell: |
@@ -27,7 +30,7 @@
     executable: /bin/bash
   when: git_pull.changed
 
-# Run database migrations
+# Run database migrations on first server only
 - name: Run database migrations
   shell: |
     cd /opt/kindle-automator
@@ -36,11 +39,13 @@
     executable: /bin/bash
   register: db_migration
   changed_when: "'Running upgrade' in db_migration.stdout"
+  run_once: true
 
 - name: Display migration output
   debug:
     msg: "{{ db_migration.stdout_lines }}"
   when: db_migration.changed
+  run_once: true
 
 # Always trigger handlers to restart service
 - name: Restart kindle-automator service

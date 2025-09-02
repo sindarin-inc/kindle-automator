@@ -354,16 +354,29 @@ class VNCInstanceManager:
             bool: True if updated successfully
         """
         try:
+            import socket
+
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
+
+            # Set the restart flag
             success = avd_manager.set_user_field(
                 email, "was_running_at_restart", should_restart if should_restart else None
             )
 
+            # Also set the server name for affinity if marking for restart
+            if success and should_restart:
+                server_name = socket.gethostname()
+                success = avd_manager.set_user_field(email, "restart_on_server", server_name)
+                if success:
+                    logger.info(f"✓ Marked {email} for restart on server '{server_name}'")
+            elif success and not should_restart:
+                # Clear the server affinity when clearing the restart flag
+                avd_manager.set_user_field(email, "restart_on_server", None)
+                logger.info(f"✓ Cleared restart flag for {email}")
+
             if success:
-                action = "marked for restart" if should_restart else "cleared restart flag"
-                logger.info(f"✓ Successfully {action} for {email}")
                 return True
             else:
                 logger.warning(f"Failed to update restart flag for {email}")
@@ -374,32 +387,66 @@ class VNCInstanceManager:
 
     def get_running_at_restart(self) -> List[str]:
         """
-        Get list of emails that were running at last restart.
+        Get list of emails that were running at last restart on THIS server.
 
         Returns:
-            List[str]: Email addresses that were running at restart
+            List[str]: Email addresses that were running at restart on this server
         """
         try:
+            import socket
+
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
-            return avd_manager.get_profiles_with_restart_flag()
+            current_server = socket.gethostname()
+
+            # Get all profiles with restart flag and filter by server affinity
+            all_restart_profiles = avd_manager.get_profiles_with_restart_flag_and_server()
+
+            # Filter to only those that should restart on this server
+            profiles_for_this_server = [
+                email for email, server in all_restart_profiles if server == current_server
+            ]
+
+            if profiles_for_this_server:
+                logger.info(
+                    f"Found {len(profiles_for_this_server)} profiles to restart on server '{current_server}'"
+                )
+
+            return profiles_for_this_server
         except Exception as e:
             logger.error(f"Error getting running at restart emails: {e}", exc_info=True)
             return []
 
     def clear_running_at_restart_flags(self) -> None:
         """
-        Clear all was_running_at_restart flags after server startup.
+        Clear all was_running_at_restart flags and server affinities after server startup.
         """
         try:
             from views.core.avd_profile_manager import AVDProfileManager
 
             avd_manager = AVDProfileManager.get_instance()
-            cleared_count = avd_manager.clear_all_restart_flags()
-            logger.info(f"Cleared {cleared_count} was_running_at_restart flags")
+            cleared_count = avd_manager.clear_all_restart_flags_and_servers()
+            logger.info(f"Cleared {cleared_count} was_running_at_restart flags and server affinities")
         except Exception as e:
             logger.error(f"Error clearing was_running_at_restart flags: {e}", exc_info=True)
+
+    def update_appium_status(self, email: str, running: bool, pid: Optional[int] = None) -> bool:
+        """
+        Update the Appium status for a profile's instance.
+
+        Args:
+            email: Email address of the profile
+            running: Whether Appium is running
+            pid: Optional process ID
+
+        Returns:
+            bool: True if update was successful
+        """
+        from datetime import datetime, timezone
+
+        health_check = datetime.now(timezone.utc) if running else None
+        return self.repository.update_appium_status(email, running, pid, health_check)
 
     def reset_appium_states_on_startup(self) -> None:
         """
@@ -479,6 +526,9 @@ class VNCInstanceManager:
         """
         Audit VNC instances and clean up any that don't have running emulators.
         This ensures the VNC instance table stays accurate and doesn't hold stale entries.
+        A stale entry is:
+        1. An instance with an emulator_id that's not actually running
+        2. An instance with an assigned profile but no emulator_id (indicates failed/crashed emulator)
         """
         logger.debug("Starting VNC instance audit to clean up stale entries")
 
@@ -508,9 +558,11 @@ class VNCInstanceManager:
             logger.error(f"Error getting running emulators: {e}")
             return
 
-        # Check each instance with an emulator_id
         cleaned_count = 0
+
+        # Check each instance
         for instance in all_instances:
+            # Case 1: Instance has an emulator_id that's not actually running
             if instance.emulator_id and instance.emulator_id not in running_emulators:
                 logger.warning(
                     f"Clearing stale emulator_id {instance.emulator_id} from VNC instance {instance.id} "
@@ -521,11 +573,19 @@ class VNCInstanceManager:
                 self.repository.update_emulator_id(instance.assigned_profile, None)
                 cleaned_count += 1
 
-                # If this instance has no profile assigned, it's truly orphaned
-                if not instance.assigned_profile:
-                    logger.info(
-                        f"VNC instance {instance.id} has no profile and no running emulator - available for use"
-                    )
+            # Case 2: Instance has an assigned profile but no emulator_id (stale assignment)
+            elif instance.assigned_profile and not instance.emulator_id:
+                logger.warning(
+                    f"Releasing stale assignment: VNC instance {instance.id} assigned to {instance.assigned_profile} "
+                    f"but has no emulator_id (display :{instance.display}, port {instance.emulator_port})"
+                )
+                # Release the stale assignment since users get reassigned dynamically
+                self.repository.release_instance_from_profile(instance.assigned_profile)
+                cleaned_count += 1
+
+            # Case 3: Instance has no profile and no emulator (available for use)
+            elif not instance.assigned_profile and not instance.emulator_id:
+                logger.debug(f"VNC instance {instance.id} is available (no profile, no emulator)")
 
         # Also check for emulator IDs in the table that shouldn't be there
         stale_count = self.repository.clear_stale_emulator_ids(running_emulators)

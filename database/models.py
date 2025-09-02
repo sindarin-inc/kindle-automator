@@ -35,6 +35,7 @@ class User(Base):
     auth_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
     auth_failed_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
     was_running_at_restart: Mapped[Optional[bool]] = mapped_column(Boolean)
+    restart_on_server: Mapped[Optional[str]] = mapped_column(String(255))
     styles_updated: Mapped[bool] = mapped_column(Boolean, default=False)
     timezone: Mapped[Optional[str]] = mapped_column(String(50))
     created_from_seed_clone: Mapped[bool] = mapped_column(Boolean, default=False)

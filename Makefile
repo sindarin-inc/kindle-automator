@@ -28,7 +28,7 @@ claude-run:
 	@# Clear the log file before starting new server
 	@> logs/server_output.log
 	@# Start the server in background
-	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development PYTHONPATH=$$(pwd) uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
+	@bash -c '(NO_COLOR_CONSOLE=1 FLASK_ENV=development uv run python -m server.server > logs/server_output.log 2>&1 & echo $$! > logs/server.pid) &'
 	@sleep 1
 	@echo "Server started with PID $$(cat logs/server.pid)"
 	@echo "Waiting for session restoration to complete..."
@@ -77,12 +77,12 @@ lint:
 # Start the Flask server
 server:
 	@echo "Starting Flask server..."
-	@FLASK_ENV=development PYTHONPATH=$(shell pwd) uv run python -m server.server
+	@FLASK_ENV=development uv run python -m server.server
 
 # Start an interactive shell with the environment setup
 shell:
 	@echo "Starting interactive shell..."
-	@PYTHONPATH=$(shell pwd) uv run python shell.py
+	@uv run python shell.py
 
 test:
 	@echo "========================================="
@@ -90,31 +90,31 @@ test:
 	@echo "========================================="
 	@echo ""
 	@echo "===== UNIT TESTS (all groups) ====="
-	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short
+	uv run pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short
 	@echo ""
 	@echo "===== GROUP 1 (kindle@solreader.com) ====="
 	@echo "Test 01 - API integration (non-expensive)"
-	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive"
+	uv run pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive"
 	@echo ""
 	@echo "Test 03 - Absolute navigation"
-	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
+	uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
 	@echo ""
 	@echo "Test 05 - Multi-user integration"
-	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
+	uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
 	@echo ""
 	@echo "===== GROUP 2 (sam@solreader.com) ====="
 	@echo "Test 02 - Request deduplication (non-expensive)"
-	@CI=true PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive"
+	@CI=true uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive"
 	@echo ""
 	@echo "Test 02 - Request deduplication (expensive - may fail)"
-	@CI=true PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
+	@CI=true uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
 	@echo ""
 	@echo "Test 04 - Concurrent requests"
-	@PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
+	uv run python tests/test_04_concurrent_requests_integration.py
 	@echo ""
 	@echo "===== GROUP 3 (recreate@solreader.com) ====="
 	@echo "Test 01 - API integration (expensive - recreate AVD)"
-	@RECREATE_USER_EMAIL=recreate@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
+	@RECREATE_USER_EMAIL=recreate@solreader.com uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
 	@echo ""
 	@echo "========================================="
 	@echo "All test groups completed!"
@@ -124,45 +124,45 @@ test-all: test
 
 test-fast:
 	@echo "Running tests with fail-fast (stops on first failure)..."
-	@PYTHONPATH=$(shell pwd) uv run pytest tests -x -v
+	uv run pytest tests -x -v
 
 test-unit:
 	@echo "Running all unit tests (no server required)..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v
+	uv run python -m pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v
 	@echo "All unit tests passed!"
 
 test-api:
 	@echo "Running integration tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_01_api_integration.py -v
+	uv run python -m pytest tests/test_01_api_integration.py -v
 
 test-dedupe:
 	@echo "Running deduplication integration tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_02_request_deduplication_integration.py -v
+	uv run python -m pytest tests/test_02_request_deduplication_integration.py -v
 
 test-page:
 	@echo "Running page navigation tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_03_absolute_navigation.py -v
+	uv run python -m pytest tests/test_03_absolute_navigation.py -v
 
 test-concurrent:
 	@echo "Running concurrent HTTP requests tests..."
-	@PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
+	uv run python tests/test_04_concurrent_requests_integration.py
 
 test-user:
 	@echo "Running multi-user integration tests..."
-	@PYTHONPATH=$(shell pwd) uv run python -m pytest tests/test_05_multi_user_integration.py
+	uv run python -m pytest tests/test_05_multi_user_integration.py
 
 # Test groups matching GitHub Actions integration groups
 test-group1:
 	@echo "===== GROUP 1 Tests (kindle@solreader.com) ====="
 	@echo ""
 	@echo "Running unit tests..."
-	@PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short
+	uv run pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short
 	@echo ""
 	@echo "Running Test 01 - API integration (non-expensive)..."
-	@TEST_USER_EMAIL=kindle@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive"
+	@TEST_USER_EMAIL=kindle@solreader.com uv run pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive"
 	@echo ""
 	@echo "Running Test 03 - Absolute navigation..."
-	@TEST_USER_EMAIL=kindle@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
+	@TEST_USER_EMAIL=kindle@solreader.com uv run pytest tests/test_03_absolute_navigation.py -v --tb=short
 	@echo ""
 	@echo ""
 	@echo "===== GROUP 1 Tests Complete ====="
@@ -171,10 +171,10 @@ test-group2:
 	@echo "===== GROUP 2 Tests (sam@solreader.com) ====="
 	@echo ""
 	@echo "Running Test 02 - Request deduplication (non-expensive)..."
-	@CI=true TEST_USER_EMAIL=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive"
+	@CI=true TEST_USER_EMAIL=sam@solreader.com uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive"
 	@echo ""
 	@echo "Running Test 02 - Request deduplication (expensive - allowed to fail)..."
-	@CI=true TEST_USER_EMAIL=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
+	@CI=true TEST_USER_EMAIL=sam@solreader.com uv run pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" || true
 	@echo ""
 	@echo ""
 	@echo "===== GROUP 2 Tests Complete ====="
@@ -183,7 +183,7 @@ test-group3:
 	@echo "===== GROUP 3 Tests (recreate@solreader.com) ====="
 	@echo ""
 	@echo "Running Test 01 - API integration (expensive - recreate AVD)..."
-	@TEST_USER_EMAIL=recreate@solreader.com RECREATE_USER_EMAIL=recreate@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
+	@TEST_USER_EMAIL=recreate@solreader.com RECREATE_USER_EMAIL=recreate@solreader.com uv run pytest tests/test_01_api_integration.py -v --tb=short -m "expensive"
 	@echo ""
 	@echo "===== GROUP 3 Tests Complete ====="
 
@@ -193,10 +193,10 @@ test-group4:
 	@echo "Configured users: CONCURRENT_USER_A=kindle@solreader.com, CONCURRENT_USER_B=sam@solreader.com"
 	@echo ""
 	@echo "Running Test 04 - Concurrent requests (uses both users)..."
-	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com PYTHONPATH=$(shell pwd) uv run python tests/test_04_concurrent_requests_integration.py
+	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com uv run python tests/test_04_concurrent_requests_integration.py
 	@echo ""
 	@echo "Running Test 05 - Multi-user integration (uses both users)..."
-	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com PYTHONPATH=$(shell pwd) uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
+	@CONCURRENT_USER_A=kindle@solreader.com CONCURRENT_USER_B=sam@solreader.com uv run pytest tests/test_05_multi_user_integration.py -v --tb=short
 	@echo ""
 	@echo "===== GROUP 4 Tests Complete ====="
 
@@ -231,7 +231,7 @@ test-web-auth:
 provision:
 	ansible-playbook ansible/provision.yml
 deploy:
-	ansible-playbook ansible/deploy.yml
+	ansible-playbook ansible/deploy.yml -l prod
 staging:
 	ansible-playbook ansible/deploy.yml -l staging
 env:
@@ -252,6 +252,7 @@ ssh-staging:
 staging-ssh: ssh-staging
 ssh-db:
 	ssh -i ansible/keys/kindle.key root@46.62.136.6
+sshdb: ssh-db
 
 # Firewall management
 firewall:
@@ -268,6 +269,16 @@ ENV_FILE := $(shell if [ -f .env ]; then echo .env; elif [ -f .env.staging ]; th
 # Display VNC instances table (auto-detects environment)
 db-vnc:
 	@uv run dotenv -f $(ENV_FILE) run python scripts/show_vnc_table.py
+
+# Audit VNC instances and clean up stale emulator IDs (only affects THIS server)
+db-audit:
+	@echo "Running VNC instance audit (will clean stale entries on THIS server)..."
+	@uv run dotenv -f $(ENV_FILE) run python scripts/audit_vnc.py
+
+# Dry run audit - shows what would be cleaned without making changes
+db-audit-dry:
+	@echo "Running VNC instance audit in dry run mode (no changes will be made)..."
+	@uv run dotenv -f $(ENV_FILE) run python scripts/audit_vnc.py --dry
 
 # Export database to JSON format (auto-detects environment)
 db-export:
