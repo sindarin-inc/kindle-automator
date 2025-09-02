@@ -84,9 +84,9 @@ class RequestManager:
 
         self.instance_id = str(uuid.uuid4())
 
-        # logger.debug(
-        #     f"RequestManager initialized for {self.user_email} on {self.path} with method {self.method} with instance ID {self.instance_id}"
-        # )
+        logger.debug(
+            f"RequestManager initialized for {self.user_email} on {self.path} with method {self.method} with instance ID {self.instance_id}"
+        )
 
     def _generate_request_key(self) -> str:
         """Generate a unique key for this request based on user, path, method, and params."""
@@ -316,11 +316,6 @@ class RequestManager:
                 active_priority = active_request.get("priority", 0)
                 active_path = active_request.get("path", "unknown")
 
-                logger.info(
-                    f"[DEBUG] Checking priority: Current request {self.path} (priority {self.priority}) "
-                    f"vs active request {active_path} (priority {active_priority})"
-                )
-
                 # If our priority is higher, cancel the active request
                 if self.priority > active_priority:
                     active_request_key = active_request.get("request_key")
@@ -345,12 +340,8 @@ class RequestManager:
                             f"{active_request_key} (priority {active_priority}, path {active_path}) for higher priority "
                             f"{BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} (priority {self.priority}){RESET}"
                         )
-                else:
-                    logger.info(
-                        f"[DEBUG] Not cancelling: {self.path} priority {self.priority} <= {active_path} priority {active_priority}"
-                    )
             else:
-                logger.info(f"[DEBUG] No active request found for user {self.user_email}")
+                pass
 
         except Exception as e:
             logger.error(f"Error checking for lower priority requests: {e}")
@@ -800,7 +791,12 @@ class RequestManager:
             logger.error(f"Error cleaning up request number: {e}")
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - handle errors."""
+        """Context manager exit - handle errors and cleanup."""
+        # Clear the cancellation cache for this request
+        from server.utils.cancellation_utils import clear_cancellation_cache
+
+        clear_cancellation_cache(self.request_key)
+
         if exc_type is not None:
             self._mark_error()
         return False

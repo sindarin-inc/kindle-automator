@@ -1,7 +1,8 @@
 """Utilities for checking request cancellation status."""
 
 import logging
-from typing import Optional
+import time
+from typing import Dict, Optional, Tuple
 
 from server.core.redis_connection import get_redis_client
 from server.core.request_manager import RequestManager
@@ -9,10 +10,16 @@ from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
 
 logger = logging.getLogger(__name__)
 
+# Cache for last check times per request key
+# Format: {request_key: (last_check_time, last_result)}
+_cancellation_check_cache: Dict[str, Tuple[float, bool]] = {}
+
 
 def should_cancel(user_email: str, request_key: Optional[str] = None) -> bool:
     """
     Check if the current request should be cancelled.
+
+    Only checks Redis at most once per second to avoid excessive checks.
 
     Args:
         user_email: The user's email address
@@ -36,23 +43,27 @@ def should_cancel(user_email: str, request_key: Optional[str] = None) -> bool:
 
                 active_request = json.loads(active_data)
                 request_key = active_request.get("request_key")
-                logger.debug(f"Got request_key from active request: {request_key}")
 
         if not request_key:
-            logger.debug(f"No request_key found for {user_email}")
             return False
 
-        # Check the cancellation flag
+        # Check if we've checked this request recently (within 1 second)
+        current_time = time.time()
+        if request_key in _cancellation_check_cache:
+            last_check_time, last_result = _cancellation_check_cache[request_key]
+            time_since_last_check = current_time - last_check_time
+
+            # If less than 1 second has passed, return the cached result
+            if time_since_last_check < 1.0:
+                return last_result
+
+        # It's been at least 1 second (or first check), so check Redis
         cancel_key = f"{request_key}:cancelled"
         cancel_value = redis_client.get(cancel_key)
         is_cancelled = bool(cancel_value)
 
-        # Debug logging for cancellation checks
-        import time
-
-        logger.debug(
-            f"[{time.time():.3f}] Checking cancellation for {cancel_key}: {is_cancelled} (value: {cancel_value})"
-        )
+        # Update the cache with the new check time and result
+        _cancellation_check_cache[request_key] = (current_time, is_cancelled)
 
         if is_cancelled:
             logger.info(
@@ -103,13 +114,15 @@ def mark_cancelled(user_email: str, request_key: Optional[str] = None) -> bool:
         cancel_key = f"{request_key}:cancelled"
         redis_client.set(cancel_key, "1", ex=130)  # Same TTL as other request keys
 
+        # Clear the cache for this request key to ensure next check sees the cancellation
+        if request_key in _cancellation_check_cache:
+            del _cancellation_check_cache[request_key]
+
         # Force immediate Redis write
         try:
             redis_client.ping()  # Force connection to be active
         except:
             pass
-
-        import time
 
         logger.info(
             f"[{time.time():.3f}] CANCELLATION MARKED: Request {request_key} has been marked as cancelled for user {user_email}"
@@ -119,6 +132,25 @@ def mark_cancelled(user_email: str, request_key: Optional[str] = None) -> bool:
     except Exception as e:
         logger.error(f"Error marking request as cancelled: {e}")
         return False
+
+
+def clear_cancellation_cache(request_key: str = None) -> None:
+    """
+    Clear the cancellation check cache for a specific request or all requests.
+
+    Args:
+        request_key: Optional specific request key to clear. If not provided,
+                     clears the entire cache.
+    """
+    global _cancellation_check_cache
+
+    if request_key:
+        if request_key in _cancellation_check_cache:
+            del _cancellation_check_cache[request_key]
+            logger.debug(f"Cleared cancellation cache for request {request_key}")
+    else:
+        _cancellation_check_cache.clear()
+        logger.debug("Cleared entire cancellation cache")
 
 
 def get_active_request_info(user_email: str) -> Optional[dict]:
