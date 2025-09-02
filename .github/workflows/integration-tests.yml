@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - staging
+      - sam/priority-test
   pull_request:
   workflow_dispatch:
 
