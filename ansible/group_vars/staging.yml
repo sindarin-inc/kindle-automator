@@ -1,3 +1,4 @@
 ---
 # Staging configuration for staging servers
-kindle_repo_branch: "staging"  # Staging branch
+# kindle_repo_branch: "staging"  # Staging branch
+kindle_repo_branch: "sam/priority-test"  # Staging branch

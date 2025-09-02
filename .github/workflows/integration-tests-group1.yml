@@ -45,35 +45,36 @@ jobs:
         run: |
           uv pip install --system -r requirements.txt
       
-      - name: Run unit tests first
+      - name: Run ONLY the failing cancellation test
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kindle_test
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m pytest tests/test_01_concurrent_access_unit.py tests/test_02_deduplication_unit.py tests/test_03_user_repository_unit.py -v --tb=short --durations=0
+          python -m pytest tests/test_02_deduplication_unit.py::TestCancellationUtils::test_should_cancel_true -v --tb=short --durations=0
         timeout-minutes: 1
       
-      - name: Run 01 - API integration tests (non-expensive)
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive" --durations=0
-        timeout-minutes: 5
+      # TEMPORARILY DISABLED - Only testing the failing test
+      # - name: Run 01 - API integration tests (non-expensive)
+      #   if: success()
+      #   env:
+      #     API_BASE_URL: https://api.sindarin.com
+      #     TEST_USER_EMAIL: kindle@solreader.com
+      #     INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+      #     WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+      #   run: |
+      #     python -m pytest tests/test_01_api_integration.py -v --tb=short -m "not expensive" --durations=0
+      #   timeout-minutes: 5
       
-      - name: Run 03 - Absolute navigation integration tests
-        if: success()
-        env:
-          API_BASE_URL: https://api.sindarin.com
-          TEST_USER_EMAIL: kindle@solreader.com
-          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-        run: |
-          python -m pytest tests/test_03_absolute_navigation.py -v --tb=short --durations=0
-        timeout-minutes: 10
+      # - name: Run 03 - Absolute navigation integration tests
+      #   if: success()
+      #   env:
+      #     API_BASE_URL: https://api.sindarin.com
+      #     TEST_USER_EMAIL: kindle@solreader.com
+      #     INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+      #     WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+      #   run: |
+      #     python -m pytest tests/test_03_absolute_navigation.py -v --tb=short --durations=0
+      #   timeout-minutes: 10
       
       - name: Upload test results
         if: always()
