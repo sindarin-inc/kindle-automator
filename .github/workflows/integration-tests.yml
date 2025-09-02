@@ -14,15 +14,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ONLY RUN GROUP 1 - which has been modified to only run the failing test
-  test-group-1:
-    uses: ./.github/workflows/integration-tests-group1.yml
-    secrets: inherit
-    
-  # TEMPORARILY DISABLED - Only testing the failing test
-  # test-group-2:
-  #   uses: ./.github/workflows/integration-tests-group2.yml
+  # TEMPORARILY DISABLED - Not the group with the failing test
+  # test-group-1:
+  #   uses: ./.github/workflows/integration-tests-group1.yml
   #   secrets: inherit
+    
+  # ONLY RUN GROUP 2 - which has the request deduplication integration tests
+  test-group-2:
+    uses: ./.github/workflows/integration-tests-group2.yml
+    secrets: inherit
     
   # test-group-3:
   #   uses: ./.github/workflows/integration-tests-group3.yml
@@ -36,21 +36,21 @@ jobs:
   
   # Final job to check all tests passed
   integration-tests-complete:
-    needs: [test-group-1]  # Only checking group 1 for now
+    needs: [test-group-2]  # Only checking group 2 for now
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check test results
         run: |
-          if [[ "${{ needs.test-group-1.result }}" != "success" ]]; then
-            echo "Test Group 1 failed"
-            exit 1
-          fi
-          # TEMPORARILY DISABLED - Only checking group 1
-          # if [[ "${{ needs.test-group-2.result }}" != "success" ]]; then
-          #   echo "Test Group 2 failed"
+          # TEMPORARILY DISABLED - Only checking group 2
+          # if [[ "${{ needs.test-group-1.result }}" != "success" ]]; then
+          #   echo "Test Group 1 failed"
           #   exit 1
           # fi
+          if [[ "${{ needs.test-group-2.result }}" != "success" ]]; then
+            echo "Test Group 2 failed"
+            exit 1
+          fi
           # if [[ "${{ needs.test-group-3.result }}" != "success" ]]; then
           #   echo "Test Group 3 failed"
           #   exit 1
@@ -59,4 +59,4 @@ jobs:
           #   echo "Test Group 4 failed"
           #   exit 1
           # fi
-          echo "Test Group 1 (single test) passed!"
+          echo "Test Group 2 passed!"
