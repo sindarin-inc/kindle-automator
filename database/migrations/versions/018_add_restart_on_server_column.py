@@ -9,6 +9,12 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import text
 
+# Alembic revision identifiers
+revision = "018"
+down_revision = "017"
+branch_labels = None
+depends_on = None
+
 
 def upgrade():
     """Add restart_on_server column to track which server should restart a user."""
