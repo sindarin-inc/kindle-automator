@@ -56,7 +56,7 @@ docker exec sol_redis redis-cli -p 6479 -n 1 monitor
 - **`make test-*`**: Run API endpoint tests (e.g. `make test-init`, `make test-books`)
 - **`make ssh`**: SSH to prod/staging (see Makefile for non-interactive command prefix)
 - **Running Python**: Use `uv run dotenv run` for scripts needing env vars, `uv run` for tools
-- **Running tests**: Use `uv run pytest` directly (no PYTHONPATH needed)
+- **Running tests**: Use `uv run pytest` directly (PYTHONPATH is automatically configured)
 
 ## Running the Server
 
