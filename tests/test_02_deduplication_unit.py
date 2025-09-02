@@ -151,6 +151,10 @@ class TestCancellationUtils(unittest.TestCase):
     def test_should_cancel_true(self, mock_get_redis):
         """Test should_cancel returns True when request is cancelled."""
         mock_get_redis.return_value = self.redis_client
+        
+        # Clear the cache first to ensure we hit Redis
+        from server.utils.cancellation_utils import clear_cancellation_cache
+        clear_cancellation_cache()
 
         # Mock active request
         active_request = {"request_key": "kindle:request:test123"}
@@ -166,6 +170,10 @@ class TestCancellationUtils(unittest.TestCase):
     def test_should_cancel_false(self, mock_get_redis):
         """Test should_cancel returns False when request is not cancelled."""
         mock_get_redis.return_value = self.redis_client
+        
+        # Clear the cache first to ensure we hit Redis
+        from server.utils.cancellation_utils import clear_cancellation_cache
+        clear_cancellation_cache()
 
         # Mock active request
         active_request = {"request_key": "kindle:request:test123"}
