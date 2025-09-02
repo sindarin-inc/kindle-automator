@@ -108,22 +108,24 @@ To control Redis command logging in the debug log:
 
 - **Local email**: Always use `sam@solreader.com` or `kindle@solreader.com`
 - **For running integration tests locally**: You need to set auth tokens from production:
+
   ```bash
   # Get tokens from production (these are stored in GitHub secrets for CI)
   # Option 1: Get from .env file if you have access to production
   # Option 2: Ask a team member for the current tokens
   # Option 3: Check GitHub Actions secrets (if you have access)
-  
+
   # Once you have the tokens, export them:
   export INTEGRATION_TEST_STAFF_AUTH_TOKEN="<get-from-prod-env>"
   export WEB_INTEGRATION_TEST_AUTH_TOKEN="<knox-token-from-prod>"
-  
+
   # To verify tokens are working:
   curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
        -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
        "http://localhost:4096/kindle/emulators/active?user_email=kindle@solreader.com"
   # Should return JSON with active emulators, not an authentication error
   ```
+
 - **Authentication for proxy server (REQUIRED)**:
 
   ```bash
@@ -150,14 +152,16 @@ To control Redis command logging in the debug log:
   - You MUST use dev session authentication as shown above
 
 - **After working on features**: Look through `tests/test_api_integration.py` and run the most appropriate specific test for the endpoint you modified:
+
   ```bash
   # First, set authentication tokens for local testing (see Testing section above for how to get these)
   export INTEGRATION_TEST_STAFF_AUTH_TOKEN="<get-from-prod-env>"
   export WEB_INTEGRATION_TEST_AUTH_TOKEN="<knox-token-from-prod>"
-  
+
   # Run specific test
   uv run pytest tests/test_api_integration.py::TestKindleAPIIntegration::test_specific_endpoint -v
   ```
+
 - Never skip tests, they are all there for a reason
 
 ## Database Migrations
@@ -189,6 +193,7 @@ To control Redis command logging in the debug log:
   # For image: http://localhost:4096/kindle/screenshot?user_email=kindle@solreader.com&xml=0
   # MUST include authentication cookies (see Testing section)
   ```
+- **NO DEPLOYMENTS**: Never deploy anything with Ansible unless explicitly asked by the user. Only make configuration changes and fixes to the codebase.
 
 ## Project Structure
 

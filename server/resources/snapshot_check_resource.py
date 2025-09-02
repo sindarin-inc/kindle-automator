@@ -61,10 +61,10 @@ class SnapshotCheckResource(Resource):
             profile_manager = AVDProfileManager.get_instance()
 
             # Check if profile exists in database
-            from database.connection import DatabaseConnection
+            from database.connection import get_db
             from database.repositories.user_repository import UserRepository
 
-            with DatabaseConnection().get_session() as session:
+            with get_db() as session:
                 repo = UserRepository(session)
                 user = repo.get_user_by_email(sindarin_email)
 
