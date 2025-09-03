@@ -757,8 +757,9 @@ class RequestManager:
         """Decrement active request count and reset counter if needed."""
         # Clear the cancellation cache for this request
         from server.utils.cancellation_utils import clear_cancellation_cache
+
         clear_cancellation_cache(self.request_key)
-        
+
         if not self.redis_client or not self.request_number:
             return
 
