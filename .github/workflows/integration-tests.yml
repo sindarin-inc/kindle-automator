@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - staging
-      - sam/priority-test
   pull_request:
   workflow_dispatch:
 
@@ -17,21 +16,21 @@ jobs:
   test-group-1:
     uses: ./.github/workflows/integration-tests-group1.yml
     secrets: inherit
-    
+
   test-group-2:
     uses: ./.github/workflows/integration-tests-group2.yml
     secrets: inherit
-    
+
   test-group-3:
     uses: ./.github/workflows/integration-tests-group3.yml
     secrets: inherit
-  
+
   # Run group 4 after groups 1 and 2 complete (multi-user tests)
   test-group-4:
     needs: [test-group-1, test-group-2]
     uses: ./.github/workflows/integration-tests-group4.yml
     secrets: inherit
-  
+
   # Final job to check all tests passed
   integration-tests-complete:
     needs: [test-group-1, test-group-2, test-group-3, test-group-4]

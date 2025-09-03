@@ -45,6 +45,17 @@ jobs:
         run: |
           uv pip install --system -r requirements.txt
 
+      - name: Run 02 - Request deduplication integration tests
+        env:
+          CI: "true"
+          API_BASE_URL: https://api.sindarin.com
+          TEST_USER_EMAIL: sam@solreader.com
+          INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
+          WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
+        run: |
+          python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "not expensive" --durations=0
+        timeout-minutes: 8
+
       - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
         continue-on-error: true
         env:
