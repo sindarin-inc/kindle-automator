@@ -742,3 +742,178 @@ class TableOfContentsHandler:
             time.sleep(0.3)
         except Exception as e:
             logger.error(f"Error hiding reading controls: {e}", exc_info=True)
+
+    def navigate_to_chapter(self, chapter_name: str) -> Dict:
+        """Navigate to a specific chapter from the table of contents.
+
+        Args:
+            chapter_name: The name of the chapter to navigate to.
+
+        Returns:
+            Dict with success status and optional error message.
+        """
+        try:
+            logger.info(f"Attempting to navigate to chapter: {chapter_name}")
+
+            # Normalize the requested chapter name for comparison
+            normalized_requested = (
+                "".join(c for c in chapter_name if c.isalnum() or c.isspace()).lower().strip()
+            )
+
+            # Check if we're in reading view
+            if not self.automator.state_machine.is_reading_view():
+                return {"success": False, "error": "Not in reading view"}
+
+            # Ensure reading controls are visible
+            if not self._ensure_reading_controls_visible():
+                return {"success": False, "error": "Failed to show reading controls"}
+
+            # Open page position popover
+            if not self._open_page_position_popover():
+                return {"success": False, "error": "Failed to open page position popover"}
+
+            # Open Table of Contents
+            if not self._open_table_of_contents():
+                return {"success": False, "error": "Failed to open Table of Contents"}
+
+            # Store page source for debugging
+            store_page_source(self.driver.page_source, "toc_navigation_view")
+
+            # Scroll to top first
+            self._scroll_to_top_of_toc()
+
+            # Find and tap the requested chapter
+            found_chapter = False
+            window_size = self.driver.get_window_size()
+            start_x = window_size["width"] // 2
+            start_y = int(window_size["height"] * 0.7)
+            end_y = int(window_size["height"] * 0.3)
+
+            max_scrolls = 20
+            for scroll_count in range(max_scrolls):
+                # Find all chapter titles visible on screen
+                try:
+                    # Find all ToC entry containers
+                    list_items = self.driver.find_elements(
+                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_view_container"
+                    )
+
+                    if not list_items:
+                        # Fallback to finding title elements directly
+                        title_elements = self.driver.find_elements(
+                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
+                        )
+
+                        for title_elem in title_elements:
+                            try:
+                                if not title_elem.is_displayed():
+                                    continue
+
+                                title_text = title_elem.text.strip()
+                                # Normalize the chapter title for comparison
+                                normalized_title = (
+                                    "".join(c for c in title_text if c.isalnum() or c.isspace())
+                                    .lower()
+                                    .strip()
+                                )
+
+                                logger.debug(f"Comparing '{normalized_requested}' with '{normalized_title}'")
+
+                                # Check for exact match or if one contains the other
+                                if (
+                                    normalized_requested == normalized_title
+                                    or normalized_requested in normalized_title
+                                    or normalized_title in normalized_requested
+                                ):
+                                    logger.info(f"Found matching chapter: {title_text}")
+                                    title_elem.click()
+                                    found_chapter = True
+                                    break
+                            except Exception as e:
+                                logger.debug(f"Error checking title element: {e}")
+                                continue
+                    else:
+                        # Process container items
+                        for item in list_items:
+                            try:
+                                title_elem = item.find_element(
+                                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
+                                )
+                                if not title_elem.is_displayed():
+                                    continue
+
+                                title_text = title_elem.text.strip()
+                                # Normalize the chapter title for comparison
+                                normalized_title = (
+                                    "".join(c for c in title_text if c.isalnum() or c.isspace())
+                                    .lower()
+                                    .strip()
+                                )
+
+                                logger.debug(f"Comparing '{normalized_requested}' with '{normalized_title}'")
+
+                                # Check for exact match or if one contains the other
+                                if (
+                                    normalized_requested == normalized_title
+                                    or normalized_requested in normalized_title
+                                    or normalized_title in normalized_requested
+                                ):
+                                    logger.info(f"Found matching chapter: {title_text}")
+                                    # Click the entire container item for better reliability
+                                    item.click()
+                                    found_chapter = True
+                                    break
+                            except Exception as e:
+                                logger.debug(f"Error checking container item: {e}")
+                                continue
+
+                    if found_chapter:
+                        break
+
+                    # Scroll down to see more chapters
+                    if scroll_count < max_scrolls - 1:
+                        self.driver.swipe(start_x, start_y, start_x, end_y, duration=500)
+                        time.sleep(0.3)
+
+                except Exception as e:
+                    logger.warning(f"Error during chapter search: {e}")
+                    continue
+
+            if not found_chapter:
+                logger.warning(f"Chapter '{chapter_name}' not found in Table of Contents")
+                # Close ToC to recover
+                self._close_table_of_contents()
+                self._hide_reading_controls()
+                return {"success": False, "error": f"Chapter '{chapter_name}' not found in Table of Contents"}
+
+            # Wait for navigation to complete
+            time.sleep(1.5)
+
+            # ToC should close automatically after chapter selection
+            # but check and close if still open
+            if self._is_table_of_contents_open():
+                logger.info("ToC still open after chapter selection, closing it")
+                self._close_table_of_contents()
+
+            # Hide any remaining controls
+            self._hide_reading_controls()
+
+            # Get current position after navigation
+            position = self._get_current_page_position()
+
+            return {
+                "success": True,
+                "navigated_to": chapter_name,
+                "position": position or {"note": "Position not available"},
+            }
+
+        except Exception as e:
+            logger.error(f"Error navigating to chapter: {e}", exc_info=True)
+            # Try to recover
+            try:
+                if self._is_table_of_contents_open():
+                    self._close_table_of_contents()
+                self._hide_reading_controls()
+            except:
+                pass
+            return {"success": False, "error": str(e)}
