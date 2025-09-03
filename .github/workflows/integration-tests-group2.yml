@@ -45,7 +45,8 @@ jobs:
         run: |
           uv pip install --system -r requirements.txt
 
-      - name: Run ONLY three specific tests - screenshot, failing stream test, and shutdown
+      - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
+        continue-on-error: true
         env:
           CI: "true"
           API_BASE_URL: https://api.sindarin.com
@@ -53,21 +54,8 @@ jobs:
           INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
           WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
         run: |
-          python -m pytest tests/test_02_request_deduplication_integration.py::Test2PriorityAndCancellation::test_screenshot_runs_concurrently tests/test_02_request_deduplication_integration.py::Test2PriorityAndCancellation::test_stream_cancellation_by_higher_priority tests/test_02_request_deduplication_integration.py::Test2PriorityAndCancellation::test_z_double_shutdown_both_return_200 -v --tb=short --durations=0
-        timeout-minutes: 3
-
-      # TEMPORARILY DISABLED - Only testing the failing test and the one before it
-      # - name: Run 02 - Request deduplication tests (expensive - allowed to fail)
-      #   continue-on-error: true
-      #   env:
-      #     CI: "true"
-      #     API_BASE_URL: https://api.sindarin.com
-      #     TEST_USER_EMAIL: sam@solreader.com
-      #     INTEGRATION_TEST_STAFF_AUTH_TOKEN: ${{ secrets.INTEGRATION_TEST_STAFF_AUTH_TOKEN }}
-      #     WEB_INTEGRATION_TEST_AUTH_TOKEN: ${{ secrets.WEB_INTEGRATION_TEST_AUTH_TOKEN }}
-      #   run: |
-      #     python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" --durations=0
-      #   timeout-minutes: 8
+          python -m pytest tests/test_02_request_deduplication_integration.py -v --tb=short -m "expensive" --durations=0
+        timeout-minutes: 8
 
       - name: Upload test results
         if: always()

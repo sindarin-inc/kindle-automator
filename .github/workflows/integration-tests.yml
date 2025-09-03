@@ -14,49 +14,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # TEMPORARILY DISABLED - Not the group with the failing test
-  # test-group-1:
-  #   uses: ./.github/workflows/integration-tests-group1.yml
-  #   secrets: inherit
+  test-group-1:
+    uses: ./.github/workflows/integration-tests-group1.yml
+    secrets: inherit
     
-  # ONLY RUN GROUP 2 - which has the request deduplication integration tests
   test-group-2:
     uses: ./.github/workflows/integration-tests-group2.yml
     secrets: inherit
     
-  # test-group-3:
-  #   uses: ./.github/workflows/integration-tests-group3.yml
-  #   secrets: inherit
+  test-group-3:
+    uses: ./.github/workflows/integration-tests-group3.yml
+    secrets: inherit
   
-  # # Run group 4 after groups 1 and 2 complete (multi-user tests)
-  # test-group-4:
-  #   needs: [test-group-1, test-group-2]
-  #   uses: ./.github/workflows/integration-tests-group4.yml
-  #   secrets: inherit
+  # Run group 4 after groups 1 and 2 complete (multi-user tests)
+  test-group-4:
+    needs: [test-group-1, test-group-2]
+    uses: ./.github/workflows/integration-tests-group4.yml
+    secrets: inherit
   
   # Final job to check all tests passed
   integration-tests-complete:
-    needs: [test-group-2]  # Only checking group 2 for now
+    needs: [test-group-1, test-group-2, test-group-3, test-group-4]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check test results
         run: |
-          # TEMPORARILY DISABLED - Only checking group 2
-          # if [[ "${{ needs.test-group-1.result }}" != "success" ]]; then
-          #   echo "Test Group 1 failed"
-          #   exit 1
-          # fi
+          if [[ "${{ needs.test-group-1.result }}" != "success" ]]; then
+            echo "Test Group 1 failed"
+            exit 1
+          fi
           if [[ "${{ needs.test-group-2.result }}" != "success" ]]; then
             echo "Test Group 2 failed"
             exit 1
           fi
-          # if [[ "${{ needs.test-group-3.result }}" != "success" ]]; then
-          #   echo "Test Group 3 failed"
-          #   exit 1
-          # fi
-          # if [[ "${{ needs.test-group-4.result }}" != "success" ]]; then
-          #   echo "Test Group 4 failed"
-          #   exit 1
-          # fi
-          echo "Test Group 2 passed!"
+          if [[ "${{ needs.test-group-3.result }}" != "success" ]]; then
+            echo "Test Group 3 failed"
+            exit 1
+          fi
+          if [[ "${{ needs.test-group-4.result }}" != "success" ]]; then
+            echo "Test Group 4 failed"
+            exit 1
+          fi
+          echo "All integration tests passed!"

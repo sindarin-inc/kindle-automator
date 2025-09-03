@@ -157,6 +157,9 @@ class RequestManager:
                         f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (different params, last-one-wins){RESET}"
                     )
 
+                    # Check for and cancel lower priority requests from other endpoints
+                    self._check_and_cancel_lower_priority_requests()
+
                     # Record this as the active request for the user
                     self._set_active_request()
                     self.is_executor = True
@@ -174,6 +177,9 @@ class RequestManager:
                     f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
                     f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (last-one-wins){RESET}"
                 )
+
+                # Check for and cancel lower priority requests from other endpoints
+                self._check_and_cancel_lower_priority_requests()
 
                 # Record this as the active request for the user
                 self._set_active_request()
@@ -749,6 +755,10 @@ class RequestManager:
 
     def _cleanup_request_number(self):
         """Decrement active request count and reset counter if needed."""
+        # Clear the cancellation cache for this request
+        from server.utils.cancellation_utils import clear_cancellation_cache
+        clear_cancellation_cache(self.request_key)
+        
         if not self.redis_client or not self.request_number:
             return
 

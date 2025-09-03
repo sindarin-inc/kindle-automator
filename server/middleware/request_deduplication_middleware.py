@@ -96,6 +96,8 @@ def deduplicate_request(func: Callable) -> Callable:
                     status_code = 200
 
                 # Store the response for waiting requests
+                # IMPORTANT: This must happen even for cancelled requests (409) so that
+                # waiting deduplicated requests get notified and don't timeout
                 manager.store_response(response_data, status_code)
 
                 # Clean up the request number now that the request is complete
