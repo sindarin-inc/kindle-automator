@@ -64,19 +64,26 @@ class TableOfContentsHandler:
                 # Skip directly to collecting chapters
                 chapters = self._collect_all_chapters()
 
-                # Try to get current position (might not be available in ToC view)
-                current_position = self._get_current_page_position()
-
-                # Close the Table of Contents
+                # Close the Table of Contents to get back to popover
                 if not self._close_table_of_contents():
                     logger.warning("Failed to close Table of Contents cleanly")
 
-                # Hide reading controls by tapping center
+                # After closing ToC, we should be back at the page position popover
+                # Get page position from the popover
+                time.sleep(0.5)  # Wait for popover to fully display
+                current_position = self._get_popover_page_position()
+                if not current_position:
+                    # Try normal page position as fallback
+                    current_position = self._get_current_page_position()
+
+                logger.info(f"Got position after closing ToC: {current_position}")
+
+                # Close the popover and hide reading controls by tapping center
                 self._hide_reading_controls()
 
                 response_data = {
                     "success": True,
-                    "position": current_position or {"note": "Position not available from ToC view"},
+                    "position": current_position or {"note": "Position not available"},
                     "chapters": chapters,
                     "chapter_count": len(chapters),
                 }
@@ -139,12 +146,22 @@ class TableOfContentsHandler:
             if not self._close_table_of_contents():
                 logger.warning("Failed to close Table of Contents cleanly")
 
+            # After closing ToC, we should be back at the page position popover
+            # Get the most up-to-date position from the popover
+            time.sleep(0.5)  # Wait for popover to fully display
+            final_position = self._get_popover_page_position()
+            if final_position:
+                logger.info(f"Got updated position from popover after ToC: {final_position}")
+            else:
+                # Use the position we got earlier as fallback
+                final_position = popover_position or current_position
+
             # Hide reading controls by tapping center
             self._hide_reading_controls()
 
             response_data = {
                 "success": True,
-                "position": popover_position or current_position,
+                "position": final_position,
                 "chapters": chapters,
                 "chapter_count": len(chapters),
             }
@@ -547,95 +564,123 @@ class TableOfContentsHandler:
 
                 # Find all chapter titles and positions - work even without the list container
                 try:
-                    # Get all chapter titles
-                    title_elements = self.driver.find_elements(
-                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
-                    )
-                    # Get all page positions
-                    position_elements = self.driver.find_elements(
-                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
-                    )
+                    # Get all list items in the ToC (each item contains a title and possibly a page number)
+                    # Try to find the parent containers that hold both title and position
+                    list_items = []
 
-                    logger.info(
-                        f"Scroll {scroll_count}: Found {len(title_elements)} title elements and {len(position_elements)} position elements"
-                    )
-
-                    # Process the elements (they should be in pairs)
-                    for i, title_elem in enumerate(title_elements):
-                        try:
-                            if not title_elem.is_displayed():
-                                continue
-
-                            title_text = title_elem.text.strip()
-                            if not title_text or title_text in seen_chapters:
-                                continue
-
-                            # Create chapter entry
-                            chapter = {"title": title_text}
-
-                            # Try to get the corresponding page position
-                            if i < len(position_elements):
-                                position_elem = position_elements[i]
-                                if position_elem.is_displayed():
-                                    page_text = position_elem.text.strip()
-                                    if page_text.isdigit():
-                                        chapter["page"] = int(page_text)
-
-                            chapters.append(chapter)
-                            seen_chapters.add(title_text)
-                            new_chapters_found = True
-                            logger.info(f"Added chapter: {chapter}")
-
-                        except Exception as e:
-                            logger.warning(f"Error processing chapter element: {e}")
-                            continue
-
-                except Exception as e:
-                    logger.warning(f"Error finding chapter elements: {e}", exc_info=True)
-                    # Fallback to XPATH search
+                    # First try to find view containers which hold both title and position
                     try:
+                        list_items = self.driver.find_elements(
+                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_view_container"
+                        )
+                        if list_items:
+                            logger.info(f"Found {len(list_items)} ToC entry view containers")
+                    except:
+                        pass
+
+                    # Fallback to finding all visible title elements and their parent containers
+                    if not list_items:
                         title_elements = self.driver.find_elements(
-                            AppiumBy.XPATH,
-                            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/toc_entry_title']",
+                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
                         )
-                        position_elements = self.driver.find_elements(
-                            AppiumBy.XPATH,
-                            "//android.widget.TextView[@resource-id='com.amazon.kindle:id/toc_entry_position']",
-                        )
+                        logger.info(f"Found {len(title_elements)} title elements")
 
-                        logger.info(
-                            f"XPATH fallback: Found {len(title_elements)} titles and {len(position_elements)} positions"
-                        )
-
-                        for i, title_elem in enumerate(title_elements):
+                        for title_elem in title_elements:
                             try:
                                 if not title_elem.is_displayed():
                                     continue
 
-                                text = title_elem.text.strip()
-                                if not text or text in seen_chapters:
+                                title_text = title_elem.text.strip()
+                                if not title_text or title_text in seen_chapters:
                                     continue
 
-                                chapter = {"title": text}
+                                # Create chapter entry
+                                chapter = {"title": title_text}
 
-                                # Try to get the corresponding page position
-                                if i < len(position_elements):
-                                    position_elem = position_elements[i]
-                                    if position_elem.is_displayed():
+                                # Try to find the position element that's a sibling of this title
+                                # Go up to the parent container and look for position element
+                                try:
+                                    # Get the parent of the title element (should be the layout container)
+                                    parent = title_elem.find_element(AppiumBy.XPATH, "..")
+                                    # Now go up one more level to the list item container
+                                    grandparent = parent.find_element(AppiumBy.XPATH, "..")
+
+                                    # Look for position element within the grandparent container
+                                    try:
+                                        position_elem = grandparent.find_element(
+                                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
+                                        )
+                                        if position_elem and position_elem.is_displayed():
+                                            page_text = position_elem.text.strip()
+                                            if page_text.isdigit():
+                                                chapter["page"] = int(page_text)
+                                                logger.info(
+                                                    f"Found page {page_text} for chapter '{title_text}'"
+                                                )
+                                    except NoSuchElementException:
+                                        logger.debug(f"No position element for chapter '{title_text}'")
+                                except Exception as pe:
+                                    logger.debug(f"Error finding position for '{title_text}': {pe}")
+
+                                chapters.append(chapter)
+                                seen_chapters.add(title_text)
+                                new_chapters_found = True
+                                logger.info(f"Added chapter: {chapter}")
+
+                            except Exception as e:
+                                logger.warning(f"Error processing title element: {e}")
+                                continue
+                    else:
+                        # Process view container items
+                        for item in list_items:
+                            try:
+                                # Find title within this container
+                                title_elem = item.find_element(
+                                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
+                                )
+                                if not title_elem.is_displayed():
+                                    continue
+
+                                title_text = title_elem.text.strip()
+                                if not title_text or title_text in seen_chapters:
+                                    continue
+
+                                chapter = {"title": title_text}
+
+                                # Try to find position within the end_align_items container
+                                try:
+                                    # Find the end_align_items container
+                                    end_align_container = item.find_element(
+                                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_end_align_items"
+                                    )
+                                    # Look for position element within it
+                                    position_elem = end_align_container.find_element(
+                                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
+                                    )
+                                    if position_elem and position_elem.is_displayed():
                                         page_text = position_elem.text.strip()
                                         if page_text.isdigit():
                                             chapter["page"] = int(page_text)
+                                            logger.info(f"Found page {page_text} for chapter '{title_text}'")
+                                except NoSuchElementException:
+                                    # No position element - this is normal for some chapters
+                                    logger.debug(f"No position element for chapter '{title_text}'")
+                                except Exception as e:
+                                    logger.debug(f"Error finding position for '{title_text}': {e}")
 
                                 chapters.append(chapter)
-                                seen_chapters.add(text)
+                                seen_chapters.add(title_text)
                                 new_chapters_found = True
-                                logger.info(f"Added chapter via XPATH: {chapter}")
+                                logger.info(f"Added chapter: {chapter}")
 
                             except Exception as e:
-                                logger.debug(f"Error processing XPATH chapter element: {e}")
+                                logger.warning(f"Error processing ToC entry: {e}")
                                 continue
-                    except Exception as e:
-                        logger.warning(f"XPATH fallback also failed: {e}")
+
+                except Exception as e:
+                    logger.warning(f"Error finding chapter elements: {e}", exc_info=True)
+                    # Fallback to XPATH search - same logic as above
+                    logger.info("Using XPATH fallback to find chapters")
 
                 if not new_chapters_found:
                     no_new_chapters_count += 1
