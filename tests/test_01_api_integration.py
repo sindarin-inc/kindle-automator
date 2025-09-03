@@ -498,6 +498,70 @@ class TestKindleAPIIntegration(BaseKindleTest):
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
 
+    @pytest.mark.timeout(120)
+    def test_table_of_contents(self):
+        """Test /kindle/table-of-contents endpoint."""
+        # This test depends on test_open_random_book or test_navigate_preview having run first
+        if not hasattr(self.__class__, "opened_book"):
+            pytest.skip("No book available - test_open_random_book must run first")
+
+        # Get the title of the currently open book
+        opened_book = self.__class__.opened_book
+        title = opened_book.get("title") if opened_book else None
+
+        # Make the Table of Contents request
+        params = {}
+        if title:
+            params["title"] = title
+
+        response = self._make_request("table-of-contents", params)
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+
+        # Verify the response structure
+        assert "success" in data, f"Response missing success field: {data}"
+        assert data["success"] is True, f"Request was not successful: {data}"
+
+        # Verify position information
+        assert "position" in data, f"Response missing position field: {data}"
+        position = data["position"]
+        if position:
+            # Position might have current_page, total_pages, percentage
+            if "current_page" in position:
+                assert isinstance(position["current_page"], int), "current_page should be an integer"
+            if "total_pages" in position:
+                assert isinstance(position["total_pages"], int), "total_pages should be an integer"
+            if "percentage" in position:
+                assert isinstance(position["percentage"], int), "percentage should be an integer"
+
+        # Verify chapters list
+        assert "chapters" in data, f"Response missing chapters field: {data}"
+        assert isinstance(data["chapters"], list), "chapters should be a list"
+
+        # Verify chapter count
+        assert "chapter_count" in data, f"Response missing chapter_count field: {data}"
+        assert data["chapter_count"] == len(
+            data["chapters"]
+        ), "chapter_count doesn't match chapters list length"
+
+        # If we have chapters, verify their structure
+        if data["chapters"]:
+            for chapter in data["chapters"]:
+                assert isinstance(chapter, dict), f"Chapter should be a dict: {chapter}"
+                assert "title" in chapter, f"Chapter missing title: {chapter}"
+                assert isinstance(chapter["title"], str), f"Chapter title should be a string: {chapter}"
+                # Page number is optional
+                if "page" in chapter:
+                    assert isinstance(chapter["page"], int), f"Chapter page should be an integer: {chapter}"
+
+            print(f"\n[TEST] Found {data['chapter_count']} chapters in Table of Contents")
+            # Print first few chapters as a sample
+            for i, chapter in enumerate(data["chapters"][:5]):
+                page_info = f" (page {chapter['page']})" if "page" in chapter else ""
+                print(f"  Chapter {i+1}: {chapter['title']}{page_info}")
+
     @pytest.mark.expensive
     @pytest.mark.timeout(180)
     def test_recreate_avd(self):

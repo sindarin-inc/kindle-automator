@@ -47,6 +47,7 @@ from views.reading.view_strategies import (
     LAST_READ_PAGE_DIALOG_IDENTIFIERS,
     READING_VIEW_FULL_SCREEN_DIALOG,
     READING_VIEW_IDENTIFIERS,
+    TABLE_OF_CONTENTS_VIEW_IDENTIFIERS,
     is_item_removed_dialog_visible,
 )
 from views.view_options.view_strategies import VIEW_OPTIONS_MENU_STATE_STRATEGIES
@@ -629,6 +630,30 @@ class ViewInspector:
                 # Store page source for debugging
                 store_page_source(self.driver.page_source, "item_removed_dialog")
                 return AppView.READING
+
+            # Check for Table of Contents view before checking for reading view
+            # This is important because ToC can overlay on reading view
+            toc_elements_found = 0
+            for strategy, locator in TABLE_OF_CONTENTS_VIEW_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element.is_displayed():
+                        toc_elements_found += 1
+                        logger.debug(f"   Found Table of Contents element: {strategy}={locator}")
+                        # If we find the main ToC container or fragment, that's a strong indicator
+                        if locator in [
+                            "com.amazon.kindle:id/toc_dialog_container",
+                            "com.amazon.kindle:id/toc_fragment_container",
+                        ]:
+                            logger.debug("   Found main ToC container - definitely in Table of Contents view")
+                            return AppView.TABLE_OF_CONTENTS
+                except NoSuchElementException:
+                    continue
+
+            # If we found at least 2 ToC elements, we're in ToC view
+            if toc_elements_found >= 2:
+                logger.debug(f"   Found {toc_elements_found} ToC elements - in Table of Contents view")
+                return AppView.TABLE_OF_CONTENTS
 
             # Check for reading view identifiers
             reading_view_elements_found = 0

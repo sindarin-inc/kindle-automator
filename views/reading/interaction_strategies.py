@@ -225,3 +225,24 @@ UNABLE_TO_DOWNLOAD_OK_BUTTON = [
     (AppiumBy.ID, "android:id/button1"),  # OK button by ID
     (AppiumBy.XPATH, "//android.widget.Button[@text='OK']"),  # Fallback using text
 ]
+
+# Page position popover interaction elements
+PAGE_SCRUBBER_SEEKBAR = [
+    (AppiumBy.ID, "com.amazon.kindle:id/page_scrubber_seekbar"),
+    (AppiumBy.XPATH, "//android.widget.SeekBar[@resource-id='com.amazon.kindle:id/page_scrubber_seekbar']"),
+]
+
+PAGE_POSITION_TEXT = [
+    (AppiumBy.ID, "com.amazon.kindle:id/page_position_text"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/page_position_text']"),
+]
+
+# Footer page number element that opens the page position popover when tapped
+FOOTER_PAGE_NUMBER_TAP_TARGET = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number_text"),
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_number"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/reader_footer_page_number_text']",
+    ),
+]

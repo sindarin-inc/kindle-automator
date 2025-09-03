@@ -218,6 +218,7 @@ from server.resources.shutdown_resources import ShutdownResource
 from server.resources.snapshot_check_resource import SnapshotCheckResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 from server.resources.state_resource import StateResource
+from server.resources.table_of_contents_resource import TableOfContentsResource
 from server.resources.text_resource import TextResource
 from server.resources.user_activity_resource import UserActivityResource
 
@@ -259,6 +260,7 @@ api.add_resource(
 )
 
 api.add_resource(BookOpenResource, "/open-book")
+api.add_resource(TableOfContentsResource, "/table-of-contents")
 api.add_resource(
     LogoutResource,
     "/logout",
