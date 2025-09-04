@@ -69,8 +69,17 @@ class TableOfContentsHandler:
                     logger.warning("Failed to close Table of Contents cleanly")
 
                 # After closing ToC, we should be back at the page position popover
-                # Get page position from the popover
-                time.sleep(0.5)  # Wait for popover to fully display
+                # Wait for popover to be visible again
+                try:
+                    WebDriverWait(self.driver, 1).until(
+                        lambda d: any(
+                            d.find_element(s, l).is_displayed()
+                            for s, l in PAGE_POSITION_POPOVER_IDENTIFIERS
+                            if self._safe_find_element(s, l)
+                        )
+                    )
+                except TimeoutException:
+                    pass
                 current_position = self._get_popover_page_position()
                 if not current_position:
                     # Try normal page position as fallback
@@ -95,7 +104,11 @@ class TableOfContentsHandler:
             if about_book_handler.is_popover_present():
                 logger.info("About Book popover detected - dismissing it")
                 about_book_handler.dismiss_popover()
-                time.sleep(0.5)
+                # Wait for popover to be dismissed
+                try:
+                    WebDriverWait(self.driver, 1).until(lambda d: not about_book_handler.is_popover_present())
+                except TimeoutException:
+                    pass
 
             # Check if we're in reading view
             if not self.automator.state_machine.is_reading_view():
@@ -147,8 +160,16 @@ class TableOfContentsHandler:
                 logger.warning("Failed to close Table of Contents cleanly")
 
             # After closing ToC, we should be back at the page position popover
-            # Get the most up-to-date position from the popover
-            time.sleep(0.5)  # Wait for popover to fully display
+            # Wait for popover to be visible again
+            try:
+                WebDriverWait(self.driver, 1).until(
+                    lambda d: any(
+                        self._safe_find_element(s, l) and d.find_element(s, l).is_displayed()
+                        for s, l in PAGE_POSITION_POPOVER_IDENTIFIERS
+                    )
+                )
+            except TimeoutException:
+                pass
             final_position = self._get_popover_page_position()
             if final_position:
                 logger.info(f"Got updated position from popover after ToC: {final_position}")
@@ -215,8 +236,11 @@ class TableOfContentsHandler:
                 logger.error(f"Failed to open book: {title}")
                 return False
 
-            # Wait for book to open
-            time.sleep(2)
+            # Wait for book to open by checking for reading view
+            try:
+                WebDriverWait(self.driver, 3).until(lambda d: self.automator.state_machine.is_reading_view())
+            except TimeoutException:
+                logger.warning("Timeout waiting for reading view after opening book")
 
             # Verify we're in reading view
             if not self.automator.state_machine.is_reading_view():
@@ -252,7 +276,6 @@ class TableOfContentsHandler:
             center_y = window_size["height"] // 2
             self.driver.tap([(center_x, center_y)])
             logger.debug("Tapped center to show controls")
-            time.sleep(0.5)
 
             # Wait for controls to appear
             def check_toolbar_visibility(driver):
@@ -338,7 +361,6 @@ class TableOfContentsHandler:
                     if element.is_displayed():
                         element.click()
                         logger.info("Tapped footer page number to open popover")
-                        time.sleep(0.5)
                         break
                 except NoSuchElementException:
                     continue
@@ -441,8 +463,8 @@ class TableOfContentsHandler:
                         continue
                 return False
 
-            # Use 5 second timeout with 0.2 second polling interval
-            WebDriverWait(self.driver, 5, poll_frequency=0.2).until(toc_visible)
+            # Use 2 second timeout with 0.1 second polling interval for faster response
+            WebDriverWait(self.driver, 2, poll_frequency=0.1).until(toc_visible)
             logger.info("Table of Contents is now visible")
             return True
 
@@ -485,6 +507,34 @@ class TableOfContentsHandler:
             logger.error(f"Error checking if ToC is open: {e}", exc_info=True)
             return False
 
+    def _add_chapter_if_new(
+        self, chapters: List[Dict], seen_chapters: set, title_text: str, page_text: str = None
+    ) -> bool:
+        """Add a chapter to the list if it's new.
+
+        Args:
+            chapters: List of chapters to add to
+            seen_chapters: Set of already seen chapter titles
+            title_text: Chapter title
+            page_text: Optional page number as string
+
+        Returns:
+            bool: True if chapter was added, False if already seen
+        """
+        if not title_text or title_text in seen_chapters:
+            return False
+
+        chapter = {"title": title_text}
+        if page_text and page_text.isdigit():
+            chapter["page"] = int(page_text)
+            logger.info(f"Found page {page_text} for chapter '{title_text}'")
+
+        chapters.append(chapter)
+        seen_chapters.add(title_text)
+        page_str = f"(p. {chapter.get('page')})" if chapter.get("page") else ""
+        logger.info(f"Added chapter: {chapter['title']} {page_str}")
+        return True
+
     def _scroll_to_top_of_toc(self):
         """Scroll to the top of the Table of Contents list."""
         try:
@@ -509,9 +559,19 @@ class TableOfContentsHandler:
             end_y = int(window_size["height"] * 0.8)
 
             # Perform multiple swipes to ensure we're at the top
-            for _ in range(3):
-                self.driver.swipe(start_x, start_y, start_x, end_y, duration=500)
-                time.sleep(0.2)
+            for i in range(3):
+                self.driver.swipe(start_x, start_y, start_x, end_y, duration=300)
+                # Wait for scroll to complete by checking if elements are stable
+                if i < 2:  # Don't wait after last swipe
+                    try:
+                        WebDriverWait(self.driver, 0.2).until(
+                            lambda d: len(
+                                d.find_elements(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
+                            )
+                            > 0
+                        )
+                    except TimeoutException:
+                        pass
 
             logger.info("Scrolled to top of Table of Contents")
 
@@ -591,41 +651,22 @@ class TableOfContentsHandler:
                                     continue
 
                                 title_text = title_elem.text.strip()
-                                if not title_text or title_text in seen_chapters:
-                                    continue
+                                page_text = None
 
-                                # Create chapter entry
-                                chapter = {"title": title_text}
-
-                                # Try to find the position element that's a sibling of this title
-                                # Go up to the parent container and look for position element
+                                # Try to find position element as sibling
                                 try:
-                                    # Get the parent of the title element (should be the layout container)
                                     parent = title_elem.find_element(AppiumBy.XPATH, "..")
-                                    # Now go up one more level to the list item container
                                     grandparent = parent.find_element(AppiumBy.XPATH, "..")
+                                    position_elem = grandparent.find_element(
+                                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
+                                    )
+                                    if position_elem and position_elem.is_displayed():
+                                        page_text = position_elem.text.strip()
+                                except (NoSuchElementException, Exception):
+                                    pass
 
-                                    # Look for position element within the grandparent container
-                                    try:
-                                        position_elem = grandparent.find_element(
-                                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
-                                        )
-                                        if position_elem and position_elem.is_displayed():
-                                            page_text = position_elem.text.strip()
-                                            if page_text.isdigit():
-                                                chapter["page"] = int(page_text)
-                                                logger.info(
-                                                    f"Found page {page_text} for chapter '{title_text}'"
-                                                )
-                                    except NoSuchElementException:
-                                        logger.debug(f"No position element for chapter '{title_text}'")
-                                except Exception as pe:
-                                    logger.debug(f"Error finding position for '{title_text}': {pe}")
-
-                                chapters.append(chapter)
-                                seen_chapters.add(title_text)
-                                new_chapters_found = True
-                                logger.info(f"Added chapter: {chapter}")
+                                if self._add_chapter_if_new(chapters, seen_chapters, title_text, page_text):
+                                    new_chapters_found = True
 
                             except Exception as e:
                                 logger.warning(f"Error processing title element: {e}")
@@ -642,36 +683,23 @@ class TableOfContentsHandler:
                                     continue
 
                                 title_text = title_elem.text.strip()
-                                if not title_text or title_text in seen_chapters:
-                                    continue
-
-                                chapter = {"title": title_text}
+                                page_text = None
 
                                 # Try to find position within the end_align_items container
                                 try:
-                                    # Find the end_align_items container
                                     end_align_container = item.find_element(
                                         AppiumBy.ID, "com.amazon.kindle:id/toc_entry_end_align_items"
                                     )
-                                    # Look for position element within it
                                     position_elem = end_align_container.find_element(
                                         AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
                                     )
                                     if position_elem and position_elem.is_displayed():
                                         page_text = position_elem.text.strip()
-                                        if page_text.isdigit():
-                                            chapter["page"] = int(page_text)
-                                            logger.info(f"Found page {page_text} for chapter '{title_text}'")
-                                except NoSuchElementException:
-                                    # No position element - this is normal for some chapters
-                                    logger.debug(f"No position element for chapter '{title_text}'")
-                                except Exception as e:
-                                    logger.debug(f"Error finding position for '{title_text}': {e}")
+                                except (NoSuchElementException, Exception):
+                                    pass
 
-                                chapters.append(chapter)
-                                seen_chapters.add(title_text)
-                                new_chapters_found = True
-                                logger.info(f"Added chapter: {chapter}")
+                                if self._add_chapter_if_new(chapters, seen_chapters, title_text, page_text):
+                                    new_chapters_found = True
 
                             except Exception as e:
                                 logger.warning(f"Error processing ToC entry: {e}")
@@ -692,8 +720,17 @@ class TableOfContentsHandler:
 
                 # Scroll down to see more chapters
                 if scroll_count < max_scrolls - 1:
-                    self.driver.swipe(start_x, start_y, start_x, end_y, duration=500)
-                    time.sleep(0.3)
+                    self.driver.swipe(start_x, start_y, start_x, end_y, duration=300)
+                    # Wait for scroll to settle by checking for elements
+                    try:
+                        WebDriverWait(self.driver, 0.2).until(
+                            lambda d: len(
+                                d.find_elements(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
+                            )
+                            > 0
+                        )
+                    except TimeoutException:
+                        pass
 
             logger.info(f"Collected {len(chapters)} chapters from Table of Contents")
 
@@ -716,7 +753,13 @@ class TableOfContentsHandler:
                     if element.is_displayed():
                         element.click()
                         logger.info("Tapped ToC close button")
-                        time.sleep(0.5)
+                        # Wait for ToC to close
+                        try:
+                            WebDriverWait(self.driver, 1).until(
+                                lambda d: not self._is_table_of_contents_open()
+                            )
+                        except TimeoutException:
+                            pass
                         return True
                 except NoSuchElementException:
                     continue
@@ -724,7 +767,11 @@ class TableOfContentsHandler:
             # If no close button found, try tapping outside or using back
             logger.warning("No close button found, trying back gesture")
             self.driver.back()
-            time.sleep(0.5)
+            # Wait for ToC to close
+            try:
+                WebDriverWait(self.driver, 1).until(lambda d: not self._is_table_of_contents_open())
+            except TimeoutException:
+                pass
             return True
 
         except Exception as e:
@@ -739,9 +786,100 @@ class TableOfContentsHandler:
             center_y = window_size["height"] // 2
             self.driver.tap([(center_x, center_y)])
             logger.debug("Tapped center to hide controls")
-            time.sleep(0.3)
+            # Wait for controls to disappear
+            try:
+                WebDriverWait(self.driver, 0.5).until(
+                    lambda d: not any(
+                        self._safe_find_element(s, l) and d.find_element(s, l).is_displayed()
+                        for s, l in READING_TOOLBAR_IDENTIFIERS
+                    )
+                )
+            except TimeoutException:
+                pass
         except Exception as e:
             logger.error(f"Error hiding reading controls: {e}", exc_info=True)
+
+    def _safe_find_element(self, strategy, locator):
+        """Safely find an element without raising exceptions.
+
+        Returns:
+            Element if found, None otherwise
+        """
+        try:
+            return self.driver.find_element(strategy, locator)
+        except NoSuchElementException:
+            return None
+
+    def _try_find_and_click_chapter(self, chapter_name: str, normalized_requested: str) -> bool:
+        """Try to find and click a chapter without scrolling.
+
+        Args:
+            chapter_name: Original chapter name
+            normalized_requested: Normalized version for comparison
+
+        Returns:
+            bool: True if chapter was found and clicked
+        """
+        try:
+            # Find all ToC entry containers
+            list_items = self.driver.find_elements(
+                AppiumBy.ID, "com.amazon.kindle:id/toc_entry_view_container"
+            )
+
+            if not list_items:
+                # Fallback to finding title elements directly
+                title_elements = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
+                )
+
+                for title_elem in title_elements:
+                    try:
+                        if not title_elem.is_displayed():
+                            continue
+
+                        title_text = title_elem.text.strip()
+                        # Normalize the chapter title for comparison
+                        normalized_title = (
+                            "".join(c for c in title_text if c.isalnum() or c.isspace()).lower().strip()
+                        )
+
+                        # Check for exact normalized match only
+                        if normalized_requested == normalized_title:
+                            logger.info(f"Found matching chapter immediately: {title_text}")
+                            title_elem.click()
+                            return True
+                    except Exception as e:
+                        logger.debug(f"Error checking title element: {e}")
+                        continue
+            else:
+                # Process container items
+                for item in list_items:
+                    try:
+                        title_elem = item.find_element(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
+                        if not title_elem.is_displayed():
+                            continue
+
+                        title_text = title_elem.text.strip()
+                        # Normalize the chapter title for comparison
+                        normalized_title = (
+                            "".join(c for c in title_text if c.isalnum() or c.isspace()).lower().strip()
+                        )
+
+                        # Check for exact normalized match only
+                        if normalized_requested == normalized_title:
+                            logger.info(f"Found matching chapter immediately: {title_text}")
+                            # Click the entire container item for better reliability
+                            item.click()
+                            return True
+                    except Exception as e:
+                        logger.debug(f"Error checking container item: {e}")
+                        continue
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"Error in quick chapter find: {e}")
+            return False
 
     def navigate_to_chapter(self, chapter_name: str) -> Dict:
         """Navigate to a specific chapter from the table of contents.
@@ -779,105 +917,47 @@ class TableOfContentsHandler:
             # Store page source for debugging
             store_page_source(self.driver.page_source, "toc_navigation_view")
 
-            # Scroll to top first
-            self._scroll_to_top_of_toc()
-
-            # Find and tap the requested chapter
+            # OPTIMIZATION: Try to find chapter immediately without scrolling first
             found_chapter = False
-            window_size = self.driver.get_window_size()
-            start_x = window_size["width"] // 2
-            start_y = int(window_size["height"] * 0.7)
-            end_y = int(window_size["height"] * 0.3)
 
-            max_scrolls = 20
-            for scroll_count in range(max_scrolls):
-                # Find all chapter titles visible on screen
-                try:
-                    # Find all ToC entry containers
-                    list_items = self.driver.find_elements(
-                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_view_container"
-                    )
+            # First check if chapter is already visible (before scrolling to top)
+            logger.info("Checking if chapter is immediately visible without scrolling...")
+            found_chapter = self._try_find_and_click_chapter(chapter_name, normalized_requested)
 
-                    if not list_items:
-                        # Fallback to finding title elements directly
-                        title_elements = self.driver.find_elements(
-                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
-                        )
+            if found_chapter:
+                logger.info("Chapter found immediately without scrolling")
+            else:
+                # If not found, scroll to top and search systematically
+                self._scroll_to_top_of_toc()
 
-                        for title_elem in title_elements:
-                            try:
-                                if not title_elem.is_displayed():
-                                    continue
+                # Now search through all chapters
+                window_size = self.driver.get_window_size()
+                start_x = window_size["width"] // 2
+                start_y = int(window_size["height"] * 0.7)
+                end_y = int(window_size["height"] * 0.3)
 
-                                title_text = title_elem.text.strip()
-                                # Normalize the chapter title for comparison
-                                normalized_title = (
-                                    "".join(c for c in title_text if c.isalnum() or c.isspace())
-                                    .lower()
-                                    .strip()
-                                )
-
-                                logger.debug(f"Comparing '{normalized_requested}' with '{normalized_title}'")
-
-                                # Check for exact match or if one contains the other
-                                if (
-                                    normalized_requested == normalized_title
-                                    or normalized_requested in normalized_title
-                                    or normalized_title in normalized_requested
-                                ):
-                                    logger.info(f"Found matching chapter: {title_text}")
-                                    title_elem.click()
-                                    found_chapter = True
-                                    break
-                            except Exception as e:
-                                logger.debug(f"Error checking title element: {e}")
-                                continue
-                    else:
-                        # Process container items
-                        for item in list_items:
-                            try:
-                                title_elem = item.find_element(
-                                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
-                                )
-                                if not title_elem.is_displayed():
-                                    continue
-
-                                title_text = title_elem.text.strip()
-                                # Normalize the chapter title for comparison
-                                normalized_title = (
-                                    "".join(c for c in title_text if c.isalnum() or c.isspace())
-                                    .lower()
-                                    .strip()
-                                )
-
-                                logger.debug(f"Comparing '{normalized_requested}' with '{normalized_title}'")
-
-                                # Check for exact match or if one contains the other
-                                if (
-                                    normalized_requested == normalized_title
-                                    or normalized_requested in normalized_title
-                                    or normalized_title in normalized_requested
-                                ):
-                                    logger.info(f"Found matching chapter: {title_text}")
-                                    # Click the entire container item for better reliability
-                                    item.click()
-                                    found_chapter = True
-                                    break
-                            except Exception as e:
-                                logger.debug(f"Error checking container item: {e}")
-                                continue
+                max_scrolls = 20
+                for scroll_count in range(max_scrolls):
+                    # Find all chapter titles visible on screen
+                    found_chapter = self._try_find_and_click_chapter(chapter_name, normalized_requested)
 
                     if found_chapter:
+                        logger.info(f"Chapter found after {scroll_count} scrolls")
                         break
 
                     # Scroll down to see more chapters
                     if scroll_count < max_scrolls - 1:
                         self.driver.swipe(start_x, start_y, start_x, end_y, duration=500)
-                        time.sleep(0.3)
-
-                except Exception as e:
-                    logger.warning(f"Error during chapter search: {e}")
-                    continue
+                        # Wait for scroll to settle by checking if new elements appear
+                        try:
+                            WebDriverWait(self.driver, 0.3).until(
+                                lambda d: len(
+                                    d.find_elements(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
+                                )
+                                > 0
+                            )
+                        except TimeoutException:
+                            pass  # Continue even if no new elements found
 
             if not found_chapter:
                 logger.warning(f"Chapter '{chapter_name}' not found in Table of Contents")
@@ -886,8 +966,13 @@ class TableOfContentsHandler:
                 self._hide_reading_controls()
                 return {"success": False, "error": f"Chapter '{chapter_name}' not found in Table of Contents"}
 
-            # Wait for navigation to complete
-            time.sleep(1.5)
+            # Wait for navigation to complete by checking for reading view
+            try:
+                # Wait for ToC to close and reading view to be visible
+                WebDriverWait(self.driver, 2).until(lambda d: not self._is_table_of_contents_open())
+                logger.info("ToC closed automatically")
+            except TimeoutException:
+                logger.info("ToC didn't close automatically")
 
             # ToC should close automatically after chapter selection
             # but check and close if still open
