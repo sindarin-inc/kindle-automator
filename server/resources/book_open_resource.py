@@ -127,7 +127,7 @@ class BookOpenResource(Resource):
 
             # Check for the 'last read page' dialog without auto-accepting
             nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
-            dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+            dialog_result = nav_handler._handle_last_read_page_dialog(click_yes_to_navigate=False)
 
             # If dialog was found, return it to the client for decision
             if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):

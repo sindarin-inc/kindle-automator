@@ -977,7 +977,7 @@ class ReaderHandler:
             nav_handler = NavigationResourceHandler(self.driver.automator, self.screenshots_dir)
             # We don't auto-accept the dialog - we'll return it to the client
             # The client will then use the /last-read-page-dialog endpoint to make a decision
-            dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+            dialog_result = nav_handler._handle_last_read_page_dialog(click_yes_to_navigate=False)
 
             # If dialog was found, we let the caller handle it and don't click anything
             if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):

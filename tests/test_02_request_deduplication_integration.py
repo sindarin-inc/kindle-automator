@@ -740,7 +740,9 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
 
     @pytest.mark.expensive
     def test_three_open_random_book_requests_only_last_succeeds(self):
-        """Test that multiple /open-book requests cancel earlier ones when they have different parameters."""
+        """Test that multiple /open-book requests cancel earlier ones when they have different parameters.
+
+        For same parameters, requests should deduplicate (wait for same result) rather than cancel."""
         results = {}
 
         # Define the books for each request
@@ -856,18 +858,20 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             f"Second request (Breakfast of Champions) should have been cancelled. Results: {results}",
         )
 
-        # Third and fourth requests should BOTH succeed since they have the same title (deduplication)
-        # Request 3 executes, request 4 gets the deduplicated response
+        # Third request should succeed
         self.assertEqual(
             results.get("request_3_status"),
             200,
             f"Third request (sol-chapter-test-epub) should have succeeded with status 200. Results: {results}",
         )
 
+        # Fourth request has same title as third - for /open-book endpoint,
+        # LAST_ONE_WINS behavior only applies to different parameters.
+        # With the same title, Request 4 should deduplicate and get a 200 response.
         self.assertEqual(
             results.get("request_4_status"),
             200,
-            f"Fourth request (sol-chapter-test-epub) should also succeed with deduplicated response. Results: {results}",
+            f"Fourth request (same title as third) should deduplicate and succeed with status 200. Results: {results}",
         )
 
         # Print which books were requested
