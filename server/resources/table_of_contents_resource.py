@@ -40,6 +40,7 @@ class TableOfContentsResource(Resource):
         Query Parameters:
             title (str): Optional book title to ensure we're in the correct book.
             chapter (str): Optional chapter name to navigate to. If provided, navigates to that chapter.
+            page (int): Optional page number of the target chapter to optimize scroll direction.
             sindarin_email (str): Required - email to identify which automator to use.
 
         Returns:
@@ -68,9 +69,11 @@ class TableOfContentsResource(Resource):
             data = request.get_json()
             title = data.get("title") or request.args.get("title")
             chapter_name = data.get("chapter") or request.args.get("chapter")
+            page = data.get("page") or request.args.get("page")
         else:
             title = request.args.get("title")
             chapter_name = request.args.get("chapter")
+            page = request.args.get("page")
 
         if title:
             # URL decode the book title
@@ -96,9 +99,18 @@ class TableOfContentsResource(Resource):
             if perform_ocr and not use_base64:
                 use_base64 = True
 
+            # Convert page to int if provided
+            target_page = None
+            if page:
+                try:
+                    target_page = int(page)
+                    logger.info(f"Target page number: {target_page}")
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid page number provided: {page}")
+
             # Create the handler and navigate to chapter
             toc_handler = TableOfContentsHandler(automator)
-            result = toc_handler.navigate_to_chapter(chapter_name)
+            result = toc_handler.navigate_to_chapter(chapter_name, target_page=target_page)
 
             if not result.get("success"):
                 return result, 400
@@ -166,6 +178,7 @@ class TableOfContentsResource(Resource):
         JSON Body:
             title (str): Optional book title to ensure we're in the correct book.
             chapter (str): Optional chapter name to navigate to. If provided, navigates to that chapter.
+            page (int): Optional page number of the target chapter to optimize scroll direction.
             sindarin_email (str): Required - email to identify which automator to use.
 
         Returns:

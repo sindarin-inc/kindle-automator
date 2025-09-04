@@ -535,10 +535,15 @@ class TableOfContentsHandler:
         logger.info(f"Added chapter: {chapter['title']} {page_str}")
         return True
 
-    def _scroll_to_top_of_toc(self):
-        """Scroll to the top of the Table of Contents list."""
+    def _scroll_toc_in_direction(self, direction: str = "up", num_swipes: int = 3):
+        """Scroll the Table of Contents in a specific direction.
+
+        Args:
+            direction: "up" to scroll to top, "down" to scroll to bottom
+            num_swipes: Number of swipes to perform
+        """
         try:
-            # Find the ToC list
+            # Find the ToC list to ensure it's displayed
             toc_list = None
             for strategy, locator in TABLE_OF_CONTENTS_LIST_IDENTIFIERS:
                 try:
@@ -552,17 +557,24 @@ class TableOfContentsHandler:
                 logger.warning("Could not find ToC list to scroll")
                 return
 
-            # Scroll to top using swipe gestures
+            # Get window dimensions for swipe
             window_size = self.driver.get_window_size()
             start_x = window_size["width"] // 2
-            start_y = int(window_size["height"] * 0.3)
-            end_y = int(window_size["height"] * 0.8)
 
-            # Perform multiple swipes to ensure we're at the top
-            for i in range(3):
+            if direction == "up":
+                # Swipe down to scroll up (to top)
+                start_y = int(window_size["height"] * 0.3)
+                end_y = int(window_size["height"] * 0.8)
+            else:
+                # Swipe up to scroll down (to bottom)
+                start_y = int(window_size["height"] * 0.8)
+                end_y = int(window_size["height"] * 0.3)
+
+            # Perform swipes
+            for i in range(num_swipes):
                 self.driver.swipe(start_x, start_y, start_x, end_y, duration=300)
                 # Wait for scroll to complete by checking if elements are stable
-                if i < 2:  # Don't wait after last swipe
+                if i < num_swipes - 1:  # Don't wait after last swipe
                     try:
                         WebDriverWait(self.driver, 0.2).until(
                             lambda d: len(
@@ -573,10 +585,14 @@ class TableOfContentsHandler:
                     except TimeoutException:
                         pass
 
-            logger.info("Scrolled to top of Table of Contents")
+            logger.info(f"Scrolled {direction} in Table of Contents ({num_swipes} swipes)")
 
         except Exception as e:
-            logger.error(f"Error scrolling to top of ToC: {e}", exc_info=True)
+            logger.error(f"Error scrolling {direction} in ToC: {e}", exc_info=True)
+
+    def _scroll_to_top_of_toc(self):
+        """Scroll to the top of the Table of Contents list."""
+        self._scroll_toc_in_direction("up", num_swipes=3)
 
     def _collect_all_chapters(self) -> List[Dict]:
         """Collect all chapters from the Table of Contents.
@@ -881,17 +897,18 @@ class TableOfContentsHandler:
             logger.debug(f"Error in quick chapter find: {e}")
             return False
 
-    def navigate_to_chapter(self, chapter_name: str) -> Dict:
+    def navigate_to_chapter(self, chapter_name: str, target_page: Optional[int] = None) -> Dict:
         """Navigate to a specific chapter from the table of contents.
 
         Args:
             chapter_name: The name of the chapter to navigate to.
+            target_page: Optional page number of the target chapter to optimize scrolling.
 
         Returns:
             Dict with success status and optional error message.
         """
         try:
-            logger.info(f"Attempting to navigate to chapter: {chapter_name}")
+            logger.info(f"Attempting to navigate to chapter: {chapter_name}, target page: {target_page}")
 
             # Normalize the requested chapter name for comparison
             normalized_requested = (
@@ -905,6 +922,14 @@ class TableOfContentsHandler:
             # Ensure reading controls are visible
             if not self._ensure_reading_controls_visible():
                 return {"success": False, "error": "Failed to show reading controls"}
+
+            # Get current page position before opening TOC (if we have target page)
+            current_page = None
+            if target_page is not None:
+                page_info = self._get_current_page_position()
+                if page_info and "current_page" in page_info:
+                    current_page = page_info["current_page"]
+                    logger.info(f"Current page: {current_page}, Target page: {target_page}")
 
             # Open page position popover
             if not self._open_page_position_popover():
@@ -927,37 +952,92 @@ class TableOfContentsHandler:
             if found_chapter:
                 logger.info("Chapter found immediately without scrolling")
             else:
-                # If not found, scroll to top and search systematically
-                self._scroll_to_top_of_toc()
+                # Decide scroll strategy based on page numbers
+                scroll_strategy = "both"  # default: search from top then bottom
 
-                # Now search through all chapters
+                if target_page is not None and current_page is not None:
+                    if target_page > current_page:
+                        # Target is after current page, try scrolling down first
+                        scroll_strategy = "down_first"
+                        logger.info(
+                            f"Target page {target_page} > current {current_page}, scrolling down first"
+                        )
+                    elif target_page < current_page:
+                        # Target is before current page, search while scrolling up
+                        scroll_strategy = "up_first"
+                        logger.info(
+                            f"Target page {target_page} < current {current_page}, searching while scrolling up"
+                        )
+                else:
+                    # No page info, default to scrolling to top
+                    logger.info("No page info available, defaulting to top-first search")
+                    scroll_strategy = "up_first"
+
+                # Window dimensions for scrolling
                 window_size = self.driver.get_window_size()
                 start_x = window_size["width"] // 2
-                start_y = int(window_size["height"] * 0.7)
-                end_y = int(window_size["height"] * 0.3)
 
-                max_scrolls = 20
-                for scroll_count in range(max_scrolls):
-                    # Find all chapter titles visible on screen
-                    found_chapter = self._try_find_and_click_chapter(chapter_name, normalized_requested)
+                # Search for chapter with smart scrolling
+                max_scrolls_per_direction = 15
 
-                    if found_chapter:
-                        logger.info(f"Chapter found after {scroll_count} scrolls")
-                        break
+                def search_in_direction(direction: str, max_scrolls: int) -> bool:
+                    """Search for chapter while scrolling in a direction."""
+                    if direction == "down":
+                        start_y = int(window_size["height"] * 0.7)
+                        end_y = int(window_size["height"] * 0.3)
+                    else:  # up
+                        start_y = int(window_size["height"] * 0.3)
+                        end_y = int(window_size["height"] * 0.7)
 
-                    # Scroll down to see more chapters
-                    if scroll_count < max_scrolls - 1:
-                        self.driver.swipe(start_x, start_y, start_x, end_y, duration=500)
-                        # Wait for scroll to settle by checking if new elements appear
-                        try:
-                            WebDriverWait(self.driver, 0.3).until(
-                                lambda d: len(
-                                    d.find_elements(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
+                    for scroll_count in range(max_scrolls):
+                        # Try to find and click chapter
+                        if self._try_find_and_click_chapter(chapter_name, normalized_requested):
+                            logger.info(f"Chapter found after {scroll_count} {direction} scrolls")
+                            return True
+
+                        # Scroll to see more chapters
+                        if scroll_count < max_scrolls - 1:
+                            self.driver.swipe(start_x, start_y, start_x, end_y, duration=300)
+                            # Wait for scroll to settle
+                            try:
+                                WebDriverWait(self.driver, 0.2).until(
+                                    lambda d: len(
+                                        d.find_elements(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
+                                    )
+                                    > 0
                                 )
-                                > 0
-                            )
-                        except TimeoutException:
-                            pass  # Continue even if no new elements found
+                            except TimeoutException:
+                                pass
+                    return False
+
+                # Execute search based on strategy
+                if scroll_strategy == "down_first":
+                    # Try scrolling down first
+                    logger.info("Searching while scrolling down...")
+                    found_chapter = search_in_direction("down", max_scrolls_per_direction)
+
+                    if not found_chapter:
+                        # Didn't find it going down, scroll to top and search down
+                        logger.info("Not found scrolling down, scrolling to top...")
+                        self._scroll_to_top_of_toc()
+                        found_chapter = search_in_direction("down", max_scrolls_per_direction)
+
+                elif scroll_strategy == "up_first":
+                    # Search while scrolling up towards the top
+                    logger.info("Searching while scrolling up...")
+                    found_chapter = search_in_direction("up", max_scrolls_per_direction)
+
+                    if not found_chapter:
+                        # If not found while scrolling up, we're probably at top now
+                        # Search down from here
+                        logger.info("Not found scrolling up, searching down from top...")
+                        found_chapter = search_in_direction("down", max_scrolls_per_direction)
+
+                else:  # "both"
+                    # Default behavior - scroll to top and search
+                    logger.info("Using default search from top...")
+                    self._scroll_to_top_of_toc()
+                    found_chapter = search_in_direction("down", max_scrolls_per_direction)
 
             if not found_chapter:
                 logger.warning(f"Chapter '{chapter_name}' not found in Table of Contents")
