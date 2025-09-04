@@ -1,9 +1,6 @@
 name: Integration Tests
 
 on:
-  push:
-    branches:
-      - staging
   pull_request:
   workflow_dispatch:
 
