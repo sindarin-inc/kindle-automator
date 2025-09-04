@@ -6,7 +6,7 @@ import logging
 import time
 import urllib.parse
 
-from flask import request
+from flask import g, request
 from flask_restful import Resource
 
 from handlers.table_of_contents_handler import TableOfContentsHandler
@@ -30,6 +30,20 @@ class TableOfContentsResource(Resource):
     Example: http://localhost:4098/table-of-contents?title=BookTitle&sindarin_email=user@email.com
     """
 
+    def _check_cancellation(self):
+        """Check if the current request has been cancelled."""
+        # Get request manager from Flask context
+        manager = getattr(g, "request_manager", None)
+        if manager and manager.is_cancelled():
+            from server.utils.ansi_colors import BOLD, BRIGHT_BLUE, RESET
+
+            logger.info(
+                f"{BRIGHT_BLUE}Request {BOLD}{BRIGHT_BLUE}{manager.request_key}{RESET}{BRIGHT_BLUE} "
+                f"detected it was cancelled in table_of_contents handler{RESET}"
+            )
+            return True
+        return False
+
     @ensure_user_profile_loaded
     @ensure_automator_healthy
     @deduplicate_request
@@ -47,6 +61,10 @@ class TableOfContentsResource(Resource):
             JSON response with table of contents data or navigation result.
         """
         server = AutomationServer.get_instance()
+
+        # Check for cancellation at the start
+        if self._check_cancellation():
+            return {"error": "Request was cancelled by higher priority operation"}, 409
 
         # Get sindarin_email from request to determine which automator to use
         from server.utils.request_utils import get_sindarin_email
@@ -108,8 +126,10 @@ class TableOfContentsResource(Resource):
                 except (ValueError, TypeError):
                     logger.warning(f"Invalid page number provided: {page}")
 
-            # Create the handler and navigate to chapter
+            # Create the handler with cancellation check
             toc_handler = TableOfContentsHandler(automator)
+            # Pass cancellation check to the handler
+            toc_handler.set_cancellation_check(self._check_cancellation)
             result = toc_handler.navigate_to_chapter(chapter_name, target_page=target_page)
 
             if not result.get("success"):
@@ -159,8 +179,10 @@ class TableOfContentsResource(Resource):
             # No chapter specified, just get the table of contents
             logger.info(f"Table of Contents request from {sindarin_email}, title: {title}")
 
-            # Create the handler and get table of contents
+            # Create the handler with cancellation check
             toc_handler = TableOfContentsHandler(automator)
+            # Pass cancellation check to the handler
+            toc_handler.set_cancellation_check(self._check_cancellation)
             response_data, status_code = toc_handler.get_table_of_contents(title=title)
 
             # Add user email to response for consistency

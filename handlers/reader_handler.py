@@ -1618,31 +1618,29 @@ class ReaderHandler:
         try:
             logger.debug("Trying to get current book title")
 
-            # Try to show the reader toolbar to access book info
+            # First try to get the cached title from profile settings
+            try:
+                from server.utils.request_utils import get_sindarin_email
+                sindarin_email = get_sindarin_email()
+                if sindarin_email and hasattr(self.driver, 'automator'):
+                    actively_reading = self.driver.automator.profile_manager.get_style_setting(
+                        "actively_reading_title", email=sindarin_email
+                    )
+                    if actively_reading:
+                        logger.debug(f"Using cached book title: '{actively_reading}'")
+                        return actively_reading
+            except Exception as e:
+                logger.debug(f"Could not get cached title: {e}")
+
+            # Check if toolbar is already visible (don't tap to show it)
             visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "reading toolbar")
 
-            # If toolbar not visible, try to show it by tapping center
+            # Only try to get the title if toolbar is already visible
+            # We explicitly DO NOT tap to show the toolbar anymore
             if not visible:
-                logger.debug("Toolbar not visible, attempting to show it")
-                try:
-                    # Get screen dimensions
-                    window_size = self.driver.get_window_size()
-                    center_x = window_size["width"] // 2
-                    tap_y = window_size["height"] // 2
-
-                    # Try tapping center of screen to show toolbar
-                    self.driver.tap([(center_x, tap_y)])
-                    logger.info(f"Tapped center at ({center_x}, {tap_y})")
-                    time.sleep(0.5)
-
-                    # Check if toolbar appeared
-                    visible, _ = self._check_element_visibility(
-                        READING_TOOLBAR_IDENTIFIERS, "reading toolbar after tap"
-                    )
-                    if not visible:
-                        logger.warning("Failed to show toolbar to get book title")
-                except Exception as e:
-                    logger.warning(f"Error showing toolbar: {e}")
+                logger.debug("Toolbar not visible, not attempting to show it to avoid disrupting reading state")
+                # Return None or cached title - don't tap to show toolbar
+                return None
 
             # Try different strategies to get the book title
 
@@ -1742,7 +1740,7 @@ class ReaderHandler:
         Returns:
             bool: True if successfully navigated back, False if cancelled or failed
         """
-        logger.info("Handling reading state - navigating back to library...")
+        logger.info("Handling reading state - navigating back to library using hardware back button...")
 
         try:
             # Check for cancellation at the start
@@ -1776,203 +1774,109 @@ class ReaderHandler:
                 logger.info("Navigation back to library cancelled after comic book view")
                 return False
 
-            # First check if toolbar is already visible
-            toolbar_visible, _ = self._check_element_visibility(READING_TOOLBAR_IDENTIFIERS, "toolbar")
-            if cancellation_check and cancellation_check():
-                return False
-            if toolbar_visible:
-                logger.debug("Toolbar already visible - proceeding to close book")
-                return self._click_close_book_button(cancellation_check)
+            # NEW APPROACH: Use hardware back button twice
+            # First back press to go to search results
+            logger.info("Pressing hardware back button to exit book to search results...")
+            self.driver.back()
+            time.sleep(1)  # Wait for navigation
 
-            # Check for and dismiss "About this book" slideover or bottom sheet
-            # These often appear together, so we'll handle them in a unified way
-            about_book_visible, _ = self._check_element_visibility(
-                ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
-            )
             if cancellation_check and cancellation_check():
-                return False
-            bottom_sheet_visible, _ = self._check_element_visibility(
-                BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
-            )
-            if cancellation_check and cancellation_check():
+                logger.info("Navigation cancelled after first back press")
                 return False
 
-            if about_book_visible or bottom_sheet_visible:
-                logger.debug(
-                    f"Found slideover/bottom sheet - about_book: {about_book_visible}, bottom_sheet: {bottom_sheet_visible}"
-                )
+            # Check if we're in search results
+            from views.library.view_strategies import SEARCH_RESULTS_IDENTIFIERS
 
-                # Try multiple dismissal approaches with retries
-                max_attempts = 3
-                for attempt in range(max_attempts):
-                    # Check for cancellation in loop
-                    if cancellation_check and cancellation_check():
-                        logger.info("Navigation cancelled during slideover dismissal")
-                        return False
-
-                    logger.debug(f"Dismissal attempt {attempt + 1}/{max_attempts}")
-
-                    # First try: Click the pill if visible
-                    pill_visible, pill = self._check_element_visibility(
-                        [BOTTOM_SHEET_IDENTIFIERS[1]], "bottom sheet pill"
-                    )
-                    if pill_visible:
-                        pill.click()
-                        logger.info("Clicked bottom sheet pill to dismiss")
-                        time.sleep(0.5)
-                        if cancellation_check and cancellation_check():
-                            return False
-
-                    # Second try: Swipe down from middle of screen
-                    if attempt >= 1:
-                        window_size = self.driver.get_window_size()
-                        center_x = window_size["width"] // 2
-                        start_y = int(window_size["height"] * 0.3)
-                        end_y = int(window_size["height"] * 0.7)
-                        self.driver.swipe(center_x, start_y, center_x, end_y, 500)
-                        logger.info("Swiped down to dismiss slideover")
-                        time.sleep(0.5)
-                        if cancellation_check and cancellation_check():
-                            return False
-
-                    # Third try: Tap near top of screen
-                    if attempt >= 2:
-                        window_size = self.driver.get_window_size()
-                        center_x = window_size["width"] // 2
-                        top_y = int(window_size["height"] * 0.10)
-                        self.driver.tap([(center_x, top_y)])
-                        logger.info("Tapped near top of screen to dismiss")
-                        time.sleep(0.5)
-                        if cancellation_check and cancellation_check():
-                            return False
-
-                    # Check if dismissed
-                    about_still_visible, _ = self._check_element_visibility(
-                        ABOUT_BOOK_SLIDEOVER_IDENTIFIERS, "About this book slideover"
-                    )
-                    if cancellation_check and cancellation_check():
-                        return False
-                    bottom_still_visible, _ = self._check_element_visibility(
-                        BOTTOM_SHEET_IDENTIFIERS, "bottom sheet dialog"
-                    )
-                    if cancellation_check and cancellation_check():
-                        return False
-
-                    if not about_still_visible and not bottom_still_visible:
-                        logger.debug("Successfully dismissed slideover/bottom sheet")
-                        break
-
-                    if attempt == max_attempts - 1:
-                        # On last attempt, log but don't fail - continue with navigation
-                        logger.warning(
-                            f"Could not fully dismiss slideover/bottom sheet after {max_attempts} attempts. "
-                            f"About book still visible: {about_still_visible}, Bottom sheet still visible: {bottom_still_visible}. "
-                            "Continuing with navigation anyway."
-                        )
-
-            # Check for and dismiss full screen dialog using DialogHandler
-            from views.common.dialog_handler import DialogHandler
-
-            dialog_handler = DialogHandler(self.driver)
-
-            if dialog_handler.check_for_viewing_full_screen_dialog():
-                logger.debug("Handled 'Viewing full screen' dialog")
-                # Brief wait for dialog dismissal animation
-                time.sleep(0.5)
-                if cancellation_check and cancellation_check():
-                    return False
-
-            # Check for and handle "Go to that location/page?" dialog
-            go_to_location_visible, message = self._check_element_visibility(
-                GO_TO_LOCATION_DIALOG_IDENTIFIERS, "'Go to that location/page?' dialog"
-            )
-            if go_to_location_visible:
-                logger.debug("Found 'Go to that location/page?' dialog - clicking YES")
-                yes_button_visible, yes_button = self._check_element_visibility(
-                    LAST_READ_PAGE_DIALOG_BUTTONS, "YES button"
-                )
-                if yes_button_visible:
-                    yes_button.click()
-                    logger.debug("Clicked YES button")
-                    time.sleep(1)
-                    if cancellation_check and cancellation_check():
-                        return False
-
-            # Check for and dismiss Goodreads auto-update dialog
-            goodreads_dialog_visible, _ = self._check_element_visibility(
-                GOODREADS_AUTO_UPDATE_DIALOG_IDENTIFIERS, "Goodreads auto-update dialog"
-            )
-            if goodreads_dialog_visible:
-                logger.debug("Found Goodreads auto-update dialog - clicking NOT NOW")
+            search_results_visible = False
+            for strategy, locator in SEARCH_RESULTS_IDENTIFIERS:
                 try:
-                    not_now_button = self.driver.find_element(
-                        AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
-                    )
-                    if not_now_button.is_displayed():
-                        not_now_button.click()
-                        logger.debug("Clicked NOT NOW button")
-                        time.sleep(1)
-                        if cancellation_check and cancellation_check():
-                            return False
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        search_results_visible = True
+                        logger.info("Confirmed we're in search results view")
+                        break
+                except Exception:
+                    continue
 
-                        # Verify dialog is gone
-                        try:
-                            not_now_button = self.driver.find_element(
-                                AppiumBy.ID, "com.amazon.kindle:id/button_disable_autoshelving"
+            if not search_results_visible:
+                # Check if we went directly to library instead
+                from views.library.view_strategies import LIBRARY_TAB_IDENTIFIERS
+
+                library_visible = False
+                for strategy, locator in LIBRARY_TAB_IDENTIFIERS:
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        if element and element.is_displayed():
+                            library_visible = True
+                            logger.info("Already in library view after first back press")
+                            break
+                    except Exception:
+                        continue
+
+                if library_visible:
+                    # Clear actively reading title
+                    try:
+                        sindarin_email = get_sindarin_email()
+                        if sindarin_email:
+                            self.driver.automator.profile_manager.save_style_setting(
+                                "actively_reading_title", None, email=sindarin_email
                             )
-                            if not_now_button.is_displayed():
-                                logger.error(
-                                    "Goodreads dialog still visible after clicking NOT NOW", exc_info=True
-                                )
-                            else:
-                                logger.debug("Dismissed Goodreads dialog")
-                        except NoSuchElementException:
-                            logger.debug("Successfully dismissed Goodreads dialog")
-
-                except NoSuchElementException:
-                    logger.error("NOT NOW button not found for Goodreads dialog", exc_info=True)
-                except Exception as e:
-                    logger.error(f"Error clicking NOT NOW button: {e}", exc_info=True)
-
-            # Check for and dismiss Word Wise dialog
-            word_wise_dialog_visible, _ = self._check_element_visibility(
-                WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
-            )
-            if word_wise_dialog_visible:
-                logger.debug("Found Word Wise dialog - clicking NO THANKS")
-                no_thanks_button_visible, no_thanks_button = self._check_element_visibility(
-                    WORD_WISE_NO_THANKS_BUTTON, "NO THANKS button"
-                )
-
-                if no_thanks_button_visible:
-                    no_thanks_button.click()
-                    logger.debug("Clicked NO THANKS button")
-                    time.sleep(1)
-                    if cancellation_check and cancellation_check():
-                        return False
-
-                    # Verify dialog is gone
-                    still_visible, _ = self._check_element_visibility(
-                        WORD_WISE_DIALOG_IDENTIFIERS, "Word Wise dialog"
-                    )
-                    if still_visible:
-                        logger.error("Word Wise dialog still visible after clicking NO THANKS", exc_info=True)
-                    else:
-                        logger.debug("Dismissed Word Wise dialog")
-
+                            logger.debug("Cleared actively reading title")
+                    except Exception as e:
+                        logger.error(f"Error clearing actively reading title: {e}", exc_info=True)
+                    return True
                 else:
-                    logger.error("NO THANKS button not found for Word Wise dialog", exc_info=True)
+                    logger.warning("After first back press, not in search results or library")
+                    # Continue with second back press anyway
 
-            # Check for cancellation before final step
+            # Second back press to go to library
             if cancellation_check and cancellation_check():
-                logger.info("Navigation cancelled before showing toolbar")
+                logger.info("Navigation cancelled before second back press")
                 return False
 
-            # Now try to make toolbar visible if it isn't already
-            return self._show_toolbar_and_close_book(cancellation_check=cancellation_check)
+            logger.info("Pressing hardware back button again to go to library list view...")
+            self.driver.back()
+            time.sleep(1)  # Wait for navigation
+
+            # Confirm we're in library list view
+            from views.library.view_strategies import (
+                LIBRARY_TAB_IDENTIFIERS,
+                LIBRARY_VIEW_IDENTIFIERS,
+            )
+
+            library_confirmed = False
+            for identifiers in [LIBRARY_TAB_IDENTIFIERS, LIBRARY_VIEW_IDENTIFIERS]:
+                for strategy, locator in identifiers:
+                    try:
+                        element = self.driver.find_element(strategy, locator)
+                        if element and element.is_displayed():
+                            library_confirmed = True
+                            logger.info("Confirmed we're in library list view")
+                            break
+                    except Exception:
+                        continue
+                if library_confirmed:
+                    break
+
+            if library_confirmed:
+                # Clear actively reading title
+                try:
+                    sindarin_email = get_sindarin_email()
+                    if sindarin_email:
+                        self.driver.automator.profile_manager.save_style_setting(
+                            "actively_reading_title", None, email=sindarin_email
+                        )
+                        logger.debug("Cleared actively reading title")
+                except Exception as e:
+                    logger.error(f"Error clearing actively reading title: {e}", exc_info=True)
+                return True
+            else:
+                logger.error("Failed to confirm library view after two back presses")
+                store_page_source(self.driver.page_source, "failed_library_navigation")
+                return False
 
         except Exception as e:
-            logger.error(f"Error handling reading state: {e}", exc_info=True)
+            logger.error(f"Error in navigate_back_to_library: {e}", exc_info=True)
             return False
 
     def _show_toolbar_and_close_book(self, cancellation_check=None):

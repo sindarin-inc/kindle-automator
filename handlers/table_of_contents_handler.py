@@ -47,6 +47,21 @@ class TableOfContentsHandler:
         """
         self.automator = automator
         self.driver = automator.driver
+        self.cancellation_check = None
+
+    def set_cancellation_check(self, check_func):
+        """Set the cancellation check function.
+
+        Args:
+            check_func: Function that returns True if request is cancelled.
+        """
+        self.cancellation_check = check_func
+
+    def _check_if_cancelled(self):
+        """Check if the current request has been cancelled."""
+        if self.cancellation_check:
+            return self.cancellation_check()
+        return False
 
     def get_table_of_contents(self, title: Optional[str] = None) -> Tuple[Dict, int]:
         """Get the table of contents for the current book.
@@ -58,6 +73,11 @@ class TableOfContentsHandler:
             Tuple of (response_data, status_code)
         """
         try:
+            # Check for cancellation at the start
+            if self._check_if_cancelled():
+                logger.info("ToC request cancelled at start")
+                return {"error": "Request was cancelled"}, 409
+
             # First check if we're already in the Table of Contents view
             if self._is_table_of_contents_open():
                 logger.info("Already in Table of Contents view")
@@ -142,12 +162,23 @@ class TableOfContentsHandler:
             # Store page source for debugging
             store_page_source(self.driver.page_source, "page_position_popover")
 
+            # Check for cancellation before opening ToC
+            if self._check_if_cancelled():
+                logger.info("ToC request cancelled before opening")
+                return {"error": "Request was cancelled"}, 409
+
             # Click the Table of Contents button
             if not self._open_table_of_contents():
                 return {"error": "Failed to open Table of Contents"}, 500
 
             # Store page source for ToC view
             store_page_source(self.driver.page_source, "table_of_contents_view")
+
+            # Check for cancellation after opening ToC
+            if self._check_if_cancelled():
+                logger.info("ToC request cancelled after opening")
+                # Don't close ToC - let the new request handle the current state
+                return {"error": "Request was cancelled"}, 409
 
             # Scroll to top of ToC list
             self._scroll_to_top_of_toc()
@@ -635,6 +666,11 @@ class TableOfContentsHandler:
             max_scrolls = 20  # Prevent infinite scrolling
 
             for scroll_count in range(max_scrolls):
+                # Check for cancellation before each scroll
+                if self._check_if_cancelled():
+                    logger.info("ToC collection cancelled during scrolling")
+                    return []
+
                 # Get visible chapter items by finding pairs of title and position elements
                 new_chapters_found = False
 
@@ -780,15 +816,10 @@ class TableOfContentsHandler:
                 except NoSuchElementException:
                     continue
 
-            # If no close button found, try tapping outside or using back
-            logger.warning("No close button found, trying back gesture")
-            self.driver.back()
-            # Wait for ToC to close
-            try:
-                WebDriverWait(self.driver, 1).until(lambda d: not self._is_table_of_contents_open())
-            except TimeoutException:
-                pass
-            return True
+            # If no close button found, don't use back gesture as it exits the book
+            logger.warning("No close button found for Table of Contents")
+            # Return False to indicate we couldn't close it
+            return False
 
         except Exception as e:
             logger.error(f"Error closing Table of Contents: {e}", exc_info=True)

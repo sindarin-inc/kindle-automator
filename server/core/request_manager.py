@@ -60,6 +60,7 @@ PRIORITY_LEVELS = {
 LAST_ONE_WINS_ENDPOINTS = {
     "/open-book",  # Book opening should cancel previous book opening requests
     "/open-random-book",  # Random book selection should cancel previous random book requests
+    "/table-of-contents",  # ToC requests should cancel previous ToC requests (even with different titles)
 }
 
 # Default TTL for cached responses and locks
@@ -95,8 +96,19 @@ class RequestManager:
         try:
             from flask import has_request_context
 
-            if has_request_context() and hasattr(request, "args"):
-                params = dict(request.args)
+            if has_request_context():
+                # Get query parameters
+                if hasattr(request, "args"):
+                    params = dict(request.args)
+
+                # For POST requests, also include JSON body parameters
+                if self.method == "POST" and hasattr(request, "is_json") and request.is_json:
+                    try:
+                        json_data = request.get_json() or {}
+                        # Merge JSON parameters (they override query params)
+                        params.update(json_data)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -142,28 +154,34 @@ class RequestManager:
                 # Check for multiple requests
                 self._check_and_notify_multiple_requests()
 
-            # Check if there's an active request for the same endpoint with different params
+            # Check if there's an active request for the same endpoint
             active_info = self._get_active_request_info()
             if active_info and active_info.get("path") == self.path:
                 # Check if it's the same request (same request_key means same params)
                 if active_info.get("request_key") != self.request_key:
-                    # Different params - cancel the previous request
-                    self._cancel_existing_same_endpoint_request()
+                    # Different params - only cancel for LAST_ONE_WINS_ENDPOINTS
+                    if self.path in LAST_ONE_WINS_ENDPOINTS:
+                        # Cancel the previous request for last-one-wins endpoints
+                        self._cancel_existing_same_endpoint_request()
 
-                    # Force claim this request (overwrite any existing)
-                    self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
-                    logger.debug(
-                        f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
-                        f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (different params, last-one-wins){RESET}"
-                    )
+                        # Force claim this request (overwrite any existing)
+                        self.redis_client.set(
+                            progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL
+                        )
+                        logger.debug(
+                            f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
+                            f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (different params, last-one-wins){RESET}"
+                        )
 
-                    # Check for and cancel lower priority requests from other endpoints
-                    self._check_and_cancel_lower_priority_requests()
+                        # Check for and cancel lower priority requests from other endpoints
+                        self._check_and_cancel_lower_priority_requests()
 
-                    # Record this as the active request for the user
-                    self._set_active_request()
-                    self.is_executor = True
-                    return True
+                        # Record this as the active request for the user
+                        self._set_active_request()
+                        self.is_executor = True
+                        return True
+                    # For non-LAST_ONE_WINS_ENDPOINTS with different params, don't cancel
+                    # Just continue with normal flow to allow concurrent execution
                 # else: Same params - fall through to normal deduplication logic
 
             # For last-one-wins endpoints (legacy, keeping for compatibility)
@@ -280,14 +298,11 @@ class RequestManager:
                 active_path = active_request.get("path")
 
                 # For last-one-wins endpoints, always cancel existing requests for the same path
-                # For other endpoints, only cancel if it's exactly the same request
+                # For other endpoints, we should NOT cancel - they should run concurrently
                 should_cancel = False
                 if self.path in LAST_ONE_WINS_ENDPOINTS and active_path == self.path:
                     should_cancel = True
-                elif active_path == self.path:
-                    active_request_key = active_request.get("request_key")
-                    if active_request_key and active_request_key != self.request_key:
-                        should_cancel = True
+                # Removed the elif block that was incorrectly cancelling requests for non-LAST_ONE_WINS endpoints
 
                 if should_cancel:
                     active_request_key = active_request.get("request_key")
