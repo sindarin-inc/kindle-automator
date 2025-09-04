@@ -75,8 +75,13 @@ class KindleStateMachine:
         logger.info(f"Attempting to transition to library from {self.current_state}")
 
         while transitions < max_transitions:
-            self.current_state = self._get_current_state()
-            logger.info(f"Current state: {self.current_state}")
+            # Skip expensive state check if we already know we're in library
+            # (e.g., when set directly by handle_reading after successful navigation)
+            if self.current_state != AppState.LIBRARY:
+                self.current_state = self._get_current_state()
+                logger.info(f"Current state: {self.current_state}")
+            else:
+                logger.info(f"Current state already set to: {self.current_state}")
 
             # Special handling for RemoteLicenseReleaseActivity dialog
             try:

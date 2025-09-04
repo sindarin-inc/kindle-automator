@@ -439,6 +439,7 @@ class LibraryHandlerSearch:
                         self._wait_for_in_library_section()
                         return self._process_search_results(book_title)
 
+            logger.debug(f"Not in search mode, submitting new search")
             # Not in search mode - submit new search
             if self._submit_search(book_title):
                 # Wait for search results
@@ -608,16 +609,26 @@ class LibraryHandlerSearch:
 
     def _is_already_in_search_mode(self):
         """Detect existing search payload via id=search_query."""
+        # Temporarily reduce implicit wait to avoid long delays when element doesn't exist
+        self.driver.implicitly_wait(0)  # Set to 0 for immediate check
+
         try:
             search_query_element = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
             current_query = self._element_text(search_query_element)
             return search_query_element, current_query
         except NoSuchElementException:
             return None, None
+        finally:
+            # Restore original implicit wait
+            self.driver.implicitly_wait(4)  # Restore to default 4 seconds
 
     def _update_search_query(self, book_title):
         """Clear + type new query + press Enter."""
+        import time
+
+        logger.debug(f"[TIMING] _update_search_query START at {time.time():.3f}")
         search_element, current_query = self._is_already_in_search_mode()
+        logger.debug(f"[TIMING] _is_already_in_search_mode returned at {time.time():.3f}")
         if not search_element:
             return False
 
@@ -626,8 +637,22 @@ class LibraryHandlerSearch:
             return True
 
         logger.info(f"Clearing existing search '{current_query}' and searching for '{book_title}'")
+
+        # Clear and set text using fastest available method
         search_element.clear()
-        search_element.send_keys(book_title)
+
+        # Try mobile:replaceValue first (much faster)
+        try:
+            search_element.click()  # Focus the field
+            self.driver.execute_script(
+                "mobile: replaceValue", {"element": search_element, "value": book_title}
+            )
+            logger.debug("Used mobile:replaceValue for faster text input")
+        except Exception as e:
+            # Fallback to send_keys
+            logger.debug(f"mobile:replaceValue failed ({e}), using send_keys")
+            search_element.send_keys(book_title)
+
         self.driver.press_keycode(66)  # Android keycode for Enter
         logger.info("Pressed Enter key to submit search")
 
@@ -652,26 +677,38 @@ class LibraryHandlerSearch:
 
     def _open_search_box(self):
         """Locate and click the search box (multiple locator strategies)."""
+        # Temporarily set implicit wait to 1s for faster failure
+        self.driver.implicitly_wait(1)
+
         try:
+            # Primary method - should work in most cases
             search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
             search_box.click()
             return True
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Primary search box locator failed: {e}")
+        finally:
+            # Restore implicit wait
+            self.driver.implicitly_wait(4)
 
-        # Try finding by class name and content-desc
-        linear_layouts = self.driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.LinearLayout")
-        for layout in linear_layouts:
-            try:
-                if layout.get_attribute("resource-id") == "com.amazon.kindle:id/search_box":
-                    logger.info("Found search box by class name and resource-id")
-                    layout.click()
-                    return True
-            except:
-                continue
-
-        logger.error("Could not find search box", exc_info=True)
-        return False
+        logger.debug(f"Opening search box failed, trying fallback")
+        # Fallback method - only if primary fails
+        self.driver.implicitly_wait(1)  # Keep it short for fallback too
+        try:
+            # More efficient: use XPath to find by resource-id directly
+            search_box = self.driver.find_element(
+                AppiumBy.XPATH,
+                "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/search_box']",
+            )
+            logger.info("Found search box using XPath fallback")
+            search_box.click()
+            return True
+        except Exception as e:
+            logger.error(f"Could not find search box: {e}", exc_info=True)
+            return False
+        finally:
+            # Restore implicit wait
+            self.driver.implicitly_wait(4)
 
     def _get_search_field(self):
         """Return the EditText used for typing."""
@@ -691,13 +728,14 @@ class LibraryHandlerSearch:
         if self._update_search_query(book_title):
             return True
 
+        logger.debug(f"Not already in search mode, opening search box")
         # Otherwise, open search box and type
         if not self._open_search_box():
             return False
 
-        # Wait for search field to appear
+        # Wait for search field to appear (reduced timeout for faster response)
         self._wait_until(
-            EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/search_query")), timeout=3
+            EC.presence_of_element_located((AppiumBy.ID, "com.amazon.kindle:id/search_query")), timeout=1
         )
 
         search_field = self._get_search_field()
@@ -705,18 +743,39 @@ class LibraryHandlerSearch:
             logger.error("Could not find search input field", exc_info=True)
             return False
 
+        # Clear and set text quickly
         search_field.clear()
-        search_field.send_keys(book_title)
-        logger.info(f"Entered book title in search field: '{book_title}'")
+
+        # Try different fast text input methods
+        text_entered = False
+
+        # Method 1: Try replaceValue (fastest, replaces all text at once)
+        if not text_entered:
+            try:
+                # Click to focus the field first
+                search_field.click()
+                # Use replaceValue to set text all at once
+                self.driver.execute_script(
+                    "mobile: replaceValue", {"element": search_field, "value": book_title}
+                )
+                logger.info(f"Entered book title using mobile:replaceValue: '{book_title}'")
+                text_entered = True
+            except Exception as e:
+                logger.debug(f"mobile:replaceValue failed ({e})")
+
+        # Method 2: Fallback to regular send_keys
+        if not text_entered:
+            search_field.send_keys(book_title)
+            logger.info(f"Entered book title using send_keys: '{book_title}'")
 
         # Press Enter
         self.driver.press_keycode(66)
         logger.info("Pressed Enter key to submit search")
 
-        # Check for search results within 3 seconds because sometimes the results pop in
+        # Check for search results within 2 seconds because sometimes the results pop in
         search_results_found = self._wait_until(
             lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
-            timeout=3,
+            timeout=2,
         )
 
         if not search_results_found:
@@ -749,7 +808,7 @@ class LibraryHandlerSearch:
         """Wait up to n seconds for any text containing 'In your library'."""
         return self._wait_until(
             lambda driver: driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'In your library')]"),
-            timeout=3,
+            timeout=2,
         )
 
     def _click_search_instead_for_if_present(self):

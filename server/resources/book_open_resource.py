@@ -515,6 +515,9 @@ class BookOpenResource(Resource):
             else:
                 # Return the error from the result
                 automator.state_machine.set_cancellation_check(None)
+                # Check if this is a cancellation (409 status)
+                if result.get("status") == 409:
+                    return result, 409
                 return result, 500
 
         # For other states, transition to library and open the book
@@ -558,6 +561,9 @@ class BookOpenResource(Resource):
             else:
                 # Return the error from the result
                 automator.state_machine.set_cancellation_check(None)
+                # Check if this is a cancellation (409 status)
+                if result.get("status") == 409:
+                    return result, 409
                 return result, 500
         else:
             # Did not reach library state

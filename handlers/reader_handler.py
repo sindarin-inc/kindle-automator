@@ -1621,8 +1621,9 @@ class ReaderHandler:
             # First try to get the cached title from profile settings
             try:
                 from server.utils.request_utils import get_sindarin_email
+
                 sindarin_email = get_sindarin_email()
-                if sindarin_email and hasattr(self.driver, 'automator'):
+                if sindarin_email and hasattr(self.driver, "automator"):
                     actively_reading = self.driver.automator.profile_manager.get_style_setting(
                         "actively_reading_title", email=sindarin_email
                     )
@@ -1638,7 +1639,9 @@ class ReaderHandler:
             # Only try to get the title if toolbar is already visible
             # We explicitly DO NOT tap to show the toolbar anymore
             if not visible:
-                logger.debug("Toolbar not visible, not attempting to show it to avoid disrupting reading state")
+                logger.debug(
+                    "Toolbar not visible, not attempting to show it to avoid disrupting reading state"
+                )
                 # Return None or cached title - don't tap to show toolbar
                 return None
 
@@ -1778,14 +1781,30 @@ class ReaderHandler:
             # First back press to go to search results
             logger.info("Pressing hardware back button to exit book to search results...")
             self.driver.back()
-            time.sleep(1)  # Wait for navigation
+
+            # Wait for navigation to complete instead of fixed sleep
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.support.ui import WebDriverWait
+
+            from views.library.view_strategies import SEARCH_RESULTS_IDENTIFIERS
+
+            try:
+                # Wait up to 2 seconds for search results or library to appear
+                WebDriverWait(self.driver, 2).until(
+                    lambda d: any(
+                        d.find_elements(strategy, locator)
+                        for strategy, locator in SEARCH_RESULTS_IDENTIFIERS[:3]  # Check first few identifiers
+                    )
+                )
+            except:
+                # If timeout, continue anyway - we'll check the state below
+                pass
 
             if cancellation_check and cancellation_check():
                 logger.info("Navigation cancelled after first back press")
                 return False
 
             # Check if we're in search results
-            from views.library.view_strategies import SEARCH_RESULTS_IDENTIFIERS
 
             search_results_visible = False
             for strategy, locator in SEARCH_RESULTS_IDENTIFIERS:
@@ -1836,13 +1855,27 @@ class ReaderHandler:
 
             logger.info("Pressing hardware back button again to go to library list view...")
             self.driver.back()
-            time.sleep(1)  # Wait for navigation
 
-            # Confirm we're in library list view
+            # Wait for library view to appear instead of fixed sleep
             from views.library.view_strategies import (
                 LIBRARY_TAB_IDENTIFIERS,
                 LIBRARY_VIEW_IDENTIFIERS,
             )
+
+            try:
+                # Wait up to 2 seconds for library view to appear
+                WebDriverWait(self.driver, 2).until(
+                    lambda d: any(
+                        d.find_elements(strategy, locator)
+                        for identifiers in [LIBRARY_TAB_IDENTIFIERS[:2], LIBRARY_VIEW_IDENTIFIERS[:2]]
+                        for strategy, locator in identifiers
+                    )
+                )
+            except:
+                # If timeout, continue anyway - we'll check the state below
+                pass
+
+            # Confirm we're in library list view
 
             library_confirmed = False
             for identifiers in [LIBRARY_TAB_IDENTIFIERS, LIBRARY_VIEW_IDENTIFIERS]:
