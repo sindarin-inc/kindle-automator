@@ -633,27 +633,20 @@ class ViewInspector:
 
             # Check for Table of Contents view before checking for reading view
             # This is important because ToC can overlay on reading view
-            toc_elements_found = 0
-            for strategy, locator in TABLE_OF_CONTENTS_VIEW_IDENTIFIERS:
+            # OPTIMIZATION: Only check the main containers, not every possible ToC element
+            toc_main_containers = [
+                (AppiumBy.ID, "com.amazon.kindle:id/toc_dialog_container"),
+                (AppiumBy.ID, "com.amazon.kindle:id/toc_fragment_container"),
+            ]
+
+            for strategy, locator in toc_main_containers:
                 try:
                     element = self.driver.find_element(strategy, locator)
                     if element.is_displayed():
-                        toc_elements_found += 1
-                        logger.debug(f"   Found Table of Contents element: {strategy}={locator}")
-                        # If we find the main ToC container or fragment, that's a strong indicator
-                        if locator in [
-                            "com.amazon.kindle:id/toc_dialog_container",
-                            "com.amazon.kindle:id/toc_fragment_container",
-                        ]:
-                            logger.debug("   Found main ToC container - definitely in Table of Contents view")
-                            return AppView.TABLE_OF_CONTENTS
+                        logger.debug(f"   Found main ToC container - definitely in Table of Contents view")
+                        return AppView.TABLE_OF_CONTENTS
                 except NoSuchElementException:
                     continue
-
-            # If we found at least 2 ToC elements, we're in ToC view
-            if toc_elements_found >= 2:
-                logger.debug(f"   Found {toc_elements_found} ToC elements - in Table of Contents view")
-                return AppView.TABLE_OF_CONTENTS
 
             # Check for reading view identifiers
             reading_view_elements_found = 0

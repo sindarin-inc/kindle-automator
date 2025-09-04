@@ -1189,7 +1189,7 @@ class LibraryHandler:
                     AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'volumes in this')]"
                 )
                 if elements:
-                    logger.info("Detected series/collection view via text pattern")
+                    logger.debug("Detected series/collection view via text pattern")
                     return True
             except Exception:
                 pass
@@ -2561,6 +2561,8 @@ class LibraryHandler:
                 else:
                     logger.error("Failed to exit series/collection view")
                     return False
+            else:
+                logger.debug(f"Not in a series view")
 
             # Check for download progress bar even for "downloaded" books
             # Sometimes the content-desc may show downloaded but it's still downloading
@@ -2570,6 +2572,10 @@ class LibraryHandler:
                 )
                 if not self._wait_for_download_completion():
                     return False
+                else:
+                    logger.debug("Download not complete?")
+            else:
+                logger.debug("Not downloading a book")
 
             # Check for "Invalid Item" dialog first
             if self._check_invalid_item_dialog(book_title, "after clicking already downloaded book"):
@@ -2577,10 +2583,14 @@ class LibraryHandler:
                 logger.info(f"Book '{book_title}' was removed as an invalid item, trying to find again")
                 time.sleep(1)  # Wait for UI to refresh after removal
                 return self.find_book(book_title)
+            else:
+                logger.debug("Book is not an invalid item")
 
             # Check for "Unable to Download" dialog for already downloaded books
             if self._check_unable_to_download_dialog(book_title, "after clicking already downloaded book"):
                 return False
+            else:
+                logger.debug("Book is not an unable to download dialog")
 
             # Wait for library view to disappear (we've left it)
             try:
@@ -2600,10 +2610,14 @@ class LibraryHandler:
                     logger.info(f"Book '{book_title}' was removed as an invalid item, trying to find again")
                     time.sleep(1)  # Wait for UI to refresh after removal
                     return self.find_book(book_title)
+                else:
+                    logger.debug("Book is not an invalid item")
 
                 # Check for "Unable to Download" dialog after second click
                 if self._check_unable_to_download_dialog(book_title, "after second click"):
                     return False
+                else:
+                    logger.debug("Book is not an invalid item")
 
                 # Wait again for library view to disappear
                 try:
@@ -2672,6 +2686,10 @@ class LibraryHandler:
             if search_result:
                 parent_container, button, book_info = search_result
                 logger.info(f"Successfully found book '{book_title}' using search function: {book_info}")
+                # Log the current implicit wait setting after search
+                logger.debug(
+                    f"Implicit wait after search: {getattr(self.driver, '_implicit_wait_time_out', 'unknown')} seconds"
+                )
 
                 # Check for cancellation after search before clicking
                 if self._check_cancellation():

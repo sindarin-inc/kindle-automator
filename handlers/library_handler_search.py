@@ -609,18 +609,12 @@ class LibraryHandlerSearch:
 
     def _is_already_in_search_mode(self):
         """Detect existing search payload via id=search_query."""
-        # Temporarily reduce implicit wait to avoid long delays when element doesn't exist
-        self.driver.implicitly_wait(0)  # Set to 0 for immediate check
-
         try:
             search_query_element = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_query")
             current_query = self._element_text(search_query_element)
             return search_query_element, current_query
         except NoSuchElementException:
             return None, None
-        finally:
-            # Restore original implicit wait
-            self.driver.implicitly_wait(4)  # Restore to default 4 seconds
 
     def _update_search_query(self, book_title):
         """Clear + type new query + press Enter."""
@@ -677,9 +671,6 @@ class LibraryHandlerSearch:
 
     def _open_search_box(self):
         """Locate and click the search box (multiple locator strategies)."""
-        # Temporarily set implicit wait to 1s for faster failure
-        self.driver.implicitly_wait(1)
-
         try:
             # Primary method - should work in most cases
             search_box = self.driver.find_element(AppiumBy.ID, "com.amazon.kindle:id/search_box")
@@ -687,13 +678,10 @@ class LibraryHandlerSearch:
             return True
         except Exception as e:
             logger.debug(f"Primary search box locator failed: {e}")
-        finally:
-            # Restore implicit wait
-            self.driver.implicitly_wait(4)
 
         logger.debug(f"Opening search box failed, trying fallback")
+
         # Fallback method - only if primary fails
-        self.driver.implicitly_wait(1)  # Keep it short for fallback too
         try:
             # More efficient: use XPath to find by resource-id directly
             search_box = self.driver.find_element(
@@ -706,9 +694,6 @@ class LibraryHandlerSearch:
         except Exception as e:
             logger.error(f"Could not find search box: {e}", exc_info=True)
             return False
-        finally:
-            # Restore implicit wait
-            self.driver.implicitly_wait(4)
 
     def _get_search_field(self):
         """Return the EditText used for typing."""

@@ -1,5 +1,11 @@
 .PHONY: server test init
 
+# Auto-source auth tokens if they exist
+-include .env.auth
+export INTEGRATION_TEST_STAFF_AUTH_TOKEN
+export WEB_INTEGRATION_TEST_AUTH_TOKEN
+export DEV_SESSION_ID
+
 run: server
 
 init:
@@ -200,31 +206,13 @@ test-group4:
 	@echo ""
 	@echo "===== GROUP 4 Tests Complete ====="
 
-# Generate staff authentication token for testing
-test-staff-auth:
-	@echo "Generating staff authentication token..."
-	@TOKEN=$$(curl -s http://localhost:4098/staff-auth?auth=true -c - | grep staff_token | awk '{print $$7}'); \
-	if [ -n "$$TOKEN" ]; then \
-		echo "Staff token generated: $$TOKEN"; \
-		echo "Add to .env: INTEGRATION_TEST_STAFF_AUTH_TOKEN=$$TOKEN"; \
-	else \
-		echo "Failed to generate staff token"; \
-		echo "Make sure the Flask server is running: make server"; \
-		exit 1; \
-	fi
+# Refresh local authentication tokens (generates new session and tokens)
+refresh-auth:
+	@bash scripts/refresh_auth.sh
 
-# Generate web authentication token for testing  
-test-web-auth:
-	@echo "Generating Knox authentication token for samuel@ofbrooklyn.com..."
-	@cd ../web-app && TOKEN=$$(docker exec sol_web ./manage.py generate_dev_knox_token samuel@ofbrooklyn.com | grep "Knox token generated:" | awk '{print $$4}'); \
-	if [ -n "$$TOKEN" ]; then \
-		echo "Knox token generated: $$TOKEN"; \
-		echo "Add to .env: WEB_INTEGRATION_TEST_AUTH_TOKEN=$$TOKEN"; \
-	else \
-		echo "Failed to generate Knox token"; \
-		echo "Make sure the web-app Docker container is running"; \
-		exit 1; \
-	fi
+# Test that authentication tokens are working
+test-auth:
+	@bash scripts/test_auth.sh
 
 # Ansible
 

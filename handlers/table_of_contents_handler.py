@@ -648,33 +648,11 @@ class TableOfContentsHandler:
         seen_chapters = set()
 
         try:
-            # Find the ToC list
-            toc_list = None
-            for strategy, locator in TABLE_OF_CONTENTS_LIST_IDENTIFIERS:
-                try:
-                    toc_list = self.driver.find_element(strategy, locator)
-                    if toc_list.is_displayed():
-                        logger.info(f"Found ToC list using {strategy}={locator}")
-                        break
-                    else:
-                        logger.debug(f"Found ToC list element but not displayed: {locator}")
-                except NoSuchElementException:
-                    logger.debug(f"ToC list element not found: {locator}")
-                    continue
-                except Exception as e:
-                    logger.debug(f"Error finding ToC list element {locator}: {e}")
-                    continue
-
-            if not toc_list:
-                logger.warning("Could not find ToC list - trying direct element search")
-                # Fall back to directly searching for chapter elements without the list container
-
-            # Scroll and collect chapters
+            # Setup scrolling parameters
             window_size = self.driver.get_window_size()
             start_x = window_size["width"] // 2
             start_y = int(window_size["height"] * 0.7)
             end_y = int(window_size["height"] * 0.3)
-
             no_new_chapters_count = 0
             max_scrolls = 20  # Prevent infinite scrolling
 
@@ -684,96 +662,56 @@ class TableOfContentsHandler:
                     logger.info("ToC collection cancelled during scrolling")
                     return []
 
-                # Get visible chapter items by finding pairs of title and position elements
                 new_chapters_found = False
 
-                # Find all chapter titles and positions - work even without the list container
-                try:
-                    # Get all list items in the ToC (each item contains a title and possibly a page number)
-                    # Try to find the parent containers that hold both title and position
-                    list_items = []
+                # Get all title elements in one batch - this is the most reliable approach
+                # We know these elements exist, no need for fallbacks
+                title_elements = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
+                )
 
-                    # First try to find view containers which hold both title and position
+                # Get all position elements in one batch
+                position_elements = self.driver.find_elements(
+                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
+                )
+
+                # Create a map of position text by element location for matching
+                position_map = {}
+                for pos_elem in position_elements:
                     try:
-                        list_items = self.driver.find_elements(
-                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_view_container"
-                        )
-                        if list_items:
-                            logger.info(f"Found {len(list_items)} ToC entry view containers")
+                        if pos_elem.is_displayed():
+                            # Use location as key since elements at same Y are likely related
+                            loc = pos_elem.location
+                            position_map[loc["y"]] = pos_elem.text.strip()
                     except:
-                        pass
+                        continue
 
-                    # Fallback to finding all visible title elements and their parent containers
-                    if not list_items:
-                        title_elements = self.driver.find_elements(
-                            AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
-                        )
-                        logger.info(f"Found {len(title_elements)} title elements")
+                # Process title elements
+                for title_elem in title_elements:
+                    try:
+                        if not title_elem.is_displayed():
+                            continue
 
-                        for title_elem in title_elements:
-                            try:
-                                if not title_elem.is_displayed():
-                                    continue
+                        title_text = title_elem.text.strip()
+                        if not title_text or title_text in seen_chapters:
+                            continue
 
-                                title_text = title_elem.text.strip()
-                                page_text = None
+                        # Try to find matching position by Y coordinate
+                        page_text = None
+                        title_y = title_elem.location["y"]
 
-                                # Try to find position element as sibling
-                                try:
-                                    parent = title_elem.find_element(AppiumBy.XPATH, "..")
-                                    grandparent = parent.find_element(AppiumBy.XPATH, "..")
-                                    position_elem = grandparent.find_element(
-                                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
-                                    )
-                                    if position_elem and position_elem.is_displayed():
-                                        page_text = position_elem.text.strip()
-                                except (NoSuchElementException, Exception):
-                                    pass
+                        # Look for position element at similar Y coordinate (within 50px)
+                        for pos_y, pos_text in position_map.items():
+                            if abs(pos_y - title_y) < 50:
+                                page_text = pos_text
+                                break
 
-                                if self._add_chapter_if_new(chapters, seen_chapters, title_text, page_text):
-                                    new_chapters_found = True
+                        if self._add_chapter_if_new(chapters, seen_chapters, title_text, page_text):
+                            new_chapters_found = True
 
-                            except Exception as e:
-                                logger.warning(f"Error processing title element: {e}")
-                                continue
-                    else:
-                        # Process view container items
-                        for item in list_items:
-                            try:
-                                # Find title within this container
-                                title_elem = item.find_element(
-                                    AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"
-                                )
-                                if not title_elem.is_displayed():
-                                    continue
-
-                                title_text = title_elem.text.strip()
-                                page_text = None
-
-                                # Try to find position within the end_align_items container
-                                try:
-                                    end_align_container = item.find_element(
-                                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_end_align_items"
-                                    )
-                                    position_elem = end_align_container.find_element(
-                                        AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"
-                                    )
-                                    if position_elem and position_elem.is_displayed():
-                                        page_text = position_elem.text.strip()
-                                except (NoSuchElementException, Exception):
-                                    pass
-
-                                if self._add_chapter_if_new(chapters, seen_chapters, title_text, page_text):
-                                    new_chapters_found = True
-
-                            except Exception as e:
-                                logger.warning(f"Error processing ToC entry: {e}")
-                                continue
-
-                except Exception as e:
-                    logger.warning(f"Error finding chapter elements: {e}", exc_info=True)
-                    # Fallback to XPATH search - same logic as above
-                    logger.info("Using XPATH fallback to find chapters")
+                    except Exception:
+                        # Skip problematic elements silently
+                        continue
 
                 if not new_chapters_found:
                     no_new_chapters_count += 1
@@ -786,16 +724,8 @@ class TableOfContentsHandler:
                 # Scroll down to see more chapters
                 if scroll_count < max_scrolls - 1:
                     self.driver.swipe(start_x, start_y, start_x, end_y, duration=300)
-                    # Wait for scroll to settle by checking for elements
-                    try:
-                        WebDriverWait(self.driver, 0.2).until(
-                            lambda d: len(
-                                d.find_elements(AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title")
-                            )
-                            > 0
-                        )
-                    except TimeoutException:
-                        pass
+                    # Small delay for scroll to complete
+                    time.sleep(0.1)
 
             logger.info(f"Collected {len(chapters)} chapters from Table of Contents")
 

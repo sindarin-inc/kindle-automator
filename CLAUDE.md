@@ -107,58 +107,62 @@ To control Redis command logging in the debug log:
 ## Testing
 
 - **Local email**: Always use `sam@solreader.com` or `kindle@solreader.com`
-- **For running integration tests locally**: You need to set auth tokens from production:
 
-  ```bash
-  # Get tokens from production (these are stored in GitHub secrets for CI)
-  # Option 1: Get from .env file if you have access to production
-  # Option 2: Ask a team member for the current tokens
-  # Option 3: Check GitHub Actions secrets (if you have access)
+### Authentication Setup (Simple!)
 
-  # Once you have the tokens, export them:
-  export INTEGRATION_TEST_STAFF_AUTH_TOKEN="<get-from-prod-env>"
-  export WEB_INTEGRATION_TEST_AUTH_TOKEN="<knox-token-from-prod>"
+Authentication tokens are now automatically managed:
 
-  # To verify tokens are working:
-  curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
-       -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
-       "http://localhost:4096/kindle/emulators/active?user_email=kindle@solreader.com"
-  # Should return JSON with active emulators, not an authentication error
-  ```
+```bash
+# First time setup or refresh tokens:
+make refresh-auth
 
-- **Authentication for proxy server (REQUIRED)**:
+# Verify tokens are working:
+make test-auth
 
-  ```bash
-  # Step 1: Generate a dev session (creates Django session with OTP bypass)
-  docker exec -t sol_web ./manage.py generate_dev_session
-  # This outputs a sessionid like: f0605l2bra7fgpnsem7ahdl8ebv5bqp7
+# That's it! Tokens are now automatically loaded for all commands
+```
 
-  # Step 2: Get staff token - save to cookie file to get FULL token
-  curl -s -c .cookies.txt -H "Cookie: sessionid=YOUR_SESSION_ID" \
-    "http://localhost:4096/kindle/staff-auth?auth=1"
+The tokens are stored in `.env.auth` and automatically loaded by:
+- `make test` and all test commands
+- `uv run pytest ...` (via Makefile include)
+- For manual curl commands, source first: `source .env.auth`
 
-  # Step 3: Extract the full token from cookie file (JSON response truncates it)
-  STAFF_TOKEN=$(grep staff_token .cookies.txt | awk '{print $7}')
+### Running Tests
 
-  # Step 4: Use both cookies for all requests
-  curl -s -H "Cookie: sessionid=YOUR_SESSION_ID; staff_token=$STAFF_TOKEN" \
-    "http://localhost:4096/kindle/screenshot?user_email=kindle@solreader.com&xml=1"
-  ```
+```bash
+# Run tests - auth tokens are automatically loaded
+uv run pytest tests/test_api_integration.py::TestKindleAPIIntegration::test_specific_endpoint -v
 
-  **IMPORTANT**:
+# Or use make commands - auth is automatic
+make test-api
+make test-group1
+```
 
-  - The proxy server handles authentication differently than the Flask server
-  - The staff_token in the JSON response is truncated with "..." - always get it from the cookie file or Set-Cookie header
-  - You MUST use dev session authentication as shown above
+### Manual API Requests
+
+For manual curl requests, source the tokens first:
+
+```bash
+# Source the auth tokens
+source .env.auth
+
+# Now make authenticated requests
+curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
+     -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
+     "http://localhost:4096/kindle/emulators/active?user_email=kindle@solreader.com"
+```
+
+### Troubleshooting Auth
+
+If authentication fails:
+1. Make sure Docker containers are running: `cd ../web-app && make fast`
+2. Regenerate tokens: `make refresh-auth`
+3. Verify tokens work: `make test-auth`
 
 - **After working on features**: Look through `tests/test_api_integration.py` and run the most appropriate specific test for the endpoint you modified:
 
   ```bash
-  # First, set authentication tokens for local testing (see Testing section above for how to get these)
-  export INTEGRATION_TEST_STAFF_AUTH_TOKEN="<get-from-prod-env>"
-  export WEB_INTEGRATION_TEST_AUTH_TOKEN="<knox-token-from-prod>"
-
-  # Run specific test
+  # Auth tokens are automatically loaded from .env.auth
   uv run pytest tests/test_api_integration.py::TestKindleAPIIntegration::test_specific_endpoint -v
   ```
 
