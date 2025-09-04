@@ -139,6 +139,20 @@ class TableOfContentsHandler:
                         return {"error": f"Failed to open book: {title}"}, 500
                 else:
                     return {"error": "Not in reading view. Please provide title parameter."}, 400
+            elif title:
+                # We're in reading view, but need to verify we're in the correct book
+                profile = self.automator.profile_manager.get_current_profile()
+                sindarin_email = profile.get("email") if profile else None
+
+                if sindarin_email and hasattr(self.automator, "server_ref") and self.automator.server_ref:
+                    current_book = self.automator.server_ref.get_current_book(sindarin_email)
+                    if current_book and current_book.lower() != title.lower():
+                        logger.info(
+                            f"Currently reading '{current_book}' but requested ToC for '{title}', switching books"
+                        )
+                        # Open the correct book
+                        if not self._open_book_if_needed(title):
+                            return {"error": f"Failed to open book: {title}"}, 500
 
             # Make sure we have the reading controls visible
             if not self._ensure_reading_controls_visible():
@@ -558,12 +572,11 @@ class TableOfContentsHandler:
         chapter = {"title": title_text}
         if page_text and page_text.isdigit():
             chapter["page"] = int(page_text)
-            logger.info(f"Found page {page_text} for chapter '{title_text}'")
 
         chapters.append(chapter)
         seen_chapters.add(title_text)
         page_str = f"(p. {chapter.get('page')})" if chapter.get("page") else ""
-        logger.info(f"Added chapter: {chapter['title']} {page_str}")
+        logger.info(f" -> {chapter['title']} {page_str}")
         return True
 
     def _scroll_toc_in_direction(self, direction: str = "up", num_swipes: int = 3):

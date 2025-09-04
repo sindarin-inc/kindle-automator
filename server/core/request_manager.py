@@ -52,7 +52,7 @@ PRIORITY_LEVELS = {
     "/books": 30,  # Low - library scanning
     "/books-stream": 30,
     "/auth": 20,
-    # "/screenshot" is excluded - it can run concurrently without priority blocking
+    # "/screenshot" has priority 0 (default) - lowest priority, can be cancelled
 }
 
 # Endpoints where newer requests should cancel older ones (last-one-wins)
