@@ -1075,8 +1075,6 @@
             container.className = 'vnc-container';
             container.id = `vnc-${instance.server_name}-${instance.display}`;
             
-            const wsPort = instance.ws_port || (instance.vnc_port + 1000);
-            
             // Format status with duration
             let statusText = instance.is_booting ? 'Booting' : 'Active';
             let durationText = '';
@@ -1103,7 +1101,7 @@
                     </div>
                 </div>
                 <div class="vnc-info" onclick="window.handleFooterClick('${id}', event)">
-                    ${instance.server_name} | Display :${instance.display} | VNC ${instance.vnc_port} | WS ${wsPort}
+                    ${instance.server_name} | Display :${instance.display} | VNC ${instance.vnc_port} | Emulator ${instance.emulator_port}
                 </div>
             `;
             
