@@ -300,6 +300,8 @@ class EmulatorManager:
                         if self.emulator_launcher.is_emulator_ready(email):
                             # Apply memory optimizations if enabled
                             self._apply_memory_optimizations(email, emulator_id)
+                            # Apply input method uninstall if not done yet
+                            self._uninstall_input_methods(email, emulator_id)
                             return True
 
                 logger.error(
@@ -369,14 +371,6 @@ class EmulatorManager:
                 (["pm", "disable-user", "com.android.vending"], "Disabling Play Store"),
                 # Disable YouTube (prevents background crashes)
                 (["pm", "disable-user", "com.google.android.youtube"], "Disabling YouTube"),
-                # Disable Gboard to prevent soft keyboard from appearing
-                (["pm", "disable-user", "com.google.android.inputmethod.latin"], "Disabling Gboard"),
-                # Configure system to think hardware keyboard is connected
-                (
-                    ["settings", "put", "secure", "show_ime_with_hard_keyboard", "0"],
-                    "Hide IME with hardware keyboard",
-                ),
-                (["settings", "put", "secure", "default_input_method", "null"], "Clear default input method"),
                 # Disable voice input settings
                 (
                     ["settings", "put", "secure", "voice_interaction_service", ""],
@@ -433,28 +427,11 @@ class EmulatorManager:
             ]
 
             # Run each command
-            keyboard_disabled = False
             for cmd, description in optimization_commands:
                 try:
                     full_cmd = adb_prefix + cmd
                     logger.debug(f"{description}...")
                     result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5, check=False)
-
-                    # Check if keyboard-related commands were successful
-                    if (
-                        any(
-                            keyword in description
-                            for keyword in [
-                                "Disabling Gboard",
-                                "Hide IME with hardware keyboard",
-                                "Clear default input method",
-                            ]
-                        )
-                        and result.returncode == 0
-                    ):
-                        keyboard_disabled = True
-                        logger.info(f"Keyboard configuration successful: {description}")
-                        logger.debug(f"Setting keyboard_disabled=True after: {description}")
 
                     # Only log errors, not successes
                     if result.returncode != 0 and result.stderr:
@@ -480,19 +457,108 @@ class EmulatorManager:
                 datetime.now(timezone.utc),
                 section="emulator_settings",
             )
-            # Store keyboard disabled state
-            logger.debug(f"keyboard_disabled flag is: {keyboard_disabled}")
-            if keyboard_disabled:
-                logger.info(f"Setting keyboard_disabled=True in profile for {email}")
-                success = profile_manager.set_user_field(
-                    email, "keyboard_disabled", True, section="emulator_settings"
-                )
-                logger.debug(f"keyboard_disabled flag set result: {success}")
-            else:
-                logger.warning(f"keyboard_disabled flag is False, not setting in profile for {email}")
 
             logger.info(f"Memory optimization settings applied successfully for {email}")
 
         except Exception as e:
             logger.error(f"Error applying memory optimizations for {email}: {e}", exc_info=True)
             # Continue even if optimizations fail - they're not critical
+
+    def _uninstall_input_methods(self, email: str, emulator_id: str) -> None:
+        """
+        Uninstall input methods to prevent keyboard/stylus from appearing.
+        This is more effective than disabling as it completely removes them from the input method list.
+
+        Args:
+            email: User email to check preferences
+            emulator_id: The emulator ID (e.g. emulator-5554)
+        """
+        try:
+            # Check if we've already uninstalled input methods
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            profile_manager = AVDProfileManager.get_instance()
+
+            # Check if input methods have been uninstalled
+            input_methods_uninstalled = profile_manager.get_user_field(
+                email, "input_methods_uninstalled", default=False, section="emulator_settings"
+            )
+
+            if input_methods_uninstalled:
+                logger.debug(f"Input methods already uninstalled for {email}")
+                return
+
+            logger.info(f"Uninstalling input methods for {email}...")
+
+            # Build adb command prefix
+            adb_prefix = [f"{self.android_home}/platform-tools/adb", "-s", emulator_id, "shell"]
+
+            # List of input method uninstall commands
+            uninstall_commands = [
+                # Completely uninstall Gboard to prevent keyboard/stylus from appearing
+                (
+                    ["pm", "uninstall", "--user", "0", "com.google.android.inputmethod.latin"],
+                    "Uninstalling Gboard",
+                ),
+                # Uninstall Google TTS/Voice input to prevent it becoming default
+                (
+                    ["pm", "uninstall", "--user", "0", "com.google.android.tts"],
+                    "Uninstalling Google TTS/Voice",
+                ),
+                # Configure system to think hardware keyboard is connected
+                (
+                    ["settings", "put", "secure", "show_ime_with_hard_keyboard", "0"],
+                    "Hide IME with hardware keyboard",
+                ),
+                # Clear input method settings (may fail if already cleared, that's ok)
+                (["settings", "delete", "secure", "default_input_method"], "Clear default input method"),
+                (["settings", "delete", "secure", "enabled_input_methods"], "Clear enabled input methods"),
+                # Additional stylus-specific settings
+                (
+                    ["settings", "put", "system", "pointer_icon_for_stylus_enabled", "0"],
+                    "Disable stylus pointer",
+                ),
+            ]
+
+            # Run each command
+            all_successful = True
+            for cmd, description in uninstall_commands:
+                try:
+                    full_cmd = adb_prefix + cmd
+                    logger.debug(f"{description}...")
+                    result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=5, check=False)
+
+                    # For uninstall commands, check if successful
+                    if "uninstall" in cmd[0] or "delete" in cmd[0]:
+                        if result.returncode == 0 or "Success" in result.stdout:
+                            logger.info(f"Successfully: {description}")
+                        else:
+                            # Don't fail if already uninstalled
+                            if (
+                                "Unknown package" not in result.stderr
+                                and "not installed" not in result.stderr
+                            ):
+                                logger.warning(f"Failed: {description} - {result.stderr}")
+                                all_successful = False
+
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Command timed out: {' '.join(cmd)}")
+                    all_successful = False
+                except Exception as cmd_e:
+                    logger.warning(f"Error running command {' '.join(cmd)}: {cmd_e}")
+                    all_successful = False
+
+            # Mark input methods as uninstalled if successful
+            if all_successful:
+                profile_manager.set_user_field(
+                    email, "input_methods_uninstalled", True, section="emulator_settings"
+                )
+                # Also set keyboard_disabled for backwards compatibility
+                profile_manager.set_user_field(email, "keyboard_disabled", True, section="emulator_settings")
+                logger.info(f"Input methods uninstalled successfully for {email}")
+            else:
+                logger.warning(f"Some input method uninstall commands failed for {email}")
+
+        except Exception as e:
+            logger.error(f"Error uninstalling input methods for {email}: {e}", exc_info=True)
+            # Continue even if uninstall fails - they're not critical
