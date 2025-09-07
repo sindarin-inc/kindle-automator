@@ -16,6 +16,8 @@ import subprocess
 import time
 from typing import Dict, List, Optional
 
+from server.utils.port_utils import is_port_in_use, kill_process_on_port
+
 logger = logging.getLogger(__name__)
 
 # Singleton instance
@@ -80,6 +82,15 @@ class WebSocketProxyManager:
 
             # Calculate WebSocket port (VNC port + offset)
             ws_port = vnc_port + WS_PORT_OFFSET
+
+            # Check if port is in use and clean it up if needed
+            if is_port_in_use(ws_port):
+                logger.warning(f"Port {ws_port} is already in use, attempting to clean up")
+                if kill_process_on_port(ws_port):
+                    logger.info(f"Successfully cleaned up process on port {ws_port}")
+                else:
+                    logger.error(f"Failed to clean up port {ws_port}, cannot start WebSocket proxy")
+                    return None
 
             # The command for launching rfbproxy
             # rfbproxy args: --address=0.0.0.0:WS_PORT --rfb-server=127.0.0.1:VNC_PORT

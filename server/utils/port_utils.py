@@ -5,8 +5,14 @@ This module consolidates all port-related logic to avoid duplication
 across the codebase. All port calculations should use these functions.
 """
 
+import logging
 import os
 import platform
+import signal
+import subprocess
+import time
+
+logger = logging.getLogger(__name__)
 
 
 class PortConfig:
@@ -204,3 +210,81 @@ def parse_emulator_id(emulator_id: str) -> int:
         int: The emulator port number
     """
     return int(emulator_id.split("-")[1])
+
+
+def is_port_in_use(port: int) -> bool:
+    """
+    Check if a port is currently in use.
+
+    Args:
+        port: The port number to check
+
+    Returns:
+        bool: True if port is in use, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return bool(result.stdout.strip())
+    except Exception as e:
+        logger.warning(f"Error checking if port {port} is in use: {e}")
+        return False
+
+
+def kill_process_on_port(port: int) -> bool:
+    """
+    Kill any process listening on the specified port.
+
+    Args:
+        port: The port number
+
+    Returns:
+        bool: True if process was killed, False if no process was found
+    """
+    if not port:
+        return False
+
+    try:
+        # Get PIDs of processes listening on the port
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if not result.stdout.strip():
+            return False
+
+        pids = result.stdout.strip().split("\n")
+        killed_any = False
+
+        for pid in pids:
+            if not pid:
+                continue
+            try:
+                logger.info(f"Killing process {pid} on port {port}")
+                os.kill(int(pid), signal.SIGTERM)
+                time.sleep(0.5)
+                # Force kill if still alive
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass  # Process already terminated
+                killed_any = True
+            except Exception as e:
+                logger.warning(f"Error killing process {pid}: {e}")
+
+        if killed_any:
+            # Give a moment for port to be released
+            time.sleep(1)
+
+        return killed_any
+
+    except Exception as e:
+        logger.warning(f"Error checking/killing processes on port {port}: {e}")
+        return False

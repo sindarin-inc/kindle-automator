@@ -413,24 +413,6 @@ class AppiumDriver:
 
     def _kill_process_on_port(self, port: int):
         """Kill any process using the specified port."""
-        try:
-            port_check = subprocess.run(
-                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True, check=False
-            )
-            if port_check.stdout.strip():
-                pids = port_check.stdout.strip().split("\n")
-                for pid in pids:
-                    logger.info(f"Killing process {pid} on port {port}")
-                    try:
-                        os.kill(int(pid), signal.SIGTERM)
-                        time.sleep(0.5)
-                        # Force kill if still alive
-                        try:
-                            os.kill(int(pid), signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
-                    except Exception as e:
-                        logger.warning(f"Error killing process {pid}: {e}")
-                time.sleep(1)
-        except Exception as e:
-            logger.warning(f"Error checking for processes on port {port}: {e}")
+        from server.utils.port_utils import kill_process_on_port
+
+        kill_process_on_port(port)
