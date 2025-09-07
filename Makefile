@@ -280,9 +280,5 @@ db-audit-dry:
 	@echo "Running VNC instance audit in dry run mode (no changes will be made)..."
 	@uv run dotenv -f $(ENV_FILE) run python scripts/audit_vnc.py --dry
 
-# Export database to JSON format (auto-detects environment)
-db-export:
-	@echo "Exporting users from database to JSON format..."
-	@uv run dotenv -f $(ENV_FILE) run python scripts/export_users_to_json.py
 
 # db-stats and db-data are defined in Makefile.database
