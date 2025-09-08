@@ -201,7 +201,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
     def test_books_streaming(self):
         """Test /books endpoint in streaming mode (sync=true) - verify it actually streams."""
         import time
-        
+
         print("\n[TEST] Testing streaming mode (sync=true)...")
         # Use the dedicated streaming endpoint for sync=true
         stream_url = f"{self.base_url}/kindle/books-stream"
@@ -217,7 +217,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
             messages = []
             message_times = []
             first_message_time = None
-            
+
             # Use chunk_size=1 to avoid buffering and get true streaming
             for line in response.iter_lines(chunk_size=1, decode_unicode=False):
                 if line:
@@ -225,20 +225,22 @@ class TestKindleAPIIntegration(BaseKindleTest):
                         # Try parsing as newline-delimited JSON first
                         message = json.loads(line.decode("utf-8"))
                         current_time = time.time()
-                        
+
                         if first_message_time is None:
                             first_message_time = current_time
                             print(f"[STREAM] First message received after {current_time - start_time:.2f}s")
-                        
+
                         elapsed = current_time - first_message_time
                         message_times.append(elapsed)
-                        
+
                         # Log message with timing info
                         if "books" in message:
-                            print(f"[STREAM] @{elapsed:.2f}s: Batch {message.get('batch_num', '?')} with {len(message['books'])} books")
+                            print(
+                                f"[STREAM] @{elapsed:.2f}s: Batch {message.get('batch_num', '?')} with {len(message['books'])} books"
+                            )
                         else:
                             print(f"[STREAM] @{elapsed:.2f}s: {json.dumps(message)}")
-                        
+
                         messages.append(message)
 
                         # Stop after getting done message or error
@@ -251,13 +253,13 @@ class TestKindleAPIIntegration(BaseKindleTest):
                             try:
                                 message = json.loads(line[6:].decode("utf-8"))
                                 current_time = time.time()
-                                
+
                                 if first_message_time is None:
                                     first_message_time = current_time
-                                
+
                                 elapsed = current_time - first_message_time
                                 message_times.append(elapsed)
-                                
+
                                 print(f"[STREAM] @{elapsed:.2f}s: SSE: {json.dumps(message)}")
                                 messages.append(message)
 
@@ -276,41 +278,43 @@ class TestKindleAPIIntegration(BaseKindleTest):
                     break
 
             print(f"[TEST] Received total of {len(messages)} messages over {time.time() - start_time:.2f}s")
-            
+
             # CRITICAL TEST: Verify streaming behavior (not buffering)
             # Check that we received messages progressively, not all at once
             book_messages = [msg for msg in messages if "books" in msg]
-            
+
             # Verify we got the expected streaming messages
             assert any("status" in msg for msg in messages), "Should have status message"
             assert any("filter_book_count" in msg for msg in messages), "Should have filter count"
             assert len(book_messages) > 0, "Should have at least one book batch"
-            
+
             # Check timing - messages should arrive over time
             if len(messages) > 2:
                 # Calculate time span of all messages
                 total_time_span = message_times[-1] - message_times[0] if message_times else 0
                 print(f"[TEST] Messages arrived over {total_time_span:.3f}s")
-                
+
                 # Even with fast retrieval, streaming should show some time distribution
                 # (as opposed to all messages having exactly the same timestamp)
                 unique_times = len(set(round(t, 3) for t in message_times))
                 print(f"[TEST] Found {unique_times} unique timestamps (rounded to ms)")
-                
+
                 # Verify messages didn't all arrive at exactly the same instant
                 assert unique_times > 1, "All messages have the same timestamp - likely buffered!"
-                
+
                 # If we have multiple book batches, check they arrived sequentially
                 if len(book_messages) > 1:
                     book_indices = [i for i, msg in enumerate(messages) if "books" in msg]
                     for i in range(1, len(book_indices)):
-                        time_gap = message_times[book_indices[i]] - message_times[book_indices[i-1]]
+                        time_gap = message_times[book_indices[i]] - message_times[book_indices[i - 1]]
                         print(f"[TEST] Time between batch {i} and {i+1}: {time_gap*1000:.1f}ms")
-                    
+
                     # Verify batches arrived in sequence (not reversed or jumbled)
-                    assert all(message_times[book_indices[i]] >= message_times[book_indices[i-1]] 
-                              for i in range(1, len(book_indices))), "Batches not in time order!"
-                
+                    assert all(
+                        message_times[book_indices[i]] >= message_times[book_indices[i - 1]]
+                        for i in range(1, len(book_indices))
+                    ), "Batches not in time order!"
+
                 print("[TEST] ✓ Streaming verified: Messages arrived progressively")
             else:
                 print("[TEST] Too few messages to verify streaming timing")
