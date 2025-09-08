@@ -688,16 +688,6 @@ class EmulatorShutdownManager:
 
     def _kill_process_on_port(self, port: int) -> None:  # noqa: ANN001, D401
         """Kill any process listening on *port* (signature unchanged)."""
-        if not port:
-            return
-        try:
-            result = subprocess.run(
-                ["lsof", "-i", f":{port}", "-sTCP:LISTEN", "-t"], capture_output=True, text=True
-            )
-            for pid in filter(None, result.stdout.split()):
-                with contextlib.suppress(Exception):
-                    os.kill(int(pid), signal.SIGTERM)
-                    time.sleep(0.5)
-                    os.kill(int(pid), signal.SIGKILL)
-        except Exception as exc:
-            logger.warning("Error checking/terminating processes on port %s: %s", port, exc)
+        from server.utils.port_utils import kill_process_on_port
+
+        kill_process_on_port(port)

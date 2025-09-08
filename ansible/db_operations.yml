@@ -1,0 +1,78 @@
+---
+- name: Database operations via SSH
+  hosts: localhost
+  gather_facts: no
+  vars:
+    db_host: "46.62.136.6"
+    db_user: "root"
+    db_key: "{{ playbook_dir }}/keys/kindle.key"
+    backup_dir: "/opt/backups/postgres"
+    local_backup_dir: "{{ playbook_dir }}/../backups"
+    database_name: "kindle_db"
+    postgres_user: "kindle_user"
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    
+  tasks:
+    - name: Ensure local backup directory exists
+      file:
+        path: "{{ local_backup_dir }}"
+        state: directory
+      delegate_to: localhost
+      tags: [dump, backup]
+    
+    - name: Create remote backup with pg_dump
+      shell: |
+        ssh -i {{ db_key }} {{ db_user }}@{{ db_host }} \
+        "sudo -u postgres pg_dump -U {{ postgres_user }} {{ database_name }} | gzip -9 > /tmp/{{ database_name }}_{{ timestamp }}.sql.gz && \
+         echo 'Backup created: /tmp/{{ database_name }}_{{ timestamp }}.sql.gz'"
+      register: dump_result
+      tags: dump
+      
+    - name: Download backup to local machine
+      shell: |
+        scp -i {{ db_key }} {{ db_user }}@{{ db_host }}:/tmp/{{ database_name }}_{{ timestamp }}.sql.gz \
+        {{ local_backup_dir }}/{{ database_name }}_{{ timestamp }}.sql.gz
+      when: dump_result is succeeded
+      tags: dump
+      
+    - name: Clean up remote backup
+      shell: |
+        ssh -i {{ db_key }} {{ db_user }}@{{ db_host }} \
+        "rm -f /tmp/{{ database_name }}_{{ timestamp }}.sql.gz"
+      when: dump_result is succeeded
+      tags: dump
+      
+    - name: Display backup location
+      debug:
+        msg: "Database backed up to {{ local_backup_dir }}/{{ database_name }}_{{ timestamp }}.sql.gz"
+      when: dump_result is succeeded
+      tags: dump
+    
+    - name: Restore database from backup
+      shell: |
+        # First upload the backup file
+        scp -i {{ db_key }} {{ restore_file }} {{ db_user }}@{{ db_host }}:/tmp/restore_temp.sql.gz && \
+        # Then restore it
+        ssh -i {{ db_key }} {{ db_user }}@{{ db_host }} \
+        "gunzip -c /tmp/restore_temp.sql.gz | sudo -u postgres psql -U {{ postgres_user }} {{ database_name }} && \
+         rm -f /tmp/restore_temp.sql.gz && \
+         echo 'Database restored successfully'"
+      when: restore_file is defined
+      tags: restore
+      
+    - name: List local backups
+      find:
+        paths: "{{ local_backup_dir }}"
+        patterns: "{{ database_name }}_*.sql.gz"
+      register: local_backups
+      tags: list
+      
+    - name: Display available local backups
+      debug:
+        msg: |
+          Available backups:
+          {% for file in local_backups.files | sort(attribute='mtime', reverse=True) %}
+          - {{ file.path }} ({{ (file.size / 1024 / 1024) | round(2) }} MB, {{ file.mtime | strftime('%Y-%m-%d %H:%M:%S') }})
+          {% endfor %}
+      when: local_backups.files | length > 0
+      tags: list
