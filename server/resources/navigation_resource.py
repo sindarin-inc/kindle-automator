@@ -51,28 +51,93 @@ class NavigationResource(Resource):
         # Process and parse navigation parameters
         params = NavigationResourceHandler.parse_navigation_params(request)
 
+        # Check for book_session_key parameter
+        book_session_key = request.args.get("book_session_key") or request.form.get("book_session_key")
+        if request.is_json and request.json:
+            book_session_key = request.json.get("book_session_key", book_session_key)
+
         # Handle absolute position parameters (navigate_to and preview_to)
         # Convert them to relative movements based on current position
         if params.get("navigate_to") is not None or params.get("preview_to") is not None:
-            current_position = server.get_position(sindarin_email)
+            # Get the current book title to work with sessions
+            current_book = server.get_current_book(sindarin_email)
 
-            # If navigate_to is specified, calculate relative movement
+            # If navigate_to is specified, handle with session tracking
             if params.get("navigate_to") is not None:
                 target_position = params["navigate_to"]
-                params["navigate_count"] = target_position - current_position
-                logger.info(
-                    f"Converting absolute navigate_to={target_position} to relative: current={current_position}, delta={params['navigate_count']}"
-                )
+
+                # If we have a session key, use the database to calculate adjustment
+                if book_session_key and current_book:
+                    from database.connection import get_db
+                    from database.repositories.book_session_repository import (
+                        BookSessionRepository,
+                    )
+
+                    with get_db() as session:
+                        book_session_repo = BookSessionRepository(session)
+
+                        # Calculate the adjustment needed based on session tracking
+                        adjustment = book_session_repo.calculate_position_adjustment(
+                            sindarin_email, current_book, book_session_key, target_position
+                        )
+
+                        # Always update or create the session with client's key and position
+                        # This ensures we track the client's session even if no adjustment is needed
+                        book_session_repo.get_or_create_session(
+                            sindarin_email, current_book, book_session_key, target_position
+                        )
+
+                        params["navigate_count"] = adjustment
+                        logger.info(
+                            f"Session-aware navigate_to={target_position}: adjustment={adjustment} "
+                            f"(session_key={book_session_key[:8]}...)"
+                        )
+                else:
+                    # No session key or book - fall back to simple position tracking
+                    current_position = server.get_position(sindarin_email)
+                    params["navigate_count"] = target_position - current_position
+                    logger.info(
+                        f"Converting absolute navigate_to={target_position} to relative: current={current_position}, delta={params['navigate_count']}"
+                    )
 
             # If preview_to is specified, calculate relative preview movement
             if params.get("preview_to") is not None:
                 preview_target = params["preview_to"]
-                # Preview is relative to where we'll be after navigation
-                final_position = current_position + params.get("navigate_count", 0)
-                params["preview_count"] = preview_target - final_position
-                logger.info(
-                    f"Converting absolute preview_to={preview_target} to relative: position_after_nav={final_position}, preview_delta={params['preview_count']}"
-                )
+
+                # If we have a session key, use session-aware position calculation
+                if book_session_key and current_book:
+                    from database.connection import get_db
+                    from database.repositories.book_session_repository import (
+                        BookSessionRepository,
+                    )
+
+                    with get_db() as session:
+                        book_session_repo = BookSessionRepository(session)
+
+                        # Get or create session to track client's perspective
+                        book_session = book_session_repo.get_or_create_session(
+                            sindarin_email,
+                            current_book,
+                            book_session_key,
+                            server.get_position(sindarin_email),  # Current position from client's perspective
+                        )
+
+                        # Calculate preview relative to session position
+                        final_position = book_session.position + params.get("navigate_count", 0)
+                        params["preview_count"] = preview_target - final_position
+                        logger.info(
+                            f"Session-aware preview_to={preview_target}: session_pos={book_session.position}, "
+                            f"final_pos={final_position}, preview_delta={params['preview_count']} "
+                            f"(session_key={book_session_key[:8]}...)"
+                        )
+                else:
+                    # No session key - fall back to simple position tracking
+                    current_position = server.get_position(sindarin_email)
+                    final_position = current_position + params.get("navigate_count", 0)
+                    params["preview_count"] = preview_target - final_position
+                    logger.info(
+                        f"Converting absolute preview_to={preview_target} to relative: position_after_nav={final_position}, preview_delta={params['preview_count']}"
+                    )
 
         # If a specific direction was provided in the route initialization, override navigate_count
         elif direction is not None:
@@ -131,6 +196,19 @@ class NavigationResource(Resource):
             and response.get("success")
         ):
             new_position = server.update_position(sindarin_email, navigate_count)
+
+            # Also update the book session position if we have a session
+            current_book = server.get_current_book(sindarin_email)
+            if current_book:
+                from database.connection import get_db
+                from database.repositories.book_session_repository import (
+                    BookSessionRepository,
+                )
+
+                with get_db() as session:
+                    book_session_repo = BookSessionRepository(session)
+                    book_session_repo.update_position(sindarin_email, current_book, new_position)
+
             if preview_count != 0:
                 logger.info(
                     f"Updated position for {sindarin_email} by {navigate_count} (navigate={navigate_count}, preview={preview_count} did not affect position) to {new_position}"

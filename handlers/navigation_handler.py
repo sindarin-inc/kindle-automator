@@ -66,6 +66,9 @@ class NavigationResourceHandler:
         Returns:
             Tuple of (response_data, status_code)
         """
+        # Track if book needs reopening (will be set if we reopen the book)
+        book_session_key_after_reopen = None
+
         # Determine the navigation direction from navigate_count
         direction_forward = navigate_count >= 0
         # Use absolute value for the actual navigation count
@@ -104,6 +107,11 @@ class NavigationResourceHandler:
                 "dialog_text": dialog_result.get("dialog_text"),
                 "message": "Last read page dialog detected",
             }
+
+            # Add book_session_key if book was reopened
+            if book_session_key_after_reopen:
+                response_data["book_session_key"] = book_session_key_after_reopen
+                response_data["book_was_reopened"] = True
 
             return response_data, 200
 
@@ -154,6 +162,11 @@ class NavigationResourceHandler:
                             "message": "Last read page dialog detected",
                         }
 
+                        # Add book_session_key if book was reopened
+                        if book_session_key_after_reopen:
+                            response_data["book_session_key"] = book_session_key_after_reopen
+                            response_data["book_was_reopened"] = True
+
                         return response_data, 200
 
                 # Check if we're in an auth-required state
@@ -200,6 +213,12 @@ class NavigationResourceHandler:
                     return {"error": "Failed to reach reading view after opening book"}, 500
 
                 logger.info("Successfully reopened book, now in reading view")
+
+                # Get the new book session key after reopening
+                from server.core.automation_server import AutomationServer
+
+                server = AutomationServer.get_instance()
+                book_session_key_after_reopen = server.get_book_session_key(sindarin_email)
             else:
                 # No book title provided, can't recover
                 logger.error("Not in reading view and no book_title provided to reopen", exc_info=True)
@@ -238,6 +257,11 @@ class NavigationResourceHandler:
             )
             response_data.update(screenshot_data)
 
+            # Add book_session_key if book was reopened
+            if book_session_key_after_reopen:
+                response_data["book_session_key"] = book_session_key_after_reopen
+                response_data["book_was_reopened"] = True
+
             return response_data, 200
 
         # If we're doing a preview with navigate_count=0, handle it specially
@@ -258,6 +282,11 @@ class NavigationResourceHandler:
                     "message": "Last read page dialog detected during preview",
                 }
                 # No screenshot data to add
+
+                # Add book_session_key if book was reopened
+                if book_session_key_after_reopen:
+                    response_data["book_session_key"] = book_session_key_after_reopen
+                    response_data["book_was_reopened"] = True
 
                 return response_data, 200
 
@@ -288,6 +317,11 @@ class NavigationResourceHandler:
 
                 # When preview is requested, we're primarily interested in the OCR text
                 response_data = {"success": True, "progress": progress, "ocr_text": preview_ocr_text}
+                # Add book_session_key if book was reopened
+                if book_session_key_after_reopen:
+                    response_data["book_session_key"] = book_session_key_after_reopen
+                    response_data["book_was_reopened"] = True
+
                 return response_data, 200
 
         # Standard navigation response with screenshot
@@ -319,6 +353,11 @@ class NavigationResourceHandler:
         screenshot_path = get_image_path(screenshot_id)
         screenshot_data = process_screenshot_response(screenshot_id, screenshot_path, use_base64, perform_ocr)
         response_data.update(screenshot_data)
+
+        # Add book_session_key if book was reopened
+        if book_session_key_after_reopen:
+            response_data["book_session_key"] = book_session_key_after_reopen
+            response_data["book_was_reopened"] = True
 
         return response_data, 200
 

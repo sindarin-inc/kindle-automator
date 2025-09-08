@@ -300,3 +300,37 @@ class BookPosition(Base):
 
     def __repr__(self) -> str:
         return f"<BookPosition(id={self.id}, user_id={self.user_id}, book_title={self.book_title[:30]}..., position={self.current_position})>"
+
+
+class BookSession(Base):
+    """Tracks book reading sessions with client session keys and their current position."""
+
+    __tablename__ = "book_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    book_title: Mapped[str] = mapped_column(Text, nullable=False)
+    session_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The current position in this session (from client's navigate_to perspective)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_accessed: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+    # Table constraints and indexes
+    __table_args__ = (
+        # A user can only have one session per book
+        UniqueConstraint("user_id", "book_title", name="uq_user_book_session"),
+        Index("idx_book_session_user_id", "user_id"),
+        Index("idx_book_session_key", "session_key"),
+        Index("idx_book_session_accessed", "last_accessed"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<BookSession(id={self.id}, user_id={self.user_id}, book_title={self.book_title[:30]}..., session_key={self.session_key}, position={self.position})>"
