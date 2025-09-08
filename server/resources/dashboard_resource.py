@@ -96,6 +96,7 @@ class DashboardResource(Resource):
                         "display": instance.display,
                         "user_email": instance.assigned_profile,
                         "emulator_id": instance.emulator_id,
+                        "emulator_port": instance.emulator_port,
                         "is_booting": instance.is_booting,
                         "appium_running": instance.appium_running,
                         "session_duration_minutes": session_duration_minutes,

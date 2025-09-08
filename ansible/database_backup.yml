@@ -1,0 +1,77 @@
+---
+- name: Database backup and restore operations
+  hosts: database
+  become: yes
+  vars:
+    backup_dir: /opt/backups/postgres
+    database_name: kindle_db
+    database_user: kindle_user
+    timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}{{ ansible_date_time.second }}"
+    
+  tasks:
+    - name: Ensure backup directory exists
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: '0755'
+      tags: [backup, restore]
+    
+    - name: Perform database backup with pg_dump
+      become_user: postgres
+      postgresql_db:
+        name: "{{ database_name }}"
+        state: dump
+        target: "{{ backup_dir }}/{{ database_name }}_{{ timestamp }}.sql.gz"
+        target_opts: "--compress=9"
+      tags: backup
+      register: backup_result
+      
+    - name: Display backup result
+      debug:
+        msg: "Database backed up to {{ backup_dir }}/{{ database_name }}_{{ timestamp }}.sql.gz"
+      when: backup_result is succeeded
+      tags: backup
+      
+    - name: List available backups
+      find:
+        paths: "{{ backup_dir }}"
+        patterns: "{{ database_name }}_*.sql.gz"
+      register: backup_files
+      tags: [list, restore]
+      
+    - name: Display available backups
+      debug:
+        msg: "Available backups: {{ backup_files.files | map(attribute='path') | list }}"
+      tags: [list, restore]
+      
+    - name: Restore database from backup
+      become_user: postgres
+      postgresql_db:
+        name: "{{ database_name }}"
+        state: restore
+        target: "{{ restore_file }}"
+      when: restore_file is defined
+      tags: restore
+      
+    - name: Create backup rotation script
+      copy:
+        dest: /usr/local/bin/rotate_db_backups.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Keep only the last 30 days of backups
+          find {{ backup_dir }} -name "{{ database_name }}_*.sql.gz" -mtime +30 -delete
+      tags: backup
+      
+    - name: Setup daily backup cron job
+      cron:
+        name: "Daily database backup for {{ database_name }}"
+        minute: "0"
+        hour: "3"
+        job: |
+          su - postgres -c "pg_dump {{ database_name }} | gzip -9 > {{ backup_dir }}/{{ database_name }}_$(date +\%Y\%m\%d_\%H\%M\%S).sql.gz" && /usr/local/bin/rotate_db_backups.sh
+        state: present
+      when: enable_cron is defined and enable_cron | bool
+      tags: cron

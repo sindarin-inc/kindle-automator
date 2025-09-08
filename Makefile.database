@@ -24,11 +24,26 @@ db-migrate:
 	@echo "Running database migrations..."
 	@uv run dotenv -f $(DB_ENV_FILE) run python -m alembic upgrade head
 
-# Migrate data from users.json to PostgreSQL
+# Software-based database export to JSON (works on any server)
+.PHONY: db-export
+db-export:
+	@echo "Exporting database to JSON format..."
+	@mkdir -p backups
+	@$(PYTHON) scripts/db_export.py
+	@echo "Export complete! Check backups/ directory for the JSON file"
+
+# Software-based database import from JSON (works on any server)
 .PHONY: db-import
 db-import:
-	@echo "Migrating users.json to PostgreSQL..."
-	@uv run dotenv -f $(DB_ENV_FILE) run python scripts/migrate_json_to_db.py
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make db-import FILE=backups/kindle_db_export_YYYYMMDD_HHMMSS.json"; \
+		echo ""; \
+		echo "Available backup files:"; \
+		ls -la backups/*.json 2>/dev/null || echo "  No backup files found"; \
+		exit 1; \
+	fi
+	@echo "Importing database from $(FILE)..."
+	@$(PYTHON) scripts/db_import.py $(FILE)
 
 # Full database setup: privileges (if needed), init, migrate, import
 .PHONY: db-setup
@@ -79,25 +94,47 @@ db-backup:
 	@$(PYTHON) scripts/db_connect.py --command dump --env $(DB_ENV_FILE) --args "backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
 	@echo "Backup saved to backups/kindle_db_$(shell date +%Y%m%d_%H%M%S).sql"
 
-# Restore database from backup
-.PHONY: db-restore
-db-restore:
+# Restore database from SQL backup (local file method - deprecated)
+.PHONY: db-restore-old
+db-restore-old:
 	@if [ -z "$(FILE)" ]; then \
-		echo "Usage: make db-restore FILE=backups/kindle_db_YYYYMMDD_HHMMSS.sql"; \
+		echo "Usage: make db-restore-old FILE=backups/kindle_db_YYYYMMDD_HHMMSS.sql"; \
 		exit 1; \
 	fi
 	@echo "Restoring database from $(FILE)..."
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --file $(FILE)
 
-# Drop and recreate database (DANGEROUS!)
-.PHONY: db-reset
-db-reset:
-	@echo "WARNING: This will delete all data in kindle_db!"
-	@echo "Press Ctrl+C to cancel, or Enter to continue..."
-	@read confirm
-	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "DROP DATABASE IF EXISTS kindle_db;"
-	@$(MAKE) db-init
-	@$(MAKE) db-migrate
+# PostgreSQL dump via Ansible (runs on database server)
+.PHONY: pg-dump
+pg-dump:
+	@echo "Creating PostgreSQL dump on database server..."
+	@cd ansible && ansible-playbook db_operations.yml --tags dump
+	@echo "Backup downloaded to backups/ directory"
+
+# PostgreSQL restore via Ansible (runs on database server)
+.PHONY: pg-restore
+pg-restore:
+	@if [ -z "$(FILE)" ]; then \
+		echo "Usage: make pg-restore FILE=backups/kindle_db_YYYYMMDD_HHMMSS.sql.gz"; \
+		echo ""; \
+		echo "Available backup files:"; \
+		ls -la backups/*.sql.gz 2>/dev/null || echo "  No backup files found"; \
+		exit 1; \
+	fi
+	@echo "Restoring PostgreSQL database from $(FILE)..."
+	@cd ansible && ansible-playbook db_operations.yml --tags restore -e "restore_file=../$(FILE)"
+
+# List available backups
+.PHONY: db-backups
+db-backups:
+	@echo "=== Available Database Backups ==="
+	@echo ""
+	@echo "JSON exports (software-based):"
+	@ls -lah backups/*.json 2>/dev/null || echo "  No JSON backups found"
+	@echo ""
+	@echo "PostgreSQL dumps:"
+	@ls -lah backups/*.sql.gz 2>/dev/null || echo "  No PostgreSQL dumps found"
+
 
 # Show recent user activity
 .PHONY: db-activity
