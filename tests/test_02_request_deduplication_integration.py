@@ -583,10 +583,10 @@ class Test2PriorityAndCancellation(BaseKindleTest, unittest.TestCase):
             results["stream_started"] = time.time()
             session = self._create_test_session()
             try:
-                params = self._build_params({"user_email": self.email, "sync": "true"})
+                params = self._build_params({"user_email": self.email})
                 # Use stream=True to properly handle streaming responses
                 response = session.get(
-                    f"{self.base_url}/kindle/books",
+                    f"{self.base_url}/kindle/books-stream",
                     params=params,
                     timeout=15,  # Shorter timeout since cancellation should be quick
                     stream=True,  # Important for proper streaming
