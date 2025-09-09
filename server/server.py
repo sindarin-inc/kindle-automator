@@ -17,7 +17,14 @@ from appium.webdriver.common.appiumby import AppiumBy
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
-from flask import Flask, Response, make_response, request, send_file
+from flask import (
+    Flask,
+    Response,
+    make_response,
+    request,
+    send_file,
+    send_from_directory,
+)
 from flask_restful import Api, Resource
 from selenium.common import exceptions as selenium_exceptions
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -92,6 +99,10 @@ class DateTimeJSONEncoder(json.JSONEncoder):
 app = Flask(__name__)
 app.json_encoder = DateTimeJSONEncoder
 
+# Configure app to work behind proxy with /kindle prefix
+app.config["APPLICATION_ROOT"] = "/kindle"
+app.config["PREFERRED_URL_SCHEME"] = "http"
+
 # Configure Flask-RESTful to use the custom encoder
 from flask_restful.representations import json as flask_json
 
@@ -131,6 +142,20 @@ if os.getenv("ENABLE_ADMIN", "true").lower() == "true":
     # Create a scoped session for Flask-Admin
     db_session = scoped_session(db_connection.SessionLocal)
     admin = init_admin(app, db_session)
+
+    # Add routes to serve Flask-Admin static files both with and without /kindle prefix
+    import os
+
+    import flask_admin
+
+    admin_static_path = os.path.join(os.path.dirname(flask_admin.__file__), "static")
+
+    # Serve Flask-Admin static files
+    @app.route("/admin/static/<path:path>")
+    def admin_static(path):
+        """Serve Flask-Admin static files."""
+        return send_from_directory(admin_static_path, path)
+
 
 # Initialize Sentry
 SENTRY_DSN = os.getenv("SENTRY_DSN")
