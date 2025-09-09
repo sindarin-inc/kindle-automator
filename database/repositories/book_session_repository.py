@@ -58,8 +58,9 @@ class BookSessionRepository:
                     f"Updating to use client's session key and position."
                 )
                 book_session.session_key = session_key
-                book_session.position = position
 
+            # Always update position to track where the client thinks they are
+            book_session.position = position
             # Update last accessed time
             book_session.last_accessed = datetime.now(timezone.utc)
             self.session.commit()
