@@ -218,6 +218,8 @@ class NavigationResourceHandler:
                 from server.core.automation_server import AutomationServer
 
                 server = AutomationServer.get_instance()
+                profile = self.automator.profile_manager.get_current_profile()
+                sindarin_email = profile.get("email") if profile else None
                 book_session_key_after_reopen = server.get_book_session_key(sindarin_email)
             else:
                 # No book title provided, can't recover
