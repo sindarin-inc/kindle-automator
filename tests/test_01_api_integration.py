@@ -199,7 +199,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
     @pytest.mark.timeout(120)
     def test_books_streaming(self):
-        """Test /books endpoint in streaming mode (sync=true)."""
+        """Test /books endpoint in streaming mode (sync=true) - verify it actually streams."""
+        import time
+
         print("\n[TEST] Testing streaming mode (sync=true)...")
         # Use the dedicated streaming endpoint for sync=true
         stream_url = f"{self.base_url}/kindle/books-stream"
@@ -208,33 +210,62 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
         try:
             # 120s timeout needed to allow the emulator to boot first
+            start_time = time.time()
             response = self.session.get(stream_url, params=stream_params, stream=True, timeout=120)
             response.raise_for_status()
 
             messages = []
-            for line in response.iter_lines():
+            message_times = []
+            first_message_time = None
+
+            # Use chunk_size=1 to avoid buffering and get true streaming
+            for line in response.iter_lines(chunk_size=1, decode_unicode=False):
                 if line:
                     try:
                         # Try parsing as newline-delimited JSON first
                         message = json.loads(line.decode("utf-8"))
-                        print(f"[STREAM] Received message: {json.dumps(message)}")
+                        current_time = time.time()
+
+                        if first_message_time is None:
+                            first_message_time = current_time
+                            print(f"[STREAM] First message received after {current_time - start_time:.2f}s")
+
+                        elapsed = current_time - first_message_time
+                        message_times.append(elapsed)
+
+                        # Log message with timing info
+                        if "books" in message:
+                            print(
+                                f"[STREAM] @{elapsed:.2f}s: Batch {message.get('batch_num', '?')} with {len(message['books'])} books"
+                            )
+                        else:
+                            print(f"[STREAM] @{elapsed:.2f}s: {json.dumps(message)}")
+
                         messages.append(message)
 
                         # Stop after getting done message or error
                         if message.get("done") or message.get("error"):
-                            print("[TEST] Received done/error message, stopping stream")
+                            print(f"[TEST] Stream completed after {elapsed:.2f}s")
                             break
                     except json.JSONDecodeError:
                         # Try SSE format: "data: {json}"
                         if line.startswith(b"data: "):
                             try:
                                 message = json.loads(line[6:].decode("utf-8"))
-                                print(f"[STREAM] Received SSE message: {json.dumps(message)}")
+                                current_time = time.time()
+
+                                if first_message_time is None:
+                                    first_message_time = current_time
+
+                                elapsed = current_time - first_message_time
+                                message_times.append(elapsed)
+
+                                print(f"[STREAM] @{elapsed:.2f}s: SSE: {json.dumps(message)}")
                                 messages.append(message)
 
                                 # Stop after getting done message or error
                                 if message.get("done") or message.get("error"):
-                                    print("[TEST] Received done/error message, stopping stream")
+                                    print(f"[TEST] Stream completed after {elapsed:.2f}s")
                                     break
                             except json.JSONDecodeError as e:
                                 print(f"[STREAM] Failed to parse line: {line}, error: {e}")
@@ -246,7 +277,47 @@ class TestKindleAPIIntegration(BaseKindleTest):
                     print("[TEST] Reached message limit, stopping stream")
                     break
 
-            print(f"[TEST] Received total of {len(messages)} messages in streaming mode")
+            print(f"[TEST] Received total of {len(messages)} messages over {time.time() - start_time:.2f}s")
+
+            # CRITICAL TEST: Verify streaming behavior (not buffering)
+            # Check that we received messages progressively, not all at once
+            book_messages = [msg for msg in messages if "books" in msg]
+
+            # Verify we got the expected streaming messages
+            assert any("status" in msg for msg in messages), "Should have status message"
+            assert any("filter_book_count" in msg for msg in messages), "Should have filter count"
+            assert len(book_messages) > 0, "Should have at least one book batch"
+
+            # Check timing - messages should arrive over time
+            if len(messages) > 2:
+                # Calculate time span of all messages
+                total_time_span = message_times[-1] - message_times[0] if message_times else 0
+                print(f"[TEST] Messages arrived over {total_time_span:.3f}s")
+
+                # Even with fast retrieval, streaming should show some time distribution
+                # (as opposed to all messages having exactly the same timestamp)
+                unique_times = len(set(round(t, 3) for t in message_times))
+                print(f"[TEST] Found {unique_times} unique timestamps (rounded to ms)")
+
+                # Verify messages didn't all arrive at exactly the same instant
+                assert unique_times > 1, "All messages have the same timestamp - likely buffered!"
+
+                # If we have multiple book batches, check they arrived sequentially
+                if len(book_messages) > 1:
+                    book_indices = [i for i, msg in enumerate(messages) if "books" in msg]
+                    for i in range(1, len(book_indices)):
+                        time_gap = message_times[book_indices[i]] - message_times[book_indices[i - 1]]
+                        print(f"[TEST] Time between batch {i} and {i+1}: {time_gap*1000:.1f}ms")
+
+                    # Verify batches arrived in sequence (not reversed or jumbled)
+                    assert all(
+                        message_times[book_indices[i]] >= message_times[book_indices[i - 1]]
+                        for i in range(1, len(book_indices))
+                    ), "Batches not in time order!"
+
+                print("[TEST] ✓ Streaming verified: Messages arrived progressively")
+            else:
+                print("[TEST] Too few messages to verify streaming timing")
 
             # Log all messages for comparison
             print(f"[TEST] All streaming messages: {json.dumps(messages, indent=2)}")
@@ -497,6 +568,70 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # Verify we got actual text back
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
+
+    @pytest.mark.timeout(120)
+    def test_table_of_contents(self):
+        """Test /kindle/table-of-contents endpoint."""
+        # This test depends on test_open_random_book or test_navigate_preview having run first
+        if not hasattr(self.__class__, "opened_book"):
+            pytest.skip("No book available - test_open_random_book must run first")
+
+        # Get the title of the currently open book
+        opened_book = self.__class__.opened_book
+        title = opened_book.get("title") if opened_book else None
+
+        # Make the Table of Contents request
+        params = {}
+        if title:
+            params["title"] = title
+
+        response = self._make_request("table-of-contents", params)
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+
+        data = response.json()
+
+        # Verify the response structure
+        assert "success" in data, f"Response missing success field: {data}"
+        assert data["success"] is True, f"Request was not successful: {data}"
+
+        # Verify position information
+        assert "position" in data, f"Response missing position field: {data}"
+        position = data["position"]
+        if position:
+            # Position might have current_page, total_pages, percentage
+            if "current_page" in position:
+                assert isinstance(position["current_page"], int), "current_page should be an integer"
+            if "total_pages" in position:
+                assert isinstance(position["total_pages"], int), "total_pages should be an integer"
+            if "percentage" in position:
+                assert isinstance(position["percentage"], int), "percentage should be an integer"
+
+        # Verify chapters list
+        assert "chapters" in data, f"Response missing chapters field: {data}"
+        assert isinstance(data["chapters"], list), "chapters should be a list"
+
+        # Verify chapter count
+        assert "chapter_count" in data, f"Response missing chapter_count field: {data}"
+        assert data["chapter_count"] == len(
+            data["chapters"]
+        ), "chapter_count doesn't match chapters list length"
+
+        # If we have chapters, verify their structure
+        if data["chapters"]:
+            for chapter in data["chapters"]:
+                assert isinstance(chapter, dict), f"Chapter should be a dict: {chapter}"
+                assert "title" in chapter, f"Chapter missing title: {chapter}"
+                assert isinstance(chapter["title"], str), f"Chapter title should be a string: {chapter}"
+                # Page number is optional
+                if "page" in chapter:
+                    assert isinstance(chapter["page"], int), f"Chapter page should be an integer: {chapter}"
+
+            print(f"\n[TEST] Found {data['chapter_count']} chapters in Table of Contents")
+            # Print first few chapters as a sample
+            for i, chapter in enumerate(data["chapters"][:5]):
+                page_info = f" (page {chapter['page']})" if "page" in chapter else ""
+                print(f"  Chapter {i+1}: {chapter['title']}{page_info}")
 
     @pytest.mark.expensive
     @pytest.mark.timeout(180)

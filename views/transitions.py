@@ -121,18 +121,27 @@ class StateTransitions:
 
         result = self.reader_handler.navigate_back_to_library(cancellation_check=cancellation_check)
 
-        # If the navigation was successful and we have a server reference, clear the current book
-        if result and server:
-            # Get the email from the driver's automator if available
-            email = None
-            if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
-                profile = self.driver.automator.profile_manager.get_current_profile()
-                if profile and "email" in profile:
-                    email = profile.get("email")
+        # If the navigation was successful, update the state machine to skip redundant state check
+        if result:
+            # Set the state directly since we know we're in library
+            if hasattr(self, "state_machine"):
+                from views.core.app_state import AppState
 
-            if email:
-                server.clear_current_book(email)
-                logger.debug(f"Cleared current book for {email} after returning to library")
+                self.state_machine.current_state = AppState.LIBRARY
+                logger.debug("Set state directly to LIBRARY after successful navigation")
+
+            # If we have a server reference, clear the current book
+            if server:
+                # Get the email from the driver's automator if available
+                email = None
+                if hasattr(self.driver, "automator") and hasattr(self.driver.automator, "profile_manager"):
+                    profile = self.driver.automator.profile_manager.get_current_profile()
+                    if profile and "email" in profile:
+                        email = profile.get("email")
+
+                if email:
+                    server.clear_current_book(email)
+                    logger.debug(f"Cleared current book for {email} after returning to library")
             else:
                 logger.warning("Could not get email to clear current book after returning to library")
 

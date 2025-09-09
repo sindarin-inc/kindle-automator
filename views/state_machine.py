@@ -75,8 +75,13 @@ class KindleStateMachine:
         logger.info(f"Attempting to transition to library from {self.current_state}")
 
         while transitions < max_transitions:
-            self.current_state = self._get_current_state()
-            logger.info(f"Current state: {self.current_state}")
+            # Skip expensive state check if we already know we're in library
+            # (e.g., when set directly by handle_reading after successful navigation)
+            if self.current_state != AppState.LIBRARY:
+                self.current_state = self._get_current_state()
+                logger.info(f"Current state: {self.current_state}")
+            else:
+                logger.info(f"Current state already set to: {self.current_state}")
 
             # Special handling for RemoteLicenseReleaseActivity dialog
             try:
@@ -100,6 +105,14 @@ class KindleStateMachine:
                         f"Not in reading state ({self.current_state}) but have current book tracked for {email} - clearing it"
                     )
                     server.clear_current_book(email)
+
+            # Handle TABLE_OF_CONTENTS state - exit it to go to reading or library
+            if self.current_state == AppState.TABLE_OF_CONTENTS:
+                logger.info("In TABLE_OF_CONTENTS state, attempting to exit to reading/library view")
+                self.exit_table_of_contents()
+                # Update state and continue the loop
+                self.current_state = self._get_current_state()
+                continue
 
             if self.current_state == AppState.LIBRARY:
                 # Update auth tracking when we reach library
@@ -329,6 +342,52 @@ class KindleStateMachine:
             self.view_inspector.driver.save_screenshot(screenshot_path)
         except Exception as e:
             logger.warning(f"Failed to save transition error data: {e}", exc_info=True)
+
+    def exit_table_of_contents(self) -> AppState:
+        """Exit the Table of Contents view and return to the reading view.
+
+        Returns:
+            AppState: The state after exiting ToC (should be READING or LIBRARY)
+        """
+        # First check if we're actually in ToC state
+        self.update_current_state()
+
+        if self.current_state != AppState.TABLE_OF_CONTENTS:
+            logger.debug(f"Not in TABLE_OF_CONTENTS state (current: {self.current_state})")
+            return self.current_state
+
+        logger.info("Attempting to exit Table of Contents view")
+
+        try:
+            # Try to close the ToC dialog using the close button
+            from appium.webdriver.common.appiumby import AppiumBy
+
+            from views.reading.view_strategies import (
+                TABLE_OF_CONTENTS_CLOSE_BUTTON_IDENTIFIERS,
+            )
+
+            for strategy, locator in TABLE_OF_CONTENTS_CLOSE_BUTTON_IDENTIFIERS:
+                try:
+                    close_button = self.driver.find_element(strategy, locator)
+                    if close_button.is_displayed():
+                        close_button.click()
+                        logger.info(f"Closed ToC using close button: {locator}")
+                        time.sleep(1)
+                        self.update_current_state()
+                        return self.current_state
+                except:
+                    continue
+
+            # If close button doesn't work, try tapping back
+            logger.info("Close button not found, trying back navigation")
+            self.driver.back()
+            time.sleep(1)
+            self.update_current_state()
+
+        except Exception as e:
+            logger.error(f"Failed to exit Table of Contents: {e}", exc_info=True)
+
+        return self.current_state
 
     def handle_state(self) -> bool:
         """Handle the current state using the appropriate state handler.

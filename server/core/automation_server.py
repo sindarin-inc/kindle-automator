@@ -49,6 +49,7 @@ class AutomationServer:
         self.automators = {}  # Dictionary to track multiple automators by email
         self.pid_dir = "logs"
         self.current_books = {}  # Track the currently open book title for each email
+        self.book_session_keys = {}  # Track the session key (timestamp) for each email's open book
         self.last_activity = {}  # Track last activity time for each email
         # Note: current_positions removed - now using database via BookPositionRepository
         os.makedirs(self.pid_dir, exist_ok=True)
@@ -263,24 +264,66 @@ class AutomationServer:
 
         return True, message
 
-    def set_current_book(self, book_title, email):
-        """Set the currently open book title for a specific email
+    def set_current_book(self, book_title, email, session_key=None):
+        """Set the currently open book title for a specific email.
+
+        If session_key is provided (from /open-book), creates/resets the session.
+        If no session_key (from navigation reopening book), preserves existing session.
 
         Args:
             book_title: The title of the book
             email: The email to associate with this book. REQUIRED.
+            session_key: Optional session key from client. If provided, resets the session.
+
+        Returns:
+            str: The session key (either provided or existing) or None if email not provided
         """
         if not email:
             logger.error("Email parameter is required for set_current_book", exc_info=True)
-            return
+            return None
 
         self.current_books[email] = book_title
-        # Reset position to 0 when opening a new book
-        self.reset_position(email, book_title)
-        logger.info(f"Set current book for {email} to: {book_title} (position reset to 0)")
+
+        # Handle book sessions in database
+        from database.connection import get_db
+        from database.repositories.book_session_repository import BookSessionRepository
+
+        with get_db() as db_session:
+            repo = BookSessionRepository(db_session)
+
+            if session_key:
+                # Client provided a session key (from /open-book) - reset the session
+                book_session = repo.reset_session(email, book_title, session_key)
+                self.book_session_keys[email] = session_key
+
+                # Reset position to 0 when opening a new book
+                self.reset_position(email, book_title)
+                logger.info(
+                    f"Set current book for {email} to: {book_title} (session_key: {session_key}, position reset to 0)"
+                )
+            else:
+                # No session key provided (navigation reopening) - preserve existing session
+                existing_session = repo.get_session(email, book_title)
+                if existing_session:
+                    session_key = existing_session.session_key
+                    self.book_session_keys[email] = session_key
+                    logger.info(
+                        f"Set current book for {email} to: {book_title} (preserving session_key: {session_key})"
+                    )
+                else:
+                    # No existing session, generate a new one
+                    session_key = str(int(time.time() * 1000))
+                    book_session = repo.reset_session(email, book_title, session_key)
+                    self.book_session_keys[email] = session_key
+                    self.reset_position(email, book_title)
+                    logger.info(
+                        f"Set current book for {email} to: {book_title} (new session_key: {session_key})"
+                    )
+
+        return session_key
 
     def clear_current_book(self, email):
-        """Clear the currently open book tracking variable for a specific email
+        """Clear the currently open book tracking variable and session key for a specific email
 
         Args:
             email: The email for which to clear the book. REQUIRED.
@@ -292,6 +335,9 @@ class AutomationServer:
         if email in self.current_books:
             logger.info(f"Cleared current book for {email}: {self.current_books[email]}")
             del self.current_books[email]
+
+        if email in self.book_session_keys:
+            del self.book_session_keys[email]
 
     def get_current_book(self, email):
         """Get the current book for the specified email.
@@ -307,6 +353,21 @@ class AutomationServer:
             return None
 
         return self.current_books.get(email)
+
+    def get_book_session_key(self, email):
+        """Get the current book session key for the specified email.
+
+        Args:
+            email: The email to get the book session key for. REQUIRED.
+
+        Returns:
+            str: The book session key (timestamp), or None if no book is open
+        """
+        if not email:
+            logger.error("Email parameter is required for get_book_session_key", exc_info=True)
+            return None
+
+        return self.book_session_keys.get(email)
 
     # current_book property has been removed - use get_current_book(email) instead
 

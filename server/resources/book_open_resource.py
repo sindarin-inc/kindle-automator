@@ -115,6 +115,20 @@ class BookOpenResource(Resource):
         if not book_title:
             return {"error": "Book title is required in the request"}, 400
 
+        # Get or generate session key for this request
+        client_session_key = None
+        if request.method == "POST" and request.is_json:
+            client_session_key = request.json.get("book_session_key")
+        if not client_session_key:
+            client_session_key = request.values.get("book_session_key")
+
+        # If no client session key provided, generate one
+        if not client_session_key:
+            client_session_key = str(int(time.time() * 1000))
+            logger.info(f"Generated new session key: {client_session_key}")
+        else:
+            logger.info(f"Using client-provided session key: {client_session_key}")
+
         # Common function to capture progress and screenshot
         def capture_book_state(already_open=False):
             # Check for and dismiss the About Book popover if present
@@ -127,7 +141,7 @@ class BookOpenResource(Resource):
 
             # Check for the 'last read page' dialog without auto-accepting
             nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
-            dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+            dialog_result = nav_handler._handle_last_read_page_dialog(click_yes_to_navigate=False)
 
             # If dialog was found, return it to the client for decision
             if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
@@ -162,6 +176,11 @@ class BookOpenResource(Resource):
 
             # Create response data with progress info
             response_data = {"success": True, "progress": progress}
+
+            # Add book session key to response
+            book_session_key = server.get_book_session_key(sindarin_email)
+            if book_session_key:
+                response_data["book_session_key"] = book_session_key
 
             # Add flag if book was already open
             if already_open:
@@ -318,7 +337,9 @@ class BookOpenResource(Resource):
                                 f"Already reading book (UI title exact match): {book_title}, returning current state"
                             )
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
+                            book_session_key = server.set_current_book(
+                                current_title_from_ui, sindarin_email, client_session_key
+                            )
                             result = capture_book_state(already_open=True)
                             # Clear cancellation check on successful completion
                             automator.state_machine.set_cancellation_check(None)
@@ -338,7 +359,9 @@ class BookOpenResource(Resource):
                                 f"Already reading book (UI title partial match): {book_title}, returning current state"
                             )
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
+                            book_session_key = server.set_current_book(
+                                current_title_from_ui, sindarin_email, client_session_key
+                            )
                             automator.state_machine.set_cancellation_check(None)
                             result = capture_book_state(already_open=True)
                             # Clear cancellation check on successful completion
@@ -376,7 +399,9 @@ class BookOpenResource(Resource):
                             f"Already reading book (stored active title exact match): {book_title}, returning current state"
                         )
                         # Update server's current book tracking
-                        server.set_current_book(actively_reading_title, sindarin_email)
+                        book_session_key = server.set_current_book(
+                            actively_reading_title, sindarin_email, client_session_key
+                        )
                         result = capture_book_state(already_open=True)
                         # Clear cancellation check on successful completion
                         automator.state_machine.set_cancellation_check(None)
@@ -396,7 +421,9 @@ class BookOpenResource(Resource):
                             f"Already reading book (stored active title partial match): {book_title}, returning current state"
                         )
                         # Update server's current book tracking
-                        server.set_current_book(actively_reading_title, sindarin_email)
+                        book_session_key = server.set_current_book(
+                            actively_reading_title, sindarin_email, client_session_key
+                        )
                         automator.state_machine.set_cancellation_check(None)
                         result = capture_book_state(already_open=True)
                         # Clear cancellation check on successful completion
@@ -426,7 +453,9 @@ class BookOpenResource(Resource):
                                 f"Already reading book (UI title exact match): {book_title}, returning current state"
                             )
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
+                            book_session_key = server.set_current_book(
+                                current_title_from_ui, sindarin_email, client_session_key
+                            )
                             result = capture_book_state(already_open=True)
                             # Clear cancellation check on successful completion
                             automator.state_machine.set_cancellation_check(None)
@@ -446,7 +475,9 @@ class BookOpenResource(Resource):
                                 f"Already reading book (UI title partial match): {book_title}, returning current state"
                             )
                             # Update server's current book tracking
-                            server.set_current_book(current_title_from_ui, sindarin_email)
+                            book_session_key = server.set_current_book(
+                                current_title_from_ui, sindarin_email, client_session_key
+                            )
                             automator.state_machine.set_cancellation_check(None)
                             result = capture_book_state(already_open=True)
                             # Clear cancellation check on successful completion
@@ -488,7 +519,7 @@ class BookOpenResource(Resource):
                 automator.state_machine.update_current_state()
                 if automator.state_machine.current_state == AppState.READING:
                     # Set the current book in the server state
-                    server.set_current_book(book_title, sindarin_email)
+                    book_session_key = server.set_current_book(book_title, sindarin_email, client_session_key)
                     automator.state_machine.set_cancellation_check(None)
                     result = capture_book_state()
                     # Clear cancellation check on successful completion
@@ -507,7 +538,7 @@ class BookOpenResource(Resource):
                 return result, 400
             elif result.get("success"):
                 # Set the current book in the server state
-                server.set_current_book(book_title, sindarin_email)
+                book_session_key = server.set_current_book(book_title, sindarin_email, client_session_key)
                 result = capture_book_state()
                 # Clear cancellation check on successful completion
                 automator.state_machine.set_cancellation_check(None)
@@ -515,6 +546,9 @@ class BookOpenResource(Resource):
             else:
                 # Return the error from the result
                 automator.state_machine.set_cancellation_check(None)
+                # Check if this is a cancellation (409 status)
+                if result.get("status") == 409:
+                    return result, 409
                 return result, 500
 
         # For other states, transition to library and open the book
@@ -550,7 +584,7 @@ class BookOpenResource(Resource):
                 return result, 400
             elif result.get("success"):
                 # Set the current book in the server state
-                server.set_current_book(book_title, sindarin_email)
+                book_session_key = server.set_current_book(book_title, sindarin_email, client_session_key)
                 result = capture_book_state()
                 # Clear cancellation check on successful completion
                 automator.state_machine.set_cancellation_check(None)
@@ -558,6 +592,9 @@ class BookOpenResource(Resource):
             else:
                 # Return the error from the result
                 automator.state_machine.set_cancellation_check(None)
+                # Check if this is a cancellation (409 status)
+                if result.get("status") == 409:
+                    return result, 409
                 return result, 500
         else:
             # Did not reach library state

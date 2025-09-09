@@ -772,14 +772,16 @@ class BooksStreamResource(Resource):
 
             # Return the replay stream response
             response = Response(
-                stream_with_context(generate_replay_stream()),
+                generate_replay_stream(),
                 mimetype="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
                     "X-Accel-Buffering": "no",
                     "Content-Type": "text/event-stream; charset=utf-8",
+                    "Transfer-Encoding": "chunked",
                     "Access-Control-Allow-Origin": "*",
                 },
+                direct_passthrough=True,
             )
             response.implicit_sequence_conversion = False
             return response
@@ -854,14 +856,16 @@ class BooksStreamResource(Resource):
         # but still using JSONL format (no data: prefix)
         logger.info(f"[{time.time():.3f}] Creating streaming response for {sindarin_email}")
         response = Response(
-            stream_with_context(generate_stream_with_cleanup()),
+            generate_stream_with_cleanup(),
             mimetype="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
                 "Content-Type": "text/event-stream; charset=utf-8",
+                "Transfer-Encoding": "chunked",
                 "Access-Control-Allow-Origin": "*",
             },
+            direct_passthrough=True,  # Disable Flask buffering
         )
         logger.info(f"[{time.time():.3f}] Returning streaming response for {sindarin_email}")
         response.implicit_sequence_conversion = False

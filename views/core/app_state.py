@@ -17,6 +17,7 @@ class AppState(Enum):
     LIBRARY_SIGN_IN = auto()  # Library view with sign in button
     SEARCH_RESULTS = auto()  # Search results view with "In your library" and "Results from Kindle" sections
     READING = auto()  # Book reading view
+    TABLE_OF_CONTENTS = auto()  # Table of Contents dialog/view
     CAPTCHA = auto()  # Captcha verification screen
     TWO_FACTOR = auto()  # Two-Step Verification screen
     PUZZLE = auto()  # Puzzle authentication screen (choose items)
@@ -46,6 +47,7 @@ class AppView(Enum):
     LIBRARY_SIGN_IN = auto()
     SEARCH_RESULTS = auto()  # Search results view with "In your library" and "Results from Kindle" sections
     READING = auto()
+    TABLE_OF_CONTENTS = auto()  # Table of Contents dialog/view
     CAPTCHA = auto()  # Captcha verification screen
     TWO_FACTOR = auto()  # Two-Step Verification screen
     PUZZLE = auto()  # Puzzle authentication screen (choose items)

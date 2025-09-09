@@ -52,7 +52,7 @@ PRIORITY_LEVELS = {
     "/books": 30,  # Low - library scanning
     "/books-stream": 30,
     "/auth": 20,
-    # "/screenshot" is excluded - it can run concurrently without priority blocking
+    # "/screenshot" has priority 0 (default) - lowest priority, can be cancelled
 }
 
 # Endpoints where newer requests should cancel older ones (last-one-wins)
@@ -60,6 +60,7 @@ PRIORITY_LEVELS = {
 LAST_ONE_WINS_ENDPOINTS = {
     "/open-book",  # Book opening should cancel previous book opening requests
     "/open-random-book",  # Random book selection should cancel previous random book requests
+    "/table-of-contents",  # ToC requests should cancel previous ToC requests (even with different titles)
 }
 
 # Default TTL for cached responses and locks
@@ -95,8 +96,19 @@ class RequestManager:
         try:
             from flask import has_request_context
 
-            if has_request_context() and hasattr(request, "args"):
-                params = dict(request.args)
+            if has_request_context():
+                # Get query parameters
+                if hasattr(request, "args"):
+                    params = dict(request.args)
+
+                # For POST requests, also include JSON body parameters
+                if self.method == "POST" and hasattr(request, "is_json") and request.is_json:
+                    try:
+                        json_data = request.get_json() or {}
+                        # Merge JSON parameters (they override query params)
+                        params.update(json_data)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -142,20 +154,50 @@ class RequestManager:
                 # Check for multiple requests
                 self._check_and_notify_multiple_requests()
 
-            # Check if there's an active request for the same endpoint with different params
+            # Check if there's an active request for the same endpoint
             active_info = self._get_active_request_info()
             if active_info and active_info.get("path") == self.path:
                 # Check if it's the same request (same request_key means same params)
                 if active_info.get("request_key") != self.request_key:
-                    # Different params - cancel the previous request
-                    self._cancel_existing_same_endpoint_request()
+                    # Different params - only cancel for LAST_ONE_WINS_ENDPOINTS
+                    if self.path in LAST_ONE_WINS_ENDPOINTS:
+                        # Cancel the previous request for last-one-wins endpoints
+                        self._cancel_existing_same_endpoint_request()
 
-                    # Force claim this request (overwrite any existing)
-                    self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
+                        # Force claim this request (overwrite any existing)
+                        self.redis_client.set(
+                            progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL
+                        )
+                        logger.debug(
+                            f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
+                            f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (different params, last-one-wins){RESET}"
+                        )
+
+                        # Check for and cancel lower priority requests from other endpoints
+                        self._check_and_cancel_lower_priority_requests()
+
+                        # Record this as the active request for the user
+                        self._set_active_request()
+                        self.is_executor = True
+                        return True
+                    # For non-LAST_ONE_WINS_ENDPOINTS with different params, don't cancel
+                    # Just continue with normal flow to allow concurrent execution
+                # else: Same params - fall through to normal deduplication logic
+
+            # For last-one-wins endpoints - but still need to handle deduplication properly
+            if self.path in LAST_ONE_WINS_ENDPOINTS:
+                # First, try to atomically claim this request (same as normal flow)
+                if self.redis_client.set(
+                    progress_key, DeduplicationStatus.IN_PROGRESS.value, nx=True, ex=DEFAULT_TTL
+                ):
+                    # We claimed it - now cancel any OTHER requests for this endpoint
                     logger.debug(
                         f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
-                        f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (different params, last-one-wins){RESET}"
+                        f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (last-one-wins){RESET}"
                     )
+
+                    # Cancel any existing request for this endpoint (with different params)
+                    self._cancel_existing_same_endpoint_request()
 
                     # Check for and cancel lower priority requests from other endpoints
                     self._check_and_cancel_lower_priority_requests()
@@ -164,27 +206,64 @@ class RequestManager:
                     self._set_active_request()
                     self.is_executor = True
                     return True
-                # else: Same params - fall through to normal deduplication logic
+                else:
+                    # Request key already exists - for LAST_ONE_WINS with same params, we should deduplicate
+                    # Check the status to see if we should wait for the result
+                    status_key = f"{self.request_key}:status"
+                    existing_status = self.redis_client.get(status_key)
+                    # Decode bytes to string if needed
+                    if existing_status and isinstance(existing_status, bytes):
+                        existing_status = existing_status.decode("utf-8")
 
-            # For last-one-wins endpoints (legacy, keeping for compatibility)
-            if self.path in LAST_ONE_WINS_ENDPOINTS:
-                # Cancel any existing request for this endpoint
-                self._cancel_existing_same_endpoint_request()
+                    logger.debug(
+                        f"LAST_ONE_WINS: Request key {self.request_key} already exists. "
+                        f"Status: {existing_status}, checking progress..."
+                    )
 
-                # Force claim this request (overwrite any existing)
-                self.redis_client.set(progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL)
-                logger.debug(
-                    f"{BRIGHT_BLUE}Claimed request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
-                    f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (last-one-wins){RESET}"
-                )
+                    if existing_status == DeduplicationStatus.COMPLETED.value:
+                        # Request already completed - use the cached result
+                        logger.info(
+                            f"{BRIGHT_BLUE}Request {self.request_key} already completed (same params), will {BOLD}{BRIGHT_BLUE}use cached result{RESET}{BRIGHT_BLUE}{RESET}"
+                        )
+                        return False  # Will get the cached result in wait_for_response
 
-                # Check for and cancel lower priority requests from other endpoints
-                self._check_and_cancel_lower_priority_requests()
+                    # Check if it's still in progress
+                    progress_status = self.redis_client.get(progress_key)
+                    # Decode bytes to string if needed
+                    if progress_status and isinstance(progress_status, bytes):
+                        progress_status = progress_status.decode("utf-8")
 
-                # Record this as the active request for the user
-                self._set_active_request()
-                self.is_executor = True
-                return True
+                    logger.debug(f"LAST_ONE_WINS: Progress status for {self.request_key}: {progress_status}")
+
+                    if progress_status == DeduplicationStatus.IN_PROGRESS.value:
+                        # Same request is already in progress - deduplicate
+                        logger.info(
+                            f"{BRIGHT_BLUE}Request {self.request_key} already in progress (same params), will {BOLD}{BRIGHT_BLUE}wait{RESET}{BRIGHT_BLUE} for result{RESET}"
+                        )
+                        return False  # Will wait for the result
+                    else:
+                        # No status or progress - this is a stale entry, force claim
+                        logger.info(
+                            f"LAST_ONE_WINS: No valid progress for {self.request_key} (progress={progress_status}), force claiming"
+                        )
+                        self.redis_client.set(
+                            progress_key, DeduplicationStatus.IN_PROGRESS.value, ex=DEFAULT_TTL
+                        )
+                        logger.debug(
+                            f"{BRIGHT_BLUE}Force-claimed stale request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_BLUE} "
+                            f"for {BOLD}{BRIGHT_BLUE}{self.user_email}{RESET}{BRIGHT_BLUE} (last-one-wins, stale entry){RESET}"
+                        )
+
+                        # Cancel any existing request for this endpoint
+                        self._cancel_existing_same_endpoint_request()
+
+                        # Check for and cancel lower priority requests from other endpoints
+                        self._check_and_cancel_lower_priority_requests()
+
+                        # Record this as the active request for the user
+                        self._set_active_request()
+                        self.is_executor = True
+                        return True
 
             # Check if there's a higher priority request already running
             if self._should_wait_for_higher_priority():
@@ -278,32 +357,30 @@ class RequestManager:
             if active_data:
                 active_request = json.loads(active_data)
                 active_path = active_request.get("path")
+                active_request_key = active_request.get("request_key")
 
-                # For last-one-wins endpoints, always cancel existing requests for the same path
-                # For other endpoints, only cancel if it's exactly the same request
+                # For last-one-wins endpoints, cancel existing requests for the same path
+                # BUT only if they have different request keys (different params)
                 should_cancel = False
                 if self.path in LAST_ONE_WINS_ENDPOINTS and active_path == self.path:
-                    should_cancel = True
-                elif active_path == self.path:
-                    active_request_key = active_request.get("request_key")
-                    if active_request_key and active_request_key != self.request_key:
+                    # Only cancel if it's a different request (different params)
+                    if active_request_key != self.request_key:
                         should_cancel = True
+                # Removed the elif block that was incorrectly cancelling requests for non-LAST_ONE_WINS endpoints
 
-                if should_cancel:
-                    active_request_key = active_request.get("request_key")
-                    if active_request_key:
-                        cancel_key = f"{active_request_key}:cancelled"
-                        self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
+                if should_cancel and active_request_key:
+                    cancel_key = f"{active_request_key}:cancelled"
+                    self.redis_client.set(cancel_key, "1", ex=DEFAULT_TTL)
 
-                        # CRITICAL: Also delete the progress key so future requests don't think they're duplicates
-                        progress_key = f"{active_request_key}:progress"
-                        self.redis_client.delete(progress_key)
+                    # CRITICAL: Also delete the progress key so future requests don't think they're duplicates
+                    progress_key = f"{active_request_key}:progress"
+                    self.redis_client.delete(progress_key)
 
-                        logger.info(
-                            f"{BRIGHT_YELLOW}Cancelling previous {BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} request "
-                            f"{active_request_key} for newer request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_YELLOW} "
-                            f"(last-one-wins){RESET}"
-                        )
+                    logger.info(
+                        f"{BRIGHT_YELLOW}Cancelling previous {BOLD}{BRIGHT_BLUE}{self.path}{RESET}{BRIGHT_YELLOW} request "
+                        f"{active_request_key} for newer request {BOLD}{BRIGHT_BLUE}{self.request_key}{RESET}{BRIGHT_YELLOW} "
+                        f"(last-one-wins){RESET}"
+                    )
 
         except Exception as e:
             logger.error(f"Error cancelling existing same-endpoint request: {e}")
@@ -477,17 +554,40 @@ class RequestManager:
                     f"{BRIGHT_BLUE}Stored response for {self.request_key} for {BOLD}{BRIGHT_BLUE}{waiters_count} waiters{RESET} (last waiter will cleanup)"
                 )
             else:
-                # No waiters, clean up immediately - no need for status at all
-                logger.debug(f"No waiters for {self.request_key}, cleaning up immediately")
+                # No waiters currently
+                if self.path in LAST_ONE_WINS_ENDPOINTS:
+                    # For LAST_ONE_WINS endpoints, keep the result briefly in case
+                    # another request with the same params arrives soon
+                    logger.debug(
+                        f"No waiters for {self.request_key}, but keeping result briefly for LAST_ONE_WINS endpoint"
+                    )
 
-                # Clean up immediately since there are no waiters
-                keys_to_delete = [
-                    f"{self.request_key}:progress",
-                    f"{self.request_key}:cancelled",
-                    f"{self.request_key}:status",
-                    f"{self.request_key}:waiters",
-                ]
-                self.redis_client.delete(*keys_to_delete)
+                    # Pickle the response data
+                    pickled_data = pickle.dumps((response_data, status_code))
+
+                    # Store result and status with short TTL (5 seconds) for potential deduplication
+                    self.redis_client.set(result_key, pickled_data, ex=5)
+                    self.redis_client.set(status_key, DeduplicationStatus.COMPLETED.value, ex=5)
+
+                    # Clean up other keys
+                    keys_to_delete = [
+                        f"{self.request_key}:progress",
+                        f"{self.request_key}:cancelled",
+                        f"{self.request_key}:waiters",
+                    ]
+                    self.redis_client.delete(*keys_to_delete)
+                else:
+                    # Not a LAST_ONE_WINS endpoint, clean up immediately
+                    logger.debug(f"No waiters for {self.request_key}, cleaning up immediately")
+
+                    # Clean up immediately since there are no waiters
+                    keys_to_delete = [
+                        f"{self.request_key}:progress",
+                        f"{self.request_key}:cancelled",
+                        f"{self.request_key}:status",
+                        f"{self.request_key}:waiters",
+                    ]
+                    self.redis_client.delete(*keys_to_delete)
 
             # Clear active request if it's ours
             self._clear_active_request()

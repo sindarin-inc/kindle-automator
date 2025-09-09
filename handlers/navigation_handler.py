@@ -66,6 +66,9 @@ class NavigationResourceHandler:
         Returns:
             Tuple of (response_data, status_code)
         """
+        # Track if book needs reopening (will be set if we reopen the book)
+        book_session_key_after_reopen = None
+
         # Determine the navigation direction from navigate_count
         direction_forward = navigate_count >= 0
         # Use absolute value for the actual navigation count
@@ -91,7 +94,7 @@ class NavigationResourceHandler:
             time.sleep(0.5)
 
         # Then check for the 'last read page' dialog which indicates we're in reading view
-        dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+        dialog_result = self._handle_last_read_page_dialog(click_yes_to_navigate=False)
         if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
             # Dialog found, return it to the client instead of navigating
             logger.info(
@@ -104,6 +107,11 @@ class NavigationResourceHandler:
                 "dialog_text": dialog_result.get("dialog_text"),
                 "message": "Last read page dialog detected",
             }
+
+            # Add book_session_key if book was reopened
+            if book_session_key_after_reopen:
+                response_data["book_session_key"] = book_session_key_after_reopen
+                response_data["book_was_reopened"] = True
 
             return response_data, 200
 
@@ -140,7 +148,7 @@ class NavigationResourceHandler:
                                 f"In reading state but no current book tracked, requested: '{book_title}'"
                             )
 
-                    dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+                    dialog_result = self._handle_last_read_page_dialog(click_yes_to_navigate=False)
                     if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
                         # Dialog found, return it to the client instead of transitioning
                         logger.info(
@@ -153,6 +161,11 @@ class NavigationResourceHandler:
                             "dialog_text": dialog_result.get("dialog_text"),
                             "message": "Last read page dialog detected",
                         }
+
+                        # Add book_session_key if book was reopened
+                        if book_session_key_after_reopen:
+                            response_data["book_session_key"] = book_session_key_after_reopen
+                            response_data["book_was_reopened"] = True
 
                         return response_data, 200
 
@@ -200,6 +213,12 @@ class NavigationResourceHandler:
                     return {"error": "Failed to reach reading view after opening book"}, 500
 
                 logger.info("Successfully reopened book, now in reading view")
+
+                # Get the new book session key after reopening
+                from server.core.automation_server import AutomationServer
+
+                server = AutomationServer.get_instance()
+                book_session_key_after_reopen = server.get_book_session_key(sindarin_email)
             else:
                 # No book title provided, can't recover
                 logger.error("Not in reading view and no book_title provided to reopen", exc_info=True)
@@ -238,12 +257,17 @@ class NavigationResourceHandler:
             )
             response_data.update(screenshot_data)
 
+            # Add book_session_key if book was reopened
+            if book_session_key_after_reopen:
+                response_data["book_session_key"] = book_session_key_after_reopen
+                response_data["book_was_reopened"] = True
+
             return response_data, 200
 
         # If we're doing a preview with navigate_count=0, handle it specially
         if preview_count != 0 and navigate_count == 0:
             # Check for last read page dialog again (which may appear after handling another dialog)
-            dialog_result = self._handle_last_read_page_dialog(auto_accept=False)
+            dialog_result = self._handle_last_read_page_dialog(click_yes_to_navigate=False)
             if isinstance(dialog_result, dict) and dialog_result.get("dialog_found"):
                 # Dialog found, return it to the client instead of handling it
                 logger.info("Found 'last read page' dialog during preview - returning to client for decision")
@@ -258,6 +282,11 @@ class NavigationResourceHandler:
                     "message": "Last read page dialog detected during preview",
                 }
                 # No screenshot data to add
+
+                # Add book_session_key if book was reopened
+                if book_session_key_after_reopen:
+                    response_data["book_session_key"] = book_session_key_after_reopen
+                    response_data["book_was_reopened"] = True
 
                 return response_data, 200
 
@@ -288,6 +317,11 @@ class NavigationResourceHandler:
 
                 # When preview is requested, we're primarily interested in the OCR text
                 response_data = {"success": True, "progress": progress, "ocr_text": preview_ocr_text}
+                # Add book_session_key if book was reopened
+                if book_session_key_after_reopen:
+                    response_data["book_session_key"] = book_session_key_after_reopen
+                    response_data["book_was_reopened"] = True
+
                 return response_data, 200
 
         # Standard navigation response with screenshot
@@ -320,18 +354,24 @@ class NavigationResourceHandler:
         screenshot_data = process_screenshot_response(screenshot_id, screenshot_path, use_base64, perform_ocr)
         response_data.update(screenshot_data)
 
+        # Add book_session_key if book was reopened
+        if book_session_key_after_reopen:
+            response_data["book_session_key"] = book_session_key_after_reopen
+            response_data["book_was_reopened"] = True
+
         return response_data, 200
 
-    def _handle_last_read_page_dialog(self, auto_accept=False):
+    def _handle_last_read_page_dialog(self, click_yes_to_navigate=False):
         """Check for and get the 'last read page' dialog or 'Go to that location?' dialog.
-        Can optionally auto-accept it.
+        Can optionally click YES to navigate to the last read location.
 
         Args:
-            auto_accept (bool): If True, automatically click YES. If False, only detect the dialog.
+            click_yes_to_navigate (bool): If True, clicks YES to navigate user to last read location.
+                                         If False, only detects the dialog without interacting.
 
         Returns:
-            dict or bool: If auto_accept is False and dialog is found, returns a dict with dialog info.
-                        If auto_accept is True, returns True if dialog was found and handled.
+            dict or bool: If click_yes_to_navigate is False and dialog is found, returns a dict with dialog info.
+                        If click_yes_to_navigate is True, returns True if dialog was found and YES was clicked.
                         Returns False if dialog was not found or error occurred.
         """
         from selenium.common.exceptions import NoSuchElementException
@@ -378,14 +418,16 @@ class NavigationResourceHandler:
                         continue
 
             if dialog_found:
-                if auto_accept:
-                    logger.info("Auto-accept is enabled - clicking YES")
+                if click_yes_to_navigate:
+                    logger.info(
+                        "click_yes_to_navigate is True - clicking YES to navigate to last read location"
+                    )
                     for btn_strategy, btn_locator in LAST_READ_PAGE_DIALOG_BUTTONS:
                         try:
                             yes_button = self.automator.driver.find_element(btn_strategy, btn_locator)
                             if yes_button.is_displayed():
                                 yes_button.click()
-                                logger.info("Clicked YES button")
+                                logger.info("Clicked YES button to navigate to last read location")
                                 time.sleep(0.5)  # Give dialog time to dismiss
                                 return True
                         except NoSuchElementException:
@@ -397,8 +439,8 @@ class NavigationResourceHandler:
             if not dialog_found:
                 return False
 
-            if auto_accept:
-                # If we got here with auto_accept=True, it means we found the dialog but failed to click YES
+            if click_yes_to_navigate:
+                # If we got here with click_yes_to_navigate=True, it means we found the dialog but failed to click YES
                 logger.warning("Found dialog but failed to click YES button")
                 return False
 
@@ -421,8 +463,8 @@ class NavigationResourceHandler:
             return True
 
         # Check for and handle the 'last read page' dialog before navigating
-        # When actually navigating pages, we do want to auto-accept the dialog
-        dialog_result = self._handle_last_read_page_dialog(auto_accept=True)
+        # When navigating pages, we want to click YES to go to the last read location
+        dialog_result = self._handle_last_read_page_dialog(click_yes_to_navigate=True)
 
         logger.info(f"Navigating {count} pages {'forward' if forward else 'backward'}")
 

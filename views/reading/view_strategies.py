@@ -403,6 +403,80 @@ TUTORIAL_MESSAGE_CONTAINER = [
     (AppiumBy.XPATH, "//android.view.ViewGroup[@resource-id='com.amazon.kindle:id/toast_tutorial_shell']"),
 ]
 
+# Page position popover identifiers (accessed via footer page number tap)
+PAGE_POSITION_POPOVER_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/page_scrubber_popover"),
+    (AppiumBy.ID, "com.amazon.kindle:id/page_position_popover"),
+    (AppiumBy.ID, "com.amazon.kindle:id/location_container"),  # Main container for page position popover
+    (AppiumBy.ID, "com.amazon.kindle:id/nln_text_secondary"),  # Page position text in popover
+    (AppiumBy.ID, "com.amazon.kindle:id/page_scrubber_seekbar"),  # Seekbar in popover
+    (AppiumBy.XPATH, "//android.widget.FrameLayout[contains(@resource-id, 'popover')]"),
+]
+
+# Table of Contents button in the page position popover
+TABLE_OF_CONTENTS_BUTTON_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/page_scrubber_menu"),
+    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_toc"),
+    (AppiumBy.ID, "com.amazon.kindle:id/menuitem_hamburger"),  # The hamburger menu button
+    (AppiumBy.XPATH, "//android.widget.Button[@content-desc='Table of Contents']"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[contains(@content-desc, 'Table of Contents')]"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[contains(@content-desc, 'Contents')]"),
+]
+
+# Table of Contents view identifiers
+TABLE_OF_CONTENTS_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_dialog_container"),  # Main ToC dialog container
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_fragment_container"),  # ToC fragment container
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_list_container"),  # RecyclerView containing the list
+    (
+        AppiumBy.ID,
+        "com.amazon.kindle:id/toc_entry_view_container",
+    ),  # ToC entry containers (actual element found)
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"),  # ToC chapter titles (actual element found)
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_header_container"),  # ToC header with title/author
+    (AppiumBy.XPATH, "//android.widget.TextView[@text='Table of Contents']"),
+]
+
+# Table of Contents list view
+TABLE_OF_CONTENTS_LIST_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_list_container"),  # RecyclerView (primary identifier)
+    (
+        AppiumBy.XPATH,
+        "//androidx.recyclerview.widget.RecyclerView[@resource-id='com.amazon.kindle:id/toc_list_container']",
+    ),
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_list"),
+    (AppiumBy.XPATH, "//android.widget.ListView[@resource-id='com.amazon.kindle:id/toc_list']"),
+]
+
+# Table of Contents close button
+TABLE_OF_CONTENTS_CLOSE_BUTTON_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_header_close_parent"),  # Primary close button container
+    (AppiumBy.XPATH, "//android.widget.FrameLayout[@content-desc='Close Table Of Contents']"),
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_header_close"),  # Close button image view
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_close_button"),
+    (AppiumBy.XPATH, "//android.widget.Button[@content-desc='Close']"),
+    (AppiumBy.XPATH, "//android.widget.ImageButton[@content-desc='Close']"),
+]
+
+# Chapter item identifiers in the Table of Contents
+CHAPTER_ITEM_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_entry_title"),  # Actual ToC chapter title elements
+    (
+        AppiumBy.XPATH,
+        "//android.widget.ListView[@resource-id='com.amazon.kindle:id/toc_list']//android.widget.TextView",
+    ),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/chapter_title']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/toc_item_text']"),
+]
+
+# Chapter page number in ToC item
+CHAPTER_PAGE_NUMBER_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/toc_entry_position"),  # Actual page position element
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/toc_entry_position']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/chapter_page_number']"),
+    (AppiumBy.XPATH, "//android.widget.TextView[@resource-id='com.amazon.kindle:id/toc_item_page']"),
+]
+
 
 def is_item_removed_dialog_visible(driver):
     """Check if the 'Item Removed' dialog is visible."""

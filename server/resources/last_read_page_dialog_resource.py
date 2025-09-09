@@ -119,7 +119,7 @@ class LastReadPageDialogResource(Resource):
         nav_handler = NavigationResourceHandler(automator, automator.screenshots_dir)
 
         # First check if the dialog is still visible before trying to click
-        dialog_result = nav_handler._handle_last_read_page_dialog(auto_accept=False)
+        dialog_result = nav_handler._handle_last_read_page_dialog(click_yes_to_navigate=False)
         if not dialog_result or not isinstance(dialog_result, dict) or not dialog_result.get("dialog_found"):
             logger.warning("Last read page dialog no longer visible - may have timed out or been dismissed")
             return {"error": "Last read page dialog not found"}, 404

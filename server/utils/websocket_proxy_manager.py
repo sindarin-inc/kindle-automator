@@ -75,6 +75,11 @@ class WebSocketProxyManager:
             Optional[int]: The WebSocket port if successful, None otherwise
         """
         try:
+            # Skip WebSocket proxy on macOS (rfbproxy not available)
+            if self.is_macos:
+                logger.debug(f"Skipping WebSocket proxy for {email} on macOS (rfbproxy not available)")
+                return None
+
             # Check if proxy is already running for this email
             if email in self.active_proxies:
                 logger.info(f"WebSocket proxy already running for {email}")
@@ -177,6 +182,10 @@ class WebSocketProxyManager:
         Returns:
             bool: True if stopped successfully, False otherwise
         """
+        # Skip on macOS where rfbproxy isn't available
+        if self.is_macos:
+            return True
+
         if email not in self.active_proxies:
             logger.warning(f"No WebSocket proxy running for {email}")
             return False
@@ -237,6 +246,10 @@ class WebSocketProxyManager:
         Returns:
             bool: True if running, False otherwise
         """
+        # Skip on macOS where rfbproxy isn't available
+        if self.is_macos:
+            return False
+
         if email in self.active_proxies:
             process = self.active_proxies[email]["process"]
             # Check if the process is still running
@@ -258,6 +271,10 @@ class WebSocketProxyManager:
         Returns:
             Optional[int]: The new WebSocket port if successful, None otherwise
         """
+        # Skip on macOS where rfbproxy isn't available
+        if self.is_macos:
+            return None
+
         if email in self.active_proxies:
             vnc_port = self.active_proxies[email]["vnc_port"]
             self.stop_proxy(email)
