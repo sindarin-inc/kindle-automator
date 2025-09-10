@@ -190,10 +190,6 @@ class TableOfContentsResource(Resource):
 
             return response_data, status_code
 
-    @ensure_user_profile_loaded
-    @ensure_automator_healthy
-    @deduplicate_request
-    @handle_automator_response
     def post(self):
         """Get the table of contents or navigate to a chapter via POST.
 
@@ -206,6 +202,21 @@ class TableOfContentsResource(Resource):
         Returns:
             JSON response with table of contents data or navigation result.
         """
+        # Validate that we can parse the request properly
+        # If the request has a body but it's not valid JSON, Flask will have already returned 400
+        # But we can check if it's a POST without proper content type
+        if request.method == "POST" and not request.is_json and request.data:
+            # This means there's a body but it's not JSON or doesn't have the right content-type
+            logger.warning("POST request to /table-of-contents without proper JSON content-type")
+            # Return error with proper metadata for consistency
+            from server.utils.request_utils import is_request_authenticated
+
+            return {
+                "error": "POST requests must have Content-Type: application/json",
+                "authenticated": is_request_authenticated(),
+            }, 400
+
         # POST method now works exactly like GET
         # This allows both GET and POST requests to either list TOC or navigate to chapters
+        # Note: We don't need decorators here since get() already has them
         return self.get()

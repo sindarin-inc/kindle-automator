@@ -200,6 +200,84 @@ else:
 # Set up request and response logging middleware
 setup_request_logger(app)
 
+
+# Add error handlers to clean up deduplication state for all client and server errors
+def cleanup_deduplication_on_error(error, status_code):
+    """Clean up any deduplication state when requests fail."""
+    from flask import g
+
+    # Check if we have a request manager in the context
+    manager = getattr(g, "request_manager", None)
+    if manager:
+        logger.warning(
+            f"Cleaning up deduplication state for failed request ({status_code}): {manager.request_key}"
+        )
+        # Mark the request as errored so waiting requests don't hang
+        manager._mark_error()
+        # Clean up the request number
+        manager._cleanup_request_number()
+
+    # Return the error with appropriate message
+    error_message = str(error.description) if hasattr(error, "description") else str(error)
+    return {"error": error_message}, status_code
+
+
+# Register error handlers for all 4xx and 5xx errors
+@app.errorhandler(400)
+def handle_bad_request(e):
+    return cleanup_deduplication_on_error(e, 400)
+
+
+@app.errorhandler(401)
+def handle_unauthorized(e):
+    return cleanup_deduplication_on_error(e, 401)
+
+
+@app.errorhandler(403)
+def handle_forbidden(e):
+    return cleanup_deduplication_on_error(e, 403)
+
+
+@app.errorhandler(404)
+def handle_not_found(e):
+    return cleanup_deduplication_on_error(e, 404)
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(e):
+    return cleanup_deduplication_on_error(e, 405)
+
+
+@app.errorhandler(409)
+def handle_conflict(e):
+    return cleanup_deduplication_on_error(e, 409)
+
+
+@app.errorhandler(422)
+def handle_unprocessable_entity(e):
+    return cleanup_deduplication_on_error(e, 422)
+
+
+@app.errorhandler(500)
+def handle_internal_error(e):
+    return cleanup_deduplication_on_error(e, 500)
+
+
+@app.errorhandler(502)
+def handle_bad_gateway(e):
+    return cleanup_deduplication_on_error(e, 502)
+
+
+@app.errorhandler(503)
+def handle_service_unavailable(e):
+    return cleanup_deduplication_on_error(e, 503)
+
+
+@app.errorhandler(504)
+def handle_gateway_timeout(e):
+    return cleanup_deduplication_on_error(e, 504)
+
+
 # Disable Flask buffering to ensure SSE streaming works properly
 app.config["PROPAGATE_EXCEPTIONS"] = True
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = False
