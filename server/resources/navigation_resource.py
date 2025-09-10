@@ -81,12 +81,6 @@ class NavigationResource(Resource):
                             sindarin_email, current_book, book_session_key, target_position
                         )
 
-                        # Always update or create the session with client's key and position
-                        # This ensures we track the client's session even if no adjustment is needed
-                        book_session_repo.get_or_create_session(
-                            sindarin_email, current_book, book_session_key, target_position
-                        )
-
                         params["navigate_count"] = adjustment
                         logger.info(
                             f"Session-aware navigate_to={target_position}: adjustment={adjustment} "
@@ -188,16 +182,15 @@ class NavigationResource(Resource):
         navigate_count = params.get("navigate_count", 0)
         preview_count = params.get("preview_count", 0)
 
-        # Only update position for actual navigation, not preview
-        if (
-            navigate_count != 0
-            and status_code == 200
-            and isinstance(response, dict)
-            and response.get("success")
-        ):
-            new_position = server.update_position(sindarin_email, navigate_count)
+        # Update position after successful navigation (but not preview)
+        if status_code == 200 and isinstance(response, dict) and response.get("success"):
+            # Update server position if we actually navigated
+            if navigate_count != 0:
+                new_position = server.update_position(sindarin_email, navigate_count)
+            else:
+                new_position = server.get_position(sindarin_email)
 
-            # Also update the book session position if we have a session
+            # Always update the book session position after successful navigation
             current_book = server.get_current_book(sindarin_email)
             if current_book:
                 from database.connection import get_db
@@ -207,14 +200,28 @@ class NavigationResource(Resource):
 
                 with get_db() as session:
                     book_session_repo = BookSessionRepository(session)
-                    book_session_repo.update_position(sindarin_email, current_book, new_position)
+                    # If using navigate_to, use the target position, otherwise use calculated position
+                    final_position = (
+                        params.get("navigate_to") if params.get("navigate_to") is not None else new_position
+                    )
+                    # Update the existing session's position (don't create new sessions during navigation)
+                    updated = book_session_repo.update_position(sindarin_email, current_book, final_position)
+                    if updated:
+                        logger.debug(
+                            f"Updated book session position to {final_position} for {sindarin_email}"
+                        )
+                    else:
+                        logger.warning(f"No book session found to update for {sindarin_email}/{current_book}")
 
-            if preview_count != 0:
-                logger.info(
-                    f"Updated position for {sindarin_email} by {navigate_count} (navigate={navigate_count}, preview={preview_count} did not affect position) to {new_position}"
-                )
-            else:
-                logger.info(f"Updated position for {sindarin_email} by {navigate_count} to {new_position}")
+            if navigate_count != 0:
+                if preview_count != 0:
+                    logger.info(
+                        f"Updated position for {sindarin_email} by {navigate_count} (navigate={navigate_count}, preview={preview_count} did not affect position) to {new_position}"
+                    )
+                else:
+                    logger.info(
+                        f"Updated position for {sindarin_email} by {navigate_count} to {new_position}"
+                    )
         elif navigate_count != 0:
             logger.info(
                 f"Navigation failed or returned non-success, not updating position for {sindarin_email}"

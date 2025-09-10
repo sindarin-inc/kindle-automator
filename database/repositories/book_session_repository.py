@@ -193,8 +193,13 @@ class BookSessionRepository:
         session = self.get_session(email, book_title)
 
         if not session:
-            # No existing session, we'll create one at the client's position
-            return client_position
+            # No existing session - this shouldn't happen during navigation
+            # The session should have been created when the book was opened
+            logger.warning(
+                f"No session found for {email}/{book_title} with key {client_session_key}. "
+                f"Cannot calculate adjustment."
+            )
+            return 0  # No adjustment if no session exists
 
         if session.session_key == client_session_key:
             # Same session - the absolute position is correct, no adjustment needed
