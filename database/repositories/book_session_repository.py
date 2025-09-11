@@ -174,18 +174,19 @@ class BookSessionRepository:
         return book_session
 
     def calculate_position_adjustment(
-        self, email: str, book_title: str, client_session_key: str, client_position: int
+        self, email: str, book_title: str, client_session_key: str, target_position: int
     ) -> int:
-        """Calculate the position adjustment needed when session keys don't match.
+        """Calculate the position adjustment needed to reach the target position.
 
-        This is used when the client thinks they're at position X but we've reopened
-        the book (losing their context). We need to navigate to where they think they are.
+        This method handles two scenarios:
+        1. Same session: Calculate adjustment from current position to target
+        2. Different session: Client reconnected, we're at position 0, need to go to target
 
         Args:
             email: User's email address
             book_title: Title of the book
             client_session_key: Client's session key
-            client_position: Position the client thinks they're at
+            target_position: Position the client wants to navigate to
 
         Returns:
             The adjustment needed (positive = forward, negative = backward)
@@ -199,20 +200,25 @@ class BookSessionRepository:
                 f"No session found for {email}/{book_title} with key {client_session_key}. "
                 f"Cannot calculate adjustment."
             )
-            return 0  # No adjustment if no session exists
+            return target_position  # Navigate to target from assumed position 0
 
         if session.session_key == client_session_key:
-            # Same session - the absolute position is correct, no adjustment needed
-            # We're already at the right position
-            return 0
+            # Same session - calculate adjustment from current position to target
+            adjustment = target_position - session.position
+            if adjustment != 0:
+                logger.info(
+                    f"Same session for {email}/{book_title}. "
+                    f"Current position {session.position}, target {target_position}. "
+                    f"Need to navigate {adjustment} pages."
+                )
+            return adjustment
         else:
             # Different session - client is continuing but we restarted
-            # Client thinks they're at position X, but we know from our last session
-            # they were at position Y. The difference is what we need to navigate.
-            adjustment = client_position - session.position
+            # We're at position 0 (book reopened), need to go to target position
+            adjustment = target_position
             logger.info(
                 f"Session key mismatch for {email}/{book_title}. "
-                f"Client at position {client_position}, we last saw {session.position}. "
+                f"Client wants position {target_position}, we're at start. "
                 f"Need to navigate {adjustment} pages."
             )
             return adjustment
