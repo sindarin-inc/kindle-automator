@@ -17,7 +17,14 @@ from appium.webdriver.common.appiumby import AppiumBy
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
-from flask import Flask, Response, make_response, request, send_file
+from flask import (
+    Flask,
+    Response,
+    make_response,
+    request,
+    send_file,
+    send_from_directory,
+)
 from flask_restful import Api, Resource
 from selenium.common import exceptions as selenium_exceptions
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -92,6 +99,10 @@ class DateTimeJSONEncoder(json.JSONEncoder):
 app = Flask(__name__)
 app.json_encoder = DateTimeJSONEncoder
 
+# Configure app to work behind proxy with /kindle prefix
+app.config["APPLICATION_ROOT"] = "/kindle"
+app.config["PREFERRED_URL_SCHEME"] = "http"
+
 # Configure Flask-RESTful to use the custom encoder
 from flask_restful.representations import json as flask_json
 
@@ -131,6 +142,20 @@ if os.getenv("ENABLE_ADMIN", "true").lower() == "true":
     # Create a scoped session for Flask-Admin
     db_session = scoped_session(db_connection.SessionLocal)
     admin = init_admin(app, db_session)
+
+    # Add routes to serve Flask-Admin static files both with and without /kindle prefix
+    import os
+
+    import flask_admin
+
+    admin_static_path = os.path.join(os.path.dirname(flask_admin.__file__), "static")
+
+    # Serve Flask-Admin static files
+    @app.route("/admin/static/<path:path>")
+    def admin_static(path):
+        """Serve Flask-Admin static files."""
+        return send_from_directory(admin_static_path, path)
+
 
 # Initialize Sentry
 SENTRY_DSN = os.getenv("SENTRY_DSN")
@@ -174,6 +199,84 @@ else:
 
 # Set up request and response logging middleware
 setup_request_logger(app)
+
+
+# Add error handlers to clean up deduplication state for all client and server errors
+def cleanup_deduplication_on_error(error, status_code):
+    """Clean up any deduplication state when requests fail."""
+    from flask import g
+
+    # Check if we have a request manager in the context
+    manager = getattr(g, "request_manager", None)
+    if manager:
+        logger.warning(
+            f"Cleaning up deduplication state for failed request ({status_code}): {manager.request_key}"
+        )
+        # Mark the request as errored so waiting requests don't hang
+        manager._mark_error()
+        # Clean up the request number
+        manager._cleanup_request_number()
+
+    # Return the error with appropriate message
+    error_message = str(error.description) if hasattr(error, "description") else str(error)
+    return {"error": error_message}, status_code
+
+
+# Register error handlers for all 4xx and 5xx errors
+@app.errorhandler(400)
+def handle_bad_request(e):
+    return cleanup_deduplication_on_error(e, 400)
+
+
+@app.errorhandler(401)
+def handle_unauthorized(e):
+    return cleanup_deduplication_on_error(e, 401)
+
+
+@app.errorhandler(403)
+def handle_forbidden(e):
+    return cleanup_deduplication_on_error(e, 403)
+
+
+@app.errorhandler(404)
+def handle_not_found(e):
+    return cleanup_deduplication_on_error(e, 404)
+
+
+@app.errorhandler(405)
+def handle_method_not_allowed(e):
+    return cleanup_deduplication_on_error(e, 405)
+
+
+@app.errorhandler(409)
+def handle_conflict(e):
+    return cleanup_deduplication_on_error(e, 409)
+
+
+@app.errorhandler(422)
+def handle_unprocessable_entity(e):
+    return cleanup_deduplication_on_error(e, 422)
+
+
+@app.errorhandler(500)
+def handle_internal_error(e):
+    return cleanup_deduplication_on_error(e, 500)
+
+
+@app.errorhandler(502)
+def handle_bad_gateway(e):
+    return cleanup_deduplication_on_error(e, 502)
+
+
+@app.errorhandler(503)
+def handle_service_unavailable(e):
+    return cleanup_deduplication_on_error(e, 503)
+
+
+@app.errorhandler(504)
+def handle_gateway_timeout(e):
+    return cleanup_deduplication_on_error(e, 504)
+
 
 # Disable Flask buffering to ensure SSE streaming works properly
 app.config["PROPAGATE_EXCEPTIONS"] = True

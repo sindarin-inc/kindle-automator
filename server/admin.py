@@ -2,13 +2,14 @@
 
 import os
 
-from flask import Flask, redirect, request, url_for
-from flask_admin import Admin, AdminIndexView
+from flask import Flask, request
+from flask_admin import Admin, AdminIndexView, expose
 from flask_admin.contrib.sqla import ModelView
 from sqlalchemy.orm import Session, scoped_session
 
 from database.models import (
     Base,
+    BookSession,
     DeviceIdentifiers,
     EmulatorSettings,
     EmulatorShutdownFailure,
@@ -127,13 +128,49 @@ class StaffTokenView(SecureModelView):
     column_formatters = {"token": lambda v, c, m, p: f"{m.token[:8]}..." if m.token else ""}
 
 
+class BookSessionView(SecureModelView):
+    """View for book sessions."""
+
+    column_searchable_list = ["book_title", "session_key"]
+    column_filters = ["user_id", "book_title", "created_at", "last_accessed"]
+    column_default_sort = ("last_accessed", True)
+    column_list = [
+        "id",
+        "user_id",
+        "book_title",
+        "session_key",
+        "position",
+        "last_accessed",
+        "created_at",
+    ]
+
+
 def init_admin(app: Flask, db_session) -> Admin:
     """Initialize Flask-Admin with all models."""
+    # Configure Flask-Admin to work behind the /kindle proxy
+    app.config["FLASK_ADMIN_SWATCH"] = "cerulean"
+
+    # Monkey-patch Flask-Admin's render to fix URLs for proxy
+    from flask_admin import base
+
+    original_render = base.BaseView.render
+
+    def patched_render(self, template, **kwargs):
+        """Fix Flask-Admin URLs to work behind /kindle proxy."""
+        html = original_render(self, template, **kwargs)
+        # Add /kindle prefix to all admin URLs
+        html = html.replace('"/admin/', '"/kindle/admin/')
+        html = html.replace("'/admin/", "'/kindle/admin/")
+        return html
+
+    base.BaseView.render = patched_render
+
     admin = Admin(
         app,
         name="Kindle Automator Admin",
         template_mode="bootstrap4",
         index_view=SecureAdminIndexView(),
+        url="/admin",
     )
 
     # Add all models to admin
@@ -145,6 +182,7 @@ def init_admin(app: Flask, db_session) -> Admin:
     admin.add_view(SecureModelView(LibrarySettings, db_session))
     admin.add_view(SecureModelView(ReadingSettings, db_session))
     admin.add_view(SecureModelView(UserPreference, db_session))
+    admin.add_view(BookSessionView(BookSession, db_session))
     admin.add_view(StaffTokenView(StaffToken, db_session))
 
     return admin

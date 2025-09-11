@@ -102,14 +102,24 @@ class RequestBodyLogger:
             "password",
             "token",
             "secret",
-            "key",
+            "api_key",
+            "private_key",
             "credential",
             "access_token",
             "refresh_token",
-            "code",
+            "auth_code",
+        ]
+
+        # Keys that should NOT be redacted
+        allowed_keys = [
+            "book_session_key",
         ]
 
         for key in sanitized:
+            # Skip redaction for explicitly allowed keys
+            if key.lower() in [ak.lower() for ak in allowed_keys]:
+                continue
+
             if any(sensitive_word in key.lower() for sensitive_word in sensitive_keys):
                 if sanitized[key]:  # Only redact if there's a value
                     sanitized[key] = "[REDACTED]"

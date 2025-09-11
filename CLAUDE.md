@@ -222,4 +222,18 @@ If authentication fails:
 - The proxy server maintains book caches and additional functionality
 - `/kindle/open-random-book` only exists on the proxy server (uses cached book list)
 - **If the proxy server returns an error**: Debug the proxy authentication (see Testing section), DO NOT try the Flask server
-- **Authentication is REQUIRED**: All proxy requests need dev session authentication (see Testing section above)
+- **Authentication is REQUIRED**: All proxy requests need authentication - use BOTH tokens:
+  ```bash
+  # Source the auth tokens first
+  source .env.auth
+  
+  # For API endpoints - use both Authorization header AND staff_token cookie:
+  curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
+       -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
+       "http://localhost:4096/kindle/endpoint"
+  
+  # For admin interface (/kindle/admin/*) - same authentication:
+  curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
+       -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
+       "http://localhost:4096/kindle/admin/"
+  ```

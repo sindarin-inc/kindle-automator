@@ -219,14 +219,25 @@ class UserActivityResource(Resource):
                     elif event_type == "navigate":
                         try:
                             params_dict = json.loads(match.group(1))
-                            preview = params_dict.get("preview", "0")
-                            navigate = params_dict.get("navigate", "0")
-                            # Handle both string and int values
-                            preview = int(preview) if preview else 0
-                            navigate = int(navigate) if navigate else 0
+                            # Check for absolute navigation parameters first
+                            navigate_to = params_dict.get("navigate_to")
+                            preview_to = params_dict.get("preview_to")
 
-                            activity["navigate_count"] = navigate
-                            activity["preview_count"] = preview
+                            # If absolute parameters exist, use them
+                            if navigate_to is not None or preview_to is not None:
+                                activity["navigate_to"] = navigate_to
+                                activity["preview_to"] = preview_to
+                            else:
+                                # Fall back to relative parameters
+                                preview = params_dict.get("preview", "0")
+                                navigate = params_dict.get("navigate", "0")
+                                # Handle both string and int values
+                                preview = int(preview) if preview else 0
+                                navigate = int(navigate) if navigate else 0
+
+                                activity["navigate_count"] = navigate
+                                activity["preview_count"] = preview
+
                             activity["action"] = "navigation_request"
                         except:
                             activity["action"] = "navigation_request"
@@ -406,6 +417,8 @@ class UserActivityResource(Resource):
                 # Check if we have a matching navigate activity with parsed values
                 navigate_count = None
                 preview_count = None
+                navigate_to = None
+                preview_to = None
                 for act in activities:
                     if (
                         act.get("action") == "navigation_request"
@@ -418,6 +431,10 @@ class UserActivityResource(Resource):
                         )
                         < 1
                     ):
+                        # Check for absolute parameters first
+                        navigate_to = act.get("navigate_to", None)
+                        preview_to = act.get("preview_to", None)
+                        # Fall back to relative parameters
                         navigate_count = act.get("navigate_count", None)
                         preview_count = act.get("preview_count", None)
                         break
@@ -435,12 +452,27 @@ class UserActivityResource(Resource):
                             title = title_match.group(1)
                     desc = f"opened book ({title})"
                 elif "/navigate" in endpoint:
+                    # Initialize all navigation variables
+                    navigate = 0
+                    preview = 0
+
                     # First check if we have a navigate activity in request_map
                     nav_activity = request_map.get("/navigate")
+
+                    # Check for absolute navigation parameters first
                     if nav_activity and nav_activity.get("type") == "navigate":
+                        navigate_to = nav_activity.get("navigate_to")
+                        preview_to = nav_activity.get("preview_to")
                         navigate = nav_activity.get("navigate_count", 0)
                         preview = nav_activity.get("preview_count", 0)
-                    # Use pre-parsed values if available
+                    # Use pre-parsed absolute values if available
+                    elif navigate_to is not None or preview_to is not None:
+                        # Already have them from the loop above, set defaults for relative
+                        if navigate_count is not None:
+                            navigate = navigate_count
+                        if preview_count is not None:
+                            preview = preview_count
+                    # Use pre-parsed relative values if available
                     elif navigate_count is not None or preview_count is not None:
                         navigate = navigate_count if navigate_count is not None else 0
                         preview = preview_count if preview_count is not None else 0
@@ -455,19 +487,25 @@ class UserActivityResource(Resource):
                             else:
                                 params_dict = json.loads(params)
 
-                            preview = params_dict.get("preview", "0")
-                            navigate = params_dict.get("navigate", "0")
-                            # Handle both string and int values
-                            preview = int(preview) if preview else 0
-                            navigate = int(navigate) if navigate else 0
+                            # Check for absolute parameters first
+                            navigate_to = params_dict.get("navigate_to")
+                            preview_to = params_dict.get("preview_to")
+
+                            if navigate_to is None and preview_to is None:
+                                # Fall back to relative parameters
+                                preview = params_dict.get("preview", "0")
+                                navigate = params_dict.get("navigate", "0")
+                                # Handle both string and int values
+                                preview = int(preview) if preview else 0
+                                navigate = int(navigate) if navigate else 0
                         except Exception as e:
                             # Log the error for debugging only if params is not empty
                             if params:
                                 logger.warning(f"Failed to parse navigate params: {params} - {str(e)}")
                             navigate = 0
                             preview = 0
-
-                    # Don't default navigate to 1 - show the actual values from the request
+                            navigate_to = None
+                            preview_to = None
 
                     # Check if response body contains ocr_text
                     ocr_length = None
@@ -503,11 +541,25 @@ class UserActivityResource(Resource):
                                     f"Failed to parse OCR from body: {e}, body preview: {body[:100]}"
                                 )
 
-                    # Build description with parameters - always show both values
-                    if ocr_length is not None:
-                        desc = f"navigation request (navigate={navigate}, preview={preview}, ocr_length={ocr_length})"
+                    # Build description with parameters - show absolute if available, otherwise relative
+                    if navigate_to is not None or preview_to is not None:
+                        # Show absolute navigation parameters
+                        nav_params = []
+                        if navigate_to is not None:
+                            nav_params.append(f"navigate_to={navigate_to}")
+                        if preview_to is not None:
+                            nav_params.append(f"preview_to={preview_to}")
+
+                        if ocr_length is not None:
+                            nav_params.append(f"ocr_length={ocr_length}")
+
+                        desc = f"navigation request ({', '.join(nav_params)})"
                     else:
-                        desc = f"navigation request (navigate={navigate}, preview={preview})"
+                        # Show relative navigation parameters
+                        if ocr_length is not None:
+                            desc = f"navigation request (navigate={navigate}, preview={preview}, ocr_length={ocr_length})"
+                        else:
+                            desc = f"navigation request (navigate={navigate}, preview={preview})"
                 elif "/books-stream" in endpoint:
                     desc = "requested book library"
                 elif endpoint.endswith("/auth-check"):
