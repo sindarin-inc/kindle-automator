@@ -152,11 +152,19 @@ class BookSessionRepository:
         )
 
         if book_session:
-            # Reset existing session
+            # Store the previous session data before resetting
+            # This allows us to handle navigation requests with the old session key
+            book_session.previous_session_key = book_session.session_key
+            book_session.previous_position = book_session.position
+
+            # Reset to new session
             book_session.session_key = new_session_key
             book_session.position = 0
             book_session.last_accessed = datetime.now(timezone.utc)
-            logger.info(f"Reset book session for {email}/{book_title} with new key {new_session_key}")
+            logger.info(
+                f"Reset book session for {email}/{book_title} with new key {new_session_key}. "
+                f"Preserved old session {book_session.previous_session_key} at position {book_session.previous_position}"
+            )
         else:
             # Create new session
             book_session = BookSession(
@@ -175,12 +183,13 @@ class BookSessionRepository:
 
     def calculate_position_adjustment(
         self, email: str, book_title: str, client_session_key: str, target_position: int
-    ) -> int:
+    ) -> tuple[int, bool, str]:
         """Calculate the position adjustment needed to reach the target position.
 
-        This method handles two scenarios:
+        This method handles three scenarios:
         1. Same session: Calculate adjustment from current position to target
-        2. Different session: Client reconnected, we're at position 0, need to go to target
+        2. Client has old session key: Restore from previous session and adjust
+        3. Unknown session: Reject navigation and signal client to reset
 
         Args:
             email: User's email address
@@ -189,7 +198,10 @@ class BookSessionRepository:
             target_position: Position the client wants to navigate to
 
         Returns:
-            The adjustment needed (positive = forward, negative = backward)
+            Tuple of (adjustment, success, current_session_key):
+            - adjustment: Pages to navigate (0 if failed)
+            - success: Whether navigation should proceed
+            - current_session_key: The server's current session key
         """
         session = self.get_session(email, book_title)
 
@@ -200,10 +212,10 @@ class BookSessionRepository:
                 f"No session found for {email}/{book_title} with key {client_session_key}. "
                 f"Cannot calculate adjustment."
             )
-            return target_position  # Navigate to target from assumed position 0
+            return (0, False, "")  # Fail navigation, no session
 
         if session.session_key == client_session_key:
-            # Same session - calculate adjustment from current position to target
+            # Same session - normal navigation
             adjustment = target_position - session.position
             if adjustment != 0:
                 logger.info(
@@ -211,14 +223,34 @@ class BookSessionRepository:
                     f"Current position {session.position}, target {target_position}. "
                     f"Need to navigate {adjustment} pages."
                 )
-            return adjustment
-        else:
-            # Different session - client is continuing but we restarted
-            # We're at position 0 (book reopened), need to go to target position
-            adjustment = target_position
+            return (adjustment, True, session.session_key)
+        elif session.previous_session_key and session.previous_session_key == client_session_key:
+            # Client is using the old session key - they think they're at the old position
+            # We need to restore their context by adopting their session key
+            old_position = session.previous_position or 0
+
+            # Update our session to match the client's session
+            session.session_key = client_session_key
+            session.position = old_position
+            # Clear the previous session data since we've adopted it
+            session.previous_session_key = None
+            session.previous_position = None
+            self.session.commit()
+
+            # Now calculate adjustment from the restored position
+            adjustment = target_position - old_position
             logger.info(
-                f"Session key mismatch for {email}/{book_title}. "
-                f"Client wants position {target_position}, we're at start. "
-                f"Need to navigate {adjustment} pages."
+                f"Restored old session for {email}/{book_title}. "
+                f"Client session {client_session_key} was at position {old_position}, "
+                f"target {target_position}. Need to navigate {adjustment} pages."
             )
-            return adjustment
+            return (adjustment, True, client_session_key)
+        else:
+            # Unknown session key - client needs to reset their position tracking
+            logger.warning(
+                f"Session key mismatch for {email}/{book_title}. "
+                f"Client key '{client_session_key}' doesn't match current '{session.session_key}' "
+                f"or previous '{session.previous_session_key}'. Navigation rejected."
+            )
+            # Return the current session key so client can sync
+            return (0, False, session.session_key)

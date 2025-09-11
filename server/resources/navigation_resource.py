@@ -77,9 +77,22 @@ class NavigationResource(Resource):
                         book_session_repo = BookSessionRepository(session)
 
                         # Calculate the adjustment needed based on session tracking
-                        adjustment = book_session_repo.calculate_position_adjustment(
-                            sindarin_email, current_book, book_session_key, target_position
+                        adjustment, navigation_allowed, server_session_key = (
+                            book_session_repo.calculate_position_adjustment(
+                                sindarin_email, current_book, book_session_key, target_position
+                            )
                         )
+
+                        if not navigation_allowed:
+                            # Session key mismatch - client needs to reset
+                            logger.warning(f"Navigation rejected for {sindarin_email}. Session key mismatch.")
+                            return {
+                                "success": False,
+                                "error": "session_key_mismatch",
+                                "message": "Your session is out of sync. Please reset your position tracking.",
+                                "current_session_key": server_session_key,
+                                "current_position": 0,  # Client should reset to 0
+                            }, 400
 
                         params["navigate_count"] = adjustment
                         logger.info(

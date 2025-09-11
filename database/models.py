@@ -313,6 +313,12 @@ class BookSession(Base):
     session_key: Mapped[str] = mapped_column(String(255), nullable=False)
     # The current position in this session (from client's navigate_to perspective)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Store the previous session's data when book is reopened
+    # This allows us to handle navigation requests with old session keys
+    previous_session_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    previous_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     last_accessed: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
