@@ -274,8 +274,12 @@ class AuthDashboardResource(Resource):
 
     def _get_firmware_metrics(self, session):
         """Get metrics about Glasses/Sindarin firmware versions and their usage patterns."""
+        import os
         import random
         from datetime import datetime, timedelta
+
+        # Check if we're in development environment
+        is_development = os.getenv("ENVIRONMENT", "production").lower() in ["development", "dev", "local"]
 
         # Get daily firmware usage from BookSession (last 30 days)
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
@@ -305,8 +309,8 @@ class AuthDashboardResource(Resource):
                 daily_firmware_data[date_str][fw_version]["users"] = users
                 daily_firmware_data[date_str][fw_version]["sessions"] = sessions
                 all_firmware_versions.add(fw_version)
-        else:
-            # Bootstrap with demo data for visualization
+        elif is_development:
+            # Bootstrap with demo data for visualization (ONLY IN DEVELOPMENT)
             versions = ["1.5.0", "1.5.99", "1.6.0"]
             all_firmware_versions = set(versions)
 
@@ -359,8 +363,8 @@ class AuthDashboardResource(Resource):
                     "total_sessions": sessions,
                     "avg_sessions_per_user": round(sessions / max(users, 1), 1),
                 }
-        else:
-            # Bootstrap with demo summary data
+        elif is_development:
+            # Bootstrap with demo summary data (ONLY IN DEVELOPMENT)
             firmware_summary = {
                 "1.5.0": {"unique_users": 25, "total_sessions": 450, "avg_sessions_per_user": 18.0},
                 "1.5.99": {"unique_users": 42, "total_sessions": 1260, "avg_sessions_per_user": 30.0},
