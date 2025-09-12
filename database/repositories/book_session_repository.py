@@ -30,6 +30,7 @@ class BookSessionRepository:
         session_key: str,
         position: int = 0,
         firmware_version: Optional[str] = None,
+        user_agent: Optional[str] = None,
     ) -> BookSession:
         """Get existing session or create a new one.
 
@@ -39,6 +40,7 @@ class BookSessionRepository:
             session_key: Client's session key
             position: Initial position if creating new session
             firmware_version: Glasses/Sindarin firmware version from user agent
+            user_agent: Full user agent string from request header
 
         Returns:
             BookSession object
@@ -70,6 +72,9 @@ class BookSessionRepository:
             # Update firmware version if provided
             if firmware_version:
                 book_session.firmware_version = firmware_version
+            # Update user agent if provided
+            if user_agent:
+                book_session.user_agent = user_agent
             # Update last accessed time
             book_session.last_accessed = datetime.now(timezone.utc)
             self.session.commit()
@@ -81,6 +86,7 @@ class BookSessionRepository:
                 session_key=session_key,
                 position=position,
                 firmware_version=firmware_version,
+                user_agent=user_agent,
                 last_accessed=datetime.now(timezone.utc),
                 created_at=datetime.now(timezone.utc),
             )
@@ -140,7 +146,12 @@ class BookSessionRepository:
         return self.session.query(BookSession).filter_by(user_id=user.id, book_title=book_title).first()
 
     def reset_session(
-        self, email: str, book_title: str, new_session_key: str, firmware_version: Optional[str] = None
+        self,
+        email: str,
+        book_title: str,
+        new_session_key: str,
+        firmware_version: Optional[str] = None,
+        user_agent: Optional[str] = None,
     ) -> Optional[BookSession]:
         """Reset a book session with a new session key and position 0.
         Used when /open-book is called.
@@ -150,6 +161,7 @@ class BookSessionRepository:
             book_title: Title of the book
             new_session_key: New session key to set
             firmware_version: Optional Glasses/Sindarin firmware version from user agent
+            user_agent: Optional full user agent string from request header
 
         Returns:
             Updated BookSession or newly created one
@@ -175,6 +187,8 @@ class BookSessionRepository:
             book_session.position = 0
             if firmware_version:
                 book_session.firmware_version = firmware_version
+            if user_agent:
+                book_session.user_agent = user_agent
             book_session.last_accessed = datetime.now(timezone.utc)
             logger.info(
                 f"Reset book session for {email}/{book_title} with new key {new_session_key}. "
@@ -188,6 +202,7 @@ class BookSessionRepository:
                 session_key=new_session_key,
                 position=0,
                 firmware_version=firmware_version,
+                user_agent=user_agent,
                 last_accessed=datetime.now(timezone.utc),
                 created_at=datetime.now(timezone.utc),
             )

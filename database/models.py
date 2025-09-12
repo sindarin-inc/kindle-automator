@@ -349,6 +349,9 @@ class BookSession(Base):
     # Glasses/Sindarin firmware version from user agent header
     firmware_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
+    # Full user agent string from request header
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     last_accessed: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
