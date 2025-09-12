@@ -180,6 +180,8 @@ class NavigationResource(Resource):
             use_base64=params["use_base64"],
             perform_ocr=params["perform_ocr"],
             book_title=params.get("title"),
+            client_session_key=book_session_key,
+            target_position=params.get("navigate_to"),
         )
 
         # Extract the response and status code from the result
