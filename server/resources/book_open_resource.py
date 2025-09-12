@@ -295,9 +295,10 @@ class BookOpenResource(Resource):
                 # Try exact match first
                 if normalized_request_title == normalized_current_title:
                     logger.info(f"Already reading book (exact match): {book_title}, returning current state")
-                    # Reset position to 0 when re-opening an already open book
-                    server.reset_position(sindarin_email, book_title)
-                    logger.info(f"Reset position to 0 for already-open book: {book_title}")
+                    # Update server's current book tracking with new session key
+                    book_session_key = server.set_current_book(
+                        book_title, sindarin_email, client_session_key, firmware_version
+                    )
                     result = capture_book_state(already_open=True)
                     # Clear cancellation check on successful completion
                     automator.state_machine.set_cancellation_check(None)
@@ -316,10 +317,10 @@ class BookOpenResource(Resource):
                     logger.info(
                         f"Already reading book (partial match): {book_title}, returning current state"
                     )
-                    # Reset position to 0 when re-opening an already open book
-                    server.reset_position(sindarin_email, book_title)
-                    logger.info(f"Reset position to 0 for already-open book: {book_title}")
-                    automator.state_machine.set_cancellation_check(None)
+                    # Update server's current book tracking with new session key
+                    book_session_key = server.set_current_book(
+                        book_title, sindarin_email, client_session_key, firmware_version
+                    )
                     result = capture_book_state(already_open=True)
                     # Clear cancellation check on successful completion
                     automator.state_machine.set_cancellation_check(None)
