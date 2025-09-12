@@ -264,7 +264,7 @@ class AutomationServer:
 
         return True, message
 
-    def set_current_book(self, book_title, email, session_key=None):
+    def set_current_book(self, book_title, email, session_key=None, firmware_version=None):
         """Set the currently open book title for a specific email.
 
         If session_key is provided (from /open-book), creates/resets the session.
@@ -274,6 +274,7 @@ class AutomationServer:
             book_title: The title of the book
             email: The email to associate with this book. REQUIRED.
             session_key: Optional session key from client. If provided, resets the session.
+            firmware_version: Optional Glasses/Sindarin firmware version from user agent.
 
         Returns:
             str: The session key (either provided or existing) or None if email not provided
@@ -293,7 +294,7 @@ class AutomationServer:
 
             if session_key:
                 # Client provided a session key (from /open-book) - reset the session
-                book_session = repo.reset_session(email, book_title, session_key)
+                book_session = repo.reset_session(email, book_title, session_key, firmware_version)
                 self.book_session_keys[email] = session_key
 
                 # Reset position to 0 when opening a new book
@@ -313,7 +314,7 @@ class AutomationServer:
                 else:
                     # No existing session, generate a new one
                     session_key = str(int(time.time() * 1000))
-                    book_session = repo.reset_session(email, book_title, session_key)
+                    book_session = repo.reset_session(email, book_title, session_key, firmware_version)
                     self.book_session_keys[email] = session_key
                     self.reset_position(email, book_title)
                     logger.info(

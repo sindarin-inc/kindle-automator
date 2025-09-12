@@ -115,6 +115,20 @@ class BookOpenResource(Resource):
         if not book_title:
             return {"error": "Book title is required in the request"}, 400
 
+        # Extract firmware version from User-Agent header
+        user_agent = request.headers.get("User-Agent", "")
+        # Firmware version is typically the Glasses/Sindarin version in the user agent
+        # Format example: "Sindarin/1.5.99" or just "1.5.99"
+        firmware_version = None
+        if user_agent:
+            # Try to extract version number pattern
+            import re
+
+            version_match = re.search(r"(\d+\.\d+\.\d+)", user_agent)
+            if version_match:
+                firmware_version = version_match.group(1)
+                logger.info(f"Extracted firmware version {firmware_version} from User-Agent: {user_agent}")
+
         # Get or generate session key for this request
         client_session_key = None
         if request.method == "POST" and request.is_json:
@@ -338,7 +352,7 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             book_session_key = server.set_current_book(
-                                current_title_from_ui, sindarin_email, client_session_key
+                                current_title_from_ui, sindarin_email, client_session_key, firmware_version
                             )
                             result = capture_book_state(already_open=True)
                             # Clear cancellation check on successful completion
@@ -360,7 +374,7 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             book_session_key = server.set_current_book(
-                                current_title_from_ui, sindarin_email, client_session_key
+                                current_title_from_ui, sindarin_email, client_session_key, firmware_version
                             )
                             automator.state_machine.set_cancellation_check(None)
                             result = capture_book_state(already_open=True)
@@ -400,7 +414,7 @@ class BookOpenResource(Resource):
                         )
                         # Update server's current book tracking
                         book_session_key = server.set_current_book(
-                            actively_reading_title, sindarin_email, client_session_key
+                            actively_reading_title, sindarin_email, client_session_key, firmware_version
                         )
                         result = capture_book_state(already_open=True)
                         # Clear cancellation check on successful completion
@@ -422,7 +436,7 @@ class BookOpenResource(Resource):
                         )
                         # Update server's current book tracking
                         book_session_key = server.set_current_book(
-                            actively_reading_title, sindarin_email, client_session_key
+                            actively_reading_title, sindarin_email, client_session_key, firmware_version
                         )
                         automator.state_machine.set_cancellation_check(None)
                         result = capture_book_state(already_open=True)
@@ -454,7 +468,7 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             book_session_key = server.set_current_book(
-                                current_title_from_ui, sindarin_email, client_session_key
+                                current_title_from_ui, sindarin_email, client_session_key, firmware_version
                             )
                             result = capture_book_state(already_open=True)
                             # Clear cancellation check on successful completion
@@ -476,7 +490,7 @@ class BookOpenResource(Resource):
                             )
                             # Update server's current book tracking
                             book_session_key = server.set_current_book(
-                                current_title_from_ui, sindarin_email, client_session_key
+                                current_title_from_ui, sindarin_email, client_session_key, firmware_version
                             )
                             automator.state_machine.set_cancellation_check(None)
                             result = capture_book_state(already_open=True)
@@ -519,7 +533,9 @@ class BookOpenResource(Resource):
                 automator.state_machine.update_current_state()
                 if automator.state_machine.current_state == AppState.READING:
                     # Set the current book in the server state
-                    book_session_key = server.set_current_book(book_title, sindarin_email, client_session_key)
+                    book_session_key = server.set_current_book(
+                        book_title, sindarin_email, client_session_key, firmware_version
+                    )
                     automator.state_machine.set_cancellation_check(None)
                     result = capture_book_state()
                     # Clear cancellation check on successful completion
@@ -538,7 +554,9 @@ class BookOpenResource(Resource):
                 return result, 400
             elif result.get("success"):
                 # Set the current book in the server state
-                book_session_key = server.set_current_book(book_title, sindarin_email, client_session_key)
+                book_session_key = server.set_current_book(
+                    book_title, sindarin_email, client_session_key, firmware_version
+                )
                 result = capture_book_state()
                 # Clear cancellation check on successful completion
                 automator.state_machine.set_cancellation_check(None)
@@ -584,7 +602,9 @@ class BookOpenResource(Resource):
                 return result, 400
             elif result.get("success"):
                 # Set the current book in the server state
-                book_session_key = server.set_current_book(book_title, sindarin_email, client_session_key)
+                book_session_key = server.set_current_book(
+                    book_title, sindarin_email, client_session_key, firmware_version
+                )
                 result = capture_book_state()
                 # Clear cancellation check on successful completion
                 automator.state_machine.set_cancellation_check(None)
