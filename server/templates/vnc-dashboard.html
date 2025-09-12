@@ -328,6 +328,11 @@
             background: #fbbf24;
         }
         
+        .status-dot.idle {
+            background: #94a3b8;
+            animation: none;
+        }
+        
         @keyframes pulse {
             0%, 100% {
                 opacity: 1;
@@ -1077,7 +1082,7 @@
             container.id = `vnc-${instance.server_name}-${instance.display}`;
             
             // Format status with duration
-            let statusText = instance.is_booting ? 'Booting' : 'Active';
+            let statusText = instance.is_booting ? 'Booting' : (instance.is_idle ? 'Idle' : 'Active');
             let durationText = '';
             if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
                 durationText = ` · ${instance.session_duration_minutes}m`;
@@ -1091,7 +1096,7 @@
                         ${instance.user_email}
                     </div>
                     <div class="vnc-status">
-                        <div class="status-dot ${instance.is_booting ? 'booting' : ''}"></div>
+                        <div class="status-dot ${instance.is_booting ? 'booting' : (instance.is_idle ? 'idle' : '')}"></div>
                         <span>${statusText}${durationText}</span>
                     </div>
                 </div>
@@ -1147,17 +1152,17 @@
                         const statusTextEl = container.querySelector('.vnc-status span');
                         
                         // Determine if status or duration changed
-                        const statusChanged = existing.is_booting !== instance.is_booting;
+                        const statusChanged = existing.is_booting !== instance.is_booting || existing.is_idle !== instance.is_idle;
                         const durationChanged = existing.session_duration_minutes !== instance.session_duration_minutes;
                         
                         if ((statusChanged || durationChanged) && statusTextEl) {
-                            // Update status dot if booting status changed
+                            // Update status dot if status changed
                             if (statusChanged && statusDot) {
-                                statusDot.className = `status-dot ${instance.is_booting ? 'booting' : ''}`;
+                                statusDot.className = `status-dot ${instance.is_booting ? 'booting' : (instance.is_idle ? 'idle' : '')}`;
                             }
                             
                             // Update status text with duration
-                            let statusText = instance.is_booting ? 'Booting' : 'Active';
+                            let statusText = instance.is_booting ? 'Booting' : (instance.is_idle ? 'Idle' : 'Active');
                             let durationText = '';
                             if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
                                 durationText = ` · ${instance.session_duration_minutes}m`;
