@@ -43,18 +43,24 @@ class DashboardResource(Resource):
         try:
             with db_connection.get_session() as session:
                 # Get all VNC instances that have an assigned profile (active emulator)
+                # Also join with User table to get last_used
+                from database.models import User
+
                 stmt = (
-                    select(VNCInstance)
+                    select(VNCInstance, User.last_used)
+                    .join(User, User.email == VNCInstance.assigned_profile, isouter=True)
                     .where(VNCInstance.assigned_profile.isnot(None))
                     .order_by(VNCInstance.server_name, VNCInstance.display)
                 )
-                instances = session.execute(stmt).scalars().all()
+                results = session.execute(stmt).all()
 
                 # Get current server name for localhost handling
                 current_server = socket.gethostname()
 
                 vnc_list = []
-                for instance in instances:
+                for row in results:
+                    instance = row[0]
+                    last_used = row[1]
                     # Map server names to accessible hostnames
                     server_hostname_map = {
                         "kindle-automator-1": "kindle1.sindarin.com",
@@ -88,6 +94,17 @@ class DashboardResource(Resource):
                         duration = now - boot_time
                         session_duration_minutes = int(duration.total_seconds() / 60)
 
+                    # Calculate idle state based on last_used (2 minutes = 120 seconds)
+                    is_idle = False
+                    if last_used and not instance.is_booting:
+                        # Make sure last_used is timezone-aware
+                        if last_used.tzinfo is None:
+                            last_used = last_used.replace(tzinfo=timezone.utc)
+
+                        now = datetime.now(timezone.utc)
+                        time_since_activity = now - last_used
+                        is_idle = time_since_activity.total_seconds() > 120  # 2 minutes
+
                     vnc_info = {
                         "server_name": instance.server_name,
                         "vnc_host": vnc_host,
@@ -98,6 +115,8 @@ class DashboardResource(Resource):
                         "emulator_id": instance.emulator_id,
                         "emulator_port": instance.emulator_port,
                         "is_booting": instance.is_booting,
+                        "is_idle": is_idle,
+                        "last_used": last_used.isoformat() if last_used else None,
                         "appium_running": instance.appium_running,
                         "session_duration_minutes": session_duration_minutes,
                         "created_at": instance.created_at.isoformat() if instance.created_at else None,

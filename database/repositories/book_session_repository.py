@@ -24,7 +24,13 @@ class BookSessionRepository:
         self.session = session
 
     def get_or_create_session(
-        self, email: str, book_title: str, session_key: str, position: int = 0
+        self,
+        email: str,
+        book_title: str,
+        session_key: str,
+        position: int = 0,
+        firmware_version: Optional[str] = None,
+        user_agent: Optional[str] = None,
     ) -> BookSession:
         """Get existing session or create a new one.
 
@@ -33,6 +39,8 @@ class BookSessionRepository:
             book_title: Title of the book
             session_key: Client's session key
             position: Initial position if creating new session
+            firmware_version: Glasses/Sindarin firmware version from user agent
+            user_agent: Full user agent string from request header
 
         Returns:
             BookSession object
@@ -61,6 +69,12 @@ class BookSessionRepository:
 
             # Always update position to track where the client thinks they are
             book_session.position = position
+            # Update firmware version if provided
+            if firmware_version:
+                book_session.firmware_version = firmware_version
+            # Update user agent if provided
+            if user_agent:
+                book_session.user_agent = user_agent
             # Update last accessed time
             book_session.last_accessed = datetime.now(timezone.utc)
             self.session.commit()
@@ -71,6 +85,8 @@ class BookSessionRepository:
                 book_title=book_title,
                 session_key=session_key,
                 position=position,
+                firmware_version=firmware_version,
+                user_agent=user_agent,
                 last_accessed=datetime.now(timezone.utc),
                 created_at=datetime.now(timezone.utc),
             )
@@ -129,7 +145,14 @@ class BookSessionRepository:
 
         return self.session.query(BookSession).filter_by(user_id=user.id, book_title=book_title).first()
 
-    def reset_session(self, email: str, book_title: str, new_session_key: str) -> Optional[BookSession]:
+    def reset_session(
+        self,
+        email: str,
+        book_title: str,
+        new_session_key: str,
+        firmware_version: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[BookSession]:
         """Reset a book session with a new session key and position 0.
         Used when /open-book is called.
 
@@ -137,6 +160,8 @@ class BookSessionRepository:
             email: User's email address
             book_title: Title of the book
             new_session_key: New session key to set
+            firmware_version: Optional Glasses/Sindarin firmware version from user agent
+            user_agent: Optional full user agent string from request header
 
         Returns:
             Updated BookSession or newly created one
@@ -152,11 +177,23 @@ class BookSessionRepository:
         )
 
         if book_session:
-            # Reset existing session
+            # Store the previous session data before resetting
+            # This allows us to handle navigation requests with the old session key
+            book_session.previous_session_key = book_session.session_key
+            book_session.previous_position = book_session.position
+
+            # Reset to new session
             book_session.session_key = new_session_key
             book_session.position = 0
+            if firmware_version:
+                book_session.firmware_version = firmware_version
+            if user_agent:
+                book_session.user_agent = user_agent
             book_session.last_accessed = datetime.now(timezone.utc)
-            logger.info(f"Reset book session for {email}/{book_title} with new key {new_session_key}")
+            logger.info(
+                f"Reset book session for {email}/{book_title} with new key {new_session_key}. "
+                f"Preserved old session {book_session.previous_session_key} at position {book_session.previous_position}"
+            )
         else:
             # Create new session
             book_session = BookSession(
@@ -164,6 +201,8 @@ class BookSessionRepository:
                 book_title=book_title,
                 session_key=new_session_key,
                 position=0,
+                firmware_version=firmware_version,
+                user_agent=user_agent,
                 last_accessed=datetime.now(timezone.utc),
                 created_at=datetime.now(timezone.utc),
             )
@@ -174,21 +213,26 @@ class BookSessionRepository:
         return book_session
 
     def calculate_position_adjustment(
-        self, email: str, book_title: str, client_session_key: str, client_position: int
-    ) -> int:
-        """Calculate the position adjustment needed when session keys don't match.
+        self, email: str, book_title: str, client_session_key: str, target_position: int
+    ) -> tuple[int, bool, str]:
+        """Calculate the position adjustment needed to reach the target position.
 
-        This is used when the client thinks they're at position X but we've reopened
-        the book (losing their context). We need to navigate to where they think they are.
+        This method handles three scenarios:
+        1. Same session: Calculate adjustment from current position to target
+        2. Client has old session key: Restore from previous session and adjust
+        3. Unknown session: Reject navigation and signal client to reset
 
         Args:
             email: User's email address
             book_title: Title of the book
             client_session_key: Client's session key
-            client_position: Position the client thinks they're at
+            target_position: Position the client wants to navigate to
 
         Returns:
-            The adjustment needed (positive = forward, negative = backward)
+            Tuple of (adjustment, success, current_session_key):
+            - adjustment: Pages to navigate (0 if failed)
+            - success: Whether navigation should proceed
+            - current_session_key: The server's current session key
         """
         session = self.get_session(email, book_title)
 
@@ -199,20 +243,63 @@ class BookSessionRepository:
                 f"No session found for {email}/{book_title} with key {client_session_key}. "
                 f"Cannot calculate adjustment."
             )
-            return 0  # No adjustment if no session exists
+            return (0, False, "")  # Fail navigation, no session
 
         if session.session_key == client_session_key:
-            # Same session - the absolute position is correct, no adjustment needed
-            # We're already at the right position
-            return 0
-        else:
-            # Different session - client is continuing but we restarted
-            # Client thinks they're at position X, but we know from our last session
-            # they were at position Y. The difference is what we need to navigate.
-            adjustment = client_position - session.position
+            # Same session - normal navigation
+            adjustment = target_position - session.position
+            if adjustment != 0:
+                logger.info(
+                    f"Same session for {email}/{book_title}. "
+                    f"Current position {session.position}, target {target_position}. "
+                    f"Need to navigate {adjustment} pages."
+                )
+            return (adjustment, True, session.session_key)
+        elif session.previous_session_key and session.previous_session_key == client_session_key:
+            # Client is using the old session key - they think they're at the old position
+            # We need to restore their context by adopting their session key
+            old_position = session.previous_position or 0
+
+            # Update our session to match the client's session
+            session.session_key = client_session_key
+            session.position = old_position
+            # Clear the previous session data since we've adopted it
+            session.previous_session_key = None
+            session.previous_position = None
+            self.session.commit()
+
+            # Now calculate adjustment from the restored position
+            adjustment = target_position - old_position
             logger.info(
-                f"Session key mismatch for {email}/{book_title}. "
-                f"Client at position {client_position}, we last saw {session.position}. "
-                f"Need to navigate {adjustment} pages."
+                f"Restored old session for {email}/{book_title}. "
+                f"Client session {client_session_key} was at position {old_position}, "
+                f"target {target_position}. Need to navigate {adjustment} pages."
             )
-            return adjustment
+            return (adjustment, True, client_session_key)
+        else:
+            # Unknown session key - check if client is requesting current position
+            # If the target position matches our current position, we can adopt the client's session
+            if target_position == session.position:
+                # Client wants to navigate to where we already are
+                # Adopt their session key since no actual navigation is needed
+                session.previous_session_key = session.session_key
+                session.previous_position = session.position
+                session.session_key = client_session_key
+                self.session.commit()
+
+                logger.info(
+                    f"Adopted new session key for {email}/{book_title}. "
+                    f"Client key '{client_session_key}' requesting position {target_position} "
+                    f"which matches current position. No navigation needed."
+                )
+                return (0, True, client_session_key)
+            else:
+                # Client wants to navigate to a different position with unknown session
+                # They need to reset their position tracking
+                logger.warning(
+                    f"Session key mismatch for {email}/{book_title}. "
+                    f"Client key '{client_session_key}' doesn't match current '{session.session_key}' "
+                    f"or previous '{session.previous_session_key}'. Navigation rejected."
+                )
+                # Return the current session key so client can sync
+                return (0, False, session.session_key)

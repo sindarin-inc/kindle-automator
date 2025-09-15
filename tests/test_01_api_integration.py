@@ -521,6 +521,16 @@ class TestKindleAPIIntegration(BaseKindleTest):
     @pytest.mark.timeout(120)
     def test_open_random_book(self):
         """Test /kindle/open-random-book endpoint."""
+        # Get initial ReadingActivity count
+        from database.connection import db_connection
+        from database.models import ReadingActivity, User
+
+        initial_activity_count = 0
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                initial_activity_count = session.query(ReadingActivity).filter_by(user_id=user.id).count()
+
         response = self._make_request("open-random-book")
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
 
@@ -541,12 +551,48 @@ class TestKindleAPIIntegration(BaseKindleTest):
         # Store book info for subsequent tests
         self.__class__.opened_book = data
 
+        # Verify ReadingActivity was created for the open event
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                new_activity_count = session.query(ReadingActivity).filter_by(user_id=user.id).count()
+                assert (
+                    new_activity_count > initial_activity_count
+                ), f"Expected ReadingActivity to be created, but count remained {initial_activity_count}"
+
+                # Check the most recent activity is an 'open' event
+                latest_activity = (
+                    session.query(ReadingActivity)
+                    .filter_by(user_id=user.id)
+                    .order_by(ReadingActivity.created_at.desc())
+                    .first()
+                )
+                assert latest_activity is not None, "No ReadingActivity found"
+                assert (
+                    latest_activity.event_type == "open"
+                ), f"Expected 'open' event, got '{latest_activity.event_type}'"
+                assert (
+                    latest_activity.position == 0
+                ), f"Expected position 0 for open event, got {latest_activity.position}"
+
     @pytest.mark.timeout(120)
     def test_navigate_preview(self):
         """Test /kindle/navigate endpoint with preview action."""
         # This test depends on test_open_random_book having run first
         if not hasattr(self.__class__, "opened_book"):
             pytest.skip("No book available to navigate - test_open_random_book must run first")
+
+        # Get initial ReadingActivity count for navigate events
+        from database.connection import db_connection
+        from database.models import ReadingActivity, User
+
+        initial_navigate_count = 0
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                initial_navigate_count = (
+                    session.query(ReadingActivity).filter_by(user_id=user.id, event_type="navigate").count()
+                )
 
         params = {"action": "preview", "preview": "true"}
         response = self._make_request("navigate", params)
@@ -568,6 +614,17 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # Verify we got actual text back
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
+
+        # Preview actions should NOT create ReadingActivity records (preview doesn't change position)
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                new_navigate_count = (
+                    session.query(ReadingActivity).filter_by(user_id=user.id, event_type="navigate").count()
+                )
+                assert (
+                    new_navigate_count == initial_navigate_count
+                ), f"Preview action should not create navigate events, but count went from {initial_navigate_count} to {new_navigate_count}"
 
     @pytest.mark.timeout(120)
     def test_table_of_contents(self):

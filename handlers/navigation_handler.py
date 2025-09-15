@@ -50,6 +50,8 @@ class NavigationResourceHandler:
         use_base64: bool = False,
         perform_ocr: bool = False,
         book_title: Optional[str] = None,
+        client_session_key: Optional[str] = None,
+        target_position: Optional[int] = None,
     ) -> Tuple[Dict, int]:
         """Handle page navigation with support for multi-page navigation and preview.
 
@@ -62,6 +64,8 @@ class NavigationResourceHandler:
             use_base64: Whether to return base64 encoded image.
             perform_ocr: Whether to perform OCR on the image.
             book_title: Book title to reopen if not in reading view.
+            client_session_key: Client's book session key to preserve when reopening.
+            target_position: Target position for absolute navigation (if provided).
 
         Returns:
             Tuple of (response_data, status_code)
@@ -214,13 +218,61 @@ class NavigationResourceHandler:
 
                 logger.info("Successfully reopened book, now in reading view")
 
-                # Get the new book session key after reopening
+                # Set the session key to match the client's if provided
                 from server.core.automation_server import AutomationServer
 
                 server = AutomationServer.get_instance()
                 profile = self.automator.profile_manager.get_current_profile()
                 sindarin_email = profile.get("email") if profile else None
-                book_session_key_after_reopen = server.get_book_session_key(sindarin_email)
+
+                # If client provided a session key, preserve it when reopening
+                if client_session_key and sindarin_email:
+                    logger.info(f"Preserving client session key {client_session_key} after reopening book")
+
+                    # First, check if this session exists in the database
+                    from database.connection import get_db
+                    from database.repositories.book_session_repository import (
+                        BookSessionRepository,
+                    )
+
+                    with get_db() as db_session:
+                        repo = BookSessionRepository(db_session)
+                        existing_session = repo.get_session(sindarin_email, book_title)
+
+                        # Check if the client's session key matches current or previous session
+                        restored_position = None
+                        if existing_session:
+                            if existing_session.session_key == client_session_key:
+                                # Client has the current session key, use its position
+                                restored_position = existing_session.position
+                                logger.info(f"Found existing session with position {restored_position}")
+                            elif existing_session.previous_session_key == client_session_key:
+                                # Client has the previous session key, use previous position
+                                restored_position = existing_session.previous_position or 0
+                                logger.info(f"Found previous session with position {restored_position}")
+
+                    # Set the book with the client's session key
+                    server.set_current_book(book_title, sindarin_email, client_session_key)
+                    book_session_key_after_reopen = client_session_key
+
+                    # If we found a position to restore, set it
+                    if restored_position is not None:
+                        logger.info(f"Restoring position to {restored_position} after reopening book")
+                        # Set the absolute position after reopening
+                        server.set_position(sindarin_email, restored_position, book_title)
+
+                        # Adjust navigation count to account for restored position
+                        if target_position is not None:
+                            # We've restored to restored_position, so adjust navigation
+                            adjusted_navigate = target_position - restored_position
+                            logger.info(
+                                f"Adjusting navigation from {navigate_count} to {adjusted_navigate} (target {target_position} - restored {restored_position})"
+                            )
+                            navigate_count = adjusted_navigate
+                            abs_navigate_count = abs(navigate_count)
+                            direction_forward = navigate_count >= 0
+                else:
+                    book_session_key_after_reopen = server.get_book_session_key(sindarin_email)
             else:
                 # No book title provided, can't recover
                 logger.error("Not in reading view and no book_title provided to reopen", exc_info=True)

@@ -113,16 +113,17 @@ To control Redis command logging in the debug log:
 Authentication tokens are now automatically managed:
 
 ```bash
-# First time setup or refresh tokens:
+# First time setup or refresh tokens. Note, you should never have to do this, it only needs to be run once, then .env.auth exists
 make refresh-auth
 
-# Verify tokens are working:
+# Verify tokens are working, esp. if you feel the need to refresh the tokens. They probably already work! You just need to use them correctly.
 make test-auth
 
 # That's it! Tokens are now automatically loaded for all commands
 ```
 
 The tokens are stored in `.env.auth` and automatically loaded by:
+
 - `make test` and all test commands
 - `uv run pytest ...` (via Makefile include)
 - For manual curl commands, source first: `source .env.auth`
@@ -155,6 +156,7 @@ curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
 ### Troubleshooting Auth
 
 If authentication fails:
+
 1. Make sure Docker containers are running: `cd ../web-app && make fast`
 2. Regenerate tokens: `make refresh-auth`
 3. Verify tokens work: `make test-auth`
@@ -223,17 +225,15 @@ If authentication fails:
 - `/kindle/open-random-book` only exists on the proxy server (uses cached book list)
 - **If the proxy server returns an error**: Debug the proxy authentication (see Testing section), DO NOT try the Flask server
 - **Authentication is REQUIRED**: All proxy requests need authentication - use BOTH tokens:
+
   ```bash
-  # Source the auth tokens first
+  # First, source the auth tokens into your shell session:
   source .env.auth
-  
-  # For API endpoints - use both Authorization header AND staff_token cookie:
+
+  # Now you can use normal curl commands with the tokens:
   curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
        -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
        "http://localhost:4096/kindle/endpoint"
-  
-  # For admin interface (/kindle/admin/*) - same authentication:
-  curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
-       -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
-       "http://localhost:4096/kindle/admin/"
+
+  # BOTH tokens are always required for proxy authentication
   ```

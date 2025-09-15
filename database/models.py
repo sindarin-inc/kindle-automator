@@ -302,6 +302,33 @@ class BookPosition(Base):
         return f"<BookPosition(id={self.id}, user_id={self.user_id}, book_title={self.book_title[:30]}..., position={self.current_position})>"
 
 
+class AuthTokenHistory(Base):
+    """Tracks the history of auth token gains and losses for each user."""
+
+    __tablename__ = "auth_token_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'gained' or 'lost'
+    event_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+    # Table constraints and indexes
+    __table_args__ = (
+        Index("idx_auth_history_user_id", "user_id"),
+        Index("idx_auth_history_event_date", "event_date"),
+        Index("idx_auth_history_event_type", "event_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AuthTokenHistory(id={self.id}, user_id={self.user_id}, event={self.event_type}, date={self.event_date})>"
+
+
 class BookSession(Base):
     """Tracks book reading sessions with client session keys and their current position."""
 
@@ -313,6 +340,18 @@ class BookSession(Base):
     session_key: Mapped[str] = mapped_column(String(255), nullable=False)
     # The current position in this session (from client's navigate_to perspective)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Store the previous session's data when book is reopened
+    # This allows us to handle navigation requests with old session keys
+    previous_session_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    previous_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Glasses/Sindarin firmware version from user agent header
+    firmware_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Full user agent string from request header
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     last_accessed: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -334,3 +373,64 @@ class BookSession(Base):
 
     def __repr__(self) -> str:
         return f"<BookSession(id={self.id}, user_id={self.user_id}, book_title={self.book_title[:30]}..., session_key={self.session_key}, position={self.position})>"
+
+
+class ReadingSession(Base):
+    """Tracks complete reading sessions from open-book to close/timeout."""
+
+    __tablename__ = "reading_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    book_title: Mapped[str] = mapped_column(Text, nullable=False)
+    session_key: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )  # Client's session key
+
+    # Position tracking
+    start_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Position when opened
+    current_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Current position
+    max_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Furthest position reached
+
+    # Navigation stats
+    total_pages_forward: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # Total pages navigated forward
+    total_pages_backward: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # Total pages navigated backward
+    navigation_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # Number of navigate events
+
+    # Session metadata
+    firmware_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+    ended_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )  # When session was closed/timed out
+
+    # Session state
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, index=True
+    )  # False when closed/timed out
+
+    # Relationship
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+    # Table constraints and indexes
+    __table_args__ = (
+        Index("idx_reading_session_user_book", "user_id", "book_title"),
+        Index("idx_reading_session_active", "is_active"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReadingSession(id={self.id}, user_id={self.user_id}, book='{self.book_title[:30]}...', position={self.current_position}, active={self.is_active})>"

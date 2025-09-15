@@ -354,6 +354,13 @@ def ensure_user_profile_loaded(f):
                 logger.warning(f"Error ensuring app is in foreground: {e}")
                 # Continue anyway, the endpoint will handle errors
 
+        # Update last_used timestamp for activity tracking
+        if sindarin_email:
+            try:
+                server.profile_manager.update_profile_usage(sindarin_email)
+            except Exception as e:
+                logger.debug(f"Could not update profile usage for {sindarin_email}: {e}")
+
         # Continue with the original endpoint handler
         result = f(*args, **kwargs)
         # Handle Flask Response objects appropriately

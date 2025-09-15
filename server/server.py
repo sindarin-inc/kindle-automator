@@ -44,6 +44,7 @@ from server.middleware.response_handler import (
     serve_image,
 )
 from server.resources.active_emulators_resource import ActiveEmulatorsResource
+from server.resources.auth_dashboard_resource import AuthDashboardResource
 from server.resources.dashboard_resource import DashboardResource
 from server.resources.emulator_batch_config_resource import EmulatorBatchConfigResource
 from server.utils.cover_utils import (
@@ -402,6 +403,7 @@ api.add_resource(
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(DashboardResource, "/dashboard")
+api.add_resource(AuthDashboardResource, "/auth-dashboard")
 api.add_resource(
     ColdStorageArchiveResource,
     "/cold-storage/archive",

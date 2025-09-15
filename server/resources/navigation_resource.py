@@ -77,9 +77,22 @@ class NavigationResource(Resource):
                         book_session_repo = BookSessionRepository(session)
 
                         # Calculate the adjustment needed based on session tracking
-                        adjustment = book_session_repo.calculate_position_adjustment(
-                            sindarin_email, current_book, book_session_key, target_position
+                        adjustment, navigation_allowed, server_session_key = (
+                            book_session_repo.calculate_position_adjustment(
+                                sindarin_email, current_book, book_session_key, target_position
+                            )
                         )
+
+                        if not navigation_allowed:
+                            # Session key mismatch - client needs to reset
+                            logger.warning(f"Navigation rejected for {sindarin_email}. Session key mismatch.")
+                            return {
+                                "success": False,
+                                "error": "session_key_mismatch",
+                                "message": "Your session is out of sync. Please reset your position tracking.",
+                                "current_session_key": server_session_key,
+                                "current_position": 0,  # Client should reset to 0
+                            }, 400
 
                         params["navigate_count"] = adjustment
                         logger.info(
@@ -167,6 +180,8 @@ class NavigationResource(Resource):
             use_base64=params["use_base64"],
             perform_ocr=params["perform_ocr"],
             book_title=params.get("title"),
+            client_session_key=book_session_key,
+            target_position=params.get("navigate_to"),
         )
 
         # Extract the response and status code from the result
@@ -197,9 +212,13 @@ class NavigationResource(Resource):
                 from database.repositories.book_session_repository import (
                     BookSessionRepository,
                 )
+                from database.repositories.reading_session_repository import (
+                    ReadingSessionRepository,
+                )
 
                 with get_db() as session:
                     book_session_repo = BookSessionRepository(session)
+                    reading_session_repo = ReadingSessionRepository(session)
                     # If using navigate_to, use the target position, otherwise use calculated position
                     final_position = (
                         params.get("navigate_to") if params.get("navigate_to") is not None else new_position
@@ -210,6 +229,22 @@ class NavigationResource(Resource):
                         logger.debug(
                             f"Updated book session position to {final_position} for {sindarin_email}"
                         )
+
+                        # Update the reading session with navigation info
+                        if navigate_count != 0:
+                            try:
+                                # Get session key
+                                session_key = params.get("book_session_key")
+
+                                reading_session_repo.update_session_navigation(
+                                    sindarin_email,
+                                    current_book,
+                                    final_position,
+                                    navigate_count,
+                                    session_key,
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to update reading session: {e}", exc_info=True)
                     else:
                         logger.warning(f"No book session found to update for {sindarin_email}/{current_book}")
 

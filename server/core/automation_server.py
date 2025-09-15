@@ -264,7 +264,7 @@ class AutomationServer:
 
         return True, message
 
-    def set_current_book(self, book_title, email, session_key=None):
+    def set_current_book(self, book_title, email, session_key=None, firmware_version=None, user_agent=None):
         """Set the currently open book title for a specific email.
 
         If session_key is provided (from /open-book), creates/resets the session.
@@ -274,6 +274,8 @@ class AutomationServer:
             book_title: The title of the book
             email: The email to associate with this book. REQUIRED.
             session_key: Optional session key from client. If provided, resets the session.
+            firmware_version: Optional Glasses/Sindarin firmware version from user agent.
+            user_agent: Optional full user agent string from request header.
 
         Returns:
             str: The session key (either provided or existing) or None if email not provided
@@ -287,17 +289,32 @@ class AutomationServer:
         # Handle book sessions in database
         from database.connection import get_db
         from database.repositories.book_session_repository import BookSessionRepository
+        from database.repositories.reading_session_repository import (
+            ReadingSessionRepository,
+        )
 
         with get_db() as db_session:
             repo = BookSessionRepository(db_session)
+            reading_session_repo = ReadingSessionRepository(db_session)
 
             if session_key:
                 # Client provided a session key (from /open-book) - reset the session
-                book_session = repo.reset_session(email, book_title, session_key)
+                book_session = repo.reset_session(
+                    email, book_title, session_key, firmware_version, user_agent
+                )
                 self.book_session_keys[email] = session_key
 
                 # Reset position to 0 when opening a new book
                 self.reset_position(email, book_title)
+
+                # Start a new reading session
+                try:
+                    reading_session_repo.start_session(
+                        email, book_title, session_key, 0, firmware_version, user_agent
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to start reading session: {e}", exc_info=True)
+
                 logger.info(
                     f"Set current book for {email} to: {book_title} (session_key: {session_key}, position reset to 0)"
                 )
@@ -313,9 +330,20 @@ class AutomationServer:
                 else:
                     # No existing session, generate a new one
                     session_key = str(int(time.time() * 1000))
-                    book_session = repo.reset_session(email, book_title, session_key)
+                    book_session = repo.reset_session(
+                        email, book_title, session_key, firmware_version, user_agent
+                    )
                     self.book_session_keys[email] = session_key
                     self.reset_position(email, book_title)
+
+                    # Start a new reading session (auto-generated session)
+                    try:
+                        reading_session_repo.start_session(
+                            email, book_title, session_key, 0, firmware_version, user_agent
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to start reading session: {e}", exc_info=True)
+
                     logger.info(
                         f"Set current book for {email} to: {book_title} (new session_key: {session_key})"
                     )
