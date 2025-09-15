@@ -314,12 +314,14 @@ class AuthDashboardResource(Resource):
             if event_date.tzinfo is None:
                 event_date = event_date.replace(tzinfo=timezone.utc)
 
-            gained_list.append({
-                "email": user.email,
-                "date": event_date.isoformat(),
-                "date_formatted": event_date.strftime("%b %d, %Y %I:%M %p"),
-                "days_ago": (now - event_date).days,
-            })
+            gained_list.append(
+                {
+                    "email": user.email,
+                    "date": event_date.isoformat(),
+                    "date_formatted": event_date.strftime("%b %d, %Y %I:%M %p"),
+                    "days_ago": (now - event_date).days,
+                }
+            )
 
         lost_list = []
         for event, user in auth_lost:
@@ -328,12 +330,14 @@ class AuthDashboardResource(Resource):
             if event_date.tzinfo is None:
                 event_date = event_date.replace(tzinfo=timezone.utc)
 
-            lost_list.append({
-                "email": user.email,
-                "date": event_date.isoformat(),
-                "date_formatted": event_date.strftime("%b %d, %Y %I:%M %p"),
-                "days_ago": (now - event_date).days,
-            })
+            lost_list.append(
+                {
+                    "email": user.email,
+                    "date": event_date.isoformat(),
+                    "date_formatted": event_date.strftime("%b %d, %Y %I:%M %p"),
+                    "days_ago": (now - event_date).days,
+                }
+            )
 
         return {
             "gained": gained_list,
@@ -453,15 +457,20 @@ class AuthDashboardResource(Resource):
 
     def _get_usage_timeline(self, session, start_date):
         """Get daily usage metrics over time."""
-        # Daily active users
+        # Daily active users - based on BookSession last_accessed
+        # Since we auto-generate session keys for all users, this captures everyone
+        # who opened or navigated in a book
         daily_active = defaultdict(set)
-        all_sessions = (
-            session.execute(select(BookSession).where(BookSession.created_at >= start_date)).scalars().all()
+        book_sessions = (
+            session.execute(select(BookSession).where(BookSession.last_accessed >= start_date))
+            .scalars()
+            .all()
         )
 
-        for session_obj in all_sessions:
-            date_key = session_obj.created_at.date().isoformat()
-            daily_active[date_key].add(session_obj.user_id)
+        for book_session in book_sessions:
+            # Each update to last_accessed means the user was reading
+            date_key = book_session.last_accessed.date().isoformat()
+            daily_active[date_key].add(book_session.user_id)
 
         # Convert to counts
         daily_active_counts = {date: len(users) for date, users in daily_active.items()}
@@ -473,19 +482,30 @@ class AuthDashboardResource(Resource):
             date_key = user.created_at.date().isoformat()
             daily_new[date_key] += 1
 
-        # Daily sessions
-        daily_sessions = defaultdict(int)
-        for session_obj in all_sessions:
-            date_key = session_obj.created_at.date().isoformat()
-            daily_sessions[date_key] += 1
+        # Daily reading sessions - for now, count book session updates
+        # TODO: Replace with ReadingActivity table when implemented
+        daily_reading_sessions = defaultdict(int)
+        for book_session in book_sessions:
+            date_key = book_session.last_accessed.date().isoformat()
+            daily_reading_sessions[date_key] += 1
+
+        # Daily book interactions (navigations, opens)
+        daily_book_interactions = defaultdict(int)
+        unique_books_read = defaultdict(set)
+        for book_session in book_sessions:
+            date_key = book_session.last_accessed.date().isoformat()
+            daily_book_interactions[date_key] += 1
+            unique_books_read[date_key].add(book_session.book_title)
 
         return {
             "daily_active_users": dict(daily_active_counts),
             "daily_new_users": dict(daily_new),
-            "daily_sessions": dict(daily_sessions),
-            "total_active_users": len(set(s.user_id for s in all_sessions)),
+            "daily_sessions": dict(daily_reading_sessions),  # Book session updates (temp)
+            "daily_book_interactions": dict(daily_book_interactions),  # Book session updates
+            "daily_unique_books": {date: len(books) for date, books in unique_books_read.items()},
+            "total_active_users": len(set(bs.user_id for bs in book_sessions)),
             "total_new_users": len(new_users),
-            "total_sessions": len(all_sessions),
+            "total_sessions": len(book_sessions),
         }
 
     def _get_reading_metrics(self, session, start_date):

@@ -373,3 +373,64 @@ class BookSession(Base):
 
     def __repr__(self) -> str:
         return f"<BookSession(id={self.id}, user_id={self.user_id}, book_title={self.book_title[:30]}..., session_key={self.session_key}, position={self.position})>"
+
+
+class ReadingSession(Base):
+    """Tracks complete reading sessions from open-book to close/timeout."""
+
+    __tablename__ = "reading_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    book_title: Mapped[str] = mapped_column(Text, nullable=False)
+    session_key: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )  # Client's session key
+
+    # Position tracking
+    start_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Position when opened
+    current_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Current position
+    max_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # Furthest position reached
+
+    # Navigation stats
+    total_pages_forward: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # Total pages navigated forward
+    total_pages_backward: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # Total pages navigated backward
+    navigation_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # Number of navigate events
+
+    # Session metadata
+    firmware_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+    ended_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )  # When session was closed/timed out
+
+    # Session state
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, index=True
+    )  # False when closed/timed out
+
+    # Relationship
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+
+    # Table constraints and indexes
+    __table_args__ = (
+        Index("idx_reading_session_user_book", "user_id", "book_title"),
+        Index("idx_reading_session_active", "is_active"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReadingSession(id={self.id}, user_id={self.user_id}, book='{self.book_title[:30]}...', position={self.current_position}, active={self.is_active})>"

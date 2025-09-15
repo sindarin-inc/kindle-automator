@@ -289,9 +289,13 @@ class AutomationServer:
         # Handle book sessions in database
         from database.connection import get_db
         from database.repositories.book_session_repository import BookSessionRepository
+        from database.repositories.reading_session_repository import (
+            ReadingSessionRepository,
+        )
 
         with get_db() as db_session:
             repo = BookSessionRepository(db_session)
+            reading_session_repo = ReadingSessionRepository(db_session)
 
             if session_key:
                 # Client provided a session key (from /open-book) - reset the session
@@ -302,6 +306,15 @@ class AutomationServer:
 
                 # Reset position to 0 when opening a new book
                 self.reset_position(email, book_title)
+
+                # Start a new reading session
+                try:
+                    reading_session_repo.start_session(
+                        email, book_title, session_key, 0, firmware_version, user_agent
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to start reading session: {e}", exc_info=True)
+
                 logger.info(
                     f"Set current book for {email} to: {book_title} (session_key: {session_key}, position reset to 0)"
                 )
@@ -322,6 +335,15 @@ class AutomationServer:
                     )
                     self.book_session_keys[email] = session_key
                     self.reset_position(email, book_title)
+
+                    # Start a new reading session (auto-generated session)
+                    try:
+                        reading_session_repo.start_session(
+                            email, book_title, session_key, 0, firmware_version, user_agent
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to start reading session: {e}", exc_info=True)
+
                     logger.info(
                         f"Set current book for {email} to: {book_title} (new session_key: {session_key})"
                     )

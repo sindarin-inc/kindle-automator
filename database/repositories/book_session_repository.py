@@ -277,11 +277,29 @@ class BookSessionRepository:
             )
             return (adjustment, True, client_session_key)
         else:
-            # Unknown session key - client needs to reset their position tracking
-            logger.warning(
-                f"Session key mismatch for {email}/{book_title}. "
-                f"Client key '{client_session_key}' doesn't match current '{session.session_key}' "
-                f"or previous '{session.previous_session_key}'. Navigation rejected."
-            )
-            # Return the current session key so client can sync
-            return (0, False, session.session_key)
+            # Unknown session key - check if client is requesting current position
+            # If the target position matches our current position, we can adopt the client's session
+            if target_position == session.position:
+                # Client wants to navigate to where we already are
+                # Adopt their session key since no actual navigation is needed
+                session.previous_session_key = session.session_key
+                session.previous_position = session.position
+                session.session_key = client_session_key
+                self.session.commit()
+
+                logger.info(
+                    f"Adopted new session key for {email}/{book_title}. "
+                    f"Client key '{client_session_key}' requesting position {target_position} "
+                    f"which matches current position. No navigation needed."
+                )
+                return (0, True, client_session_key)
+            else:
+                # Client wants to navigate to a different position with unknown session
+                # They need to reset their position tracking
+                logger.warning(
+                    f"Session key mismatch for {email}/{book_title}. "
+                    f"Client key '{client_session_key}' doesn't match current '{session.session_key}' "
+                    f"or previous '{session.previous_session_key}'. Navigation rejected."
+                )
+                # Return the current session key so client can sync
+                return (0, False, session.session_key)

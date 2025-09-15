@@ -212,9 +212,13 @@ class NavigationResource(Resource):
                 from database.repositories.book_session_repository import (
                     BookSessionRepository,
                 )
+                from database.repositories.reading_session_repository import (
+                    ReadingSessionRepository,
+                )
 
                 with get_db() as session:
                     book_session_repo = BookSessionRepository(session)
+                    reading_session_repo = ReadingSessionRepository(session)
                     # If using navigate_to, use the target position, otherwise use calculated position
                     final_position = (
                         params.get("navigate_to") if params.get("navigate_to") is not None else new_position
@@ -225,6 +229,22 @@ class NavigationResource(Resource):
                         logger.debug(
                             f"Updated book session position to {final_position} for {sindarin_email}"
                         )
+
+                        # Update the reading session with navigation info
+                        if navigate_count != 0:
+                            try:
+                                # Get session key
+                                session_key = params.get("book_session_key")
+
+                                reading_session_repo.update_session_navigation(
+                                    sindarin_email,
+                                    current_book,
+                                    final_position,
+                                    navigate_count,
+                                    session_key,
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to update reading session: {e}", exc_info=True)
                     else:
                         logger.warning(f"No book session found to update for {sindarin_email}/{current_book}")
 

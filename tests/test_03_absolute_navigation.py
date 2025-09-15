@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from tests.test_base import BaseKindleTest
+from tests.test_base import TEST_USER_EMAIL, BaseKindleTest
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,19 @@ class TestAbsoluteNavigation(BaseKindleTest):
     @pytest.mark.timeout(120)
     def test_navigate_to_absolute_position(self):
         """Test navigate_to for absolute positioning."""
-        print("\n[TEST] Testing navigate_to absolute positioning")
+        print("\n[TEST] Testing navigate_to absolute positioning with ReadingSession tracking")
+
+        # Import database models for ReadingSession checks
+        from database.connection import db_connection
+        from database.models import ReadingSession, User
+
+        # Get initial ReadingSession count
+        initial_session_count = 0
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                initial_session_count = session.query(ReadingSession).filter_by(user_id=user.id).count()
+                print(f"[TEST] Initial ReadingSession count: {initial_session_count}")
 
         # Open the test book with numbered paragraphs
         print("[TEST] Opening sol-chapter-test-epub book...")
@@ -36,6 +48,36 @@ class TestAbsoluteNavigation(BaseKindleTest):
             )
             assert dialog_response.status_code == 200
 
+        # Verify ReadingSession was created for the open event
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                sessions_after_open = session.query(ReadingSession).filter_by(user_id=user.id).count()
+                assert (
+                    sessions_after_open > initial_session_count
+                ), f"Expected ReadingSession for open-book, but count remained {initial_session_count}"
+
+                # Get the active session
+                active_session = (
+                    session.query(ReadingSession)
+                    .filter_by(user_id=user.id, is_active=True)
+                    .order_by(ReadingSession.started_at.desc())
+                    .first()
+                )
+                assert active_session is not None, "No active ReadingSession found"
+                assert (
+                    active_session.book_title == "sol-chapter-test-epub"
+                ), f"Expected book title 'sol-chapter-test-epub', got '{active_session.book_title}'"
+                assert (
+                    active_session.current_position == 0
+                ), f"Expected position 0 for new session, got {active_session.current_position}"
+                assert (
+                    active_session.navigation_count == 0
+                ), f"Expected 0 navigations for new session, got {active_session.navigation_count}"
+                print(f"[TEST] ✓ ReadingSession created for sol-chapter-test-epub")
+                # Store session ID for later checks
+                session_id = active_session.id
+
         # Test navigate_to=3
         print("[TEST] Testing navigate_to=3...")
         nav_3 = self._make_request("navigate", params={"navigate_to": 3})
@@ -44,6 +86,25 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert not nav_3_data.get("error"), f"Navigation failed: {nav_3_data.get('error')}"
         nav_3_text = nav_3_data.get("text", "") or nav_3_data.get("ocr_text", "")
         print(f"[TEST] ✓ Successfully navigated to position 3, OCR text preview: {nav_3_text[:100]}...")
+
+        # Verify ReadingSession was updated for navigate to position 3
+        with db_connection.get_session() as session:
+            # Get the same session and check it was updated
+            active_session = session.query(ReadingSession).filter_by(id=session_id).first()
+            assert active_session is not None, "ReadingSession disappeared"
+            assert (
+                active_session.current_position == 3
+            ), f"Expected position 3 after navigate_to=3, got {active_session.current_position}"
+            assert (
+                active_session.max_position == 3
+            ), f"Expected max_position 3, got {active_session.max_position}"
+            assert (
+                active_session.total_pages_forward == 3
+            ), f"Expected 3 pages forward, got {active_session.total_pages_forward}"
+            assert (
+                active_session.navigation_count == 1
+            ), f"Expected 1 navigation, got {active_session.navigation_count}"
+            print(f"[TEST] ✓ ReadingSession updated: position=3, pages_forward=3")
 
         # Test navigate_to=1 (should go back)
         print("[TEST] Testing navigate_to=1 (going back)...")
@@ -54,6 +115,24 @@ class TestAbsoluteNavigation(BaseKindleTest):
         nav_1_text = nav_1_data.get("text", "") or nav_1_data.get("ocr_text", "")
         print(f"[TEST] ✓ Successfully navigated back to position 1, OCR text preview: {nav_1_text[:100]}...")
 
+        # Verify ReadingSession for backward navigation
+        with db_connection.get_session() as session:
+            active_session = session.query(ReadingSession).filter_by(id=session_id).first()
+            assert active_session is not None, "ReadingSession disappeared"
+            assert (
+                active_session.current_position == 1
+            ), f"Expected position 1 after navigate_to=1, got {active_session.current_position}"
+            assert (
+                active_session.max_position == 3
+            ), f"Expected max_position to remain 3, got {active_session.max_position}"
+            assert (
+                active_session.total_pages_backward == 2
+            ), f"Expected 2 pages backward, got {active_session.total_pages_backward}"
+            assert (
+                active_session.navigation_count == 2
+            ), f"Expected 2 navigations total, got {active_session.navigation_count}"
+            print(f"[TEST] ✓ ReadingSession updated: position=1, pages_backward=2")
+
         # Test navigate_to=0 (go to start)
         print("[TEST] Testing navigate_to=0 (start of book)...")
         nav_0 = self._make_request("navigate", params={"navigate_to": 0})
@@ -63,7 +142,36 @@ class TestAbsoluteNavigation(BaseKindleTest):
         nav_0_text = nav_0_data.get("text", "") or nav_0_data.get("ocr_text", "")
         print(f"[TEST] ✓ Successfully navigated to position 0, OCR text preview: {nav_0_text[:100]}...")
 
-        print("[TEST] All navigate_to tests passed!")
+        # Final ReadingSession verification
+        with db_connection.get_session() as session:
+            user = session.query(User).filter_by(email=TEST_USER_EMAIL).first()
+            if user:
+                # Should still have only ONE session for this book
+                final_session_count = session.query(ReadingSession).filter_by(user_id=user.id).count()
+                new_sessions = final_session_count - initial_session_count
+                assert new_sessions == 1, f"Expected exactly 1 new session, got {new_sessions}"
+
+                # Verify final state of the session
+                active_session = session.query(ReadingSession).filter_by(id=session_id).first()
+                assert active_session is not None, "ReadingSession disappeared"
+                assert (
+                    active_session.current_position == 0
+                ), f"Expected final position 0, got {active_session.current_position}"
+                assert (
+                    active_session.navigation_count == 3
+                ), f"Expected 3 total navigations, got {active_session.navigation_count}"
+                assert (
+                    active_session.total_pages_forward == 3
+                ), f"Expected 3 total pages forward, got {active_session.total_pages_forward}"
+                assert (
+                    active_session.total_pages_backward == 3
+                ), f"Expected 3 total pages backward, got {active_session.total_pages_backward}"
+                assert active_session.is_active == True, "Session should still be active"
+
+                print(f"[TEST] ✓ Single ReadingSession tracked entire reading session")
+                print(f"[TEST] ✓ Final stats: 3 navigations, 3 forward, 3 backward, position 0")
+
+        print("[TEST] All navigate_to tests with ReadingSession tracking passed!")
 
     @pytest.mark.timeout(120)
     def test_preview_to_absolute_position(self):
