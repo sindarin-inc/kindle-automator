@@ -595,8 +595,21 @@ class TestKindleAPIIntegration(BaseKindleTest):
         assert "success" in data, f"Response missing success field: {data}"
         assert data["success"] is True, f"Request was not successful: {data}"
 
-        # Verify position information
-        assert "position" in data, f"Response missing position field: {data}"
+        # Check if this is cached data (no position) or live data (has position)
+        is_cached = "position" not in data or data.get("position") is None
+
+        if is_cached:
+            print("[TEST] Got cached ToC response (no position), requesting with sync=true...")
+            # Request again with sync=true to get actual position
+            params["sync"] = "true"
+            response = self._make_request("table-of-contents", params)
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+            data = response.json()
+            assert "success" in data, f"Response missing success field: {data}"
+            assert data["success"] is True, f"Request was not successful: {data}"
+
+        # Now verify position information (should exist after sync=true)
+        assert "position" in data, f"Response missing position field after sync: {data}"
         position = data["position"]
         if position:
             # Position might have current_page, total_pages, percentage
