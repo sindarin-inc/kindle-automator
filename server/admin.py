@@ -14,6 +14,7 @@ from database.models import (
     EmulatorSettings,
     EmulatorShutdownFailure,
     LibrarySettings,
+    ReadingSession,
     ReadingSettings,
     StaffToken,
     User,
@@ -145,6 +146,29 @@ class BookSessionView(SecureModelView):
     ]
 
 
+class ReadingSessionView(SecureModelView):
+    """View for reading sessions."""
+
+    column_searchable_list = ["book_title", "session_key"]
+    column_filters = ["user_id", "book_title", "started_at", "ended_at", "status"]
+    column_default_sort = ("started_at", True)
+    column_list = [
+        "id",
+        "user_id",
+        "book_title",
+        "session_key",
+        "start_position",
+        "current_position",
+        "max_position",
+        "total_pages_forward",
+        "total_pages_backward",
+        "duration_seconds",
+        "status",
+        "started_at",
+        "ended_at",
+    ]
+
+
 def init_admin(app: Flask, db_session) -> Admin:
     """Initialize Flask-Admin with all models."""
     # Configure Flask-Admin to work behind the /kindle proxy
@@ -183,6 +207,7 @@ def init_admin(app: Flask, db_session) -> Admin:
     admin.add_view(SecureModelView(ReadingSettings, db_session))
     admin.add_view(SecureModelView(UserPreference, db_session))
     admin.add_view(BookSessionView(BookSession, db_session))
+    admin.add_view(ReadingSessionView(ReadingSession, db_session))
     admin.add_view(StaffTokenView(StaffToken, db_session))
 
     return admin
