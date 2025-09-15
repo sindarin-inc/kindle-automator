@@ -15,8 +15,8 @@ from database.connection import db_connection
 from database.models import (
     AuthTokenHistory,
     BookPosition,
-    BookSession,
     EmulatorShutdownFailure,
+    ReadingSession,
     User,
     VNCInstance,
 )
@@ -115,11 +115,11 @@ class AuthDashboardResource(Resource):
 
             sessions_before = (
                 session.execute(
-                    select(func.count(BookSession.id)).where(
+                    select(func.count(ReadingSession.id)).where(
                         and_(
-                            BookSession.user_id == loss_event.user_id,
-                            BookSession.created_at >= before_start,
-                            BookSession.created_at < before_end,
+                            ReadingSession.user_id == loss_event.user_id,
+                            ReadingSession.started_at >= before_start,
+                            ReadingSession.started_at < before_end,
                         )
                     )
                 ).scalar()
@@ -132,11 +132,11 @@ class AuthDashboardResource(Resource):
 
             sessions_after = (
                 session.execute(
-                    select(func.count(BookSession.id)).where(
+                    select(func.count(ReadingSession.id)).where(
                         and_(
-                            BookSession.user_id == loss_event.user_id,
-                            BookSession.created_at >= after_start,
-                            BookSession.created_at < after_end,
+                            ReadingSession.user_id == loss_event.user_id,
+                            ReadingSession.started_at >= after_start,
+                            ReadingSession.started_at < after_end,
                         )
                     )
                 ).scalar()
@@ -146,11 +146,11 @@ class AuthDashboardResource(Resource):
             # Count unique books read before auth loss (7 days) as a proxy for engagement
             books_before = (
                 session.execute(
-                    select(func.count(func.distinct(BookSession.book_title))).where(
+                    select(func.count(func.distinct(ReadingSession.book_title))).where(
                         and_(
-                            BookSession.user_id == loss_event.user_id,
-                            BookSession.created_at >= before_start,
-                            BookSession.created_at < before_end,
+                            ReadingSession.user_id == loss_event.user_id,
+                            ReadingSession.started_at >= before_start,
+                            ReadingSession.started_at < before_end,
                         )
                     )
                 ).scalar()
@@ -160,11 +160,11 @@ class AuthDashboardResource(Resource):
             # Count unique books after auth loss (7 days)
             books_after = (
                 session.execute(
-                    select(func.count(func.distinct(BookSession.book_title))).where(
+                    select(func.count(func.distinct(ReadingSession.book_title))).where(
                         and_(
-                            BookSession.user_id == loss_event.user_id,
-                            BookSession.created_at >= after_start,
-                            BookSession.created_at < after_end,
+                            ReadingSession.user_id == loss_event.user_id,
+                            ReadingSession.started_at >= after_start,
+                            ReadingSession.started_at < after_end,
                         )
                     )
                 ).scalar()
@@ -354,21 +354,21 @@ class AuthDashboardResource(Resource):
         environment = os.getenv("ENVIRONMENT", "dev").upper()
         is_development = environment not in ["PROD", "STAGING"]
 
-        # Get daily firmware usage from BookSession (last 30 days)
+        # Get daily firmware usage from ReadingSession (last 30 days)
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
 
-        # Query book sessions with firmware versions in the last 30 days
+        # Query reading sessions with firmware versions in the last 30 days
         firmware_daily_usage = session.execute(
             select(
-                func.date(BookSession.last_accessed).label("date"),
-                BookSession.firmware_version,
-                func.count(func.distinct(BookSession.user_id)).label("unique_users"),
-                func.count(BookSession.id).label("sessions"),
+                func.date(ReadingSession.started_at).label("date"),
+                ReadingSession.firmware_version,
+                func.count(func.distinct(ReadingSession.user_id)).label("unique_users"),
+                func.count(ReadingSession.id).label("sessions"),
             )
-            .where(BookSession.last_accessed >= thirty_days_ago)
-            .where(BookSession.firmware_version.isnot(None))
-            .group_by(func.date(BookSession.last_accessed), BookSession.firmware_version)
-            .order_by(func.date(BookSession.last_accessed).desc())
+            .where(ReadingSession.started_at >= thirty_days_ago)
+            .where(ReadingSession.firmware_version.isnot(None))
+            .group_by(func.date(ReadingSession.started_at), ReadingSession.firmware_version)
+            .order_by(func.date(ReadingSession.started_at).desc())
         ).all()
 
         # Organize by date and version
@@ -419,13 +419,13 @@ class AuthDashboardResource(Resource):
         # Get overall firmware version counts
         firmware_counts = session.execute(
             select(
-                BookSession.firmware_version,
-                func.count(func.distinct(BookSession.user_id)).label("unique_users"),
-                func.count(BookSession.id).label("total_sessions"),
+                ReadingSession.firmware_version,
+                func.count(func.distinct(ReadingSession.user_id)).label("unique_users"),
+                func.count(ReadingSession.id).label("total_sessions"),
             )
-            .where(BookSession.firmware_version.isnot(None))
-            .group_by(BookSession.firmware_version)
-            .order_by(func.count(BookSession.id).desc())
+            .where(ReadingSession.firmware_version.isnot(None))
+            .group_by(ReadingSession.firmware_version)
+            .order_by(func.count(ReadingSession.id).desc())
         ).all()
 
         firmware_summary = {}
@@ -457,20 +457,23 @@ class AuthDashboardResource(Resource):
 
     def _get_usage_timeline(self, session, start_date):
         """Get daily usage metrics over time."""
-        # Daily active users - based on BookSession last_accessed
-        # Since we auto-generate session keys for all users, this captures everyone
-        # who opened or navigated in a book
+        # Daily active users - based on ReadingSession activity
         daily_active = defaultdict(set)
-        book_sessions = (
-            session.execute(select(BookSession).where(BookSession.last_accessed >= start_date))
+        reading_sessions = (
+            session.execute(select(ReadingSession).where(ReadingSession.started_at >= start_date))
             .scalars()
             .all()
         )
 
-        for book_session in book_sessions:
-            # Each update to last_accessed means the user was reading
-            date_key = book_session.last_accessed.date().isoformat()
-            daily_active[date_key].add(book_session.user_id)
+        for reading_session in reading_sessions:
+            # Track both start date and last activity date
+            start_date_key = reading_session.started_at.date().isoformat()
+            daily_active[start_date_key].add(reading_session.user_id)
+
+            # Also track activity date if different from start
+            if reading_session.last_activity_at:
+                activity_date_key = reading_session.last_activity_at.date().isoformat()
+                daily_active[activity_date_key].add(reading_session.user_id)
 
         # Convert to counts
         daily_active_counts = {date: len(users) for date, users in daily_active.items()}
@@ -482,44 +485,46 @@ class AuthDashboardResource(Resource):
             date_key = user.created_at.date().isoformat()
             daily_new[date_key] += 1
 
-        # Daily reading sessions - for now, count book session updates
-        # TODO: Replace with ReadingActivity table when implemented
+        # Daily reading sessions - count actual reading sessions
         daily_reading_sessions = defaultdict(int)
-        for book_session in book_sessions:
-            date_key = book_session.last_accessed.date().isoformat()
+        for reading_session in reading_sessions:
+            date_key = reading_session.started_at.date().isoformat()
             daily_reading_sessions[date_key] += 1
 
-        # Daily book interactions (navigations, opens)
+        # Daily book interactions and unique books
         daily_book_interactions = defaultdict(int)
         unique_books_read = defaultdict(set)
-        for book_session in book_sessions:
-            date_key = book_session.last_accessed.date().isoformat()
-            daily_book_interactions[date_key] += 1
-            unique_books_read[date_key].add(book_session.book_title)
+        for reading_session in reading_sessions:
+            date_key = reading_session.started_at.date().isoformat()
+            # Count navigation events as interactions
+            daily_book_interactions[date_key] += 1 + reading_session.navigation_count
+            unique_books_read[date_key].add(reading_session.book_title)
 
         return {
             "daily_active_users": dict(daily_active_counts),
             "daily_new_users": dict(daily_new),
-            "daily_sessions": dict(daily_reading_sessions),  # Book session updates (temp)
-            "daily_book_interactions": dict(daily_book_interactions),  # Book session updates
+            "daily_sessions": dict(daily_reading_sessions),  # Actual reading sessions
+            "daily_book_interactions": dict(daily_book_interactions),  # Sessions + navigations
             "daily_unique_books": {date: len(books) for date, books in unique_books_read.items()},
-            "total_active_users": len(set(bs.user_id for bs in book_sessions)),
+            "total_active_users": len(set(rs.user_id for rs in reading_sessions)),
             "total_new_users": len(new_users),
-            "total_sessions": len(book_sessions),
+            "total_sessions": len(reading_sessions),
         }
 
     def _get_reading_metrics(self, session, start_date):
         """Get reading behavior metrics."""
-        # Most read books
-        book_sessions = session.execute(
+        # Most read books based on ReadingSession
+        reading_sessions = session.execute(
             select(
-                BookSession.book_title,
-                func.count(BookSession.id).label("session_count"),
-                func.count(func.distinct(BookSession.user_id)).label("unique_readers"),
+                ReadingSession.book_title,
+                func.count(ReadingSession.id).label("session_count"),
+                func.count(func.distinct(ReadingSession.user_id)).label("unique_readers"),
+                func.sum(ReadingSession.navigation_count).label("total_navigations"),
+                func.avg(ReadingSession.navigation_count).label("avg_navigations"),
             )
-            .where(BookSession.created_at >= start_date)
-            .group_by(BookSession.book_title)
-            .order_by(func.count(BookSession.id).desc())
+            .where(ReadingSession.started_at >= start_date)
+            .group_by(ReadingSession.book_title)
+            .order_by(func.count(ReadingSession.id).desc())
             .limit(10)
         ).all()
 
@@ -529,8 +534,10 @@ class AuthDashboardResource(Resource):
                     "title": book[0][:50],  # Truncate long titles
                     "sessions": book[1],
                     "unique_readers": book[2],
+                    "total_navigations": int(book[3]) if book[3] else 0,
+                    "avg_navigations": round(float(book[4]), 1) if book[4] else 0,
                 }
-                for book in book_sessions
+                for book in reading_sessions
             ],
         }
 
