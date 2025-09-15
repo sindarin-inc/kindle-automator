@@ -157,6 +157,8 @@ class ReadingSessionView(SecureModelView):
         "user_id",
         "book_title",
         "session_key",
+        "firmware_version",
+        "user_agent",
         "start_position",
         "current_position",
         "max_position",
