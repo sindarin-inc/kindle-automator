@@ -417,6 +417,45 @@
         let dashboardData = null;
         let charts = {};
 
+        // Helper function to parse ISO date strings in local timezone
+        // This prevents the timezone offset issue where dates appear a day behind
+        function parseLocalDate(dateStr) {
+            // Split the date string to get year, month, day
+            const [year, month, day] = dateStr.split('-').map(num => parseInt(num));
+            // Create date in local timezone (month is 0-indexed in JS)
+            return new Date(year, month - 1, day);
+        }
+
+        // Helper function to format date for display
+        function formatDateLabel(dateStr) {
+            return parseLocalDate(dateStr).toLocaleDateString();
+        }
+
+        // Helper function to generate date range in local timezone
+        function generateDateRange(periodDays) {
+            const today = new Date();
+            // Set time to midnight local time to avoid any time-based issues
+            today.setHours(0, 0, 0, 0);
+
+            const startDate = new Date(today);
+            startDate.setDate(today.getDate() - periodDays);
+
+            const dates = [];
+            const currentDate = new Date(startDate);
+
+            while (currentDate <= today) {
+                // Format as YYYY-MM-DD in local timezone
+                const year = currentDate.getFullYear();
+                const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const day = String(currentDate.getDate()).padStart(2, '0');
+                dates.push(`${year}-${month}-${day}`);
+
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+
+            return dates;
+        }
+
         async function fetchDashboardData(days = 30) {
             try {
                 const pathPrefix = window.location.pathname.replace(/\/auth-dashboard.*/, '');
@@ -515,7 +554,7 @@
             charts.authLosses = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: [{
                         label: 'Auth Tokens Lost',
                         data: dates.map(d => daily_losses[d]),
@@ -603,7 +642,7 @@
             charts.authImpact = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: [{
                         label: 'Sessions Before',
                         data: dates.map(d => daily_impacts[d].sessions_before),
@@ -640,16 +679,7 @@
             const timeline = data.auth_metrics?.auth_timeline || {};
 
             // Generate complete date range including today
-            const today = new Date();
-            const startDate = new Date();
-            startDate.setDate(today.getDate() - (data.period_days || 30));
-
-            const dates = [];
-            const currentDate = new Date(startDate);
-            while (currentDate <= today) {
-                dates.push(currentDate.toISOString().split('T')[0]);
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
+            const dates = generateDateRange(data.period_days || 30);
 
             if (charts.authTimeline) {
                 charts.authTimeline.destroy();
@@ -658,7 +688,7 @@
             charts.authTimeline = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: [{
                         label: 'Auth Gained',
                         data: dates.map(d => timeline[d]?.gained || 0),
@@ -758,16 +788,7 @@
             const ctx = document.getElementById('dailyUsersChart').getContext('2d');
 
             // Generate complete date range including today
-            const today = new Date();
-            const startDate = new Date();
-            startDate.setDate(today.getDate() - (data.period_days || 30));
-
-            const dates = [];
-            const currentDate = new Date(startDate);
-            while (currentDate <= today) {
-                dates.push(currentDate.toISOString().split('T')[0]);
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
+            const dates = generateDateRange(data.period_days || 30);
 
             if (charts.dailyUsers) {
                 charts.dailyUsers.destroy();
@@ -776,7 +797,7 @@
             charts.dailyUsers = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: [{
                         label: 'Active Users',
                         data: dates.map(d => data.usage_timeline?.daily_active_users[d] || 0),
@@ -810,16 +831,7 @@
             const allVersions = data.firmware_metrics?.all_firmware_versions || [];
 
             // Generate complete date range including today
-            const today = new Date();
-            const startDate = new Date();
-            startDate.setDate(today.getDate() - (data.period_days || 30));
-
-            const dates = [];
-            const currentDate = new Date(startDate);
-            while (currentDate <= today) {
-                dates.push(currentDate.toISOString().split('T')[0]);
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
+            const dates = generateDateRange(data.period_days || 30);
 
             if (charts.firmwareUsers) {
                 charts.firmwareUsers.destroy();
@@ -842,7 +854,7 @@
             charts.firmwareUsers = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: datasets
                 },
                 options: {
@@ -888,16 +900,7 @@
             const allVersions = data.firmware_metrics?.all_firmware_versions || [];
 
             // Generate complete date range including today
-            const today = new Date();
-            const startDate = new Date();
-            startDate.setDate(today.getDate() - (data.period_days || 30));
-
-            const dates = [];
-            const currentDate = new Date(startDate);
-            while (currentDate <= today) {
-                dates.push(currentDate.toISOString().split('T')[0]);
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
+            const dates = generateDateRange(data.period_days || 30);
 
             if (charts.firmwareSessions) {
                 charts.firmwareSessions.destroy();
@@ -920,7 +923,7 @@
             charts.firmwareSessions = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: datasets
                 },
                 options: {
@@ -1015,16 +1018,7 @@
             const allVersions = data.firmware_metrics?.all_firmware_versions || [];
 
             // Generate complete date range including today
-            const today = new Date();
-            const startDate = new Date();
-            startDate.setDate(today.getDate() - (data.period_days || 30));
-
-            const dates = [];
-            const currentDate = new Date(startDate);
-            while (currentDate <= today) {
-                dates.push(currentDate.toISOString().split('T')[0]);
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
+            const dates = generateDateRange(data.period_days || 30);
 
             if (charts.firmwareAdoption) {
                 charts.firmwareAdoption.destroy();
@@ -1057,7 +1051,7 @@
             charts.firmwareAdoption = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: dates.map(d => new Date(d).toLocaleDateString()),
+                    labels: dates.map(d => formatDateLabel(d)),
                     datasets: datasets
                 },
                 options: {
