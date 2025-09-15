@@ -557,7 +557,18 @@
         function createAuthTimelineChart(data) {
             const ctx = document.getElementById('authTimelineChart').getContext('2d');
             const timeline = data.auth_metrics?.auth_timeline || {};
-            const dates = Object.keys(timeline).sort();
+
+            // Generate complete date range including today
+            const today = new Date();
+            const startDate = new Date();
+            startDate.setDate(today.getDate() - (data.period_days || 30));
+
+            const dates = [];
+            const currentDate = new Date(startDate);
+            while (currentDate <= today) {
+                dates.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
 
             if (charts.authTimeline) {
                 charts.authTimeline.destroy();
@@ -605,7 +616,18 @@
 
         function createDailyUsersChart(data) {
             const ctx = document.getElementById('dailyUsersChart').getContext('2d');
-            const dates = Object.keys(data.usage_timeline?.daily_active_users || {}).sort();
+
+            // Generate complete date range including today
+            const today = new Date();
+            const startDate = new Date();
+            startDate.setDate(today.getDate() - (data.period_days || 30));
+
+            const dates = [];
+            const currentDate = new Date(startDate);
+            while (currentDate <= today) {
+                dates.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
 
             if (charts.dailyUsers) {
                 charts.dailyUsers.destroy();
@@ -646,7 +668,18 @@
             const ctx = document.getElementById('firmwareUsersChart').getContext('2d');
             const firmwareData = data.firmware_metrics?.daily_firmware_data || {};
             const allVersions = data.firmware_metrics?.all_firmware_versions || [];
-            const dates = Object.keys(firmwareData).sort();
+
+            // Generate complete date range including today
+            const today = new Date();
+            const startDate = new Date();
+            startDate.setDate(today.getDate() - (data.period_days || 30));
+
+            const dates = [];
+            const currentDate = new Date(startDate);
+            while (currentDate <= today) {
+                dates.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
 
             if (charts.firmwareUsers) {
                 charts.firmwareUsers.destroy();
@@ -713,7 +746,18 @@
             const ctx = document.getElementById('firmwareSessionsChart').getContext('2d');
             const firmwareData = data.firmware_metrics?.daily_firmware_data || {};
             const allVersions = data.firmware_metrics?.all_firmware_versions || [];
-            const dates = Object.keys(firmwareData).sort();
+
+            // Generate complete date range including today
+            const today = new Date();
+            const startDate = new Date();
+            startDate.setDate(today.getDate() - (data.period_days || 30));
+
+            const dates = [];
+            const currentDate = new Date(startDate);
+            while (currentDate <= today) {
+                dates.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
 
             if (charts.firmwareSessions) {
                 charts.firmwareSessions.destroy();
@@ -829,7 +873,18 @@
             const ctx = document.getElementById('firmwareAdoptionChart').getContext('2d');
             const firmwareData = data.firmware_metrics?.daily_firmware_data || {};
             const allVersions = data.firmware_metrics?.all_firmware_versions || [];
-            const dates = Object.keys(firmwareData).sort();
+
+            // Generate complete date range including today
+            const today = new Date();
+            const startDate = new Date();
+            startDate.setDate(today.getDate() - (data.period_days || 30));
+
+            const dates = [];
+            const currentDate = new Date(startDate);
+            while (currentDate <= today) {
+                dates.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
 
             if (charts.firmwareAdoption) {
                 charts.firmwareAdoption.destroy();

@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from database.models import (
+    AuthTokenHistory,
     DeviceIdentifiers,
     EmulatorSettings,
     LibrarySettings,
@@ -267,7 +268,7 @@ class UserRepository:
 
     def update_auth_state(self, email: str, authenticated: bool) -> bool:
         """
-        Update authentication state for a user.
+        Update authentication state for a user and log to history.
 
         Args:
             email: The user's email address
@@ -277,17 +278,46 @@ class UserRepository:
             True if update was successful
         """
         try:
-            values = {"updated_at": datetime.now(timezone.utc)}
+            # Get the user first
+            user = self.get_user_by_email(email)
+            if not user:
+                logger.error(f"User not found: {email}")
+                return False
+
+            now = datetime.now(timezone.utc)
+            values = {"updated_at": now}
+
+            # Determine if this is a state change
+            state_changed = False
+            event_type = None
+
             if authenticated:
-                values["auth_date"] = datetime.now(timezone.utc)
+                # Check if user was not authenticated before
+                if not user.auth_date or user.auth_failed_date:
+                    state_changed = True
+                    event_type = "gained"
+                values["auth_date"] = now
                 values["auth_failed_date"] = None  # Clear any previous auth failure
             else:
-                values["auth_failed_date"] = datetime.now(timezone.utc)
+                # Check if user was authenticated before
+                if user.auth_date and not user.auth_failed_date:
+                    state_changed = True
+                    event_type = "lost"
+                values["auth_failed_date"] = now
 
+            # Update user table
             stmt = update(User).where(User.email == email).values(**values)
             result = self.session.execute(stmt)
-            self.session.commit()
 
+            # If state changed, log to history table
+            if state_changed and event_type:
+                history_entry = AuthTokenHistory(
+                    user_id=user.id, event_type=event_type, event_date=now, created_at=now
+                )
+                self.session.add(history_entry)
+                logger.info(f"Logged auth event: {email} {event_type} auth at {now}")
+
+            self.session.commit()
             return result.rowcount > 0
 
         except SQLAlchemyError as e:
