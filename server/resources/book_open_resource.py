@@ -118,20 +118,20 @@ class BookOpenResource(Resource):
         # Extract firmware version from User-Agent header
         user_agent = request.headers.get("User-Agent", "")
         # Firmware version is typically the Glasses/Sindarin version in the user agent
-        # Format example: "solreader/1.5.99" - MUST have "solreader/" prefix
+        # Format example: "solreader/1.5.99" or "solreader/1.5.99.1" - MUST have "solreader/" prefix
         firmware_version = None
         if user_agent:
             # Try to extract version number pattern but ONLY if preceded by "solreader/"
             import re
 
-            # Look for "solreader/" followed by semantic version number
-            version_match = re.search(r"solreader/(\d+\.\d+\.\d+)", user_agent, re.IGNORECASE)
+            # Look for "solreader/" followed by semantic version number (3 or 4 segments)
+            version_match = re.search(r"solreader/(\d+\.\d+\.\d+(?:\.\d+)?)", user_agent, re.IGNORECASE)
             if version_match:
                 firmware_version = version_match.group(1)
                 logger.info(f"Extracted firmware version {firmware_version} from User-Agent: {user_agent}")
             else:
                 # Log if we found a version but not with solreader prefix
-                any_version = re.search(r"(\d+\.\d+\.\d+)", user_agent)
+                any_version = re.search(r"(\d+\.\d+\.\d+(?:\.\d+)?)", user_agent)
                 if any_version:
                     logger.debug(
                         f"Found version {any_version.group(1)} in User-Agent but not preceded by 'solreader/': {user_agent}"
