@@ -549,7 +549,6 @@ class TestKindleAPIIntegration(BaseKindleTest):
         if not hasattr(self.__class__, "opened_book"):
             pytest.skip("No book available to navigate - test_open_random_book must run first")
 
-
         params = {"action": "preview", "preview": "true"}
         response = self._make_request("navigate", params)
 
@@ -571,7 +570,6 @@ class TestKindleAPIIntegration(BaseKindleTest):
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
 
-
     @pytest.mark.timeout(120)
     def test_table_of_contents(self):
         """Test /kindle/table-of-contents endpoint."""
@@ -584,9 +582,8 @@ class TestKindleAPIIntegration(BaseKindleTest):
         title = opened_book.get("title") if opened_book else None
 
         # Make the Table of Contents request
-        params = {}
-        if title:
-            params["title"] = title
+        # Always provide a title to ensure the request works even if not in reading view
+        params = {"title": title or "sol-chapter-test-epub"}
 
         response = self._make_request("table-of-contents", params)
 
