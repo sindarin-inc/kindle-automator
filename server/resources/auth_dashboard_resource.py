@@ -35,11 +35,7 @@ class AuthDashboardResource(Resource):
         - format: 'json' for data, 'html' for page (default: html)
         - days: Number of days to look back (default: 30)
         """
-        # Check staff authentication via cookie
-        token = request.cookies.get("staff_token")
-        if not token:
-            return {"error": "Staff authentication required"}, 401
-
+        # Note: Authentication is handled by the proxy server, not here
         # Check requested format
         response_format = request.args.get("format", "html").lower()
         days = int(request.args.get("days", 30))
@@ -276,6 +272,72 @@ class AuthDashboardResource(Resource):
             "recovery_rate": recovery_rate,
             "avg_recovery_days": avg_recovery_days,
             "auth_loss_impacts": auth_loss_impacts,
+            "recent_auth_events": self._get_recent_auth_events(session, start_date),
+        }
+
+    def _get_recent_auth_events(self, session, start_date):
+        """Get lists of users who recently gained or lost auth tokens."""
+        # Get recent auth gained events with user details
+        auth_gained = session.execute(
+            select(AuthTokenHistory, User)
+            .join(User, AuthTokenHistory.user_id == User.id)
+            .where(
+                and_(
+                    AuthTokenHistory.event_type == "gained",
+                    AuthTokenHistory.event_date >= start_date,
+                )
+            )
+            .order_by(AuthTokenHistory.event_date.desc())
+            .limit(50)
+        ).all()
+
+        # Get recent auth lost events with user details
+        auth_lost = session.execute(
+            select(AuthTokenHistory, User)
+            .join(User, AuthTokenHistory.user_id == User.id)
+            .where(
+                and_(
+                    AuthTokenHistory.event_type == "lost",
+                    AuthTokenHistory.event_date >= start_date,
+                )
+            )
+            .order_by(AuthTokenHistory.event_date.desc())
+            .limit(50)
+        ).all()
+
+        # Format the results
+        now = datetime.now(timezone.utc)
+        gained_list = []
+        for event, user in auth_gained:
+            # Ensure event_date is timezone-aware
+            event_date = event.event_date
+            if event_date.tzinfo is None:
+                event_date = event_date.replace(tzinfo=timezone.utc)
+
+            gained_list.append({
+                "email": user.email,
+                "date": event_date.isoformat(),
+                "date_formatted": event_date.strftime("%b %d, %Y %I:%M %p"),
+                "days_ago": (now - event_date).days,
+            })
+
+        lost_list = []
+        for event, user in auth_lost:
+            # Ensure event_date is timezone-aware
+            event_date = event.event_date
+            if event_date.tzinfo is None:
+                event_date = event_date.replace(tzinfo=timezone.utc)
+
+            lost_list.append({
+                "email": user.email,
+                "date": event_date.isoformat(),
+                "date_formatted": event_date.strftime("%b %d, %Y %I:%M %p"),
+                "days_ago": (now - event_date).days,
+            })
+
+        return {
+            "gained": gained_list,
+            "lost": lost_list,
         }
 
     def _get_firmware_metrics(self, session):

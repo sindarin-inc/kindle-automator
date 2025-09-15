@@ -227,16 +227,13 @@ If authentication fails:
 - **Authentication is REQUIRED**: All proxy requests need authentication - use BOTH tokens:
 
   ```bash
-  # Source the auth tokens first
+  # First, source the auth tokens into your shell session:
   source .env.auth
 
-  # For API endpoints - use both Authorization header AND staff_token cookie:
+  # Now you can use normal curl commands with the tokens:
   curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
        -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
        "http://localhost:4096/kindle/endpoint"
 
-  # For admin interface (/kindle/admin/*) - same authentication:
-  curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
-       -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
-       "http://localhost:4096/kindle/admin/"
+  # BOTH tokens are always required for proxy authentication
   ```
