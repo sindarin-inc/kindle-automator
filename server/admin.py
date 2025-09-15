@@ -150,7 +150,7 @@ class ReadingSessionView(SecureModelView):
     """View for reading sessions."""
 
     column_searchable_list = ["book_title", "session_key"]
-    column_filters = ["user_id", "book_title", "started_at", "ended_at", "status"]
+    column_filters = ["user_id", "book_title", "started_at", "ended_at", "is_active"]
     column_default_sort = ("started_at", True)
     column_list = [
         "id",
@@ -162,9 +162,10 @@ class ReadingSessionView(SecureModelView):
         "max_position",
         "total_pages_forward",
         "total_pages_backward",
-        "duration_seconds",
-        "status",
+        "navigation_count",
+        "is_active",
         "started_at",
+        "last_activity_at",
         "ended_at",
     ]
 
