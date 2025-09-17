@@ -260,8 +260,8 @@ class BookOpenResource(Resource):
         # IMPORTANT: For new app installation or first run, current_book may be None
         # even though we're already in reading state - we need to check that too
 
-        # Get current book for this email
-        current_book = server.current_books.get(sindarin_email)
+        # Get current book for this email from database
+        current_book = server.get_current_book(sindarin_email)
 
         # If forcing library navigation, log that we're skipping the optimization
         if current_state == AppState.READING and force_library_navigation:

@@ -48,10 +48,6 @@ class AutomationServer:
 
         self.automators = {}  # Dictionary to track multiple automators by email
         self.pid_dir = "logs"
-        self.current_books = {}  # Track the currently open book title for each email
-        self.book_session_keys = {}  # Track the session key (timestamp) for each email's open book
-        self.last_activity = {}  # Track last activity time for each email
-        # Note: current_positions removed - now using database via BookPositionRepository
         os.makedirs(self.pid_dir, exist_ok=True)
 
         # Initialize the AVD profile manager
@@ -265,7 +261,7 @@ class AutomationServer:
         return True, message
 
     def set_current_book(self, book_title, email, session_key=None, firmware_version=None, user_agent=None):
-        """Set the currently open book title for a specific email.
+        """Set the currently open book title for a specific email in the database.
 
         If session_key is provided (from /open-book), creates/resets the session.
         If no session_key (from navigation reopening book), preserves existing session.
@@ -284,8 +280,6 @@ class AutomationServer:
             logger.error("Email parameter is required for set_current_book", exc_info=True)
             return None
 
-        self.current_books[email] = book_title
-
         # Handle book sessions in database
         from database.connection import get_db
         from database.repositories.book_session_repository import BookSessionRepository
@@ -302,7 +296,7 @@ class AutomationServer:
                 book_session = repo.reset_session(
                     email, book_title, session_key, firmware_version, user_agent
                 )
-                self.book_session_keys[email] = session_key
+                # Session key is stored in database
 
                 # Reset position to 0 when opening a new book
                 self.reset_position(email, book_title)
@@ -323,7 +317,7 @@ class AutomationServer:
                 existing_session = repo.get_session(email, book_title)
                 if existing_session:
                     session_key = existing_session.session_key
-                    self.book_session_keys[email] = session_key
+                    # Session key is stored in database
                     logger.info(
                         f"Set current book for {email} to: {book_title} (preserving session_key: {session_key})"
                     )
@@ -333,7 +327,7 @@ class AutomationServer:
                     book_session = repo.reset_session(
                         email, book_title, session_key, firmware_version, user_agent
                     )
-                    self.book_session_keys[email] = session_key
+                    # Session key is stored in database
                     self.reset_position(email, book_title)
 
                     # Start a new reading session (auto-generated session)
@@ -351,7 +345,7 @@ class AutomationServer:
         return session_key
 
     def clear_current_book(self, email):
-        """Clear the currently open book tracking variable and session key for a specific email
+        """Clear the currently open book session key for a specific email
 
         Args:
             email: The email for which to clear the book. REQUIRED.
@@ -360,15 +354,10 @@ class AutomationServer:
             logger.error("Email parameter is required for clear_current_book", exc_info=True)
             return
 
-        if email in self.current_books:
-            logger.info(f"Cleared current book for {email}: {self.current_books[email]}")
-            del self.current_books[email]
-
-        if email in self.book_session_keys:
-            del self.book_session_keys[email]
+        # Session key is cleared from database when book session ends
 
     def get_current_book(self, email):
-        """Get the current book for the specified email.
+        """Get the current book for the specified email from the database.
 
         Args:
             email: The email to get the current book for. REQUIRED.
@@ -380,10 +369,27 @@ class AutomationServer:
             logger.error("Email parameter is required for get_current_book", exc_info=True)
             return None
 
-        return self.current_books.get(email)
+        # Query the database for the actual current book
+        from database.connection import get_db
+        from database.models import ReadingSession, User
+
+        with get_db() as db_session:
+            # Find the most recent active reading session for this user
+            user = db_session.query(User).filter_by(email=email).first()
+            if user:
+                session = (
+                    db_session.query(ReadingSession)
+                    .filter_by(user_id=user.id, ended_at=None)
+                    .order_by(ReadingSession.started_at.desc())
+                    .first()
+                )
+                if session:
+                    return session.book_title
+
+        return None
 
     def get_book_session_key(self, email):
-        """Get the current book session key for the specified email.
+        """Get the current book session key for the specified email from the database.
 
         Args:
             email: The email to get the book session key for. REQUIRED.
@@ -395,7 +401,32 @@ class AutomationServer:
             logger.error("Email parameter is required for get_book_session_key", exc_info=True)
             return None
 
-        return self.book_session_keys.get(email)
+        # Query the database for the actual session key
+        from database.connection import get_db
+        from database.models import ReadingSession, User
+
+        with get_db() as db_session:
+            # Find the most recent active reading session for this user
+            user = db_session.query(User).filter_by(email=email).first()
+            if user:
+                session = (
+                    db_session.query(ReadingSession)
+                    .filter_by(user_id=user.id, ended_at=None)
+                    .order_by(ReadingSession.started_at.desc())
+                    .first()
+                )
+                if session and session.book_title:
+                    # Return the book session key from the book sessions table
+                    from database.repositories.book_session_repository import (
+                        BookSessionRepository,
+                    )
+
+                    book_repo = BookSessionRepository(db_session)
+                    book_session = book_repo.get_session(email, session.book_title)
+                    if book_session:
+                        return book_session.session_key
+
+        return None
 
     # current_book property has been removed - use get_current_book(email) instead
 
@@ -443,24 +474,58 @@ class AutomationServer:
                 logger.error(f"Error killing flask process: {e}", exc_info=True)
 
     def update_activity(self, email):
-        """Update the last activity timestamp for an email.
+        """Update the last activity timestamp for an email in the database.
 
         Args:
             email: The email address to update activity for
         """
         if email:
-            self.last_activity[email] = time.time()
+            from datetime import datetime, timezone
+
+            from database.connection import get_db
+            from database.models import ReadingSession, User
+
+            with get_db() as db_session:
+                # Find the most recent active reading session for this user
+                user = db_session.query(User).filter_by(email=email).first()
+                if user:
+                    session = (
+                        db_session.query(ReadingSession)
+                        .filter_by(user_id=user.id, ended_at=None)
+                        .order_by(ReadingSession.started_at.desc())
+                        .first()
+                    )
+                    if session:
+                        session.last_activity_at = datetime.now(timezone.utc)
+                        db_session.commit()
 
     def get_last_activity_time(self, email):
-        """Get the last activity timestamp for an email.
+        """Get the last activity timestamp for an email from the database.
 
         Args:
             email: The email address to get activity time for
 
         Returns:
-            The last activity timestamp or None if not found
+            The last activity timestamp (as Unix timestamp) or None if not found
         """
-        return self.last_activity.get(email)
+        from database.connection import get_db
+        from database.models import ReadingSession, User
+
+        with get_db() as db_session:
+            # Find the most recent active reading session for this user
+            user = db_session.query(User).filter_by(email=email).first()
+            if user:
+                session = (
+                    db_session.query(ReadingSession)
+                    .filter_by(user_id=user.id, ended_at=None)
+                    .order_by(ReadingSession.started_at.desc())
+                    .first()
+                )
+                if session and session.last_activity_at:
+                    # Convert datetime to Unix timestamp for compatibility
+                    return session.last_activity_at.timestamp()
+
+        return None
 
     def reset_position(self, email: str, book_title: str = None) -> None:
         """Reset the page position to 0 for a given email (called when opening a book).
@@ -471,7 +536,7 @@ class AutomationServer:
         """
         # Get book title if not provided
         if not book_title:
-            book_title = self.current_books.get(email)
+            book_title = self.get_current_book(email)
 
         if not book_title:
             logger.warning(f"No book title available for position reset for {email}")
@@ -495,7 +560,7 @@ class AutomationServer:
         """
         # Get book title if not provided
         if not book_title:
-            book_title = self.current_books.get(email)
+            book_title = self.get_current_book(email)
 
         if not book_title:
             logger.debug(f"No book title available for position lookup for {email}")
@@ -521,7 +586,7 @@ class AutomationServer:
         """
         # Get book title if not provided
         if not book_title:
-            book_title = self.current_books.get(email)
+            book_title = self.get_current_book(email)
 
         if not book_title:
             logger.warning(f"No book title available for position update for {email}")
@@ -544,7 +609,7 @@ class AutomationServer:
         """
         # Get book title if not provided
         if not book_title:
-            book_title = self.current_books.get(email)
+            book_title = self.get_current_book(email)
 
         if not book_title:
             logger.warning(f"No book title available for position set for {email}")

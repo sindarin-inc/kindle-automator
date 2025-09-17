@@ -164,23 +164,9 @@ class StateTransitions:
         # Check for book_to_open first (set by server.py for this specific purpose)
         # This is the most reliable source of what book we're trying to open
         book_title = None
-        if (
-            hasattr(self.driver, "automator")
-            and hasattr(self.driver.automator, "book_to_open")
-            and self.driver.automator.book_to_open
-        ):
+        if hasattr(self.driver.automator, "book_to_open") and self.driver.automator.book_to_open:
             book_title = self.driver.automator.book_to_open
             logger.debug(f"Found book_to_open in context: '{book_title}', checking if it's in search results")
-        # Fall back to current_book_title if book_to_open isn't set
-        elif (
-            hasattr(self.driver, "automator")
-            and hasattr(self.driver.automator, "current_book_title")
-            and self.driver.automator.current_book_title
-        ):
-            book_title = self.driver.automator.current_book_title
-            logger.debug(
-                f"Using current_book_title as fallback: '{book_title}', checking if it's in search results"
-            )
 
         if book_title:
             # Check current search input to see if it matches our desired search

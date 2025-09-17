@@ -29,6 +29,16 @@ When Docker Desktop crashes on macOS, follow these steps:
    docker ps | grep -E "sol_postgres|sol_redis"
    ```
 
+### Postgres Access
+
+Uses `kindle_dev` database on port 5496 (via web-app's `sol_postgres` container).
+DATABASE_URL in .env connects to: `postgresql://local:local@localhost:5496/kindle_dev`
+
+```bash
+# Quick query
+docker exec sol_postgres psql -U local -d kindle_dev -c "SELECT COUNT(*) FROM users;"
+```
+
 ### Redis Access
 
 The project uses Redis on port 6479 (database 1) via Docker container `sol_redis`.

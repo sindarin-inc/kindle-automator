@@ -100,7 +100,7 @@ class KindleStateMachine:
                 email = profile.get("email") if profile else None
 
                 # Check if there's a current book for this email
-                if email and email in server.current_books:
+                if email and server.get_current_book(email):
                     logger.debug(
                         f"Not in reading state ({self.current_state}) but have current book tracked for {email} - clearing it"
                     )
