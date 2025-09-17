@@ -52,6 +52,7 @@ class NavigationResourceHandler:
         book_title: Optional[str] = None,
         client_session_key: Optional[str] = None,
         target_position: Optional[int] = None,
+        include_screenshot: bool = False,
     ) -> Tuple[Dict, int]:
         """Handle page navigation with support for multi-page navigation and preview.
 
@@ -285,31 +286,32 @@ class NavigationResourceHandler:
                 show_placemark=show_placemark
             )
 
-            # Take screenshot
-            # Get the user email for unique screenshot naming
-            profile = self.automator.profile_manager.get_current_profile()
-            sindarin_email = profile.get("email") if profile else None
-            if sindarin_email:
-                # Sanitize email for filename
-                email_safe = sindarin_email.replace("@", "_").replace(".", "_")
-                screenshot_id = f"{email_safe}_page_{int(time.time())}"
-            else:
-                screenshot_id = f"page_{int(time.time())}"
-            screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
-            self.automator.driver.save_screenshot(screenshot_path)
-
             response_data = {
                 "success": True,
                 "progress": progress,
                 "message": "Current page info (no navigation)",
             }
 
-            # Process the screenshot
-            screenshot_path = get_image_path(screenshot_id)
-            screenshot_data = process_screenshot_response(
-                screenshot_id, screenshot_path, use_base64, perform_ocr
-            )
-            response_data.update(screenshot_data)
+            # Only take screenshot if explicitly requested
+            if include_screenshot:
+                # Get the user email for unique screenshot naming
+                profile = self.automator.profile_manager.get_current_profile()
+                sindarin_email = profile.get("email") if profile else None
+                if sindarin_email:
+                    # Sanitize email for filename
+                    email_safe = sindarin_email.replace("@", "_").replace(".", "_")
+                    screenshot_id = f"{email_safe}_page_{int(time.time())}"
+                else:
+                    screenshot_id = f"page_{int(time.time())}"
+                screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
+                self.automator.driver.save_screenshot(screenshot_path)
+
+                # Process the screenshot
+                screenshot_path = get_image_path(screenshot_id)
+                screenshot_data = process_screenshot_response(
+                    screenshot_id, screenshot_path, use_base64, perform_ocr
+                )
+                response_data.update(screenshot_data)
 
             # Add book_session_key if book was reopened
             if book_session_key_after_reopen:
@@ -378,35 +380,39 @@ class NavigationResourceHandler:
 
                 return response_data, 200
 
-        # Standard navigation response with screenshot
+        # Standard navigation response
         # Get current page number and progress
         progress = self.automator.state_machine.reader_handler.get_reading_progress(
             show_placemark=show_placemark
         )
-
-        # Save screenshot with unique ID
-        # Get the user email for unique screenshot naming
-        profile = self.automator.profile_manager.get_current_profile()
-        sindarin_email = profile.get("email") if profile else None
-        if sindarin_email:
-            # Sanitize email for filename
-            email_safe = sindarin_email.replace("@", "_").replace(".", "_")
-            screenshot_id = f"{email_safe}_page_{int(time.time())}"
-        else:
-            screenshot_id = f"page_{int(time.time())}"
-        time.sleep(0.5)
-        screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
-        self.automator.driver.save_screenshot(screenshot_path)
 
         response_data = {
             "success": True,
             "progress": progress,
         }
 
-        # Process the screenshot (either base64 encode, add URL, or OCR)
-        screenshot_path = get_image_path(screenshot_id)
-        screenshot_data = process_screenshot_response(screenshot_id, screenshot_path, use_base64, perform_ocr)
-        response_data.update(screenshot_data)
+        # Only include screenshot if explicitly requested
+        if include_screenshot:
+            # Save screenshot with unique ID
+            # Get the user email for unique screenshot naming
+            profile = self.automator.profile_manager.get_current_profile()
+            sindarin_email = profile.get("email") if profile else None
+            if sindarin_email:
+                # Sanitize email for filename
+                email_safe = sindarin_email.replace("@", "_").replace(".", "_")
+                screenshot_id = f"{email_safe}_page_{int(time.time())}"
+            else:
+                screenshot_id = f"page_{int(time.time())}"
+            time.sleep(0.5)
+            screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
+            self.automator.driver.save_screenshot(screenshot_path)
+
+            # Process the screenshot (either base64 encode, add URL, or OCR)
+            screenshot_path = get_image_path(screenshot_id)
+            screenshot_data = process_screenshot_response(
+                screenshot_id, screenshot_path, use_base64, perform_ocr
+            )
+            response_data.update(screenshot_data)
 
         # Add book_session_key if book was reopened
         if book_session_key_after_reopen:
@@ -776,9 +782,13 @@ class NavigationResourceHandler:
                     params["preview_count"] = 1
                     params["perform_ocr"] = True
 
-        # Check for placemark parameter
-        placemark_param = request_obj.args.get("placemark", "0")
-        params["show_placemark"] = placemark_param.lower() in ("1", "true", "yes")
+        # Check for position parameter (maps to show_placemark internally)
+        position_param = request_obj.args.get("position", "0")
+        params["show_placemark"] = position_param.lower() in ("1", "true", "yes")
+
+        # Check for screenshot parameter
+        screenshot_param = request_obj.args.get("screenshot", "0")
+        params["include_screenshot"] = screenshot_param.lower() in ("1", "true", "yes")
 
         # Check for title parameter (same as /open-book endpoint)
         title = request_obj.args.get("title")
@@ -847,15 +857,25 @@ class NavigationResourceHandler:
                             params["preview_count"] = 1
                             params["perform_ocr"] = True
 
-                # Override placemark if provided in JSON
-                if "placemark" in json_data:
-                    placemark_param = json_data["placemark"]
-                    if isinstance(placemark_param, bool):
-                        params["show_placemark"] = placemark_param
-                    elif isinstance(placemark_param, str):
-                        params["show_placemark"] = placemark_param.lower() in ("1", "true", "yes")
-                    elif isinstance(placemark_param, int):
-                        params["show_placemark"] = placemark_param == 1
+                # Override position if provided in JSON (maps to show_placemark internally)
+                if "position" in json_data:
+                    position_param = json_data["position"]
+                    if isinstance(position_param, bool):
+                        params["show_placemark"] = position_param
+                    elif isinstance(position_param, str):
+                        params["show_placemark"] = position_param.lower() in ("1", "true", "yes")
+                    elif isinstance(position_param, int):
+                        params["show_placemark"] = position_param == 1
+
+                # Override screenshot if provided in JSON
+                if "screenshot" in json_data:
+                    screenshot_param = json_data["screenshot"]
+                    if isinstance(screenshot_param, bool):
+                        params["include_screenshot"] = screenshot_param
+                    elif isinstance(screenshot_param, str):
+                        params["include_screenshot"] = screenshot_param.lower() in ("1", "true", "yes")
+                    elif isinstance(screenshot_param, int):
+                        params["include_screenshot"] = screenshot_param == 1
 
                 # Override title if provided in JSON (same as /open-book endpoint)
                 if "title" in json_data and json_data["title"]:

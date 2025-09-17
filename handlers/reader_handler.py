@@ -1448,6 +1448,156 @@ class ReaderHandler:
                 )
             return False, None
 
+    def get_position_from_footer(self):
+        """Get reading position from the bottom left footer indicator.
+
+        This method reads the position indicator at the bottom left of the reading view,
+        which can show different formats like:
+        - Page X of Y
+        - Location X of Y
+        - X hours Y minutes left in chapter/book
+        - X minutes left in chapter/book
+
+        If not showing page numbers, it will tap the indicator to cycle through formats
+        until it finds "Page X of Y" or completes a full cycle.
+
+        Returns:
+            dict: Dictionary containing:
+                - percentage: Reading progress as percentage (int)
+                - current_page: Current page number (int)
+                - total_pages: Total pages (int)
+                - display_format: The current display format (str)
+            or None if position couldn't be retrieved
+        """
+        from views.reading.view_strategies import READING_POSITION_INDICATOR_IDENTIFIERS
+
+        try:
+            logger.debug("Attempting to get position from footer indicator")
+
+            # Find the position indicator element
+            position_element = None
+            for strategy, locator in READING_POSITION_INDICATOR_IDENTIFIERS:
+                try:
+                    element = self.driver.find_element(strategy, locator)
+                    if element and element.is_displayed():
+                        position_element = element
+                        logger.debug(f"Found position indicator using {strategy}: {locator}")
+                        break
+                except NoSuchElementException:
+                    continue
+
+            if not position_element:
+                logger.debug("No position indicator found in footer")
+                return None
+
+            # Read initial text
+            initial_text = position_element.text.strip()
+            logger.debug(f"Initial footer position text: {initial_text}")
+
+            # Track formats we've seen to detect full cycle
+            seen_formats = [initial_text]
+            max_taps = 5  # Maximum number of format changes to try
+
+            # Parse the current format
+            result = self._parse_position_text(initial_text)
+
+            # If we already have page format, return it
+            if result and result.get("current_page"):
+                logger.debug(f"Showing page format: {result}")
+                return result
+
+            # Otherwise, tap to cycle through formats
+            logger.info("Not showing page format, cycling through display formats")
+
+            for tap_count in range(max_taps):
+                try:
+                    # Tap on the position indicator to change format
+                    position_element.click()
+                    time.sleep(0.25)  # Wait for format to change
+
+                    # Re-find the element as it may have been refreshed
+                    for strategy, locator in READING_POSITION_INDICATOR_IDENTIFIERS:
+                        try:
+                            element = self.driver.find_element(strategy, locator)
+                            if element and element.is_displayed():
+                                position_element = element
+                                break
+                        except NoSuchElementException:
+                            continue
+
+                    # Read new text
+                    new_text = position_element.text.strip()
+                    logger.debug(f"After tap {tap_count + 1}, footer shows: {new_text}")
+
+                    # Check if we've cycled back to the initial format
+                    if new_text in seen_formats:
+                        logger.debug(f"Cycled back to previously seen format: {new_text}")
+                        logger.debug("Could not find page format after full cycle")
+                        return None
+
+                    seen_formats.append(new_text)
+
+                    # Parse the new format
+                    result = self._parse_position_text(new_text)
+
+                    # If we found page format, return it
+                    if result and result.get("current_page"):
+                        logger.debug(f"Found page format after {tap_count + 1} taps: {result}")
+                        return result
+
+                except Exception as e:
+                    logger.debug(f"Error tapping position indicator: {e}")
+                    break
+
+            logger.debug(f"Could not find page format after {max_taps} taps")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting position from footer: {e}", exc_info=True)
+            return None
+
+    def _parse_position_text(self, text):
+        """Parse position text from various formats.
+
+        Args:
+            text (str): The position text to parse
+
+        Returns:
+            dict: Parsed position info or None
+        """
+        import re
+
+        if not text:
+            return None
+
+        result = {"display_format": text, "percentage": None, "current_page": None, "total_pages": None}
+
+        # Try to parse "Page X of Y" format
+        page_match = re.search(r"[Pp]age\s+(\d+)\s+of\s+(\d+)", text)
+        if page_match:
+            result["current_page"] = int(page_match.group(1))
+            result["total_pages"] = int(page_match.group(2))
+            # Calculate percentage
+            result["percentage"] = round((result["current_page"] / result["total_pages"]) * 100)
+            return result
+
+        # Try to parse "Location X of Y" format
+        loc_match = re.search(r"[Ll]ocation\s+(\d+)\s+of\s+(\d+)", text)
+        if loc_match:
+            current_loc = int(loc_match.group(1))
+            total_loc = int(loc_match.group(2))
+            # Calculate percentage from location
+            result["percentage"] = round((current_loc / total_loc) * 100)
+            return result
+
+        # Try to parse time left formats (just capture, don't calculate)
+        time_match = re.search(r"(\d+)\s+(hours?|minutes?|mins?)\s+.*left", text, re.IGNORECASE)
+        if time_match:
+            # Just note the format, can't calculate pages from this
+            return result
+
+        return result
+
     def get_reading_progress(self, show_placemark=False):
         """Get reading progress information
 
@@ -1465,6 +1615,18 @@ class ReaderHandler:
         """
         opened_controls = False
         try:
+            # First try to get position from footer without opening any dialogs
+            footer_position = self.get_position_from_footer()
+            if footer_position:
+                logger.debug(f"Got position from footer: {footer_position}")
+                # Return in the expected format
+                return {
+                    "percentage": footer_position.get("percentage"),
+                    "current_page": footer_position.get("current_page"),
+                    "total_pages": footer_position.get("total_pages"),
+                }
+
+            # If footer didn't work, try the old method
             # Always try to get basic page info first without tapping
             page_info = self.get_current_page()
             logger.debug(f"Initial page info: {page_info}")
@@ -1522,8 +1684,47 @@ class ReaderHandler:
                     logger.debug("Reading controls now visible")
                     opened_controls = True
                 except TimeoutException:
-                    logger.error("Could not make reading controls visible", exc_info=True)
-                    return None
+                    logger.debug(
+                        "Toolbar not visible after center tap, likely hit a footnote - trying fallback strategy"
+                    )
+                    logger.debug(f"Center tap was at coordinates: ({center_x}, {center_y})")
+
+                    # First tap at 25% to dismiss footnote (if present)
+                    quarter_y = int(window_size["height"] * 0.25)  # Top quarter
+                    logger.debug(
+                        f"First tap at 25% from top (y={quarter_y}) to dismiss potential footnote dialog"
+                    )
+                    self.driver.tap([(center_x, quarter_y)])
+                    time.sleep(0.5)
+
+                    # Second tap at 25% to show reading controls
+                    logger.debug(f"Second tap at 25% from top (y={quarter_y}) to show reading controls")
+                    self.driver.tap([(center_x, quarter_y)])
+                    time.sleep(0.5)
+
+                    # Try to wait for toolbar
+                    try:
+                        WebDriverWait(self.driver, 3).until(check_toolbar_visibility)
+                        logger.debug("Reading controls now visible after two fallback taps")
+                        opened_controls = True
+                    except TimeoutException:
+                        # Try one more tap at 25% as final attempt
+                        logger.debug(
+                            f"Controls still not visible, trying third tap at 25% from top (y={quarter_y})"
+                        )
+                        self.driver.tap([(center_x, quarter_y)])
+                        time.sleep(0.5)
+
+                        try:
+                            WebDriverWait(self.driver, 3).until(check_toolbar_visibility)
+                            logger.debug("Reading controls now visible after three fallback taps")
+                            opened_controls = True
+                        except TimeoutException:
+                            logger.error(
+                                f"Could not make reading controls visible even with three fallback taps at y={quarter_y}",
+                                exc_info=True,
+                            )
+                            return None
 
                 try:
                     for strategy, locator in READING_PROGRESS_IDENTIFIERS:

@@ -311,25 +311,6 @@ class RelativePathFormatter(logging.Formatter):
             # Get request number from g context
             if hasattr(g, "request_number"):
                 request_number = g.request_number
-
-            # Check if we should show request numbers
-            # Always check Redis for the current state, not just g.show_request_number
-            # This ensures that if request 2 arrives while request 1 is executing,
-            # request 1 will start showing its number too
-            if email:
-                # Try to get Redis client from request manager or import it
-                redis_client = None
-                if hasattr(g, "request_manager") and g.request_manager:
-                    redis_client = g.request_manager.redis_client
-
-                # Skip Redis checks if this is a Redis log message to prevent infinite recursion
-                if redis_client and "redis_connection.py" not in record.pathname:
-                    # Only check the active count - no need for redundant has_multiple_requests key
-                    active_key = f"kindle:user:{email}:active_request_count"
-                    active_count = redis_client.get(active_key)
-                    if active_count and int(active_count) > 1:
-                        has_multiple_requests = True
-
         except (ImportError, RuntimeError):
             # Not in Flask context
             pass

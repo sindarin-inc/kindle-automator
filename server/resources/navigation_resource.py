@@ -182,6 +182,7 @@ class NavigationResource(Resource):
             book_title=params.get("title"),
             client_session_key=book_session_key,
             target_position=params.get("navigate_to"),
+            include_screenshot=params.get("include_screenshot", False),
         )
 
         # Extract the response and status code from the result

@@ -403,6 +403,29 @@ TUTORIAL_MESSAGE_CONTAINER = [
     (AppiumBy.XPATH, "//android.view.ViewGroup[@resource-id='com.amazon.kindle:id/toast_tutorial_shell']"),
 ]
 
+# Footnote dialog identifiers (appears when tapping on footnote links)
+# Not currently used - footnotes are handled by fallback tap strategy in reader_handler
+FOOTNOTE_DIALOG_IDENTIFIERS = []
+
+# Bottom left position indicator in reading view
+# Shows current position in various formats (page X of Y, location X of Y, X minutes left, etc.)
+READING_POSITION_INDICATOR_IDENTIFIERS = [
+    (AppiumBy.ID, "com.amazon.kindle:id/reader_footer_page_num_view"),
+    (
+        AppiumBy.XPATH,
+        "//android.widget.TextView[@resource-id='com.amazon.kindle:id/reader_footer_page_num_view']",
+    ),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@resource-id, 'page_num_view')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@resource-id, 'footer_page')]"),
+    # Fallback: look for text patterns in bottom left area
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, ' of ')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Page ')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'Location ')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, ' left in ')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'minutes left')]"),
+    (AppiumBy.XPATH, "//android.widget.TextView[contains(@text, 'hours left')]"),
+]
+
 # Page position popover identifiers (accessed via footer page number tap)
 PAGE_POSITION_POPOVER_IDENTIFIERS = [
     (AppiumBy.ID, "com.amazon.kindle:id/page_scrubber_popover"),

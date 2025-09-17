@@ -151,6 +151,8 @@ source .env.auth
 curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
      -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
      "http://localhost:4096/kindle/emulators/active?user_email=kindle@solreader.com"
+# Note: Don't redirect stdout/stderr output to grep, it will break the variable substitution and auth won't work
+# Just use `| jq .` if you want to read the output
 ```
 
 ### Troubleshooting Auth
@@ -230,10 +232,13 @@ If authentication fails:
   # First, source the auth tokens into your shell session:
   source .env.auth
 
-  # Now you can use normal curl commands with the tokens:
+  # For API endpoints - use both Authorization header AND staff_token cookie:
   curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
        -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
        "http://localhost:4096/kindle/endpoint"
 
-  # BOTH tokens are always required for proxy authentication
+  # For admin interface (/kindle/admin/*) - same authentication:
+  curl -H "Authorization: Tolkien $WEB_INTEGRATION_TEST_AUTH_TOKEN" \
+       -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
+       "http://localhost:4096/kindle/admin/"
   ```
