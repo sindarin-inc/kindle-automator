@@ -292,8 +292,8 @@ class NavigationResourceHandler:
                 "message": "Current page info (no navigation)",
             }
 
-            # Only take screenshot if explicitly requested
-            if include_screenshot:
+            # Handle screenshot and/or OCR if requested
+            if include_screenshot or perform_ocr:
                 # Get the user email for unique screenshot naming
                 profile = self.automator.profile_manager.get_current_profile()
                 sindarin_email = profile.get("email") if profile else None
@@ -306,12 +306,22 @@ class NavigationResourceHandler:
                 screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
                 self.automator.driver.save_screenshot(screenshot_path)
 
-                # Process the screenshot
+                # Process the screenshot - this handles both screenshot and OCR independently
                 screenshot_path = get_image_path(screenshot_id)
                 screenshot_data = process_screenshot_response(
                     screenshot_id, screenshot_path, use_base64, perform_ocr
                 )
-                response_data.update(screenshot_data)
+
+                # If only OCR was requested (not screenshot), only include OCR text in response
+                if perform_ocr and not include_screenshot:
+                    # Only include OCR-related fields
+                    if "ocr_text" in screenshot_data:
+                        response_data["ocr_text"] = screenshot_data["ocr_text"]
+                    if "ocr_error" in screenshot_data:
+                        response_data["ocr_error"] = screenshot_data["ocr_error"]
+                else:
+                    # Include all screenshot data
+                    response_data.update(screenshot_data)
 
             # Add book_session_key if book was reopened
             if book_session_key_after_reopen:
@@ -391,8 +401,8 @@ class NavigationResourceHandler:
             "progress": progress,
         }
 
-        # Only include screenshot if explicitly requested
-        if include_screenshot:
+        # Handle screenshot and/or OCR if requested
+        if include_screenshot or perform_ocr:
             # Save screenshot with unique ID
             # Get the user email for unique screenshot naming
             profile = self.automator.profile_manager.get_current_profile()
@@ -412,7 +422,17 @@ class NavigationResourceHandler:
             screenshot_data = process_screenshot_response(
                 screenshot_id, screenshot_path, use_base64, perform_ocr
             )
-            response_data.update(screenshot_data)
+
+            # If only OCR was requested (not screenshot), only include OCR text in response
+            if perform_ocr and not include_screenshot:
+                # Only include OCR-related fields
+                if "ocr_text" in screenshot_data:
+                    response_data["ocr_text"] = screenshot_data["ocr_text"]
+                if "ocr_error" in screenshot_data:
+                    response_data["ocr_error"] = screenshot_data["ocr_error"]
+            else:
+                # Include all screenshot data
+                response_data.update(screenshot_data)
 
         # Add book_session_key if book was reopened
         if book_session_key_after_reopen:

@@ -163,7 +163,10 @@ class NavigationResource(Resource):
                 and "preview" not in request.form
                 and params.get("preview_to") is None
             ):
-                params["navigate_count"] = self.default_direction
+                # Only apply default direction if it's not the general /navigate endpoint
+                # (direction=0 means we explicitly don't want to navigate)
+                if direction != 0:
+                    params["navigate_count"] = self.default_direction
             # Otherwise navigate_count stays at 0 (from parse_navigation_params)
 
         # Log the navigation parameters
@@ -294,9 +297,22 @@ class NavigationResource(Resource):
         # Process and parse navigation parameters
         params = NavigationResourceHandler.parse_navigation_params(request)
 
-        # If no navigate parameter was provided AND no preview was specified, use the default direction
-        if "navigate" not in request.args and "preview" not in request.args:
-            direction = self.default_direction
+        # Check if any navigation-related parameters were provided
+        has_navigate_param = (
+            "navigate" in request.args
+            or "navigate_to" in request.args
+            or params.get("navigate_to") is not None
+        )
+
+        # If no navigate parameter was provided AND no preview was specified,
+        # only use the default direction for specialized endpoints (navigate-next, navigate-previous)
+        if not has_navigate_param and "preview" not in request.args:
+            # Only use default direction for the specialized navigation endpoints
+            if endpoint in ["navigate_next", "navigate_previous"]:
+                direction = self.default_direction
+            else:
+                # For the general /navigate endpoint, don't navigate by default
+                direction = 0
         else:
             direction = None  # Will use the parsed navigate_count from params
 
