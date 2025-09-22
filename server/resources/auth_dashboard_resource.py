@@ -416,6 +416,43 @@ class AuthDashboardResource(Resource):
                     daily_firmware_data[date_str]["2.6.0"]["users"] = random.randint(3, 8)
                     daily_firmware_data[date_str]["2.6.0"]["sessions"] = random.randint(9, 24)
 
+        # Calculate minutes read per firmware version
+        # Using COALESCE to handle None values in ended_at (use last_activity_at if ended_at is null)
+        firmware_minutes_read = session.execute(
+            select(
+                ReadingSession.firmware_version,
+                func.sum(
+                    func.extract(
+                        "epoch",
+                        func.coalesce(ReadingSession.ended_at, ReadingSession.last_activity_at)
+                        - ReadingSession.started_at,
+                    )
+                    / 60
+                ).label("total_minutes"),
+                func.avg(
+                    func.extract(
+                        "epoch",
+                        func.coalesce(ReadingSession.ended_at, ReadingSession.last_activity_at)
+                        - ReadingSession.started_at,
+                    )
+                    / 60
+                ).label("avg_minutes_per_session"),
+            )
+            .where(ReadingSession.firmware_version.isnot(None))
+            .where(ReadingSession.started_at >= thirty_days_ago)
+            .group_by(ReadingSession.firmware_version)
+            .order_by(
+                func.sum(
+                    func.extract(
+                        "epoch",
+                        func.coalesce(ReadingSession.ended_at, ReadingSession.last_activity_at)
+                        - ReadingSession.started_at,
+                    )
+                    / 60
+                ).desc()
+            )
+        ).all()
+
         # Get overall firmware version counts
         firmware_counts = session.execute(
             select(
@@ -427,6 +464,22 @@ class AuthDashboardResource(Resource):
             .group_by(ReadingSession.firmware_version)
             .order_by(func.count(ReadingSession.id).desc())
         ).all()
+
+        # Process firmware minutes read data
+        firmware_minutes_data = {}
+        if firmware_minutes_read:
+            for fw_version, total_min, avg_min in firmware_minutes_read:
+                firmware_minutes_data[fw_version] = {
+                    "total_minutes": round(float(total_min), 1) if total_min else 0,
+                    "avg_minutes_per_session": round(float(avg_min), 1) if avg_min else 0,
+                }
+        elif is_development:
+            # Bootstrap with demo minutes read data (ONLY IN DEVELOPMENT)
+            firmware_minutes_data = {
+                "2.5.0": {"total_minutes": 1250.5, "avg_minutes_per_session": 15.3},
+                "2.5.99": {"total_minutes": 3780.2, "avg_minutes_per_session": 22.7},
+                "2.6.0": {"total_minutes": 890.8, "avg_minutes_per_session": 18.5},
+            }
 
         firmware_summary = {}
         if firmware_counts:
@@ -450,6 +503,7 @@ class AuthDashboardResource(Resource):
             "daily_firmware_data": dict(daily_firmware_data),
             "all_firmware_versions": sorted(list(all_firmware_versions)),
             "firmware_summary": firmware_summary,
+            "firmware_minutes_data": firmware_minutes_data,
             "most_popular_version": (
                 max(firmware_counts, key=lambda x: x[2])[0] if firmware_counts else None
             ),

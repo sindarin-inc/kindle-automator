@@ -365,9 +365,9 @@
                 </div>
 
                 <div class="chart-container">
-                    <h2 class="chart-title">Glasses Firmware Sessions by Day</h2>
+                    <h2 class="chart-title">Minutes Read per Firmware Version</h2>
                     <div class="chart-wrapper">
-                        <canvas id="firmwareSessionsChart"></canvas>
+                        <canvas id="firmwareMinutesChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -894,67 +894,65 @@
             });
         }
 
-        function createFirmwareSessionsChart(data) {
-            const ctx = document.getElementById('firmwareSessionsChart').getContext('2d');
-            const firmwareData = data.firmware_metrics?.daily_firmware_data || {};
-            const allVersions = data.firmware_metrics?.all_firmware_versions || [];
+        function createFirmwareMinutesChart(data) {
+            const ctx = document.getElementById('firmwareMinutesChart').getContext('2d');
+            const firmwareMinutes = data.firmware_metrics?.firmware_minutes_data || {};
+            const firmwareSummary = data.firmware_metrics?.firmware_summary || {};
 
-            // Generate complete date range including today
-            const dates = generateDateRange(data.period_days || 30);
-
-            if (charts.firmwareSessions) {
-                charts.firmwareSessions.destroy();
+            if (charts.firmwareMinutes) {
+                charts.firmwareMinutes.destroy();
             }
 
-            // Create datasets for each firmware version - SESSIONS
-            const datasets = allVersions.map((version, index) => {
-                const colors = ['#007aff', '#34c759', '#ff9500', '#ff3b30', '#5856d6', '#af52de'];
-                const color = colors[index % colors.length];
+            const versions = Object.keys(firmwareMinutes).sort();
+            const colors = ['#007aff', '#34c759', '#ff9500', '#ff3b30', '#5856d6', '#af52de'];
 
-                return {
-                    label: `v${version}`,
-                    data: dates.map(date => firmwareData[date]?.[version]?.sessions || 0),
-                    backgroundColor: color,
-                    borderColor: color,
-                    borderWidth: 1
-                };
-            });
-
-            charts.firmwareSessions = new Chart(ctx, {
+            charts.firmwareMinutes = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: dates.map(d => formatDateLabel(d)),
-                    datasets: datasets
+                    labels: versions.map(v => `v${v}`),
+                    datasets: [{
+                        label: 'Total Minutes Read',
+                        data: versions.map(v => firmwareMinutes[v]?.total_minutes || 0),
+                        backgroundColor: versions.map((_, i) => colors[i % colors.length]),
+                        borderColor: versions.map((_, i) => colors[i % colors.length]),
+                        borderWidth: 2,
+                        borderRadius: 8
+                    }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     animation: false,
                     scales: {
-                        x: {
-                            stacked: true
-                        },
                         y: {
-                            stacked: true,
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Number of Sessions'
+                                text: 'Minutes Read'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
                             }
                         }
                     },
                     plugins: {
                         legend: {
-                            display: true,
-                            position: 'top'
+                            display: false
                         },
                         tooltip: {
                             callbacks: {
-                                afterLabel: function(context) {
-                                    const date = dates[context.dataIndex];
-                                    const version = allVersions[context.datasetIndex];
-                                    const users = firmwareData[date]?.[version]?.users || 0;
-                                    return `Users: ${users}`;
+                                label: function(context) {
+                                    const version = versions[context.dataIndex];
+                                    const minutesData = firmwareMinutes[version];
+                                    const summaryData = firmwareSummary[version];
+                                    return [
+                                        `Total: ${minutesData.total_minutes.toLocaleString()} minutes`,
+                                        `Average per session: ${minutesData.avg_minutes_per_session} minutes`,
+                                        `Users: ${summaryData?.unique_users || 0}`,
+                                        `Sessions: ${summaryData?.total_sessions || 0}`
+                                    ];
                                 }
                             }
                         }
@@ -1111,7 +1109,7 @@
                 createAuthImpactChart(dashboardData);
                 createAuthTimelineChart(dashboardData);
                 createFirmwareUsersChart(dashboardData);
-                createFirmwareSessionsChart(dashboardData);
+                createFirmwareMinutesChart(dashboardData);
                 createFirmwareDistributionChart(dashboardData);
                 createFirmwareAdoptionChart(dashboardData);
                 createDailyUsersChart(dashboardData);
