@@ -230,16 +230,32 @@ env:
 ssh: ssh-3
 
 ssh-1:
-	ssh -i ansible/keys/kindle.key root@157.180.51.112
+	@if [ -n "$(CMD)" ]; then \
+		ssh -i ansible/keys/kindle.key root@157.180.51.112 "$(CMD)"; \
+	else \
+		ssh -i ansible/keys/kindle.key root@157.180.51.112; \
+	fi
 ssh1: ssh-1
 ssh-3:
-	ssh -i ansible/keys/kindle.key root@157.180.14.166
+	@if [ -n "$(CMD)" ]; then \
+		ssh -i ansible/keys/kindle.key root@157.180.14.166 "$(CMD)"; \
+	else \
+		ssh -i ansible/keys/kindle.key root@157.180.14.166; \
+	fi
 ssh3: ssh-3
 ssh-staging:
-	ssh -i ansible/keys/kindle.key root@65.108.197.86
+	@if [ -n "$(CMD)" ]; then \
+		ssh -i ansible/keys/kindle.key root@65.108.197.86 "$(CMD)"; \
+	else \
+		ssh -i ansible/keys/kindle.key root@65.108.197.86; \
+	fi
 staging-ssh: ssh-staging
 ssh-db:
-	ssh -i ansible/keys/kindle.key root@46.62.136.6
+	@if [ -n "$(CMD)" ]; then \
+		ssh -i ansible/keys/kindle.key root@46.62.136.6 "$(CMD)"; \
+	else \
+		ssh -i ansible/keys/kindle.key root@46.62.136.6; \
+	fi
 sshdb: ssh-db
 
 # Firewall management

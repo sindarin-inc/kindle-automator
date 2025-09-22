@@ -357,9 +357,12 @@ def ensure_user_profile_loaded(f):
         # Update last_used timestamp for activity tracking
         if sindarin_email:
             try:
-                server.profile_manager.update_profile_usage(sindarin_email)
+                with get_db() as session:
+                    repo = UserRepository(session)
+                    repo.update_last_used(sindarin_email)
+                logger.debug(f"Updated last_used timestamp for {sindarin_email}")
             except Exception as e:
-                logger.debug(f"Could not update profile usage for {sindarin_email}: {e}")
+                logger.debug(f"Could not update last_used for {sindarin_email}: {e}")
 
         # Continue with the original endpoint handler
         result = f(*args, **kwargs)

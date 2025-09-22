@@ -499,21 +499,14 @@ class AutomationServer:
             The last activity timestamp (as Unix timestamp) or None if not found
         """
         from database.connection import get_db
-        from database.models import ReadingSession, User
+        from database.models import User
 
         with get_db() as db_session:
-            # Find the most recent active reading session for this user
+            # Get the user's last_used timestamp for idle checking
             user = db_session.query(User).filter_by(email=email).first()
-            if user:
-                session = (
-                    db_session.query(ReadingSession)
-                    .filter_by(user_id=user.id, ended_at=None)
-                    .order_by(ReadingSession.started_at.desc())
-                    .first()
-                )
-                if session and session.last_activity_at:
-                    # Convert datetime to Unix timestamp for compatibility
-                    return session.last_activity_at.timestamp()
+            if user and user.last_used:
+                # Convert datetime to Unix timestamp for compatibility
+                return user.last_used.timestamp()
 
         return None
 

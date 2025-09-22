@@ -88,14 +88,63 @@ class IdleCheckResource(Resource):
                 if automator is None:
                     continue
 
+                # Check if emulator is currently booting
+                vnc_manager = VNCInstanceManager.get_instance()
+                if vnc_manager.repository.is_booting(email):
+                    logger.info(f"Emulator for {email} is currently booting, skipping idle check")
+                    active_emails.append({"email": email, "status": "booting"})
+                    continue
+
                 # Get last activity time
                 server = AutomationServer.get_instance()
                 last_activity = server.get_last_activity_time(email)
 
                 if last_activity is None:
-                    # If no activity recorded, consider it as just started
-                    logger.info(f"No activity recorded for {email}, considering it as active")
-                    active_emails.append(email)
+                    # If no activity recorded, consider it idle and shut it down
+                    logger.info(f"No last_used timestamp for {email} - shutting down as idle")
+                    # Treat as infinitely idle (use a large idle duration for logging)
+                    idle_duration = 9999  # minutes
+
+                    # Use the shutdown manager directly
+                    try:
+                        shutdown_manager = EmulatorShutdownManager(server)
+                        with email_override(email):
+                            shutdown_summary = shutdown_manager.shutdown_emulator(
+                                email, preserve_reading_state=False, mark_for_restart=False
+                            )
+
+                        # Check if shutdown was successful
+                        if any(shutdown_summary.values()):
+                            shutdown_emails.append(
+                                {
+                                    "email": email,
+                                    "idle_minutes": idle_duration,
+                                    "status": "shutdown",
+                                    "reason": "no_last_used_timestamp",
+                                    "details": shutdown_summary,
+                                }
+                            )
+                        else:
+                            logger.warning(f"No active resources found to shut down for {email}")
+                            shutdown_emails.append(
+                                {
+                                    "email": email,
+                                    "idle_minutes": idle_duration,
+                                    "status": "failed",
+                                    "error": "No active resources found",
+                                }
+                            )
+
+                    except Exception as e:
+                        logger.error(f"Error shutting down idle emulator for {email}: {e}", exc_info=True)
+                        shutdown_emails.append(
+                            {
+                                "email": email,
+                                "idle_minutes": idle_duration,
+                                "status": "error",
+                                "error": str(e),
+                            }
+                        )
                     continue
 
                 # Check if idle

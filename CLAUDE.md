@@ -64,7 +64,13 @@ docker exec sol_redis redis-cli -p 6479 -n 1 monitor
   - **IMPORTANT**: Always run `make claude-run` after changing server code and before testing
 - **`make deps`**: Install dependencies using uv
 - **`make test-*`**: Run API endpoint tests (e.g. `make test-init`, `make test-books`)
-- **`make ssh`**: SSH to prod/staging (see Makefile for non-interactive command prefix)
+- **SSH to servers**:
+  - Interactive: `make ssh1` (kindle-automator-1) or `make ssh3` (kindle-automator-3)
+  - Run command: `make ssh1 CMD="command here"`
+  - **Run Python on prod with database**:
+    ```bash
+    ssh -i ansible/keys/kindle.key root@157.180.51.112 'cd /opt/kindle-automator && uv run dotenv -f .env.prod run python -c "code here"'
+    ```
 - **Running Python**: Use `uv run dotenv run` for scripts needing env vars, `uv run` for tools
 - **Running tests**: Use `uv run pytest` directly (PYTHONPATH is automatically configured)
 
