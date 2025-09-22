@@ -403,14 +403,19 @@ class AutomationServer:
 
         # Query the BookSession table directly for the most recent active session
         from database.connection import get_db
-        from database.models import BookSession
+        from database.models import BookSession, User
 
         with get_db() as db_session:
-            # Find the most recent active book session for this user
+            # Find the user first
+            user = db_session.query(User).filter_by(email=email).first()
+            if not user:
+                return None
+
+            # Find the most recent book session for this user
             book_session = (
                 db_session.query(BookSession)
-                .filter_by(user_email=email, ended_at=None)
-                .order_by(BookSession.started_at.desc())
+                .filter_by(user_id=user.id)
+                .order_by(BookSession.last_accessed.desc())
                 .first()
             )
             if book_session:
