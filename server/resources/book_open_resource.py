@@ -181,6 +181,11 @@ class BookOpenResource(Resource):
                     "message": "Last read page dialog detected",
                 }
 
+                # Add book session key to response
+                book_session_key = server.get_book_session_key(sindarin_email)
+                if book_session_key:
+                    response_data["book_session_key"] = book_session_key
+
                 # Add flag if book was already open
                 if already_open:
                     response_data["already_open"] = True

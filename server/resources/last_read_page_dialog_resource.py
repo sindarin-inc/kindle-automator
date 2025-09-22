@@ -192,6 +192,11 @@ class LastReadPageDialogResource(Resource):
                 "progress": progress,
             }
 
+            # Add book session key to response since we're returning OCR text
+            book_session_key = server.get_book_session_key(sindarin_email)
+            if book_session_key:
+                response_data["book_session_key"] = book_session_key
+
             # We need OCR text if requested, but without screenshots
             if perform_ocr:
                 # Take a screenshot just for OCR then discard it

@@ -401,30 +401,20 @@ class AutomationServer:
             logger.error("Email parameter is required for get_book_session_key", exc_info=True)
             return None
 
-        # Query the database for the actual session key
+        # Query the BookSession table directly for the most recent active session
         from database.connection import get_db
-        from database.models import ReadingSession, User
+        from database.models import BookSession
 
         with get_db() as db_session:
-            # Find the most recent active reading session for this user
-            user = db_session.query(User).filter_by(email=email).first()
-            if user:
-                session = (
-                    db_session.query(ReadingSession)
-                    .filter_by(user_id=user.id, ended_at=None)
-                    .order_by(ReadingSession.started_at.desc())
-                    .first()
-                )
-                if session and session.book_title:
-                    # Return the book session key from the book sessions table
-                    from database.repositories.book_session_repository import (
-                        BookSessionRepository,
-                    )
-
-                    book_repo = BookSessionRepository(db_session)
-                    book_session = book_repo.get_session(email, session.book_title)
-                    if book_session:
-                        return book_session.session_key
+            # Find the most recent active book session for this user
+            book_session = (
+                db_session.query(BookSession)
+                .filter_by(user_email=email, ended_at=None)
+                .order_by(BookSession.started_at.desc())
+                .first()
+            )
+            if book_session:
+                return book_session.session_key
 
         return None
 
