@@ -250,6 +250,20 @@ def ensure_user_profile_loaded(f):
                     logger.debug(f"Emulator already running for {sindarin_email}")
                 else:
                     logger.debug(f"In macOS dev mode with available device for {sindarin_email}")
+
+                # Update last_used timestamp BEFORE executing the endpoint
+                if sindarin_email:
+                    try:
+                        with get_db() as session:
+                            repo = UserRepository(session)
+                            success = repo.update_last_used(sindarin_email)
+                            if success:
+                                logger.debug(f"Updated last_used for {sindarin_email}")
+                            else:
+                                logger.error(f"Failed to update last_used for {sindarin_email}")
+                    except Exception as e:
+                        logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
+
                 result = f(*args, **kwargs)
                 # Handle Flask Response objects appropriately
                 if isinstance(result, (flask.Response, Response)):
@@ -359,10 +373,13 @@ def ensure_user_profile_loaded(f):
             try:
                 with get_db() as session:
                     repo = UserRepository(session)
-                    repo.update_last_used(sindarin_email)
-                logger.debug(f"Updated last_used timestamp for {sindarin_email}")
+                    success = repo.update_last_used(sindarin_email)
+                    if success:
+                        logger.debug(f"Updated last_used for {sindarin_email}")
+                    else:
+                        logger.error(f"Failed to update last_used for {sindarin_email}")
             except Exception as e:
-                logger.debug(f"Could not update last_used for {sindarin_email}: {e}")
+                logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
 
         # Continue with the original endpoint handler
         result = f(*args, **kwargs)
