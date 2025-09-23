@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -434,3 +435,48 @@ class ReadingSession(Base):
 
     def __repr__(self) -> str:
         return f"<ReadingSession(id={self.id}, user_id={self.user_id}, book='{self.book_title[:30]}...', position={self.current_position}, active={self.is_active})>"
+
+
+class RequestLog(Base):
+    """Logs all HTTP requests to the Kindle API for debugging and analytics."""
+
+    __tablename__ = "request_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    datetime: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    params: Mapped[Optional[str]] = mapped_column(Text)  # Query params or POST body (first 5000 chars)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text)
+    user_agent_identifier: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    elapsed_time: Mapped[Optional[float]] = mapped_column(Float)  # Request time in seconds
+    response_length: Mapped[Optional[int]] = mapped_column(Integer)
+    response_preview: Mapped[Optional[str]] = mapped_column(String(500))  # First 500 chars of response
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45))  # IPv4 or IPv6
+    referer: Mapped[Optional[str]] = mapped_column(Text)
+    is_ajax: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_mobile: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    user_email: Mapped[Optional[str]] = mapped_column(
+        String(255), index=True
+    )  # Denormalized for quick lookup
+
+    # Relationship
+    user: Mapped[Optional["User"]] = relationship(foreign_keys=[user_id])
+
+    # Table constraints and indexes
+    __table_args__ = (
+        Index("idx_request_log_datetime", "datetime"),
+        Index("idx_request_log_user_datetime", "user_id", "datetime"),
+        Index("idx_request_log_path_datetime", "path", "datetime"),
+        Index("idx_request_log_status_datetime", "status_code", "datetime"),
+    )
+
+    def __repr__(self) -> str:
+        user_str = self.user_email or "Anonymous"
+        return f"<RequestLog(id={self.id}, {self.method} {self.path}, user={user_str}, status={self.status_code})>"

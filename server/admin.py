@@ -16,6 +16,7 @@ from database.models import (
     LibrarySettings,
     ReadingSession,
     ReadingSettings,
+    RequestLog,
     StaffToken,
     User,
     UserPreference,
@@ -172,6 +173,77 @@ class ReadingSessionView(SecureModelView):
     ]
 
 
+class RequestLogView(SecureModelView):
+    """View for request logs."""
+
+    can_create = False  # Logs are auto-generated, no manual creation
+    can_edit = False  # Logs should not be edited
+    can_delete = True  # Allow deletion for cleanup
+
+    column_searchable_list = [
+        "path",
+        "user_email",
+        "params",
+        "response_preview",
+        "user_agent",
+        "ip_address",
+        "referer",
+    ]
+    column_filters = [
+        "method",
+        "status_code",
+        "user_email",
+        "datetime",
+        "path",
+        "user_agent_identifier",
+        "is_ajax",
+        "is_mobile",
+    ]
+    column_default_sort = ("datetime", True)
+
+    # Show ALL fields in the list view
+    column_list = [
+        "id",
+        "user_id",
+        "datetime",
+        "method",
+        "path",
+        "params",
+        "user_agent",
+        "user_agent_identifier",
+        "status_code",
+        "elapsed_time",
+        "response_length",
+        "response_preview",
+        "ip_address",
+        "referer",
+        "is_ajax",
+        "is_mobile",
+        "user_email",
+    ]
+
+    # Format columns for better display
+    column_formatters = {
+        "params": lambda v, c, m, p: (
+            (m.params[:100] + "...") if m.params and len(m.params) > 100 else m.params or ""
+        ),
+        "response_preview": lambda v, c, m, p: (
+            (m.response_preview[:100] + "...")
+            if m.response_preview and len(m.response_preview) > 100
+            else m.response_preview or ""
+        ),
+        "user_agent": lambda v, c, m, p: (
+            (m.user_agent[:80] + "...") if m.user_agent and len(m.user_agent) > 80 else m.user_agent or ""
+        ),
+        "referer": lambda v, c, m, p: (
+            (m.referer[:80] + "...") if m.referer and len(m.referer) > 80 else m.referer or ""
+        ),
+        "elapsed_time": lambda v, c, m, p: f"{m.elapsed_time:.3f}s" if m.elapsed_time else "N/A",
+        "user_agent_identifier": lambda v, c, m, p: m.user_agent_identifier or "unknown",
+        "response_length": lambda v, c, m, p: f"{m.response_length:,} bytes" if m.response_length else "N/A",
+    }
+
+
 def init_admin(app: Flask, db_session) -> Admin:
     """Initialize Flask-Admin with all models."""
     # Configure Flask-Admin to work behind the /kindle proxy
@@ -211,6 +283,7 @@ def init_admin(app: Flask, db_session) -> Admin:
     admin.add_view(SecureModelView(UserPreference, db_session))
     admin.add_view(BookSessionView(BookSession, db_session))
     admin.add_view(ReadingSessionView(ReadingSession, db_session))
+    admin.add_view(RequestLogView(RequestLog, db_session))
     admin.add_view(StaffTokenView(StaffToken, db_session))
 
     return admin

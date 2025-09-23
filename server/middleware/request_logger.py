@@ -4,12 +4,15 @@ import logging
 import time
 from functools import wraps
 from io import BytesIO
+from urllib.parse import urlencode
 
 import sentry_sdk
 from flask import Response, current_app, g, request
 from user_agents import parse
 
 # Removed set_current_request_email import as it's no longer needed
+from database.connection import get_db
+from database.models import RequestLog, User
 from server.utils.ansi_colors import (
     BLUE,
     BRIGHT_WHITE,
@@ -207,6 +210,135 @@ class RequestBodyLogger:
             )
 
     @staticmethod
+    def save_to_database(response, elapsed_time_seconds=None, response_preview=""):
+        """Save request/response to database for analytics."""
+        try:
+            # Skip certain paths from database logging
+            skip_db_paths = [
+                "/health",
+                "/healthz",
+                "/ping",
+                "/favicon.ico",
+                "/robots.txt",
+                "/dashboard",
+                "/auth-dashboard",
+                "/admin",  # Skip Flask-Admin interface requests
+            ]
+            if any(request.path.startswith(path) for path in skip_db_paths):
+                return
+
+            # Get user info
+            user_id = None
+            user_email = getattr(g, "request_email", None)
+
+            # If we have a user_email, try to find the user
+            if user_email:
+                with get_db() as session:
+                    user = session.query(User).filter_by(email=user_email).first()
+                    if user:
+                        user_id = user.id
+
+            # Get user agent info
+            user_agent = request.headers.get("User-Agent", "")
+            user_agent_identifier = RequestBodyLogger.get_ua_identifier(user_agent)
+
+            # Collect parameters (excluding user_email and sindarin_email)
+            params = ""
+            if request.method == "GET" and request.args:
+                # Filter out user_email and sindarin_email params
+                filtered_args = {
+                    k: v for k, v in request.args.items() if k not in ["user_email", "sindarin_email"]
+                }
+                if filtered_args:
+                    params = urlencode(filtered_args)
+            elif request.method == "POST":
+                if request.is_json:
+                    try:
+                        body_data = request.get_json(force=True, silent=True)
+                        if body_data:
+                            # Filter out user_email and sindarin_email from POST data
+                            filtered_data = {
+                                k: v
+                                for k, v in body_data.items()
+                                if k not in ["user_email", "sindarin_email"]
+                            }
+                            if filtered_data:
+                                params = json.dumps(RequestBodyLogger.sanitize_sensitive_data(filtered_data))
+                    except:
+                        params = ""
+                elif request.form:
+                    # Filter out user_email and sindarin_email from form data
+                    filtered_form = {
+                        k: v for k, v in request.form.items() if k not in ["user_email", "sindarin_email"]
+                    }
+                    if filtered_form:
+                        params = str(dict(filtered_form))
+                elif hasattr(request, "data") and request.data:
+                    try:
+                        params = request.data.decode("utf-8")
+                    except:
+                        params = f"[Binary data: {len(request.data)} bytes]"
+
+            # Truncate params if too long
+            MAX_PARAMS_LENGTH = 5000
+            if len(params) > MAX_PARAMS_LENGTH:
+                params = params[:MAX_PARAMS_LENGTH] + "... (truncated)"
+
+            # Get response info
+            response_length = 0
+            if hasattr(response, "data") and response.data:
+                response_length = len(response.data)
+
+            # Truncate response preview
+            MAX_RESPONSE_PREVIEW = 500
+            if len(response_preview) > MAX_RESPONSE_PREVIEW:
+                response_preview = response_preview[:MAX_RESPONSE_PREVIEW]
+
+            # Get client IP
+            x_forwarded_for = request.headers.get("X-Forwarded-For")
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(",")[0].strip()
+            else:
+                ip_address = request.remote_addr
+
+            # Check if request is AJAX
+            is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+            # Check if mobile
+            is_mobile = False
+            if user_agent:
+                try:
+                    ua = parse(user_agent)
+                    is_mobile = ua.is_mobile
+                except:
+                    pass
+
+            # Create log entry
+            with get_db() as session:
+                log_entry = RequestLog(
+                    user_id=user_id,
+                    method=request.method,
+                    path=request.path,
+                    params=params,
+                    user_agent=user_agent,
+                    user_agent_identifier=user_agent_identifier,
+                    status_code=response.status_code,
+                    elapsed_time=elapsed_time_seconds,
+                    response_length=response_length,
+                    response_preview=response_preview,
+                    ip_address=ip_address,
+                    referer=request.headers.get("Referer", ""),
+                    is_ajax=is_ajax,
+                    is_mobile=is_mobile,
+                    user_email=user_email,
+                )
+                session.add(log_entry)
+                session.commit()
+
+        except Exception as e:
+            # Log the error but don't fail the request
+            logger.exception(f"Error saving request to database: {e}")
+
     def log_response(response):
         """Log the response body."""
         # Skip logging for certain paths
@@ -215,11 +347,14 @@ class RequestBodyLogger:
             return response
 
         response_data = None
+        response_preview = ""
+        elapsed_seconds = None
 
         # Calculate elapsed time
         elapsed_time = ""
         if hasattr(g, "request_start_time"):
             elapsed = time.time() - g.request_start_time
+            elapsed_seconds = elapsed
             elapsed_time = f" {BLUE}{elapsed:.1f}s{RESET}"
 
         # Format status code with color
@@ -236,6 +371,8 @@ class RequestBodyLogger:
             logger.info(
                 f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}Direct passthrough (file/image){RESET}"
             )
+            response_preview = "Direct passthrough (file/image)"
+            RequestBodyLogger.save_to_database(response, elapsed_seconds, response_preview)
             return response
 
         # Skip logging for streaming responses (SSE, etc.)
@@ -244,6 +381,8 @@ class RequestBodyLogger:
             logger.info(
                 f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}Streaming response ({content_type}){RESET}"
             )
+            response_preview = f"Streaming response ({content_type})"
+            RequestBodyLogger.save_to_database(response, elapsed_seconds, response_preview)
             return response
 
         # Store original response data
@@ -260,6 +399,7 @@ class RequestBodyLogger:
                 if isinstance(response_data, dict):
                     sanitized_data = RequestBodyLogger.sanitize_sensitive_data(response_data)
                     json_str = json.dumps(sanitized_data, default=str)
+                    response_preview = json_str[:500] if json_str else ""
                     if len(json_str) > 5000:
                         logger.info(
                             f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
@@ -270,6 +410,7 @@ class RequestBodyLogger:
                         )
                 else:
                     json_str = json.dumps(response_data, default=str)
+                    response_preview = json_str[:500] if json_str else ""
                     if len(json_str) > 5000:
                         logger.info(
                             f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str[:5000]}{RESET}... (truncated, total {len(json_str)} bytes)"
@@ -279,6 +420,7 @@ class RequestBodyLogger:
                             f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{json_str}{RESET}"
                         )
             except json.JSONDecodeError:
+                response_preview = response_text[:500] if response_text else ""
                 if len(response_text) > 5000:
                     logger.info(
                         f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{response_text[:5000]}{RESET}... (truncated, total {len(response_text)} bytes)"
@@ -288,9 +430,13 @@ class RequestBodyLogger:
                         f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}{response_text}{RESET}"
                     )
         except UnicodeDecodeError:
+            response_preview = f"[Binary data: {len(original_data)} bytes]"
             logger.info(
                 f"RESPONSE{status_info} [{request.method} {MAGENTA}{request.path}{RESET}{elapsed_time}]: {DIM_YELLOW}Binary data ({len(original_data)} bytes){RESET}"
             )
+
+        # Save to database
+        RequestBodyLogger.save_to_database(response, elapsed_seconds, response_preview)
 
         return response
 

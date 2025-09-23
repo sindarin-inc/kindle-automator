@@ -403,6 +403,8 @@ api.add_resource(
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(DashboardResource, "/dashboard")
+
+
 api.add_resource(AuthDashboardResource, "/auth-dashboard")
 api.add_resource(
     ColdStorageArchiveResource,

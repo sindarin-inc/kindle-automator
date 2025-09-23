@@ -182,4 +182,7 @@ db-data:
 	@echo ""
 	@echo "EMULATOR SHUTDOWN FAILURES (by created_at):"
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT * FROM emulator_shutdown_failures ORDER BY created_at DESC LIMIT 3;"
+	@echo ""
+	@echo "REQUEST LOGS (by datetime):"
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT id, datetime, elapsed_time, method, path, status_code, user_email, SUBSTRING(response_preview, 1, 50) AS response_preview FROM request_logs ORDER BY datetime DESC LIMIT 5;"
 

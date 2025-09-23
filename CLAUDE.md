@@ -55,6 +55,25 @@ docker exec sol_redis redis-cli -p 6479 -n 1 get "kindle:active_request:user@ema
 docker exec sol_redis redis-cli -p 6479 -n 1 monitor
 ```
 
+## Database Models
+
+All models are in `database/models.py`:
+
+- **User** (`users`) - Main user account
+- **EmulatorSettings** (`emulator_settings`) - User's emulator configuration
+- **DeviceIdentifiers** (`device_identifiers`) - AVD device IDs
+- **LibrarySettings** (`library_settings`) - Library view preferences
+- **ReadingSettings** (`reading_settings`) - Reading preferences
+- **UserPreference** (`user_preferences`) - Key-value preferences
+- **VNCInstance** (`vnc_instances`) - VNC display/ports
+- **StaffToken** (`staff_tokens`) - Staff auth tokens
+- **EmulatorShutdownFailure** (`emulator_shutdown_failures`) - Shutdown error logs
+- **BookPosition** (`book_positions`) - Book page positions
+- **AuthTokenHistory** (`auth_token_history`) - Auth token events
+- **BookSession** (`book_sessions`) - Active book sessions
+- **ReadingSession** (`reading_sessions`) - Complete reading sessions
+- **RequestLog** (`request_logs`) - HTTP request logs
+
 ## Commands
 
 - **`make lint`**: Run isort, black, and flake8 formatting tools

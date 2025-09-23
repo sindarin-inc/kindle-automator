@@ -128,6 +128,37 @@ test:
 
 test-all: test
 
+# Database viewing commands (request logs)
+db-requests:
+	@PGPASSWORD=local psql -h localhost -p 5496 -U local -d kindle_dev -c \
+		"SELECT datetime, elapsed_time, method, path, status_code, user_email, \
+		        user_agent_identifier as device, \
+		        SUBSTRING(params, 1, 100) as request_params, \
+		        SUBSTRING(response_preview, 1, 100) as response \
+		 FROM request_logs \
+		 WHERE datetime > NOW() - INTERVAL '1 hour' \
+		 ORDER BY datetime DESC;"
+
+db-slow-requests:
+	@echo "===== Slow Requests (>1s) ====="
+	@PGPASSWORD=local psql -h localhost -p 5496 -U local -d kindle_dev -c \
+		"SELECT datetime, elapsed_time, method, path, status_code, user_email, \
+		        user_agent_identifier as device \
+		 FROM request_logs \
+		 WHERE elapsed_time > 1.0 \
+		 ORDER BY elapsed_time DESC \
+		 LIMIT 20;"
+
+db-requests-full:
+	@echo "===== Recent Requests with Full User Agent ====="
+	@PGPASSWORD=local psql -h localhost -p 5496 -U local -d kindle_dev -c \
+		"SELECT datetime, method, path, status_code, user_agent_identifier as device, \
+		        user_agent \
+		 FROM request_logs \
+		 WHERE datetime > NOW() - INTERVAL '1 hour' \
+		 ORDER BY datetime DESC \
+		 LIMIT 20;"
+
 test-fast:
 	@echo "Running tests with fail-fast (stops on first failure)..."
 	uv run pytest tests -x -v
