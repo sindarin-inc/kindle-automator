@@ -326,6 +326,9 @@ class EmulatorShutdownManager:
                 summary["placemark_sync_attempted"] = True
 
             server = AutomationServer.get_instance()
+            # Clear any cancellation check from the state machine before shutdown operations
+            # This prevents trying to access Flask context from background tasks
+            state_machine.set_cancellation_check(None)
             final_state = state_machine.transition_to_library(max_transitions=10, server=server)
             if final_state == AppState.LIBRARY:
                 logger.info("Successfully transitioned to Library view (%s)", email)
