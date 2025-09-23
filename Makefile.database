@@ -186,3 +186,38 @@ db-data:
 	@echo "REQUEST LOGS (by datetime):"
 	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args "SELECT id, datetime, elapsed_time, method, path, status_code, user_email, SUBSTRING(response_preview, 1, 50) AS response_preview FROM request_logs ORDER BY datetime DESC LIMIT 5;"
 
+# Request log viewing commands
+.PHONY: db-requests
+db-requests:
+	@echo "===== Recent Requests (last hour) ====="
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args \
+		"SELECT datetime, elapsed_time, method, path, status_code, user_email, \
+		        user_agent_identifier as device, \
+		        SUBSTRING(params, 1, 100) as request_params, \
+		        SUBSTRING(response_preview, 1, 100) as response \
+		 FROM request_logs \
+		 WHERE datetime > NOW() - INTERVAL '1 hour' \
+		 ORDER BY datetime DESC;"
+
+.PHONY: db-slow-requests
+db-slow-requests:
+	@echo "===== Slow Requests (>1s) ====="
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args \
+		"SELECT datetime, elapsed_time, method, path, status_code, user_email, \
+		        user_agent_identifier as device \
+		 FROM request_logs \
+		 WHERE elapsed_time > 1.0 \
+		 ORDER BY elapsed_time DESC \
+		 LIMIT 20;"
+
+.PHONY: db-requests-full
+db-requests-full:
+	@echo "===== Recent Requests with Full User Agent ====="
+	@$(PYTHON) scripts/db_connect.py --command query --env $(DB_ENV_FILE) --args \
+		"SELECT datetime, method, path, status_code, user_agent_identifier as device, \
+		        user_agent \
+		 FROM request_logs \
+		 WHERE datetime > NOW() - INTERVAL '1 hour' \
+		 ORDER BY datetime DESC \
+		 LIMIT 20;"
+
