@@ -136,57 +136,105 @@ class TextResource(Resource):
             screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
             automator.driver.save_screenshot(screenshot_path)
 
-            # Get current page number and progress for context
-            # Check if placemark is requested
+            # Read the screenshot into memory once
+            with open(screenshot_path, "rb") as img_file:
+                screenshot_bytes = img_file.read()
+
+            # Delete the screenshot file immediately after reading
+            try:
+                os.remove(screenshot_path)
+                logger.info(f"Deleted screenshot after reading: {screenshot_path}")
+            except Exception as del_e:
+                logger.warning(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
+
+            # Check if debug mode is requested
+            debug_ocr = request.args.get("debug_ocr", "0") == "1"
+            if request.is_json:
+                data = request.get_json(silent=True) or {}
+                if data.get("debug_ocr") in (True, 1, "1", "true"):
+                    debug_ocr = True
+
+            # Check if placemark/position dialog is requested
             show_placemark = False
             placemark_param = request.args.get("placemark", "0")
+            position_param = request.args.get("position", "0")
+            position_dialog_param = request.args.get("position_dialog", "0")
+
             if placemark_param.lower() in ("1", "true", "yes"):
                 show_placemark = True
                 logger.info("Placemark mode enabled for OCR")
+            elif position_param.lower() in ("1", "true", "yes"):
+                show_placemark = True
+                logger.info("Position dialog mode enabled")
+            elif position_dialog_param.lower() in ("1", "true", "yes"):
+                show_placemark = True
+                logger.info("Position dialog mode enabled via position_dialog param")
 
             # Also check in POST data
             if not show_placemark and request.is_json:
                 data = request.get_json(silent=True) or {}
                 placemark_param = data.get("placemark", "0")
+                position_param = data.get("position", "0")
+                position_dialog_param = data.get("position_dialog", "0")
                 if placemark_param and str(placemark_param).lower() in ("1", "true", "yes"):
                     show_placemark = True
-                    logger.info("Placemark mode enabled from POST data for OCR")
+                    logger.info("Placemark mode enabled from POST data")
+                elif position_param and str(position_param).lower() in ("1", "true", "yes"):
+                    show_placemark = True
+                    logger.info("Position dialog mode enabled from POST data")
+                elif position_dialog_param and str(position_dialog_param).lower() in ("1", "true", "yes"):
+                    show_placemark = True
+                    logger.info("Position dialog mode enabled via position_dialog from POST data")
 
-            progress = automator.state_machine.reader_handler.get_reading_progress(
-                show_placemark=show_placemark
-            )
+            # Get progress - use OCR method by default, dialog method if requested
+            if show_placemark:
+                # Use the traditional dialog method
+                progress = automator.state_machine.reader_handler.get_reading_progress(show_placemark=True)
+            else:
+                # Use the new OCR method (no dialog)
+                progress = automator.state_machine.reader_handler.get_reading_progress_from_ocr(
+                    screenshot_bytes=screenshot_bytes
+                )
+                # If still no page format, try rotating
+                if progress and progress.get("display_format") != "page_of":
+                    logger.info(
+                        f"Current format is '{progress.get('display_format')}', attempting to rotate to page format"
+                    )
+                    page_progress = automator.state_machine.reader_handler.rotate_page_format_with_ocr()
+                    if page_progress:
+                        progress = page_progress
 
-            # Process the screenshot with OCR
-            try:
-                with open(screenshot_path, "rb") as img_file:
-                    image_data = img_file.read()
+            # Process the screenshot with OCR for main text
+            if debug_ocr:
+                # Debug mode - return raw OCR results from all regions
+                from server.utils.ocr_utils import process_screenshot_with_regions
 
-                # Process the image with OCR
-                ocr_text, error = KindleOCR.process_ocr(image_data)
+                ocr_results = process_screenshot_with_regions(screenshot_bytes)
+                return {
+                    "success": True,
+                    "debug": True,
+                    "progress": progress,
+                    "main_text": ocr_results.get("main_text"),
+                    "page_indicator_raw": ocr_results.get("page_indicator_text"),
+                    "percentage_raw": ocr_results.get("percentage_text"),
+                    "errors": ocr_results.get("errors", []),
+                }, 200
+            else:
+                # Normal mode - use process_screenshot_with_regions for efficient processing
+                from server.utils.ocr_utils import process_screenshot_with_regions
 
-                # Delete the screenshot file after processing
-                try:
-                    os.remove(screenshot_path)
-                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
-                except Exception as del_e:
-                    logger.warning(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
+                ocr_results = process_screenshot_with_regions(screenshot_bytes)
+                ocr_text = ocr_results.get("main_text")
 
                 if ocr_text:
                     return {"success": True, "progress": progress, "text": ocr_text}, 200
                 else:
+                    error_msg = "; ".join(ocr_results.get("errors", ["OCR processing failed"]))
                     return {
                         "success": False,
                         "progress": progress,
-                        "error": error or "OCR processing failed",
+                        "error": error_msg,
                     }, 500
-
-            except Exception as e:
-                logger.error(f"Error processing OCR: {e}", exc_info=True)
-                return {
-                    "success": False,
-                    "progress": progress,
-                    "error": f"Failed to extract text: {str(e)}",
-                }, 500
 
         except Exception as e:
             logger.error(f"Error extracting text: {e}", exc_info=True)

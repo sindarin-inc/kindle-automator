@@ -324,6 +324,137 @@ class KindleOCR:
         return None, combined_error
 
 
+def extract_page_indicator_regions(image_bytes):
+    """Extract the page indicator and percentage regions from a screenshot.
+
+    Args:
+        image_bytes: The screenshot as bytes
+
+    Returns:
+        tuple: (page_indicator_bytes, percentage_bytes) - Cropped regions as bytes
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        # Load the image
+        img = Image.open(BytesIO(image_bytes))
+        width, height = img.size
+
+        # Define crop regions based on proportions
+        # Bottom-left for page/location indicator
+        page_indicator_box = (
+            0,  # Left edge
+            int(height * 0.85),  # Start at 85% from top
+            int(width * 0.6),  # Left 60% of width
+            height,  # Bottom edge
+        )
+
+        # Bottom-right for percentage
+        percentage_box = (
+            int(width * 0.7),  # Start at 70% from left
+            int(height * 0.85),  # Start at 85% from top
+            width,  # Right edge
+            height,  # Bottom edge
+        )
+
+        # Crop the regions
+        page_indicator_img = img.crop(page_indicator_box)
+        percentage_img = img.crop(percentage_box)
+
+        # Convert back to bytes
+        page_indicator_bytes = BytesIO()
+        page_indicator_img.save(page_indicator_bytes, format="PNG")
+        page_indicator_bytes = page_indicator_bytes.getvalue()
+
+        percentage_bytes = BytesIO()
+        percentage_img.save(percentage_bytes, format="PNG")
+        percentage_bytes = percentage_bytes.getvalue()
+
+        logger.debug(f"Cropped page indicator region: {page_indicator_box}")
+        logger.debug(f"Cropped percentage region: {percentage_box}")
+
+        return page_indicator_bytes, percentage_bytes
+
+    except Exception as e:
+        logger.error(f"Error extracting page indicator regions: {e}", exc_info=True)
+        return None, None
+
+
+def process_screenshot_with_regions(image_bytes):
+    """Process a screenshot to extract both main text and page information.
+
+    Args:
+        image_bytes: The screenshot as bytes
+
+    Returns:
+        dict: Contains 'main_text', 'page_indicator_text', 'percentage_text', and any errors
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    result = {"main_text": None, "page_indicator_text": None, "percentage_text": None, "errors": []}
+
+    try:
+        # Load the image once
+        img = Image.open(BytesIO(image_bytes))
+        width, height = img.size
+
+        # Crop main text area (top 85%, excluding page numbers)
+        main_text_box = (
+            0,  # Left edge
+            0,  # Top edge
+            width,  # Right edge
+            int(height * 0.85),  # Stop at 85% from top
+        )
+        main_text_img = img.crop(main_text_box)
+
+        # Convert main text to bytes and OCR
+        main_text_bytes = BytesIO()
+        main_text_img.save(main_text_bytes, format="PNG")
+        main_text_data = main_text_bytes.getvalue()
+
+        main_ocr_text, main_error = KindleOCR.process_ocr(main_text_data)
+        if main_ocr_text:
+            result["main_text"] = main_ocr_text
+        elif main_error:
+            result["errors"].append(f"Main text OCR error: {main_error}")
+
+        # Extract page indicator regions
+        page_indicator_bytes, percentage_bytes = extract_page_indicator_regions(image_bytes)
+
+        # OCR page indicator
+        if page_indicator_bytes:
+            page_text, page_error = KindleOCR.process_ocr(page_indicator_bytes)
+            if page_text:
+                # Clean up the text - remove any extra whitespace
+                page_text = " ".join(page_text.split())
+                result["page_indicator_text"] = page_text
+                logger.info(f"Page indicator OCR result: '{page_text}'")
+            elif page_error:
+                result["errors"].append(f"Page indicator OCR error: {page_error}")
+
+        # OCR percentage
+        if percentage_bytes:
+            percent_text, percent_error = KindleOCR.process_ocr(percentage_bytes)
+            if percent_text:
+                # Clean up the text - remove any extra whitespace
+                percent_text = percent_text.strip()
+                result["percentage_text"] = percent_text
+                logger.info(f"Percentage OCR result: '{percent_text}'")
+            elif percent_error:
+                result["errors"].append(f"Percentage OCR error: {percent_error}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error processing screenshot with regions: {e}", exc_info=True)
+        result["errors"].append(f"Processing error: {str(e)}")
+        return result
+
+
 def is_base64_requested():
     """Check if base64 format is requested in query parameters or JSON body.
 
