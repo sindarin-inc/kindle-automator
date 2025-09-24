@@ -56,9 +56,12 @@
         }
 
         .vnc-canvas-container canvas {
-            /* Let noVNC handle sizing naturally */
+            /* Maintain aspect ratio while fitting in container */
             max-width: 100%;
             max-height: 100%;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain;
         }
 
         .vnc-connecting {
