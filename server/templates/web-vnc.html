@@ -58,14 +58,15 @@
             height: 100%;
             position: relative;
             overflow: hidden;
-            cursor: none !important;  /* Hide cursor */
+            cursor: default;  /* Default cursor for web */
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
-        /* Hide cursor for all child elements */
-        .vnc-canvas-container * {
+        /* Only hide cursor in iOS WebView */
+        .ios-webview .vnc-canvas-container,
+        .ios-webview .vnc-canvas-container * {
             cursor: none !important;
         }
 
@@ -142,6 +143,28 @@
         let rfbConnection = null;
         let reconnectAttempts = 0;
         let reconnectTimeout = null;
+
+        // Detect if we're in an iOS WebView
+        function isIOSWebView() {
+            const ua = navigator.userAgent;
+            const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+            // Check for WKWebView or UIWebView
+            const isWebView = isIOS && (
+                // WKWebView detection
+                (ua.indexOf('Mobile') > -1 && ua.indexOf('Safari') === -1) ||
+                // UIWebView detection
+                (typeof window.webkit !== 'undefined' && window.webkit.messageHandlers) ||
+                // Additional check for standalone mode
+                window.navigator.standalone === true
+            );
+            return isWebView;
+        }
+
+        // Add iOS class if in WebView
+        if (isIOSWebView()) {
+            document.body.classList.add('ios-webview');
+            console.log('iOS WebView detected - hiding cursor');
+        }
 
         // Build API endpoint
         function buildApiEndpoint() {
@@ -225,7 +248,7 @@
                 rfbConnection.viewOnly = false;
                 rfbConnection.scaleViewport = false;  // Don't scale - let CSS handle display sizing
                 rfbConnection.resizeSession = false;
-                rfbConnection.showDotCursor = false;  // Hide cursor
+                rfbConnection.showDotCursor = !isIOSWebView();  // Hide cursor only on iOS
                 rfbConnection.qualityLevel = 9;       // Max quality
                 rfbConnection.compressionLevel = 0;   // No compression
                 rfbConnection.clipViewport = false;   // Don't clip viewport
@@ -237,9 +260,25 @@
                     console.log('ViewOnly state:', rfbConnection.viewOnly);
                     reconnectAttempts = 0;
 
-                    // Prevent rotation by intercepting orientation-related keys
+                    // Get the canvas element
                     const canvas = canvasContainer.querySelector('canvas');
                     if (canvas) {
+                        // Prevent scroll events on the canvas itself
+                        canvas.addEventListener('wheel', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.stopImmediatePropagation();
+                            return false;
+                        }, { passive: false, capture: true });
+
+                        canvas.addEventListener('touchmove', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.stopImmediatePropagation();
+                            return false;
+                        }, { passive: false, capture: true });
+
+                        // Prevent rotation by intercepting orientation-related keys
                         canvas.addEventListener('keydown', (e) => {
                             // Block Ctrl+Alt+Arrow keys (common rotation shortcuts)
                             if ((e.ctrlKey && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
@@ -341,13 +380,24 @@
         function preventScroll(e) {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             return false;
         }
 
-        // Disable all scroll events
-        document.addEventListener('wheel', preventScroll, { passive: false });
-        document.addEventListener('touchmove', preventScroll, { passive: false });
-        document.addEventListener('scroll', preventScroll, { passive: false });
+        // Disable all scroll events at document level
+        document.addEventListener('wheel', preventScroll, { passive: false, capture: true });
+        document.addEventListener('touchmove', preventScroll, { passive: false, capture: true });
+        document.addEventListener('scroll', preventScroll, { passive: false, capture: true });
+
+        // Also prevent scroll on the VNC container specifically
+        setTimeout(() => {
+            const vncContainer = document.getElementById('vnc-canvas');
+            if (vncContainer) {
+                vncContainer.addEventListener('wheel', preventScroll, { passive: false, capture: true });
+                vncContainer.addEventListener('touchmove', preventScroll, { passive: false, capture: true });
+                vncContainer.addEventListener('scroll', preventScroll, { passive: false, capture: true });
+            }
+        }, 100);
 
         // Also prevent keyboard scrolling
         document.addEventListener('keydown', (e) => {
@@ -356,10 +406,11 @@
                 const isInputElement = ['input', 'textarea'].includes(e.target.tagName.toLowerCase());
                 if (!isInputElement) {
                     e.preventDefault();
+                    e.stopPropagation();
                     return false;
                 }
             }
-        });
+        }, { capture: true });
 
         // Initialize connection
         connectVNC();
