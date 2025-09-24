@@ -880,7 +880,7 @@
                 // Configure RFB settings
                 // Default to non-interactive (view-only)
                 rfb.viewOnly = true;
-                rfb.scaleViewport = false;  // Don't scale, show actual size
+                rfb.scaleViewport = true;   // Enable scaling to handle coordinate translation with CSS scaling
                 rfb.resizeSession = false;
                 rfb.showDotCursor = true;   // Show cursor to verify rendering
                 rfb.qualityLevel = 9;       // Max quality
