@@ -78,8 +78,9 @@ def ensure_user_profile_loaded(f):
         elif request.is_json and "user_email" in (request.get_json(silent=True) or {}):
             user_email = request.get_json(silent=True).get("user_email")
 
-        # Only require staff authentication when user_email is present
-        if user_email:
+        # Only require staff authentication when user_email is present AND different from sindarin_email
+        # (i.e., actual impersonation, not just redundant parameters)
+        if user_email and user_email != sindarin_email:
             # Check if staff token exists
             token = request.cookies.get("staff_token")
             if not token:
