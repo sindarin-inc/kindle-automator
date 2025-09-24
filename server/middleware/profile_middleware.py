@@ -40,10 +40,24 @@ def find_device_id_by_android_id(email):
 def ensure_user_profile_loaded(f):
     @wraps(f)
     def middleware(*args, **kwargs):
-        logger.info(f"PROFILE MIDDLEWARE CALLED for {request.endpoint if request else 'unknown'} endpoint")
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
-        logger.info(f"PROFILE MIDDLEWARE: sindarin_email={sindarin_email}")
+
+        # Update last_used
+        if sindarin_email:
+            try:
+                from database.connection import get_db
+                from database.repositories.user_repository import UserRepository
+
+                with get_db() as session:
+                    repo = UserRepository(session)
+                    success = repo.update_last_used(sindarin_email)
+                    if success:
+                        logger.info(f"Updated last_used for {sindarin_email} at start of request")
+                    else:
+                        logger.error(f"EARLY UPDATE FAILED: Could not update last_used for {sindarin_email}")
+            except Exception as e:
+                logger.error(f"EARLY UPDATE EXCEPTION for {sindarin_email}: {e}", exc_info=True)
 
         # Extract user_email from request parameters if present
         user_email = None
@@ -253,27 +267,21 @@ def ensure_user_profile_loaded(f):
             # The emulator state doesn't matter - if we have a working automator, it's active
             logger.debug(f"Automator exists with driver for {sindarin_email}")
 
-            # Update last_used timestamp BEFORE executing the endpoint
-            if sindarin_email:
-                logger.info(f"ATTEMPTING TO UPDATE last_used for '{sindarin_email}'")
-                try:
-                    with get_db() as session:
-                        repo = UserRepository(session)
-                        # First check if user exists
-                        user = repo.get_user_by_email(sindarin_email)
-                        if not user:
-                            logger.error(f"USER NOT FOUND in database: '{sindarin_email}'")
-                        else:
-                            logger.info(f"User found: {user.email}, current last_used: {user.last_used}")
-                            success = repo.update_last_used(sindarin_email)
-                            if success:
-                                logger.info(f"SUCCESS: Updated last_used for {sindarin_email}")
-                            else:
-                                logger.error(f"FAILED: update_last_used returned False for {sindarin_email}")
-                except Exception as e:
-                    logger.error(f"EXCEPTION updating last_used for {sindarin_email}: {e}", exc_info=True)
-            else:
-                logger.error(f"SKIPPING last_used update - sindarin_email is None or empty")
+            # Update last_used again after automator setup (in case it took a while)
+        if sindarin_email:
+            try:
+                from database.connection import get_db
+                from database.repositories.user_repository import UserRepository
+
+                with get_db() as session:
+                    repo = UserRepository(session)
+                    success = repo.update_last_used(sindarin_email)
+                    if success:
+                        logger.debug(f"Updated last_used for {sindarin_email} after setup")
+                    else:
+                        logger.error(f"Failed to update last_used for {sindarin_email} after setup")
+            except Exception as e:
+                logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
 
             result = f(*args, **kwargs)
             # Handle Flask Response objects appropriately
@@ -379,16 +387,19 @@ def ensure_user_profile_loaded(f):
                 logger.warning(f"Error ensuring app is in foreground: {e}")
                 # Continue anyway, the endpoint will handle errors
 
-        # Update last_used timestamp for activity tracking
+        # Update last_used again after automator setup (in case it took a while)
         if sindarin_email:
             try:
+                from database.connection import get_db
+                from database.repositories.user_repository import UserRepository
+
                 with get_db() as session:
                     repo = UserRepository(session)
                     success = repo.update_last_used(sindarin_email)
                     if success:
-                        logger.debug(f"Updated last_used for {sindarin_email}")
+                        logger.debug(f"Updated last_used for {sindarin_email} after setup")
                     else:
-                        logger.error(f"Failed to update last_used for {sindarin_email}")
+                        logger.error(f"Failed to update last_used for {sindarin_email} after setup")
             except Exception as e:
                 logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
 
