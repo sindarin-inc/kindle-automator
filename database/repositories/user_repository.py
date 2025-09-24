@@ -67,7 +67,9 @@ class UserRepository:
             The created User object
         """
         try:
-            user = User(email=email, avd_name=avd_name)
+            from datetime import datetime, timezone
+
+            user = User(email=email, avd_name=avd_name, last_used=datetime.now(timezone.utc))
             self.session.add(user)
 
             # Create default related records
