@@ -51,9 +51,21 @@ def ensure_user_profile_loaded(f):
 
                 with get_db() as session:
                     repo = UserRepository(session)
+                    # Check current value first
+                    user = repo.get_user_by_email(sindarin_email)
+                    old_last_used = user.last_used if user else None
+
                     success = repo.update_last_used(sindarin_email)
+
                     if success:
-                        logger.info(f"Updated last_used for {sindarin_email} at start of request")
+                        # Verify it was actually updated
+                        user = repo.get_user_by_email(sindarin_email)
+                        new_last_used = user.last_used if user else None
+                        logger.info(
+                            f"Updated last_used for {sindarin_email}: "
+                            f"old={old_last_used.isoformat() if old_last_used else 'None'}, "
+                            f"new={new_last_used.isoformat() if new_last_used else 'None'}"
+                        )
                     else:
                         logger.error(f"EARLY UPDATE FAILED: Could not update last_used for {sindarin_email}")
             except Exception as e:

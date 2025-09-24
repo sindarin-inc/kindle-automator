@@ -151,7 +151,7 @@ class IdleCheckResource(Resource):
                 if last_activity < idle_threshold:
                     idle_duration = (current_time - last_activity) / 60  # Convert to minutes
                     logger.info(
-                        f"Emulator for {email} has been idle for {idle_duration:.1f} minutes - shutting down"
+                        f"Emulator for {email} has been idle for {idle_duration:.1f} minutes ({current_time} - {last_activity} = {current_time - last_activity}) - shutting down"
                     )
 
                     # Use the shutdown manager directly instead of going through HTTP
