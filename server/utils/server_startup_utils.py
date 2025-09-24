@@ -81,6 +81,19 @@ def auto_restart_emulators_after_startup(server):
                 try:
                     logger.info(f" ---> Auto-restarting emulator for {email}...")
 
+                    # Use RequestManager to prevent contention with other requests
+                    from server.core.request_manager import RequestManager
+
+                    # Create a request manager for the restart operation
+                    # Using a special path to identify restart operations
+                    restart_manager = RequestManager(email, "/internal/restart-emulator", "POST")
+
+                    # Try to claim this restart operation
+                    if not restart_manager.claim_request():
+                        # Another process is already restarting this emulator
+                        logger.info(f"Another process is already restarting emulator for {email}, skipping")
+                        continue
+
                     # Check if this profile's emulator is already in use (local development only)
                     if platform.system() == "Darwin":
                         (
@@ -95,6 +108,9 @@ def auto_restart_emulators_after_startup(server):
                             )
                             logger.info(f"On local development, only one profile per emulator is allowed")
                             failed_restarts.append(email)
+                            restart_manager.store_response(
+                                {"success": False, "error": f"Emulator already in use by {other_email}"}, 409
+                            )
                             continue
 
                     # Use email override context to ensure proper email routing
@@ -116,15 +132,27 @@ def auto_restart_emulators_after_startup(server):
                                     logger.debug(
                                         f"Marked emulator {automator.device_id} as in use by {email}"
                                     )
+
+                                # Mark the restart as complete
+                                restart_manager.store_response(
+                                    {"success": True, "message": f"Emulator restarted for {email}"}, 200
+                                )
                             else:
                                 logger.error(f"✗ Failed to initialize driver for {email}", exc_info=True)
                                 failed_restarts.append(email)
+                                restart_manager.store_response(
+                                    {"success": False, "error": "Failed to initialize driver"}, 500
+                                )
                         else:
                             logger.error(f"✗ Failed to start emulator for {email}: {message}", exc_info=True)
                             failed_restarts.append(email)
+                            restart_manager.store_response({"success": False, "error": message}, 500)
 
                 except Exception as e:
                     logger.error(f"✗ Error restarting emulator for {email}: {e}", exc_info=True)
+                    # Complete the request with error if we had registered it
+                    if "restart_manager" in locals():
+                        restart_manager.store_response({"success": False, "error": str(e)}, 500)
                     logger.debug(
                         f"Backtrace for error restarting emulator for {email}: {traceback.format_exc()}"
                     )
