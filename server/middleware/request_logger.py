@@ -286,7 +286,14 @@ class RequestBodyLogger:
 
             # Get response info
             response_length = 0
-            if hasattr(response, "data") and response.data:
+            # Check if it's a streaming response first to avoid RuntimeError
+            if hasattr(response, "direct_passthrough") and response.direct_passthrough:
+                # Streaming response - can't access data directly
+                response_length = 0
+            elif hasattr(response, "is_streamed") and response.is_streamed:
+                # SSE/streaming response - can't access data directly
+                response_length = 0
+            elif hasattr(response, "data") and response.data:
                 response_length = len(response.data)
 
             # Truncate response preview
