@@ -225,16 +225,11 @@
             width: var(--emulator-width-flex, 300px);
         }
         
-        /* Two lines view - split into two rows */  
-        .dashboard.view-two-lines {
-            display: flex;
-            flex-wrap: wrap;
+        /* Columns view - configurable number of columns */
+        .dashboard.view-columns {
+            display: grid;
             gap: 1rem;
-        }
-        
-        .dashboard.view-two-lines .vnc-container {
-            flex: 0 0 calc(50% - 0.5rem);
-            max-width: calc(50% - 0.5rem);
+            grid-template-columns: repeat(var(--column-count, 2), 1fr);
         }
         
         .vnc-container {
@@ -354,7 +349,7 @@
         
         /* Adjust display height based on view mode */
         .view-one-line .vnc-display,
-        .view-two-lines .vnc-display {
+        .view-columns .vnc-display {
             height: 480px;
         }
         
@@ -543,7 +538,14 @@
                     </div>
                 </div>
                 <button class="view-btn" data-view="one-line">Single Row</button>
-                <button class="view-btn" data-view="two-lines">Two Rows</button>
+                <div class="adjustable-container">
+                    <button class="view-btn" data-view="columns">Columns</button>
+                    <div class="size-control columns-control">
+                        <label>Columns:</label>
+                        <input type="range" class="size-slider" id="columns-slider" min="2" max="6" value="2" step="1">
+                        <span class="size-value" id="columns-value">2</span>
+                    </div>
+                </div>
             </div>
             <div class="stats">
                 <div class="stat">
@@ -591,22 +593,31 @@
         let refreshTimer = null;
         let currentViewMode = 'default';
         let currentSize = 360;
+        let currentColumns = 2;
         
         // Load preferences from localStorage
         function loadPreferences() {
             const savedView = localStorage.getItem('vnc-view-mode');
             const savedSize = localStorage.getItem('vnc-emulator-size');
-            
+            const savedColumns = localStorage.getItem('vnc-column-count');
+
             if (savedView) {
                 currentViewMode = savedView;
                 setViewMode(savedView);
             }
-            
+
             if (savedSize) {
                 currentSize = parseInt(savedSize);
                 document.getElementById('size-slider').value = currentSize;
                 document.getElementById('size-value').textContent = `${currentSize}px`;
                 updateEmulatorSizes();
+            }
+
+            if (savedColumns) {
+                currentColumns = parseInt(savedColumns);
+                document.getElementById('columns-slider').value = currentColumns;
+                document.getElementById('columns-value').textContent = currentColumns;
+                updateColumnCount();
             }
         }
         
@@ -614,6 +625,7 @@
         function savePreferences() {
             localStorage.setItem('vnc-view-mode', currentViewMode);
             localStorage.setItem('vnc-emulator-size', currentSize.toString());
+            localStorage.setItem('vnc-column-count', currentColumns.toString());
         }
         
         // Set view mode
@@ -635,6 +647,8 @@
                 updateEmulatorSizes();
             } else if (mode === 'one-line') {
                 updateFlexSizes();
+            } else if (mode === 'columns') {
+                updateColumnCount();
             }
             
             savePreferences();
@@ -645,6 +659,12 @@
             const dashboard = document.getElementById('dashboard');
             dashboard.style.setProperty('--emulator-width', `${currentSize}px`);
             dashboard.style.setProperty('--emulator-width-flex', `${currentSize}px`);
+        }
+
+        // Update column count for columns mode
+        function updateColumnCount() {
+            const dashboard = document.getElementById('dashboard');
+            dashboard.style.setProperty('--column-count', currentColumns);
         }
         
         // Calculate and update flex sizes for one-line mode
@@ -786,11 +806,22 @@
             // Size slider
             const sizeSlider = document.getElementById('size-slider');
             const sizeValue = document.getElementById('size-value');
-            
+
             sizeSlider.addEventListener('input', (e) => {
                 currentSize = parseInt(e.target.value);
                 sizeValue.textContent = `${currentSize}px`;
                 updateEmulatorSizes();
+                savePreferences();
+            });
+
+            // Columns slider
+            const columnsSlider = document.getElementById('columns-slider');
+            const columnsValue = document.getElementById('columns-value');
+
+            columnsSlider.addEventListener('input', (e) => {
+                currentColumns = parseInt(e.target.value);
+                columnsValue.textContent = currentColumns;
+                updateColumnCount();
                 savePreferences();
             });
             
@@ -880,7 +911,7 @@
                 // Configure RFB settings
                 // Default to non-interactive (view-only)
                 rfb.viewOnly = true;
-                rfb.scaleViewport = false;  // Don't scale, show actual size
+                rfb.scaleViewport = true;   // Enable scaling to handle coordinate translation with CSS scaling
                 rfb.resizeSession = false;
                 rfb.showDotCursor = true;   // Show cursor to verify rendering
                 rfb.qualityLevel = 9;       // Max quality
@@ -1084,7 +1115,15 @@
             // Format status with duration
             let statusText = instance.is_booting ? 'Booting' : (instance.is_idle ? 'Idle' : 'Active');
             let durationText = '';
-            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+
+            // Show appropriate duration(s)
+            if (instance.is_idle && instance.idle_duration_minutes !== null && instance.idle_duration_minutes !== undefined) {
+                // For idle: show "Idle Xm · Ym" where X is idle duration and Y is session duration
+                statusText = `Idle ${instance.idle_duration_minutes}m`;
+                if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                    durationText = ` · <span style="color: #10b981;">${instance.session_duration_minutes}m</span>`;
+                }
+            } else if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
                 durationText = ` · ${instance.session_duration_minutes}m`;
             }
             
@@ -1164,10 +1203,18 @@
                             // Update status text with duration
                             let statusText = instance.is_booting ? 'Booting' : (instance.is_idle ? 'Idle' : 'Active');
                             let durationText = '';
-                            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+
+                            // Show appropriate duration(s)
+                            if (instance.is_idle && instance.idle_duration_minutes !== null && instance.idle_duration_minutes !== undefined) {
+                                // For idle: show "Idle Xm · Ym" where X is idle duration and Y is session duration
+                                statusText = `Idle ${instance.idle_duration_minutes}m`;
+                                if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                                    durationText = ` · <span style="color: #10b981;">${instance.session_duration_minutes}m</span>`;
+                                }
+                            } else if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
                                 durationText = ` · ${instance.session_duration_minutes}m`;
                             }
-                            statusTextEl.textContent = `${statusText}${durationText}`;
+                            statusTextEl.innerHTML = `${statusText}${durationText}`;
                         }
                     }
                     

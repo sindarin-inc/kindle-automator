@@ -90,7 +90,7 @@ All models are in `database/models.py`:
     ssh -i ansible/keys/kindle.key root@157.180.51.112 'cd /opt/kindle-automator && uv run dotenv -f .env.prod run python -c "code here"'
     ```
 - **Running Python**: Use `uv run dotenv run` for scripts needing env vars, `uv run` for tools
-- **Running tests**: Use `uv run pytest` directly (PYTHONPATH is automatically configured)
+- **Running tests**: Use `uv run pytest` directly (without PYTHONPATH)
 
 ## Running the Server
 

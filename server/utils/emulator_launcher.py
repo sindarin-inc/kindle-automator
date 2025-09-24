@@ -9,7 +9,7 @@ import os
 import platform
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -2124,7 +2124,9 @@ class EmulatorLauncher:
                 # Get snapshot size and modification time for debugging
                 snapshot_stat = os.stat(snapshot_path)
                 snapshot_size_mb = snapshot_stat.st_size / (1024 * 1024)
-                snapshot_mtime = datetime.fromtimestamp(snapshot_stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                snapshot_mtime = datetime.fromtimestamp(snapshot_stat.st_mtime, tz=timezone.utc).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
                 logger.debug(
                     f"Snapshot '{snapshot_name}' exists for {email} at {snapshot_path} "
                     f"(size: {snapshot_size_mb:.1f}MB, modified: {snapshot_mtime})"

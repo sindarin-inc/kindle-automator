@@ -1,7 +1,7 @@
 """Staff authentication resource."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import jsonify, make_response, request
 from flask_restful import Resource
@@ -144,9 +144,9 @@ class StaffTokensResource(Resource):
         for token_info in tokens:
             if "created_at" in token_info:
                 timestamp = token_info["created_at"]
-                token_info["created_at_formatted"] = datetime.fromtimestamp(timestamp).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                )
+                token_info["created_at_formatted"] = datetime.fromtimestamp(
+                    timestamp, tz=timezone.utc
+                ).strftime("%Y-%m-%d %H:%M:%S")
 
             # Truncate the actual token for security
             if "token" in token_info:

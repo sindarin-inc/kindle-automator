@@ -43,6 +43,34 @@ def ensure_user_profile_loaded(f):
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
 
+        # Update last_used
+        if sindarin_email:
+            try:
+                from database.connection import get_db
+                from database.repositories.user_repository import UserRepository
+
+                with get_db() as session:
+                    repo = UserRepository(session)
+                    # Check current value first
+                    user = repo.get_user_by_email(sindarin_email)
+                    old_last_used = user.last_used if user else None
+
+                    success = repo.update_last_used(sindarin_email)
+
+                    if success:
+                        # Verify it was actually updated
+                        user = repo.get_user_by_email(sindarin_email)
+                        new_last_used = user.last_used if user else None
+                        logger.info(
+                            f"Updated last_used for {sindarin_email}: "
+                            f"old={old_last_used.isoformat() if old_last_used else 'None'}, "
+                            f"new={new_last_used.isoformat() if new_last_used else 'None'}"
+                        )
+                    else:
+                        logger.error(f"EARLY UPDATE FAILED: Could not update last_used for {sindarin_email}")
+            except Exception as e:
+                logger.error(f"EARLY UPDATE EXCEPTION for {sindarin_email}: {e}", exc_info=True)
+
         # Extract user_email from request parameters if present
         user_email = None
         if "user_email" in request.args:
@@ -50,8 +78,9 @@ def ensure_user_profile_loaded(f):
         elif request.is_json and "user_email" in (request.get_json(silent=True) or {}):
             user_email = request.get_json(silent=True).get("user_email")
 
-        # Only require staff authentication when user_email is present
-        if user_email:
+        # Require staff authentication only when user_email is present AND different from sindarin_email
+        # This means someone is trying to impersonate a different user
+        if user_email and user_email != sindarin_email:
             # Check if staff token exists
             token = request.cookies.get("staff_token")
             if not token:
@@ -238,37 +267,40 @@ def ensure_user_profile_loaded(f):
 
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
+        logger.info(
+            f"Checking automator for {sindarin_email}: exists={automator is not None}, has_driver={hasattr(automator, 'driver') if automator else False}, driver_valid={bool(automator.driver) if automator and hasattr(automator, 'driver') else False}"
+        )
         if automator and hasattr(automator, "driver") and automator.driver:
             logger.info(f"Already have automator for email: {sindarin_email}")
 
             # Special case for macOS dev environment
             is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
 
-            # If the emulator is running for this profile or we're in macOS dev, we're good to go
-            if is_running or (is_mac_dev and find_device_id_by_android_id(sindarin_email)):
-                if is_running:
-                    logger.debug(f"Emulator already running for {sindarin_email}")
-                else:
-                    logger.debug(f"In macOS dev mode with available device for {sindarin_email}")
+            # If we have an automator with a driver, we should update last_used and continue
+            # The emulator state doesn't matter - if we have a working automator, it's active
+            logger.debug(f"Automator exists with driver for {sindarin_email}")
 
-                # Update last_used timestamp BEFORE executing the endpoint
-                if sindarin_email:
-                    try:
-                        with get_db() as session:
-                            repo = UserRepository(session)
-                            success = repo.update_last_used(sindarin_email)
-                            if success:
-                                logger.debug(f"Updated last_used for {sindarin_email}")
-                            else:
-                                logger.error(f"Failed to update last_used for {sindarin_email}")
-                    except Exception as e:
-                        logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
+            # Update last_used again after automator setup (in case it took a while)
+            if sindarin_email:
+                try:
+                    from database.connection import get_db
+                    from database.repositories.user_repository import UserRepository
 
-                result = f(*args, **kwargs)
-                # Handle Flask Response objects appropriately
-                if isinstance(result, (flask.Response, Response)):
-                    return result
+                    with get_db() as session:
+                        repo = UserRepository(session)
+                        success = repo.update_last_used(sindarin_email)
+                        if success:
+                            logger.debug(f"Updated last_used for {sindarin_email} after setup")
+                        else:
+                            logger.error(f"Failed to update last_used for {sindarin_email} after setup")
+                except Exception as e:
+                    logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
+
+            result = f(*args, **kwargs)
+            # Handle Flask Response objects appropriately
+            if isinstance(result, (flask.Response, Response)):
                 return result
+            return result
 
         # Need to switch to this profile - server.switch_profile handles both:
         # 1. Switching to an existing profile
@@ -368,16 +400,19 @@ def ensure_user_profile_loaded(f):
                 logger.warning(f"Error ensuring app is in foreground: {e}")
                 # Continue anyway, the endpoint will handle errors
 
-        # Update last_used timestamp for activity tracking
+        # Update last_used again after automator setup (in case it took a while)
         if sindarin_email:
             try:
+                from database.connection import get_db
+                from database.repositories.user_repository import UserRepository
+
                 with get_db() as session:
                     repo = UserRepository(session)
                     success = repo.update_last_used(sindarin_email)
                     if success:
-                        logger.debug(f"Updated last_used for {sindarin_email}")
+                        logger.debug(f"Updated last_used for {sindarin_email} after setup")
                     else:
-                        logger.error(f"Failed to update last_used for {sindarin_email}")
+                        logger.error(f"Failed to update last_used for {sindarin_email} after setup")
             except Exception as e:
                 logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
 

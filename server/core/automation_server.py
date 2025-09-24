@@ -515,9 +515,19 @@ class AutomationServer:
             # Get the user's last_used timestamp for idle checking
             user = db_session.query(User).filter_by(email=email).first()
             if user and user.last_used:
-                # Convert datetime to Unix timestamp for compatibility
-                return user.last_used.timestamp()
+                # Database now stores timezone-aware datetimes, just use directly
+                timestamp = user.last_used.timestamp()
 
+                logger.info(
+                    f"get_last_activity_time for {email}: "
+                    f"last_used={user.last_used.isoformat()}, "
+                    f"timestamp={timestamp}, "
+                    f"current_time={time.time()}, "
+                    f"diff={(time.time() - timestamp)/60:.1f} minutes"
+                )
+                return timestamp
+
+        logger.warning(f"No last_used timestamp found for {email}")
         return None
 
     def reset_position(self, email: str, book_title: str = None) -> None:

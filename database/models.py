@@ -32,9 +32,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     avd_name: Mapped[Optional[str]] = mapped_column(String(255))
-    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
-    auth_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    auth_failed_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    auth_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    auth_failed_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     was_running_at_restart: Mapped[Optional[bool]] = mapped_column(Boolean)
     restart_on_server: Mapped[Optional[str]] = mapped_column(String(255))
     styles_updated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -42,20 +42,20 @@ class User(Base):
     created_from_seed_clone: Mapped[bool] = mapped_column(Boolean, default=False)
     post_boot_randomized: Mapped[bool] = mapped_column(Boolean, default=False)
     needs_device_randomization: Mapped[bool] = mapped_column(Boolean, default=False)
-    last_snapshot_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_snapshot_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
     snapshot_dirty: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    snapshot_dirty_since: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    cold_storage_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    snapshot_dirty_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    cold_storage_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     kindle_version_name: Mapped[Optional[str]] = mapped_column(String(50))
     kindle_version_code: Mapped[Optional[str]] = mapped_column(String(50))
     android_version: Mapped[Optional[str]] = mapped_column(String(10))
     system_image: Mapped[Optional[str]] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
@@ -97,7 +97,7 @@ class EmulatorSettings(Base):
     status_bar_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_updates_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     memory_optimizations_applied: Mapped[bool] = mapped_column(Boolean, default=False)
-    memory_optimization_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    memory_optimization_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     appium_device_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
     keyboard_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     input_methods_uninstalled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -136,7 +136,7 @@ class LibrarySettings(Base):
     actively_reading_title: Mapped[Optional[str]] = mapped_column(Text)
     filter_book_count: Mapped[Optional[int]] = mapped_column(Integer)
     scroll_book_count: Mapped[Optional[int]] = mapped_column(Integer)
-    last_series_group_check: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_series_group_check: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     # Relationship
     user: Mapped["User"] = relationship(back_populates="library_settings")
@@ -193,17 +193,17 @@ class VNCInstance(Base):
     )
     appium_pid: Mapped[Optional[int]] = mapped_column(Integer)
     appium_running: Mapped[bool] = mapped_column(Boolean, default=False)
-    appium_last_health_check: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    appium_last_health_check: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     appium_system_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_chromedriver_port: Mapped[int] = mapped_column(Integer, nullable=False)
     appium_mjpeg_server_port: Mapped[int] = mapped_column(Integer, nullable=False)
     is_booting: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    boot_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    boot_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
@@ -241,11 +241,11 @@ class StaffToken(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
-    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     def __repr__(self) -> str:
         return f"<StaffToken(id={self.id}, token={self.token[:8]}..., revoked={self.revoked})>"
@@ -266,7 +266,7 @@ class EmulatorShutdownFailure(Base):
     snapshot_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
     placemark_sync_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
 
     def __repr__(self) -> str:
@@ -283,10 +283,10 @@ class BookPosition(Base):
     book_title: Mapped[str] = mapped_column(Text, nullable=False)
     current_position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     position_updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relationship
@@ -311,9 +311,9 @@ class AuthTokenHistory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'gained' or 'lost'
-    event_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    event_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relationship
@@ -354,10 +354,10 @@ class BookSession(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     last_accessed: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
 
     # Relationship
@@ -410,13 +410,13 @@ class ReadingSession(Base):
 
     # Timestamps
     started_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
     last_activity_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
     ended_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
+        DateTime(timezone=True), nullable=True
     )  # When session was closed/timed out
 
     # Session state
@@ -447,7 +447,7 @@ class RequestLog(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     datetime: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
     method: Mapped[str] = mapped_column(String(10), nullable=False)
     path: Mapped[str] = mapped_column(String(500), nullable=False, index=True)

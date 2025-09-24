@@ -3,7 +3,7 @@
 import json
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to Python path
@@ -70,7 +70,7 @@ def export_database(output_file: str = None) -> None:
         db_connection.initialize()
 
         # Prepare export data
-        export_data = {"export_timestamp": datetime.now().isoformat(), "tables": {}}
+        export_data = {"export_timestamp": datetime.now(timezone.utc).isoformat(), "tables": {}}
 
         with db_connection.get_session() as session:
             # Export all tables
@@ -95,7 +95,7 @@ def export_database(output_file: str = None) -> None:
 
         # Generate output filename if not provided
         if not output_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             output_file = f"backups/kindle_db_export_{timestamp}.json"
 
         # Ensure backup directory exists

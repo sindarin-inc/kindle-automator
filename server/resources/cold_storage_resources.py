@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import request
 from flask_restful import Resource
@@ -56,7 +56,7 @@ class ColdStorageArchiveResource(Resource):
                         "message": f"User {user_email} archived to cold storage",
                         "user_email": user_email,
                         "storage_info": storage_info,
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "dry_run": dry_run,
                     }
                 else:
@@ -65,7 +65,7 @@ class ColdStorageArchiveResource(Resource):
                         "message": f"Failed to archive user {user_email}",
                         "user_email": user_email,
                         "error": storage_info.get("error") if storage_info else "Unknown error",
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }, 400
 
             # Otherwise, archive all eligible profiles
@@ -86,7 +86,7 @@ class ColdStorageArchiveResource(Resource):
                 "success_count": success_count,
                 "failure_count": failure_count,
                 "storage_info": storage_info,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "dry_run": dry_run,
             }
 
@@ -150,7 +150,7 @@ class ColdStorageStatusResource(Resource):
                     if last_used:
                         try:
                             # Convert Unix timestamp to ISO format string
-                            last_used_date = datetime.fromtimestamp(last_used).isoformat()
+                            last_used_date = datetime.fromtimestamp(last_used, tz=timezone.utc).isoformat()
                         except (ValueError, TypeError):
                             logger.warning(f"Invalid last_used timestamp for {email}: {last_used}")
                     else:
@@ -183,7 +183,7 @@ class ColdStorageStatusResource(Resource):
                 "eligible_profiles": eligible_profiles,
                 "active_profiles": active_profiles,
                 "days_threshold": days_inactive,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -235,14 +235,14 @@ class ColdStorageRestoreResource(Resource):
                         "success": True,
                         "message": f"Successfully restored {user_email} from local backup",
                         "user_email": user_email,
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
                 else:
                     return {
                         "success": False,
                         "message": f"Failed to restore {user_email} from local backup",
                         "user_email": user_email,
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }, 400
             else:
                 # Normal restore from cold storage
@@ -269,7 +269,7 @@ class ColdStorageRestoreResource(Resource):
                         "message": message,
                         "user_email": user_email,
                         "restore_info": restore_info,
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "dry_run": dry_run,
                     }
                 else:
@@ -278,7 +278,7 @@ class ColdStorageRestoreResource(Resource):
                         "message": f"Failed to restore {user_email} from cold storage",
                         "user_email": user_email,
                         "error": restore_info.get("error") if restore_info else "Unknown error",
-                        "timestamp": datetime.now().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }, 400
 
         except Exception as e:
