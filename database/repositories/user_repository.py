@@ -251,6 +251,7 @@ class UserRepository:
             True if update was successful
         """
         try:
+            # Use timezone-aware UTC datetime - PostgreSQL will store as UTC
             now = datetime.now(timezone.utc)
             stmt = update(User).where(User.email == email).values(last_used=now, updated_at=now)
             result = self.session.execute(stmt)

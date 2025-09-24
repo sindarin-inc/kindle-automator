@@ -510,9 +510,8 @@ class AutomationServer:
             # Get the user's last_used timestamp for idle checking
             user = db_session.query(User).filter_by(email=email).first()
             if user and user.last_used:
-                # Convert datetime to Unix timestamp for compatibility
+                # Database now stores timezone-aware datetimes, just use directly
                 timestamp = user.last_used.timestamp()
-                from datetime import datetime
 
                 logger.info(
                     f"get_last_activity_time for {email}: "

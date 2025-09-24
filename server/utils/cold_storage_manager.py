@@ -5,7 +5,7 @@ import shutil
 import tarfile
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 import boto3
@@ -425,7 +425,8 @@ class ColdStorageManager:
         from views.core.avd_profile_manager import AVDProfileManager
 
         profile_manager = AVDProfileManager.get_instance()
-        cutoff_date = datetime.now() - timedelta(days=days_inactive)
+        # Use timezone-aware UTC datetime
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_inactive)
 
         # Use targeted query to get inactive profiles
         eligible_profiles = []
@@ -476,7 +477,9 @@ class ColdStorageManager:
             success, storage_info = self.archive_avd_to_cold_storage(email, dry_run=dry_run)
             if success and storage_info:
                 # Always mark as in cold storage, even in dry run
-                profile_manager.set_user_field(email, "cold_storage_date", datetime.now().isoformat())
+                profile_manager.set_user_field(
+                    email, "cold_storage_date", datetime.now(timezone.utc).isoformat()
+                )
                 if dry_run:
                     profile_manager.set_user_field(email, "cold_storage_dry_run", True)
                 success_count += 1
@@ -557,7 +560,7 @@ class ColdStorageManager:
 
         if success and storage_info:
             # Mark as in cold storage
-            profile_manager.set_user_field(email, "cold_storage_date", datetime.now().isoformat())
+            profile_manager.set_user_field(email, "cold_storage_date", datetime.now(timezone.utc).isoformat())
             if dry_run:
                 profile_manager.set_user_field(email, "cold_storage_dry_run", True)
 
