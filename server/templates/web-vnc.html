@@ -50,12 +50,15 @@
             position: relative;
             overflow: hidden;
             cursor: default;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .vnc-canvas-container canvas {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: contain;
+            /* Let noVNC handle sizing naturally */
+            max-width: 100%;
+            max-height: 100%;
         }
 
         .vnc-connecting {
@@ -203,7 +206,7 @@
 
                 // Configure RFB settings - interactive by default
                 rfbConnection.viewOnly = false;
-                rfbConnection.scaleViewport = true;   // Enable scaling to handle coordinate translation
+                rfbConnection.scaleViewport = false;  // Don't scale - let CSS handle display sizing
                 rfbConnection.resizeSession = false;
                 rfbConnection.showDotCursor = true;   // Show cursor to verify rendering
                 rfbConnection.qualityLevel = 9;       // Max quality
@@ -234,6 +237,7 @@
                             }
                         }, true);
                     }
+
 
                     // Clear connecting message
                     setTimeout(() => {
