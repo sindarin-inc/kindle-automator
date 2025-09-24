@@ -198,17 +198,18 @@
 
                 // Create RFB connection with credentials
                 rfbConnection = new RFB(canvasContainer, wsUrl, {
-                    credentials: { password: VNC_PASSWORD }
+                    credentials: { password: VNC_PASSWORD },
+                    shared: true,
+                    repeaterID: ''
                 });
 
                 // Configure RFB settings - interactive by default
                 rfbConnection.viewOnly = false;
-                rfbConnection.scaleViewport = true;  // Enable scaling for proper coordinate mapping
+                rfbConnection.scaleViewport = false;  // Don't scale, show actual size (same as dashboard)
                 rfbConnection.resizeSession = false;
-                rfbConnection.showDotCursor = false;  // Hide dot cursor for touch interface
-                rfbConnection.qualityLevel = 9;
-                rfbConnection.compressionLevel = 0;
-                rfbConnection.focusOnClick = true;  // Focus canvas on click
+                rfbConnection.showDotCursor = true;   // Show cursor to verify rendering (same as dashboard)
+                rfbConnection.qualityLevel = 9;       // Max quality
+                rfbConnection.compressionLevel = 0;   // No compression
 
                 // Set up event handlers
                 rfbConnection.addEventListener('connect', () => {
