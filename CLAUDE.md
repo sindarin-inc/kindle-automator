@@ -17,16 +17,15 @@ When Docker Desktop crashes on macOS, follow these steps:
    # Wait ~10 seconds for Docker to fully start
    ```
 
-2. **Start Redis and Postgres containers:**
-
-   ```bash
-   cd ../web-app
-   make fast  # Starts sol_redis (port 6479) and sol_postgres (port 5496)
-   ```
-
-3. **Verify services are running:**
+2. **Verify services are running:**
    ```bash
    docker ps | grep -E "sol_postgres|sol_redis"
+   ```
+
+   If containers are not running, start them:
+   ```bash
+   cd ../web-app
+   make fast  # Only run if containers are not already running
    ```
 
 ### Postgres Access
@@ -190,7 +189,7 @@ bash -c 'source .env.auth && curl -H "Authorization: Tolkien $WEB_INTEGRATION_TE
 
 If authentication fails:
 
-1. Make sure Docker containers are running: `cd ../web-app && make fast`
+1. Make sure Docker containers are running: `docker ps | grep -E "sol_postgres|sol_redis"`
 2. Regenerate tokens: `make refresh-auth`
 3. Verify tokens work: `make test-auth`
 
