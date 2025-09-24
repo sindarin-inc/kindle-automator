@@ -381,7 +381,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
         # Test 1: Access our own account (kindle@solreader.com) - should work without staff token
         print("[TEST] Step 1: Accessing own account without staff token...")
         response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
-        assert response.status_code == 200, f"Expected 200 when accessing own account, got {response.status_code}"
+        assert (
+            response.status_code == 200
+        ), f"Expected 200 when accessing own account, got {response.status_code}"
         data = response.json()
         assert "success" in data or "authenticated" in data, "Response should indicate success"
         print(f"[TEST] ✓ Correctly allowed access to own account without staff token")
@@ -539,7 +541,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
         # Test 1: Access our own account - should work even with invalid staff token
         print("[TEST] Step 1: Accessing own account with invalid staff token...")
         response = self._make_request("auth", {"user_email": TEST_USER_EMAIL})
-        assert response.status_code == 200, f"Expected 200 when accessing own account (invalid token ignored), got {response.status_code}"
+        assert (
+            response.status_code == 200
+        ), f"Expected 200 when accessing own account (invalid token ignored), got {response.status_code}"
         data = response.json()
         assert "success" in data or "authenticated" in data, "Response should indicate success"
         print(f"[TEST] ✓ Correctly ignored invalid token when not impersonating")
@@ -555,8 +559,9 @@ class TestKindleAPIIntegration(BaseKindleTest):
             assert response.status_code == 403, f"Expected 403 with invalid token, got {response.status_code}"
             data = response.json()
             assert "error" in data, "Response should contain error"
-            assert "invalid" in data.get("error", "").lower() or "staff" in data.get("error", "").lower(), \
-                f"Error should mention invalid token or staff auth: {data.get('error', '')}"
+            assert (
+                "invalid" in data.get("error", "").lower() or "staff" in data.get("error", "").lower()
+            ), f"Error should mention invalid token or staff auth: {data.get('error', '')}"
             print(f"[TEST] ✓ Correctly rejected invalid token: {data.get('error', 'Unknown error')}")
 
         # Restore original session state
