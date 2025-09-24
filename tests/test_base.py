@@ -11,7 +11,9 @@ from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-load_dotenv()
+# Load both .env and .env.auth files
+load_dotenv()  # Load .env first
+load_dotenv(".env.auth", override=True)  # Then load .env.auth, overriding any conflicts
 
 logger = logging.getLogger(__name__)
 
