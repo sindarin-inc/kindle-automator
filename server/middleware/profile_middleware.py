@@ -40,8 +40,10 @@ def find_device_id_by_android_id(email):
 def ensure_user_profile_loaded(f):
     @wraps(f)
     def middleware(*args, **kwargs):
+        logger.info(f"PROFILE MIDDLEWARE CALLED for {request.endpoint if request else 'unknown'} endpoint")
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
+        logger.info(f"PROFILE MIDDLEWARE: sindarin_email={sindarin_email}")
 
         # Extract user_email from request parameters if present
         user_email = None
@@ -238,6 +240,9 @@ def ensure_user_profile_loaded(f):
 
         # Check if we already have a working automator for this email
         automator = server.automators.get(sindarin_email)
+        logger.info(
+            f"Checking automator for {sindarin_email}: exists={automator is not None}, has_driver={hasattr(automator, 'driver') if automator else False}, driver_valid={bool(automator.driver) if automator and hasattr(automator, 'driver') else False}"
+        )
         if automator and hasattr(automator, "driver") and automator.driver:
             logger.info(f"Already have automator for email: {sindarin_email}")
 
@@ -250,16 +255,25 @@ def ensure_user_profile_loaded(f):
 
             # Update last_used timestamp BEFORE executing the endpoint
             if sindarin_email:
+                logger.info(f"ATTEMPTING TO UPDATE last_used for '{sindarin_email}'")
                 try:
                     with get_db() as session:
                         repo = UserRepository(session)
-                        success = repo.update_last_used(sindarin_email)
-                        if success:
-                            logger.debug(f"Updated last_used for {sindarin_email}")
+                        # First check if user exists
+                        user = repo.get_user_by_email(sindarin_email)
+                        if not user:
+                            logger.error(f"USER NOT FOUND in database: '{sindarin_email}'")
                         else:
-                            logger.error(f"Failed to update last_used for {sindarin_email}")
+                            logger.info(f"User found: {user.email}, current last_used: {user.last_used}")
+                            success = repo.update_last_used(sindarin_email)
+                            if success:
+                                logger.info(f"SUCCESS: Updated last_used for {sindarin_email}")
+                            else:
+                                logger.error(f"FAILED: update_last_used returned False for {sindarin_email}")
                 except Exception as e:
-                    logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
+                    logger.error(f"EXCEPTION updating last_used for {sindarin_email}: {e}", exc_info=True)
+            else:
+                logger.error(f"SKIPPING last_used update - sindarin_email is None or empty")
 
             result = f(*args, **kwargs)
             # Handle Flask Response objects appropriately
