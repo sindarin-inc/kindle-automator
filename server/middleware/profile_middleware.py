@@ -244,31 +244,28 @@ def ensure_user_profile_loaded(f):
             # Special case for macOS dev environment
             is_mac_dev = ENVIRONMENT.lower() == "dev" and platform.system() == "Darwin"
 
-            # If the emulator is running for this profile or we're in macOS dev, we're good to go
-            if is_running or (is_mac_dev and find_device_id_by_android_id(sindarin_email)):
-                if is_running:
-                    logger.debug(f"Emulator already running for {sindarin_email}")
-                else:
-                    logger.debug(f"In macOS dev mode with available device for {sindarin_email}")
+            # If we have an automator with a driver, we should update last_used and continue
+            # The emulator state doesn't matter - if we have a working automator, it's active
+            logger.debug(f"Automator exists with driver for {sindarin_email}")
 
-                # Update last_used timestamp BEFORE executing the endpoint
-                if sindarin_email:
-                    try:
-                        with get_db() as session:
-                            repo = UserRepository(session)
-                            success = repo.update_last_used(sindarin_email)
-                            if success:
-                                logger.debug(f"Updated last_used for {sindarin_email}")
-                            else:
-                                logger.error(f"Failed to update last_used for {sindarin_email}")
-                    except Exception as e:
-                        logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
+            # Update last_used timestamp BEFORE executing the endpoint
+            if sindarin_email:
+                try:
+                    with get_db() as session:
+                        repo = UserRepository(session)
+                        success = repo.update_last_used(sindarin_email)
+                        if success:
+                            logger.debug(f"Updated last_used for {sindarin_email}")
+                        else:
+                            logger.error(f"Failed to update last_used for {sindarin_email}")
+                except Exception as e:
+                    logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
 
-                result = f(*args, **kwargs)
-                # Handle Flask Response objects appropriately
-                if isinstance(result, (flask.Response, Response)):
-                    return result
+            result = f(*args, **kwargs)
+            # Handle Flask Response objects appropriately
+            if isinstance(result, (flask.Response, Response)):
                 return result
+            return result
 
         # Need to switch to this profile - server.switch_profile handles both:
         # 1. Switching to an existing profile
