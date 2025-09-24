@@ -47,6 +47,7 @@ from server.resources.active_emulators_resource import ActiveEmulatorsResource
 from server.resources.auth_dashboard_resource import AuthDashboardResource
 from server.resources.dashboard_resource import DashboardResource
 from server.resources.emulator_batch_config_resource import EmulatorBatchConfigResource
+from server.resources.web_vnc_resource import WebVNCResource
 from server.utils.cover_utils import (
     add_cover_urls_to_books,
     extract_book_covers_from_screen,
@@ -403,6 +404,7 @@ api.add_resource(
     resource_class_kwargs={"server_instance": server},
 )
 api.add_resource(DashboardResource, "/dashboard")
+api.add_resource(WebVNCResource, "/web-vnc")
 
 
 api.add_resource(AuthDashboardResource, "/auth-dashboard")

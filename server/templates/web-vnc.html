@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kindle Emulator</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📱</text></svg>">
+
+    <!-- noVNC CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/app/styles/base.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #000;
+            color: #e0e0e0;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .vnc-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .vnc-display {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: #000;
+        }
+
+        .vnc-canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            cursor: default;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .vnc-canvas-container canvas {
+            /* Maintain aspect ratio while fitting in container */
+            max-width: 100%;
+            max-height: 100%;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain;
+        }
+
+        .vnc-connecting {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #999;
+            font-size: 1.2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            text-align: center;
+        }
+
+        .vnc-error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ef4444;
+            font-size: 1rem;
+            text-align: center;
+            padding: 1rem;
+            max-width: 80%;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #fff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+    </style>
+</head>
+<body>
+    <div class="vnc-container">
+        <div class="vnc-display">
+            <div class="vnc-canvas-container" id="vnc-canvas">
+                <div class="vnc-connecting">
+                    <div class="spinner"></div>
+                    <span>Connecting to your Kindle emulator...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load noVNC scripts -->
+    <script type="module">
+        import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/core/rfb.js';
+
+        const VNC_PASSWORD = 'changeme';
+        const USER_EMAIL = '{{USER_EMAIL}}';
+
+        let rfbConnection = null;
+        let reconnectAttempts = 0;
+        let reconnectTimeout = null;
+
+        // Build API endpoint
+        function buildApiEndpoint() {
+            const params = new URLSearchParams(window.location.search);
+            params.set('format', 'json');
+            // Ensure user_email is in params if not already
+            if (!params.has('user_email') && !params.has('sindarin_email')) {
+                params.set('user_email', USER_EMAIL);
+            }
+            return `/kindle/web-vnc?${params.toString()}`;
+        }
+
+        async function fetchVNCData() {
+            try {
+                const response = await fetch(buildApiEndpoint(), {
+                    method: 'GET',
+                    credentials: 'same-origin',  // Include cookies
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    return data.vnc_instance;
+                } else {
+                    throw new Error(data.error || 'Failed to get VNC data');
+                }
+            } catch (error) {
+                console.error('Error fetching VNC data:', error);
+                throw error;
+            }
+        }
+
+        function showError(message) {
+            const container = document.getElementById('vnc-canvas');
+            container.innerHTML = `<div class="vnc-error">${message}</div>`;
+        }
+
+        function showConnecting(message = 'Connecting to your Kindle emulator...') {
+            const container = document.getElementById('vnc-canvas');
+            container.innerHTML = `<div class="vnc-connecting">
+                <div class="spinner"></div>
+                <span>${message}</span>
+            </div>`;
+        }
+
+        async function connectVNC() {
+            try {
+                showConnecting();
+
+                // Fetch VNC data
+                const vncData = await fetchVNCData();
+                const canvasContainer = document.getElementById('vnc-canvas');
+
+                // Build WebSocket URL
+                const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                let wsUrl;
+
+                if (window.location.protocol === 'https:') {
+                    // Route through the API server for HTTPS
+                    wsUrl = `${protocol}://${window.location.hostname}/websockify/${vncData.server_name}/${vncData.ws_port}`;
+                } else {
+                    // Direct connection for HTTP
+                    wsUrl = `${protocol}://${vncData.vnc_host}/websockify/${vncData.ws_port}`;
+                }
+
+                console.log(`Connecting to VNC at ${wsUrl}`);
+
+                // Create RFB connection with credentials
+                rfbConnection = new RFB(canvasContainer, wsUrl, {
+                    credentials: { password: VNC_PASSWORD },
+                    shared: true,
+                    repeaterID: ''
+                });
+
+                // Configure RFB settings - interactive by default
+                rfbConnection.viewOnly = false;
+                rfbConnection.scaleViewport = false;  // Don't scale - let CSS handle display sizing
+                rfbConnection.resizeSession = false;
+                rfbConnection.showDotCursor = true;   // Show cursor to verify rendering
+                rfbConnection.qualityLevel = 9;       // Max quality
+                rfbConnection.compressionLevel = 0;   // No compression
+                rfbConnection.clipViewport = false;   // Don't clip viewport
+                rfbConnection.dragViewport = false;   // Don't drag viewport
+
+                // Set up event handlers
+                rfbConnection.addEventListener('connect', () => {
+                    console.log('VNC connected');
+                    console.log('ViewOnly state:', rfbConnection.viewOnly);
+                    reconnectAttempts = 0;
+
+                    // Prevent rotation by intercepting orientation-related keys
+                    const canvas = canvasContainer.querySelector('canvas');
+                    if (canvas) {
+                        canvas.addEventListener('keydown', (e) => {
+                            // Block Ctrl+Alt+Arrow keys (common rotation shortcuts)
+                            if ((e.ctrlKey && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+                                // Block rotation keys used by Android emulator
+                                (e.ctrlKey && (e.key === 'F11' || e.key === 'F12')) ||
+                                // Block Ctrl+Shift+R (rotation)
+                                (e.ctrlKey && e.shiftKey && e.key === 'R')) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log('Blocked rotation key:', e.key);
+                                return false;
+                            }
+                        }, true);
+                    }
+
+
+                    // Clear connecting message
+                    setTimeout(() => {
+                        const connectingMsg = canvasContainer.querySelector('.vnc-connecting');
+                        if (connectingMsg) {
+                            connectingMsg.remove();
+                        }
+                    }, 200);
+
+                    // Give focus to the canvas after connection
+                    setTimeout(() => {
+                        const canvas = canvasContainer.querySelector('canvas');
+                        if (canvas) {
+                            console.log('Focusing canvas element');
+                            canvas.tabIndex = 1;  // Make canvas focusable
+                            canvas.focus();
+
+                            // Double-check viewOnly is false
+                            if (rfbConnection.viewOnly) {
+                                console.log('WARNING: Connection is view-only, setting to interactive');
+                                rfbConnection.viewOnly = false;
+                            }
+                        }
+                    }, 500);
+                });
+
+                rfbConnection.addEventListener('disconnect', (e) => {
+                    console.log('VNC disconnected:', e.detail);
+
+                    // Auto-reconnect with exponential backoff
+                    const backoffMs = Math.min(30000, Math.pow(2, reconnectAttempts) * 1000);
+                    const backoffSec = Math.round(backoffMs / 1000);
+
+                    showConnecting(`Connection lost. Reconnecting in ${backoffSec}s...`);
+                    reconnectAttempts++;
+
+                    reconnectTimeout = setTimeout(() => {
+                        connectVNC();
+                    }, backoffMs);
+                });
+
+                rfbConnection.addEventListener('credentialsrequired', () => {
+                    console.log('Credentials required');
+                    rfbConnection.sendCredentials({ password: VNC_PASSWORD });
+                });
+
+                rfbConnection.addEventListener('securityfailure', (e) => {
+                    console.error('Security failure:', e.detail);
+
+                    // Auto-retry on auth failure
+                    const backoffMs = Math.min(30000, Math.pow(2, reconnectAttempts) * 1000);
+                    const backoffSec = Math.round(backoffMs / 1000);
+
+                    showConnecting(`Authentication failed. Retrying in ${backoffSec}s...`);
+                    reconnectAttempts++;
+
+                    reconnectTimeout = setTimeout(() => {
+                        connectVNC();
+                    }, backoffMs);
+                });
+
+            } catch (error) {
+                console.error('Error connecting to VNC:', error);
+                showError(`Failed to connect: ${error.message}`);
+
+                // Auto-retry on error
+                const backoffMs = Math.min(30000, Math.pow(2, reconnectAttempts) * 1000);
+                const backoffSec = Math.round(backoffMs / 1000);
+
+                setTimeout(() => {
+                    showConnecting(`Error occurred. Retrying in ${backoffSec}s...`);
+                }, 2000);
+
+                reconnectAttempts++;
+
+                reconnectTimeout = setTimeout(() => {
+                    connectVNC();
+                }, backoffMs);
+            }
+        }
+
+
+        // Initialize connection
+        connectVNC();
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+            if (rfbConnection) {
+                try {
+                    rfbConnection.disconnect();
+                } catch (e) {
+                    console.error('Error disconnecting on unload:', e);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
