@@ -49,12 +49,15 @@
             height: 100%;
             position: relative;
             overflow: hidden;
+            touch-action: none;  /* Prevent browser touch handling */
         }
 
         .vnc-canvas-container canvas {
             width: 100% !important;
             height: 100% !important;
             object-fit: contain;
+            touch-action: none;  /* Prevent browser touch handling */
+            cursor: pointer;
         }
 
         .vnc-connecting {
@@ -200,11 +203,12 @@
 
                 // Configure RFB settings - interactive by default
                 rfbConnection.viewOnly = false;
-                rfbConnection.scaleViewport = false;
+                rfbConnection.scaleViewport = true;  // Enable scaling for proper coordinate mapping
                 rfbConnection.resizeSession = false;
-                rfbConnection.showDotCursor = true;
+                rfbConnection.showDotCursor = false;  // Hide dot cursor for touch interface
                 rfbConnection.qualityLevel = 9;
                 rfbConnection.compressionLevel = 0;
+                rfbConnection.focusOnClick = true;  // Focus canvas on click
 
                 // Set up event handlers
                 rfbConnection.addEventListener('connect', () => {
@@ -218,6 +222,13 @@
                             connectingMsg.remove();
                         }
                     }, 200);
+
+                    // Focus the canvas to ensure it receives input
+                    const canvas = canvasContainer.querySelector('canvas');
+                    if (canvas) {
+                        canvas.focus();
+                        canvas.tabIndex = 0;  // Make canvas focusable
+                    }
                 });
 
                 rfbConnection.addEventListener('disconnect', (e) => {
