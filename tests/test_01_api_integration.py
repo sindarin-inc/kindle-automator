@@ -570,7 +570,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
     @pytest.mark.timeout(120)
     def test_open_random_book(self):
-        """Test /kindle/open-random-book endpoint."""
+        """Test /kindle/open-random-book endpoint with page indicator extraction."""
 
         response = self._make_request("open-random-book")
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
@@ -588,6 +588,28 @@ class TestKindleAPIIntegration(BaseKindleTest):
             assert "ocr_text" in data, f"Response missing OCR text: {data}"
             # Verify we got actual text back
             assert len(data["ocr_text"]) > 0, "OCR text should not be empty"
+
+            # Verify progress field exists and has page indicators
+            assert "progress" in data, f"Response missing progress field: {data}"
+            progress = data["progress"]
+
+            # Check that at least one of the page indicator fields is present and non-null
+            has_page_info = any(
+                [
+                    progress.get("page") is not None,
+                    progress.get("location") is not None,
+                    progress.get("percentage") is not None,
+                ]
+            )
+            assert has_page_info, f"Progress should contain page indicators, got: {progress}"
+
+            # Log what we extracted for debugging
+            if progress.get("page"):
+                print(f"Extracted page: {progress['page']}")
+            if progress.get("location"):
+                print(f"Extracted location: {progress['location']}")
+            if progress.get("percentage") is not None:
+                print(f"Extracted percentage: {progress['percentage']}%")
 
         # Store book info for subsequent tests
         self.__class__.opened_book = data
@@ -611,14 +633,54 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # Verify dialog-specific fields
             assert "message" in data, f"Response missing message field: {data}"
             assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
-        else:
-            # Normal navigation response
-            assert (
-                "ocr_text" in data or "text" in data or "content" in data
-            ), f"Response missing OCR text: {data}"
-            # Verify we got actual text back
+
+            # Use the proper /last-read-page-dialog endpoint to dismiss with YES
+            print("[TEST] Found last-read dialog, dismissing with YES via /last-read-page-dialog...")
+            dismiss_params = {"goto_last_read_page": "true"}
+            response = self._make_request("last-read-page-dialog", dismiss_params)
+            assert response.status_code == 200, f"Failed to dismiss dialog: {response.status_code}"
+            data = response.json()
+            assert data.get("success"), f"Dialog dismissal failed: {data}"
+            print(f"[TEST] Dialog dismissed successfully, got OCR response")
+
+        # Now test the OCR response (either from initial navigate or after dismissing dialog)
+        if "ocr_text" in data or "text" in data or "content" in data:
+            # Normal navigation response with OCR
             text_field = data.get("ocr_text") or data.get("text") or data.get("content")
             assert len(text_field) > 0, "OCR text should not be empty"
+
+            # NEW: Verify progress field is included with OCR text (from the page OCR branch)
+            assert "progress" in data, f"Response missing progress field with OCR text: {data}"
+            progress = data["progress"]
+            assert progress is not None, "Progress field should not be None"
+
+            # Check that progress contains expected fields
+            assert "percentage" in progress, f"Progress missing percentage field: {progress}"
+            assert "current_page" in progress, f"Progress missing current_page field: {progress}"
+            assert "total_pages" in progress, f"Progress missing total_pages field: {progress}"
+
+            # At least one of these should have a non-null value from OCR
+            has_valid_data = any(
+                [
+                    progress.get("percentage") is not None,
+                    progress.get("current_page") is not None,
+                    progress.get("total_pages") is not None,
+                    progress.get("current_location") is not None,
+                    progress.get("total_locations") is not None,
+                ]
+            )
+
+            assert has_valid_data, f"OCR failed to extract any page/location info. Progress: {progress}"
+
+            # Log what we successfully extracted
+            if progress.get("percentage") is not None:
+                print(f"[TEST] ✓ Got percentage: {progress['percentage']}%")
+            if progress.get("current_page") is not None and progress.get("total_pages") is not None:
+                print(f"[TEST] ✓ Got page info: {progress['current_page']}/{progress['total_pages']}")
+            if progress.get("current_location") is not None and progress.get("total_locations") is not None:
+                print(
+                    f"[TEST] ✓ Got location info: {progress['current_location']}/{progress['total_locations']}"
+                )
 
     @pytest.mark.timeout(120)
     def test_table_of_contents(self):

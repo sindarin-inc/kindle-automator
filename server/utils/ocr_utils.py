@@ -202,13 +202,15 @@ class KindleOCR:
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
                     ocr_text = page.markdown
-                    if ocr_text:
-                        logger.info("MistralAI OCR processing successful")
+                    if ocr_text and ocr_text.strip():  # Check for non-empty text
+                        logger.info(
+                            f"MistralAI OCR processing successful, extracted text: '{ocr_text[:100]}'..."
+                        )
                         return ocr_text, None
                     else:
-                        error_msg = "No text extracted from MistralAI OCR response"
-                        logger.error(error_msg)
-                        return None, error_msg
+                        # Log but don't treat empty text as error for page regions
+                        logger.info(f"MistralAI OCR returned empty text (markdown: '{ocr_text}')")
+                        return None, "No text extracted from MistralAI OCR response"
                 else:
                     error_msg = f"No MistralAI OCR response or no pages found: {ocr_response}"
                     logger.error(error_msg)
@@ -293,12 +295,13 @@ class KindleOCR:
         return cleaned_text
 
     @staticmethod
-    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
+    def process_ocr(image_content, clean_ui_elements=True) -> Tuple[Optional[str], Optional[str]]:
         """
         Process an image with OCR, trying Google Document AI first, then falling back to MistralAI.
 
         Args:
             image_content: Either binary content (bytes) or a base64-encoded string
+            clean_ui_elements: Whether to clean UI elements like page numbers (default True for main text, False for page indicators)
 
         Returns:
             A tuple of (OCR text result or None if processing failed, error message if an error occurred)
@@ -308,16 +311,24 @@ class KindleOCR:
         ocr_text, mistral_error = KindleOCR._process_with_mistral(image_content)
 
         if ocr_text:
-            cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
-            return cleaned_text, None
+            # Only clean UI elements if requested (not for page indicator regions)
+            if clean_ui_elements:
+                cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
+                return cleaned_text, None
+            else:
+                return ocr_text, None
 
         # If Google fails, try MistralAI as fallback
         logger.warning(f"MistralAI failed: {mistral_error}. Falling back to Google Document AI...")
         ocr_text, google_error = KindleOCR._process_with_google_document_ai(image_content)
 
         if ocr_text:
-            cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
-            return cleaned_text, None
+            # Only clean UI elements if requested (not for page indicator regions)
+            if clean_ui_elements:
+                cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
+                return cleaned_text, None
+            else:
+                return ocr_text, None
 
         # Both failed, return combined error message
         combined_error = f"Both OCR services failed. Google: {google_error}; MistralAI: {mistral_error}"
@@ -344,17 +355,18 @@ def extract_page_indicator_regions(image_bytes):
 
         # Define crop regions based on proportions
         # Bottom-left for page/location indicator
+        # The page number is in the bottom 6% of screen (bottom 80px of 1400px)
         page_indicator_box = (
             0,  # Left edge
-            int(height * 0.85),  # Start at 85% from top
-            int(width * 0.6),  # Left 60% of width
+            int(height * 0.94),  # Start at 94% from top (bottom 6%)
+            int(width * 0.5),  # Left 50% of width
             height,  # Bottom edge
         )
 
         # Bottom-right for percentage
         percentage_box = (
-            int(width * 0.7),  # Start at 70% from left
-            int(height * 0.85),  # Start at 85% from top
+            int(width * 0.5),  # Start at 50% from left
+            int(height * 0.94),  # Start at 94% from top (bottom 6%)
             width,  # Right edge
             height,  # Bottom edge
         )
@@ -382,6 +394,54 @@ def extract_page_indicator_regions(image_bytes):
         return None, None
 
 
+def parse_page_indicators(page_indicator_text, percentage_text):
+    """Parse page indicator and percentage text to extract structured progress data.
+
+    Args:
+        page_indicator_text: OCR text from page indicator region (e.g., "Page 123 of 456", "8 mins left in chapter")
+        percentage_text: OCR text from percentage region (e.g., "87%")
+
+    Returns:
+        dict: Progress information with current_page/location, total_pages/locations, percentage, and/or time_left
+    """
+    progress = {}
+
+    # Parse page indicator text
+    if page_indicator_text:
+        # Try to match page numbers
+        if match := re.search(r"(?:Page|page)\s+(\d+)\s+of\s+(\d+)", page_indicator_text):
+            progress["current_page"] = int(match.group(1))
+            progress["total_pages"] = int(match.group(2))
+            logger.info(f"Extracted page info: {match.group(1)}/{match.group(2)}")
+        # Try to match locations
+        elif match := re.search(r"(?:Location|location)\s+(\d+)\s+of\s+(\d+)", page_indicator_text):
+            progress["current_location"] = int(match.group(1))
+            progress["total_locations"] = int(match.group(2))
+        # Try to match time indicators
+        elif match := re.search(
+            r"(\d+)\s+(min|mins|minute|minutes|hour|hours|hr|hrs)\s+left", page_indicator_text
+        ):
+            unit = "min" if "min" in match.group(2) else "hour"
+            progress["time_left"] = f"{match.group(1)} {unit}"
+            progress["reading_time_indicator"] = page_indicator_text
+            logger.info(f"Extracted time-based indicator: {progress['time_left']}")
+            progress["current_page"] = None
+            progress["total_pages"] = None
+
+    # Parse percentage
+    if percentage_text:
+        percentage_match = re.search(r"(\d+)%", percentage_text)
+        if percentage_match:
+            progress["percentage"] = int(percentage_match.group(1))
+            logger.info(f"Extracted percentage: {progress['percentage']}%")
+        else:
+            progress["percentage"] = None
+    else:
+        progress["percentage"] = None
+
+    return progress
+
+
 def process_screenshot_with_regions(image_bytes):
     """Process a screenshot to extract both main text and page information.
 
@@ -402,12 +462,12 @@ def process_screenshot_with_regions(image_bytes):
         img = Image.open(BytesIO(image_bytes))
         width, height = img.size
 
-        # Crop main text area (top 85%, excluding page numbers)
+        # Crop main text area (top 94%, excluding page numbers which are in bottom 6%)
         main_text_box = (
             0,  # Left edge
             0,  # Top edge
             width,  # Right edge
-            int(height * 0.85),  # Stop at 85% from top
+            int(height * 0.94),  # Stop at 94% from top (excludes bottom 6% where page numbers are)
         )
         main_text_img = img.crop(main_text_box)
 
@@ -427,25 +487,27 @@ def process_screenshot_with_regions(image_bytes):
 
         # OCR page indicator
         if page_indicator_bytes:
-            page_text, page_error = KindleOCR.process_ocr(page_indicator_bytes)
+            page_text, page_error = KindleOCR.process_ocr(page_indicator_bytes, clean_ui_elements=False)
             if page_text:
                 # Clean up the text - remove any extra whitespace
                 page_text = " ".join(page_text.split())
                 result["page_indicator_text"] = page_text
-                logger.info(f"Page indicator OCR result: '{page_text}'")
+                logger.info(f"OCR: Page indicator extracted: '{page_text}'")
             elif page_error:
                 result["errors"].append(f"Page indicator OCR error: {page_error}")
 
         # OCR percentage
         if percentage_bytes:
-            percent_text, percent_error = KindleOCR.process_ocr(percentage_bytes)
+            percent_text, percent_error = KindleOCR.process_ocr(percentage_bytes, clean_ui_elements=False)
             if percent_text:
                 # Clean up the text - remove any extra whitespace
                 percent_text = percent_text.strip()
                 result["percentage_text"] = percent_text
-                logger.info(f"Percentage OCR result: '{percent_text}'")
+                logger.info(f"OCR: Percentage extracted: '{percent_text}'")
             elif percent_error:
                 result["errors"].append(f"Percentage OCR error: {percent_error}")
+        else:
+            logger.warning("OCR: No percentage bytes extracted")
 
         return result
 
@@ -557,6 +619,62 @@ def is_ocr_requested(default=False):
     return perform_ocr
 
 
+def cycle_page_indicator_if_needed(driver, page_indicator_text, percentage_text=None):
+    """If time-based indicator is detected, tap to cycle through formats to get page/location.
+
+    Args:
+        driver: The Appium driver instance
+        page_indicator_text: The OCR'd text from the page indicator region
+        percentage_text: Optional percentage text
+
+    Returns:
+        dict: Updated progress information with page/location data if found
+    """
+    # First parse what we have
+    progress = parse_page_indicators(page_indicator_text, percentage_text)
+
+    # Check if we got a time-based indicator instead of page/location
+    if (
+        progress
+        and progress.get("time_left")
+        and not progress.get("current_page")
+        and not progress.get("current_location")
+    ):
+        logger.info(
+            f"Detected time-based indicator: {progress.get('time_left')}. Attempting to cycle to page/location format"
+        )
+
+        try:
+            # Import reader handler to use its tap-to-cycle functionality
+            from handlers.reader_handler import ReaderHandler
+
+            # Create a reader handler instance
+            reader = ReaderHandler(driver)
+
+            # Use the rotate_page_format_with_ocr method to cycle through formats
+            cycled_progress = reader.rotate_page_format_with_ocr(max_taps=5)
+
+            if cycled_progress:
+                logger.info(f"Successfully cycled to format: {cycled_progress.get('display_format')}")
+                # Update the progress with the cycled data
+                if cycled_progress.get("current_page"):
+                    progress["current_page"] = cycled_progress["current_page"]
+                    progress["total_pages"] = cycled_progress.get("total_pages")
+                elif cycled_progress.get("current_location"):
+                    progress["current_location"] = cycled_progress["current_location"]
+                    progress["total_locations"] = cycled_progress.get("total_locations")
+                if cycled_progress.get("percentage"):
+                    progress["percentage"] = cycled_progress["percentage"]
+                # Keep the original time indicator for reference
+                progress["original_indicator"] = progress.get("reading_time_indicator")
+            else:
+                logger.warning("Could not find page/location format after cycling")
+        except Exception as e:
+            logger.error(f"Error cycling page indicator: {e}", exc_info=True)
+
+    return progress
+
+
 def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False, perform_ocr=False):
     """Process screenshot for API response - either adding URL, base64-encoded image, or OCR text.
 
@@ -579,20 +697,43 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
             with open(screenshot_path, "rb") as img_file:
                 image_data = img_file.read()
 
-            # Process the image with OCR
-            ocr_text, error = KindleOCR.process_ocr(image_data)
+            # Use process_screenshot_with_regions to extract both main text and page indicators
+            ocr_results = process_screenshot_with_regions(image_data)
+
+            ocr_text = ocr_results.get("main_text")
+            page_indicator_text = ocr_results.get("page_indicator_text")
+            percentage_text = ocr_results.get("percentage_text")
+            errors = ocr_results.get("errors", [])
 
             if ocr_text:
-                # If OCR successful, just add the text to the result and don't include the image
-                # Don't include base64 or URL to save bandwidth and storage
+                # If OCR successful, add the text to the result
                 result["ocr_text"] = ocr_text
                 # Log the length of the OCR text
                 logger.info(f"OCR text extracted successfully, length: {len(ocr_text)} characters")
+
+                # Log what we got from the page regions
+                logger.info(
+                    f"Page indicator text: '{page_indicator_text}', Percentage text: '{percentage_text}'"
+                )
+
+                # Parse and add page progress information if extracted
+                # Note: We can't use cycle_page_indicator_if_needed here because we don't have access to the driver
+                # The cycling should be handled by the calling code that has access to the driver
+                progress = parse_page_indicators(page_indicator_text, percentage_text)
+
+                # Log the parsed progress
+                logger.info(f"Parsed progress: {progress}")
+
+                # Add progress to result if any info was extracted
+                if progress:
+                    result["progress"] = progress
+
                 # Always delete the image after successful OCR
                 delete_after = True
             else:
                 # If OCR failed, add the error and fall back to regular image handling
-                result["ocr_error"] = error or "Unknown OCR error"
+                error_msg = "; ".join(errors) if errors else "Unknown OCR error"
+                result["ocr_error"] = error_msg
                 # Fall back to base64 or URL
                 if use_base64:
                     encoded_image = base64.b64encode(image_data).decode("utf-8")

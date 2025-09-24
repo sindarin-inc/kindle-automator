@@ -10,6 +10,7 @@ with support for:
 
 import logging
 import os
+import re
 import time
 from typing import Dict, Optional, Tuple, Union
 
@@ -312,6 +313,21 @@ class NavigationResourceHandler:
                     screenshot_id, screenshot_path, use_base64, perform_ocr
                 )
 
+                # If OCR detected time-based indicators, try to cycle to get page/location
+                if perform_ocr and "progress" in screenshot_data:
+                    from server.utils.ocr_utils import cycle_page_indicator_if_needed
+
+                    progress = screenshot_data["progress"]
+                    if progress and progress.get("time_left"):
+                        # Try to cycle to get page/location information
+                        page_text = progress.get("reading_time_indicator", "")
+                        percentage = progress.get("percentage", "")
+                        updated_progress = cycle_page_indicator_if_needed(
+                            self.automator.driver, page_text, f"{percentage}%" if percentage else None
+                        )
+                        if updated_progress:
+                            screenshot_data["progress"] = updated_progress
+
                 # If only OCR was requested (not screenshot), only include OCR text in response
                 if perform_ocr and not include_screenshot:
                     # Only include OCR-related fields
@@ -319,6 +335,13 @@ class NavigationResourceHandler:
                         response_data["ocr_text"] = screenshot_data["ocr_text"]
                     if "ocr_error" in screenshot_data:
                         response_data["ocr_error"] = screenshot_data["ocr_error"]
+                    # Also include progress if page indicators were extracted
+                    if "progress" in screenshot_data:
+                        # Merge the OCR-extracted progress with existing progress
+                        if response_data.get("progress"):
+                            response_data["progress"].update(screenshot_data["progress"])
+                        else:
+                            response_data["progress"] = screenshot_data["progress"]
                 else:
                     # Include all screenshot data
                     response_data.update(screenshot_data)
@@ -369,17 +392,27 @@ class NavigationResourceHandler:
 
         # If preview was requested, handle it after navigating
         preview_ocr_text = None
+        preview_page_info = None
         if success and preview_count != 0:
             if preview_direction_forward:
-                preview_success, preview_ocr_text = self._preview_multiple_pages_forward(abs_preview_count)
+                preview_success, preview_ocr_text, preview_page_info = self._preview_multiple_pages_forward(
+                    abs_preview_count
+                )
             else:
-                preview_success, preview_ocr_text = self._preview_multiple_pages_backward(abs_preview_count)
+                preview_success, preview_ocr_text, preview_page_info = self._preview_multiple_pages_backward(
+                    abs_preview_count
+                )
 
             if preview_success and preview_ocr_text:
-                # Get current page data after navigation
-                progress = self.automator.state_machine.reader_handler.get_reading_progress(
-                    show_placemark=show_placemark
-                )
+                # Use the page info from the preview if available, otherwise get current page data
+                if preview_page_info:
+                    # Use the page info extracted from OCR of the preview page
+                    progress = preview_page_info
+                else:
+                    # Fall back to getting current page data after navigation
+                    progress = self.automator.state_machine.reader_handler.get_reading_progress(
+                        show_placemark=show_placemark
+                    )
 
                 # When preview is requested, we're primarily interested in the OCR text
                 response_data = {"success": True, "progress": progress, "ocr_text": preview_ocr_text}
@@ -423,6 +456,21 @@ class NavigationResourceHandler:
                 screenshot_id, screenshot_path, use_base64, perform_ocr
             )
 
+            # If OCR detected time-based indicators, try to cycle to get page/location
+            if perform_ocr and "progress" in screenshot_data:
+                from server.utils.ocr_utils import cycle_page_indicator_if_needed
+
+                progress = screenshot_data["progress"]
+                if progress and progress.get("time_left"):
+                    # Try to cycle to get page/location information
+                    page_text = progress.get("reading_time_indicator", "")
+                    percentage = progress.get("percentage", "")
+                    updated_progress = cycle_page_indicator_if_needed(
+                        self.automator.driver, page_text, f"{percentage}%" if percentage else None
+                    )
+                    if updated_progress:
+                        screenshot_data["progress"] = updated_progress
+
             # If only OCR was requested (not screenshot), only include OCR text in response
             if perform_ocr and not include_screenshot:
                 # Only include OCR-related fields
@@ -430,6 +478,9 @@ class NavigationResourceHandler:
                     response_data["ocr_text"] = screenshot_data["ocr_text"]
                 if "ocr_error" in screenshot_data:
                     response_data["ocr_error"] = screenshot_data["ocr_error"]
+                # If OCR extracted page progress, use it to override the default progress
+                if "progress" in screenshot_data:
+                    response_data["progress"] = screenshot_data["progress"]
             else:
                 # Include all screenshot data
                 response_data.update(screenshot_data)
@@ -566,17 +617,17 @@ class NavigationResourceHandler:
 
         return success
 
-    def _preview_multiple_pages_forward(self, count: int) -> Tuple[bool, Optional[str]]:
+    def _preview_multiple_pages_forward(self, count: int) -> Tuple[bool, Optional[str], Optional[dict]]:
         """Preview multiple pages forward, then return to original position.
 
         Args:
             count: Number of pages to preview forward.
 
         Returns:
-            Tuple of (success, ocr_text)
+            Tuple of (success, ocr_text, page_info)
         """
         if count <= 0:
-            return False, None
+            return False, None, None
 
         logger.info(f"Previewing {count} pages forward")
 
@@ -584,10 +635,10 @@ class NavigationResourceHandler:
         forward_success = self._navigate_pages(forward=True, count=count)
         if not forward_success:
             logger.error("Failed to navigate forward during preview", exc_info=True)
-            return False, None
+            return False, None, None
 
         # Capture OCR from the preview page
-        ocr_text, error_msg = self._extract_screenshot_for_ocr(f"preview_forward_{count}")
+        ocr_text, page_info, error_msg = self._extract_screenshot_for_ocr(f"preview_forward_{count}")
 
         # Now navigate back to original position
         backward_success = self._navigate_pages(forward=False, count=count)
@@ -597,22 +648,23 @@ class NavigationResourceHandler:
 
         if ocr_text:
             logger.info(f"Successfully previewed {count} pages forward and extracted OCR text")
-            return True, ocr_text
+            # Return both OCR text and page info
+            return True, ocr_text, page_info
         else:
             logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
-            return False, None
+            return False, None, None
 
-    def _preview_multiple_pages_backward(self, count: int) -> Tuple[bool, Optional[str]]:
+    def _preview_multiple_pages_backward(self, count: int) -> Tuple[bool, Optional[str], Optional[dict]]:
         """Preview multiple pages backward, then return to original position.
 
         Args:
             count: Number of pages to preview backward.
 
         Returns:
-            Tuple of (success, ocr_text)
+            Tuple of (success, ocr_text, page_info)
         """
         if count <= 0:
-            return False, None
+            return False, None, None
 
         logger.info(f"Previewing {count} pages backward")
 
@@ -620,10 +672,10 @@ class NavigationResourceHandler:
         backward_success = self._navigate_pages(forward=False, count=count)
         if not backward_success:
             logger.error("Failed to navigate backward during preview", exc_info=True)
-            return False, None
+            return False, None, None
 
         # Capture OCR from the preview page
-        ocr_text, error_msg = self._extract_screenshot_for_ocr(f"preview_backward_{count}")
+        ocr_text, page_info, error_msg = self._extract_screenshot_for_ocr(f"preview_backward_{count}")
 
         # Now navigate forward to original position
         forward_success = self._navigate_pages(forward=True, count=count)
@@ -633,10 +685,10 @@ class NavigationResourceHandler:
 
         if ocr_text:
             logger.info(f"Successfully previewed {count} pages backward and extracted OCR text")
-            return True, ocr_text
+            return True, ocr_text, page_info
         else:
             logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
-            return False, None
+            return False, None, None
 
     def _preview_pages_forward(self, count: int, show_placemark: bool) -> Tuple[Dict, int]:
         """Preview pages forward without navigating from current position.
@@ -649,15 +701,19 @@ class NavigationResourceHandler:
             Tuple of (response_data, status_code)
         """
         logger.info(f"Handling _preview_pages_forward with count={count}")
-        success, ocr_text = self._preview_multiple_pages_forward(count)
+        success, ocr_text, page_info = self._preview_multiple_pages_forward(count)
         if success and ocr_text:
             response_data = {"success": True, "ocr_text": ocr_text}
-            # Get reading progress but don't show placemark
-            progress = self.automator.state_machine.reader_handler.get_reading_progress(
-                show_placemark=show_placemark
-            )
-            if progress:
-                response_data["progress"] = progress
+            # Use page info from OCR if available, otherwise get reading progress
+            if page_info:
+                response_data["progress"] = page_info
+            else:
+                # Get reading progress but don't show placemark
+                progress = self.automator.state_machine.reader_handler.get_reading_progress(
+                    show_placemark=show_placemark
+                )
+                if progress:
+                    response_data["progress"] = progress
             return response_data, 200
         else:
             return {"error": f"Failed to preview {count} pages forward"}, 500
@@ -673,27 +729,31 @@ class NavigationResourceHandler:
             Tuple of (response_data, status_code)
         """
         logger.info(f"Handling _preview_pages_backward with count={count}")
-        success, ocr_text = self._preview_multiple_pages_backward(count)
+        success, ocr_text, page_info = self._preview_multiple_pages_backward(count)
         if success and ocr_text:
             response_data = {"success": True, "ocr_text": ocr_text}
-            # Get reading progress but don't show placemark
-            progress = self.automator.state_machine.reader_handler.get_reading_progress(
-                show_placemark=show_placemark
-            )
-            if progress:
-                response_data["progress"] = progress
+            # Use page info from OCR if available, otherwise get reading progress
+            if page_info:
+                response_data["progress"] = page_info
+            else:
+                # Get reading progress but don't show placemark
+                progress = self.automator.state_machine.reader_handler.get_reading_progress(
+                    show_placemark=show_placemark
+                )
+                if progress:
+                    response_data["progress"] = progress
             return response_data, 200
         else:
             return {"error": f"Failed to preview {count} pages backward"}, 500
 
-    def _extract_screenshot_for_ocr(self, prefix: str) -> Tuple[Optional[str], Optional[str]]:
-        """Take a screenshot and perform OCR on it.
+    def _extract_screenshot_for_ocr(self, prefix: str) -> Tuple[Optional[str], Optional[dict], Optional[str]]:
+        """Take a screenshot and perform OCR on it, extracting both main text and page information.
 
         Args:
             prefix: Prefix for the screenshot filename
 
         Returns:
-            tuple: (ocr_text, error_message) - OCR text if successful, error message if failed
+            tuple: (ocr_text, page_info, error_message) - OCR text and page info if successful, error message if failed
         """
         try:
             # Give the page a moment to render fully
@@ -713,15 +773,42 @@ class NavigationResourceHandler:
             screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
             self.automator.driver.save_screenshot(screenshot_path)
 
-            # Get OCR text from screenshot
+            # Get OCR text and page info from screenshot using regions
             ocr_text = None
+            page_info = None
             error_msg = None
 
             try:
                 with open(screenshot_path, "rb") as img_file:
                     image_data = img_file.read()
 
-                ocr_text, error_msg = KindleOCR.process_ocr(image_data)
+                # Use process_screenshot_with_regions to extract both main text and page indicators
+                from server.utils.ocr_utils import (
+                    cycle_page_indicator_if_needed,
+                    parse_page_indicators,
+                    process_screenshot_with_regions,
+                )
+
+                ocr_results = process_screenshot_with_regions(image_data)
+
+                ocr_text = ocr_results.get("main_text")
+
+                # Extract page information from OCR results
+                page_indicator_text = ocr_results.get("page_indicator_text")
+                percentage_text = ocr_results.get("percentage_text")
+
+                # Parse the page indicators and handle time-based indicators
+                if page_indicator_text or percentage_text:
+                    # Use the cycle function which will tap if needed for time-based indicators
+                    page_info = cycle_page_indicator_if_needed(
+                        self.automator.driver, page_indicator_text, percentage_text
+                    )
+                else:
+                    page_info = None
+
+                # Check for errors
+                if ocr_results.get("errors"):
+                    error_msg = "; ".join(ocr_results["errors"])
 
                 # Delete the screenshot file after processing
                 try:
@@ -734,11 +821,12 @@ class NavigationResourceHandler:
                 logger.error(f"Error processing OCR: {e}", exc_info=True)
                 error_msg = str(e)
 
-            return ocr_text, error_msg
+            # Return both OCR text and page info
+            return ocr_text, page_info, error_msg
 
         except Exception as e:
             logger.error(f"Error taking screenshot for OCR: {e}", exc_info=True)
-            return None, str(e)
+            return None, None, str(e)
 
     @staticmethod
     def parse_navigation_params(request_obj) -> Dict[str, Union[int, bool, str]]:

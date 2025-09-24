@@ -15,7 +15,14 @@ from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_deduplication_middleware import deduplicate_request
 from server.middleware.response_handler import handle_automator_response
-from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
+from server.utils.ocr_utils import (
+    KindleOCR,
+    cycle_page_indicator_if_needed,
+    is_base64_requested,
+    is_ocr_requested,
+    parse_page_indicators,
+    process_screenshot_with_regions,
+)
 from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
 
@@ -228,13 +235,28 @@ class BookOpenResource(Resource):
                 screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
                 automator.driver.save_screenshot(screenshot_path)
 
-                # Get OCR text
+                # Get OCR text and page indicators
                 with open(screenshot_path, "rb") as img_file:
                     image_data = img_file.read()
 
-                ocr_text, _ = KindleOCR.process_ocr(image_data)
-                if ocr_text:
-                    response_data["ocr_text"] = ocr_text
+                # Process screenshot with regions to extract both main text and page indicators
+                ocr_results = process_screenshot_with_regions(image_data)
+
+                # Add main text if available
+                if ocr_results.get("main_text"):
+                    response_data["ocr_text"] = ocr_results["main_text"]
+
+                # Add page indicators if extracted
+                page_indicator_text = ocr_results.get("page_indicator_text")
+                percentage_text = ocr_results.get("percentage_text")
+
+                if page_indicator_text or percentage_text:
+                    # Use the cycle function which will tap if needed for time-based indicators
+                    page_indicators = cycle_page_indicator_if_needed(
+                        automator.driver, page_indicator_text, percentage_text
+                    )
+                    if page_indicators:
+                        response_data["progress"].update(page_indicators)
 
                 # Delete the temporary screenshot
                 try:
