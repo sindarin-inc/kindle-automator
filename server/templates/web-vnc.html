@@ -135,7 +135,13 @@
 
         async function fetchVNCData() {
             try {
-                const response = await fetch(buildApiEndpoint());
+                const response = await fetch(buildApiEndpoint(), {
+                    method: 'GET',
+                    credentials: 'same-origin',  // Include cookies
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -187,11 +193,9 @@
 
                 console.log(`Connecting to VNC at ${wsUrl}`);
 
-                // Create RFB connection
+                // Create RFB connection with credentials
                 rfbConnection = new RFB(canvasContainer, wsUrl, {
-                    credentials: { password: VNC_PASSWORD },
-                    shared: true,
-                    repeaterID: ''
+                    credentials: { password: VNC_PASSWORD }
                 });
 
                 // Configure RFB settings - interactive by default
