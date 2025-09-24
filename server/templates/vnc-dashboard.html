@@ -1084,7 +1084,15 @@
             // Format status with duration
             let statusText = instance.is_booting ? 'Booting' : (instance.is_idle ? 'Idle' : 'Active');
             let durationText = '';
-            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+
+            // Show appropriate duration(s)
+            if (instance.is_idle && instance.idle_duration_minutes !== null && instance.idle_duration_minutes !== undefined) {
+                // For idle: show "Idle Xm · Ym" where X is idle duration and Y is session duration
+                statusText = `Idle ${instance.idle_duration_minutes}m`;
+                if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                    durationText = ` · <span style="color: #10b981;">${instance.session_duration_minutes}m</span>`;
+                }
+            } else if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
                 durationText = ` · ${instance.session_duration_minutes}m`;
             }
             
@@ -1164,10 +1172,18 @@
                             // Update status text with duration
                             let statusText = instance.is_booting ? 'Booting' : (instance.is_idle ? 'Idle' : 'Active');
                             let durationText = '';
-                            if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+
+                            // Show appropriate duration(s)
+                            if (instance.is_idle && instance.idle_duration_minutes !== null && instance.idle_duration_minutes !== undefined) {
+                                // For idle: show "Idle Xm · Ym" where X is idle duration and Y is session duration
+                                statusText = `Idle ${instance.idle_duration_minutes}m`;
+                                if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
+                                    durationText = ` · <span style="color: #10b981;">${instance.session_duration_minutes}m</span>`;
+                                }
+                            } else if (instance.session_duration_minutes !== null && instance.session_duration_minutes !== undefined) {
                                 durationText = ` · ${instance.session_duration_minutes}m`;
                             }
-                            statusTextEl.textContent = `${statusText}${durationText}`;
+                            statusTextEl.innerHTML = `${statusText}${durationText}`;
                         }
                     }
                     

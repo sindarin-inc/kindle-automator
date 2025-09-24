@@ -94,8 +94,9 @@ class DashboardResource(Resource):
                         duration = now - boot_time
                         session_duration_minutes = int(duration.total_seconds() / 60)
 
-                    # Calculate idle state based on last_used (2 minutes = 120 seconds)
+                    # Calculate idle state and duration based on last_used (2 minutes = 120 seconds)
                     is_idle = False
+                    idle_duration_minutes = None
                     if last_used and not instance.is_booting:
                         # Make sure last_used is timezone-aware
                         if last_used.tzinfo is None:
@@ -103,7 +104,12 @@ class DashboardResource(Resource):
 
                         now = datetime.now(timezone.utc)
                         time_since_activity = now - last_used
-                        is_idle = time_since_activity.total_seconds() > 120  # 2 minutes
+                        idle_seconds = time_since_activity.total_seconds()
+                        is_idle = idle_seconds > 120  # 2 minutes
+
+                        # Calculate idle duration in minutes if idle
+                        if is_idle:
+                            idle_duration_minutes = int(idle_seconds / 60)
 
                     vnc_info = {
                         "server_name": instance.server_name,
@@ -116,6 +122,7 @@ class DashboardResource(Resource):
                         "emulator_port": instance.emulator_port,
                         "is_booting": instance.is_booting,
                         "is_idle": is_idle,
+                        "idle_duration_minutes": idle_duration_minutes,
                         "last_used": last_used.isoformat() if last_used else None,
                         "appium_running": instance.appium_running,
                         "session_duration_minutes": session_duration_minutes,
