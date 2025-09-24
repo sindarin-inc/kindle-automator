@@ -217,6 +217,24 @@
                     console.log('ViewOnly state:', rfbConnection.viewOnly);
                     reconnectAttempts = 0;
 
+                    // Prevent rotation by intercepting orientation-related keys
+                    const canvas = canvasContainer.querySelector('canvas');
+                    if (canvas) {
+                        canvas.addEventListener('keydown', (e) => {
+                            // Block Ctrl+Alt+Arrow keys (common rotation shortcuts)
+                            if ((e.ctrlKey && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) ||
+                                // Block rotation keys used by Android emulator
+                                (e.ctrlKey && (e.key === 'F11' || e.key === 'F12')) ||
+                                // Block Ctrl+Shift+R (rotation)
+                                (e.ctrlKey && e.shiftKey && e.key === 'R')) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                console.log('Blocked rotation key:', e.key);
+                                return false;
+                            }
+                        }, true);
+                    }
+
                     // Clear connecting message
                     setTimeout(() => {
                         const connectingMsg = canvasContainer.querySelector('.vnc-connecting');
