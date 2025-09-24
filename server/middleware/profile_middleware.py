@@ -43,14 +43,6 @@ def ensure_user_profile_loaded(f):
         # Get sindarin_email from request data using our utility function
         sindarin_email = get_sindarin_email()
 
-        # Also get the raw sindarin_email parameter (not the impersonated one)
-        # This is needed to check if staff authentication is required
-        raw_sindarin_email = None
-        if "sindarin_email" in request.args:
-            raw_sindarin_email = request.args.get("sindarin_email")
-        elif request.is_json and "sindarin_email" in (request.get_json(silent=True) or {}):
-            raw_sindarin_email = request.get_json(silent=True).get("sindarin_email")
-
         # Update last_used
         if sindarin_email:
             try:
@@ -86,9 +78,9 @@ def ensure_user_profile_loaded(f):
         elif request.is_json and "user_email" in (request.get_json(silent=True) or {}):
             user_email = request.get_json(silent=True).get("user_email")
 
-        # Only require staff authentication when user_email is present AND different from raw sindarin_email
-        # (i.e., actual impersonation, not just redundant parameters)
-        if user_email and user_email != raw_sindarin_email:
+        # Require staff authentication only when user_email is present AND different from sindarin_email
+        # This means someone is trying to impersonate a different user
+        if user_email and user_email != sindarin_email:
             # Check if staff token exists
             token = request.cookies.get("staff_token")
             if not token:
