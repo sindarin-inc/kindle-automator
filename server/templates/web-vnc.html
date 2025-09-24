@@ -203,11 +203,13 @@
 
                 // Configure RFB settings - interactive by default
                 rfbConnection.viewOnly = false;
-                rfbConnection.scaleViewport = false;  // Don't scale, show actual size (same as dashboard)
+                rfbConnection.scaleViewport = true;   // Enable scaling to handle coordinate translation
                 rfbConnection.resizeSession = false;
-                rfbConnection.showDotCursor = true;   // Show cursor to verify rendering (same as dashboard)
+                rfbConnection.showDotCursor = true;   // Show cursor to verify rendering
                 rfbConnection.qualityLevel = 9;       // Max quality
                 rfbConnection.compressionLevel = 0;   // No compression
+                rfbConnection.clipViewport = false;   // Don't clip viewport
+                rfbConnection.dragViewport = false;   // Don't drag viewport
 
                 // Set up event handlers
                 rfbConnection.addEventListener('connect', () => {
