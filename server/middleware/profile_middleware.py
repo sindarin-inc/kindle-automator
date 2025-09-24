@@ -268,20 +268,20 @@ def ensure_user_profile_loaded(f):
             logger.debug(f"Automator exists with driver for {sindarin_email}")
 
             # Update last_used again after automator setup (in case it took a while)
-        if sindarin_email:
-            try:
-                from database.connection import get_db
-                from database.repositories.user_repository import UserRepository
+            if sindarin_email:
+                try:
+                    from database.connection import get_db
+                    from database.repositories.user_repository import UserRepository
 
-                with get_db() as session:
-                    repo = UserRepository(session)
-                    success = repo.update_last_used(sindarin_email)
-                    if success:
-                        logger.debug(f"Updated last_used for {sindarin_email} after setup")
-                    else:
-                        logger.error(f"Failed to update last_used for {sindarin_email} after setup")
-            except Exception as e:
-                logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
+                    with get_db() as session:
+                        repo = UserRepository(session)
+                        success = repo.update_last_used(sindarin_email)
+                        if success:
+                            logger.debug(f"Updated last_used for {sindarin_email} after setup")
+                        else:
+                            logger.error(f"Failed to update last_used for {sindarin_email} after setup")
+                except Exception as e:
+                    logger.error(f"Exception updating last_used for {sindarin_email}: {e}", exc_info=True)
 
             result = f(*args, **kwargs)
             # Handle Flask Response objects appropriately
