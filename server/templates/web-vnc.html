@@ -16,6 +16,13 @@
             box-sizing: border-box;
         }
 
+        html, body {
+            overflow: hidden !important;
+            position: fixed !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: #000;
@@ -26,6 +33,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            touch-action: none;  /* Disable touch scrolling */
+            overscroll-behavior: none;  /* Disable overscroll effects */
         }
 
         .vnc-container {
@@ -49,10 +58,15 @@
             height: 100%;
             position: relative;
             overflow: hidden;
-            cursor: default;
+            cursor: none !important;  /* Hide cursor */
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        /* Hide cursor for all child elements */
+        .vnc-canvas-container * {
+            cursor: none !important;
         }
 
         .vnc-canvas-container canvas {
@@ -211,7 +225,7 @@
                 rfbConnection.viewOnly = false;
                 rfbConnection.scaleViewport = false;  // Don't scale - let CSS handle display sizing
                 rfbConnection.resizeSession = false;
-                rfbConnection.showDotCursor = true;   // Show cursor to verify rendering
+                rfbConnection.showDotCursor = false;  // Hide cursor
                 rfbConnection.qualityLevel = 9;       // Max quality
                 rfbConnection.compressionLevel = 0;   // No compression
                 rfbConnection.clipViewport = false;   // Don't clip viewport
@@ -322,6 +336,30 @@
             }
         }
 
+
+        // Prevent all scrolling
+        function preventScroll(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+
+        // Disable all scroll events
+        document.addEventListener('wheel', preventScroll, { passive: false });
+        document.addEventListener('touchmove', preventScroll, { passive: false });
+        document.addEventListener('scroll', preventScroll, { passive: false });
+
+        // Also prevent keyboard scrolling
+        document.addEventListener('keydown', (e) => {
+            // Block arrow keys, page up/down, home/end, space that could cause scrolling
+            if ([32, 33, 34, 35, 36, 37, 38, 39, 40].includes(e.keyCode)) {
+                const isInputElement = ['input', 'textarea'].includes(e.target.tagName.toLowerCase());
+                if (!isInputElement) {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+        });
 
         // Initialize connection
         connectVNC();
