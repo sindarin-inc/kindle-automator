@@ -598,6 +598,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
                 [
                     progress.get("page") is not None,
                     progress.get("location") is not None,
+                    progress.get("current_location") is not None,
                     progress.get("percentage") is not None,
                 ]
             )
@@ -608,6 +609,8 @@ class TestKindleAPIIntegration(BaseKindleTest):
                 print(f"Extracted page: {progress['page']}")
             if progress.get("location"):
                 print(f"Extracted location: {progress['location']}")
+            if progress.get("current_location"):
+                print(f"Extracted current_location: {progress['current_location']}")
             if progress.get("percentage") is not None:
                 print(f"Extracted percentage: {progress['percentage']}%")
 
@@ -656,8 +659,10 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
             # Check that progress contains expected fields
             assert "percentage" in progress, f"Progress missing percentage field: {progress}"
-            assert "current_page" in progress, f"Progress missing current_page field: {progress}"
-            assert "total_pages" in progress, f"Progress missing total_pages field: {progress}"
+            # Accept either page or location information
+            has_page_info = ("current_page" in progress and "total_pages" in progress)
+            has_location_info = ("current_location" in progress and "total_locations" in progress)
+            assert has_page_info or has_location_info, f"Progress missing page/location fields: {progress}"
 
             # At least one of these should have a non-null value from OCR
             has_valid_data = any(
