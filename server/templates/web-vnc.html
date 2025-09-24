@@ -17,24 +17,28 @@
         }
 
         html, body {
-            overflow: hidden !important;
-            position: fixed !important;
-            width: 100% !important;
-            height: 100% !important;
+            width: 100%;
+            height: 100%;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: #000;
             color: #e0e0e0;
-            overflow: hidden;
+            overflow: auto;  /* Allow scrolling on web */
             width: 100vw;
-            height: 100vh;
+            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            touch-action: none;  /* Disable touch scrolling */
-            overscroll-behavior: none;  /* Disable overscroll effects */
+        }
+
+        /* Only disable scrolling in iOS WebView */
+        .ios-webview {
+            overflow: hidden !important;
+            position: fixed !important;
+            touch-action: none !important;
+            overscroll-behavior: none !important;
         }
 
         .vnc-container {
@@ -263,20 +267,13 @@
                     // Get the canvas element
                     const canvas = canvasContainer.querySelector('canvas');
                     if (canvas) {
-                        // Prevent scroll events on the canvas itself
-                        canvas.addEventListener('wheel', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.stopImmediatePropagation();
-                            return false;
-                        }, { passive: false, capture: true });
-
-                        canvas.addEventListener('touchmove', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.stopImmediatePropagation();
-                            return false;
-                        }, { passive: false, capture: true });
+                        // Only prevent scrolling in iOS WebView
+                        if (isIOSWebView()) {
+                            canvas.addEventListener('wheel', (e) => {
+                                e.preventDefault();
+                                return false;
+                            }, { passive: false });
+                        }
 
                         // Prevent rotation by intercepting orientation-related keys
                         canvas.addEventListener('keydown', (e) => {
@@ -376,41 +373,30 @@
         }
 
 
-        // Prevent all scrolling
-        function preventScroll(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            return false;
-        }
-
-        // Disable all scroll events at document level
-        document.addEventListener('wheel', preventScroll, { passive: false, capture: true });
-        document.addEventListener('touchmove', preventScroll, { passive: false, capture: true });
-        document.addEventListener('scroll', preventScroll, { passive: false, capture: true });
-
-        // Also prevent scroll on the VNC container specifically
-        setTimeout(() => {
-            const vncContainer = document.getElementById('vnc-canvas');
-            if (vncContainer) {
-                vncContainer.addEventListener('wheel', preventScroll, { passive: false, capture: true });
-                vncContainer.addEventListener('touchmove', preventScroll, { passive: false, capture: true });
-                vncContainer.addEventListener('scroll', preventScroll, { passive: false, capture: true });
+        // Only prevent scrolling in iOS WebView
+        if (isIOSWebView()) {
+            function preventScroll(e) {
+                e.preventDefault();
+                return false;
             }
-        }, 100);
 
-        // Also prevent keyboard scrolling
-        document.addEventListener('keydown', (e) => {
-            // Block arrow keys, page up/down, home/end, space that could cause scrolling
-            if ([32, 33, 34, 35, 36, 37, 38, 39, 40].includes(e.keyCode)) {
-                const isInputElement = ['input', 'textarea'].includes(e.target.tagName.toLowerCase());
-                if (!isInputElement) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
+            // Disable scroll events for iOS
+            document.addEventListener('wheel', preventScroll, { passive: false });
+            document.addEventListener('touchmove', preventScroll, { passive: false });
+            document.addEventListener('scroll', preventScroll, { passive: false });
+
+            // Prevent keyboard scrolling on iOS
+            document.addEventListener('keydown', (e) => {
+                // Block arrow keys, page up/down, home/end, space that could cause scrolling
+                if ([32, 33, 34, 35, 36, 37, 38, 39, 40].includes(e.keyCode)) {
+                    const isInputElement = ['input', 'textarea'].includes(e.target.tagName.toLowerCase());
+                    if (!isInputElement) {
+                        e.preventDefault();
+                        return false;
+                    }
                 }
-            }
-        }, { capture: true });
+            });
+        }
 
         // Initialize connection
         connectVNC();
