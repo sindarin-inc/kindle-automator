@@ -49,15 +49,13 @@
             height: 100%;
             position: relative;
             overflow: hidden;
-            touch-action: none;  /* Prevent browser touch handling */
+            cursor: default;
         }
 
         .vnc-canvas-container canvas {
             width: 100% !important;
             height: 100% !important;
             object-fit: contain;
-            touch-action: none;  /* Prevent browser touch handling */
-            cursor: pointer;
         }
 
         .vnc-connecting {
@@ -214,6 +212,7 @@
                 // Set up event handlers
                 rfbConnection.addEventListener('connect', () => {
                     console.log('VNC connected');
+                    console.log('ViewOnly state:', rfbConnection.viewOnly);
                     reconnectAttempts = 0;
 
                     // Clear connecting message
@@ -224,12 +223,21 @@
                         }
                     }, 200);
 
-                    // Focus the canvas to ensure it receives input
-                    const canvas = canvasContainer.querySelector('canvas');
-                    if (canvas) {
-                        canvas.focus();
-                        canvas.tabIndex = 0;  // Make canvas focusable
-                    }
+                    // Give focus to the canvas after connection
+                    setTimeout(() => {
+                        const canvas = canvasContainer.querySelector('canvas');
+                        if (canvas) {
+                            console.log('Focusing canvas element');
+                            canvas.tabIndex = 1;  // Make canvas focusable
+                            canvas.focus();
+
+                            // Double-check viewOnly is false
+                            if (rfbConnection.viewOnly) {
+                                console.log('WARNING: Connection is view-only, setting to interactive');
+                                rfbConnection.viewOnly = false;
+                            }
+                        }
+                    }, 500);
                 });
 
                 rfbConnection.addEventListener('disconnect', (e) => {
