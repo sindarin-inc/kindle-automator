@@ -4,7 +4,7 @@ import gzip
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import make_response, request
@@ -186,7 +186,7 @@ class UserActivityResource(Resource):
                 if timestamp_match:
                     time_str = timestamp_match.group(1)
                     # Use today's date with the time
-                    today = datetime.now().date()
+                    today = datetime.now(timezone.utc).date()
                     timestamp = datetime.combine(today, datetime.strptime(time_str, "%H:%M:%S").time())
 
             if not timestamp:

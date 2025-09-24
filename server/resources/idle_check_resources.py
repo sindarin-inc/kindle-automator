@@ -3,7 +3,7 @@
 import logging
 import platform
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import request
 from flask_restful import Resource
@@ -206,7 +206,7 @@ class IdleCheckResource(Resource):
             # Prepare summary
             server = AutomationServer.get_instance()
             summary = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "idle_timeout_minutes": timeout_minutes,
                 "total_checked": len(server.automators),
                 "shut_down": len([s for s in shutdown_emails if s.get("status") == "shutdown"]),
