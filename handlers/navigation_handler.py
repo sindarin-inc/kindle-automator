@@ -321,10 +321,7 @@ class NavigationResourceHandler:
                     if progress and progress.get("time_left"):
                         # Try to cycle to get page/location information
                         page_text = progress.get("reading_time_indicator", "")
-                        percentage = progress.get("percentage", "")
-                        updated_progress = cycle_page_indicator_if_needed(
-                            self.automator.driver, page_text, f"{percentage}%" if percentage else None
-                        )
+                        updated_progress = cycle_page_indicator_if_needed(self.automator.driver, page_text)
                         if updated_progress:
                             screenshot_data["progress"] = updated_progress
 
@@ -390,6 +387,13 @@ class NavigationResourceHandler:
         if not success:
             return {"error": "Navigation failed"}, 500
 
+        # After navigation, capture page info at the user's actual position (not preview position)
+        # This is only needed when we're doing a preview, to get the correct page number
+        navigation_page_info = None
+        if success and preview_count != 0:
+            # Extract just the page indicator at the navigation position
+            _, navigation_page_info, _ = self._extract_screenshot_for_ocr(f"nav_pos")
+
         # If preview was requested, handle it after navigating
         preview_ocr_text = None
         preview_page_info = None
@@ -404,10 +408,10 @@ class NavigationResourceHandler:
                 )
 
             if preview_success and preview_ocr_text:
-                # Use the page info from the preview if available, otherwise get current page data
-                if preview_page_info:
-                    # Use the page info extracted from OCR of the preview page
-                    progress = preview_page_info
+                # Use the page info from the navigation position, NOT the preview position
+                if navigation_page_info:
+                    # Use the page info extracted at navigation position
+                    progress = navigation_page_info
                 else:
                     # Fall back to getting current page data after navigation
                     progress = self.automator.state_machine.reader_handler.get_reading_progress(
@@ -464,10 +468,7 @@ class NavigationResourceHandler:
                 if progress and progress.get("time_left"):
                     # Try to cycle to get page/location information
                     page_text = progress.get("reading_time_indicator", "")
-                    percentage = progress.get("percentage", "")
-                    updated_progress = cycle_page_indicator_if_needed(
-                        self.automator.driver, page_text, f"{percentage}%" if percentage else None
-                    )
+                    updated_progress = cycle_page_indicator_if_needed(self.automator.driver, page_text)
                     if updated_progress:
                         screenshot_data["progress"] = updated_progress
 
@@ -795,14 +796,11 @@ class NavigationResourceHandler:
 
                 # Extract page information from OCR results
                 page_indicator_text = ocr_results.get("page_indicator_text")
-                percentage_text = ocr_results.get("percentage_text")
 
                 # Parse the page indicators and handle time-based indicators
-                if page_indicator_text or percentage_text:
+                if page_indicator_text:
                     # Use the cycle function which will tap if needed for time-based indicators
-                    page_info = cycle_page_indicator_if_needed(
-                        self.automator.driver, page_indicator_text, percentage_text
-                    )
+                    page_info = cycle_page_indicator_if_needed(self.automator.driver, page_indicator_text)
                 else:
                     page_info = None
 

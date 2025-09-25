@@ -335,14 +335,14 @@ class KindleOCR:
         return None, combined_error
 
 
-def extract_page_indicator_regions(image_bytes):
-    """Extract the page indicator and percentage regions from a screenshot.
+def extract_page_indicator_region(image_bytes):
+    """Extract the page indicator region from a screenshot.
 
     Args:
         image_bytes: The screenshot as bytes
 
     Returns:
-        tuple: (page_indicator_bytes, percentage_bytes) - Cropped regions as bytes
+        bytes: page_indicator_bytes - Cropped region as bytes
     """
     from io import BytesIO
 
@@ -353,7 +353,7 @@ def extract_page_indicator_regions(image_bytes):
         img = Image.open(BytesIO(image_bytes))
         width, height = img.size
 
-        # Define crop regions based on proportions
+        # Define crop region based on proportions
         # Bottom-left for page/location indicator
         # The page number is in the bottom 6% of screen (bottom 80px of 1400px)
         page_indicator_box = (
@@ -363,46 +363,31 @@ def extract_page_indicator_regions(image_bytes):
             height,  # Bottom edge
         )
 
-        # Bottom-right for percentage
-        percentage_box = (
-            int(width * 0.5),  # Start at 50% from left
-            int(height * 0.94),  # Start at 94% from top (bottom 6%)
-            width,  # Right edge
-            height,  # Bottom edge
-        )
-
-        # Crop the regions
+        # Crop the region
         page_indicator_img = img.crop(page_indicator_box)
-        percentage_img = img.crop(percentage_box)
 
         # Convert back to bytes
         page_indicator_bytes = BytesIO()
         page_indicator_img.save(page_indicator_bytes, format="PNG")
         page_indicator_bytes = page_indicator_bytes.getvalue()
 
-        percentage_bytes = BytesIO()
-        percentage_img.save(percentage_bytes, format="PNG")
-        percentage_bytes = percentage_bytes.getvalue()
-
         logger.debug(f"Cropped page indicator region: {page_indicator_box}")
-        logger.debug(f"Cropped percentage region: {percentage_box}")
 
-        return page_indicator_bytes, percentage_bytes
+        return page_indicator_bytes
 
     except Exception as e:
-        logger.error(f"Error extracting page indicator regions: {e}", exc_info=True)
-        return None, None
+        logger.error(f"Error extracting page indicator region: {e}", exc_info=True)
+        return None
 
 
-def parse_page_indicators(page_indicator_text, percentage_text):
-    """Parse page indicator and percentage text to extract structured progress data.
+def parse_page_indicators(page_indicator_text):
+    """Parse page indicator text to extract structured progress data.
 
     Args:
         page_indicator_text: OCR text from page indicator region (e.g., "Page 123 of 456", "8 mins left in chapter")
-        percentage_text: OCR text from percentage region (e.g., "87%")
 
     Returns:
-        dict: Progress information with current_page/location, total_pages/locations, percentage, and/or time_left
+        dict: Progress information with current_page/location, total_pages/locations, and/or time_left
     """
     progress = {}
 
@@ -435,17 +420,6 @@ def parse_page_indicators(page_indicator_text, percentage_text):
             progress["current_page"] = None
             progress["total_pages"] = None
 
-    # Parse percentage
-    if percentage_text:
-        percentage_match = re.search(r"(\d+)%", percentage_text)
-        if percentage_match:
-            progress["percentage"] = int(percentage_match.group(1))
-            logger.info(f"Extracted percentage: {progress['percentage']}%")
-        else:
-            progress["percentage"] = None
-    else:
-        progress["percentage"] = None
-
     return progress
 
 
@@ -456,13 +430,13 @@ def process_screenshot_with_regions(image_bytes):
         image_bytes: The screenshot as bytes
 
     Returns:
-        dict: Contains 'main_text', 'page_indicator_text', 'percentage_text', and any errors
+        dict: Contains 'main_text', 'page_indicator_text', and any errors
     """
     from io import BytesIO
 
     from PIL import Image
 
-    result = {"main_text": None, "page_indicator_text": None, "percentage_text": None, "errors": []}
+    result = {"main_text": None, "page_indicator_text": None, "errors": []}
 
     try:
         # Load the image once
@@ -489,8 +463,8 @@ def process_screenshot_with_regions(image_bytes):
         elif main_error:
             result["errors"].append(f"Main text OCR error: {main_error}")
 
-        # Extract page indicator regions
-        page_indicator_bytes, percentage_bytes = extract_page_indicator_regions(image_bytes)
+        # Extract page indicator region
+        page_indicator_bytes = extract_page_indicator_region(image_bytes)
 
         # OCR page indicator
         if page_indicator_bytes:
@@ -502,19 +476,6 @@ def process_screenshot_with_regions(image_bytes):
                 logger.info(f"OCR: Page indicator extracted: '{page_text}'")
             elif page_error:
                 result["errors"].append(f"Page indicator OCR error: {page_error}")
-
-        # OCR percentage
-        if percentage_bytes:
-            percent_text, percent_error = KindleOCR.process_ocr(percentage_bytes, clean_ui_elements=False)
-            if percent_text:
-                # Clean up the text - remove any extra whitespace
-                percent_text = percent_text.strip()
-                result["percentage_text"] = percent_text
-                logger.info(f"OCR: Percentage extracted: '{percent_text}'")
-            elif percent_error:
-                result["errors"].append(f"Percentage OCR error: {percent_error}")
-        else:
-            logger.warning("OCR: No percentage bytes extracted")
 
         return result
 
@@ -626,19 +587,18 @@ def is_ocr_requested(default=False):
     return perform_ocr
 
 
-def cycle_page_indicator_if_needed(driver, page_indicator_text, percentage_text=None):
+def cycle_page_indicator_if_needed(driver, page_indicator_text):
     """If time-based indicator is detected, tap to cycle through formats to get page/location.
 
     Args:
         driver: The Appium driver instance
         page_indicator_text: The OCR'd text from the page indicator region
-        percentage_text: Optional percentage text
 
     Returns:
         dict: Updated progress information with page/location data if found
     """
     # First parse what we have
-    progress = parse_page_indicators(page_indicator_text, percentage_text)
+    progress = parse_page_indicators(page_indicator_text)
 
     # Check if we got a time-based indicator or "Learning reading speed" instead of page/location
     if (
@@ -710,7 +670,6 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
 
             ocr_text = ocr_results.get("main_text")
             page_indicator_text = ocr_results.get("page_indicator_text")
-            percentage_text = ocr_results.get("percentage_text")
             errors = ocr_results.get("errors", [])
 
             if ocr_text:
@@ -720,14 +679,12 @@ def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False
                 logger.info(f"OCR text extracted successfully, length: {len(ocr_text)} characters")
 
                 # Log what we got from the page regions
-                logger.info(
-                    f"Page indicator text: '{page_indicator_text}', Percentage text: '{percentage_text}'"
-                )
+                logger.info(f"Page indicator text: '{page_indicator_text}'")
 
                 # Parse and add page progress information if extracted
                 # Note: We can't use cycle_page_indicator_if_needed here because we don't have access to the driver
                 # The cycling should be handled by the calling code that has access to the driver
-                progress = parse_page_indicators(page_indicator_text, percentage_text)
+                progress = parse_page_indicators(page_indicator_text)
 
                 # Log the parsed progress
                 logger.info(f"Parsed progress: {progress}")
