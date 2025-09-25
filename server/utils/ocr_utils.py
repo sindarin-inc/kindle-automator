@@ -412,7 +412,6 @@ def parse_page_indicators(page_indicator_text, percentage_text):
         if re.search(r"learning\s+reading\s+speed", page_indicator_text, re.IGNORECASE):
             # This is a temporary state that needs cycling to get actual page/time info
             progress["time_left"] = "calculating"
-            progress["reading_time_indicator"] = page_indicator_text
             progress["needs_cycling"] = True
             logger.info(f"Detected 'Learning reading speed' - needs cycling to get actual indicator")
             progress["current_page"] = None
@@ -432,7 +431,6 @@ def parse_page_indicators(page_indicator_text, percentage_text):
         ):
             unit = "min" if "min" in match.group(2) else "hour"
             progress["time_left"] = f"{match.group(1)} {unit}"
-            progress["reading_time_indicator"] = page_indicator_text
             logger.info(f"Extracted time-based indicator: {progress['time_left']}")
             progress["current_page"] = None
             progress["total_pages"] = None
@@ -677,8 +675,6 @@ def cycle_page_indicator_if_needed(driver, page_indicator_text, percentage_text=
                     progress["total_locations"] = cycled_progress.get("total_locations")
                 if cycled_progress.get("percentage"):
                     progress["percentage"] = cycled_progress["percentage"]
-                # Keep the original time indicator for reference
-                progress["original_indicator"] = progress.get("reading_time_indicator")
             else:
                 logger.warning("Could not find page/location format after cycling")
         except Exception as e:
