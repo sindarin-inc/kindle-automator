@@ -660,8 +660,8 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # Check that progress contains expected fields
             assert "percentage" in progress, f"Progress missing percentage field: {progress}"
             # Accept either page or location information
-            has_page_info = ("current_page" in progress and "total_pages" in progress)
-            has_location_info = ("current_location" in progress and "total_locations" in progress)
+            has_page_info = "current_page" in progress and "total_pages" in progress
+            has_location_info = "current_location" in progress and "total_locations" in progress
             assert has_page_info or has_location_info, f"Progress missing page/location fields: {progress}"
 
             # At least one of these should have a non-null value from OCR
