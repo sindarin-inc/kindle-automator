@@ -263,3 +263,16 @@ If authentication fails:
        -H "Cookie: staff_token=$INTEGRATION_TEST_STAFF_AUTH_TOKEN" \
        "http://localhost:4096/kindle/endpoint"
   ```
+
+## MCP GitHub Tools
+
+When given a GitHub Actions URL, use the appropriate MCP tool to get detailed logs:
+
+- **For workflow run URLs** (e.g., `https://github.com/owner/repo/actions/runs/18017152781`):
+  - First try: `mcp__github__get_job_logs` with `run_id` and `failed_only=true` to get failed job logs
+  - If output too large: Add `return_content=true` and `tail_lines=500` to limit output
+  - Alternative: Use `gh run view <run_id> --repo owner/repo --log-failed` via Bash tool
+
+- **For specific job URLs** (e.g., `https://github.com/owner/repo/actions/runs/18017152781/job/51264956029`):
+  - Use: `mcp__github__get_job_logs` with `job_id`, `return_content=true`, `tail_lines=500`
+  - Look for AssertionError, FAILED, or ERROR patterns in the logs to find actual test failures
