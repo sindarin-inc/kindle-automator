@@ -1790,9 +1790,8 @@ class ReaderHandler:
             footer_position = self.get_position_from_footer()
             if footer_position:
                 logger.debug(f"Got position from footer: {footer_position}")
-                # Return in the expected format
+                # Return in the expected format (no longer returning percentage)
                 return {
-                    "percentage": footer_position.get("percentage"),
                     "current_page": footer_position.get("current_page"),
                     "total_pages": footer_position.get("total_pages"),
                 }
@@ -1813,14 +1812,13 @@ class ReaderHandler:
                             current_page = int(parts[0].replace("Page ", ""))
                             total_pages = int(parts[1])
                             return {
-                                "percentage": None,
                                 "current_page": current_page,
                                 "total_pages": total_pages,
                             }
                     except Exception as e:
                         logger.warning(f"Error parsing basic page info: {e}")
                 # If we can't parse, just return an empty result
-                return {"percentage": None, "current_page": None, "total_pages": None}
+                return {"current_page": None, "total_pages": None}
 
             # If we get here, show_placemark is True - try to get full progress info
 
@@ -1915,16 +1913,8 @@ class ReaderHandler:
             logger.debug(f"Found progress text: {progress_text}")
 
             # Initialize return values
-            percentage = None
             current_page = None
             total_pages = None
-
-            # Extract percentage if present (between the last space before the % and the %)
-            if "%" in progress_text:
-                percentage_regex = r"(\d+)%"
-                match = re.search(percentage_regex, progress_text)
-                if match:
-                    percentage = int(match.group(1))
 
             # Extract page numbers
             if "of" in progress_text.lower():
@@ -1934,11 +1924,6 @@ class ReaderHandler:
                     if match:
                         current_page = int(match.group(1))
                         total_pages = int(match.group(2))
-
-                    # Calculate percentage if not found in text
-                    if not percentage and current_page is not None and total_pages is not None:
-                        calc_percentage = round((current_page / total_pages) * 100)
-                        percentage = calc_percentage  # Return as int, not string
                 except Exception as e:
                     logger.error(f"Error parsing page numbers: {e}", exc_info=True)
 
@@ -1951,11 +1936,11 @@ class ReaderHandler:
                 logger.debug("Closing reading controls")
                 self.driver.tap([(center_x, center_y)])
 
-            if not any([percentage, current_page, total_pages]):
+            if not any([current_page, total_pages]):
                 logger.error("Could not extract any progress information", exc_info=True)
                 return None
 
-            return {"percentage": percentage, "current_page": current_page, "total_pages": total_pages}
+            return {"current_page": current_page, "total_pages": total_pages}
 
         except Exception as e:
             logger.error(f"Error getting reading progress: {e}", exc_info=True)

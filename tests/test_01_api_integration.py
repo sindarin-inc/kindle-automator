@@ -595,12 +595,14 @@ class TestKindleAPIIntegration(BaseKindleTest):
             progress = data["progress"]
 
             # Check that at least one of the page indicator fields is present and non-null
+            # Note: We no longer return percentage in progress
             has_page_info = any(
                 [
                     progress.get("page") is not None,
                     progress.get("location") is not None,
                     progress.get("current_location") is not None,
-                    progress.get("percentage") is not None,
+                    progress.get("current_page") is not None,
+                    progress.get("total_pages") is not None,
                 ]
             )
             assert has_page_info, f"Progress should contain page indicators, got: {progress}"
@@ -612,8 +614,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
                 print(f"Extracted location: {progress['location']}")
             if progress.get("current_location"):
                 print(f"Extracted current_location: {progress['current_location']}")
-            if progress.get("percentage") is not None:
-                print(f"Extracted percentage: {progress['percentage']}%")
+            # Note: We no longer extract percentage
 
         # Store book info for subsequent tests
         self.__class__.opened_book = data
@@ -668,7 +669,6 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # At least one of these should have a non-null value from OCR
             has_valid_data = any(
                 [
-                    progress.get("percentage") is not None,
                     progress.get("current_page") is not None,
                     progress.get("total_pages") is not None,
                     progress.get("current_location") is not None,
@@ -678,9 +678,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
 
             assert has_valid_data, f"OCR failed to extract any page/location info. Progress: {progress}"
 
-            # Log what we successfully extracted
-            if progress.get("percentage") is not None:
-                print(f"[TEST] ✓ Got percentage: {progress['percentage']}%")
+            # Log what we successfully extracted (no longer extracting percentage)
             if progress.get("current_page") is not None and progress.get("total_pages") is not None:
                 print(f"[TEST] ✓ Got page info: {progress['current_page']}/{progress['total_pages']}")
             if progress.get("current_location") is not None and progress.get("total_locations") is not None:
