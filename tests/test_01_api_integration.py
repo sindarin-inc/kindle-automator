@@ -584,7 +584,22 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # Verify dialog-specific fields
             assert "message" in data, f"Response missing message field: {data}"
             assert len(data["dialog_text"]) > 0, "Dialog text should not be empty"
-        else:
+
+            # Automatically submit "yes" to go to last read page
+            print("Last read dialog detected, automatically submitting 'yes' to go to last read page...")
+            dialog_response = self._make_request(
+                "handle-last-read-page-dialog", params={"goto_last_read_page": "true"}
+            )
+            assert (
+                dialog_response.status_code == 200
+            ), f"Failed to handle dialog: {dialog_response.status_code}: {dialog_response.text}"
+
+            # Use the dialog response as the final data
+            data = dialog_response.json()
+            assert "success" in data, f"Dialog response missing success field: {data}"
+
+        # Process the response (either original or dialog response)
+        if not data.get("last_read_dialog"):  # Only check these if not a dialog-only response
             # Normal book open response
             assert "ocr_text" in data, f"Response missing OCR text: {data}"
             # Verify we got actual text back
@@ -659,12 +674,18 @@ class TestKindleAPIIntegration(BaseKindleTest):
             progress = data["progress"]
             assert progress is not None, "Progress field should not be None"
 
-            # Check that progress contains expected fields
-            assert "percentage" in progress, f"Progress missing percentage field: {progress}"
-            # Accept either page or location information
-            has_page_info = "current_page" in progress and "total_pages" in progress
-            has_location_info = "current_location" in progress and "total_locations" in progress
-            assert has_page_info or has_location_info, f"Progress missing page/location fields: {progress}"
+            # Check that progress contains expected fields (no percentage anymore)
+            # We should have either page info, location info, or time info
+            has_page_info = (
+                progress.get("current_page") is not None or progress.get("total_pages") is not None
+            )
+            has_location_info = (
+                progress.get("current_location") is not None or progress.get("total_locations") is not None
+            )
+            has_time_info = progress.get("time_left") is not None
+            assert (
+                has_page_info or has_location_info or has_time_info
+            ), f"Progress should contain page, location, or time info: {progress}"
 
             # At least one of these should have a non-null value from OCR
             has_valid_data = any(

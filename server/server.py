@@ -32,6 +32,7 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 
 from database.connection import db_connection
 from handlers.navigation_handler import NavigationResourceHandler
+from handlers.reader_page_handler import process_screenshot_response
 from handlers.test_fixtures_handler import TestFixturesHandler
 from server.core.automation_server import AutomationServer
 from server.logging_config import setup_logger
@@ -52,7 +53,6 @@ from server.utils.cover_utils import (
     add_cover_urls_to_books,
     extract_book_covers_from_screen,
 )
-from handlers.reader_page_handler import process_screenshot_response
 from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
 from server.utils.request_utils import (
     get_automator_for_request,

@@ -388,6 +388,7 @@ class NavigationResourceHandler:
         navigation_page_info = None
         if success and preview_count != 0:
             navigation_page_info = self._extract_page_info_only("nav_pos")
+            logger.info(f"Extracted navigation page info: {navigation_page_info}")
 
         # If preview was requested, handle it after navigating
         preview_ocr_text = None
@@ -695,14 +696,19 @@ class NavigationResourceHandler:
             Tuple of (response_data, status_code)
         """
         logger.info(f"Handling _preview_pages_forward with count={count}")
-        success, ocr_text, page_info = self._preview_multiple_pages_forward(count)
+
+        # First extract page info at current position (before preview)
+        current_page_info = self._extract_page_info_only("current_pos")
+
+        # Then do the preview to get text
+        success, ocr_text, _ = self._preview_multiple_pages_forward(count)
         if success and ocr_text:
             response_data = {"success": True, "ocr_text": ocr_text}
-            # Use page info from OCR if available, otherwise get reading progress
-            if page_info:
-                response_data["progress"] = page_info
+            # Use page info from current position (not preview position)
+            if current_page_info:
+                response_data["progress"] = current_page_info
             else:
-                # Get reading progress but don't show placemark
+                # Fall back to getting reading progress if page extraction failed
                 progress = self.automator.state_machine.reader_handler.get_reading_progress(
                     show_placemark=show_placemark
                 )
@@ -723,14 +729,19 @@ class NavigationResourceHandler:
             Tuple of (response_data, status_code)
         """
         logger.info(f"Handling _preview_pages_backward with count={count}")
-        success, ocr_text, page_info = self._preview_multiple_pages_backward(count)
+
+        # First extract page info at current position (before preview)
+        current_page_info = self._extract_page_info_only("current_pos")
+
+        # Then do the preview to get text
+        success, ocr_text, _ = self._preview_multiple_pages_backward(count)
         if success and ocr_text:
             response_data = {"success": True, "ocr_text": ocr_text}
-            # Use page info from OCR if available, otherwise get reading progress
-            if page_info:
-                response_data["progress"] = page_info
+            # Use page info from current position (not preview position)
+            if current_page_info:
+                response_data["progress"] = current_page_info
             else:
-                # Get reading progress but don't show placemark
+                # Fall back to getting reading progress if page extraction failed
                 progress = self.automator.state_machine.reader_handler.get_reading_progress(
                     show_placemark=show_placemark
                 )
@@ -866,7 +877,10 @@ class NavigationResourceHandler:
                     logger.info(f"Extracted page indicator at navigation position: '{page_text}'")
 
                     # Parse and potentially cycle the page indicator
-                    page_info = cycle_page_indicator_if_needed(self.automator.driver, page_text)
+                    # Pass the reader_handler instead of driver
+                    page_info = cycle_page_indicator_if_needed(
+                        self.automator.state_machine.reader_handler, page_text
+                    )
 
                     # Clean up screenshot
                     try:

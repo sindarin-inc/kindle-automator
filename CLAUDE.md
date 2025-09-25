@@ -18,15 +18,12 @@ When Docker Desktop crashes on macOS, follow these steps:
    ```
 
 2. **Verify services are running:**
+
    ```bash
    docker ps | grep -E "sol_postgres|sol_redis"
    ```
 
-   If containers are not running, start them:
-   ```bash
-   cd ../web-app
-   make fast  # Only run if containers are not already running
-   ```
+   If containers are not running, beep and let the operator know, then try again once they're up.
 
 ### Postgres Access
 
@@ -269,6 +266,7 @@ If authentication fails:
 When given a GitHub Actions URL, use the appropriate MCP tool to get detailed logs:
 
 - **For workflow run URLs** (e.g., `https://github.com/owner/repo/actions/runs/18017152781`):
+
   - First try: `mcp__github__get_job_logs` with `run_id` and `failed_only=true` to get failed job logs
   - If output too large: Add `return_content=true` and `tail_lines=500` to limit output
   - Alternative: Use `gh run view <run_id> --repo owner/repo --log-failed` via Bash tool
