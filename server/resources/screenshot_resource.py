@@ -19,11 +19,8 @@ from server.middleware.response_handler import (
     serve_image,
 )
 from server.utils.appium_error_utils import is_appium_error
-from server.utils.ocr_utils import (
-    is_base64_requested,
-    is_ocr_requested,
-    process_screenshot_response,
-)
+from handlers.reader_page_handler import process_screenshot_response
+from server.utils.ocr_utils import is_base64_requested, is_ocr_requested
 from server.utils.request_utils import get_sindarin_email
 from views.core.app_state import AppState
 

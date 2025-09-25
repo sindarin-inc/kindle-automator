@@ -17,13 +17,9 @@ from typing import Dict, Optional, Tuple, Union
 from flask import request
 
 from handlers.about_book_popover_handler import AboutBookPopoverHandler
+from handlers.reader_page_handler import process_screenshot_response
 from server.middleware.response_handler import get_image_path
-from server.utils.ocr_utils import (
-    KindleOCR,
-    is_base64_requested,
-    is_ocr_requested,
-    process_screenshot_response,
-)
+from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
 from views.core.app_state import AppState
 
 logger = logging.getLogger(__name__)
@@ -391,19 +387,15 @@ class NavigationResourceHandler:
         # This is only needed when we're doing a preview, to get the correct page number
         navigation_page_info = None
         if success and preview_count != 0:
-            # Extract just the page indicator at the navigation position
-            _, navigation_page_info, _ = self._extract_screenshot_for_ocr(f"nav_pos")
+            navigation_page_info = self._extract_page_info_only("nav_pos")
 
         # If preview was requested, handle it after navigating
         preview_ocr_text = None
-        preview_page_info = None
         if success and preview_count != 0:
             if preview_direction_forward:
-                preview_success, preview_ocr_text, preview_page_info = self._preview_multiple_pages_forward(
-                    abs_preview_count
-                )
+                preview_success, preview_ocr_text, _ = self._preview_multiple_pages_forward(abs_preview_count)
             else:
-                preview_success, preview_ocr_text, preview_page_info = self._preview_multiple_pages_backward(
+                preview_success, preview_ocr_text, _ = self._preview_multiple_pages_backward(
                     abs_preview_count
                 )
 
@@ -638,8 +630,8 @@ class NavigationResourceHandler:
             logger.error("Failed to navigate forward during preview", exc_info=True)
             return False, None, None
 
-        # Capture OCR from the preview page
-        ocr_text, page_info, error_msg = self._extract_screenshot_for_ocr(f"preview_forward_{count}")
+        # Capture OCR from the preview page (text only, no page info)
+        ocr_text, error_msg = self._extract_text_only_for_preview(f"preview_forward_{count}")
 
         # Now navigate back to original position
         backward_success = self._navigate_pages(forward=False, count=count)
@@ -649,8 +641,8 @@ class NavigationResourceHandler:
 
         if ocr_text:
             logger.info(f"Successfully previewed {count} pages forward and extracted OCR text")
-            # Return both OCR text and page info
-            return True, ocr_text, page_info
+            # Return OCR text but NO page info (we'll use navigation position page info instead)
+            return True, ocr_text, None
         else:
             logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
             return False, None, None
@@ -675,8 +667,8 @@ class NavigationResourceHandler:
             logger.error("Failed to navigate backward during preview", exc_info=True)
             return False, None, None
 
-        # Capture OCR from the preview page
-        ocr_text, page_info, error_msg = self._extract_screenshot_for_ocr(f"preview_backward_{count}")
+        # Capture OCR from the preview page (text only, no page info)
+        ocr_text, error_msg = self._extract_text_only_for_preview(f"preview_backward_{count}")
 
         # Now navigate forward to original position
         forward_success = self._navigate_pages(forward=True, count=count)
@@ -686,7 +678,8 @@ class NavigationResourceHandler:
 
         if ocr_text:
             logger.info(f"Successfully previewed {count} pages backward and extracted OCR text")
-            return True, ocr_text, page_info
+            # Return OCR text but NO page info (we'll use navigation position page info instead)
+            return True, ocr_text, None
         else:
             logger.error(f"Failed to extract OCR text from preview: {error_msg}", exc_info=True)
             return False, None, None
@@ -747,14 +740,16 @@ class NavigationResourceHandler:
         else:
             return {"error": f"Failed to preview {count} pages backward"}, 500
 
-    def _extract_screenshot_for_ocr(self, prefix: str) -> Tuple[Optional[str], Optional[dict], Optional[str]]:
-        """Take a screenshot and perform OCR on it, extracting both main text and page information.
+    def _extract_text_only_for_preview(self, prefix: str) -> Tuple[Optional[str], Optional[str]]:
+        """Take a screenshot and extract ONLY the main text (top 94%) for preview.
+
+        Used when previewing pages - we only want text content, not page numbers.
 
         Args:
             prefix: Prefix for the screenshot filename
 
         Returns:
-            tuple: (ocr_text, page_info, error_message) - OCR text and page info if successful, error message if failed
+            tuple: (ocr_text, error_message) - OCR text if successful, error message if failed
         """
         try:
             # Give the page a moment to render fully
@@ -774,44 +769,49 @@ class NavigationResourceHandler:
             screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
             self.automator.driver.save_screenshot(screenshot_path)
 
-            # Get OCR text and page info from screenshot using regions
+            # Extract ONLY main text for preview (no page indicators)
             ocr_text = None
-            page_info = None
             error_msg = None
 
             try:
                 with open(screenshot_path, "rb") as img_file:
                     image_data = img_file.read()
 
-                # Use process_screenshot_with_regions to extract both main text and page indicators
-                from server.utils.ocr_utils import (
-                    cycle_page_indicator_if_needed,
-                    parse_page_indicators,
-                    process_screenshot_with_regions,
+                # Import PIL to crop just the main text area
+                from io import BytesIO
+
+                from PIL import Image
+
+                # Load the image
+                img = Image.open(BytesIO(image_data))
+                width, height = img.size
+
+                # Crop main text area (top 94%, excluding page numbers which are in bottom 6%)
+                main_text_box = (
+                    0,  # Left edge
+                    0,  # Top edge
+                    width,  # Right edge
+                    int(height * 0.94),  # Stop at 94% from top (excludes bottom 6% where page numbers are)
                 )
+                main_text_img = img.crop(main_text_box)
 
-                ocr_results = process_screenshot_with_regions(image_data)
+                # Convert to bytes for OCR
+                main_text_bytes = BytesIO()
+                main_text_img.save(main_text_bytes, format="PNG")
+                main_text_data = main_text_bytes.getvalue()
 
-                ocr_text = ocr_results.get("main_text")
+                # OCR just the main text
+                from server.utils.ocr_utils import KindleOCR
 
-                # Extract page information from OCR results
-                page_indicator_text = ocr_results.get("page_indicator_text")
+                ocr_text, ocr_error = KindleOCR.process_ocr(main_text_data)
 
-                # Parse the page indicators and handle time-based indicators
-                if page_indicator_text:
-                    # Use the cycle function which will tap if needed for time-based indicators
-                    page_info = cycle_page_indicator_if_needed(self.automator.driver, page_indicator_text)
-                else:
-                    page_info = None
-
-                # Check for errors
-                if ocr_results.get("errors"):
-                    error_msg = "; ".join(ocr_results["errors"])
+                if ocr_error:
+                    error_msg = ocr_error
 
                 # Delete the screenshot file after processing
                 try:
                     os.remove(screenshot_path)
-                    logger.info(f"Deleted screenshot after OCR processing: {screenshot_path}")
+                    logger.info(f"Deleted screenshot after text OCR processing: {screenshot_path}")
                 except Exception as del_e:
                     logger.error(f"Failed to delete screenshot {screenshot_path}: {del_e}", exc_info=True)
 
@@ -819,12 +819,76 @@ class NavigationResourceHandler:
                 logger.error(f"Error processing OCR: {e}", exc_info=True)
                 error_msg = str(e)
 
-            # Return both OCR text and page info
-            return ocr_text, page_info, error_msg
+            # Return OCR text only (no page info)
+            return ocr_text, error_msg
 
         except Exception as e:
-            logger.error(f"Error taking screenshot for OCR: {e}", exc_info=True)
-            return None, None, str(e)
+            logger.error(f"Error taking screenshot for text OCR: {e}", exc_info=True)
+            return None, str(e)
+
+    def _extract_page_info_only(self, prefix="page_only"):
+        """Extract only page indicator information from current screen position.
+
+        Args:
+            prefix: Prefix for screenshot naming.
+
+        Returns:
+            dict: Page progress information (current_page, total_pages, etc.) or None if failed
+        """
+        try:
+            # Take a screenshot
+            screenshot_id = f"{prefix}_{int(time.time())}"
+            screenshot_path = os.path.join(self.screenshots_dir, f"{screenshot_id}.png")
+            self.automator.driver.save_screenshot(screenshot_path)
+
+            # Read the screenshot
+            with open(screenshot_path, "rb") as img_file:
+                image_data = img_file.read()
+
+            # Import functions from reader_page_handler
+            from handlers.reader_page_handler import (
+                cycle_page_indicator_if_needed,
+                extract_page_indicator_region,
+            )
+
+            # Extract only the page indicator region
+            page_indicator_bytes = extract_page_indicator_region(image_data)
+
+            if page_indicator_bytes:
+                # OCR just the page indicator region
+                from server.utils.ocr_utils import KindleOCR
+
+                page_text, page_error = KindleOCR.process_ocr(page_indicator_bytes, clean_ui_elements=False)
+
+                if page_text:
+                    # Clean up the text
+                    page_text = " ".join(page_text.split())
+                    logger.info(f"Extracted page indicator at navigation position: '{page_text}'")
+
+                    # Parse and potentially cycle the page indicator
+                    page_info = cycle_page_indicator_if_needed(self.automator.driver, page_text)
+
+                    # Clean up screenshot
+                    try:
+                        os.remove(screenshot_path)
+                    except Exception:
+                        pass
+
+                    return page_info
+                else:
+                    logger.warning(f"Failed to OCR page indicator: {page_error}")
+
+            # Clean up screenshot on failure
+            try:
+                os.remove(screenshot_path)
+            except Exception:
+                pass
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error extracting page info: {e}", exc_info=True)
+            return None
 
     @staticmethod
     def parse_navigation_params(request_obj) -> Dict[str, Union[int, bool, str]]:

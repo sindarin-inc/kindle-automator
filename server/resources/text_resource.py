@@ -207,7 +207,7 @@ class TextResource(Resource):
             # Process the screenshot with OCR for main text
             if debug_ocr:
                 # Debug mode - return raw OCR results from all regions
-                from server.utils.ocr_utils import process_screenshot_with_regions
+                from handlers.reader_page_handler import process_screenshot_with_regions
 
                 ocr_results = process_screenshot_with_regions(screenshot_bytes)
                 return {
@@ -221,7 +221,7 @@ class TextResource(Resource):
                 }, 200
             else:
                 # Normal mode - use process_screenshot_with_regions for efficient processing
-                from server.utils.ocr_utils import process_screenshot_with_regions
+                from handlers.reader_page_handler import process_screenshot_with_regions
 
                 ocr_results = process_screenshot_with_regions(screenshot_bytes)
                 ocr_text = ocr_results.get("main_text")
