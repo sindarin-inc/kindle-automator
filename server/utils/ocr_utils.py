@@ -408,8 +408,17 @@ def parse_page_indicators(page_indicator_text, percentage_text):
 
     # Parse page indicator text
     if page_indicator_text:
+        # Check for "Learning reading speed" - Kindle's initial state before showing time/page
+        if re.search(r"learning\s+reading\s+speed", page_indicator_text, re.IGNORECASE):
+            # This is a temporary state that needs cycling to get actual page/time info
+            progress["time_left"] = "calculating"
+            progress["reading_time_indicator"] = page_indicator_text
+            progress["needs_cycling"] = True
+            logger.info(f"Detected 'Learning reading speed' - needs cycling to get actual indicator")
+            progress["current_page"] = None
+            progress["total_pages"] = None
         # Try to match page numbers
-        if match := re.search(r"(?:Page|page)\s+(\d+)\s+of\s+(\d+)", page_indicator_text):
+        elif match := re.search(r"(?:Page|page)\s+(\d+)\s+of\s+(\d+)", page_indicator_text):
             progress["current_page"] = int(match.group(1))
             progress["total_pages"] = int(match.group(2))
             logger.info(f"Extracted page info: {match.group(1)}/{match.group(2)}")
@@ -633,15 +642,18 @@ def cycle_page_indicator_if_needed(driver, page_indicator_text, percentage_text=
     # First parse what we have
     progress = parse_page_indicators(page_indicator_text, percentage_text)
 
-    # Check if we got a time-based indicator instead of page/location
+    # Check if we got a time-based indicator or "Learning reading speed" instead of page/location
     if (
         progress
-        and progress.get("time_left")
+        and (progress.get("time_left") or progress.get("needs_cycling"))
         and not progress.get("current_page")
         and not progress.get("current_location")
     ):
+        indicator_type = (
+            "Learning reading speed" if progress.get("needs_cycling") else progress.get("time_left")
+        )
         logger.info(
-            f"Detected time-based indicator: {progress.get('time_left')}. Attempting to cycle to page/location format"
+            f"Detected indicator requiring cycling: {indicator_type}. Attempting to cycle to page/location format"
         )
 
         try:

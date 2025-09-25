@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from tests.test_base import (
+    API_BASE_URL,
     RECREATE_USER_EMAIL,
     STAGING,
     TEST_USER_EMAIL,
@@ -41,7 +42,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
         try:
             # Create a session for teardown
             session = requests.Session()
-            base_url = f"http://localhost:{4096 if not STAGING else 80}"
+            base_url = API_BASE_URL
 
             # Shutdown the emulator
             shutdown_url = f"{base_url}/kindle/shutdown"
