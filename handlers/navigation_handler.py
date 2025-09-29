@@ -311,7 +311,9 @@ class NavigationResourceHandler:
 
                 # If OCR detected time-based indicators, try to cycle to get page/location
                 if perform_ocr and "progress" in screenshot_data:
-                    from server.utils.ocr_utils import cycle_page_indicator_if_needed
+                    from server.utils.page_indicator_utils import (
+                        cycle_page_indicator_if_needed,
+                    )
 
                     progress = screenshot_data["progress"]
                     if progress and progress.get("time_left"):
@@ -455,7 +457,9 @@ class NavigationResourceHandler:
 
             # If OCR detected time-based indicators, try to cycle to get page/location
             if perform_ocr and "progress" in screenshot_data:
-                from server.utils.ocr_utils import cycle_page_indicator_if_needed
+                from server.utils.page_indicator_utils import (
+                    cycle_page_indicator_if_needed,
+                )
 
                 progress = screenshot_data["progress"]
                 if progress and progress.get("time_left"):

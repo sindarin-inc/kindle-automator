@@ -1567,12 +1567,11 @@ class ReaderHandler:
             logger.error(f"Error getting position from footer: {e}", exc_info=True)
             return None
 
-    def _parse_position_text(self, text, percentage_text=None):
+    def _parse_position_text(self, text):
         """Parse position text from various formats.
 
         Args:
             text (str): The position text to parse (e.g., "Page 123 of 456", "Location 1652 of 8148")
-            percentage_text (str, optional): The percentage text if available separately (e.g., "20%")
 
         Returns:
             dict: Parsed position info with display_format, percentage, current_page, total_pages
@@ -1592,12 +1591,6 @@ class ReaderHandler:
             "raw_text": text,
         }
 
-        # Parse percentage if provided separately
-        if percentage_text:
-            percent_match = re.search(r"(\d{1,3})%", percentage_text)
-            if percent_match:
-                result["percentage"] = int(percent_match.group(1))
-
         # Check against all known patterns
         for pattern_name, (pattern_regex, pattern_type) in PAGE_FORMAT_PATTERNS.items():
             match = re.search(pattern_regex, text, re.IGNORECASE)
@@ -1607,19 +1600,17 @@ class ReaderHandler:
                 if pattern_type == "page":
                     result["current_page"] = int(match.group(1))
                     result["total_pages"] = int(match.group(2))
-                    # Calculate percentage if not provided
-                    if result["percentage"] is None:
-                        result["percentage"] = round((result["current_page"] / result["total_pages"]) * 100)
+                    # Calculate percentage from page numbers
+                    result["percentage"] = round((result["current_page"] / result["total_pages"]) * 100)
                     return result
 
                 elif pattern_type == "location":
                     result["current_location"] = int(match.group(1))
                     result["total_locations"] = int(match.group(2))
-                    # Calculate percentage if not provided
-                    if result["percentage"] is None:
-                        result["percentage"] = round(
-                            (result["current_location"] / result["total_locations"]) * 100
-                        )
+                    # Calculate percentage from location numbers
+                    result["percentage"] = round(
+                        (result["current_location"] / result["total_locations"]) * 100
+                    )
                     return result
 
                 elif pattern_type in ["time", "time_chapter", "time_book"]:
@@ -1630,7 +1621,7 @@ class ReaderHandler:
                     # Learning reading speed mode
                     return result
 
-                elif pattern_type == "percent" and result["percentage"] is None:
+                elif pattern_type == "percent":
                     # Percentage only format
                     result["percentage"] = int(match.group(1))
                     return result
@@ -1674,14 +1665,14 @@ class ReaderHandler:
                 except Exception:
                     pass
 
-            # Import OCR utils
-            from server.utils.ocr_utils import KindleOCR, extract_page_indicator_regions
+            # Import OCR utils and page indicator extraction
+            from handlers.reader_page_handler import extract_page_indicator_region
+            from server.utils.ocr_utils import KindleOCR
 
-            # Extract and OCR the page indicator regions
-            page_indicator_bytes, percentage_bytes = extract_page_indicator_regions(screenshot_bytes)
+            # Extract and OCR the page indicator region
+            page_indicator_bytes = extract_page_indicator_region(screenshot_bytes)
 
             page_text = None
-            percentage_text = None
 
             # OCR the page indicator
             if page_indicator_bytes:
@@ -1690,16 +1681,9 @@ class ReaderHandler:
                     page_text = " ".join(page_text.split())  # Clean up whitespace
                     logger.info(f"Page indicator OCR: '{page_text}'")
 
-            # OCR the percentage
-            if percentage_bytes:
-                percentage_text, _ = KindleOCR.process_ocr(percentage_bytes)
-                if percentage_text:
-                    percentage_text = percentage_text.strip()
-                    logger.info(f"Percentage OCR: '{percentage_text}'")
-
             # Parse the text
             if page_text:
-                result = self._parse_position_text(page_text, percentage_text)
+                result = self._parse_position_text(page_text)
                 if result:
                     # Format response to match get_reading_progress() format
                     return {
