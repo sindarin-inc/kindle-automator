@@ -588,7 +588,7 @@ class TestKindleAPIIntegration(BaseKindleTest):
             # Automatically submit "yes" to go to last read page
             print("Last read dialog detected, automatically submitting 'yes' to go to last read page...")
             dialog_response = self._make_request(
-                "handle-last-read-page-dialog", params={"goto_last_read_page": "true"}
+                "last-read-page-dialog", params={"goto_last_read_page": "true"}
             )
             assert (
                 dialog_response.status_code == 200
