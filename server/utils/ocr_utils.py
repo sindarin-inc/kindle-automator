@@ -202,13 +202,15 @@ class KindleOCR:
                 if ocr_response and hasattr(ocr_response, "pages") and len(ocr_response.pages) > 0:
                     page = ocr_response.pages[0]
                     ocr_text = page.markdown
-                    if ocr_text:
-                        logger.info("MistralAI OCR processing successful")
+                    if ocr_text and ocr_text.strip():  # Check for non-empty text
+                        logger.info(
+                            f"MistralAI OCR processing successful, extracted text: '{ocr_text[:100]}'..."
+                        )
                         return ocr_text, None
                     else:
-                        error_msg = "No text extracted from MistralAI OCR response"
-                        logger.error(error_msg)
-                        return None, error_msg
+                        # Log but don't treat empty text as error for page regions
+                        logger.info(f"MistralAI OCR returned empty text (markdown: '{ocr_text}')")
+                        return None, "No text extracted from MistralAI OCR response"
                 else:
                     error_msg = f"No MistralAI OCR response or no pages found: {ocr_response}"
                     logger.error(error_msg)
@@ -293,12 +295,13 @@ class KindleOCR:
         return cleaned_text
 
     @staticmethod
-    def process_ocr(image_content) -> Tuple[Optional[str], Optional[str]]:
+    def process_ocr(image_content, clean_ui_elements=True) -> Tuple[Optional[str], Optional[str]]:
         """
         Process an image with OCR, trying Google Document AI first, then falling back to MistralAI.
 
         Args:
             image_content: Either binary content (bytes) or a base64-encoded string
+            clean_ui_elements: Whether to clean UI elements like page numbers (default True for main text, False for page indicators)
 
         Returns:
             A tuple of (OCR text result or None if processing failed, error message if an error occurred)
@@ -308,16 +311,24 @@ class KindleOCR:
         ocr_text, mistral_error = KindleOCR._process_with_mistral(image_content)
 
         if ocr_text:
-            cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
-            return cleaned_text, None
+            # Only clean UI elements if requested (not for page indicator regions)
+            if clean_ui_elements:
+                cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
+                return cleaned_text, None
+            else:
+                return ocr_text, None
 
         # If Google fails, try MistralAI as fallback
         logger.warning(f"MistralAI failed: {mistral_error}. Falling back to Google Document AI...")
         ocr_text, google_error = KindleOCR._process_with_google_document_ai(image_content)
 
         if ocr_text:
-            cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
-            return cleaned_text, None
+            # Only clean UI elements if requested (not for page indicator regions)
+            if clean_ui_elements:
+                cleaned_text = KindleOCR._clean_ocr_text(ocr_text)
+                return cleaned_text, None
+            else:
+                return ocr_text, None
 
         # Both failed, return combined error message
         combined_error = f"Both OCR services failed. Google: {google_error}; MistralAI: {mistral_error}"
@@ -424,91 +435,3 @@ def is_ocr_requested(default=False):
             logger.warning(f"Error parsing JSON for OCR parameters: {e}")
 
     return perform_ocr
-
-
-def process_screenshot_response(screenshot_id, screenshot_path, use_base64=False, perform_ocr=False):
-    """Process screenshot for API response - either adding URL, base64-encoded image, or OCR text.
-
-    Args:
-        screenshot_id: The ID of the screenshot
-        screenshot_path: The full path to the screenshot file
-        use_base64: Whether to use base64 encoding
-        perform_ocr: Whether to perform OCR on the image
-
-    Returns:
-        Dictionary with screenshot information (URL, base64, or OCR text)
-    """
-    result = {}
-    delete_after = use_base64 or perform_ocr  # Delete the image if we're encoding it or OCR'ing it
-
-    # If OCR is requested, we need to process the image
-    if perform_ocr:
-        try:
-            # Read the image file
-            with open(screenshot_path, "rb") as img_file:
-                image_data = img_file.read()
-
-            # Process the image with OCR
-            ocr_text, error = KindleOCR.process_ocr(image_data)
-
-            if ocr_text:
-                # If OCR successful, just add the text to the result and don't include the image
-                # Don't include base64 or URL to save bandwidth and storage
-                result["ocr_text"] = ocr_text
-                # Log the length of the OCR text
-                logger.info(f"OCR text extracted successfully, length: {len(ocr_text)} characters")
-                # Always delete the image after successful OCR
-                delete_after = True
-            else:
-                # If OCR failed, add the error and fall back to regular image handling
-                result["ocr_error"] = error or "Unknown OCR error"
-                # Fall back to base64 or URL
-                if use_base64:
-                    encoded_image = base64.b64encode(image_data).decode("utf-8")
-                    result["screenshot_base64"] = encoded_image
-                else:
-                    # Return URL to image and don't delete file
-                    image_url = f"/image/{screenshot_id}"
-                    result["screenshot_url"] = image_url
-                    delete_after = False
-        except Exception as e:
-            logger.error(f"Error processing OCR: {e}", exc_info=True)
-            result["ocr_error"] = f"Failed to process image for OCR: {str(e)}"
-            # Fall back to regular image handling
-            if use_base64:
-                try:
-                    with open(screenshot_path, "rb") as img_file:
-                        encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-                        result["screenshot_base64"] = encoded_image
-                except Exception as e2:
-                    logger.error(f"Error encoding image to base64: {e2}", exc_info=True)
-                    result["error"] = f"Failed to encode image to base64: {str(e2)}"
-            else:
-                # Return URL to image and don't delete file
-                image_url = f"/image/{screenshot_id}"
-                result["screenshot_url"] = image_url
-                delete_after = False
-    elif use_base64:
-        # Base64 encoding without OCR
-        try:
-            with open(screenshot_path, "rb") as img_file:
-                encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
-                result["screenshot_base64"] = encoded_image
-        except Exception as e:
-            logger.error(f"Error encoding image to base64: {e}", exc_info=True)
-            result["error"] = f"Failed to encode image to base64: {str(e)}"
-    else:
-        # Regular URL handling
-        image_url = f"/image/{screenshot_id}"
-        result["screenshot_url"] = image_url
-        delete_after = False  # Don't delete file when using URL
-
-    # Delete the image file if needed
-    if delete_after:
-        try:
-            os.remove(screenshot_path)
-            logger.info(f"Deleted image after processing: {screenshot_path}")
-        except Exception as e:
-            logger.error(f"Failed to delete image {screenshot_path}: {e}", exc_info=True)
-
-    return result

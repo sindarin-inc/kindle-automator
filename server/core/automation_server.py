@@ -117,7 +117,12 @@ class AutomationServer:
             # Set initial activity time
             self.update_activity(email)
 
-            automator.initialize_driver()
+            # Initialize the driver and check for success
+            if not automator.initialize_driver():
+                logger.error(f"Failed to initialize driver for {email}, removing automator")
+                # Clean up on failure
+                self.automators[email] = None
+                return None
 
         return automator
 

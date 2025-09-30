@@ -132,7 +132,8 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
         if sindarin_email not in server.automators or not server.automators[sindarin_email]:
             logger.info(f"Initializing automator for {sindarin_email}")
             automator = server.initialize_automator(sindarin_email)
-            return automator.initialize_driver() if automator else False
+            # initialize_automator already calls initialize_driver internally
+            return automator is not None
 
         # Clean up existing automator
         automator = server.automators[sindarin_email]
@@ -140,9 +141,9 @@ def retry_with_app_relaunch(func, server_instance, start_time=None, *args, **kwa
             automator.cleanup()
             server.automators[sindarin_email] = None
 
-        # Initialize new automator
+        # Initialize new automator (which calls initialize_driver internally)
         automator = server.initialize_automator(sindarin_email)
-        return automator.initialize_driver() if automator else False
+        return automator is not None
 
     def restart_emulator():
         """Restart the emulator if it's not running properly"""

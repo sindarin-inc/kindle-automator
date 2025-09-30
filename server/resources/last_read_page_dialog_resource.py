@@ -14,7 +14,7 @@ from server.core.automation_server import AutomationServer
 from server.middleware.automator_middleware import ensure_automator_healthy
 from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.response_handler import handle_automator_response
-from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
+from server.utils.ocr_utils import is_base64_requested, is_ocr_requested
 from server.utils.request_utils import get_sindarin_email
 from views.reading.interaction_strategies import LAST_READ_PAGE_DIALOG_BUTTONS
 from views.reading.view_strategies import LAST_READ_PAGE_DIALOG_IDENTIFIERS
@@ -212,13 +212,25 @@ class LastReadPageDialogResource(Resource):
                 screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
                 automator.driver.save_screenshot(screenshot_path)
 
-                # Get OCR text
-                with open(screenshot_path, "rb") as img_file:
-                    image_data = img_file.read()
+                from handlers.reader_page_handler import process_screenshot_response
 
-                ocr_text, _ = KindleOCR.process_ocr(image_data)
-                if ocr_text:
-                    response_data["ocr_text"] = ocr_text
+                # TODO: Refactor with BookOpenResource.capture_book_state
+                # Use process_screenshot_response to get both OCR text and page indicators
+                ocr_data = process_screenshot_response(
+                    screenshot_id, screenshot_path, use_base64=False, perform_ocr=True
+                )
+
+                # Add OCR text if extracted
+                if "ocr_text" in ocr_data:
+                    response_data["ocr_text"] = ocr_data["ocr_text"]
+
+                # Add progress if page indicators were extracted
+                if "progress" in ocr_data:
+                    response_data["progress"] = ocr_data["progress"]
+
+                # Add any OCR error if present
+                if "ocr_error" in ocr_data:
+                    response_data["ocr_error"] = ocr_data["ocr_error"]
 
                 # Delete the temporary screenshot
                 try:

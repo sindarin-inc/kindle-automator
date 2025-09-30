@@ -58,6 +58,17 @@ from views.reading.view_strategies import (
 
 logger = logging.getLogger(__name__)
 
+# Page format patterns for parsing different display formats
+PAGE_FORMAT_PATTERNS = {
+    "page_of": (r"[Pp]age\s+(\d+)\s+of\s+(\d+)", "page"),
+    "location_of": (r"[Ll]ocation\s+(\d+)\s+of\s+(\d+)", "location"),
+    "time_left_chapter": (r"(\d+)\s+(hours?|minutes?|mins?)\s+left\s+in\s+chapter", "time_chapter"),
+    "time_left_book": (r"(\d+)\s+(hours?|minutes?|mins?)\s+left\s+in\s+book", "time_book"),
+    "time_left": (r"(\d+)\s+(hours?|minutes?|mins?)\s+left", "time"),
+    "learning_speed": (r"[Ll]earning\s+reading\s+speed", "learning"),
+    "percentage_only": (r"^\s*(\d{1,3})%\s*$", "percent"),
+}
+
 
 class ReaderHandler:
     def __init__(self, driver):
@@ -1560,43 +1571,187 @@ class ReaderHandler:
         """Parse position text from various formats.
 
         Args:
-            text (str): The position text to parse
+            text (str): The position text to parse (e.g., "Page 123 of 456", "Location 1652 of 8148")
 
         Returns:
-            dict: Parsed position info or None
+            dict: Parsed position info with display_format, percentage, current_page, total_pages
         """
         import re
 
         if not text:
             return None
 
-        result = {"display_format": text, "percentage": None, "current_page": None, "total_pages": None}
+        result = {
+            "display_format": None,
+            "percentage": None,
+            "current_page": None,
+            "total_pages": None,
+            "current_location": None,
+            "total_locations": None,
+            "raw_text": text,
+        }
 
-        # Try to parse "Page X of Y" format
-        page_match = re.search(r"[Pp]age\s+(\d+)\s+of\s+(\d+)", text)
-        if page_match:
-            result["current_page"] = int(page_match.group(1))
-            result["total_pages"] = int(page_match.group(2))
-            # Calculate percentage
-            result["percentage"] = round((result["current_page"] / result["total_pages"]) * 100)
-            return result
+        # Check against all known patterns
+        for pattern_name, (pattern_regex, pattern_type) in PAGE_FORMAT_PATTERNS.items():
+            match = re.search(pattern_regex, text, re.IGNORECASE)
+            if match:
+                result["display_format"] = pattern_name
 
-        # Try to parse "Location X of Y" format
-        loc_match = re.search(r"[Ll]ocation\s+(\d+)\s+of\s+(\d+)", text)
-        if loc_match:
-            current_loc = int(loc_match.group(1))
-            total_loc = int(loc_match.group(2))
-            # Calculate percentage from location
-            result["percentage"] = round((current_loc / total_loc) * 100)
-            return result
+                if pattern_type == "page":
+                    result["current_page"] = int(match.group(1))
+                    result["total_pages"] = int(match.group(2))
+                    # Calculate percentage from page numbers
+                    result["percentage"] = round((result["current_page"] / result["total_pages"]) * 100)
+                    return result
 
-        # Try to parse time left formats (just capture, don't calculate)
-        time_match = re.search(r"(\d+)\s+(hours?|minutes?|mins?)\s+.*left", text, re.IGNORECASE)
-        if time_match:
-            # Just note the format, can't calculate pages from this
-            return result
+                elif pattern_type == "location":
+                    result["current_location"] = int(match.group(1))
+                    result["total_locations"] = int(match.group(2))
+                    # Calculate percentage from location numbers
+                    result["percentage"] = round(
+                        (result["current_location"] / result["total_locations"]) * 100
+                    )
+                    return result
 
+                elif pattern_type in ["time", "time_chapter", "time_book"]:
+                    # Just note the format, can't calculate pages from this
+                    return result
+
+                elif pattern_type == "learning":
+                    # Learning reading speed mode
+                    return result
+
+                elif pattern_type == "percent":
+                    # Percentage only format
+                    result["percentage"] = int(match.group(1))
+                    return result
+
+        # Unknown format - log it for future pattern additions
+        logger.warning(f"Unknown page format detected: '{text}'")
+        with open("logs/unknown_page_formats.log", "a") as f:
+            from datetime import datetime
+
+            f.write(f"{datetime.now().isoformat()} - Unknown format: '{text}'\n")
+
+        result["display_format"] = "unknown"
         return result
+
+    def get_reading_progress_from_ocr(self, screenshot_bytes=None):
+        """Get reading progress using OCR on the page number area without opening dialog.
+
+        Args:
+            screenshot_bytes (bytes, optional): Screenshot to use. If None, takes a new screenshot.
+
+        Returns:
+            dict: Dictionary containing:
+                - percentage: Reading progress as percentage (int)
+                - current_page: Current page number (int) or None
+                - total_pages: Total pages (int) or None
+                - current_location: Current location (int) or None
+                - total_locations: Total locations (int) or None
+                - display_format: The current display format (str)
+            or None if progress info couldn't be retrieved
+        """
+        try:
+            # Take screenshot if not provided
+            if screenshot_bytes is None:
+                screenshot_path = os.path.join(self.screenshots_dir, f"progress_ocr_{int(time.time())}.png")
+                self.driver.save_screenshot(screenshot_path)
+                with open(screenshot_path, "rb") as f:
+                    screenshot_bytes = f.read()
+                # Clean up
+                try:
+                    os.remove(screenshot_path)
+                except Exception:
+                    pass
+
+            # Import OCR utils and page indicator extraction
+            from handlers.reader_page_handler import extract_page_indicator_region
+            from server.utils.ocr_utils import KindleOCR
+
+            # Extract and OCR the page indicator region
+            page_indicator_bytes = extract_page_indicator_region(screenshot_bytes)
+
+            page_text = None
+
+            # OCR the page indicator
+            if page_indicator_bytes:
+                page_text, _ = KindleOCR.process_ocr(page_indicator_bytes)
+                if page_text:
+                    page_text = " ".join(page_text.split())  # Clean up whitespace
+                    logger.info(f"Page indicator OCR: '{page_text}'")
+
+            # Parse the text
+            if page_text:
+                result = self._parse_position_text(page_text)
+                if result:
+                    # Format response to match get_reading_progress() format
+                    return {
+                        "percentage": result.get("percentage"),
+                        "current_page": result.get("current_page"),
+                        "total_pages": result.get("total_pages"),
+                        "current_location": result.get("current_location"),
+                        "total_locations": result.get("total_locations"),
+                        "display_format": result.get("display_format"),
+                    }
+
+            logger.warning("Could not extract page progress from OCR")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting reading progress from OCR: {e}", exc_info=True)
+            return None
+
+    def rotate_page_format_with_ocr(self, max_taps=5):
+        """Rotate through page format displays using OCR to find "Page X of Y" format.
+
+        Args:
+            max_taps (int): Maximum number of format changes to try
+
+        Returns:
+            dict: Reading progress when page format is found, or None
+        """
+        try:
+            seen_formats = []
+
+            for tap_count in range(max_taps):
+                # Take screenshot and OCR current format
+                progress = self.get_reading_progress_from_ocr()
+
+                if progress:
+                    current_format = progress.get("display_format")
+                    logger.info(f"Tap {tap_count}: Current format is '{current_format}'")
+
+                    # Check if we've seen this format before (cycle detected)
+                    if current_format in seen_formats:
+                        logger.info(f"Cycle detected - saw '{current_format}' again")
+                        break
+
+                    seen_formats.append(current_format)
+
+                    # If we found page format, return it
+                    if current_format == "page_of" and progress.get("current_page"):
+                        logger.info(f"Found page format after {tap_count} taps")
+                        return progress
+
+                # Tap the page number area to rotate format
+                # The page indicator is in the bottom-left, but we need to avoid triggering page flip
+                # Page flip seems to trigger around 85-95% height, so tap closer to the very bottom
+                window_size = self.driver.get_window_size()
+                tap_x = int(window_size["width"] * 0.10)  # 10% from left (left side for page indicator)
+                tap_y = int(window_size["height"] * 0.97)  # 97% from top (very bottom to avoid page flip)
+
+                logger.debug(f"Tapping page number area at ({tap_x}, {tap_y}) to rotate format")
+                self.driver.tap([(tap_x, tap_y)])
+                time.sleep(0.3)  # Wait for format to change
+
+            logger.warning(f"Could not find page format after {max_taps} taps")
+            logger.info(f"Formats seen: {seen_formats}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error rotating page format with OCR: {e}", exc_info=True)
+            return None
 
     def get_reading_progress(self, show_placemark=False):
         """Get reading progress information
@@ -1619,9 +1774,8 @@ class ReaderHandler:
             footer_position = self.get_position_from_footer()
             if footer_position:
                 logger.debug(f"Got position from footer: {footer_position}")
-                # Return in the expected format
+                # Return in the expected format (no longer returning percentage)
                 return {
-                    "percentage": footer_position.get("percentage"),
                     "current_page": footer_position.get("current_page"),
                     "total_pages": footer_position.get("total_pages"),
                 }
@@ -1642,14 +1796,13 @@ class ReaderHandler:
                             current_page = int(parts[0].replace("Page ", ""))
                             total_pages = int(parts[1])
                             return {
-                                "percentage": None,
                                 "current_page": current_page,
                                 "total_pages": total_pages,
                             }
                     except Exception as e:
                         logger.warning(f"Error parsing basic page info: {e}")
                 # If we can't parse, just return an empty result
-                return {"percentage": None, "current_page": None, "total_pages": None}
+                return {"current_page": None, "total_pages": None}
 
             # If we get here, show_placemark is True - try to get full progress info
 
@@ -1744,16 +1897,8 @@ class ReaderHandler:
             logger.debug(f"Found progress text: {progress_text}")
 
             # Initialize return values
-            percentage = None
             current_page = None
             total_pages = None
-
-            # Extract percentage if present (between the last space before the % and the %)
-            if "%" in progress_text:
-                percentage_regex = r"(\d+)%"
-                match = re.search(percentage_regex, progress_text)
-                if match:
-                    percentage = int(match.group(1))
 
             # Extract page numbers
             if "of" in progress_text.lower():
@@ -1763,11 +1908,6 @@ class ReaderHandler:
                     if match:
                         current_page = int(match.group(1))
                         total_pages = int(match.group(2))
-
-                    # Calculate percentage if not found in text
-                    if not percentage and current_page is not None and total_pages is not None:
-                        calc_percentage = round((current_page / total_pages) * 100)
-                        percentage = calc_percentage  # Return as int, not string
                 except Exception as e:
                     logger.error(f"Error parsing page numbers: {e}", exc_info=True)
 
@@ -1780,11 +1920,11 @@ class ReaderHandler:
                 logger.debug("Closing reading controls")
                 self.driver.tap([(center_x, center_y)])
 
-            if not any([percentage, current_page, total_pages]):
+            if not any([current_page, total_pages]):
                 logger.error("Could not extract any progress information", exc_info=True)
                 return None
 
-            return {"percentage": percentage, "current_page": current_page, "total_pages": total_pages}
+            return {"current_page": current_page, "total_pages": total_pages}
 
         except Exception as e:
             logger.error(f"Error getting reading progress: {e}", exc_info=True)

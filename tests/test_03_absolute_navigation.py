@@ -5,6 +5,7 @@ import logging
 import pytest
 
 from tests.test_base import TEST_USER_EMAIL, BaseKindleTest
+from tests.test_utils import assert_ocr_text_match
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         if not check_data.get("last_read_dialog"):
             check_text = check_data.get("text", "") or check_data.get("ocr_text", "")
             if nav_2_text:  # Only verify if we have text to compare
-                assert check_text == nav_2_text, "Position changed after preview_to"
+                assert_ocr_text_match(check_text, nav_2_text, message="Position changed after preview_to")
         print("[TEST] ✓ Position remained at 2 after preview")
 
         # Test preview_to=0
@@ -130,7 +131,9 @@ class TestAbsoluteNavigation(BaseKindleTest):
         if not check2_data.get("last_read_dialog"):
             check2_text = check2_data.get("text", "") or check2_data.get("ocr_text", "")
             if nav_2_text:  # Only verify if we have text to compare
-                assert check2_text == nav_2_text, "Position changed after second preview_to"
+                assert_ocr_text_match(
+                    check2_text, nav_2_text, message="Position changed after second preview_to"
+                )
         print("[TEST] ✓ Position still at 2 after multiple previews")
 
         # Test session key change scenario (simulating server restart)
@@ -174,10 +177,10 @@ class TestAbsoluteNavigation(BaseKindleTest):
 
                     # Should still be on the same page since server adopts client's perspective
                     if nav_4_text and nav_4_new_text:
-                        assert nav_4_new_text == nav_4_text, (
-                            f"Navigate with new session key should show current position\n"
-                            f"Expected (original nav to 4): {nav_4_text[:200]}...\n"
-                            f"Got (nav_to 4 with new key): {nav_4_new_text[:200]}..."
+                        assert_ocr_text_match(
+                            nav_4_new_text,
+                            nav_4_text,
+                            message="Navigate with new session key should show current position",
                         )
                         print(
                             "[TEST] ✓ Server correctly adopted client's session perspective (no navigation needed)"
@@ -192,7 +195,9 @@ class TestAbsoluteNavigation(BaseKindleTest):
         check_final = self._make_request("navigate", params={"navigate": 0})
         assert check_final.status_code == 200
         check_final_text = check_final.json().get("text", "") or check_final.json().get("ocr_text", "")
-        assert check_final_text == nav_4_text, "Position changed after preview with new session"
+        assert_ocr_text_match(
+            check_final_text, nav_4_text, message="Position changed after preview with new session"
+        )
         print("[TEST] ✓ Position remained at 4 after session key change and preview")
 
         print("[TEST] All preview_to tests passed!")
@@ -270,7 +275,11 @@ class TestAbsoluteNavigation(BaseKindleTest):
         verify_pos = self._make_request("navigate", params={"navigate": 0})
         assert verify_pos.status_code == 200
         verify_text = verify_pos.json().get("text", "") or verify_pos.json().get("ocr_text", "")
-        assert verify_text == rel_nav_text, "Position changed after preview - should still be at position 5"
+        assert_ocr_text_match(
+            verify_text,
+            rel_nav_text,
+            message="Position changed after preview - should still be at position 5",
+        )
         print("[TEST] ✓ Confirmed still at position 5 after preview")
 
         # Navigate back to absolute position 2 using navigate_to
@@ -281,9 +290,11 @@ class TestAbsoluteNavigation(BaseKindleTest):
         print(f"[TEST] Back at position 2, OCR text: {back_text[:100]}...")
 
         # Verify we're back at the same checkpoint
-        assert (
-            back_text == checkpoint_text
-        ), f"Position tracking failed - checkpoint text doesn't match after relative navigation\nExpected: {checkpoint_text[:200]}\nGot: {back_text[:200]}"
+        assert_ocr_text_match(
+            back_text,
+            checkpoint_text,
+            message="Position tracking failed - checkpoint text doesn't match after relative navigation",
+        )
         print("[TEST] ✓ Successfully returned to checkpoint - position tracking is consistent")
 
         print("[TEST] All combined navigation tests passed!")
@@ -338,9 +349,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert back_5.status_code == 200
         back_5_data = back_5.json()
         back_5_text = back_5_data.get("text", "") or back_5_data.get("ocr_text", "")
-        assert (
-            back_5_text == initial_text
-        ), f"Text mismatch after navigate +5, -5\nExpected: {initial_text[:200]}\nGot: {back_5_text[:200]}"
+        assert_ocr_text_match(back_5_text, initial_text, message="Text mismatch after navigate +5, -5")
         print("[TEST] ✓ Text matches after +5, -5")
 
         print("\n[TEST] Navigation consistency test passed!")
@@ -392,7 +401,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert verify_1.status_code == 200
         verify_1_data = verify_1.json()
         verify_1_text = verify_1_data.get("text", "") or verify_1_data.get("ocr_text", "")
-        assert verify_1_text == current_text, "Position changed after preview"
+        assert_ocr_text_match(verify_1_text, current_text, message="Position changed after preview")
         print("[TEST] ✓ Position unchanged after preview=1")
 
         # Test 2: Preview forward 3
@@ -409,7 +418,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert verify_3.status_code == 200
         verify_3_data = verify_3.json()
         verify_3_text = verify_3_data.get("text", "") or verify_3_data.get("ocr_text", "")
-        assert verify_3_text == current_text, "Position changed after preview=3"
+        assert_ocr_text_match(verify_3_text, current_text, message="Position changed after preview=3")
         print("[TEST] ✓ Position unchanged after preview=3")
 
         # Test 3: Navigate and preview combo (navigate=2, preview=1)
@@ -432,7 +441,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         assert back_to_start.status_code == 200
         back_data = back_to_start.json()
         back_text = back_data.get("text", "") or back_data.get("ocr_text", "")
-        assert back_text == current_text, "Failed to return to start position"
+        assert_ocr_text_match(back_text, current_text, message="Failed to return to start position")
         print("[TEST] ✓ Navigate and preview combo works correctly")
 
         # Test 4: Preview backward
@@ -452,7 +461,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         verify_still_3 = self._make_request("navigate", params={"navigate": 0})
         assert verify_still_3.status_code == 200
         still_3_text = verify_still_3.json().get("text", "") or verify_still_3.json().get("ocr_text", "")
-        assert still_3_text == page_3_text, "Position changed after backward preview"
+        assert_ocr_text_match(still_3_text, page_3_text, message="Position changed after backward preview")
         print("[TEST] ✓ Backward preview works correctly")
 
         # Test 5: Test preview_to absolute positioning
@@ -469,7 +478,7 @@ class TestAbsoluteNavigation(BaseKindleTest):
         verify_pos = self._make_request("navigate", params={"navigate": 0})
         assert verify_pos.status_code == 200
         verify_text = verify_pos.json().get("text", "") or verify_pos.json().get("ocr_text", "")
-        assert verify_text == page_3_text, "Position changed after preview_to"
+        assert_ocr_text_match(verify_text, page_3_text, message="Position changed after preview_to")
         print("[TEST] ✓ preview_to works without changing position")
 
         print("\n[TEST] All preview consistency tests passed!")
