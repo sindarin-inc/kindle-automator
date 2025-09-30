@@ -212,9 +212,9 @@ class LastReadPageDialogResource(Resource):
                 screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
                 automator.driver.save_screenshot(screenshot_path)
 
-                # Import process_screenshot_response from reader_page_handler
                 from handlers.reader_page_handler import process_screenshot_response
 
+                # TODO: Refactor with BookOpenResource.capture_book_state
                 # Use process_screenshot_response to get both OCR text and page indicators
                 ocr_data = process_screenshot_response(
                     screenshot_id, screenshot_path, use_base64=False, perform_ocr=True

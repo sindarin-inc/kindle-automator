@@ -816,8 +816,6 @@ class NavigationResourceHandler:
                 main_text_data = main_text_bytes.getvalue()
 
                 # OCR just the main text
-                from server.utils.ocr_utils import KindleOCR
-
                 ocr_text, ocr_error = KindleOCR.process_ocr(main_text_data)
 
                 if ocr_error:
@@ -871,8 +869,6 @@ class NavigationResourceHandler:
 
             if page_indicator_bytes:
                 # OCR just the page indicator region
-                from server.utils.ocr_utils import KindleOCR
-
                 page_text, page_error = KindleOCR.process_ocr(page_indicator_bytes, clean_ui_elements=False)
 
                 if page_text:

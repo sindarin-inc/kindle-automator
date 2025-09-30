@@ -228,7 +228,6 @@ class BookOpenResource(Resource):
                 screenshot_path = os.path.join(automator.screenshots_dir, f"{screenshot_id}.png")
                 automator.driver.save_screenshot(screenshot_path)
 
-                # Import process_screenshot_response from reader_page_handler
                 from handlers.reader_page_handler import process_screenshot_response
 
                 # Use process_screenshot_response to get both OCR text and page indicators

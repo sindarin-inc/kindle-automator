@@ -7,61 +7,27 @@ import platform
 import signal
 import subprocess
 import time
-import traceback
-import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
 import sentry_sdk
-from appium.webdriver.common.appiumby import AppiumBy
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
-from flask import (
-    Flask,
-    Response,
-    make_response,
-    request,
-    send_file,
-    send_from_directory,
-)
-from flask_restful import Api, Resource
-from selenium.common import exceptions as selenium_exceptions
+from flask import Flask, make_response, send_from_directory
+from flask_restful import Api
 from sentry_sdk.integrations.flask import FlaskIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
 from database.connection import db_connection
-from handlers.navigation_handler import NavigationResourceHandler
-from handlers.reader_page_handler import process_screenshot_response
-from handlers.test_fixtures_handler import TestFixturesHandler
 from server.core.automation_server import AutomationServer
 from server.logging_config import setup_logger
-from server.middleware.automator_middleware import ensure_automator_healthy
-from server.middleware.profile_middleware import ensure_user_profile_loaded
 from server.middleware.request_logger import setup_request_logger
-from server.middleware.response_handler import (
-    get_image_path,
-    handle_automator_response,
-    serve_image,
-)
 from server.resources.active_emulators_resource import ActiveEmulatorsResource
 from server.resources.auth_dashboard_resource import AuthDashboardResource
 from server.resources.dashboard_resource import DashboardResource
 from server.resources.emulator_batch_config_resource import EmulatorBatchConfigResource
 from server.resources.web_vnc_resource import WebVNCResource
-from server.utils.cover_utils import (
-    add_cover_urls_to_books,
-    extract_book_covers_from_screen,
-)
-from server.utils.ocr_utils import KindleOCR, is_base64_requested, is_ocr_requested
-from server.utils.request_utils import (
-    get_automator_for_request,
-    get_formatted_vnc_url,
-    get_sindarin_email,
-    get_vnc_and_websocket_urls,
-    is_websockets_requested,
-)
-from views.core.app_state import AppState
 
 # Load environment variables from .env file
 setup_logger()
@@ -320,7 +286,6 @@ from server.resources.snapshot_check_resource import SnapshotCheckResource
 from server.resources.staff_auth_resources import StaffAuthResource, StaffTokensResource
 from server.resources.state_resource import StateResource
 from server.resources.table_of_contents_resource import TableOfContentsResource
-from server.resources.text_resource import TextResource
 from server.resources.user_activity_resource import UserActivityResource
 
 # Add resources to API
@@ -377,7 +342,6 @@ api.add_resource(
 api.add_resource(FixturesResource, "/fixtures")
 api.add_resource(ImageResource, "/image/<string:image_id>")
 api.add_resource(CoverImageResource, "/covers/<string:email_slug>/<string:filename>")
-api.add_resource(TextResource, "/text")
 api.add_resource(LastReadPageDialogResource, "/last-read-page-dialog")
 api.add_resource(
     ShutdownResource,
