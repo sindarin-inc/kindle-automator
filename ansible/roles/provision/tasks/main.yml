@@ -12,6 +12,10 @@
       - zsh
     state: present
 
+- name: Set timezone to Pacific Time
+  community.general.timezone:
+    name: America/Los_Angeles
+
 - name: Add Docker GPG key
   apt_key:
     url: https://download.docker.com/linux/ubuntu/gpg
