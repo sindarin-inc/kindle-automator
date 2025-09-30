@@ -2701,6 +2701,13 @@ class LibraryHandler:
             else:
                 logger.info(f"Search function didn't find '{book_title}', falling back to scrolling method")
 
+                # Perform pull-to-refresh before scrolling to ensure we have the latest book list
+                logger.info("Performing pull-to-refresh before scrolling")
+                if not self.pull_to_refresh():
+                    logger.warning(
+                        "Pull-to-refresh failed after search failure, continuing with scroll anyway..."
+                    )
+
             # Fallback: Search for the book by scrolling
 
             # Only handle Grid/List view if cached preferences indicate we need to
