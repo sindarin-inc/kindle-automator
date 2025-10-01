@@ -119,6 +119,7 @@ class ShutdownResource(Resource):
         preserve_reading_state = get_boolean_param("preserve_reading_state", default=False)
         mark_for_restart = get_boolean_param("mark_for_restart", default=False)
         skip_snapshot = get_boolean_param("skip_snapshot", default=False)
+        cold = get_boolean_param("cold", default=False)
 
         try:
             # Use the shutdown manager to handle the shutdown
@@ -127,6 +128,7 @@ class ShutdownResource(Resource):
                 preserve_reading_state=preserve_reading_state,
                 mark_for_restart=mark_for_restart,
                 skip_snapshot=skip_snapshot,
+                cold=cold,
             )
 
             # Prepare response
@@ -143,6 +145,10 @@ class ShutdownResource(Resource):
                 message_parts.append("snapshot taken")
             elif skip_snapshot:
                 message_parts.append("snapshot skipped for cold boot")
+            elif cold and shutdown_summary.get("snapshot_deleted"):
+                message_parts.append("snapshot deleted for cold boot")
+            elif cold and not shutdown_summary.get("snapshot_deleted"):
+                message_parts.append("no snapshot to delete for cold boot")
             elif (
                 not skip_snapshot
                 and not shutdown_summary["snapshot_taken"]
@@ -187,7 +193,7 @@ class ShutdownResource(Resource):
                 "success": True,
                 "message": message,
                 "details": shutdown_summary,
-                "cold_shutdown": skip_snapshot,
+                "cold_shutdown": skip_snapshot or cold,
             }, 200
 
         except Exception as e:

@@ -36,6 +36,7 @@ class EmulatorShutdownManager:
         "websocket_stopped",
         "automator_cleaned",
         "snapshot_taken",
+        "snapshot_deleted",
         "placemark_sync_attempted",
         "placemark_sync_success",
     )
@@ -58,6 +59,7 @@ class EmulatorShutdownManager:
         preserve_reading_state: bool = False,
         mark_for_restart: Optional[bool] = None,
         skip_snapshot: bool = False,
+        cold: bool = False,
     ) -> Dict[str, bool]:
         """Gracefully shut down the emulator attached to *email*.
 
@@ -67,6 +69,7 @@ class EmulatorShutdownManager:
             mark_for_restart: Persist running flag for deployment restarts.  If *None*,
                 falls back to *preserve_reading_state* for backwards compatibility.
             skip_snapshot: Skip taking a snapshot before shutdown (for cold boot).
+            cold: Delete existing snapshot to ensure cold boot on next start.
 
         Returns
         -------
@@ -80,11 +83,12 @@ class EmulatorShutdownManager:
 
         start_time = _time.time()
         logger.info(
-            "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s, skip_snapshot=%s)",
+            "Processing shutdown request for %s (preserve_reading_state=%s, mark_for_restart=%s, skip_snapshot=%s, cold=%s)",
             email,
             preserve_reading_state,
             mark_for_restart,
             skip_snapshot,
+            cold,
         )
 
         # ------------------------------------------------------------------
@@ -115,12 +119,16 @@ class EmulatorShutdownManager:
         # ------------------------------------------------------------------
         # 4. Take snapshot (always attempt, even if UI crashed)        ──────
         # ------------------------------------------------------------------
-        if not skip_snapshot:
+        if not skip_snapshot and not cold:
             snapshot_start = _time.time()
             self._take_snapshot(automator, email, summary)
             logger.debug(f"Snapshot attempt took {_time.time() - snapshot_start:.1f}s for {email}")
         else:
             logger.debug(f"Skipping snapshot for {email} as requested (cold boot)")
+
+        # Delete existing snapshot if cold boot requested
+        if cold:
+            self._delete_existing_snapshot(automator, email, summary)
 
         # ------------------------------------------------------------------
         # 5. Stop emulator + auxiliary processes                       ──────
@@ -448,6 +456,38 @@ class EmulatorShutdownManager:
         return sync_success
 
     # ----------------------------- snapshot ------------------------ #
+
+    def _delete_existing_snapshot(self, automator, email: str, summary: Dict[str, bool]):
+        """Delete the existing default_boot snapshot to force cold boot on next start."""
+        try:
+            import os
+            import shutil
+
+            # Get AVD name from email
+            launcher = automator.emulator_manager.emulator_launcher
+            avd_name = launcher._extract_avd_name_from_email(email)
+            if not avd_name:
+                logger.warning(f"Could not determine AVD name for {email} to delete snapshot")
+                return
+
+            # Get the correct AVD directory from the launcher
+            avd_dir = launcher.avd_dir
+            snapshot_path = os.path.join(avd_dir, f"{avd_name}.avd", "snapshots", "default_boot")
+
+            if os.path.exists(snapshot_path):
+                logger.info(f"Deleting existing default_boot snapshot for {email} at {snapshot_path}")
+                shutil.rmtree(snapshot_path)
+                summary["snapshot_deleted"] = True
+                logger.info(
+                    f"Successfully deleted default_boot snapshot for {email} - will cold boot next time"
+                )
+            else:
+                logger.debug(f"No default_boot snapshot found to delete for {email}")
+                summary["snapshot_deleted"] = False
+
+        except Exception as e:
+            logger.error(f"Error deleting snapshot for {email}: {e}", exc_info=True)
+            summary["snapshot_deleted"] = False
 
     def _take_snapshot(self, automator, email: str, summary: Dict[str, bool]):
         launcher = automator.emulator_manager.emulator_launcher
