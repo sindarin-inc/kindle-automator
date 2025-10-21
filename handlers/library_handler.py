@@ -144,7 +144,7 @@ class LibraryHandler:
 
         except Exception as e:
             logger.warning(f"Error performing pull-to-refresh: {e}", exc_info=True)
-            store_page_source(self.driver, "pull_refresh_error")
+            store_page_source(self.driver.page_source, "pull_refresh_error")
             return False
 
     def click_filter_button_and_count_books(self):
