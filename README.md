@@ -1,4 +1,66 @@
-## Installation Instructions
+# Kindle Automator
+
+### An Android Kindle Use Agent for Programmatic Book Reading
+
+Kindle Automator is an open-source automation platform that turns Android emulators into programmable Kindle reading agents. It provides a REST API to control the Amazon Kindle Android app, enabling developers to build applications that can read books, navigate pages, extract text via OCR, and manage entire Kindle libraries programmatically.
+
+---
+
+## Why Does This Project Exist?
+
+The Kindle ecosystem is notoriously locked down. Amazon provides no official API for third-party applications to interact with your purchased Kindle books. This project bridges that gap by using Android emulation and UI automation to provide programmatic access to Kindle functionality.
+
+**Use cases include:**
+- Building accessible reading applications for users with disabilities
+- Creating custom reading interfaces and experiences
+- Developing AI-powered reading assistants
+- Automating book organization and library management
+- Research applications requiring bulk text extraction
+- Building cross-platform reading synchronization tools
+
+---
+
+## Features
+
+- 👥 **Multi-User Support** - Run multiple Android emulators simultaneously, each with its own authenticated Amazon account and isolated profile data
+
+- 🔌 **REST API** - Complete HTTP API for all Kindle operations including authentication, library browsing, book opening, page navigation, and screenshots
+
+- 📝 **OCR Text Extraction** - Extract readable text from any page using Google Document AI or Mistral OCR with automatic UI element filtering
+
+- 📡 **Real-Time Streaming** - Server-Sent Events (SSE) endpoint for streaming book library data as it loads, with cover image extraction
+
+- 🖼️ **Book Cover Extraction** - Automatically extract and cache book cover images from the library view for use in your applications
+
+- 📑 **Table of Contents Navigation** - Retrieve chapter listings and jump directly to any chapter in a book
+
+- 🎯 **Absolute Page Navigation** - Navigate to specific page positions with session tracking to maintain reading progress across requests
+
+- 👀 **Preview Mode** - Look ahead or behind in a book without changing your actual reading position
+
+- 🖥️ **VNC Remote Access** - View and interact with emulators in real-time through browser-based VNC streaming via WebSocket
+
+- 🧬 **Profile Cloning** - Create new user profiles from authenticated "seed" templates for rapid deployment
+
+- 🧊 **Cold Storage Archival** - Automatically archive inactive user profiles to cloud storage (DigitalOcean Spaces) and restore on demand
+
+- 🤖 **State Machine Architecture** - Intelligent handling of Kindle app states including login screens, dialogs, popups, and reading modes
+
+- 🔄 **Request Deduplication** - Smart request queuing with priority handling to prevent conflicting automation commands
+
+- 💤 **Idle Management** - Automatic shutdown of inactive emulators to conserve server resources
+
+- 📸 **Snapshot Recovery** - Save and restore emulator states for fast startup and crash recovery
+
+- 📊 **Admin Dashboard** - Built-in Flask-Admin interface for monitoring users, VNC instances, and system state
+
+- 🐛 **Sentry Integration** - Production-ready error tracking and monitoring with intelligent error filtering
+
+- 🎭 **Device Fingerprint Randomization** - Randomize device identifiers (MAC addresses, serial numbers, Android IDs) to avoid detection
+
+---
+
+## Quick Start
 
 To get started with the automation setup, you need to install Appium and the necessary drivers. Follow the steps below:
 
