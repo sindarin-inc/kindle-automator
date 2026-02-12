@@ -102,7 +102,7 @@ class EmulatorShutdownManager:
         server = AutomationServer.get_instance()
         automator = server.automators.get(email)
         if automator is None:
-            return self._handle_orphaned_emulator(email, summary)
+            return self._handle_orphaned_emulator(email, summary, cold=cold)
 
         # ------------------------------------------------------------------
         # 3. UI navigation (navigate to library if needed)             ──────
@@ -229,8 +229,14 @@ class EmulatorShutdownManager:
 
     # ----------------------- orphan‑handling ------------------------ #
 
-    def _handle_orphaned_emulator(self, email: str, summary: Dict[str, bool]):  # noqa: C901
+    def _handle_orphaned_emulator(
+        self, email: str, summary: Dict[str, bool], cold: bool = False
+    ):  # noqa: C901
         """Stop an emulator that is still running but has no live automator."""
+        # Handle cold boot cleanup even if there's no running emulator
+        if cold:
+            self._clear_snapshot_timestamp(email)
+
         vnc_manager = VNCInstanceManager.get_instance()
         vnc_instance = vnc_manager.get_instance_for_profile(email)
         if not vnc_instance or not vnc_instance.get("emulator_id"):
@@ -485,6 +491,9 @@ class EmulatorShutdownManager:
                 logger.debug(f"No default_boot snapshot found to delete for {email}")
                 summary["snapshot_deleted"] = False
 
+            # Clear the snapshot timestamp so the next boot uses -no-snapshot-load
+            self._clear_snapshot_timestamp(email)
+
         except Exception as e:
             logger.error(f"Error deleting snapshot for {email}: {e}", exc_info=True)
             summary["snapshot_deleted"] = False
@@ -524,6 +533,17 @@ class EmulatorShutdownManager:
                 emulator_id=emulator_id,
                 snapshot_attempted=True,
             )
+
+    @staticmethod
+    def _clear_snapshot_timestamp(email: str):
+        """Clear the snapshot timestamp so the next boot uses cold boot (-no-snapshot-load)."""
+        with contextlib.suppress(Exception):
+            from views.core.avd_profile_manager import AVDProfileManager
+
+            avd_mgr = AVDProfileManager.get_instance()
+            avd_mgr.set_user_field(email, "last_snapshot_timestamp", None)
+            avd_mgr.set_user_field(email, "last_snapshot", None)
+            logger.info(f"Cleared snapshot timestamp for {email} - next boot will cold boot")
 
     @staticmethod
     def _update_snapshot_timestamp(email: str):
